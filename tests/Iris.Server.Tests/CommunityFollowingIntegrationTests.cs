@@ -47,6 +47,7 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
     private const string Alice = "alice";
     private const string Bob = "bob";
     private const string Community = "iris";
+    private const string RemoteCommunity = "lumen";
 
     private readonly TestServer _a;
     private readonly TestServer _b;
@@ -58,29 +59,39 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
     private readonly Iri _communityIri;
     private readonly Iri _communityInboxIri;
     private readonly Iri _bobActorIri;
+    private readonly KeyPair _remoteCommunityKey;
+    private readonly Iri _remoteCommunityIri;
+    private readonly Iri _remoteCommunityInboxIri;
 
     public CommunityFollowingIntegrationTests()
     {
         var aPersistence = new InMemoryPersistenceProvider();
         _bPersistence = new InMemoryPersistenceProvider();
 
-        // A hosts alice (public actor document, so B can resolve alice's key).
+        // A hosts alice (public actor document, so B can resolve alice's key) and a second community
+        // <c>lumen</c> (a Group with a real key) that B's community can follow over the wire.
         var aSeeded = Seed(aPersistence, AHost, Alice);
         _aliceKey = aSeeded.Key;
         _aliceActorIri = aSeeded.ActorIri;
         _aliceInboxIri = _aliceActorIri.InboxOf();
 
-        // B hosts bob; its fetcher is wired to A so B can validate signatures by fetching A's actor doc.
+        _remoteCommunityIri = new Iri($"https://{AHost}/ap/v1/c/{RemoteCommunity}");
+        _remoteCommunityInboxIri = _remoteCommunityIri.InboxOf();
+        _remoteCommunityKey = SeedCommunity(aPersistence, AHost, RemoteCommunity);
+
+        // B hosts bob; its fetcher is wired to A so B can validate signatures by fetching A's actor doc
+        // (and A's community doc, so B can resolve A's community-as-follower's key).
         var bSeeded = Seed(_bPersistence, BHost, Bob);
         _bobActorIri = bSeeded.ActorIri;
 
-        // B also hosts a community <c>iris</c> with bob as its (only) local member.
+        // B also hosts a community <c>iris</c> with bob as its (only) local member, and a real key so it
+        // can sign outbound follows (a Group is a follower just like a Person).
         _communityIri = new Iri($"https://{BHost}/ap/v1/c/{Community}");
         _communityInboxIri = new Iri($"{_communityIri.Value}/inbox");
-        SeedCommunity(_bPersistence, _communityIri, _bobActorIri);
+        var communityKey = SeedCommunity(_bPersistence, BHost, Community, _bobActorIri);
 
-        _a = StartServer(AHost, Alice, aPersistence);
-        _b = StartServer(BHost, Bob, _bPersistence,
+        _a = StartServer(AHost, Alice, aPersistence, _aliceKey);
+        _b = StartServer(BHost, Bob, _bPersistence, bSeeded.Key, communityKey,
             fetcher: BuildFetcherFor(BHost, Bob, bSeeded.Key, targetServer: _a));
         _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
     }
@@ -188,19 +199,43 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
     // --- Helpers ----------------------------------------------------------------------------
 
     /// <summary>
-    /// Seeds a community (a <see cref="Group"/>) on B with <paramref name="memberIri"/> as its only
-    /// local member.
+    /// Seeds a community (a <see cref="Group"/>) with a real EC key (carried in the <c>publicKey</c>
+    /// extension, so a remote resolver can verify signatures the community signs) and an optional
+    /// local member. Returns the community's key (so it can be registered for outbound signing).
     /// </summary>
-    private static void SeedCommunity(
-        InMemoryPersistenceProvider persistence, Iri communityIri, Iri memberIri)
+    private static KeyPair SeedCommunity(
+        InMemoryPersistenceProvider persistence, string host, string name,
+        Iri? memberIri = null)
     {
-        persistence.Communities.PutCommunityAsync(new Group
+        var communityIri = new Iri($"https://{host}/ap/v1/c/{name}");
+        var keyId = new Iri($"{communityIri.Value}#key-1");
+        var key = KeyPairGenerator.GenerateEcP256(keyId);
+        persistence.Keys.PutKey(key);
+
+        var community = new Group
         {
             Id = communityIri.Value,
-            PreferredUsername = Community,
-            Name = [Community],
-        }).GetAwaiter().GetResult();
-        persistence.Communities.AddMemberAsync(communityIri, memberIri).GetAwaiter().GetResult();
+            PreferredUsername = name,
+            Name = [name],
+        };
+        community.ExtensionData ??= new Dictionary<string, JsonElement>();
+        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = communityIri.Value,
+            kty = "EC",
+            crv = "P-256",
+            x = ExtractJwkComponent(key, "x"),
+            y = ExtractJwkComponent(key, "y"),
+        });
+        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
+
+        if (memberIri is not null)
+        {
+            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
+        }
+
+        return key;
     }
 
     /// <summary>
@@ -329,13 +364,36 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
     }
 
     /// <summary>
-    /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, optionally
+    /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, registering
+    /// the instance actor's key (and, when provided, a community key for outbound signing) and
     /// overriding the <see cref="IActorDocumentFetcher"/> (for the federation wiring).
     /// </summary>
     private static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence,
+        KeyPair instanceKey,
+        KeyPair? communityKey = null,
         IActorDocumentFetcher? fetcher = null)
     {
+        var instanceActorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
+
+        // Register the instance actor's key (and the community's key, when provided) in the key store
+        // so the server can sign outbound deliveries as either identity. The community key lets B's
+        // DeliveryWorker sign a Follow as the community (a Group is a follower just like a Person).
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(instanceKey);
+        if (communityKey is not null)
+        {
+            keyStore.PutKey(communityKey);
+        }
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(instanceActorIri, instanceKey.KeyId);
+        if (communityKey is not null)
+        {
+            var communityIri = new Iri($"https://{host}/ap/v1/c/{Community}");
+            keyProvider.RegisterKey(communityIri, communityKey.KeyId);
+        }
+        var signer = new HttpSignatureSigner(keyStore);
+
         var builder = new WebHostBuilder()
             .ConfigureLogging(l =>
             {
@@ -350,10 +408,18 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
                 {
                     opts.BaseUri = new Iri($"https://{host}");
                     opts.InstanceName = $"iris-{host}";
-                    opts.InstanceActorId = new Iri($"https://{host}/ap/v1/u/{handle}");
+                    opts.InstanceActorId = instanceActorIri;
                 });
                 s.AddInMemoryPersistence();
                 s.AddSingleton<IPersistenceProvider>(persistence);
+
+                // Register the community key so the server's DeliveryWorker can sign as the community.
+                if (communityKey is not null)
+                {
+                    s.AddSingleton<IKeyStore>(keyStore);
+                    s.AddSingleton<IKeyProvider>(keyProvider);
+                    s.AddSingleton<ISignatureSigner>(signer);
+                }
 
                 if (fetcher is not null)
                 {

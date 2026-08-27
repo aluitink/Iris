@@ -339,6 +339,23 @@ public static class ActivityPubServerExtensions
         // (the shared limit/offset pagination shape, Resolved Decision #6).
         group.MapGet("/c/{name}/search", CommunitySearchHandler);
 
+        // Community collections: GET /ap/v1/c/{name}/{collection} where {collection} is one of following
+        // (the actors/communities the community follows) or followers (the actors/communities that follow
+        // the community). Mirrors the actor collection endpoint (/u/{handle}/{collection}) for a Group:
+        // a community is followed (and follows) the same way a person is, so it carries the same
+        // following/followers collections. `following` is backed by the community's follows set
+        // (ICommunityStore.GetFollowsAsync — the community follows the follower, Resolved Decision #36).
+        // `followers` (a community being followed) has no follow edge recorded against it (a follow of a
+        // community records an edge in the community's *follows* set, not a followers set), so it serves
+        // the empty collection. Paged via ?page/?limit (the shared page/limit shape).
+        group.MapGet(
+                "/c/{name}/{collection:regex(following|followers)}",
+                (string name, string collection, HttpContext context,
+                    IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
+                    CancellationToken ct)
+                    => CommunityCollectionHandler(name, collection, context, persistence, optionsAccessor, ct))
+            .WithName("community-collection-endpoint");
+
         // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
         // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
         // Requires a valid HTTP signature (validated by SignatureValidationMiddleware); unsigned or
@@ -900,6 +917,61 @@ public static class ActivityPubServerExtensions
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = new Iri($"{communityIri.Value}/feed");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves a community's <c>following</c> or <c>followers</c> collection as a paged
+    /// <c>OrderedCollection</c> (page 1) / <c>OrderedCollectionPage</c> (page N&gt;1) for
+    /// <c>GET /ap/v1/c/{name}/{collection}</c>. Mirrors the actor collection endpoint for a
+    /// <see cref="Group"/>: a community follows (and is followed by) actors and other communities the
+    /// same way a person does, so it carries the same <c>following</c>/<c>followers</c> collections.
+    /// </summary>
+    /// <remarks>
+    /// <c>following</c> is backed by the community's follows set
+    /// (<see cref="ICommunityStore.GetFollowsAsync"/> — the community "follows" the follower, Resolved
+    /// Decision #36); the items are the followed actors'/communities' IRIs as <c>Link</c>s.
+    /// <c>followers</c> (a community being followed) has no follow edge recorded against it — a follow of
+    /// a community records an edge in the community's <em>follows</em> set, not a followers set — so it
+    /// serves the empty collection. Pagination is the shared <c>?page</c>/<c>?limit</c> shape (page 1 is
+    /// the <c>OrderedCollection</c> with a self <c>first</c>; page N&gt;1 an <c>OrderedCollectionPage</c>
+    /// with <c>partOf</c>/<c>prev</c>/<c>next</c>). An unknown community 404s. The response carries the
+    /// collection <c>Cache-Control</c>.
+    /// </remarks>
+    private static async Task<IResult> CommunityCollectionHandler(
+        string name,
+        string collection,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // The community's follows set is the directed "community follows X" edge set. It backs the
+        // `following` collection (what the community follows); a community being followed has no
+        // followers set recorded (a follow of a community records an edge in the follows set, not a
+        // followers set), so `followers` serves the empty collection.
+        var items = collection == "following"
+            ? ActorIrisToLinks((await persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false)).ToList())
+            : [];
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var collectionIri = new Iri($"{communityIri.Value}/{collection}");
         var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =

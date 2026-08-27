@@ -37,13 +37,14 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
 
     private readonly TestServer _server;
     private readonly HttpClient _http;
+    private readonly InMemoryPersistenceProvider Persistence;
     private readonly string _base = $"https://{AHost}";
 
     public CommunityEndpointIntegrationTests()
     {
-        var persistence = new InMemoryPersistenceProvider();
-        Seed(persistence);
-        _server = StartServer(persistence);
+        Persistence = new InMemoryPersistenceProvider();
+        Seed(Persistence);
+        _server = StartServer(Persistence);
         _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
     }
 
@@ -136,6 +137,57 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // --- GET /c/{name}/{following|followers} is the community's follow collections
+
+    [Fact]
+    public async Task Following_Page1_IsOrderedCollection_WithFollowedIris()
+    {
+        // Seed the community's follows set: the community follows two remote actors/communities.
+        var communityIri = new Iri($"{_base}/ap/v1/c/{Community}");
+        var remote1 = new Iri($"https://remote1.example/ap/v1/u/carol");
+        var remote2 = new Iri($"https://remote2.example/ap/v1/c/hub");
+        await Persistence.Communities.AddFollowAsync(communityIri, remote1);
+        await Persistence.Communities.AddFollowAsync(communityIri, remote2);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/following");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/following", doc.RootElement.GetProperty("id").GetString());
+
+        // The followed IRIs are present (as bare IRI strings), and totalItems reflects the count.
+        var followedIris = GetItems(doc.RootElement).Select(ItemIri).ToHashSet();
+        Assert.Equal(2, followedIris.Count);
+        Assert.Contains(remote1.Value, followedIris);
+        Assert.Contains(remote2.Value, followedIris);
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Followers_IsEmpty_WhenCommunityHasNoFollowers()
+    {
+        // A follow of a community records an edge in the community's *follows* set, not a followers set,
+        // so a community being followed has no followers recorded: the followers collection is empty.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/followers");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
+        Assert.Empty(GetItems(doc.RootElement));
+        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Following_UnknownCommunity_Returns404()
+    {
+        var following = await _http.GetAsync($"{_base}/ap/v1/c/nobody/following");
+        Assert.Equal(HttpStatusCode.NotFound, following.StatusCode);
+        var followers = await _http.GetAsync($"{_base}/ap/v1/c/nobody/followers");
+        Assert.Equal(HttpStatusCode.NotFound, followers.StatusCode);
+    }
+
     // --- POST /c/{name}/inbox requires a valid signature ------------------------
 
     [Fact]
@@ -181,6 +233,11 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
     /// A members item serializes as a bare IRI string (a single <c>Link</c>).
     /// </summary>
     private static string MemberIri(JsonElement element) => element.GetString()!;
+
+    /// <summary>
+    /// A following/followers item serializes as a bare IRI string (a single <c>Link</c>).
+    /// </summary>
+    private static string ItemIri(JsonElement element) => element.GetString()!;
 
     /// <summary>
     /// Seeds the persistence provider: a community <c>iris</c> (a <c>Group</c> actor) with two local
