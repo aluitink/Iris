@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Runtime.CompilerServices;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
@@ -86,6 +87,127 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         return (int)response.StatusCode;
+    }
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<CollectionPage> GetCollectionAsync(
+        Iri collectionId,
+        CollectionQuery? query = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        int? limit = query?.Limit;
+        int yielded = 0;
+
+        // Resolve the first page: fetch the collection and follow its `first` link if needed.
+        IObject? first = await GetObjectAsync(collectionId, ct).ConfigureAwait(false);
+        Iri? pageIri = ResolveFirstPageIri(first, collectionId);
+        if (pageIri is null)
+        {
+            yield break;
+        }
+
+        while (pageIri is { } current)
+        {
+            var page = await FetchCollectionPageAsync(current, ct).ConfigureAwait(false);
+            if (page is null)
+            {
+                yield break;
+            }
+
+            yield return page;
+
+            foreach (var _ in page.Items)
+            {
+                yielded++;
+                if (limit is not null && yielded >= limit)
+                {
+                    yield break;
+                }
+            }
+
+            pageIri = page.NextPage;
+        }
+    }
+
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<IObjectOrLink> GetCollectionItemsAsync(
+        Iri collectionId,
+        CollectionQuery? query = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        int? limit = query?.Limit;
+        int remaining = limit ?? int.MaxValue;
+
+        await foreach (var page in GetCollectionAsync(collectionId, query, ct).ConfigureAwait(false))
+        {
+            foreach (var item in page.Items)
+            {
+                if (remaining <= 0)
+                {
+                    yield break;
+                }
+
+                yield return item;
+                remaining--;
+            }
+        }
+    }
+
+    private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)
+    {
+        // If the fetched object is itself a page, use it directly.
+        if (collection is OrderedCollectionPage)
+        {
+            return collectionId;
+        }
+
+        // Otherwise follow the collection's `first` link to reach the first page.
+        if (collection is Collection { First: { } first } && TryGetIri(first, out var firstIri))
+        {
+            return firstIri;
+        }
+
+        return null;
+    }
+
+    private static bool TryGetIri(ICollectionOrLink? objOrLink, out Iri? iri)
+    {
+        iri = null;
+        // A page/collection link is either a Link (with Href) or a document (with Id).
+        if (objOrLink is ILink { Href: { } href })
+        {
+            iri = new Iri(href);
+            return true;
+        }
+
+        if (objOrLink is IObject { Id: { Length: > 0 } id })
+        {
+            iri = new Iri(id);
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task<CollectionPage?> FetchCollectionPageAsync(Iri pageIri, CancellationToken ct)
+    {
+        var obj = await GetObjectAsync(pageIri, ct).ConfigureAwait(false);
+        if (obj is not OrderedCollectionPage page)
+        {
+            return null;
+        }
+
+        var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+
+        return new CollectionPage
+        {
+            Page = page,
+            Items = items,
+            NextPage = TryGetIri(page.Next, out var next) ? next : null,
+            PrevPage = TryGetIri(page.Prev, out var prev) ? prev : null,
+            TotalItems = page.TotalItems is { } total ? (int)total : null,
+            PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
+        };
     }
 
     private async Task<IObject?> GetObjectAsync(HttpRequestMessage request, CancellationToken ct)

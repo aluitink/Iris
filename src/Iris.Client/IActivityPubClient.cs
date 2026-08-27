@@ -49,4 +49,39 @@ public interface IActivityPubClient : IDisposable
     /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
     /// <exception cref="ArgumentException">When <paramref name="activity"/> is not an <see cref="Activity"/>.</exception>
     public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the pages of an <see cref="OrderedCollection"/> by IRI, following the
+    /// <c>next</c> link from the collection's <c>first</c> page until the last page (or until
+    /// <see cref="CollectionQuery.Limit"/> items have been yielded).
+    /// </summary>
+    /// <param name="collectionId">The IRI of the collection (or of its <c>first</c> page).</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>, <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of <see cref="CollectionPage"/> in order. Yields nothing when the
+    /// collection cannot be fetched (e.g. 404 / not an <see cref="OrderedCollectionPage"/>).</returns>
+    /// <remarks>
+    /// The collection's <c>first</c> link is followed to reach the first page; if the fetched
+    /// object is itself an <see cref="OrderedCollectionPage"/> it is used directly. Each yielded
+    /// page's <see cref="CollectionPage.NextPage"/> is followed until it is null (last page) or the
+    /// <see cref="CollectionQuery.Limit"/> is reached.
+    /// </remarks>
+    public IAsyncEnumerable<CollectionPage> GetCollectionAsync(
+        Iri collectionId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the **items** of an <see cref="OrderedCollection"/> by IRI, flattening the
+    /// per-page <see cref="CollectionPage.Items"/> across pages in order.
+    /// </summary>
+    /// <param name="collectionId">The IRI of the collection (or of its <c>first</c> page).</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>, <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the collection's items (each an <see cref="IObjectOrLink"/>;
+    /// callers pattern-match). Yields nothing when the collection cannot be fetched.</returns>
+    public IAsyncEnumerable<IObjectOrLink> GetCollectionItemsAsync(
+        Iri collectionId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
 }
