@@ -259,6 +259,128 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
     }
 
+    // --- Announce propagation: a local actor's boost is propagated to a local follower's inbox over the wire --
+    //
+    // B hosts two local actors (bob = the instance actor, carol = a second local actor) and bob
+    // follows carol. carol announces (boosts) an object: a client signed as carol POSTs an Announce to
+    // B's inbox. B's SignatureValidationMiddleware validates the signature (resolving carol's key from
+    // B's own actor doc), stores the Announce, and B's AnnounceActivityHandler records it in carol's
+    // outbox and propagates it to carol's local followers' inboxes (here, bob's inbox) via the
+    // DeliveryWorker, signed as carol (the announcer). The propagated copy reuses the deterministic
+    // Announce IRI ({carol}/announces/{object}) and is addressed to=bob, cc=carol — so the activity
+    // stored under that IRI is the propagated form, and its presence proves the worker delivered it to
+    // bob's inbox over the wire and B validated carol's signature on it.
+
+    [Fact]
+    public async Task Announce_LocalActorPropagatesToFollowersInbox_SignedWithAnnouncersKey()
+    {
+        // Self-contained two-instance federation (mirrors the two-actor Accept test): fresh
+        // persistence per instance so this test is isolated from the fixture's servers. B hosts two
+        // local actors (bob = instance actor, carol = a second local actor).
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var bBob = Seed(bPersistence, BHost, Bob);
+        var bCarol = Seed(bPersistence, BHost, Carol);
+        var bobActorIri = bBob.ActorIri;
+        var carolActorIri = bCarol.ActorIri;
+        var carolInboxIri = carolActorIri.InboxOf();
+
+        // bob (B's local instance actor) follows carol (B's second local actor): bob is one of
+        // carol's local followers on B.
+        await bPersistence.Follows.RecordFollowAsync(bobActorIri, carolActorIri);
+
+        // B's inbound key resolver validates carol's signature by fetching carol's actor doc from B
+        // (its own instance) — so B's fetcher is a self-loop (route to B's own handler, lazy to break
+        // the wiring chicken-and-egg). B's DeliveryWorker delivers the propagated Announce to bob's
+        // inbox (also on B), so B's delivery transport is likewise a self-loop. A is present only as
+        // the origin of the announced object (the object IRI is on A); A's fetcher/delivery route to B.
+        TestServer? bRef = null;
+        var a = StartServer(AHost, Alice, aPersistence,
+            fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())),
+            // A's delivery transport is a self-safe lazy (A doesn't deliver in this test, but the
+            // worker creates its client at startup before bRef is assigned).
+            deliveryTransport: () => new LazyHandler(() => bRef!.CreateHandler()));
+        bRef = StartServer(BHost, Bob, bPersistence,
+            // B's fetcher is a self-loop: B resolves its own actors' keys (bob, carol) by fetching its
+            // own actor docs. This is the correct behavior — an instance validating a signature from
+            // one of its own actors fetches its own actor doc.
+            fetcher: BuildFetcherFor(BHost, Bob, bBob.Key, new LazyHandler(() => bRef!.CreateHandler())),
+            // B's DeliveryWorker delivers the propagated Announce to bob's inbox (on B) — self-loop.
+            // The worker creates its transport client at startup (before bRef is assigned), so the
+            // transport is wrapped in a LazyHandler that defers bRef.CreateHandler() until the first
+            // actual delivery (by which point bRef exists).
+            deliveryTransport: () => new LazyHandler(() => bRef!.CreateHandler()),
+            extraLocalActors: [carolActorIri]);
+        using var scope = new DisposeBoth(bRef, a);
+
+        // carol announces (boosts) an object: signed as carol, delivered to carol's inbox on B over the
+        // wire. The original announce is addressed to the public (to=Public); the propagated copy
+        // (built by the handler) is addressed to=bob, cc=carol.
+        var objectIri = new Iri($"https://{AHost}/objects/note-1");
+        var announceIri = new Iri($"{carolActorIri}/announces/{objectIri}");
+        var announce = new Announce
+        {
+            Id = announceIri.Value,
+            Actor = [new Link { Href = new Uri(carolActorIri.Value) }],
+            AttributedTo = [new Link { Href = new Uri(carolActorIri.Value) }],
+            Object = [new Link { Href = new Uri(objectIri.Value) }],
+            To = [new Link { Href = new Uri(Iri.Public.Value) }],
+        };
+
+        // Deliver carol's signed Announce to carol's inbox on B over the wire.
+        using var client = BuildDeliveryClient(carolActorIri, bCarol.Key, bRef.CreateHandler());
+        var statusCode = await client.DeliverAsync(carolInboxIri, announce);
+        Assert.Equal(202, statusCode);
+
+        // B validated carol's signature (resolving carol's key from B's actor doc) and stored the
+        // Announce under its deterministic IRI.
+        Assert.True(
+            await bPersistence.Activities.TryGetActivityAsync(announceIri, out _),
+            "B should have stored the Announce after validating carol's signature");
+
+        // B recorded the Announce in carol's (recipient's) outbox.
+        var outbox = await bPersistence.Activities.GetOutboxAsync(carolActorIri);
+        Assert.Single(outbox);
+        Assert.IsType<Announce>(outbox[0]);
+
+        // B's AnnounceActivityHandler propagated the Announce to bob's inbox (bob is carol's local
+        // follower). The DeliveryWorker POSTs the propagated copy (to=bob, cc=carol, same
+        // deterministic IRI) to bob's inbox over the wire, signed as carol (the announcer); B
+        // validates carol's signature (fetching B's actor doc for carol) and stores it under the
+        // deterministic IRI — the same IRI as the original announce. Because the propagated copy
+        // reuses the deterministic IRI, B's store ends up holding the propagated form (to=bob); wait
+        // until the stored activity is the propagated form, which only the worker's delivery produces.
+        await WaitForAsync(async () =>
+        {
+            if (!await bPersistence.Activities.TryGetActivityAsync(announceIri, out var propagated)
+                || propagated is not Announce a2)
+            {
+                return false;
+            }
+
+            return (a2.To?.FirstOrDefault() as ILink) is { Href: { } href } && href == new Uri(bobActorIri.Value);
+        }, timeout: TimeSpan.FromSeconds(10));
+
+        // The propagated Announce (stored under the deterministic IRI) is addressed to bob, cc'd to
+        // carol, and references the announced object — proving the worker delivered it to bob's inbox
+        // and B validated carol's signature on the propagated copy.
+        Assert.True(
+            await bPersistence.Activities.TryGetActivityAsync(announceIri, out var stored),
+            "B should have stored the propagated Announce under the deterministic IRI");
+        var storedAnnounce = Assert.IsType<Announce>(stored!);
+        var toLink = storedAnnounce.To!.First() as ILink;
+        Assert.NotNull(toLink);
+        Assert.Equal(new Uri(bobActorIri.Value), toLink!.Href); // addressed to the local follower (bob)
+        var ccLink = storedAnnounce.Cc!.First() as ILink;
+        Assert.NotNull(ccLink);
+        Assert.Equal(new Uri(carolActorIri.Value), ccLink!.Href); // cc'd to the announcer (carol)
+        Assert.NotNull(storedAnnounce.Object);
+        Assert.Contains(storedAnnounce.Object!, o => o is ILink { Href: { } href } && href == objectIri.Uri);
+        Assert.NotNull(storedAnnounce.Actor);
+        Assert.Contains(storedAnnounce.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
+    }
+
     // --- Key resolution: B resolves alice's key by fetching A's actor doc --------
 
     [Fact]

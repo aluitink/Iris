@@ -189,12 +189,20 @@ public static class ActivityPubServerExtensions
         // to the registered activity handlers. The default set interprets the follow lifecycle:
         // Follow (records the local follow edge + schedules the Accept response), Accept (finalizes a
         // local follower's provisional follow when the followed side accepts), and Reject (undoes it
-        // when the followed side rejects). A host may add more IActivityHandler registrations
+        // when the followed side rejects). Announce (records the announce in the recipient's outbox
+        // and propagates it to the recipient's local followers' inboxes, so a boost is visible to a
+        // local follower's client). A host may add more IActivityHandler registrations
         // (e.g. Create) to extend the pipeline; the processor picks them up automatically.
         services.TryAddSingleton<ILocalActorResolver, DefaultLocalActorResolver>();
-        services.TryAddSingleton<IActivityHandler, FollowActivityHandler>();
-        services.TryAddSingleton<IActivityHandler, AcceptActivityHandler>();
-        services.TryAddSingleton<IActivityHandler, RejectActivityHandler>();
+        // The activity handlers are an OPEN list: each is a distinct implementation registered under
+        // the same service type (IActivityHandler), so AddSingleton (not TryAddSingleton) is required —
+        // TryAddSingleton would treat the second and later registrations as duplicates of the first
+        // (the same ServiceType) and skip them, leaving only the FollowActivityHandler. A host may add
+        // more IActivityHandler registrations (e.g. Create) to extend the pipeline.
+        services.AddSingleton<IActivityHandler, FollowActivityHandler>();
+        services.AddSingleton<IActivityHandler, AcceptActivityHandler>();
+        services.AddSingleton<IActivityHandler, RejectActivityHandler>();
+        services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service

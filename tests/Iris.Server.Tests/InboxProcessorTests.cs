@@ -56,6 +56,138 @@ public sealed class InboxProcessorTests
         Assert.Equal(RecipientIri, job.ActorIri);
     }
 
+    // --- Dispatch: an Announce is recorded in the outbox and propagated to local followers --
+
+    [Fact]
+    public async Task ProcessAsync_Announce_WithLocalFollowers_RecordsInOutboxAndPropagatesToEachLocalFollowerInbox()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, RecipientIri); // bob (local, the announcer)
+        var (queue, processor) = BuildProcessorWithAnnounceHandler(persistence);
+        // bob has two local followers (carol, dave) and one remote follower (charlie) who is NOT
+        // propagated to (a remote follower is the remote instance's concern).
+        var carol = new Iri("https://b.domain.local/ap/v1/u/carol");
+        var dave = new Iri("https://b.domain.local/ap/v1/u/dave");
+        var charlie = new Iri("https://c.domain.local/ap/v1/u/charlie");
+        SeedLocalActor(persistence, carol);
+        SeedLocalActor(persistence, dave);
+        await persistence.Follows.RecordFollowAsync(carol, RecipientIri);
+        await persistence.Follows.RecordFollowAsync(dave, RecipientIri);
+        await persistence.Follows.RecordFollowAsync(charlie, RecipientIri);
+
+        var objectIri = new Iri("https://a.domain.local/objects/note-1");
+        var announce = BuildAnnounce(RecipientIri, objectIri);
+
+        await processor.ProcessAsync(new InboxDelivery(RecipientIri, announce));
+
+        // The announce is stored under its IRI (by the processor) and recorded in bob's outbox.
+        Assert.True(await persistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out var stored));
+        Assert.Equal(announce.Id, stored!.Id);
+        var outbox = await persistence.Activities.GetOutboxAsync(RecipientIri);
+        Assert.Single(outbox);
+        Assert.IsType<Announce>(outbox[0]);
+
+        // The AnnounceActivityHandler propagated the announce to each LOCAL follower's inbox
+        // (carol and dave) — NOT the remote follower charlie. Two jobs, one per local follower.
+        Assert.Equal(2, queue.Count);
+        var jobA = await queue.TryDequeueAsync();
+        var jobB = await queue.TryDequeueAsync();
+        var deliveredInboxes = new[] { jobA!, jobB! }.Select(j => j.InboxIri).ToHashSet();
+        Assert.Contains(carol.InboxOf(), deliveredInboxes);
+        Assert.Contains(dave.InboxOf(), deliveredInboxes);
+        Assert.DoesNotContain(charlie.InboxOf(), deliveredInboxes);
+
+        // Each propagated activity is the deterministic Announce (same IRI as the original),
+        // addressed (to) to its follower, cc'd to the announcer, and signed as the announcer (bob).
+        foreach (var job in new[] { jobA!, jobB! })
+        {
+            // The delivery is addressed to a local follower's inbox (derived from the follower IRI).
+            Assert.True(job.InboxIri.IsAbsolute);
+            var propagated = Assert.IsType<Announce>(job.Activity);
+            Assert.Equal(announce.Id, propagated.Id); // deterministic IRI reused
+            var actor = propagated.Actor!.First();
+            var cc = propagated.Cc!.First();
+            var to = propagated.To!.First();
+            Assert.IsType<Link>(actor);
+            Assert.IsType<Link>(cc);
+            Assert.IsType<Link>(to);
+            // The actor and cc are the announcer (bob).
+            Assert.Equal(new Uri(RecipientIri.Value), (actor as Link)!.Href);
+            Assert.Equal(new Uri(RecipientIri.Value), (cc as Link)!.Href);
+            // The `to` audience is a local follower (one of carol/dave).
+            var toHref = (to as Link)!.Href;
+            Assert.True(
+                toHref == new Uri(carol.Value) || toHref == new Uri(dave.Value),
+                $"Expected the announce to be addressed to carol or dave, got {toHref}");
+            // The delivery is signed as the announcer (bob) — the recipient whose inbox received it.
+            Assert.Equal(RecipientIri, job.ActorIri);
+        }
+    }
+
+    // --- Handler: an Announce with no local followers is still recorded in the outbox --
+
+    [Fact]
+    public async Task ProcessAsync_Announce_WithNoLocalFollowers_RecordsInOutboxAndPropagatesNothing()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, RecipientIri); // bob (local, the announcer) — no followers
+        var (queue, processor) = BuildProcessorWithAnnounceHandler(persistence);
+        var objectIri = new Iri("https://a.domain.local/objects/note-2");
+        var announce = BuildAnnounce(RecipientIri, objectIri);
+
+        await processor.ProcessAsync(new InboxDelivery(RecipientIri, announce));
+
+        // The announce is recorded in bob's outbox, but nothing is propagated (no local followers).
+        var outbox = await persistence.Activities.GetOutboxAsync(RecipientIri);
+        Assert.Single(outbox);
+        Assert.IsType<Announce>(outbox[0]);
+        Assert.Equal(0, queue.Count);
+    }
+
+    // --- Handler: an Announce to a remote recipient is a no-op ----------------------------
+
+    [Fact]
+    public async Task ProcessAsync_Announce_RemoteRecipient_StoresActivityAndRecordsNothing()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // The recipient is NOT seeded (it is a remote actor) → the handler records nothing.
+        var (queue, processor) = BuildProcessorWithAnnounceHandler(persistence);
+        var remoteRecipient = new Iri("https://c.domain.local/ap/v1/u/charlie");
+        var objectIri = new Iri("https://c.domain.local/objects/note-1");
+        var announce = BuildAnnounce(remoteRecipient, objectIri);
+
+        await processor.ProcessAsync(new InboxDelivery(remoteRecipient, announce));
+
+        // The activity is stored (unknown/remote announce is preserved), but no outbox entry is
+        // recorded (the recipient is not a local actor) and nothing is propagated.
+        Assert.True(await persistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _));
+        Assert.Empty(await persistence.Activities.GetOutboxAsync(remoteRecipient));
+        Assert.Equal(0, queue.Count);
+    }
+
+    // --- Handler: an Announce with no resolvable actor/object records nothing -------------
+
+    [Fact]
+    public async Task ProcessAsync_AnnounceWithNoActor_StoresActivityAndRecordsNothing()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, RecipientIri);
+        var (queue, processor) = BuildProcessorWithAnnounceHandler(persistence);
+        // An Announce with no actor (malformed) — the handler records nothing.
+        var announce = new Announce
+        {
+            Id = "https://b.domain.local/announces/noactor",
+            Object = [new Link { Href = new Uri("https://a.domain.local/objects/note-3") }],
+        };
+
+        await processor.ProcessAsync(new InboxDelivery(RecipientIri, announce));
+
+        // The activity is stored, but no outbox entry is recorded and nothing is propagated.
+        Assert.True(await persistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _));
+        Assert.Empty(await persistence.Activities.GetOutboxAsync(RecipientIri));
+        Assert.Equal(0, queue.Count);
+    }
+
     // --- Dispatch: an activity with no registered handler is stored, not dispatched --
 
     [Fact]
@@ -316,6 +448,28 @@ public sealed class InboxProcessorTests
         Actor = [new Link { Href = new Uri(followerIri.Value) }],
         Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
+
+    private static Announce BuildAnnounce(Iri announcerIri, Iri objectIri) => new()
+    {
+        Id = $"{announcerIri}/announces/{objectIri}",
+        Actor = [new Link { Href = new Uri(announcerIri.Value) }],
+        Object = [new Link { Href = new Uri(objectIri.Value) }],
+    };
+
+    /// <summary>
+    /// Builds an <see cref="InboxProcessor"/> with a single <see cref="AnnounceActivityHandler"/>
+    /// (wired to a real <see cref="InMemoryDeliveryQueue"/> + <see cref="DeliveryService"/> + a
+    /// <see cref="DefaultLocalActorResolver"/> over the persistence's actor store), exposing the
+    /// delivery queue (to assert the scheduled propagations) and the processor.
+    /// </summary>
+    private static (IDeliveryQueue Queue, InboxProcessor Processor) BuildProcessorWithAnnounceHandler(IPersistenceProvider persistence)
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var delivery = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
+        var localActors = new DefaultLocalActorResolver(persistence);
+        var handler = new AnnounceActivityHandler(persistence, delivery, localActors);
+        return (queue, new InboxProcessor(persistence, [handler]));
+    }
 
     /// <summary>
     /// Seeds a local actor (Person) in the persistence's actor store, so the

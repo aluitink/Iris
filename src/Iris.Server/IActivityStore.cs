@@ -39,4 +39,20 @@ public interface IActivityStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the outbox items (possibly empty).</returns>
     public Task<IReadOnlyList<IObjectOrLink>> GetOutboxAsync(Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds an activity to an actor's outbox (newest first).
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor whose outbox is updated.</param>
+    /// <param name="item">The activity to add. Must not be null.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the activity has been added to the outbox.</returns>
+    /// <remarks>
+    /// The outbox is the actor's posted/announced activities (newest first), served by the outbox
+    /// collection endpoint. Activity handlers that record a local actor's activity in the outbox
+    /// (e.g. <see cref="AnnounceActivityHandler"/> recording a boost) call this. The store does not
+    /// de-duplicate by the item's IRI; callers that re-record the same activity should ensure
+    /// idempotency.
+    /// </remarks>
+    public Task AddToOutboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default);
 }

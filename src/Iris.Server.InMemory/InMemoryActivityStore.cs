@@ -46,12 +46,7 @@ public sealed class InMemoryActivityStore : IActivityStore
         return Task.FromResult<IReadOnlyList<IObjectOrLink>>(outbox.ToList());
     }
 
-    /// <summary>
-    /// Adds an activity to an actor's outbox (newest first). Used by tests and the inbox pipeline.
-    /// </summary>
-    /// <param name="actorIri">The IRI of the actor whose outbox is updated.</param>
-    /// <param name="item">The activity to add. Must not be null.</param>
-    /// <param name="ct">Cancellation token.</param>
+    /// <inheritdoc/>
     public Task AddToOutboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(item);
