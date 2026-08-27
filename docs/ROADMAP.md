@@ -40,8 +40,8 @@
 
 ### Phase 2 — Client Library
 
-- [ ] `IActivityPubClient` + `IActivityPubClientFactory` (operates on ActivityStreams types).
-  - `remaining:` concrete `ActivityPubClient` landed (signed `GetObjectAsync` → `IObject`, signed `DeliverAsync` → status); the `IActivityPubClient` interface + factory are not yet extracted.
+- [x] `IActivityPubClient` + `IActivityPubClientFactory` (operates on ActivityStreams types).
+  - Done: `IActivityPubClient` (`GetObjectAsync` → `IObject`, `GetActorAsync` → `Actor` via pattern-match cast, `DeliverAsync` → status) implemented by `ActivityPubClient`; `IActivityPubClientFactory`/`ActivityPubClientFactory` wire a `SigningHandler` (signer + key provider over the caller's transport) into an owned `HttpClient`. `IActivityPubClient` extends `IDisposable`. `remaining:` none for this bullet (caching, paged collections, `JsonLd`/`Retry` handlers tracked separately below).
 - [x] `SigningHandler` (respects `SigningProfile`).
   - Done: `SigningHandler` (`DelegatingHandler`) adds `Date` + `Signature`; `ClientToServer` for bodyless GETs, `ServerToServer` (digest+content-type) for body POSTs; derives host from the request URI when no `Host` header is set. Round-trip verified against `HttpSignatureVerifier`. `remaining:` `JsonLdHandler`, `RetryHandler`.
 - [ ] `IClientAuthenticator` + `BasicAuthClientAuthenticator` (fetches actor doc + private key from our server).
