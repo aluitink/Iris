@@ -26,4 +26,20 @@ public interface ISignatureVerifier
     /// not an error.
     /// </remarks>
     public bool Verify(HttpRequestMetadata metadata, string signatureHeader);
+
+    /// <summary>
+    /// Verifies the signature on the given request using an explicitly provided key.
+    /// </summary>
+    /// <param name="metadata">The request fields.</param>
+    /// <param name="key">The public key to verify with (e.g. a remote key resolved from the sender's
+    /// actor document rather than looked up from the local <see cref="IKeyStore"/>).</param>
+    /// <param name="signatureHeader">The raw <c>Signature</c> header value.</param>
+    /// <returns><see langword="true"/> when the signature is valid; otherwise <see langword="false"/>.</returns>
+    /// <remarks>
+    /// This overload exists because a server validating an inbound federation request resolves the
+    /// signing key from a *remote* source (the sender's actor document), not from its own key store.
+    /// It performs the same base reconstruction and cryptographic check as
+    /// <see cref="Verify(HttpRequestMetadata, string)"/> but with the key supplied directly.
+    /// </remarks>
+    public bool Verify(HttpRequestMetadata metadata, KeyPair key, string signatureHeader);
 }

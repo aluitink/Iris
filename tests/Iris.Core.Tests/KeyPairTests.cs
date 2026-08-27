@@ -128,4 +128,38 @@ public class KeyPairTests
         Assert.Throws<ArgumentNullException>(() => key.Verify(null!, [0x01]));
         Assert.Throws<ArgumentNullException>(() => key.Verify(Payload, null!));
     }
+
+    [Theory]
+    [InlineData(KeyAlgorithm.Rsa)]
+    [InlineData(KeyAlgorithm.EcP256)]
+    public void FromJwk_PublicKey_VerifiesSignatureMadeWithPrivateKey(KeyAlgorithm algorithm)
+    {
+        using var secret = KeyPairGenerator.Generate(algorithm, KeyId);
+
+        // The server-side path: the actor document carries the JWK; the verifier reconstructs a
+        // public-only key from it and must verify a signature made with the private key.
+        var jwk = secret.GetPublicJwk();
+        using var publicKey = KeyPair.FromJwk(jwk, algorithm, KeyId);
+
+        var signature = secret.Sign(Payload);
+        Assert.True(publicKey.Verify(Payload, signature));
+    }
+
+    [Theory]
+    [InlineData(KeyAlgorithm.Rsa)]
+    [InlineData(KeyAlgorithm.EcP256)]
+    public void FromJwk_PublicKey_CannotSign(KeyAlgorithm algorithm)
+    {
+        using var secret = KeyPairGenerator.Generate(algorithm, KeyId);
+        using var publicKey = KeyPair.FromJwk(secret.GetPublicJwk(), algorithm, KeyId);
+
+        Assert.ThrowsAny<CryptographicException>(() => publicKey.Sign(Payload));
+    }
+
+    [Fact]
+    public void FromJwk_MissingMember_Throws()
+    {
+        Assert.Throws<FormatException>(() =>
+            KeyPair.FromJwk("{\"kty\":\"RSA\"}", KeyAlgorithm.Rsa, KeyId));
+    }
 }

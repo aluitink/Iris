@@ -36,4 +36,11 @@ public sealed class ActivityPubServerOptions
     /// <see cref="Iris.Core.CachePolicy"/> are used.
     /// </summary>
     public ServerCachePolicies? CachePolicies { get; set; }
+
+    /// <summary>
+    /// The IRI of the local actor the instance signs outbound federation requests as (actor-document
+    /// fetches for inbound signature validation, and Phase 4 activity delivery). Defaults to the
+    /// instance's first registered actor when not set. See Resolved Decision #27.
+    /// </summary>
+    public Iri? InstanceActorId { get; set; }
 }

@@ -67,7 +67,17 @@ public sealed class SigningHandler : DelegatingHandler
 
         if (body.Length > 0)
         {
-            request.Content = new ByteArrayContent(body);
+            // Replace the content with the exact bytes that were signed, and restore the
+            // content-type + set the digest header so the receiving instance can reconstruct the
+            // same signature base (the ServerToServer profile covers digest + content-type).
+            var content = new ByteArrayContent(body);
+            if (metadata.ContentType is not null)
+            {
+                content.Headers.ContentType = new MediaTypeHeaderValue(metadata.ContentType);
+            }
+
+            content.Headers.TryAddWithoutValidation(Signatures.DigestHeaderName, metadata.Headers[Signatures.DigestHeaderName]);
+            request.Content = content;
         }
 
         return await base.SendAsync(request, ct).ConfigureAwait(false);

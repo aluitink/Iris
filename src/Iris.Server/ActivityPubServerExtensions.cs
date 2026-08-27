@@ -63,13 +63,21 @@ public static class ActivityPubServerExtensions
         // policy falls back to the CachePolicy default for that object type. These are the building
         // blocks for the server's outbound federation paths (Phase 4); they are registered now so
         // the seam is in place and unit-testable.
+        // The remote-key cache is registered standalone (not just inside ServerCaches) so the
+        // inbound key resolver (RemoteInboundKeyResolver) can resolve it directly by type.
+        services.TryAddSingleton<RemoteKeyCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            return new RemoteKeyCache(policies?.RemoteKey);
+        });
+
         services.TryAddSingleton<ServerCaches>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
             var policies = options.CachePolicies;
             return new ServerCaches(
                 RemoteActors: new RemoteActorCache(policies?.RemoteActor),
-                RemoteKeys: new RemoteKeyCache(policies?.RemoteKey),
+                RemoteKeys: sp.GetRequiredService<RemoteKeyCache>(),
                 CollectionPages: new CollectionPageCache(policies?.CollectionPage),
                 WebFinger: new WebFingerCache(policies?.WebFinger));
         });
@@ -79,12 +87,60 @@ public static class ActivityPubServerExtensions
         // authenticated owner-only document is never cached).
         services.TryAddSingleton<LocalActorDocumentCache>(_ => new LocalActorDocumentCache());
 
+        // Inbound signature validation (Phase 4). The server verifies the HTTP signature on inbound
+        // requests by resolving the remote signing key (fetched from the remote actor's document) and
+        // checking it cryptographically. A host app (or test) may replace IActorDocumentFetcher /
+        // IInboundKeyResolver / ISignatureValidator to customize key resolution or validation policy.
+        services.TryAddSingleton<IActivityPubClientFactory, ActivityPubClientFactory>();
+        services.TryAddSingleton<ISignatureVerifier, HttpSignatureVerifier>();
+        services.TryAddSingleton<IInboundKeyResolver, RemoteInboundKeyResolver>();
+        services.TryAddSingleton<ISignatureValidator, HttpSignatureValidator>();
+        services.TryAddSingleton<IActorDocumentFetcher>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+
+            // Without a configured instance actor the default fetcher cannot sign outbound fetches,
+            // so it degrades to a no-op (remote keys cannot be resolved → remote signatures fail
+            // validation). A host that sets ActivityPubServerOptions.InstanceActorId gets full
+            // inbound key resolution. A test that needs in-process routing (the federation test)
+            // replaces this registration with one wired to the other TestServer.
+            if (options.InstanceActorId is null)
+            {
+                return new NoopActorDocumentFetcher();
+            }
+
+            var factory = sp.GetRequiredService<IActivityPubClientFactory>();
+            var clientOptions = new ActivityPubClientOptions
+            {
+                ActorId = options.InstanceActorId.Value,
+                // Inbound key-resolution fetches do not need retries; keep the pipeline minimal.
+                EnableRetry = false,
+            };
+
+            // A real transport handler: the default fetch goes to the remote instance's public URL.
+            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()));
+        });
+
         // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
         // does NOT register a concrete persistence provider, keeping Iris.Server free of a dependency
         // on any specific persistence implementation.
 
         return services;
+    }
+
+    /// <summary>
+    /// Adds the <see cref="SignatureValidationMiddleware"/> to the pipeline. Call this before
+    /// <c>UseRouting</c>/<c>UseEndpoints</c> so inbound ActivityPub requests are signature-validated
+    /// before they reach the endpoints.
+    /// </summary>
+    /// <param name="app">The application builder. Must not be null.</param>
+    /// <returns>The application builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="app"/> is null.</exception>
+    public static IApplicationBuilder UseSignatureValidation(this IApplicationBuilder app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        return app.UseMiddleware<SignatureValidationMiddleware>();
     }
 
     /// <summary>
@@ -120,6 +176,11 @@ public static class ActivityPubServerExtensions
 
         // NodeInfo discovery root: GET /ap/v1/.well-known/nodeinfo (links to /nodeinfo/2.0).
         group.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
+
+        // Inbox: POST /ap/v1/u/{handle}/inbox — receives federation activities (Follow, Accept,
+        // Create, ...). Requires a valid HTTP signature (validated by SignatureValidationMiddleware);
+        // unsigned or invalidly-signed requests are rejected with 401.
+        group.MapPost("/u/{handle}/inbox", InboxHandler);
 
         return endpoints;
     }
@@ -197,6 +258,54 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(rendered, ActivityJson.ActivityJsonContentType);
+    }
+
+    private static async Task<IResult> InboxHandler(
+        HttpContext context,
+        string handle,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        // Signature validation policy: an inbox POST must be signed and valid. The middleware
+        // buffered the body and stored the outcome; an unsigned or invalid signature → 401.
+        var outcome = SignatureValidationMiddleware.GetResult(context);
+        if (!outcome.IsValid)
+        {
+            return Results.Unauthorized();
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // The inbox belongs to a local actor; an unknown handle → 404.
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // The body was buffered by the middleware; re-read it from the start.
+        context.Request.Body.Position = 0;
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Results.BadRequest();
+        }
+
+        // Rule 1: deserialize into the range interface, then cast.
+        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (payload is not Activity { Id: not null } activity)
+        {
+            return Results.BadRequest();
+        }
+
+        // Store the activity (the inbox pipeline that interprets it is a later Phase 4 slice).
+        await persistence.Activities.PutActivityAsync(activity, ct).ConfigureAwait(false);
+
+        return Results.Accepted();
     }
 
     /// <summary>

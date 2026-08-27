@@ -33,6 +33,29 @@ public sealed class HttpSignatureVerifier(IKeyStore keyStore) : ISignatureVerifi
         }
 
         // The key is borrowed from the store (the store owns its lifetime); do not dispose it here.
+        return VerifyWithKey(metadata, key, header);
+    }
+
+    /// <inheritdoc/>
+    public bool Verify(HttpRequestMetadata metadata, KeyPair key, string signatureHeader)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(key);
+        if (string.IsNullOrWhiteSpace(signatureHeader))
+        {
+            return false;
+        }
+
+        if (!SignatureHeader.TryParse(signatureHeader, out var header) || header is null)
+        {
+            return false;
+        }
+
+        return VerifyWithKey(metadata, key, header);
+    }
+
+    private static bool VerifyWithKey(HttpRequestMetadata metadata, KeyPair key, SignatureHeader header)
+    {
         var components = header.Headers.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (components.Length == 0)
         {

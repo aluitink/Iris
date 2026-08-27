@@ -94,6 +94,29 @@ public sealed class KeyPair : IDisposable
     public string ExportPrivateKeyPem() => _key.ExportPkcs8PrivateKeyPem();
 
     /// <summary>
+    /// Exports this key's public key as a SubjectPublicKeyInfo (PKIX) PEM string.
+    /// This is the alternate form carried in an actor document's <c>publicKey</c> property
+    /// (<c>publicKeyPem</c>), as opposed to the JWK form produced by <see cref="GetPublicJwk"/>.
+    /// </summary>
+    /// <returns>A PEM string (e.g. <c>-----BEGIN PUBLIC KEY-----</c>).</returns>
+    public string ExportPublicKeyPem()
+    {
+        var info = Algorithm switch
+        {
+            KeyAlgorithm.Rsa when _key is RSA rsa => rsa.ExportSubjectPublicKeyInfo(),
+            KeyAlgorithm.EcP256 when _key is ECDsa ec => ec.ExportSubjectPublicKeyInfo(),
+            _ => throw new NotSupportedException($"Algorithm {Algorithm} is not supported."),
+        };
+        return ToPem(info);
+    }
+
+    private static string ToPem(byte[] der)
+    {
+        var base64 = Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks);
+        return $"-----BEGIN PUBLIC KEY-----\n{base64}\n-----END PUBLIC KEY-----\n";
+    }
+
+    /// <summary>
     /// Gets the JWK (JSON Web Key) representation of the public key, as a JSON object string.
     /// This is the form placed in the <c>publicKey</c> property of an actor document.
     /// </summary>
@@ -184,6 +207,52 @@ public sealed class KeyPair : IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates a <b>public-only</b> <see cref="KeyPair"/> from a JSON Web Key (JWK). The result can
+    /// <see cref="Verify">verify</see> signatures but cannot sign (it has no private key).
+    /// </summary>
+    /// <param name="jwkJson">A JWK JSON object string (the <c>publicKey</c> field of an actor document).
+    /// For RSA: <c>kty</c>=<c>"RSA"</c> with <c>n</c>/<c>e</c>; for EC: <c>kty</c>=<c>"EC"</c> with
+    /// <c>crv</c>=<c>"P-256"</c>, <c>x</c>/<c>y</c>. Values are base64url-encoded.</param>
+    /// <param name="algorithm">The algorithm the key was generated with.</param>
+    /// <param name="keyId">The IRI that identifies the key.</param>
+    /// <returns>A public-only <see cref="KeyPair"/> (owns the key material; verify-only).</returns>
+    /// <remarks>
+    /// This is the inbound (server) counterpart to <see cref="GetPublicJwk"/>: a server that receives
+    /// a signed request from a remote actor fetches that actor's document, reads the <c>publicKey</c>
+    /// JWK, and reconstructs a public-only key to verify the signature. See Resolved Decision #27.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="jwkJson"/> is null.</exception>
+    /// <exception cref="FormatException">When the JWK is malformed or missing required members.</exception>
+    /// <exception cref="CryptographicException">When the JWK parameters do not form a valid key.</exception>
+    public static KeyPair FromJwk(string jwkJson, KeyAlgorithm algorithm, Iri keyId)
+    {
+        ArgumentNullException.ThrowIfNull(jwkJson);
+
+        var jwk = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(jwkJson);
+        if (jwk.ValueKind != System.Text.Json.JsonValueKind.Object)
+        {
+            throw new FormatException("A JWK must be a JSON object.");
+        }
+
+        AsymmetricAlgorithm key = algorithm switch
+        {
+            KeyAlgorithm.Rsa => BuildRsaFromJwk(jwk),
+            KeyAlgorithm.EcP256 => BuildEcFromJwk(jwk),
+            _ => throw new NotSupportedException($"Algorithm {algorithm} is not supported."),
+        };
+
+        try
+        {
+            return new KeyPair(key, algorithm, keyId);
+        }
+        catch
+        {
+            key.Dispose();
+            throw;
+        }
+    }
+
     /// <inheritdoc/>
     public void Dispose() => _key.Dispose();
 
@@ -199,6 +268,46 @@ public sealed class KeyPair : IDisposable
         var p = ec.ExportParameters(false);
         // RFC 7638: members sorted lexicographically (crv, kty, x, y).
         return $"\"crv\":\"P-256\",\"kty\":\"EC\",\"x\":\"{Base64Url.Encode(p.Q.X!)}\",\"y\":\"{Base64Url.Encode(p.Q.Y!)}\"";
+    }
+
+    private static RSA BuildRsaFromJwk(System.Text.Json.JsonElement jwk)
+    {
+        var modulus = DecodeBase64Url(RequireString(jwk, "n"));
+        var exponent = DecodeBase64Url(RequireString(jwk, "e"));
+        var rsa = RSA.Create();
+        rsa.ImportParameters(new RSAParameters { Modulus = modulus, Exponent = exponent });
+        return rsa;
+    }
+
+    private static ECDsa BuildEcFromJwk(System.Text.Json.JsonElement jwk)
+    {
+        var x = DecodeBase64Url(RequireString(jwk, "x"));
+        var y = DecodeBase64Url(RequireString(jwk, "y"));
+        var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        ec.ImportParameters(new ECParameters
+        {
+            Curve = ECCurve.NamedCurves.nistP256,
+            Q = new ECPoint { X = x, Y = y },
+        });
+        return ec;
+    }
+
+    private static string RequireString(System.Text.Json.JsonElement jwk, string name)
+    {
+        if (jwk.TryGetProperty(name, out var value) && value.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            return value.GetString()!;
+        }
+
+        throw new FormatException($"JWK is missing the required '{name}' member.");
+    }
+
+    private static byte[] DecodeBase64Url(string value)
+    {
+        var padding = (4 - (value.Length % 4)) % 4;
+        var normalized = value.PadRight(value.Length + padding, '=')
+            .Replace('-', '+').Replace('_', '/');
+        return Convert.FromBase64String(normalized);
     }
 
     private static class Base64Url
