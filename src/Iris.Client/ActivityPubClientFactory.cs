@@ -6,9 +6,19 @@ namespace Iris.Client;
 
 /// <summary>
 /// The default <see cref="IActivityPubClientFactory"/>. Composes an <see cref="ActivityPubClient"/> with a
-/// signing pipeline: <see cref="SigningHandler"/> over the caller-supplied transport handler.
+/// handler pipeline: <see cref="RetryHandler"/> → <see cref="JsonLdHandler"/> →
+/// <see cref="SigningHandler"/> over the caller-supplied transport handler.
 /// </summary>
 /// <remarks>
+/// Pipeline order matters:
+/// <list type="number">
+/// <item><see cref="RetryHandler"/> (outermost) replays the whole signed request on transient
+/// failure, so it must wrap the signing stage.</item>
+/// <item><see cref="JsonLdHandler"/> sets <c>Accept</c>/<c>Content-Type</c> before the
+/// <see cref="SigningHandler"/> reads the content type into the signature.</item>
+/// <item><see cref="SigningHandler"/> adds <c>Date</c>/<c>Signature</c> and (for body requests) the
+/// digest-covered content.</item>
+/// </list>
 /// The <see cref="SigningHandler"/> signs as <see cref="ActivityPubClientOptions.ActorId"/>. The signer and
 /// key store are owned by the factory; the key store must outlive the returned clients (keys are
 /// borrowed, not cloned — see <see cref="IKeyStore"/>). The transport handler passed to
@@ -48,9 +58,17 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
             ActorId = options.ActorId.Value,
         };
 
-        // The client owns this HttpClient (and disposes it on Dispose); the transport
+        // Retry → JsonLd → Signing → transport. Retry is outermost so it replays the signed
+        // request; JsonLd sets content negotiation headers before Signing signs them in.
+        DelegatingHandler pipeline = new JsonLdHandler(signingHandler);
+        if (options.EnableRetry)
+        {
+            pipeline = new RetryHandler(options.MaxRetryAttempts, pipeline);
+        }
+
+        // The client owns this HttpClient (and disposes the pipeline on Dispose); the transport
         // httpHandler is NOT disposed by it.
-        var httpClient = new HttpClient(signingHandler, disposeHandler: true)
+        var httpClient = new HttpClient(pipeline, disposeHandler: true)
         {
             Timeout = options.HttpClientTimeout ?? Timeout.InfiniteTimeSpan,
         };

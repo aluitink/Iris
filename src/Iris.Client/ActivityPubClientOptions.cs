@@ -23,4 +23,17 @@ public sealed class ActivityPubClientOptions
     /// client goes straight to the network for reads (no caching).
     /// </summary>
     public ClientCaches? Caches { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the <see cref="RetryHandler"/> is included in the pipeline. Defaults to
+    /// true.
+    /// </summary>
+    public bool EnableRetry { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the total number of attempts (including the first) the
+    /// <see cref="RetryHandler"/> will make for idempotent requests. Defaults to
+    /// <see cref="RetryHandler.DefaultMaxAttempts"/> (3).
+    /// </summary>
+    public int MaxRetryAttempts { get; set; } = RetryHandler.DefaultMaxAttempts;
 }
