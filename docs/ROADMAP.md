@@ -31,11 +31,12 @@
   - Done: `ClientToServer` = `(request-target) host date`; `ServerToServer` = `+ digest content-type`. Verifier reconstructs the base from the declared `headers` list, so it accepts both.
 - [x] `ActivityJson` static helpers (pre-configured `JsonSerializerOptions` with ActivityStreams converters).
   - Done: single `JsonSerializerOptions` (registers the library's `ObjectOrLinkConverter`, `WhenWritingDefault`, no naming policy); content-type constants; `Serialize`/`Deserialize` overloads. Unit-tested against the wire format.
-- [ ] `ICache<T>`, `CacheEntry<T>`, `MemoryCache<T>`, `CachePolicy` (in-memory, TTL, LRU eviction, stale-while-revalidate). TTLs **configurable** via options.
+- [x] `ICache<T>`, `CacheEntry<T>`, `MemoryCache<T>`, `CachePolicy` (in-memory, TTL, LRU eviction, stale-while-revalidate). TTLs **configurable** via options.
+  - Done: `CachePolicy` (record struct + validated defaults: Actor 5m, CollectionPage 30s, Key 1h, WebFinger 15m), `CacheState` (Fresh/Stale/Expired), `CacheEntry<TValue>` (value + createdAt + captured policy; `GetState(now)`), `ICache<TValue>` (Get/TryGetEntry/Put/Invalidate/Count, keyed by `Iri`, clock injected), `MemoryCache<TValue>` (thread-safe LRU, bounded capacity, opportunistic expired-eviction, stale-while-revalidate), `CachedValue<TValue>` (lookup result), `CacheExtensions` (`Lookup`/`GetOrAdd`).
 - [x] **PEM private-key load/save** helpers (`RSA`/`ECDsa` ↔ PKCS#8 PEM) for the `privateKey` actor-doc property.
   - Done: `KeyPem.Load`/`KeyPem.Save` over `KeyPair.FromPem`/`ExportPrivateKeyPem`. Round-trip tested for both algorithms.
-- [ ] Unit tests (pure logic only): sign/verify round-trip (both profiles), tamper detection, key generation, PEM round-trip, IRI helpers, cache TTL/eviction/stale-revalidate.
-  - Done so far: key generation, key sign/verify round-trip + tamper (both algos), PEM round-trip, IRI helpers, and **full HTTP-signature sign/verify per `SigningProfile`** (both algos x both profiles, signature-base spec examples, digest, tamper detection, unknown-key/malformed-header). Remaining: cache TTL/eviction/stale-revalidate (with the caching slice).
+- [x] Unit tests (pure logic only): sign/verify round-trip (both profiles), tamper detection, key generation, PEM round-trip, IRI helpers, cache TTL/eviction/stale-revalidate.
+  - Done: key generation, key sign/verify round-trip + tamper (both algos), PEM round-trip, IRI helpers, **full HTTP-signature sign/verify per `SigningProfile`** (both algos x both profiles, signature-base spec examples, digest, tamper detection, unknown-key/malformed-header), and **cache TTL/stale-while-revalidate/LRU eviction/invalidation** (incl. exact-boundary behavior and expired-eviction on write). Phase 1 complete.
 
 ### Phase 2 — Client Library
 
@@ -133,6 +134,8 @@
 13. **Multi-instance test topology**: **start with 2 servers** for basic federation, using simple hostnames **`a.domain.local`** and **`b.domain.local`**. **Plan for N servers** to support relay/fan-out scenarios (the harness must scale to N instances with distinct `*.domain.local` hostnames).
 14. **Key lifetime in signing**: a `KeyPair` wraps a non-clonable `AsymmetricAlgorithm`, so it **cannot be safely shared by reference across independent owners**. The `IKeyStore` is the single owner; `HttpSignatureSigner`/`HttpSignatureVerifier` **borrow** the key (never dispose it). A `KeyPair` created outside a store (e.g. by `KeyPairGenerator`) must be disposed by its creator.
 15. **Algorithm label placement**: the `algorithm` value (`rsa-sha256` / `ecdsa-p256-sha256`) is carried in the `Signature` header, **not** folded into the signature base (which is built only from the declared `headers` list, per draft-cavage-03). Verification is by the key's actual algorithm; the label is informational and must match the key type.
+16. **Cache clock injection**: `ICache<TValue>`/`MemoryCache<TValue>` take an explicit `nowUtc` on read/write (and an injectable `clock` on the constructor) rather than calling `DateTime.UtcNow` internally. This makes TTL / stale-while-revalidate / LRU-eviction **deterministic in unit tests** (no sleeps). The default `clock` is `DateTime.UtcNow`, so production callers get real time.
+17. **Cache eviction policy**: `MemoryCache<TValue>` is a **bounded LRU** (capacity default 1024). Expired entries are evicted **opportunistically on write** (best-effort pass from the LRU end); stale entries are never evicted by time alone — they are served (stale-while-revalidate) until they cross the `StaleFor` window, at which point the next read returns a miss and evicts them.
 
 ## Open Questions (to resolve as we go)
 

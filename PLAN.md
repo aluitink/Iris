@@ -63,9 +63,9 @@ Iris.sln
 - [x] Phase 0 — Scaffolding (see [Roadmap](docs/ROADMAP.md#phase-0--scaffolding-this-step))
   - Scaffold, projects, build, and the multi-instance `TestServer` harness are done and green.
   - Open: (a) spec-research findings not yet captured/folded back (carried into Phase 1 signing work); (b) a bare `dotnet build` in the root is blocked by MSB1011 (stray root scratch files — `rm` is permission-blocked; delete `Program.cs`/`inspect.csproj`/`packages.lock.json` manually).
-- [ ] Phase 1 — Core: Identity, Keys, Signatures & Caching (in progress)
-  - Done: `Iri` + `IriExtensions`, `ActivityJson`, the identity/key foundation (`KeyAlgorithm`, `KeyPair`, `KeyPairGenerator`, `IIdentity`/`SystemIdentity`, `IKeyStore`/`InMemoryKeyStore`, `KeyPem`), and the **HTTP-signature layer** (`HttpRequestMetadata`, `SigningProfile`, `Signatures`, `SignatureHeader`, `ISignatureSigner`/`HttpSignatureSigner`, `ISignatureVerifier`/`HttpSignatureVerifier`) — all with unit tests.
-  - `dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 114/114; `dotnet format` clean.
-  - Remaining: `ICache<T>`/`CacheEntry<T>`/`MemoryCache<T>`/`CachePolicy` (TTL, LRU, stale-while-revalidate) + tests. (Spec-research findings for signatures were folded in this turn: see Resolved Decisions #14/#15.)
+- [x] Phase 1 — Core: Identity, Keys, Signatures & Caching (complete)
+  - Done: `Iri` + `IriExtensions`, `ActivityJson`, the identity/key foundation (`KeyAlgorithm`, `KeyPair`, `KeyPairGenerator`, `IIdentity`/`SystemIdentity`, `IKeyStore`/`InMemoryKeyStore`, `KeyPem`), the **HTTP-signature layer** (`HttpRequestMetadata`, `SigningProfile`, `Signatures`, `SignatureHeader`, `ISignatureSigner`/`HttpSignatureSigner`, `ISignatureVerifier`/`HttpSignatureVerifier`), and the **caching layer** (`CachePolicy`, `CacheState`, `CacheEntry<T>`, `ICache<T>`/`MemoryCache<T>`, `CachedValue<T>`, `CacheExtensions`) — all with unit tests.
+  - `dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 136/136; `dotnet format` clean.
+  - Next: Phase 2 — Client Library (`IActivityPubClient` + `IActivityPubClientFactory`, WebFinger, actor/collection/key caches built on `ICache<T>`).
 
 Track progress in [docs/ROADMAP.md](docs/ROADMAP.md).
