@@ -9,5 +9,5 @@ public interface IHarnessStore
     /// <summary>
     /// Gets the hostname this store instance is bound to (for diagnostics).
     /// </summary>
-    string Hostname { get; }
+    public string Hostname { get; }
 }
