@@ -13,6 +13,7 @@ This document is the **index**. The full plan is split across the files below �
 | [docs/TESTING.md](docs/TESTING.md) | Integration-first testing strategy, multi-instance `TestServer` harness, test project layout, deferred Mastodon live test |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased plan (Phase 0–9+), resolved decisions, open questions |
 | [docs/CODING_STYLE.md](docs/CODING_STYLE.md) | **Binding** coding conventions — C# style, naming, error handling, async, and the rules for working with 3rd-party `KristofferStrube.ActivityStreams` types |
+| [docs/AUTONOMOUS_LOOP.md](docs/AUTONOMOUS_LOOP.md) | Operating instructions for the autonomous dev loop (one turn at a time) |
 
 ## The Short Version
 
