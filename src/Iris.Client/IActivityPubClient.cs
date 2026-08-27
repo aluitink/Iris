@@ -94,4 +94,26 @@ public interface IActivityPubClient : IDisposable
         Iri collectionId,
         CollectionQuery? query = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the **community feed** items by community IRI: the community's unified feed
+    /// (the union of its members' outbox activities, newest first), served by the server's
+    /// <c>GET /c/{name}/feed</c> endpoint. Works identically to a personal feed (a paged
+    /// <see cref="OrderedCollection"/> of items), so the same enumeration/caching semantics apply.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (e.g. <c>https://a.domain.local/ap/v1/c/iris</c>).</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>, <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the community feed's items (each an <see cref="IObjectOrLink"/>;
+    /// callers pattern-match). Yields nothing when the feed cannot be fetched (e.g. 404).</returns>
+    /// <remarks>
+    /// The feed IRI is derived from the community IRI via <see cref="IriExtensions.FeedOf(Iri)"/>
+    /// (<c>{community}/feed</c>). The feed is read through the client's
+    /// <see cref="CollectionPageCache"/> like any other collection, so a feed page is fetched once and
+    /// reused within the TTL.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetCommunityFeedAsync(
+        Iri communityId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
 }

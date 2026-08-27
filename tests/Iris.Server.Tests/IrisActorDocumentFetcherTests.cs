@@ -155,6 +155,13 @@ public class IrisActorDocumentFetcherTests
             => EmptyAsync<IObjectOrLink>(ct);
 
         /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> GetCommunityFeedAsync(
+            Iri communityId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        /// <inheritdoc/>
         public void Dispose()
         {
         }

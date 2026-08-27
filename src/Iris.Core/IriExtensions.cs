@@ -37,9 +37,17 @@ public static class IriExtensions
     /// Derives the following-collection IRI by appending <c>/following</c>.
     /// </summary>
     /// <param name="iri">The actor IRI. Must be absolute.</param>
-    /// <returns>The following IRI.</returns>
+    /// <returns>The following-collection IRI.</returns>
     /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
     public static Iri FollowingOf(this Iri iri) => AppendSegment(iri, "following");
+
+    /// <summary>
+    /// Derives the community-feed IRI by appending <c>/feed</c>.
+    /// </summary>
+    /// <param name="iri">The community IRI. Must be absolute.</param>
+    /// <returns>The community-feed IRI (e.g. <c>https://a.domain.local/ap/v1/c/iris/feed</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri FeedOf(this Iri iri) => AppendSegment(iri, "feed");
 
     /// <summary>
     /// Converts a library <c>string?</c> IRI (e.g. an object's <c>Id</c>) to an <see cref="Iri"/>.

@@ -231,6 +231,17 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         }
     }
 
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetCommunityFeedAsync(
+        Iri communityId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The community feed is a paged collection at {community}/feed, so it is enumerated exactly like
+        // any other collection (GetCollectionItemsAsync reads through the CollectionPageCache).
+        return GetCollectionItemsAsync(communityId.FeedOf(), query, ct);
+    }
+
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)
     {
         // If the fetched object is itself a page, use it directly.
