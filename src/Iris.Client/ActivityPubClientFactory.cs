@@ -55,6 +55,10 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
             Timeout = options.HttpClientTimeout ?? Timeout.InfiniteTimeSpan,
         };
 
-        return new ActivityPubClient(httpClient);
+        var caches = options.Caches;
+        return new ActivityPubClient(
+            httpClient,
+            caches?.Actors,
+            caches?.CollectionPages);
     }
 }

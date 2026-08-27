@@ -23,14 +23,26 @@ public sealed class WebFingerClient
     };
 
     private readonly HttpClient _http;
+    private readonly WebFingerCache? _cache;
 
     /// <summary>
     /// Initializes a new <see cref="WebFingerClient"/>.
     /// </summary>
     /// <param name="http">The HTTP client to use for requests.</param>
     public WebFingerClient(HttpClient http)
+        : this(http, cache: null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="WebFingerClient"/> with an optional read-through cache.
+    /// </summary>
+    /// <param name="http">The HTTP client to use for requests.</param>
+    /// <param name="cache">Optional cache for resolution results. Null disables caching (always hits the network).</param>
+    public WebFingerClient(HttpClient http, WebFingerCache? cache)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
+        _cache = cache;
     }
 
     /// <summary>
@@ -49,7 +61,23 @@ public sealed class WebFingerClient
     {
         ArgumentNullException.ThrowIfNull(account);
         var subject = NormalizeSubject(account);
+        var subjectIri = new Iri(subject);
 
+        if (_cache is not null)
+        {
+            var (value, _) = await _cache.GetAsync(
+                subjectIri,
+                bypassCache: false,
+                async iri => await ResolveActorFromNetworkAsync(iri.Value, ct).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            return value;
+        }
+
+        return await ResolveActorFromNetworkAsync(subject, ct).ConfigureAwait(false);
+    }
+
+    private async Task<Iri?> ResolveActorFromNetworkAsync(string subject, CancellationToken ct)
+    {
         // The WebFinger resource lives on the *account's own host*, so derive the base URL from
         // the host in the acct: URI rather than relying on the HttpClient's BaseAddress.
         var host = Uri.UnescapeDataString(subject["acct:".Length..]);

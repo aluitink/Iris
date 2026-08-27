@@ -21,6 +21,8 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 {
     private readonly HttpClient _http;
     private readonly bool _ownsHandler;
+    private readonly ActorCache? _actorCache;
+    private readonly CollectionPageCache? _collectionPageCache;
 
     /// <summary>
     /// Initializes a new <see cref="ActivityPubClient"/>.
@@ -28,9 +30,8 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <param name="http">The HTTP client (its handler pipeline should include a
     /// <see cref="SigningHandler"/> for signed requests). The client does not dispose it.</param>
     public ActivityPubClient(HttpClient http)
+        : this(http, null, false, null, null)
     {
-        _http = http ?? throw new ArgumentNullException(nameof(http));
-        _ownsHandler = false;
     }
 
     /// <summary>
@@ -40,10 +41,57 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <see cref="HttpClientHandler"/>). The signing handler's <see cref="SigningHandler.ActorId"/>
     /// must be set before sending signed requests.</param>
     public ActivityPubClient(HttpMessageHandler handler)
+        : this(null, handler, true, null, null)
     {
-        ArgumentNullException.ThrowIfNull(handler);
-        _http = new HttpClient(handler, disposeHandler: true);
-        _ownsHandler = true;
+    }
+
+    private ActivityPubClient(
+        HttpClient? http,
+        HttpMessageHandler? handler,
+        bool disposeHandler,
+        ActorCache? actorCache,
+        CollectionPageCache? collectionPageCache)
+    {
+        if (http is null && handler is null)
+        {
+            throw new ArgumentException("Either http or handler must be provided.", nameof(http));
+        }
+
+        _http = http ?? new HttpClient(handler!, disposeHandler);
+        _ownsHandler = disposeHandler;
+        _actorCache = actorCache;
+        _collectionPageCache = collectionPageCache;
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="ActivityPubClient"/> with optional read-through caches.
+    /// </summary>
+    /// <param name="http">The HTTP client (its handler pipeline should include a
+    /// <see cref="SigningHandler"/> for signed requests). The client does not dispose it.</param>
+    /// <param name="actorCache">Optional cache for <see cref="GetObjectAsync(Iri, CancellationToken)"/> reads. Null disables actor caching.</param>
+    /// <param name="collectionPageCache">Optional cache for <see cref="GetCollectionAsync"/> page reads. Null disables page caching.</param>
+    public ActivityPubClient(
+        HttpClient http,
+        ActorCache? actorCache,
+        CollectionPageCache? collectionPageCache)
+        : this(http, null, false, actorCache, collectionPageCache)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="ActivityPubClient"/> that owns its <see cref="HttpClient"/>, with
+    /// optional read-through caches.
+    /// </summary>
+    /// <param name="handler">The handler pipeline (typically a <see cref="SigningHandler"/> over a
+    /// <see cref="HttpClientHandler"/>).</param>
+    /// <param name="actorCache">Optional cache for <see cref="GetObjectAsync(Iri, CancellationToken)"/> reads. Null disables actor caching.</param>
+    /// <param name="collectionPageCache">Optional cache for <see cref="GetCollectionAsync"/> page reads. Null disables page caching.</param>
+    public ActivityPubClient(
+        HttpMessageHandler handler,
+        ActorCache? actorCache,
+        CollectionPageCache? collectionPageCache)
+        : this(null, handler, true, actorCache, collectionPageCache)
+    {
     }
 
     /// <summary>
@@ -60,8 +108,30 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <inheritdoc/>
     public async Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
     {
+        if (_actorCache is null)
+        {
+            return await GetObjectFromNetworkAsync(objectId, ct).ConfigureAwait(false);
+        }
+
+        var (value, _) = await _actorCache.GetAsync(
+            objectId,
+            bypassCache: false,
+            async iri => await GetObjectFromNetworkAsync(iri, ct).ConfigureAwait(false),
+            ct).ConfigureAwait(false);
+
+        return value;
+    }
+
+    /// <summary>
+    /// Fetches an object from the network (bypassing any actor cache) and deserializes it.
+    /// </summary>
+    /// <param name="objectId">The IRI of the object to fetch.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The deserialized object, or null if the request failed or the body was empty.</returns>
+    private Task<IObject?> GetObjectFromNetworkAsync(Iri objectId, CancellationToken ct)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Get, objectId.Value);
-        return await GetObjectAsync(request, ct).ConfigureAwait(false);
+        return GetObjectAsync(request, ct);
     }
 
     /// <inheritdoc/>
@@ -96,6 +166,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         int? limit = query?.Limit;
+        bool bypassCache = query?.BypassCache ?? false;
         int yielded = 0;
 
         // Resolve the first page: fetch the collection and follow its `first` link if needed.
@@ -108,7 +179,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 
         while (pageIri is { } current)
         {
-            var page = await FetchCollectionPageAsync(current, ct).ConfigureAwait(false);
+            var page = await FetchCollectionPageAsync(current, bypassCache, ct).ConfigureAwait(false);
             if (page is null)
             {
                 yield break;
@@ -189,9 +260,23 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return false;
     }
 
-    private async Task<CollectionPage?> FetchCollectionPageAsync(Iri pageIri, CancellationToken ct)
+    private async Task<CollectionPage?> FetchCollectionPageAsync(Iri pageIri, bool bypassCache, CancellationToken ct)
     {
-        var obj = await GetObjectAsync(pageIri, ct).ConfigureAwait(false);
+        IObject? obj;
+        if (_collectionPageCache is null)
+        {
+            obj = await GetObjectFromNetworkAsync(pageIri, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            var (value, _) = await _collectionPageCache.GetAsync(
+                pageIri,
+                bypassCache,
+                async iri => await GetObjectFromNetworkAsync(iri, ct).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            obj = value;
+        }
+
         if (obj is not OrderedCollectionPage page)
         {
             return null;
