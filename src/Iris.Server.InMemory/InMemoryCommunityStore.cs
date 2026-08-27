@@ -5,14 +5,16 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Server.InMemory;
 
 /// <summary>
-/// An in-memory <see cref="ICommunityStore"/> backed by a concurrent dictionary.
+/// An in-memory <see cref="ICommunityStore"/> backed by concurrent dictionaries.
 /// </summary>
 /// <remarks>
-/// Ephemeral: communities vanish on restart. Thread-safe.
+/// Ephemeral: communities and memberships vanish on restart. Thread-safe. Community membership is
+/// keyed by community IRI and holds the set of local actor IRIs that are members.
 /// </remarks>
 public sealed class InMemoryCommunityStore : ICommunityStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Group> _communities = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _members = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
@@ -34,5 +36,48 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         ct.ThrowIfCancellationRequested();
         _communities[new Iri(community.Id)] = community;
         return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> AddMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var added = _members.GetOrAdd(communityIri, _ => new System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>()).TryAdd(actorIri, 0);
+        return Task.FromResult(added);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_members.TryGetValue(communityIri, out var members))
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(members.TryRemove(actorIri, out _));
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> IsMemberAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_members.TryGetValue(communityIri, out var members) && members.ContainsKey(actorIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new List<Iri>();
+        if (_members.TryGetValue(communityIri, out var members))
+        {
+            foreach (var member in members.Keys)
+            {
+                result.Add(member);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
     }
 }
