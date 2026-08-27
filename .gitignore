@@ -1,0 +1,53 @@
+## .NET
+bin/
+obj/
+out/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.binlog
+project.lock.json
+project.fragment.lock.json
+artifacts/
+TestResults/
+coverage*.json
+coverage*.xml
+*.coverage
+*.CoverletReport/
+
+## Rider / VS
+.idea/
+.vs/
+.vscode/
+*.swp
+
+## NuGet
+packages/
+*.nupkg
+*.snupkg
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## OS
+.DS_Store
+Thumbs.db
+
+## OpenCode
+.opencode/
+opencode.json
+opencode.jsonc
+opencode.md
+OPENCODE.md
