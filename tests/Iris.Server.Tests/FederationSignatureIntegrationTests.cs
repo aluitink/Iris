@@ -106,6 +106,33 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // (The middleware on A does not validate GETs, so this is a plain public document fetch.)
     }
 
+    // --- The follow is not just stored: the FollowActivityHandler records the edge ----
+
+    [Fact]
+    public async Task Follow_SignedByAlice_RecordsFollowEdgeInBobFollowStore()
+    {
+        var follow = BuildFollow(AliceActorIri, BobActorIri);
+
+        // Deliver the signed Follow over the wire to B's inbox.
+        using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
+        var statusCode = await client.DeliverAsync(BobInboxIri, follow);
+        Assert.Equal(202, statusCode);
+
+        // B's inbox processor dispatched the validated Follow to the FollowActivityHandler, which
+        // recorded the directed edge alice → bob in B's follow store. This proves the full inbound
+        // pipeline end-to-end: signature validation → store → interpret (record the follow).
+        Assert.True(
+            await _bPersistence.Follows.IsFollowingAsync(AliceActorIri, BobActorIri),
+            "After a signed Follow, alice should follow bob in B's follow store");
+
+        var bobFollowers = await _bPersistence.Follows.GetFollowersAsync(BobActorIri);
+        Assert.Contains(AliceActorIri, bobFollowers);
+
+        // And the reverse direction (bob's following list) is also recorded.
+        var aliceFollowing = await _bPersistence.Follows.GetFollowingAsync(AliceActorIri);
+        Assert.Contains(BobActorIri, aliceFollowing);
+    }
+
     // --- Key resolution: B resolves alice's key by fetching A's actor doc --------
 
     [Fact]

@@ -121,6 +121,13 @@ public static class ActivityPubServerExtensions
             return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()));
         });
 
+        // Inbox processing (Phase 4): the processor stores each validated activity and dispatches it
+        // to the registered activity handlers. The default set of handlers interprets Follow
+        // (records the follow edge). A host may add more IActivityHandler registrations (e.g. Accept,
+        // Reject, Create) to extend the pipeline; the processor picks them up automatically.
+        services.TryAddSingleton<IActivityHandler, FollowActivityHandler>();
+        services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
+
         // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
         // does NOT register a concrete persistence provider, keeping Iris.Server free of a dependency
@@ -264,6 +271,7 @@ public static class ActivityPubServerExtensions
         HttpContext context,
         string handle,
         IPersistenceProvider persistence,
+        IInboxProcessor inboxProcessor,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -302,8 +310,24 @@ public static class ActivityPubServerExtensions
             return Results.BadRequest();
         }
 
-        // Store the activity (the inbox pipeline that interprets it is a later Phase 4 slice).
-        await persistence.Activities.PutActivityAsync(activity, ct).ConfigureAwait(false);
+        // Hand the validated activity to the inbox processor: it stores the activity and dispatches
+        // it to the registered activity handler for its type (e.g. Follow records the follow edge).
+        // A handler failure is a server-side error → 500 (the activity may already be stored; the
+        // remote can retry, and the store is idempotent on the activity IRI).
+        try
+        {
+            await inboxProcessor
+                .ProcessAsync(new InboxDelivery(actorIri, activity), ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
 
         return Results.Accepted();
     }
