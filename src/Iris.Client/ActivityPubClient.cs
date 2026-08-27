@@ -5,8 +5,8 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Client;
 
 /// <summary>
-/// The primary ActivityPub client: performs signed HTTP requests against remote ActivityPub
-/// servers and operates on <c>KristofferStrube.ActivityStreams</c> types.
+/// The default <see cref="IActivityPubClient"/>. Performs signed HTTP requests against remote
+/// ActivityPub servers and operates on <c>KristofferStrube.ActivityStreams</c> types.
 /// </summary>
 /// <remarks>
 /// Requests are signed by the <see cref="SigningHandler"/> (wired into the
@@ -16,23 +16,19 @@ namespace Iris.Client;
 /// pattern-matched — never into a concrete type (see the coding-style rules for 3rd-party
 /// ActivityStreams types).
 /// </remarks>
-public sealed class ActivityPubClient : IDisposable
+public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 {
     private readonly HttpClient _http;
-    private readonly SigningHandler? _signingHandler;
     private readonly bool _ownsHandler;
 
     /// <summary>
     /// Initializes a new <see cref="ActivityPubClient"/>.
     /// </summary>
     /// <param name="http">The HTTP client (its handler pipeline should include a
-    /// <see cref="SigningHandler"/> for signed requests).</param>
-    /// <param name="signingHandler">The signing handler, used to set the actor per request.
-    /// May be null when the client is used unsigned (e.g. for public reads).</param>
-    public ActivityPubClient(HttpClient http, SigningHandler? signingHandler = null)
+    /// <see cref="SigningHandler"/> for signed requests). The client does not dispose it.</param>
+    public ActivityPubClient(HttpClient http)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
-        _signingHandler = signingHandler;
         _ownsHandler = false;
     }
 
@@ -60,29 +56,18 @@ public sealed class ActivityPubClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// Fetches an actor (or object) by IRI, signed with the <see cref="SigningProfile.ClientToServer"/>
-    /// profile.
-    /// </summary>
-    /// <param name="actorId">The IRI of the actor/object to fetch.</param>
-    /// <param name="ct">The cancellation token.</param>
-    /// <returns>The deserialized object, or null if the request failed or the body was empty.</returns>
-    public async Task<IObject?> GetObjectAsync(Iri actorId, CancellationToken ct = default)
+    /// <inheritdoc/>
+    public async Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
     {
-        using var request = new HttpRequestMessage(HttpMethod.Get, actorId.Value);
+        using var request = new HttpRequestMessage(HttpMethod.Get, objectId.Value);
         return await GetObjectAsync(request, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Sends an ActivityPub activity to the given inbox IRI, signed with the
-    /// <see cref="SigningProfile.ServerToServer"/> profile (covers <c>digest</c> + <c>content-type</c>).
-    /// </summary>
-    /// <param name="inboxId">The inbox IRI to deliver to.</param>
-    /// <param name="activity">The activity to send (must be an <see cref="Activity"/>; serialized
-    /// with <see cref="ActivityJson"/>).</param>
-    /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
-    /// <exception cref="ArgumentException">When <paramref name="activity"/> is not an <see cref="Activity"/>.</exception>
+    /// <inheritdoc/>
+    public async Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
+        => (await GetObjectAsync(actorId, ct).ConfigureAwait(false)) as Actor;
+
+    /// <inheritdoc/>
     public async Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)

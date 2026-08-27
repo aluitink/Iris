@@ -45,6 +45,34 @@ public class ActivityPubClientTests
     }
 
     [Fact]
+    public async Task GetActorAsync_ActorDocument_ReturnsActor()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(PersonJson, Encoding.UTF8, ActivityJson.ActivityJsonContentType),
+        };
+        var client = new ActivityPubClient(new HttpClient(new FakeHttpHandler(response)));
+
+        var actor = await client.GetActorAsync(new Iri(ActorIri));
+
+        Assert.NotNull(actor);
+        Assert.Equal(ActorIri, actor!.Id);
+    }
+
+    [Fact]
+    public async Task GetActorAsync_NoteDocument_ReturnsNull()
+    {
+        const string noteJson = """{"id":"https://b.domain.local/n/1","type":"Note","content":"hi"}""";
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(noteJson, Encoding.UTF8, ActivityJson.ActivityJsonContentType),
+        };
+        var client = new ActivityPubClient(new HttpClient(new FakeHttpHandler(response)));
+
+        Assert.Null(await client.GetActorAsync(new Iri("https://b.domain.local/n/1")));
+    }
+
+    [Fact]
     public async Task DeliverAsync_PostsActivityWithActivityJsonContentType_ReturnsStatusCode()
     {
         var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
