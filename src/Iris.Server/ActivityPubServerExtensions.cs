@@ -123,10 +123,15 @@ public static class ActivityPubServerExtensions
         });
 
         // Inbox processing (Phase 4): the processor stores each validated activity and dispatches it
-        // to the registered activity handlers. The default set of handlers interprets Follow
-        // (records the follow edge). A host may add more IActivityHandler registrations (e.g. Accept,
-        // Reject, Create) to extend the pipeline; the processor picks them up automatically.
+        // to the registered activity handlers. The default set interprets the follow lifecycle:
+        // Follow (records the local follow edge + schedules the Accept response), Accept (finalizes a
+        // local follower's provisional follow when the followed side accepts), and Reject (undoes it
+        // when the followed side rejects). A host may add more IActivityHandler registrations
+        // (e.g. Create) to extend the pipeline; the processor picks them up automatically.
+        services.TryAddSingleton<ILocalActorResolver, DefaultLocalActorResolver>();
         services.TryAddSingleton<IActivityHandler, FollowActivityHandler>();
+        services.TryAddSingleton<IActivityHandler, AcceptActivityHandler>();
+        services.TryAddSingleton<IActivityHandler, RejectActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service

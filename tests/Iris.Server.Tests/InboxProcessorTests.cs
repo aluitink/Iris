@@ -22,6 +22,7 @@ public sealed class InboxProcessorTests
     public async Task ProcessAsync_Follow_WithFollowHandler_StoresRecordsFollowEdgeAndQueuesAccept()
     {
         var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, RecipientIri);
         var (queue, processor) = BuildProcessorWithFollowHandler(persistence);
         var follow = BuildFollow(FollowerIri, RecipientIri);
 
@@ -82,6 +83,7 @@ public sealed class InboxProcessorTests
     public async Task ProcessAsync_Activity_WithExactAndBaseHandlers_DispatchesToExactMatch()
     {
         var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, RecipientIri);
         var followHandler = BuildFollowHandler(persistence, out _);
         var baseHandler = new RecordingActivityHandler();
         var processor = new InboxProcessor(persistence, [baseHandler, followHandler]);
@@ -138,6 +140,93 @@ public sealed class InboxProcessorTests
         Assert.Equal(0, queue.Count);
     }
 
+    // --- Dispatch: an Accept finalizes a local follower's provisional follow -----------
+
+    [Fact]
+    public async Task ProcessAsync_Accept_LocalFollower_FinalizesFollowEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, FollowerIri);
+        var processor = BuildProcessorWithAcceptHandler(persistence);
+        // alice (local) followed bob: the follow is stored in A's activity store (as the follower).
+        var follow = BuildFollow(FollowerIri, RecipientIri);
+        await persistence.Activities.PutActivityAsync(follow);
+        // bob accepted alice's follow (the Accept is delivered back to alice's inbox).
+        var accept = FollowIris.BuildAccept(RecipientIri, follow);
+
+        await processor.ProcessAsync(new InboxDelivery(FollowerIri, accept));
+
+        // The Accept's object references the original follow; the follower (alice, local) now
+        // follows the target (bob) — the provisional follow is finalized.
+        Assert.True(await persistence.Follows.IsFollowingAsync(FollowerIri, RecipientIri));
+        var aliceFollowing = await persistence.Follows.GetFollowingAsync(FollowerIri);
+        Assert.Contains(RecipientIri, aliceFollowing);
+    }
+
+    // --- Dispatch: an Accept for a remote follower's follow is a no-op ------------------
+
+    [Fact]
+    public async Task ProcessAsync_Accept_RemoteFollower_DoesNotRecordLocalEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, FollowerIri);
+        var processor = BuildProcessorWithAcceptHandler(persistence);
+        // A remote follower (charlie, not in A's actor store) is accepted. The Accept references a
+        // follow that is not in A's activity store (it belongs to the remote instance).
+        var remoteFollower = new Iri("https://c.domain.local/ap/v1/u/charlie");
+        var remoteFollow = BuildFollow(remoteFollower, RecipientIri);
+        var accept = FollowIris.BuildAccept(RecipientIri, remoteFollow);
+
+        await processor.ProcessAsync(new InboxDelivery(FollowerIri, accept));
+
+        // No local follow edge is recorded (the remote follower's follow is the remote instance's
+        // concern; the local store has no such follow to finalize).
+        Assert.False(await persistence.Follows.IsFollowingAsync(remoteFollower, RecipientIri));
+    }
+
+    // --- Dispatch: a Reject undoes a local follower's follow ---------------------------
+
+    [Fact]
+    public async Task ProcessAsync_Reject_LocalFollower_RemovesFollowEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        SeedLocalActor(persistence, FollowerIri);
+        var processor = BuildProcessorWithRejectHandler(persistence);
+        // alice (local) followed bob: the follow is stored, and the edge is already recorded
+        // (provisional — the follow was made, pending the followed side's response).
+        var follow = BuildFollow(FollowerIri, RecipientIri);
+        await persistence.Activities.PutActivityAsync(follow);
+        await persistence.Follows.RecordFollowAsync(FollowerIri, RecipientIri);
+        Assert.True(await persistence.Follows.IsFollowingAsync(FollowerIri, RecipientIri));
+        // bob rejected alice's follow.
+        var reject = FollowIris.BuildReject(RecipientIri, follow);
+
+        await processor.ProcessAsync(new InboxDelivery(FollowerIri, reject));
+
+        // The local follow edge is undone.
+        Assert.False(await persistence.Follows.IsFollowingAsync(FollowerIri, RecipientIri));
+        var aliceFollowing = await persistence.Follows.GetFollowingAsync(FollowerIri);
+        Assert.DoesNotContain(RecipientIri, aliceFollowing);
+    }
+
+    // --- Dispatch: a Reject for a remote follower's follow is a no-op -------------------
+
+    [Fact]
+    public async Task ProcessAsync_Reject_RemoteFollower_DoesNotTouchLocalStore()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        var processor = BuildProcessorWithRejectHandler(persistence);
+        var remoteFollower = new Iri("https://c.domain.local/ap/v1/u/charlie");
+        var remoteFollow = BuildFollow(remoteFollower, RecipientIri);
+        var reject = FollowIris.BuildReject(RecipientIri, remoteFollow);
+
+        await processor.ProcessAsync(new InboxDelivery(FollowerIri, reject));
+
+        // No local follow edge is removed (the remote follower's follow is the remote instance's
+        // concern; the local store has no such follow to undo).
+        Assert.False(await persistence.Follows.IsFollowingAsync(remoteFollower, RecipientIri));
+    }
+
     // --- Handlers property exposes the registered handlers ----------------------------
 
     [Fact]
@@ -176,14 +265,15 @@ public sealed class InboxProcessorTests
 
     /// <summary>
     /// Builds a <see cref="FollowActivityHandler"/> wired to a real <see cref="InMemoryDeliveryQueue"/>
-    /// + <see cref="DeliveryService"/>, exposing both the queue (to assert the scheduled Accept) and the
-    /// handler.
+    /// + <see cref="DeliveryService"/> + a <see cref="DefaultLocalActorResolver"/> (over the
+    /// persistence's actor store), exposing the queue (to assert the scheduled Accept) and the handler.
     /// </summary>
     private static FollowActivityHandler BuildFollowHandler(IPersistenceProvider persistence, out IDeliveryQueue queue)
     {
         queue = new InMemoryDeliveryQueue();
         var delivery = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
-        return new FollowActivityHandler(persistence, delivery);
+        var localActors = new DefaultLocalActorResolver(persistence);
+        return new FollowActivityHandler(persistence, delivery, localActors);
     }
 
     /// <summary>
@@ -196,12 +286,48 @@ public sealed class InboxProcessorTests
         return (queue, new InboxProcessor(persistence, [handler]));
     }
 
+    /// <summary>
+    /// Builds an <see cref="InboxProcessor"/> with a single <see cref="AcceptActivityHandler"/> (wired
+    /// to a <see cref="DefaultLocalActorResolver"/> over the persistence's actor store).
+    /// </summary>
+    private static InboxProcessor BuildProcessorWithAcceptHandler(IPersistenceProvider persistence)
+    {
+        var handler = new AcceptActivityHandler(persistence, new DefaultLocalActorResolver(persistence));
+        return new InboxProcessor(persistence, [handler]);
+    }
+
+    /// <summary>
+    /// Builds an <see cref="InboxProcessor"/> with a single <see cref="RejectActivityHandler"/> (wired
+    /// to a <see cref="DefaultLocalActorResolver"/> over the persistence's actor store).
+    /// </summary>
+    private static InboxProcessor BuildProcessorWithRejectHandler(IPersistenceProvider persistence)
+    {
+        var handler = new RejectActivityHandler(persistence, new DefaultLocalActorResolver(persistence));
+        return new InboxProcessor(persistence, [handler]);
+    }
+
     private static Follow BuildFollow(Iri followerIri, Iri targetIri) => new()
     {
         Id = $"https://{new Uri(followerIri.Value).Host}/activities/follow-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(followerIri.Value) }],
         Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
+
+    /// <summary>
+    /// Seeds a local actor (Person) in the persistence's actor store, so the
+    /// <see cref="ILocalActorResolver"/> resolves it as local.
+    /// </summary>
+    private static void SeedLocalActor(IPersistenceProvider persistence, Iri actorIri)
+    {
+        var handle = new Uri(actorIri.Value).AbsolutePath.Trim('/').Split('/').Last();
+        var actor = new KristofferStrube.ActivityStreams.Person
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        persistence.Actors.PutActorAsync(actor).GetAwaiter().GetResult();
+    }
 
     /// <summary>
     /// A recording handler for the base <see cref="Activity"/> type, used to verify which handler
