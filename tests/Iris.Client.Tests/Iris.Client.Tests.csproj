@@ -5,9 +5,18 @@
     <RootNamespace>Iris.Client.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <Description>Integration tests: Iris.Client against live in-process TestServer instances.</Description>
+    <!--
+      The client ↔ live-TestServer integration tests build in-process servers with WebHostBuilder +
+      TestServer(IWebHostBuilder), the only API that wires an IApplicationBuilder into TestServer in
+      .NET 10. Both are obsolete (ASPDEPR004/ASPDEPR008), so the specific deprecation codes are
+      suppressed here (test-only; production code stays deprecation-clean).
+    -->
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
