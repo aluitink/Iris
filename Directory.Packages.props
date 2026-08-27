@@ -1,0 +1,21 @@
+<Project>
+
+  <PropertyGroup>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ActivityStreams / ActivityPub object model + JSON-LD converters (only non-BCL dependency of Iris.Core). -->
+    <PackageVersion Include="KristofferStrube.ActivityStreams" Version="0.2.4" />
+    <!-- ASP.NET Core (framework reference surface for Iris.Server). -->
+    <PackageVersion Include="Microsoft.AspNetCore.App" Version="10.0.0" />
+    <!-- In-process TestServer for integration tests (not part of the shared framework). -->
+    <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
+    <!-- xUnit test stack. -->
+    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>

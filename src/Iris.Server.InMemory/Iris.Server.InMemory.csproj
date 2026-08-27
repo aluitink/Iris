@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Server.InMemory</RootNamespace>
+    <Description>In-memory persistence, delivery queue, and server cache implementations for Iris.Server.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Server\Iris.Server.csproj" />
+  </ItemGroup>
+
+</Project>

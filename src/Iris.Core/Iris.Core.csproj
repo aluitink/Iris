@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Core</RootNamespace>
+    <Description>Shared ActivityPub primitives for Iris: IRI, identity, keys, HTTP signatures, JSON helpers, and caching abstractions.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="KristofferStrube.ActivityStreams" />
+  </ItemGroup>
+
+</Project>

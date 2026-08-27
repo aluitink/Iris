@@ -1,0 +1,36 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Testing</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>Shared in-process multi-instance ActivityPub test server harness for Iris tests.</Description>
+    <!--
+      The in-process test harness must use WebHostBuilder + TestServer(IWebHostBuilder), the only
+      API that wires an IApplicationBuilder into TestServer in a way that resolves correctly in
+      .NET 10. Both are obsolete (ASPDEPR004/ASPDEPR008), so the specific deprecation codes are
+      suppressed here (test harness only; production code stays deprecation-clean).
+    -->
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server.InMemory\Iris.Server.InMemory.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
