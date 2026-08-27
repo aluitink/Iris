@@ -56,6 +56,31 @@ public static class ActivityPubServerConstants
     public const string CapabilitiesTerm = "capabilities";
 
     /// <summary>
+    /// The canonical default <c>iris:</c> namespace base IRI (Resolved Decision #9; Open Question #1
+    /// resolved) used when a deployment does not override <see cref="ActivityPubServerOptions.NamespaceIri"/>.
+    /// The base is configurable per-deployment; this is the out-of-the-box default.
+    /// </summary>
+    public const string DefaultCapabilitiesNamespaceIri = "https://iris.example/ns#";
+
+    /// <summary>
+    /// The capability value advertised for the community's unified feed (the
+    /// <c>GET /c/{name}/feed</c> specialized collection).
+    /// </summary>
+    public const string CapabilityFeed = "feed";
+
+    /// <summary>
+    /// The capability value advertised for the community's members collection (the
+    /// <c>GET /c/{name}/members</c> endpoint).
+    /// </summary>
+    public const string CapabilityMembers = "members";
+
+    /// <summary>
+    /// The capability value advertised for the community's search (the
+    /// <c>GET /c/{name}/search</c> specialized collection).
+    /// </summary>
+    public const string CapabilitySearch = "search";
+
+    /// <summary>
     /// The name of the HTTP caching directive header emitted on cacheable responses.
     /// </summary>
     public const string CacheControlHeaderName = "Cache-Control";
@@ -99,4 +124,11 @@ public static class ActivityPubServerConstants
     /// <c>max-age=60, stale-while-revalidate=300</c>).
     /// </summary>
     public const string CollectionCacheControl = "max-age=60, stale-while-revalidate=300";
+
+    /// <summary>
+    /// The query parameter name that carries a 0-based offset on the <c>GET /c/{name}/search</c>
+    /// specialized collection (the shared <c>limit</c>/<c>offset</c> pagination shape, Resolved
+    /// Decision #6).
+    /// </summary>
+    public const string OffsetQueryParameterName = "offset";
 }

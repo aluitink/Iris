@@ -5,13 +5,14 @@ namespace Iris.Server;
 
 /// <summary>
 /// The default <see cref="ICommunityFeedService"/>: merges the local members' outbox activities into a
-/// single newest-first feed for a community.
+/// single newest-first feed for a community, and searches that content.
 /// </summary>
 /// <remarks>
 /// For each local member of the community, reads the member's outbox (the member's posted activities,
 /// newest first) and concatenates them in member order, then de-duplicates by activity IRI (keeping the
 /// first, i.e. newest, occurrence). A member with no outbox contributes nothing; an unknown community or
-/// a community with no members yields an empty feed.
+/// a community with no members yields an empty feed. The <see cref="SearchCommunityAsync"/> method runs a
+/// case-insensitive substring search over the feed's items' <c>content</c>/<c>name</c>.
 /// </remarks>
 public sealed class CommunityFeedService : ICommunityFeedService
 {
@@ -58,5 +59,74 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         return feed;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<IObjectOrLink>> SearchCommunityAsync(Iri communityIri, string? query, CancellationToken ct = default)
+    {
+        // The search runs over the same surface as the feed (the union of the members' outbox
+        // activities). An empty/whitespace query matches all items (the feed, unfiltered).
+        var feed = await GetFeedAsync(communityIri, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return feed;
+        }
+
+        var normalized = query.Trim();
+        var matches = new List<IObjectOrLink>();
+        foreach (var item in feed)
+        {
+            // An outbox item is an activity (e.g. a Create) whose content lives on the nested object
+            // (e.g. the Create's Note). Match the activity's own content/name and, for activities, the
+            // content/name of each referenced object.
+            if (item is IObject obj)
+            {
+                var activityMatches =
+                    ContainsInStrings(obj.Content, normalized) || ContainsInStrings(obj.Name, normalized);
+                var nestedMatches = false;
+                if (obj is Activity activity)
+                {
+                    foreach (var referenced in activity.Object ?? [])
+                    {
+                        if (referenced is IObject refObj &&
+                            (ContainsInStrings(refObj.Content, normalized) || ContainsInStrings(refObj.Name, normalized)))
+                        {
+                            nestedMatches = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (activityMatches || nestedMatches)
+                {
+                    matches.Add(item);
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    /// <summary>
+    /// Returns true when any value in the multi-valued <c>content</c>/<c>name</c> property contains
+    /// <paramref name="query"/> as a substring (case-insensitive, ordinal).
+    /// </summary>
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null &&
+                value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

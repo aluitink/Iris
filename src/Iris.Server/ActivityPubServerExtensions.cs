@@ -334,6 +334,11 @@ public static class ActivityPubServerExtensions
         // local members' outbox activities, newest first), served as a paged collection.
         group.MapGet("/c/{name}/feed", CommunityFeedHandler);
 
+        // Community search: GET /ap/v1/c/{name}/search — a specialized collection that searches the
+        // community's content (the feed surface) case-insensitively via ?q, paged via ?limit/?offset
+        // (the shared limit/offset pagination shape, Resolved Decision #6).
+        group.MapGet("/c/{name}/search", CommunitySearchHandler);
+
         // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
         // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
         // Requires a valid HTTP signature (validated by SignatureValidationMiddleware); unsigned or
@@ -793,6 +798,30 @@ public static class ActivityPubServerExtensions
             changed = true;
         }
 
+        if (!ext.ContainsKey("search"))
+        {
+            ext["search"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/search");
+            changed = true;
+        }
+
+        // The iris:capabilities extension (Resolved Decision #11) declares the community's available
+        // specialized collections (feed/members/search) for client discovery. The full term is
+        // {NamespaceIri}capabilities (configurable per-deployment, Resolved Decision #9; the canonical
+        // default when unset, Resolved Decision #1).
+        var capabilitiesTerm =
+            (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
+            ActivityPubServerConstants.CapabilitiesTerm;
+        if (!ext.ContainsKey(capabilitiesTerm))
+        {
+            ext[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(new[]
+            {
+                ActivityPubServerConstants.CapabilityFeed,
+                ActivityPubServerConstants.CapabilityMembers,
+                ActivityPubServerConstants.CapabilitySearch,
+            });
+            changed = true;
+        }
+
         if (changed)
         {
             doc.ExtensionData = ext;
@@ -872,6 +901,56 @@ public static class ActivityPubServerExtensions
 
         var collectionIri = new Iri($"{communityIri.Value}/feed");
         var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the community's content search as a specialized collection for
+    /// <c>GET /ap/v1/c/{name}/search</c>. The search matches the community's content (the feed surface —
+    /// the union of the local members' outbox activities) case-insensitively via the <c>?q</c> query,
+    /// and pages the matching items via the shared <c>?limit</c>/<c>?offset</c> shape (Resolved Decision
+    /// #6). The page 1 document is an <c>OrderedCollection</c> (with <c>first</c>); a page N &gt; 1 is an
+    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>) carrying this page's slice
+    /// in the <c>items</c> array and the full match count in <c>totalItems</c>.
+    /// </summary>
+    /// <remarks>
+    /// An unknown community 404s. An empty/absent <c>?q</c> matches all items (the feed, unfiltered), so
+    /// the endpoint also serves as a plain paged listing of the community's content. A <c>?limit</c> is
+    /// bounded (default <see cref="ActivityPubServerConstants.DefaultCollectionPageSize"/>, capped at
+    /// <see cref="ActivityPubServerConstants.MaxCollectionPageSize"/>); a <c>?offset</c> is a 0-based
+    /// position (default 0, negative clamped to 0). The response carries the collection
+    /// <c>Cache-Control</c>.
+    /// </remarks>
+    private static async Task<IResult> CommunitySearchHandler(
+        string name,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        ICommunityFeedService feedService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var query = context.Request.Query["q"].ToString();
+        var items = await feedService.SearchCommunityAsync(communityIri, query, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
+
+        var collectionIri = new Iri($"{communityIri.Value}/search");
+        var namespaceBase = options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
+        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, namespaceBase);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
@@ -1054,6 +1133,138 @@ public static class ActivityPubServerExtensions
         }
 
         return value;
+    }
+
+    /// <summary>
+    /// Parses a <c>?offset</c> query value into a 0-based offset (default 0; negative clamped to 0).
+    /// </summary>
+    /// <param name="raw">The raw query string (may be empty, non-numeric, or negative).</param>
+    /// <returns>The clamped 0-based offset.</returns>
+    private static int ParseOffset(string raw)
+    {
+        if (!int.TryParse(raw, out var value) || value < 0)
+        {
+            return 0;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// Renders the JSON-LD document for one page of the community search (the
+    /// <c>GET /c/{name}/search</c> specialized collection). The page is selected by a 0-based
+    /// <paramref name="offset"/> and a <paramref name="limit"/> (the shared <c>limit</c>/<c>offset</c>
+    /// pagination shape, Resolved Decision #6). Page 1 (offset 0) is an <c>OrderedCollection</c> (with a
+    /// self-referencing <c>first</c>); a page beyond the first is an <c>OrderedCollectionPage</c> (with
+    /// <c>partOf</c>/<c>prev</c>/<c>next</c>). The <c>items</c> array holds this page's slice;
+    /// <c>totalItems</c> carries the full match count. When the search had a non-empty query, the page
+    /// carries an <c>iris:searchQuery</c> extension (in the configurable namespace) recording it.
+    /// </summary>
+    /// <param name="collectionIri">The search collection's IRI (<c>{community}/search</c>).</param>
+    /// <param name="offset">The 0-based offset of the first item on this page.</param>
+    /// <param name="limit">The page size (items per page).</param>
+    /// <param name="items">All matching items (in feed order), unsliced.</param>
+    /// <param name="query">The search query (an empty/whitespace query records no extension).</param>
+    /// <param name="namespaceBase">The <c>iris:</c> namespace base IRI (the configurable
+    /// <see cref="ActivityPubServerOptions.NamespaceIri"/>, or the canonical default when unset) used to
+    /// form the <c>iris:searchQuery</c> extension term.</param>
+    /// <returns>The serialized JSON-LD document for the requested page.</returns>
+    private static string BuildSearchPageDocument(
+        Iri collectionIri,
+        int offset,
+        int limit,
+        IReadOnlyList<IObjectOrLink> items,
+        string? query,
+        string namespaceBase)
+    {
+        var total = items.Count;
+        var start = offset;
+        var endExclusive = Math.Min(offset + limit, total);
+        var slice = new List<IObjectOrLink>();
+        for (var i = start; i < endExclusive; i++)
+        {
+            slice.Add(items[i]);
+        }
+
+        // Whether a query was supplied (records the iris:searchQuery extension when non-empty).
+        var hasQuery = !string.IsNullOrWhiteSpace(query);
+        var searchQueryTerm = $"{namespaceBase}searchQuery";
+        var nextOffset = start + limit;
+        var prevOffset = Math.Max(0, start - limit);
+
+        if (start == 0)
+        {
+            // The first page (offset 0) is the collection document itself: it carries its own items and a
+            // self-referencing `first` link. An `OrderedCollection` has no `next` property, so a
+            // next-page link is recorded as the standard AS `next` extension (matching the page-2+
+            // `next` so a reader can walk from page 1 onward).
+            var collection = new OrderedCollection
+            {
+                Id = collectionIri.Value,
+                Items = [.. slice],
+                First = new Link { Href = new Uri(collectionIri.Value) },
+                TotalItems = (uint)total,
+            };
+
+            if (nextOffset < total)
+            {
+                AddExtension(collection, "next", $"{collectionIri.Value}/?offset={nextOffset}&limit={limit}");
+            }
+
+            if (hasQuery)
+            {
+                AddSearchQueryExtension(collection, searchQueryTerm, query!);
+            }
+
+            return ActivityJson.Serialize(collection);
+        }
+
+        var pageDoc = new OrderedCollectionPage
+        {
+            Id = $"{collectionIri.Value}/?offset={offset}&limit={limit}",
+            PartOf = new Link { Href = new Uri(collectionIri.Value) },
+            Items = [.. slice],
+            StartIndex = (uint)start,
+            TotalItems = (uint)total,
+        };
+
+        pageDoc.Prev = new Link { Href = new Uri($"{collectionIri.Value}/?offset={prevOffset}&limit={limit}") };
+        if (nextOffset < total)
+        {
+            pageDoc.Next = new Link { Href = new Uri($"{collectionIri.Value}/?offset={nextOffset}&limit={limit}") };
+        }
+
+        if (hasQuery)
+        {
+            AddSearchQueryExtension(pageDoc, searchQueryTerm, query!);
+        }
+
+        return ActivityJson.Serialize(pageDoc);
+    }
+
+    /// <summary>
+    /// Records the <c>iris:searchQuery</c> extension (the search query) on a collection page document.
+    /// </summary>
+    private static void AddSearchQueryExtension(
+        KristofferStrube.ActivityStreams.Object document,
+        string searchQueryTerm,
+        string query)
+    {
+        AddExtension(document, searchQueryTerm, query.Trim());
+    }
+
+    /// <summary>
+    /// Records a scalar or link value under a term in a document's extension data (creating the
+    /// dictionary when absent).
+    /// </summary>
+    private static void AddExtension(
+        KristofferStrube.ActivityStreams.Object document,
+        string term,
+        object? value)
+    {
+        var ext = document.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
+        ext[term] = System.Text.Json.JsonSerializer.SerializeToElement(value);
+        document.ExtensionData = ext;
     }
 }
 
