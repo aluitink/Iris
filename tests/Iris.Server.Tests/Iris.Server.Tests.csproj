@@ -5,9 +5,12 @@
     <RootNamespace>Iris.Server.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <Description>Integration tests: multi-instance federation against live in-process TestServer instances.</Description>
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />

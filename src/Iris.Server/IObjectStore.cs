@@ -1,0 +1,34 @@
+using Iris.Core;
+using KristofferStrube.ActivityStreams;
+
+namespace Iris.Server;
+
+/// <summary>
+/// Stores and retrieves generic ActivityStreams objects (notes, articles, media) by IRI.
+/// </summary>
+/// <remarks>
+/// Distinct from <see cref="IActivityStore"/>: this is for non-activity content objects that are
+/// addressed by IRI and served over the wire. The inbox pipeline (Phase 4) uses
+/// <see cref="IActivityStore"/> for activities; this store is for content objects referenced in
+/// <c>object</c> links.
+/// </remarks>
+public interface IObjectStore
+{
+    /// <summary>
+    /// Attempts to retrieve the object for the given IRI.
+    /// </summary>
+    /// <param name="objectIri">The IRI identifying the object.</param>
+    /// <param name="obj">When successful, the object; otherwise null.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> if the object was found; otherwise <see langword="false"/>.</returns>
+    public Task<bool> TryGetObjectAsync(Iri objectIri, out IObject? obj, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores (or replaces) the object under its IRI. The object's <c>Id</c> must already be set.
+    /// </summary>
+    /// <param name="obj">The object to store. Must not be null and must have a non-null <c>Id</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="ArgumentNullException">When <paramref name="obj"/> is null.</exception>
+    /// <exception cref="ArgumentException">When the object has no <c>Id</c>.</exception>
+    public Task PutObjectAsync(IObject obj, CancellationToken ct = default);
+}

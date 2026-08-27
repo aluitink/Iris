@@ -1,9 +1,47 @@
+using Iris.Core;
+
 namespace Iris.Server;
 
 /// <summary>
-/// Placeholder for the Iris.Server assembly. Phase 3 replaces this with the real
-/// persistence-provider and store interfaces (<c>IPersistenceProvider</c>, <c>IActorStore</c>, etc.).
+/// The aggregate persistence boundary for an Iris server instance.
 /// </summary>
-internal static class IrisServerPlaceholder
+/// <remarks>
+/// Bundles the per-concern stores (<see cref="IActorStore"/>, <see cref="IActivityStore"/>,
+/// <see cref="IFollowStore"/>, <see cref="IObjectStore"/>, <see cref="ICommunityStore"/>, and
+/// <see cref="IKeyStore"/> for the local actor's signing keys) behind one interface so that
+/// <c>AddActivityPubServer()</c> can register a single dependency and endpoints can resolve a
+/// cohesive persistence surface. Implementations: <c>Iris.Server.InMemory</c> (ephemeral) and,
+/// later, a real database.
+/// </remarks>
+public interface IPersistenceProvider
 {
+    /// <summary>
+    /// The actor store.
+    /// </summary>
+    public IActorStore Actors { get; }
+
+    /// <summary>
+    /// The activity store.
+    /// </summary>
+    public IActivityStore Activities { get; }
+
+    /// <summary>
+    /// The follow store.
+    /// </summary>
+    public IFollowStore Follows { get; }
+
+    /// <summary>
+    /// The object store.
+    /// </summary>
+    public IObjectStore Objects { get; }
+
+    /// <summary>
+    /// The community store.
+    /// </summary>
+    public ICommunityStore Communities { get; }
+
+    /// <summary>
+    /// The key store for the local instance's signing keys.
+    /// </summary>
+    public IKeyStore Keys { get; }
 }
