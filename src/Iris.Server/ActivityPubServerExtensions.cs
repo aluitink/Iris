@@ -205,6 +205,11 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
+        // Community feed (Phase 5): computes a community's unified feed (the union of its local
+        // members' outbox activities, newest first) for the /c/{name}/feed endpoint and the client's
+        // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.
+        services.TryAddSingleton<ICommunityFeedService, CommunityFeedService>();
+
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
         // (handlers call it to schedule a delivery — it enqueues and returns), and the background
         // DeliveryWorker (pumps jobs off the queue and POSTs them, signed as InstanceActorId).
@@ -323,6 +328,10 @@ public static class ActivityPubServerExtensions
         // Community members: GET /ap/v1/c/{name}/members — the community's member actor IRIs, served as
         // a paged collection (page 1 is an OrderedCollection with `first`; page N>1 an OrderedCollectionPage).
         group.MapGet("/c/{name}/members", CommunityMembersHandler);
+
+        // Community feed: GET /ap/v1/c/{name}/feed — the community's unified feed (the union of its
+        // local members' outbox activities, newest first), served as a paged collection.
+        group.MapGet("/c/{name}/feed", CommunityFeedHandler);
 
         // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
         // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
@@ -770,9 +779,21 @@ public static class ActivityPubServerExtensions
         doc.Followers ??= new Link { Href = new Uri(communityIri.FollowersOf().Value) };
         doc.Following ??= new Link { Href = new Uri(communityIri.FollowingOf().Value) };
         var ext = doc.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
+        var changed = false;
         if (!ext.ContainsKey("members"))
         {
             ext["members"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/members");
+            changed = true;
+        }
+
+        if (!ext.ContainsKey("feed"))
+        {
+            ext["feed"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/feed");
+            changed = true;
+        }
+
+        if (changed)
+        {
             doc.ExtensionData = ext;
         }
 
@@ -811,6 +832,44 @@ public static class ActivityPubServerExtensions
 
         var collectionIri = new Iri($"{communityIri.Value}/members");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri.Value}/?page={page}");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the community's unified feed as a paged collection for <c>GET /ap/v1/c/{name}/feed</c>.
+    /// The feed is the union of the community's local members' outbox activities (newest first),
+    /// computed by the <see cref="ICommunityFeedService"/>. Page 1 is an <c>OrderedCollection</c> (with
+    /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>),
+    /// paged via <c>?page</c>/<c>?limit</c>.
+    /// </summary>
+    private static async Task<IResult> CommunityFeedHandler(
+        string name,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        ICommunityFeedService feedService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var items = await feedService.GetFeedAsync(communityIri, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var collectionIri = new Iri($"{communityIri.Value}/feed");
         var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =

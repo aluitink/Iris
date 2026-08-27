@@ -72,8 +72,9 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("followers").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/following", doc.RootElement.GetProperty("following").GetString());
 
-        // The members extension points at the members endpoint.
+        // The members and feed extensions point at their endpoints.
         Assert.Equal($"{_base}/ap/v1/c/{Community}/members", doc.RootElement.GetProperty("members").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/feed", doc.RootElement.GetProperty("feed").GetString());
     }
 
     [Fact]
