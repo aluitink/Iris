@@ -105,6 +105,10 @@ public static class ActivityPubServerExtensions
         // authenticated owner-only document is never cached).
         services.TryAddSingleton<LocalActorDocumentCache>(_ => new LocalActorDocumentCache());
 
+        // The server → client response cache for paged local collections (outbox/followers/following),
+        // backing those endpoints' Cache-Control headers and ?refresh=true bypass.
+        services.TryAddSingleton<LocalCollectionPageCache>(_ => new LocalCollectionPageCache());
+
         // Inbound signature validation (Phase 4). The server verifies the HTTP signature on inbound
         // requests by resolving the remote signing key (fetched from the remote actor's document) and
         // checking it cryptographically. A host app (or test) may replace IActorDocumentFetcher /
@@ -250,6 +254,20 @@ public static class ActivityPubServerExtensions
         // Create, ...). Requires a valid HTTP signature (validated by SignatureValidationMiddleware);
         // unsigned or invalidly-signed requests are rejected with 401.
         group.MapPost("/u/{handle}/inbox", InboxHandler);
+
+        // Paged collections: GET /ap/v1/u/{handle}/{collection} where {collection} is one of outbox
+        // (the actor's posted activities, newest first), followers (actors following the local actor),
+        // or following (actors the local actor follows). Each serves an OrderedCollection (page 1,
+        // with `first`) or an OrderedCollectionPage (page N>1), paged via ?page=N and ?limit=N, and
+        // served through the local collection-page response cache. The {collection} route value is
+        // bound as `collectionName` (it is not a query parameter).
+        group.MapGet(
+                "/u/{handle}/{collection:regex(outbox|followers|following)}",
+                (string handle, string collection, HttpContext context,
+                    IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CollectionEndpointHandler(handle, collection, context, persistence, optionsAccessor, collectionCache, ct))
+            .WithName("collection-endpoint");
 
         return endpoints;
     }
@@ -576,6 +594,190 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(link),
             "application/json");
+    }
+
+    // --- Paged collection endpoints (outbox / followers / following) -----------
+
+    /// <summary>
+    /// Serves a local actor's <c>outbox</c>, <c>followers</c>, or <c>following</c> collection as a paged
+    /// <see cref="OrderedCollection"/> (page 1, carrying <c>first</c>) or <see cref="OrderedCollectionPage"/>
+    /// (page N &gt; 1). The request's <c>?page</c> (default 1) and <c>?limit</c> (default
+    /// <see cref="ActivityPubServerConstants.DefaultCollectionPageSize"/>, capped at
+    /// <see cref="ActivityPubServerConstants.MaxCollectionPageSize"/>) select the page; <c>?refresh=true</c>
+    /// bypasses the local collection-page response cache for the read. The response is served through the
+    /// <see cref="LocalCollectionPageCache"/> and carries the collection <c>Cache-Control</c> header.
+    /// </summary>
+    private static async Task<IResult> CollectionEndpointHandler(
+        string handle,
+        string collectionName,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            || actor is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Resolve the collection items (newest-first outbox; insertion-ordered followers/following).
+        IReadOnlyList<IObjectOrLink> items = collectionName switch
+        {
+            "outbox" => await persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false),
+            "followers" => ActorIrisToLinks(await persistence.Follows.GetFollowersAsync(actorIri, ct).ConfigureAwait(false)),
+            "following" => ActorIrisToLinks(await persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false)),
+            _ => [],
+        };
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+        var refresh = context.Request.Query["refresh"].ToString()
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        var collectionIri = new Iri($"{actorIri}/{collectionName}");
+        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
+
+        // Read (or render on a miss) through the local collection-page response cache.
+        var (document, _, _) = await collectionCache.GetAsync(
+            pageIri,
+            refresh,
+            _ => Task.FromResult<string?>(BuildCollectionPageDocument(
+                collectionIri,
+                page,
+                limit,
+                items)),
+            ct).ConfigureAwait(false);
+
+        // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
+        // re-rendered; intermediates must not serve a stale copy). A fresh hit, a stale-while-revalidate
+        // hit, and a first render (a miss we now populate) are all cacheable.
+        var cacheControl = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Renders the JSON-LD document for a single page of a local collection. Page 1 is an
+    /// <c>OrderedCollection</c> (with <c>first</c> self-referencing it); page N &gt; 1 is an
+    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>). The <c>items</c> array holds
+    /// this page's slice; the <c>totalItems</c> property carries the full collection size.
+    /// </summary>
+    /// <param name="collectionIri">The collection's IRI (<c>{actor}/{name}</c>).</param>
+    /// <param name="page">The 1-based page number to render.</param>
+    /// <param name="limit">The page size (items per page).</param>
+    /// <param name="items">All of the collection's items (newest-first for the outbox), unslliced.</param>
+    /// <returns>The serialized JSON-LD document for the requested page.</returns>
+    private static string BuildCollectionPageDocument(
+        Iri collectionIri,
+        int page,
+        int limit,
+        IReadOnlyList<IObjectOrLink> items)
+    {
+        var total = items.Count;
+        var pageCount = total == 0 ? 1 : (int)Math.Ceiling(total / (double)limit);
+        if (page > pageCount)
+        {
+            page = pageCount;
+        }
+
+        var start = (page - 1) * limit + 1;
+        var endExclusive = Math.Min(page * limit, total);
+        var slice = new List<IObjectOrLink>();
+        for (var i = start; i <= endExclusive; i++)
+        {
+            slice.Add(items[i - 1]);
+        }
+
+        if (page == 1)
+        {
+            // Page 1 is the collection document itself: it carries its own first page of items and a
+            // self-referencing `first` link. The `next` pointer lives on the first page, so a reader
+            // walks page 2 onward via the page's `next` (this document's own items are page 1).
+            var collection = new OrderedCollection
+            {
+                Id = collectionIri.Value,
+                Items = [.. slice],
+                First = new Link { Href = new Uri(collectionIri.Value) },
+                TotalItems = (uint)total,
+            };
+
+            return ActivityJson.Serialize(collection);
+        }
+
+        var pageDoc = new OrderedCollectionPage
+        {
+            Id = $"{collectionIri.Value}/?page={page}",
+            PartOf = new Link { Href = new Uri(collectionIri.Value) },
+            Items = [.. slice],
+            StartIndex = (uint)start,
+            TotalItems = (uint)total,
+        };
+
+        pageDoc.Prev = new Link { Href = new Uri($"{collectionIri.Value}/?page={page - 1}") };
+        if (page < pageCount)
+        {
+            pageDoc.Next = new Link { Href = new Uri($"{collectionIri.Value}/?page={page + 1}") };
+        }
+
+        return ActivityJson.Serialize(pageDoc);
+    }
+
+    /// <summary>
+    /// Coerces actor IRIs (from <c>IFollowStore</c>) into ActivityStreams <c>Link</c> objects so they can
+    /// be embedded as collection items.
+    /// </summary>
+    /// <param name="actorIris">The actor IRIs.</param>
+    /// <returns>A list of <see cref="Link"/> objects (one per IRI).</returns>
+    private static IReadOnlyList<IObjectOrLink> ActorIrisToLinks(IReadOnlyList<Iri> actorIris)
+    {
+        var links = new IObjectOrLink[actorIris.Count];
+        for (var i = 0; i < actorIris.Count; i++)
+        {
+            links[i] = new Link { Href = new Uri(actorIris[i].Value) };
+        }
+
+        return links;
+    }
+
+    /// <summary>
+    /// Parses a <c>?limit</c> query value into a bounded page size (default
+    /// <see cref="ActivityPubServerConstants.DefaultCollectionPageSize"/>, capped at
+    /// <see cref="ActivityPubServerConstants.MaxCollectionPageSize"/>).
+    /// </summary>
+    /// <param name="raw">The raw query string (may be empty or non-numeric).</param>
+    /// <returns>The clamped page size.</returns>
+    private static int ParsePageSize(string raw)
+    {
+        if (!int.TryParse(raw, out var value) || value <= 0)
+        {
+            return ActivityPubServerConstants.DefaultCollectionPageSize;
+        }
+
+        return Math.Min(value, ActivityPubServerConstants.MaxCollectionPageSize);
+    }
+
+    /// <summary>
+    /// Parses a <c>?page</c> query value into a 1-based page number (default 1).
+    /// </summary>
+    /// <param name="raw">The raw query string (may be empty, non-numeric, or &lt; 1).</param>
+    /// <returns>The 1-based page number.</returns>
+    private static int ParsePageNumber(string raw)
+    {
+        if (!int.TryParse(raw, out var value) || value < 1)
+        {
+            return 1;
+        }
+
+        return value;
     }
 }
 

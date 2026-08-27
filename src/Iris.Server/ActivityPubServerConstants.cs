@@ -82,4 +82,21 @@ public static class ActivityPubServerConstants
     /// was re-fetched; intermediates must not serve a stale copy).
     /// </summary>
     public const string NoCacheCacheControl = "no-cache";
+
+    /// <summary>
+    /// The default page size for paged collection endpoints (<c>outbox</c>/<c>followers</c>/<c>following</c>)
+    /// when the request does not supply a <c>?limit</c>.
+    /// </summary>
+    public const int DefaultCollectionPageSize = 20;
+
+    /// <summary>
+    /// The maximum <c>?limit</c> honored by paged collection endpoints (bounds a single page's size).
+    /// </summary>
+    public const int MaxCollectionPageSize = 100;
+
+    /// <summary>
+    /// The <c>Cache-Control</c> value for paged collection documents (mirrors the actor document:
+    /// <c>max-age=60, stale-while-revalidate=300</c>).
+    /// </summary>
+    public const string CollectionCacheControl = "max-age=60, stale-while-revalidate=300";
 }
