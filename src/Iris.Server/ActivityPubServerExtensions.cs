@@ -89,6 +89,15 @@ public static class ActivityPubServerExtensions
             return new WebFingerCache(policies?.WebFinger);
         });
 
+        // The collection-page cache is also registered standalone so the outbound remote-collection
+        // fetch path (IrisRemoteCollectionFetcher) can resolve it directly by type; ServerCaches reuses
+        // the same instance below.
+        services.TryAddSingleton<CollectionPageCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            return new CollectionPageCache(policies?.CollectionPage);
+        });
+
         services.TryAddSingleton<ServerCaches>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
@@ -96,7 +105,7 @@ public static class ActivityPubServerExtensions
             return new ServerCaches(
                 RemoteActors: sp.GetRequiredService<RemoteActorCache>(),
                 RemoteKeys: sp.GetRequiredService<RemoteKeyCache>(),
-                CollectionPages: new CollectionPageCache(policies?.CollectionPage),
+                CollectionPages: sp.GetRequiredService<CollectionPageCache>(),
                 WebFinger: sp.GetRequiredService<WebFingerCache>());
         });
 
@@ -144,6 +153,36 @@ public static class ActivityPubServerExtensions
             // is fetched once and reused across key resolutions and deliveries.
             var actorCache = sp.GetRequiredService<RemoteActorCache>();
             return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache);
+        });
+
+        // Outbound remote-collection fetch (Phase 4): fetches a single page of a remote actor's
+        // collection (e.g. a remote actor's outbox/followers), reading through the Phase 3
+        // CollectionPageCache so a page is fetched once and reused within the TTL. The outbound
+        // transport is a real HttpClientHandler (goes to the remote instance's public URL); a host or
+        // test replaces IRemoteCollectionFetcher with one wired to the other TestServer.
+        services.TryAddSingleton<IRemoteCollectionFetcher>(sp =>
+        {
+            var factory = sp.GetRequiredService<IActivityPubClientFactory>();
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+
+            // Without a configured instance actor the fetcher cannot sign outbound fetches, so it
+            // cannot resolve remote pages. A host that sets ActivityPubServerOptions.InstanceActorId
+            // gets full remote-collection fetching.
+            if (options.InstanceActorId is null)
+            {
+                throw new InvalidOperationException(
+                    "IRemoteCollectionFetcher requires ActivityPubServerOptions.InstanceActorId to be set (outbound fetches must be signed).");
+            }
+
+            var clientOptions = new ActivityPubClientOptions
+            {
+                ActorId = options.InstanceActorId.Value,
+                // Outbound collection fetches do not need retries; keep the pipeline minimal.
+                EnableRetry = false,
+            };
+
+            var collectionPages = sp.GetRequiredService<CollectionPageCache>();
+            return new IrisRemoteCollectionFetcher(factory.Create(clientOptions, new HttpClientHandler()), collectionPages);
         });
 
         // Inbox processing (Phase 4): the processor stores each validated activity and dispatches it
