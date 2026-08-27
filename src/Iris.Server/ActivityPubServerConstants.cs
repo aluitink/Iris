@@ -54,4 +54,32 @@ public static class ActivityPubServerConstants
     /// The full IRI is <c>{NamespaceIri}capabilities</c>; this is the local term.
     /// </summary>
     public const string CapabilitiesTerm = "capabilities";
+
+    /// <summary>
+    /// The name of the HTTP caching directive header emitted on cacheable responses.
+    /// </summary>
+    public const string CacheControlHeaderName = "Cache-Control";
+
+    /// <summary>
+    /// The query parameter name that forces a cache bypass on cached endpoints (ARCHITECTURE.md:
+    /// <c>?refresh=true</c>).
+    /// </summary>
+    public const string RefreshQueryParameterName = "refresh";
+
+    /// <summary>
+    /// The <c>Cache-Control</c> value for cacheable actor documents (ARCHITECTURE.md:
+    /// <c>max-age=60, stale-while-revalidate=300</c>).
+    /// </summary>
+    public const string ActorCacheControl = "max-age=60, stale-while-revalidate=300";
+
+    /// <summary>
+    /// The <c>Cache-Control</c> value for responses that must not be stored (owner-only / private data).
+    /// </summary>
+    public const string NoStoreCacheControl = "no-store";
+
+    /// <summary>
+    /// The <c>Cache-Control</c> value emitted when a <c>?refresh=true</c> bypass is honored (the response
+    /// was re-fetched; intermediates must not serve a stale copy).
+    /// </summary>
+    public const string NoCacheCacheControl = "no-cache";
 }

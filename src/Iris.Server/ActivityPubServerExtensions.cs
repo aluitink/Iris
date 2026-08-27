@@ -58,6 +58,27 @@ public static class ActivityPubServerExtensions
         // The signing key provider for the local actor (Phase 4 delivery signs with the actor's key).
         services.TryAddSingleton<IKeyProvider, InMemoryKeyProvider>();
 
+        // The server-side object caches (remote actors, remote keys, collection pages, WebFinger).
+        // The TTLs come from ActivityPubServerOptions.CachePolicies (ServerCachePolicies); a null
+        // policy falls back to the CachePolicy default for that object type. These are the building
+        // blocks for the server's outbound federation paths (Phase 4); they are registered now so
+        // the seam is in place and unit-testable.
+        services.TryAddSingleton<ServerCaches>(sp =>
+        {
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+            var policies = options.CachePolicies;
+            return new ServerCaches(
+                RemoteActors: new RemoteActorCache(policies?.RemoteActor),
+                RemoteKeys: new RemoteKeyCache(policies?.RemoteKey),
+                CollectionPages: new CollectionPageCache(policies?.CollectionPage),
+                WebFinger: new WebFingerCache(policies?.WebFinger));
+        });
+
+        // The server → client response cache: rendered local actor documents, backing the actor
+        // document endpoint's Cache-Control headers and ?refresh=true bypass (public docs only; the
+        // authenticated owner-only document is never cached).
+        services.TryAddSingleton<LocalActorDocumentCache>(_ => new LocalActorDocumentCache());
+
         // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
         // does NOT register a concrete persistence provider, keeping Iris.Server free of a dependency
@@ -111,6 +132,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         IActorCredentialValidator credentialValidator,
+        LocalActorDocumentCache actorDocumentCache,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -118,21 +140,75 @@ public static class ActivityPubServerExtensions
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var actorIri = BuildActorIri(baseUrl, handle);
 
-        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false) ||
-            actor is null)
-        {
-            return Results.NotFound();
-        }
-
         // Determine whether the request is authenticated for this actor (owner-only extension).
         var authorization = context.Request.Headers.Authorization.ToString();
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
 
-        var doc = BuildActorDocument(actor, actorIri, authenticatedHandle, persistence, options);
-        return Results.Text(ActivityJson.Serialize(doc), ActivityJson.ActivityJsonContentType);
+        // Owner-only (authenticated) document: private data. Never cached; always no-store.
+        if (authenticatedHandle is not null)
+        {
+            if (!await persistence.Actors.TryGetActorAsync(actorIri, out var ownerActor, ct).ConfigureAwait(false) ||
+                ownerActor is null)
+            {
+                return Results.NotFound();
+            }
+
+            var ownerDoc = BuildActorDocument(ownerActor, actorIri, authenticatedHandle, persistence, options);
+            var noStore = Results.Text(ActivityJson.Serialize(ownerDoc), ActivityJson.ActivityJsonContentType);
+            context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+                ActivityPubServerConstants.NoStoreCacheControl;
+            return noStore;
+        }
+
+        // Public document: served through the local actor document cache (server → client layer).
+        // ?refresh=true bypasses the read (re-fetch from persistence) but still writes back.
+        var forceRefresh = HasRefreshBypass(context);
+        var (rendered, _, _) = await actorDocumentCache
+            .GetAsync(
+                actorIri,
+                forceRefresh,
+                async key =>
+                {
+                    if (await persistence.Actors.TryGetActorAsync(key, out var actor, ct).ConfigureAwait(false) &&
+                        actor is not null)
+                    {
+                        var doc = BuildActorDocument(actor, key, null, persistence, options);
+                        return ActivityJson.Serialize(doc);
+                    }
+
+                    return null;
+                },
+                ct)
+            .ConfigureAwait(false);
+
+        if (rendered is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
+        // re-fetched; intermediates must not serve a stale copy). A fresh hit, a stale-while-revalidate
+        // hit, and a first fetch (a miss we now populate) are all cacheable: max-age=60,
+        // stale-while-revalidate=300.
+        var cacheControl = forceRefresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.ActorCacheControl;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
+        return Results.Text(rendered, ActivityJson.ActivityJsonContentType);
     }
+
+    /// <summary>
+    /// Returns true when the request carries the <c>?refresh=true</c> bypass (case-insensitive,
+    /// any truthy value).
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <returns><see langword="true"/> when the refresh bypass is requested.</returns>
+    private static bool HasRefreshBypass(HttpContext context)
+        => context.Request.Query.TryGetValue(
+            ActivityPubServerConstants.RefreshQueryParameterName,
+            out var values) && values.Count > 0 && values[0] is not null and not "false";
 
     private static Actor BuildActorDocument(
         Actor actor,

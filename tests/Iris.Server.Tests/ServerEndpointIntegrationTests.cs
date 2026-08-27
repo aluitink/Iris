@@ -35,6 +35,7 @@ public class ServerEndpointIntegrationTests : IDisposable
     private readonly TestServer _server;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly HttpClient _client;
+    private readonly IServiceProvider _services;
 
     public ServerEndpointIntegrationTests()
     {
@@ -81,9 +82,14 @@ public class ServerEndpointIntegrationTests : IDisposable
 
         _server = new TestServer(builder);
         _client = _server.CreateClient();
+        _services = _server.Services;
     }
 
-    public void Dispose() => _server.Dispose();
+    public void Dispose()
+    {
+        // TestServer owns the DI container; disposing the server disposes the services too.
+        _server.Dispose();
+    }
 
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
@@ -262,5 +268,93 @@ public class ServerEndpointIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(json);
         var link = doc.RootElement.GetProperty("links")[0];
         Assert.Contains("nodeinfo/2.0", link.GetProperty("href").GetString());
+    }
+
+    // --- Server → client response caching (Cache-Control + ?refresh=true) ------
+
+    private LocalActorDocumentCache ActorDocCache() => _services.GetRequiredService<LocalActorDocumentCache>();
+
+    [Fact]
+    public async Task ActorDoc_Public_FirstRequest_PopulatesCacheWithCacheControl()
+    {
+        var cache = ActorDocCache();
+        Assert.Equal(0, cache.Count); // start empty
+
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The public actor document is cacheable: max-age=60, stale-while-revalidate=300.
+        Assert.Equal("max-age=60, stale-while-revalidate=300",
+            response.Headers.CacheControl!.ToString());
+
+        // The read was a miss (populated the cache).
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public async Task ActorDoc_Public_SecondRequest_IsServedFromCache()
+    {
+        var cache = ActorDocCache();
+
+        // Prime the cache.
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/ap/v1/u/{Handle}")).StatusCode);
+        Assert.Equal(1, cache.Count);
+
+        // Second request: still 200, still cacheable, and the cache count is unchanged (a hit,
+        // not a re-fetch that would replace the entry). The body is identical (deterministic render).
+        var first = await (await _client.GetAsync($"/ap/v1/u/{Handle}")).Content.ReadAsStringAsync();
+        var second = await (await _client.GetAsync($"/ap/v1/u/{Handle}")).Content.ReadAsStringAsync();
+        Assert.Equal(first, second);
+        Assert.Equal(1, cache.Count);
+
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}");
+        Assert.Equal("max-age=60, stale-while-revalidate=300",
+            response.Headers.CacheControl!.ToString());
+    }
+
+    [Fact]
+    public async Task ActorDoc_Public_RefreshTrue_BypassesCacheWithNoCache()
+    {
+        var cache = ActorDocCache();
+
+        // Prime the cache.
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/ap/v1/u/{Handle}")).StatusCode);
+        Assert.Equal(1, cache.Count);
+
+        // ?refresh=true: re-fetch from persistence (bypass) and emit no-cache.
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}?refresh=true");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("no-cache", response.Headers.CacheControl!.ToString());
+
+        // Still one entry (the refresh wrote back, not a second key).
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public async Task ActorDoc_Authenticated_IsNoStoreAndNeverCached()
+    {
+        var cache = ActorDocCache();
+
+        // Prime the public cache first so we can prove the authenticated path doesn't touch it.
+        Assert.Equal(HttpStatusCode.OK, (await _client.GetAsync($"/ap/v1/u/{Handle}")).StatusCode);
+        Assert.Equal(1, cache.Count);
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Handle}:{Password}")));
+
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // Owner-only (private) data: never cached, always no-store.
+        Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
+        Assert.Equal(1, cache.Count); // the authenticated read did not add a cache entry
+    }
+
+    [Fact]
+    public async Task ActorDoc_UnknownHandle_RefreshTrue_Still404s()
+    {
+        var response = await _client.GetAsync($"/ap/v1/u/nobody?refresh=true");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 }
