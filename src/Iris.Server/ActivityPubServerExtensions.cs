@@ -203,6 +203,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, AcceptActivityHandler>();
         services.AddSingleton<IActivityHandler, RejectActivityHandler>();
         services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
+        services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
         // Community feed (Phase 5): computes a community's unified feed (the union of its local

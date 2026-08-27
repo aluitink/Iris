@@ -15,6 +15,7 @@ public sealed class InMemoryCommunityStore : ICommunityStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Group> _communities = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _members = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _follows = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
@@ -79,5 +80,41 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         }
 
         return Task.FromResult<IReadOnlyCollection<Iri>>(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetFollowsAsync(Iri communityIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new List<Iri>();
+        if (_follows.TryGetValue(communityIri, out var follows))
+        {
+            foreach (var followed in follows.Keys)
+            {
+                result.Add(followed);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> AddFollowAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var added = _follows.GetOrAdd(communityIri, _ => new System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>()).TryAdd(actorIri, 0);
+        return Task.FromResult(added);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFollowAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_follows.TryGetValue(communityIri, out var follows))
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(follows.TryRemove(actorIri, out _));
     }
 }

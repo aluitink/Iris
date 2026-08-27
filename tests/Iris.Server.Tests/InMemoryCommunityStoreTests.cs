@@ -173,4 +173,87 @@ public class InMemoryCommunityStoreTests
         Assert.Equal(50, (await sut.GetMembersAsync(Community)).Count);
         Assert.All(actors, a => Assert.True(sut.IsMemberAsync(Community, a).GetAwaiter().GetResult()));
     }
+
+    // --- The follows set (community follows a remote actor) -------------------------
+
+    [Fact]
+    public async Task AddFollow_NewFollow_ReturnsTrue()
+    {
+        var sut = new InMemoryCommunityStore();
+        await sut.PutCommunityAsync(NewCommunity("https://a.test/ap/v1/c/iris"));
+
+        var added = await sut.AddFollowAsync(Community, Bob);
+
+        Assert.True(added);
+        Assert.Contains(Bob, await sut.GetFollowsAsync(Community));
+    }
+
+    [Fact]
+    public async Task AddFollow_ExistingFollow_IsIdempotent()
+    {
+        var sut = new InMemoryCommunityStore();
+
+        var first = await sut.AddFollowAsync(Community, Bob);
+        var second = await sut.AddFollowAsync(Community, Bob);
+
+        Assert.True(first);
+        Assert.False(second);
+        Assert.Single(await sut.GetFollowsAsync(Community));
+    }
+
+    [Fact]
+    public async Task RemoveFollow_Present_ReturnsTrueAndRemoves()
+    {
+        var sut = new InMemoryCommunityStore();
+        await sut.AddFollowAsync(Community, Bob);
+
+        var removed = await sut.RemoveFollowAsync(Community, Bob);
+
+        Assert.True(removed);
+        Assert.Empty(await sut.GetFollowsAsync(Community));
+    }
+
+    [Fact]
+    public async Task RemoveFollow_Absent_ReturnsFalse()
+    {
+        var sut = new InMemoryCommunityStore();
+
+        var removed = await sut.RemoveFollowAsync(Community, Bob);
+
+        Assert.False(removed);
+    }
+
+    [Fact]
+    public async Task GetFollows_UnknownCommunity_ReturnsEmpty()
+    {
+        var sut = new InMemoryCommunityStore();
+
+        Assert.Empty(await sut.GetFollowsAsync(Community));
+    }
+
+    [Fact]
+    public async Task Follows_AreIsolatedPerCommunity()
+    {
+        var sut = new InMemoryCommunityStore();
+        var other = new Iri("https://a.test/ap/v1/c/other");
+        await sut.AddFollowAsync(Community, Bob);
+
+        Assert.Contains(Bob, await sut.GetFollowsAsync(Community));
+        Assert.Empty(await sut.GetFollowsAsync(other));
+    }
+
+    [Fact]
+    public async Task MembersAndFollows_AreIndependentSets()
+    {
+        // Membership and following are disjoint sets: a community can follow an actor that is not a
+        // member, and have a member that it does not follow.
+        var sut = new InMemoryCommunityStore();
+        await sut.AddMemberAsync(Community, Alice);
+        await sut.AddFollowAsync(Community, Bob);
+
+        Assert.Contains(Alice, await sut.GetMembersAsync(Community));
+        Assert.DoesNotContain(Alice, await sut.GetFollowsAsync(Community));
+        Assert.Contains(Bob, await sut.GetFollowsAsync(Community));
+        Assert.DoesNotContain(Bob, await sut.GetMembersAsync(Community));
+    }
 }

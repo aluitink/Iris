@@ -56,6 +56,53 @@ public sealed class InboxProcessorTests
         Assert.Equal(RecipientIri, job.ActorIri);
     }
 
+    [Fact]
+    public async Task ProcessAsync_FollowOfCommunity_RecordsCommunityFollowAndQueuesAccept()
+    {
+        // A remote actor (alice) follows a local community (the Group). The follow is recorded in the
+        // community's follows set (not the person-follow store), and an Accept is queued — but a follow
+        // of a community is NOT a membership grant (alice is not added to the community's members).
+        var persistence = new InMemoryPersistenceProvider();
+        var communityIri = new Iri("https://b.domain.local/ap/v1/c/iris");
+        var community = new Group
+        {
+            Id = communityIri.Value,
+            Name = ["Iris"],
+            PreferredUsername = "iris",
+        };
+        await persistence.Communities.PutCommunityAsync(community);
+        // The community has a local member (so the feed has somewhere to surface content later); alice
+        // is the remote follower and is NOT a member.
+        var localMember = new Iri("https://b.domain.local/ap/v1/u/bob");
+        SeedLocalActor(persistence, localMember);
+        await persistence.Communities.AddMemberAsync(communityIri, localMember);
+
+        var (queue, processor) = BuildProcessorWithFollowHandler(persistence);
+        var follow = BuildFollow(FollowerIri, communityIri);
+
+        await processor.ProcessAsync(new InboxDelivery(communityIri, follow));
+
+        // The activity is stored under its IRI.
+        Assert.True(await persistence.Activities.TryGetActivityAsync(new Iri(follow.Id!), out var stored));
+        Assert.Equal(follow.Id, stored!.Id);
+
+        // The follow is recorded in the community's follows set (the community follows alice).
+        Assert.Contains(FollowerIri, await persistence.Communities.GetFollowsAsync(communityIri));
+
+        // A follow of a community is NOT a membership grant: alice is not a member, and the
+        // person-follow store has no edge (the community is not a Person in the actor store).
+        Assert.False(await persistence.Communities.IsMemberAsync(communityIri, FollowerIri));
+        Assert.False(await persistence.Follows.IsFollowingAsync(FollowerIri, communityIri));
+
+        // An Accept is queued to the follower's inbox, signed as the community.
+        Assert.Equal(1, queue.Count);
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(FollowerIri.InboxOf(), job!.InboxIri);
+        Assert.IsType<Accept>(job.Activity);
+        Assert.Equal(communityIri, job.ActorIri);
+    }
+
     // --- Dispatch: an Announce is recorded in the outbox and propagated to local followers --
 
     [Fact]
