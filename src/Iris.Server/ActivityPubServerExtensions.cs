@@ -80,6 +80,15 @@ public static class ActivityPubServerExtensions
             return new RemoteKeyCache(policies?.RemoteKey);
         });
 
+        // The WebFinger cache is also registered standalone so the outbound account-resolution path
+        // (WebFingerAccountResolver) can resolve it directly by type; ServerCaches reuses the same
+        // instance below.
+        services.TryAddSingleton<WebFingerCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            return new WebFingerCache(policies?.WebFinger);
+        });
+
         services.TryAddSingleton<ServerCaches>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
@@ -88,7 +97,7 @@ public static class ActivityPubServerExtensions
                 RemoteActors: sp.GetRequiredService<RemoteActorCache>(),
                 RemoteKeys: sp.GetRequiredService<RemoteKeyCache>(),
                 CollectionPages: new CollectionPageCache(policies?.CollectionPage),
-                WebFinger: new WebFingerCache(policies?.WebFinger));
+                WebFinger: sp.GetRequiredService<WebFingerCache>());
         });
 
         // The server → client response cache: rendered local actor documents, backing the actor
@@ -157,6 +166,23 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
         services.AddHostedService<DeliveryWorker>();
 
+        // Outbound account resolution (Phase 4): resolves a remote account (e.g. @bob@b.test) to its
+        // actor IRI via WebFinger, reading through the Phase 3 WebFingerCache. The WebFingerClient is
+        // backed by a plain (unsigned, no content-negotiation) HTTP pipeline — WebFinger (RFC 8410)
+        // is not ActivityPub, so it must not carry the activity+json Accept header or an HTTP
+        // signature. A host (or test) overrides the Func<HttpMessageHandler> seam above to route the
+        // request (e.g. in-process to a TestServer).
+        services.TryAddSingleton<WebFingerClient>(sp =>
+        {
+            var handlerFactory = sp.GetRequiredService<Func<HttpMessageHandler>>();
+            return new WebFingerClient(new HttpClient(handlerFactory(), disposeHandler: false));
+        });
+
+        // The resolver contract the account resolver depends on; the WebFingerClient is the default
+        // implementation. Registered so a host (or test) may swap in a different resolver.
+        services.TryAddSingleton<IWebFingerResolver>(sp => sp.GetRequiredService<WebFingerClient>());
+        services.TryAddSingleton<IAccountResolver, WebFingerAccountResolver>();
+
         // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
         // does NOT register a concrete persistence provider, keeping Iris.Server free of a dependency
@@ -206,6 +232,13 @@ public static class ActivityPubServerExtensions
 
         // WebFinger: GET /ap/v1/.well-known/webfinger?resource=acct:{handle}@{host}.
         group.MapGet("/.well-known/webfinger", WebFingerHandler);
+
+        // WebFinger at the RFC 8410 standard root path (/.well-known/webfinger). RFC 8410 defines the
+        // well-known URI at the host root (not under a versioned prefix), so a remote client resolving
+        // an account via WebFinger — the standard discovery mechanism — must be able to reach it here.
+        // This is the path the client's WebFingerClient queries; without it, an Iris instance could not
+        // resolve another Iris instance's accounts. The versioned route above is retained for symmetry.
+        endpoints.MapGet("/.well-known/webfinger", WebFingerHandler);
 
         // NodeInfo: GET /ap/v1/nodeinfo/2.0 (RFC 8555 instance metadata).
         group.MapGet("/nodeinfo/2.0", NodeInfoHandler);

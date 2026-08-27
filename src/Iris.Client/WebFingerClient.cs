@@ -15,7 +15,7 @@ namespace Iris.Client;
 /// contains an entry with <c>rel = "self"</c> (and <c>type = "application/activity+json"</c>
 /// for ActivityPub). The <c>href</c> of that entry is the actor IRI.
 /// </remarks>
-public sealed class WebFingerClient
+public sealed class WebFingerClient : IWebFingerResolver
 {
     private static readonly JsonSerializerOptions _options = new()
     {
