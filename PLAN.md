@@ -64,8 +64,8 @@ Iris.sln
   - Scaffold, projects, build, and the multi-instance `TestServer` harness are done and green.
   - Open: (a) spec-research findings not yet captured/folded back (carried into Phase 1 signing work); (b) a bare `dotnet build` in the root is blocked by MSB1011 (stray root scratch files — `rm` is permission-blocked; delete `Program.cs`/`inspect.csproj`/`packages.lock.json` manually).
 - [ ] Phase 1 — Core: Identity, Keys, Signatures & Caching (in progress)
-  - Done: `Iri` + `IriExtensions`, `ActivityJson`, and the identity/key foundation — `KeyAlgorithm`, `KeyPair` (sign/verify, PEM, JWK, RFC 7638 thumbprint), `KeyPairGenerator`, `IIdentity`/`SystemIdentity`, `IKeyStore`/`InMemoryKeyStore`, `KeyPem` — all with unit tests.
-  - `dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 75/75; `dotnet format` clean.
-  - Remaining: `HttpRequestMetadata`, `SigningProfile`, `ISignatureSigner`/`ISignatureVerifier` (HTTP signatures per profile) + tests, and `ICache<T>`/`MemoryCache<T>`/`CachePolicy` + tests. (Spec-research findings should be folded in before the signing slice.)
+  - Done: `Iri` + `IriExtensions`, `ActivityJson`, the identity/key foundation (`KeyAlgorithm`, `KeyPair`, `KeyPairGenerator`, `IIdentity`/`SystemIdentity`, `IKeyStore`/`InMemoryKeyStore`, `KeyPem`), and the **HTTP-signature layer** (`HttpRequestMetadata`, `SigningProfile`, `Signatures`, `SignatureHeader`, `ISignatureSigner`/`HttpSignatureSigner`, `ISignatureVerifier`/`HttpSignatureVerifier`) — all with unit tests.
+  - `dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 114/114; `dotnet format` clean.
+  - Remaining: `ICache<T>`/`CacheEntry<T>`/`MemoryCache<T>`/`CachePolicy` (TTL, LRU, stale-while-revalidate) + tests. (Spec-research findings for signatures were folded in this turn: see Resolved Decisions #14/#15.)
 
 Track progress in [docs/ROADMAP.md](docs/ROADMAP.md).

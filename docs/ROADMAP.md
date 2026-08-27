@@ -23,16 +23,19 @@
   - Done: `KeyAlgorithm` (Rsa/EcP256), `KeyPair` (Sign/Verify SHA-256, ExportPrivateKeyPem, GetPublicJwk, RFC 7638 thumbprint, FromPem), `KeyPairGenerator` (RSA-2048 / EC P-256), `IIdentity` + `SystemIdentity` record.
 - [x] `IKeyStore` interface.
   - Done: `IKeyStore` (put/try-get/remove) + `InMemoryKeyStore` (ephemeral, disposes evicted keys).
-- [ ] `HttpRequestMetadata` value type.
-- [ ] `ISignatureSigner` / `ISignatureVerifier` + RSA/ECDSA implementations.
-- [ ] `SigningProfile` enum (`ClientToServer` restricted / `ServerToServer` full).
+- [x] `HttpRequestMetadata` value type.
+  - Done: `HttpRequestMetadata` (HTTP-agnostic snapshot; value-based equality; case-insensitive header lookup; `With()` for partial copies).
+- [x] `ISignatureSigner` / `ISignatureVerifier` + RSA/ECDSA implementations.
+  - Done: `Signatures` (shared base/digest/algorithm-label/`Signature`-header constants), `SignatureHeader` (parse/format), `HttpSignatureSigner` / `HttpSignatureVerifier` (RSA + ECDSA). Keys are **borrowed** from the `IKeyStore` (store owns lifetime).
+- [x] `SigningProfile` enum (`ClientToServer` restricted / `ServerToServer` full).
+  - Done: `ClientToServer` = `(request-target) host date`; `ServerToServer` = `+ digest content-type`. Verifier reconstructs the base from the declared `headers` list, so it accepts both.
 - [x] `ActivityJson` static helpers (pre-configured `JsonSerializerOptions` with ActivityStreams converters).
   - Done: single `JsonSerializerOptions` (registers the library's `ObjectOrLinkConverter`, `WhenWritingDefault`, no naming policy); content-type constants; `Serialize`/`Deserialize` overloads. Unit-tested against the wire format.
 - [ ] `ICache<T>`, `CacheEntry<T>`, `MemoryCache<T>`, `CachePolicy` (in-memory, TTL, LRU eviction, stale-while-revalidate). TTLs **configurable** via options.
 - [x] **PEM private-key load/save** helpers (`RSA`/`ECDsa` ↔ PKCS#8 PEM) for the `privateKey` actor-doc property.
   - Done: `KeyPem.Load`/`KeyPem.Save` over `KeyPair.FromPem`/`ExportPrivateKeyPem`. Round-trip tested for both algorithms.
 - [ ] Unit tests (pure logic only): sign/verify round-trip (both profiles), tamper detection, key generation, PEM round-trip, IRI helpers, cache TTL/eviction/stale-revalidate.
-  - Done so far: key generation, key sign/verify round-trip + tamper (both algos), PEM round-trip, IRI helpers. Remaining: full HTTP-signature sign/verify per `SigningProfile`, cache TTL/eviction/stale-revalidate (with the signing + caching slices).
+  - Done so far: key generation, key sign/verify round-trip + tamper (both algos), PEM round-trip, IRI helpers, and **full HTTP-signature sign/verify per `SigningProfile`** (both algos x both profiles, signature-base spec examples, digest, tamper detection, unknown-key/malformed-header). Remaining: cache TTL/eviction/stale-revalidate (with the caching slice).
 
 ### Phase 2 — Client Library
 
@@ -128,6 +131,8 @@
 11. **`iris:capabilities` on collections**: a custom **`iris:capabilities`** property (in the configurable namespace) on a collection/actor/community document **declares what is available** on that collection (e.g. `search`, `sort`, `filter`, `feed`). This is the discovery mechanism for specialized collections — a client reads `iris:capabilities` to know which extended query params / sub-collections the server supports.
 12. **Mastodon live test — deferred**: the live Mastodon compatibility suite is **saved for far later**, after instance-to-instance viability is first confirmed with our own in-process servers. When we get there, it runs against a **Dockerized Mastodon** in a **fully isolated, routable Docker-composed test environment** (our server instance + Mastodon + any relay on an internal network with routable hostnames).
 13. **Multi-instance test topology**: **start with 2 servers** for basic federation, using simple hostnames **`a.domain.local`** and **`b.domain.local`**. **Plan for N servers** to support relay/fan-out scenarios (the harness must scale to N instances with distinct `*.domain.local` hostnames).
+14. **Key lifetime in signing**: a `KeyPair` wraps a non-clonable `AsymmetricAlgorithm`, so it **cannot be safely shared by reference across independent owners**. The `IKeyStore` is the single owner; `HttpSignatureSigner`/`HttpSignatureVerifier` **borrow** the key (never dispose it). A `KeyPair` created outside a store (e.g. by `KeyPairGenerator`) must be disposed by its creator.
+15. **Algorithm label placement**: the `algorithm` value (`rsa-sha256` / `ecdsa-p256-sha256`) is carried in the `Signature` header, **not** folded into the signature base (which is built only from the declared `headers` list, per draft-cavage-03). Verification is by the key's actual algorithm; the label is informational and must match the key type.
 
 ## Open Questions (to resolve as we go)
 
