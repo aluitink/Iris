@@ -19,16 +19,20 @@
 
 - [x] `Iri` value type + helpers (wraps `Uri`, `#Public` constant, inbox/outbox derivation).
   - Done: `Iri` (record struct), `Iri.Public`, `TryParse`, and `IriExtensions` (`InboxOf`/`OutboxOf`/`FollowersOf`/`FollowingOf` + library `string?`/`Uri?` ↔ `Iri` boundary conversions). Unit-tested incl. relative-vs-absolute handling.
-- [ ] `IIdentity`, `SystemIdentity`, `KeyPair`, `KeyPairGenerator` (RSA-2048, EC P-256).
-- [ ] `IKeyStore` interface.
+- [x] `IIdentity`, `SystemIdentity`, `KeyPair`, `KeyPairGenerator` (RSA-2048, EC P-256).
+  - Done: `KeyAlgorithm` (Rsa/EcP256), `KeyPair` (Sign/Verify SHA-256, ExportPrivateKeyPem, GetPublicJwk, RFC 7638 thumbprint, FromPem), `KeyPairGenerator` (RSA-2048 / EC P-256), `IIdentity` + `SystemIdentity` record.
+- [x] `IKeyStore` interface.
+  - Done: `IKeyStore` (put/try-get/remove) + `InMemoryKeyStore` (ephemeral, disposes evicted keys).
 - [ ] `HttpRequestMetadata` value type.
 - [ ] `ISignatureSigner` / `ISignatureVerifier` + RSA/ECDSA implementations.
 - [ ] `SigningProfile` enum (`ClientToServer` restricted / `ServerToServer` full).
 - [x] `ActivityJson` static helpers (pre-configured `JsonSerializerOptions` with ActivityStreams converters).
   - Done: single `JsonSerializerOptions` (registers the library's `ObjectOrLinkConverter`, `WhenWritingDefault`, no naming policy); content-type constants; `Serialize`/`Deserialize` overloads. Unit-tested against the wire format.
 - [ ] `ICache<T>`, `CacheEntry<T>`, `MemoryCache<T>`, `CachePolicy` (in-memory, TTL, LRU eviction, stale-while-revalidate). TTLs **configurable** via options.
-- [ ] **PEM private-key load/save** helpers (`RSA`/`ECDsa` ↔ PKCS#8 PEM) for the `privateKey` actor-doc property.
+- [x] **PEM private-key load/save** helpers (`RSA`/`ECDsa` ↔ PKCS#8 PEM) for the `privateKey` actor-doc property.
+  - Done: `KeyPem.Load`/`KeyPem.Save` over `KeyPair.FromPem`/`ExportPrivateKeyPem`. Round-trip tested for both algorithms.
 - [ ] Unit tests (pure logic only): sign/verify round-trip (both profiles), tamper detection, key generation, PEM round-trip, IRI helpers, cache TTL/eviction/stale-revalidate.
+  - Done so far: key generation, key sign/verify round-trip + tamper (both algos), PEM round-trip, IRI helpers. Remaining: full HTTP-signature sign/verify per `SigningProfile`, cache TTL/eviction/stale-revalidate (with the signing + caching slices).
 
 ### Phase 2 — Client Library
 
