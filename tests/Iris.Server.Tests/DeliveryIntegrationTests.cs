@@ -272,7 +272,7 @@ public sealed class DeliveryIntegrationTests : IDisposable
             new ActivityPubClientOptions { ActorId = bobActorIri, EnableRetry = false },
             targetServer.CreateHandler());
 
-        return new IrisActorDocumentFetcher(client);
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
     /// <summary>

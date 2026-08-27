@@ -419,7 +419,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             new ActivityPubClientOptions { ActorId = bobActorIri, EnableRetry = false },
             handler);
 
-        return new IrisActorDocumentFetcher(client);
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
     /// <summary>

@@ -64,8 +64,16 @@ public static class ActivityPubServerExtensions
         // policy falls back to the CachePolicy default for that object type. These are the building
         // blocks for the server's outbound federation paths (Phase 4); they are registered now so
         // the seam is in place and unit-testable.
-        // The remote-key cache is registered standalone (not just inside ServerCaches) so the
-        // inbound key resolver (RemoteInboundKeyResolver) can resolve it directly by type.
+        // The remote-actor and remote-key caches are registered standalone (not just inside
+        // ServerCaches) so the outbound paths can resolve them directly by type: the actor-document
+        // fetcher (IrisActorDocumentFetcher) reads/writes the actor-doc cache, and the inbound key
+        // resolver (RemoteInboundKeyResolver) reads/writes the key cache.
+        services.TryAddSingleton<RemoteActorCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            return new RemoteActorCache(policies?.RemoteActor);
+        });
+
         services.TryAddSingleton<RemoteKeyCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
@@ -77,7 +85,7 @@ public static class ActivityPubServerExtensions
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
             var policies = options.CachePolicies;
             return new ServerCaches(
-                RemoteActors: new RemoteActorCache(policies?.RemoteActor),
+                RemoteActors: sp.GetRequiredService<RemoteActorCache>(),
                 RemoteKeys: sp.GetRequiredService<RemoteKeyCache>(),
                 CollectionPages: new CollectionPageCache(policies?.CollectionPage),
                 WebFinger: new WebFingerCache(policies?.WebFinger));
@@ -119,7 +127,10 @@ public static class ActivityPubServerExtensions
             };
 
             // A real transport handler: the default fetch goes to the remote instance's public URL.
-            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()));
+            // The fetch reads through the remote-actor cache (Phase 3), so a remote actor's document
+            // is fetched once and reused across key resolutions and deliveries.
+            var actorCache = sp.GetRequiredService<RemoteActorCache>();
+            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache);
         });
 
         // Inbox processing (Phase 4): the processor stores each validated activity and dispatches it
