@@ -1,0 +1,155 @@
+using System.Net.Http.Headers;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Iris.Core;
+using KristofferStrube.ActivityStreams;
+
+namespace Iris.Client;
+
+/// <summary>
+/// An <see cref="IClientAuthenticator"/> that authenticates with HTTP Basic auth. It fetches the
+/// actor document with a <c>Authorization: Basic</c> header, reads the owner-only
+/// <c>privateKey</c> (PKCS#8 PEM) extension field, and loads it into a <see cref="KeyPair"/>.
+/// </summary>
+/// <remarks>
+/// The <see cref="KeyPair"/> is inferred from the PEM header and loaded with the matching
+/// <see cref="KeyAlgorithm"/>. The key's <see cref="KeyPair.KeyId"/> is the actor IRI. The returned
+/// <see cref="KeyPair"/> is owned by the caller. This is the concrete "Basic-auth → private-key (PEM)"
+/// flow described in the roadmap; a future OAuth authenticator would be a separate implementation
+/// of <see cref="IClientAuthenticator"/>.
+/// </remarks>
+public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
+{
+    private const string PrivateKeyProperty = "privateKey";
+    private const string PublicKeyProperty = "publicKey";
+    private const string KeyAlgorithmProperty = "keyAlgorithm";
+
+    private readonly HttpClient _http;
+    private readonly Iri _actorId;
+    private readonly string _credentials;
+
+    /// <summary>
+    /// Initializes a new <see cref="BasicAuthClientAuthenticator"/>.
+    /// </summary>
+    /// <param name="http">The HTTP client used to fetch the actor document. Not disposed by the authenticator.</param>
+    /// <param name="actorId">The IRI of the actor (the authenticated owner).</param>
+    /// <param name="user">The Basic-auth username.</param>
+    /// <param name="password">The Basic-auth password.</param>
+    public BasicAuthClientAuthenticator(HttpClient http, Iri actorId, string user, string password)
+    {
+        _http = http ?? throw new ArgumentNullException(nameof(http));
+        _actorId = actorId;
+        _credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{user}:{password}"));
+    }
+
+    /// <inheritdoc/>
+    public async Task<AuthenticatedActor?> AuthenticateAsync(Iri actorId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, actorId.Value);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", _credentials);
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        var objectOrLink = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (objectOrLink is not Actor actor)
+        {
+            return null;
+        }
+
+        var pem = ExtractPrivateKey(actor);
+        if (string.IsNullOrWhiteSpace(pem))
+        {
+            return null;
+        }
+
+        var keyId = ExtractKeyId(actor, actorId);
+        var algorithm = ExtractKeyAlgorithm(actor);
+        KeyPair key;
+        try
+        {
+            key = KeyPem.Load(pem, algorithm, keyId);
+        }
+        catch (CryptographicException)
+        {
+            // Malformed PEM / PEM-algorithm mismatch: an authentication failure, not an error.
+            return null;
+        }
+        catch (ArgumentException)
+        {
+            // ImportFromPem throws ArgumentException for structurally invalid PEM.
+            return null;
+        }
+        catch (FormatException)
+        {
+            // Invalid base64 / DER within the PEM block.
+            return null;
+        }
+
+        return new AuthenticatedActor(actor, key);
+    }
+
+    /// <summary>
+    /// Gets the Basic-auth credentials (base64 of <c>user:password</c>) applied to outgoing requests.
+    /// </summary>
+    public string Credentials => _credentials;
+
+    private static string? ExtractPrivateKey(Actor actor)
+        => actor.ExtensionData is { } ext
+           && ext.TryGetValue(PrivateKeyProperty, out var value)
+           && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+
+    private static Iri ExtractKeyId(Actor actor, Iri fallback)
+    {
+        if (actor.ExtensionData is { } ext
+            && ext.TryGetValue(PublicKeyProperty, out var pk)
+            && pk.ValueKind == JsonValueKind.Object
+            && pk.TryGetProperty("id", out var idElement)
+            && idElement.ValueKind == JsonValueKind.String)
+        {
+            var id = idElement.GetString();
+            if (id is not null && Iri.TryParse(id, out var iri))
+            {
+                return iri;
+            }
+        }
+
+        return fallback;
+    }
+
+    /// <summary>
+    /// Determines the <see cref="KeyAlgorithm"/> for the loaded key. Both RSA and EC private keys are
+    /// exported as identical PKCS#8 ("BEGIN PRIVATE KEY") PEM, so the algorithm cannot be inferred from
+    /// the header; the actor document carries it in the <c>keyAlgorithm</c> extension field. When
+    /// absent, defaults to RSA (the Iris default). See ROADMAP Resolved Decision on key algorithm
+    /// round-tripping.
+    /// </summary>
+    private static KeyAlgorithm ExtractKeyAlgorithm(Actor actor)
+    {
+        if (actor.ExtensionData is { } ext
+            && ext.TryGetValue(KeyAlgorithmProperty, out var value)
+            && value.ValueKind == JsonValueKind.String)
+        {
+            var text = value.GetString();
+            if (string.Equals(text, "ecdsa-p256", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "ec", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "ecp256", StringComparison.OrdinalIgnoreCase))
+            {
+                return KeyAlgorithm.EcP256;
+            }
+        }
+
+        return KeyAlgorithm.Rsa;
+    }
+}
