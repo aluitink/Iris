@@ -45,6 +45,9 @@ bld/
 .DS_Store
 Thumbs.db
 
+## Scratch / local tooling
+.scratch/
+
 ## OpenCode
 .opencode/
 opencode.json

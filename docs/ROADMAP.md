@@ -7,11 +7,13 @@
 ### Phase 0 — Scaffolding (this step)
 
 - [ ] **Spec research pass** — read ActivityPub, ActivityStreams 2.0, HTTP Signatures, WebFinger/JRD, NodeInfo; note requirements & real-world conventions (see [Spec Research](ARCHITECTURE.md#spec-research)). Fold findings into this plan.
-- [ ] Create solution + all project files with correct TFM (**net10.0**) and package references.
-- [ ] Add `KristofferStrube.ActivityStreams` package reference to `Iris.Core`.
-- [ ] Set up `Directory.Build.props` (LangVersion, Nullable, TreatWarningsAsErrors, central package versions).
-- [ ] Add test projects (xUnit) **including the shared `Iris.Testing` multi-instance `TestServer` harness** (distinct hostnames, in-memory persistence, real HTTP).
-- [ ] Verify `dotnet build` succeeds on the empty skeleton.
+  - `remaining:` findings not yet captured/folded back; the research *directive* is in place but no concrete findings have been recorded. Carry forward into Phase 1 (signing/IRI work depends on it).
+- [x] Create solution + all project files with correct TFM (**net10.0**) and package references.
+- [x] Add `KristofferStrube.ActivityStreams` package reference to `Iris.Core`.
+- [x] Set up `Directory.Build.props` (LangVersion, Nullable, TreatWarningsAsErrors, central package versions).
+- [x] Add test projects (xUnit) **including the shared `Iris.Testing` multi-instance `TestServer` harness** (distinct hostnames, in-memory persistence, real HTTP).
+- [x] Verify `dotnet build` succeeds on the empty skeleton.
+  - `remaining:` `dotnet build Iris.slnx` is clean (0 warnings/0 errors) and `dotnet test Iris.slnx` is green (7/7). A *bare* `dotnet build` in the repo root is blocked by MSB1011 (two root project/solution files: `Iris.slnx` + a stray scratch `inspect.csproj`). `rm` is permission-blocked, so the stray root `Program.cs`/`inspect.csproj`/`packages.lock.json` scratch files remain; delete them manually to restore a bare build.
 
 ### Phase 1 — Core: Identity, Keys, Signatures & Caching
 
