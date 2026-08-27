@@ -192,6 +192,108 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
     }
 
+    // --- The full Follow/Reject loop: bob rejects alice's follow, delivered back over the wire --
+    //
+    // Self-contained two-instance federation (mirrors the Accept full loop above). alice follows bob:
+    // A records the follow it sent (the activity + alice's own provisional follow edge, alice → bob) in
+    // A's store. bob then rejects it: B constructs the Reject (deterministic IRI: bob's actor IRI +
+    // /rejects + the follow IRI — the local actor's decision, not auto-generated) and delivers it back
+    // to alice's inbox over the wire, signed as bob. A validates bob's signature (fetching B's actor
+    // doc) and its RejectActivityHandler resolves the follow's target from A's local store and removes
+    // the alice → bob edge from A's follow store (and, visibly, from alice's public `following`
+    // collection). This proves the full inbound pipeline for a Reject end-to-end — and, critically,
+    // that the DI now registers the RejectActivityHandler (the AddSingleton fix in Resolved Decision
+    // #34): if the handler were (still) dropped, the Reject would be stored but the follow edge would
+    // survive.
+    //
+    // Note: the FollowActivityHandler auto-accepts a follow (it schedules an Accept). A Reject is the
+    // followed side's *explicit* decision and supersedes that auto-Accept — so this test does not wire
+    // B's outbound delivery transport (the Reject is delivered directly, signed as bob), keeping the
+    // auto-Accept from racing the Reject back into alice's inbox and re-adding the edge.
+
+    [Fact]
+    public async Task Follow_ThenReject_FullFederationLoop_RejectIsDeliveredBackAndRemovesFollowEdge()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var bSeeded = Seed(bPersistence, BHost, Bob);
+        var aliceActorIri = aSeeded.ActorIri;
+        var bobActorIri = bSeeded.ActorIri;
+        var aliceFollowingIri = new Iri($"{aliceActorIri}/following");
+
+        // A's fetcher routes to B via a lazy handler (resolved on first use) — the same wiring as the
+        // Accept full loop — so A fetches bob's actor doc carrying bSeeded.Key, the key the Reject is
+        // signed with; A's signature validation therefore succeeds. B's outbound delivery transport is
+        // NOT wired here: the Reject is delivered directly by this test (signed as bob), and B's
+        // FollowActivityHandler auto-Accept must not race the Reject back into alice's inbox (the
+        // Reject supersedes the auto-Accept — see the test remarks).
+        TestServer? bRef = null;
+        var a = StartServer(AHost, Alice, aPersistence,
+            fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())));
+        bRef = StartServer(BHost, Bob, bPersistence,
+            fetcher: BuildFetcherFor(BHost, Bob, bSeeded.Key, a.CreateHandler()));
+        using var scope = new DisposeBoth(bRef, a);
+
+        // alice follows bob over the wire. B validates alice's signature and records the provisional
+        // follow edge (alice → bob) in B's follow store. A also records the follow it is sending in its
+        // own store — both the activity (so the RejectActivityHandler can later resolve the follow's
+        // target) and alice's own (provisional) follow edge, which the Reject will remove. (The
+        // client's DeliverAsync is a plain signed POST; it does not store in A's own store.)
+        var follow = BuildFollow(aliceActorIri, bobActorIri);
+        await aPersistence.Activities.PutActivityAsync(follow);
+        await aPersistence.Follows.RecordFollowAsync(aliceActorIri, bobActorIri);
+        using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
+        var statusCode = await client.DeliverAsync(bobActorIri.InboxOf(), follow);
+        Assert.Equal(202, statusCode);
+        Assert.True(
+            await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "Before the Reject, B should record that alice follows bob");
+        Assert.True(
+            await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "Before the Reject, A should record alice's own follow of bob");
+
+        // bob rejects the follow. B builds the Reject (object = the original follow, by IRI) with the
+        // deterministic IRI bob's actor IRI + /rejects + the follow IRI, and delivers it to alice's
+        // inbox over the wire, signed as bob. A validates bob's signature (fetching B's actor doc for
+        // bob) and stores the Reject under that IRI.
+        var reject = FollowIris.BuildReject(bobActorIri, follow);
+        using var bClient = BuildDeliveryClient(bobActorIri, bSeeded.Key, a.CreateHandler());
+        var rejectStatusCode = await bClient.DeliverAsync(aliceActorIri.InboxOf(), reject);
+        Assert.Equal(202, rejectStatusCode);
+
+        var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
+        Assert.True(
+            await aPersistence.Activities.TryGetActivityAsync(rejectIri, out var stored),
+            "A should have stored the Reject delivered by B over the wire");
+        var rejectActivity = Assert.IsType<Reject>(stored!);
+
+        // The Reject's object references the original follow (by IRI) and its actor is bob.
+        Assert.NotNull(rejectActivity.Object);
+        Assert.Contains(rejectActivity.Object!, o => o is ILink { Href: { } href } && href == new Uri(follow.Id!));
+        Assert.NotNull(rejectActivity.Actor);
+        Assert.Contains(rejectActivity.Actor!, a => a is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
+
+        // A's RejectActivityHandler (driven by the inbound Reject, recipient = alice) resolved the
+        // follow's target from A's local store and removed the alice → bob edge from A's follow store.
+        // This is the assertion that proves the Reject handler is registered and dispatched end-to-end
+        // (a dropped handler would leave the edge in place).
+        Assert.False(
+            await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "After the Reject is delivered back to alice, alice should no longer follow bob in A's follow store");
+
+        // And the removal is visible on alice's public `following` collection: bob is gone. (Invalidate
+        // the page-1 cache key first so the endpoint re-renders rather than serving the pre-Reject page.)
+        a.Services.GetRequiredService<LocalCollectionPageCache>().Invalidate(aliceFollowingIri);
+        using var http = new HttpClient(a.CreateHandler());
+        var followingJson = await http.GetStringAsync($"https://{AHost}/ap/v1/u/{Alice}/following");
+        var following = ActivityJson.Deserialize<IObjectOrLink>(followingJson);
+        var items = (following as OrderedCollection)?.OrderedItems
+            ?? (following as OrderedCollectionPage)?.OrderedItems
+            ?? [];
+        Assert.DoesNotContain(items, i => i is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
+    }
+
     // --- Delivery signs with the acting actor's key (not the instance actor) ---------
     //
     // The full loop, with B hosting two local actors (bob = instance actor, carol = a second
