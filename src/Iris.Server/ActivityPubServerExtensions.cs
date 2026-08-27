@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Security.Cryptography;
 using Iris.Client;
 using Iris.Core;
@@ -127,6 +128,18 @@ public static class ActivityPubServerExtensions
         // Reject, Create) to extend the pipeline; the processor picks them up automatically.
         services.TryAddSingleton<IActivityHandler, FollowActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
+
+        // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
+        // (handlers call it to schedule a delivery — it enqueues and returns), and the background
+        // DeliveryWorker (pumps jobs off the queue and POSTs them, signed as InstanceActorId).
+        // The outbound transport is a Func<HttpMessageHandler> seam: the default is a real
+        // HttpClientHandler (goes to the recipient's public URL); a host or test overrides it to route
+        // deliveries (e.g. to a TestServer in-process, or to an IHttpClientFactory-backed handler for
+        // proxying/timeouts). DeliveryWorker is registered as a hosted service so it starts with the host.
+        services.TryAddSingleton<IDeliveryQueue, InMemoryDeliveryQueue>();
+        services.TryAddSingleton<IDeliveryService, DeliveryService>();
+        services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
+        services.AddHostedService<DeliveryWorker>();
 
         // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
