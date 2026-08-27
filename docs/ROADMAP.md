@@ -41,10 +41,14 @@
 ### Phase 2 — Client Library
 
 - [ ] `IActivityPubClient` + `IActivityPubClientFactory` (operates on ActivityStreams types).
-- [ ] `SigningHandler` (respects `SigningProfile`), `JsonLdHandler`, `RetryHandler`.
+  - `remaining:` concrete `ActivityPubClient` landed (signed `GetObjectAsync` → `IObject`, signed `DeliverAsync` → status); the `IActivityPubClient` interface + factory are not yet extracted.
+- [x] `SigningHandler` (respects `SigningProfile`).
+  - Done: `SigningHandler` (`DelegatingHandler`) adds `Date` + `Signature`; `ClientToServer` for bodyless GETs, `ServerToServer` (digest+content-type) for body POSTs; derives host from the request URI when no `Host` header is set. Round-trip verified against `HttpSignatureVerifier`. `remaining:` `JsonLdHandler`, `RetryHandler`.
 - [ ] `IClientAuthenticator` + `BasicAuthClientAuthenticator` (fetches actor doc + private key from our server).
-- [ ] `IKeyProvider` (in-memory session key store).
-- [ ] `IDiscoveryService` + WebFinger client.
+- [x] `IKeyProvider` (in-memory session key store).
+  - Done: `IKeyProvider` (resolve signing `IIdentity` from an actor IRI) + `InMemoryKeyProvider` (actor→key map over `IKeyStore`; keys borrowed, never disposed).
+- [x] `IDiscoveryService` + WebFinger client.
+  - Done: `WebFingerClient` (RFC 8410 lookup on the account's own host, `self`-link resolution, `acct:` normalization, graceful null on 404/parse failure) + `IDiscoveryService`/`WebFingerDiscoveryService`.
 - [ ] **Client caching**: `ActorCache`, `CollectionPageCache`, `WebFingerCache`, `KeyCache` (all with `bypassCache` support + stale-while-revalidate).
 - [ ] **Rich paged collections**: `CollectionPage`, `IAsyncEnumerable<CollectionPage> GetCollectionAsync(...)`, `GetCollectionItemsAsync(...)` (flattened), `CollectionQuery` options. All collections share the same `limit`/`offset`-style shape.
 - [ ] **Integration tests** (client ↔ live `TestServer`): signing, Basic-auth → private-key (PEM) flow, discovery, cache hit/bypass, paged enumeration (multi-page follow, early break).
@@ -136,6 +140,8 @@
 15. **Algorithm label placement**: the `algorithm` value (`rsa-sha256` / `ecdsa-p256-sha256`) is carried in the `Signature` header, **not** folded into the signature base (which is built only from the declared `headers` list, per draft-cavage-03). Verification is by the key's actual algorithm; the label is informational and must match the key type.
 16. **Cache clock injection**: `ICache<TValue>`/`MemoryCache<TValue>` take an explicit `nowUtc` on read/write (and an injectable `clock` on the constructor) rather than calling `DateTime.UtcNow` internally. This makes TTL / stale-while-revalidate / LRU-eviction **deterministic in unit tests** (no sleeps). The default `clock` is `DateTime.UtcNow`, so production callers get real time.
 17. **Cache eviction policy**: `MemoryCache<TValue>` is a **bounded LRU** (capacity default 1024). Expired entries are evicted **opportunistically on write** (best-effort pass from the LRU end); stale entries are never evicted by time alone — they are served (stale-while-revalidate) until they cross the `StaleFor` window, at which point the next read returns a miss and evicts them.
+18. **WebFinger base URL**: the WebFinger query is issued against the **account's own host** (derived from the `acct:` URI, e.g. `https://b.domain.local/.well-known/webfinger?resource=acct:bob@b.domain.local`), *not* the `HttpClient`'s `BaseAddress`. This matches the RFC 8410 / ActivityPub §3 rule that WebFinger is resolved on the domain that owns the account, and keeps the client correct for multi-domain federation without requiring a pre-set base address.
+19. **Signing host derivation**: when an outgoing `HttpRequestMessage` has no explicit `Host` header, the `SigningHandler` derives the `host` signature component from the request URI's authority. An explicit `Host` header (virtual hosts / SNI) always takes precedence.
 
 ## Open Questions (to resolve as we go)
 
