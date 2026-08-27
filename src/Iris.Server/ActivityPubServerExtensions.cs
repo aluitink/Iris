@@ -316,6 +316,20 @@ public static class ActivityPubServerExtensions
                     => CollectionEndpointHandler(handle, collection, context, persistence, optionsAccessor, collectionCache, ct))
             .WithName("collection-endpoint");
 
+        // Community document: GET /ap/v1/c/{name} — the community (the library's Group actor) document.
+        // A community is addressed by its handle (not an actor IRI), so the route uses {name}.
+        group.MapGet("/c/{name}", CommunityDocumentHandler);
+
+        // Community members: GET /ap/v1/c/{name}/members — the community's member actor IRIs, served as
+        // a paged collection (page 1 is an OrderedCollection with `first`; page N>1 an OrderedCollectionPage).
+        group.MapGet("/c/{name}/members", CommunityMembersHandler);
+
+        // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
+        // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
+        // Requires a valid HTTP signature (validated by SignatureValidationMiddleware); unsigned or
+        // invalidly-signed requests are rejected with 401.
+        group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
+
         return endpoints;
     }
 
@@ -517,6 +531,19 @@ public static class ActivityPubServerExtensions
         return new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/u/{handle}");
     }
 
+    /// <summary>
+    /// Builds the absolute community IRI for a local community name, normalizing the base URL (strips a
+    /// trailing slash so the path segment is appended cleanly, avoiding a double slash).
+    /// </summary>
+    /// <param name="baseUrl">The base URL of the instance (may have a trailing slash).</param>
+    /// <param name="name">The local community name (the <c>{name}</c> route segment).</param>
+    /// <returns>The absolute community IRI.</returns>
+    private static Iri BuildCommunityIri(string baseUrl, string name)
+    {
+        var normalized = baseUrl.TrimEnd('/');
+        return new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/c/{name}");
+    }
+
     private static Iri ResolveKeyIri(Actor actor, Iri actorIri)
     {
         // The key IRI is the actor's publicKey.id (ActivityPub convention). The library carries
@@ -710,6 +737,148 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the community (the library's <c>Group</c> actor) document for <c>GET /ap/v1/c/{name}</c>.
+    /// The community is addressed by its handle (not an actor IRI), so the route uses <c>{name}</c>.
+    /// </summary>
+    private static async Task<IResult> CommunityDocumentHandler(
+        HttpContext context,
+        string name,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Deep-copy via serialize/deserialize so we never mutate the stored community, and ensure the
+        // document carries the standard collection endpoints (inbox/outbox/followers/following) + members.
+        var doc = ActivityJson.Deserialize<Group>(ActivityJson.Serialize(community))!;
+        doc.Id ??= communityIri.Value;
+        doc.Inbox ??= new Link { Href = new Uri(communityIri.InboxOf().Value) };
+        doc.Outbox ??= new Link { Href = new Uri(communityIri.OutboxOf().Value) };
+        doc.Followers ??= new Link { Href = new Uri(communityIri.FollowersOf().Value) };
+        doc.Following ??= new Link { Href = new Uri(communityIri.FollowingOf().Value) };
+        var ext = doc.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
+        if (!ext.ContainsKey("members"))
+        {
+            ext["members"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/members");
+            doc.ExtensionData = ext;
+        }
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(ActivityJson.Serialize(doc), ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the community's member actor IRIs as a paged collection for <c>GET /ap/v1/c/{name}/members</c>.
+    /// Page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
+    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>), paged via <c>?page</c>/<c>?limit</c>.
+    /// </summary>
+    private static async Task<IResult> CommunityMembersHandler(
+        string name,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var memberIris = await persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
+        var items = ActorIrisToLinks(memberIris.ToList());
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var collectionIri = new Iri($"{communityIri.Value}/members");
+        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri.Value}/?page={page}");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Receives federation activities addressed to a community for <c>POST /ap/v1/c/{name}/inbox</c>.
+    /// Mirrors the actor inbox: requires a valid signature (401 otherwise), 404 for an unknown community,
+    /// deserializes the body into an <see cref="Activity"/> and hands it to the inbox processor.
+    /// </summary>
+    private static async Task<IResult> CommunityInboxHandler(
+        HttpContext context,
+        string name,
+        IPersistenceProvider persistence,
+        IInboxProcessor inboxProcessor,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var outcome = SignatureValidationMiddleware.GetResult(context);
+        if (!outcome.IsValid)
+        {
+            return Results.Unauthorized();
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The inbox belongs to a local community; an unknown name → 404.
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        context.Request.Body.Position = 0;
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Results.BadRequest();
+        }
+
+        // Rule 1: deserialize into the range interface, then cast.
+        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (payload is not Activity { Id: not null } activity)
+        {
+            return Results.BadRequest();
+        }
+
+        try
+        {
+            await inboxProcessor
+                .ProcessAsync(new InboxDelivery(communityIri, activity), ct)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Accepted();
     }
 
     /// <summary>
