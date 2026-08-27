@@ -10,7 +10,7 @@
 - **The docs are binding.** [CODING_STYLE.md](CODING_STYLE.md) wins over habit; [TESTING.md](TESTING.md) defines what coverage a phase needs before it's checkable.
 
 ## The Loop
-
+<instructions>
 ### 1. Confirm good state
 
 - Run `dotnet build` and `dotnet test` (a SubAgent may run and summarize the results; fixes happen in the main loop).
@@ -51,7 +51,7 @@
 - Commit separately as `docs: ...`.
 
 ### 6. End this turn
-
+</instructions>
 ## Failure Modes to Avoid
 
 | Failure mode | Guard |
