@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Net.Http.Headers;
 using Iris.Client;
 using Iris.Core;
 using Microsoft.Extensions.Hosting;
@@ -19,10 +20,14 @@ namespace Iris.Server;
 /// then stops.
 /// </remarks>
 /// <remarks>
-/// <strong>Signing:</strong> deliveries are signed as <see cref="ActivityPubServerOptions.InstanceActorId"/>
-/// — the local actor performing the automated event (an <c>Accept</c> to a follow, a <c>Create</c>, etc.).
-/// This is the "system key for automated events" the roadmap calls for; per-actor key selection (signing
-/// a delivery as a specific local actor rather than the instance actor) is a follow-up.
+/// <strong>Signing:</strong> each delivery is signed as the local actor named on its
+/// <see cref="DeliveryJob.ActorIri"/> (the actor performing the automated event — e.g. the local actor
+/// being followed in a <c>Follow</c> → <c>Accept</c>). When a job carries no acting actor, the worker
+/// falls back to <see cref="ActivityPubServerOptions.InstanceActorId"/> — the "system key for automated
+/// events". The acting actor is communicated to the <see cref="SigningHandler"/> via the
+/// <c>X-Iris-Actor</c> request header (which the handler treats as a per-request override of its default
+/// <see cref="Iris.Client.SigningHandler.ActorId"/>); the handler resolves that actor's key from the
+/// <see cref="Iris.Client.IKeyProvider"/>.
 /// </remarks>
 /// <remarks>
 /// <strong>Failure policy:</strong> a delivery that fails (network error, non-2xx) is logged at
@@ -101,9 +106,7 @@ public sealed class DeliveryWorker : BackgroundService
     {
         try
         {
-            var statusCode = await client
-                .DeliverAsync(job.InboxIri, job.Activity, ct)
-                .ConfigureAwait(false);
+            var statusCode = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
 
             if (statusCode is >= 200 and < 300)
             {
@@ -136,5 +139,31 @@ public sealed class DeliveryWorker : BackgroundService
                 job.Activity.Id,
                 job.InboxIri);
         }
+    }
+
+    /// <summary>
+    /// POSTs a job's activity to its inbox, signed as the job's acting actor. The acting actor is
+    /// communicated via the <c>X-Iris-Actor</c> header, which the <see cref="SigningHandler"/> resolves
+    /// to the actor's key (overriding the client's default instance-actor identity); when the job has
+    /// no acting actor the header is omitted and the client signs as the instance actor.
+    /// </summary>
+    private static async Task<int> DeliverAsAsync(IActivityPubClient client, DeliveryJob job, CancellationToken ct)
+    {
+        var json = ActivityJson.Serialize(job.Activity);
+        var body = System.Text.Encoding.UTF8.GetBytes(json);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, job.InboxIri.Value)
+        {
+            Content = new ByteArrayContent(body),
+        };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue(ActivityJson.ActivityJsonContentType);
+
+        if (job.ActorIri is { } actorIri)
+        {
+            request.Headers.Add("X-Iris-Actor", actorIri.Value);
+        }
+
+        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        return (int)response.StatusCode;
     }
 }

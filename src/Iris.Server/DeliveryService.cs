@@ -34,7 +34,11 @@ public sealed class DeliveryService : IDeliveryService
     }
 
     /// <inheritdoc/>
-    public async Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default)
+    public Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default)
+        => DeliverAsync(inboxIri, activity, actorIri: null, ct);
+
+    /// <inheritdoc/>
+    public async Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(activity);
         if (!inboxIri.IsAbsolute)
@@ -43,25 +47,29 @@ public sealed class DeliveryService : IDeliveryService
         }
 
         await _queue
-            .EnqueueAsync(new DeliveryJob(inboxIri, activity), ct)
+            .EnqueueAsync(new DeliveryJob(inboxIri, activity, actorIri), ct)
             .ConfigureAwait(false);
 
         _logger.LogDebug(
-            "Enqueued delivery of activity {ActivityId} to {Inbox}",
+            "Enqueued delivery of activity {ActivityId} to {Inbox} as {Actor}",
             activity.Id,
-            inboxIri.Value);
+            inboxIri.Value,
+            actorIri?.Value ?? "<instance actor>");
     }
 
     /// <inheritdoc/>
     public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default)
+        => DeliverToActorAsync(recipientIri, activity, actorIri: null, ct);
+
+    /// <inheritdoc/>
+    public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
     {
-        ArgumentNullException.ThrowIfNull(activity);
         if (!recipientIri.IsAbsolute)
         {
             throw new ArgumentException("The recipient IRI must be an absolute IRI.", nameof(recipientIri));
         }
 
         // The ActivityPub convention: an actor's inbox is the actor IRI with "/inbox" appended.
-        return DeliverAsync(recipientIri.InboxOf(), activity, ct);
+        return DeliverAsync(recipientIri.InboxOf(), activity, actorIri, ct);
     }
 }

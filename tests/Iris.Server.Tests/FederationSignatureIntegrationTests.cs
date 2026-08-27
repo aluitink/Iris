@@ -43,6 +43,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
     private const string BHost = "b.domain.local";
     private const string Alice = "alice";
     private const string Bob = "bob";
+    private const string Carol = "carol";
 
     private readonly TestServer _a;
     private readonly TestServer _b;
@@ -189,6 +190,73 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Assert.Contains(accept.Object!, o => o is ILink { Href: { } href } && href == new Uri(follow.Id!));
         Assert.NotNull(accept.Actor);
         Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
+    }
+
+    // --- Delivery signs with the acting actor's key (not the instance actor) ---------
+    //
+    // The full loop, with B hosting two local actors (bob = instance actor, carol = a second
+    // local actor). alice follows carol. B's FollowActivityHandler records the follow and
+    // schedules an Accept that is signed as carol (the local actor being followed — the acting
+    // actor), NOT as bob (the instance actor). A validates that signature by fetching B's actor
+    // doc for carol (resolving carol's key) and stores the Accept. If the worker had (still)
+    // signed as the instance actor (bob), A would have resolved bob's key, which does not match
+    // the signature, and the Accept would be rejected (401) — never stored. Storing it therefore
+    // proves the delivery was signed with carol's key.
+
+    [Fact]
+    public async Task Follow_TwoActors_AcceptIsSignedWithActingActorsKey_NotInstanceActor()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = Seed(aPersistence, AHost, Alice);
+
+        // B hosts TWO local actors: bob (the instance actor) and carol (a second local actor).
+        var bBob = Seed(bPersistence, BHost, Bob);
+        var bCarol = Seed(bPersistence, BHost, Carol);
+        var bobActorIri = bBob.ActorIri;
+        var bobInboxIri = bobActorIri.InboxOf();
+        var carolActorIri = bCarol.ActorIri;
+        var carolInboxIri = carolActorIri.InboxOf();
+
+        // A's fetcher routes to B (lazy, to break the A↔B wiring chicken-and-egg), so A can fetch
+        // carol's actor doc to resolve carol's key when validating the Accept.
+        TestServer? bRef = null;
+        var a = StartServer(AHost, Alice, aPersistence,
+            fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())));
+        bRef = StartServer(
+            BHost, Bob, bPersistence,
+            fetcher: BuildFetcherFor(BHost, Bob, bBob.Key, a.CreateHandler()),
+            deliveryTransport: () => a.CreateHandler(),
+            extraLocalActors: [carolActorIri]);
+        using var scope = new DisposeBoth(bRef, a);
+
+        // alice follows carol (not bob — the instance actor).
+        var follow = BuildFollow(aSeeded.ActorIri, carolActorIri);
+        using var client = BuildDeliveryClient(aSeeded.ActorIri, aSeeded.Key, bRef.CreateHandler());
+        var statusCode = await client.DeliverAsync(carolInboxIri, follow);
+        Assert.Equal(202, statusCode);
+
+        // B recorded the follow edge (alice → carol).
+        Assert.True(
+            await bPersistence.Follows.IsFollowingAsync(aSeeded.ActorIri, carolActorIri),
+            "B should record that alice follows carol");
+
+        // B's FollowActivityHandler scheduled an Accept (deterministic IRI: carol's actor IRI +
+        // /accepts + the follow IRI). B's DeliveryWorker delivers it to alice's inbox, signed as
+        // carol (the acting actor). A validates carol's signature (fetching B's actor doc for
+        // carol) and stores the Accept.
+        var acceptIri = new Iri($"{carolActorIri}/accepts/{follow.Id}");
+        await WaitForAsync(
+            () => aPersistence.Activities.TryGetActivityAsync(acceptIri, out _),
+            timeout: TimeSpan.FromSeconds(10));
+
+        Assert.True(
+            await aPersistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
+            "A should have stored the Accept signed with carol's key (the acting actor), " +
+            "delivered by B's worker");
+        var accept = Assert.IsType<Accept>(stored!);
+        Assert.NotNull(accept.Actor);
+        Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
     }
 
     // --- Key resolution: B resolves alice's key by fetching A's actor doc --------
@@ -365,7 +433,8 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         string host, string handle, InMemoryPersistenceProvider persistence,
         IActorDocumentFetcher? fetcher = null,
         Func<HttpMessageHandler>? deliveryTransport = null,
-        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? extraServices = null)
+        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? extraServices = null,
+        IEnumerable<Iri>? extraLocalActors = null)
     {
         var builder = new WebHostBuilder()
             .ConfigureLogging(l =>
@@ -423,6 +492,17 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var keyProvider = server.Services.GetRequiredService<IKeyProvider>();
         var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
         keyProvider.RegisterKey(actorIri, new Iri($"{actorIri}#key-1"));
+
+        // Register any additional local actors' keys (e.g. a second local actor on the same
+        // instance) so the outbound DeliveryWorker can sign a delivery as them. The key IRI is the
+        // actor's publicKey.id (the #key-1 convention used by Seed).
+        if (extraLocalActors is not null)
+        {
+            foreach (var extraActor in extraLocalActors)
+            {
+                keyProvider.RegisterKey(extraActor, new Iri($"{extraActor}#key-1"));
+            }
+        }
 
         return server;
     }

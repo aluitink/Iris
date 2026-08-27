@@ -50,6 +50,10 @@ public sealed class InboxProcessorTests
         Assert.Contains(accept.Object!, o => o is ILink { Href: { } href } && href == new Uri(follow.Id!));
         Assert.NotNull(accept.Actor);
         Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(RecipientIri.Value));
+
+        // The delivery is signed as the local actor being followed (bob) — not the instance actor —
+        // so the remote verifies the Accept against bob's key.
+        Assert.Equal(RecipientIri, job.ActorIri);
     }
 
     // --- Dispatch: an activity with no registered handler is stored, not dispatched --

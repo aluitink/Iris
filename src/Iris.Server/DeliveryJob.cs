@@ -8,10 +8,14 @@ namespace Iris.Server;
 /// </summary>
 /// <remarks>
 /// This is the unit of work the <see cref="IDeliveryQueue"/> carries and the
-/// <see cref="IDeliveryService"/> produces. The <c>InboxIri</c> is the absolute IRI of the recipient's
+/// <see cref="DeliveryService"/> produces. The <c>InboxIri</c> is the absolute IRI of the recipient's
 /// inbox endpoint (e.g. <c>https://a.domain.local/ap/v1/u/alice/inbox</c>); the worker POSTs the
-/// serialized <see cref="Activity"/> there, signed with the instance actor's key.
+/// serialized <see cref="Activity"/> there. The <c>ActorIri</c> is the local actor the delivery is
+/// signed as (the actor performing the automated event); when it is null the worker falls back to
+/// the instance actor (the "system key for automated events").
 /// </remarks>
 /// <param name="InboxIri">The absolute IRI of the recipient's inbox endpoint to deliver to.</param>
 /// <param name="Activity">The activity to deliver (must be a non-null <see cref="Activity"/>).</param>
-public sealed record DeliveryJob(Iri InboxIri, Activity Activity);
+/// <param name="ActorIri">The local actor to sign the delivery as, or null to sign as the
+/// instance actor (the system key for automated events).</param>
+public sealed record DeliveryJob(Iri InboxIri, Activity Activity, Iri? ActorIri = null);

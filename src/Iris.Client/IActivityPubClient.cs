@@ -51,6 +51,16 @@ public interface IActivityPubClient : IDisposable
     public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
 
     /// <summary>
+    /// Sends a raw HTTP request through the client's signed pipeline and returns the response.
+    /// </summary>
+    /// <param name="request">The request to send. It is signed by the pipeline (the
+    /// <see cref="SigningHandler"/> resolves the signing identity from the request's <c>X-Iris-Actor</c>
+    /// header when present, otherwise the client's default actor).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The (unconsumed) response; the caller owns and disposes it.</returns>
+    public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default);
+
+    /// <summary>
     /// Enumerates the pages of an <see cref="OrderedCollection"/> by IRI, following the
     /// <c>next</c> link from the collection's <c>first</c> page until the last page (or until
     /// <see cref="CollectionQuery.Limit"/> items have been yielded).

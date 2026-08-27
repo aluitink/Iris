@@ -20,7 +20,8 @@ namespace Iris.Server;
 public interface IDeliveryService
 {
     /// <summary>
-    /// Schedules an activity for delivery to the given inbox IRI.
+    /// Schedules an activity for delivery to the given inbox IRI, signed as the instance actor
+    /// (the system key for automated events).
     /// </summary>
     /// <param name="inboxIri">The absolute IRI of the recipient's inbox endpoint.</param>
     /// <param name="activity">The activity to deliver. Must not be null.</param>
@@ -29,6 +30,19 @@ public interface IDeliveryService
     /// delivered — delivery is asynchronous and background).</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
     public Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default);
+
+    /// <summary>
+    /// Schedules an activity for delivery to the given inbox IRI, signed as a specific local actor
+    /// (the actor performing the automated event, e.g. the local actor being followed in a
+    /// <c>Follow</c> → <c>Accept</c>).
+    /// </summary>
+    /// <param name="inboxIri">The absolute IRI of the recipient's inbox endpoint.</param>
+    /// <param name="activity">The activity to deliver. Must not be null.</param>
+    /// <param name="actorIri">The local actor to sign the delivery as.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A task that completes when the delivery has been enqueued.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
+    public Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default);
 
     /// <summary>
     /// Schedules an activity for delivery to the recipient actor's inbox. The inbox IRI is derived
@@ -40,11 +54,25 @@ public interface IDeliveryService
     /// <returns>A task that completes when the delivery has been enqueued.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
     /// <remarks>
-    /// This convenience overload derives the inbox as <c>recipientIri.InboxOf()</c>. A recipient whose
-    /// document advertises a <c>sharedInbox</c> (or whose inbox is at a non-conventional IRI) should be
-    /// delivered via <see cref="DeliverAsync(Iri, Activity, CancellationToken)"/> with the explicit
-    /// inbox IRI. Resolving a remote actor's advertised inbox from its document is a follow-up (the
-    /// remote object caches from Phase 3 are the seam).
+    /// This convenience overload derives the inbox as <c>recipientIri.InboxOf()</c> and signs as the
+    /// instance actor. A recipient whose document advertises a <c>sharedInbox</c> (or whose inbox is at
+    /// a non-conventional IRI) should be delivered via
+    /// <see cref="DeliverAsync(Iri, Activity, CancellationToken)"/> with the explicit inbox IRI.
+    /// Resolving a remote actor's advertised inbox from its document is a follow-up (the remote object
+    /// caches from Phase 3 are the seam).
     /// </remarks>
     public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default);
+
+    /// <summary>
+    /// Schedules an activity for delivery to the recipient actor's inbox, signed as a specific local
+    /// actor. The inbox IRI is derived from the recipient's actor IRI.
+    /// </summary>
+    /// <param name="recipientIri">The absolute IRI of the recipient actor.</param>
+    /// <param name="activity">The activity to deliver. Must not be null.</param>
+    /// <param name="actorIri">The local actor to sign the delivery as. When null, the delivery is
+    /// signed as the instance actor (the system key for automated events).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A task that completes when the delivery has been enqueued.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
+    public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default);
 }

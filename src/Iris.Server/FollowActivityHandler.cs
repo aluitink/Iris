@@ -84,10 +84,11 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         // Respond to the follow: construct an Accept (actor = the local actor being followed, which is
         // delivery.RecipientIri — the actor IRI, per InboxDelivery's contract; object = the original
         // follow) and schedule it for delivery to the follower's inbox. DeliverToActorAsync derives the
-        // follower's inbox from the follower's actor IRI.
+        // follower's inbox from the follower's actor IRI; the delivery is signed as the local actor
+        // being followed (the Accept's actor), so the remote verifies it against that actor's key.
         var accept = FollowIris.BuildAccept(delivery.RecipientIri, follow);
         await _delivery
-            .DeliverToActorAsync(followerIri.Value, accept, ct)
+            .DeliverToActorAsync(followerIri.Value, accept, delivery.RecipientIri, ct)
             .ConfigureAwait(false);
     }
 }

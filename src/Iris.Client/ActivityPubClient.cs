@@ -160,6 +160,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return _http.SendAsync(request, ct);
+    }
+
+    /// <inheritdoc/>
     public async IAsyncEnumerable<CollectionPage> GetCollectionAsync(
         Iri collectionId,
         CollectionQuery? query = null,

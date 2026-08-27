@@ -137,6 +137,57 @@ public sealed class DeliveryQueueAndServiceTests
         Assert.Equal(ActorIri.InboxOf(), job!.InboxIri);
     }
 
+    // --- Service: DeliverAsync with an actor threads it onto the job -----------------
+
+    [Fact]
+    public async Task Service_DeliverAsync_WithActor_ThreadsActorOntoJob()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var service = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
+        var note = BuildCreate("deliver-actor");
+
+        await service.DeliverAsync(InboxIri, note, ActorIri);
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(InboxIri, job!.InboxIri);
+        Assert.Equal(note, job.Activity);
+        // The acting actor is recorded so the worker signs the delivery as that actor.
+        Assert.Equal(ActorIri, job.ActorIri);
+    }
+
+    // --- Service: DeliverToActorAsync with an actor threads it onto the job ----------
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_WithActor_ThreadsActorOntoJob()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var service = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(ActorIri, BuildCreate("actor-2"), ActorIri);
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(ActorIri.InboxOf(), job!.InboxIri);
+        Assert.Equal(ActorIri, job.ActorIri);
+    }
+
+    // --- Service: the instance-actor overload leaves the job's actor null -------------
+
+    [Fact]
+    public async Task Service_DeliverAsync_InstanceActor_LeavesJobActorNull()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var service = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverAsync(InboxIri, BuildCreate("deliver-instance"));
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        // A null actor means "sign as the instance actor" (the system key for automated events).
+        Assert.Null(job!.ActorIri);
+    }
+
     // --- Service: relative (non-absolute) inbox IRI throws ---------------------------
 
     [Fact]
