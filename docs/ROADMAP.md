@@ -17,13 +17,15 @@
 
 ### Phase 1 — Core: Identity, Keys, Signatures & Caching
 
-- [ ] `Iri` value type + helpers (wraps `Uri`, `#Public` constant, inbox/outbox derivation).
+- [x] `Iri` value type + helpers (wraps `Uri`, `#Public` constant, inbox/outbox derivation).
+  - Done: `Iri` (record struct), `Iri.Public`, `TryParse`, and `IriExtensions` (`InboxOf`/`OutboxOf`/`FollowersOf`/`FollowingOf` + library `string?`/`Uri?` ↔ `Iri` boundary conversions). Unit-tested incl. relative-vs-absolute handling.
 - [ ] `IIdentity`, `SystemIdentity`, `KeyPair`, `KeyPairGenerator` (RSA-2048, EC P-256).
 - [ ] `IKeyStore` interface.
 - [ ] `HttpRequestMetadata` value type.
 - [ ] `ISignatureSigner` / `ISignatureVerifier` + RSA/ECDSA implementations.
 - [ ] `SigningProfile` enum (`ClientToServer` restricted / `ServerToServer` full).
-- [ ] `ActivityJson` static helpers (pre-configured `JsonSerializerOptions` with ActivityStreams converters).
+- [x] `ActivityJson` static helpers (pre-configured `JsonSerializerOptions` with ActivityStreams converters).
+  - Done: single `JsonSerializerOptions` (registers the library's `ObjectOrLinkConverter`, `WhenWritingDefault`, no naming policy); content-type constants; `Serialize`/`Deserialize` overloads. Unit-tested against the wire format.
 - [ ] `ICache<T>`, `CacheEntry<T>`, `MemoryCache<T>`, `CachePolicy` (in-memory, TTL, LRU eviction, stale-while-revalidate). TTLs **configurable** via options.
 - [ ] **PEM private-key load/save** helpers (`RSA`/`ECDsa` ↔ PKCS#8 PEM) for the `privateKey` actor-doc property.
 - [ ] Unit tests (pure logic only): sign/verify round-trip (both profiles), tamper detection, key generation, PEM round-trip, IRI helpers, cache TTL/eviction/stale-revalidate.

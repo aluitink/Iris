@@ -60,8 +60,12 @@ Iris.sln
 
 ## Current Status
 
-- [ ] Phase 0 — Scaffolding (see [Roadmap](docs/ROADMAP.md#phase-0--scaffolding-this-step))
-  - Scaffold, projects, build, and the multi-instance `TestServer` harness are done and green (`dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 7/7).
-  - Remaining: (a) spec-research findings not yet captured/folded back; (b) a bare `dotnet build` in the root is blocked by MSB1011 (stray root scratch files — `rm` is permission-blocked; delete `Program.cs`/`inspect.csproj`/`packages.lock.json` manually).
+- [x] Phase 0 — Scaffolding (see [Roadmap](docs/ROADMAP.md#phase-0--scaffolding-this-step))
+  - Scaffold, projects, build, and the multi-instance `TestServer` harness are done and green.
+  - Open: (a) spec-research findings not yet captured/folded back (carried into Phase 1 signing work); (b) a bare `dotnet build` in the root is blocked by MSB1011 (stray root scratch files — `rm` is permission-blocked; delete `Program.cs`/`inspect.csproj`/`packages.lock.json` manually).
+- [ ] Phase 1 — Core: Identity, Keys, Signatures & Caching (in progress)
+  - Done: `Iri` value type + `IriExtensions` derivation/boundary helpers, `ActivityJson` serialization entry point (with unit tests).
+  - `dotnet build Iris.slnx` 0 warnings; `dotnet test Iris.slnx` 43/43; `dotnet format` clean.
+  - Remaining: `IIdentity`/`SystemIdentity`/`KeyPair`/`KeyPairGenerator`, `IKeyStore`, `HttpRequestMetadata`, `ISignatureSigner`/`ISignatureVerifier` + RSA/ECDSA, `SigningProfile`, `ICache<T>`/`MemoryCache<T>`/`CachePolicy`, PEM key helpers, and their unit tests. (Spec-research findings should be folded in before the signing slice.)
 
 Track progress in [docs/ROADMAP.md](docs/ROADMAP.md).
