@@ -73,7 +73,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
 
         _a = StartServer(AHost, Alice, _aPersistence);
         _b = StartServer(BHost, Bob, _bPersistence,
-            fetcher: BuildFetcherFor(BHost, Bob, _bobKey, targetServer: _a));
+            fetcher: BuildFetcherFor(BHost, Bob, _bobKey, _a.CreateHandler()));
     }
 
     public void Dispose()
@@ -131,6 +131,64 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // And the reverse direction (bob's following list) is also recorded.
         var aliceFollowing = await _bPersistence.Follows.GetFollowingAsync(AliceActorIri);
         Assert.Contains(BobActorIri, aliceFollowing);
+    }
+
+    // --- The full Follow/Accept loop: bob accepts alice's follow, delivered back over the wire --
+
+    [Fact]
+    public async Task Follow_ThenAccept_FullFederationLoop_AcceptIsDeliveredBackToAliceInbox()
+    {
+        // Self-contained two-instance federation (mirrors DeliveryIntegrationTests): fresh
+        // persistence per instance so this test is isolated from the fixture's servers. B's outbound
+        // delivery transport is wired to A so B's DeliveryWorker delivers the Accept back to alice's
+        // inbox over the wire (signed as bob); A validates bob's signature by fetching B's actor doc.
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var bSeeded = Seed(bPersistence, BHost, Bob);
+        var aliceActorIri = aSeeded.ActorIri;
+        var bobActorIri = bSeeded.ActorIri;
+        var bobInboxIri = bobActorIri.InboxOf();
+
+        // A's fetcher routes to the NEW b via a lazy handler (resolved on first use), which breaks the
+        // A↔B wiring chicken-and-egg (A's fetcher needs B's handler; B's transport needs A's handler)
+        // and ensures A fetches bob's actor doc carrying bSeeded.Key — the key B's worker actually
+        // signs the Accept with — so A's signature validation succeeds.
+        TestServer? bRef = null;
+        var a = StartServer(AHost, Alice, aPersistence,
+            fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())));
+        bRef = StartServer(BHost, Bob, bPersistence,
+            fetcher: BuildFetcherFor(BHost, Bob, bSeeded.Key, a.CreateHandler()),
+            deliveryTransport: () => a.CreateHandler());
+        using var scope = new DisposeBoth(bRef, a);
+
+        // Deliver a signed Follow from alice to bob's inbox over the wire.
+        var follow = BuildFollow(aliceActorIri, bobActorIri);
+        using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
+        var statusCode = await client.DeliverAsync(bobInboxIri, follow);
+        Assert.Equal(202, statusCode);
+        Assert.True(
+            await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "B should record that alice follows bob");
+
+        // B's FollowActivityHandler scheduled an Accept with a deterministic IRI (bob's actor IRI +
+        // /accepts + the follow IRI). B's DeliveryWorker delivers it to alice's inbox over the wire;
+        // A validates bob's signature (fetching B's actor doc) and stores it under that IRI.
+        var acceptIri = new Iri($"{bobActorIri}/accepts/{follow.Id}");
+        await WaitForAsync(
+            () => aPersistence.Activities.TryGetActivityAsync(acceptIri, out _),
+            timeout: TimeSpan.FromSeconds(10));
+
+        Assert.True(
+            await aPersistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
+            "A should have stored the Accept delivered by B over the wire");
+        var accept = Assert.IsType<Accept>(stored!);
+
+        // The Accept's object references the original follow (by IRI) and its actor is bob.
+        Assert.NotNull(accept.Object);
+        Assert.Contains(accept.Object!, o => o is ILink { Href: { } href } && href == new Uri(follow.Id!));
+        Assert.NotNull(accept.Actor);
+        Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
     }
 
     // --- Key resolution: B resolves alice's key by fetching A's actor doc --------
@@ -275,11 +333,11 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
 
     /// <summary>
     /// Builds an <see cref="IActorDocumentFetcher"/> whose client (signed as the given
-    /// <paramref name="handle"/>) routes to <paramref name="targetServer"/> — i.e. B's fetcher
-    /// reaches A's actor documents.
+    /// <paramref name="handle"/>) routes over <paramref name="handler"/> — i.e. B's fetcher reaches
+    /// A's actor documents.
     /// </summary>
     private static IActorDocumentFetcher BuildFetcherFor(
-        string host, string handle, KeyPair bobKey, TestServer targetServer)
+        string host, string handle, KeyPair bobKey, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(bobKey);
@@ -291,18 +349,23 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
         var client = factory.Create(
             new ActivityPubClientOptions { ActorId = bobActorIri, EnableRetry = false },
-            targetServer.CreateHandler());
+            handler);
 
         return new IrisActorDocumentFetcher(client);
     }
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, optionally
-    /// overriding the <see cref="IActorDocumentFetcher"/> (for the federation wiring).
+    /// overriding the <see cref="IActorDocumentFetcher"/> (for the federation wiring) and the
+    /// <c>Func&lt;HttpMessageHandler&gt;</c> delivery transport (so this instance's outbound
+    /// <see cref="DeliveryWorker"/> routes to the other in-process <see cref="TestServer"/> instead of
+    /// the real network).
     /// </summary>
     private static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence,
-        IActorDocumentFetcher? fetcher = null)
+        IActorDocumentFetcher? fetcher = null,
+        Func<HttpMessageHandler>? deliveryTransport = null,
+        Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? extraServices = null)
     {
         var builder = new WebHostBuilder()
             .ConfigureLogging(l =>
@@ -323,6 +386,11 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
                 });
                 s.AddInMemoryPersistence();
                 s.AddSingleton<IPersistenceProvider>(persistence);
+                // The seeded persistence carries the local actor's private signing key; bind the
+                // IKeyStore seam to it so the outbound DeliveryWorker (which signs as InstanceActorId)
+                // can find the key. AddInMemoryPersistence otherwise registers a fresh, empty
+                // InMemoryKeyStore.
+                s.AddSingleton<IKeyStore>(persistence.Keys);
 
                 if (fetcher is not null)
                 {
@@ -330,6 +398,15 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
                     // to resolve the in-process host) with one wired to the other TestServer.
                     s.AddSingleton<IActorDocumentFetcher>(fetcher);
                 }
+
+                if (deliveryTransport is { } transport)
+                {
+                    // Override the default delivery transport (real HttpClientHandler) so this
+                    // instance's outbound DeliveryWorker routes to the other in-process TestServer.
+                    s.AddSingleton<Func<HttpMessageHandler>>(() => transport());
+                }
+
+                extraServices?.Invoke(s);
             })
             .Configure(webApp =>
             {
@@ -338,7 +415,16 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
                 webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
             });
 
-        return new TestServer(builder);
+        var server = new TestServer(builder);
+
+        // Register the local actor's key with the IKeyProvider so the outbound DeliveryWorker (which
+        // signs as InstanceActorId = the local actor) can find the key. The key IRI is the actor's
+        // publicKey.id (the #key-1 convention used by Seed).
+        var keyProvider = server.Services.GetRequiredService<IKeyProvider>();
+        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
+        keyProvider.RegisterKey(actorIri, new Iri($"{actorIri}#key-1"));
+
+        return server;
     }
 
     private static Follow BuildFollow(Iri actorIri, Iri targetIri)
@@ -440,5 +526,78 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         public Dictionary<string, IList<string>> Headers { get; init; } = new();
 
         public Dictionary<string, IList<string>> ContentHeaders { get; init; } = new();
+    }
+
+    /// <summary>
+    /// Awaits until <paramref name="probe"/> returns true or the timeout elapses.
+    /// </summary>
+    private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            if (await probe())
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+    }
+
+    /// <summary>
+    /// Disposes two <see cref="TestServer"/> instances (for the tests that spin up an extra pair).
+    /// </summary>
+    private sealed class DisposeBoth(TestServer one, TestServer two) : IDisposable
+    {
+        public void Dispose()
+        {
+            one.Dispose();
+            two.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// An <see cref="IActorDocumentFetcher"/> that records each fetch (actor IRI + outcome) then
+    /// forwards to an inner fetcher. Used to detect whether the inbound key resolver's fetch runs
+    /// (and whether it completes) during a signed inbox request.
+    /// </summary>
+    /// <summary>
+    /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first
+    /// request. Used to break the A↔B wiring chicken-and-egg (A's fetcher needs B's handler; B's
+    /// transport needs A's handler) — both servers exist by the time any request flows.
+    /// </summary>
+    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
+    {
+        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
+        private HttpMessageHandler? _inner;
+        private HttpClient? _client;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
+            // Clone the request: the inner pipeline may retry (RetryHandler), and HttpClient
+            // forbids sending the same request message more than once.
+            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+            {
+                Version = request.Version,
+            };
+            foreach (var header in request.Headers)
+            {
+                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            if (request.Content is { } content)
+            {
+                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+                foreach (var header in content.Headers)
+                {
+                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            return _client.SendAsync(clone, cancellationToken);
+        }
     }
 }

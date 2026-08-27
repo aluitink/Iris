@@ -20,4 +20,13 @@ public interface IKeyProvider
     /// <param name="identity">When successful, the identity (actor + key id); otherwise null.</param>
     /// <returns><see langword="true"/> if an identity was found; otherwise <see langword="false"/>.</returns>
     public bool TryGetIdentity(Iri actorId, out IIdentity? identity);
+
+    /// <summary>
+    /// Registers (or replaces) the key IRI used to sign for the given actor. The key must already be
+    /// present in the backing <see cref="IKeyStore"/>. A host (or the server's startup) calls this to
+    /// make a local actor signable — e.g. the instance actor whose key backs outbound delivery.
+    /// </summary>
+    /// <param name="actorId">The actor IRI to sign as.</param>
+    /// <param name="keyId">The key IRI (must already be present in the key store).</param>
+    public void RegisterKey(Iri actorId, Iri keyId);
 }
