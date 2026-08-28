@@ -195,6 +195,7 @@
 | Phase 10 Slice 1.7: test-harness consolidation | 478 | 157 | 96 | 4 | 177 (+12 `TestHelperTests`; ~597 lines of per-test federation/seeding/JSON helpers hoisted into `Iris.Testing` `TestSeeder`/`Jwk`/`JsonDoc`; no tests removed) |
 | Phase 10 Slice 1.7b: harness bridge (`StartServer` consolidation) | 478 | 157 | 96 | 4 | 177 (12 per-test `StartServer` helpers → shared `Iris.Testing.ActivityPubHostFactory`; ~334 lines removed; pure test refactor — no new tests) |
 | Phase 11 Slice 11.1: client/server page-1 collection interop | 482 | 157 | 96 | 4 | 181 (+4 `ClientServerCollectionInteropTests`; server page-1 `OrderedCollection` now emits `next` via `ExtensionData`; client reads it to walk past page 1) |
+| Phase 11 Slice 11.2: user-journey walkthroughs (research-only) | 482 | 157 | 96 | 4 | 181 (no new tests — a research slice: all eight capabilities walked end-to-end as a user; new `PHASE_11_USER_JOURNEYS.md` + J-1…J-22 usability-friction register) |
 
 All slices: `dotnet build Iris.slnx` 0 warnings; `dotnet format` clean.
 
