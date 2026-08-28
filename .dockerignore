@@ -1,0 +1,28 @@
+# Build context is the repository root; keep it lean so the Docker build is fast and does not pull in
+# unrelated projects or local scratch.
+bin/
+obj/
+out/
+artifacts/
+TestResults/
+coverage*.json
+coverage*.xml
+*.coverage
+*.CoverableReport/
+*.binlog
+*.user
+*.suo
+.idea/
+.vs/
+.vscode/
+.git/
+.github/
+.opencode/
+.scratch/
+.probe/
+docs/
+tests/
+samples/SampleBlazorClient/
+PLAN.md
+.editorconfig
+packages.lock.json

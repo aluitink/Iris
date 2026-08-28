@@ -66,6 +66,9 @@ public static partial class SampleServer
                 l.AddSimpleConsole(o => o.SingleLine = true);
                 l.SetMinimumLevel(LogLevel.Information);
             })
+            // A bare WebHostBuilder (the generic host's UseKestrel is not applied) does not register
+            // IServer in .NET 10; UseKestrel registers the Kestrel web server so the host can start.
+            .UseKestrel()
             .UseUrls($"{envScheme}://{envHost}:{envPort}")
             .ConfigureServices(services => ConfigureServices(services))
             .Configure(app => ConfigureApp(app));

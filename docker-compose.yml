@@ -1,0 +1,67 @@
+# Phase 8 sample Docker composition: two real Iris ActivityPub servers on an internal Docker network,
+# exercising cross-container federation over genuine network I/O (not in-process TestServer).
+#
+# Topology (see docs/DEPLOYMENT.md):
+#   iris-a  → iris-a:8080   actor alice / community iris   (the "home" instance)
+#   iris-b  → iris-b:8080   actor alice / community iris   (the "remote" instance)
+#
+# Each container's Iris__HostName is its service name and Iris__Port is the real in-network port
+# (8080), so the server's advertised base URI (the actor/community IRIs) is routable from the other
+# container. The two instances resolve each other by hostname (iris-a / iris-b) via Docker's built-in
+# DNS. Port mappings (8081/8082 → 8080) expose the instances on the host for the smoke test / manual
+# inspection; the in-container federation uses the service names, not the host mappings.
+#
+# Run:    docker compose -f docker-compose.yml up --build -d
+# Smoke:  ./scripts/docker-smoke-test.sh
+# Tear:   docker compose -f docker-compose.yml down
+
+services:
+  iris-a:
+    build:
+      context: .
+      dockerfile: samples/SampleServer/Dockerfile
+    container_name: iris-a
+    hostname: iris-a
+    environment:
+      Iris__HostName: iris-a
+      Iris__Port: "8080"
+      Iris__Https: "false"
+      Iris__Actor: alice
+    ports:
+      - "8081:8080"
+    healthcheck:
+      # A public WebFinger GET (RFC 8410 root path) — skips signature validation, so it is a clean
+      # liveness probe. (curl is not in the aspnet base image, so the probe uses a TCP connect.)
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - iris-net
+
+  iris-b:
+    build:
+      context: .
+      dockerfile: samples/SampleServer/Dockerfile
+    container_name: iris-b
+    hostname: iris-b
+    environment:
+      Iris__HostName: iris-b
+      Iris__Port: "8080"
+      Iris__Https: "false"
+      Iris__Actor: alice
+    ports:
+      - "8082:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' 2>/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - iris-net
+
+networks:
+  iris-net:
+    driver: bridge
