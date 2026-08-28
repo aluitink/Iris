@@ -1,11 +1,13 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Iris.Client.Extensions/Iris.Client.Extensions.csproj" />
     <Project Path="src/Iris.Client/Iris.Client.csproj" />
     <Project Path="src/Iris.Core/Iris.Core.csproj" />
     <Project Path="src/Iris.Server.InMemory/Iris.Server.InMemory.csproj" />
     <Project Path="src/Iris.Server/Iris.Server.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Iris.Client.Extensions.Tests/Iris.Client.Extensions.Tests.csproj" />
     <Project Path="tests/Iris.Client.Tests/Iris.Client.Tests.csproj" />
     <Project Path="tests/Iris.Core.Tests/Iris.Core.Tests.csproj" />
     <Project Path="tests/Iris.Server.Tests/Iris.Server.Tests.csproj" />

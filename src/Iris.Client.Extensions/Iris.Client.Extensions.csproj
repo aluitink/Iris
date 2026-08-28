@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Client.Extensions</RootNamespace>
+    <Description>Blazor-oriented extensions for the Iris ActivityPub client: session identity/key persistence and pre-configured client construction (with proxy fallback), in a WASM-safe composition root.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Client\Iris.Client.csproj" />
+  </ItemGroup>
+
+  <!--
+    The Microsoft.Extensions.DependencyInjection.Abstractions package is NOT referenced: the
+    package's Microsoft.Extensions.DependencyInjection.Abstractions.csproj is a versionless,
+    centrally-managed reference that would require adding a PackageVersion to
+    Directory.Packages.props (a new dependency, which needs a ROADMAP note). Instead,
+    IrisClientServiceExtensions targets the BCL's System.IServiceProvider (Microsoft DI's
+    IServiceCollection implements it), so the package stays free of the DI-abstractions package
+    while remaining composable with both a Blazor (WASM) service provider and Microsoft DI.
+  -->
+
+</Project>
