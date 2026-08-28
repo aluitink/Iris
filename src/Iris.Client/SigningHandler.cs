@@ -117,8 +117,11 @@ public sealed class SigningHandler : DelegatingHandler
     {
         var uri = request.RequestUri ?? throw new InvalidOperationException("Request URI is not set.");
         // Prefer an explicit Host header (it may differ from the URI host for virtual hosts /
-        // SNI); otherwise derive it from the request URI.
-        var host = request.Headers.Host?.ToString() ?? uri.Authority;
+        // SNI); otherwise derive it from the request URI. An empty Host (as produced when a request
+        // is constructed with an absolute URI but no BaseAddress, e.g. over TestServer) falls back to
+        // the URI authority — a null-coalesce alone would not, because the header is an empty string,
+        // not null.
+        var host = string.IsNullOrEmpty(request.Headers.Host) ? uri.Authority : request.Headers.Host.ToString();
         var date = DateTime.UtcNow.ToString("R");
         var contentType = request.Content?.Headers.ContentType?.MediaType;
 

@@ -104,4 +104,61 @@ public class ActivityPubClientTests
 
         await Assert.ThrowsAsync<ArgumentException>(() => client.DeliverAsync(new Iri(InboxIri), person));
     }
+
+    // --- FollowAsync (J-9): the client's one-call "follow" ---------------------------
+
+    [Fact]
+    public async Task FollowAsync_PostsFollowToTargetInbox_WithActivityJson()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var follower = new Iri("https://a.domain.local/u/alice");
+        var status = await client.FollowAsync(follower, new Iri(ActorIri));
+
+        Assert.Equal(202, status);
+        // The follow is delivered to the *target's* inbox (derived from the target actor IRI).
+        Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
+        Assert.Equal(InboxIri, fake.LastUri!.ToString());
+        Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest.Content!.Headers.ContentType!.MediaType);
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        // A Follow activity: actor = follower, object = target. A Link in a multi-valued slot
+        // serializes as its bare IRI (a string), not an {"href":...} object.
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Follow", root.GetProperty("type").GetString());
+        Assert.Equal(follower.Value, root.GetProperty("actor").GetString());
+        Assert.Equal(ActorIri, root.GetProperty("object").GetString());
+        // A deterministic, unique id so a retried follow dedupes.
+        Assert.Equal($"{follower.Value}/follows/{ActorIri}", root.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task FollowAsync_CommunityTarget_DerivesCommunityInbox()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var community = new Iri("https://b.domain.local/c/iris");
+        var status = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), community);
+
+        Assert.Equal(202, status);
+        // Following a community posts to the community's inbox, not an actor's.
+        Assert.Equal("https://b.domain.local/c/iris/inbox", fake.LastUri!.ToString());
+        using var doc = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
+        Assert.Equal(community.Value, doc.RootElement.GetProperty("object").GetString());
+    }
+
+    [Fact]
+    public async Task FollowAsync_InboxReturnsNotAccepted_PropagatesStatusCode()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.BadRequest));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var status = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), new Iri(ActorIri));
+
+        // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed follow).
+        Assert.Equal(400, status);
+    }
 }

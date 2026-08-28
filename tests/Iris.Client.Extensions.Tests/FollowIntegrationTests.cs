@@ -1,0 +1,167 @@
+using System.Text;
+using Iris.Client;
+using Iris.Client.Extensions;
+using Iris.Core;
+using Iris.Server;
+using Iris.Server.InMemory;
+using Iris.Testing;
+using Microsoft.AspNetCore.TestHost;
+
+namespace Iris.Client.Extensions.Tests;
+
+/// <summary>
+/// Phase 11 Slice 11.4 end-to-end test (gap J-9 — the client's "follow" API): a real
+/// <see cref="TestServer"/> runs the Iris ActivityPub server. A local actor authenticates (Basic auth →
+/// PEM private key), then — using the client's one-call <see cref="IActivityPubClient.FollowAsync"/> —
+/// follows a second seeded actor. The request is signed through the full pipeline and accepted by the
+/// server's inbox, which records the follow edge. This proves the handle→IRI step (Slice 11.3) and the
+/// follow step are reachable through the client as a user would drive them.
+/// </summary>
+public sealed class FollowIntegrationTests : IDisposable
+{
+    private const string Host = "a.domain.local";
+    private const string Follower = "alice";
+    private const string Target = "bob";
+    private const string Password = "correct-horse-battery";
+    private const string FollowerIri = $"https://{Host}/ap/v1/u/{Follower}";
+    private const string TargetIri = $"https://{Host}/ap/v1/u/{Target}";
+    private const string FollowerKeyIri = $"{FollowerIri}#key-1";
+
+    private readonly TestServer _server;
+    private readonly InMemoryPersistenceProvider _persistence;
+
+    public FollowIntegrationTests()
+    {
+        _persistence = new InMemoryPersistenceProvider();
+        // The follower gets a real signing key (embedded as a JWK in the actor doc) so the server's
+        // SignatureValidationMiddleware can verify the signed follow. The target is a plain person.
+        var (followerKey, _, _) = TestSeeder.SeedPersonWithKey(_persistence, Host, Follower);
+        TestSeeder.SeedPerson(_persistence, Host, Target);
+
+        // The server's inbound key resolver must fetch the follower's actor doc to verify the follow's
+        // signature. In a single-instance test that doc lives on THIS server, so the fetcher is wired to
+        // reach the in-process TestServer. The TestServer is created by ActivityPubHostFactory.Create
+        // (below), which is the very call that wires the fetcher — a chicken-and-egg. The LazyHandler
+        // therefore captures a Func<TestServer> (deferred to first use) rather than a server reference,
+        // because _server is still null while the object initializer that assigns it is running.
+        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = Host,
+            Handle = Follower,
+            Persistence = _persistence,
+            CredentialValidator = new BasicAuthCredentialValidator((_, username, password) =>
+            {
+                var valid = username == Follower &&
+                    System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                        Encoding.UTF8.GetBytes(password), Encoding.UTF8.GetBytes(Password));
+                return new ValueTask<bool>(valid);
+            }),
+            Fetcher = BuildSelfFetcher(followerKey, () => _server!),
+        });
+    }
+
+    public void Dispose() => _server.Dispose();
+
+    [Fact]
+    public async Task Session_Login_ThenFollowAsync_RecordsFollowEdge()
+    {
+        // Authenticate as the follower (Basic auth → owner-only doc + PEM key).
+        var authenticator = new BasicAuthClientAuthenticator(
+            _server.CreateClient(), new Iri(FollowerIri), Follower, Password);
+
+        var options = new IrisClientOptions
+        {
+            ServerBaseUri = new Uri($"https://{Host}"),
+            UseProxyFallback = false,
+            // The in-process TestServer transport does not clone the request between sends, so a
+            // retried follow (RetryHandler) would re-send the same HttpRequestMessage and be
+            // rejected. Real deployments use a socket transport (which clones internally); disable
+            // retry here to keep the single-attempt follow on the in-process wire.
+            EnableRetry = false,
+        };
+        using var bundle = IrisClientBuilder.Create(options)
+            .WithAuthenticator(authenticator)
+            .Build();
+
+        var actor = await bundle.Session.LoginAsync(new Iri(FollowerIri));
+        Assert.NotNull(actor);
+        Assert.True(bundle.Session.KeyStore.TryGetKey(new Iri(FollowerKeyIri), out _),
+            "the authenticated key should be in the session key store");
+
+        // Build a signed client routed to the in-process server and follow the target. The client
+        // derives the target's inbox from the target IRI and signs the Follow as the follower.
+        using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
+        var status = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
+
+        Assert.Equal(202, status);
+
+        // The server's inbox recorded the follow edge: the follower now follows the target.
+        var following = await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri));
+        Assert.True(following, "the follow edge should be recorded after the signed Follow is accepted");
+    }
+
+    // --- Helpers ----------------------------------------------------------------------
+
+    /// <summary>
+    /// Builds the server's <see cref="IActorDocumentFetcher"/> so it fetches actor documents through
+    /// the in-process <see cref="TestServer"/> (the same host that owns the actors), signed with the
+    /// follower's key. The <see cref="LazyHandler"/> defers the transport to the server's
+    /// <see cref="TestServer.CreateHandler()"/> until first use, so the fetcher can be built before the
+    /// <see cref="TestServer"/> exists. The server is captured by a <see cref="Func{TResult}"/> (rather
+    /// than a reference) because the fetcher is wired by the very <c>ActivityPubHostFactory.Create</c>
+    /// call that assigns the field the server reference.
+    /// </summary>
+    private static IActorDocumentFetcher BuildSelfFetcher(KeyPair followerKey, Func<TestServer> server)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(followerKey);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(new Iri(FollowerIri), followerKey.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = new Iri(FollowerIri), EnableRetry = false },
+            new LazyHandler(server));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+
+    /// <summary>
+    /// A <see cref="HttpMessageHandler"/> that defers creating its inner handler until the first
+    /// request, breaking the build-order dependency between the fetcher and the <see cref="TestServer"/>.
+    /// It clones each request: the inner pipeline may retry (RetryHandler), and <see cref="HttpClient"/>
+    /// forbids sending the same <see cref="HttpRequestMessage"/> more than once.
+    /// </summary>
+    private sealed class LazyHandler(Func<TestServer> server) : HttpMessageHandler
+    {
+        private HttpMessageHandler? _inner;
+        private HttpClient? _client;
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            _client ??= new HttpClient(_inner ??= server().CreateHandler(), disposeHandler: false);
+
+            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+            {
+                Version = request.Version,
+            };
+            foreach (var header in request.Headers)
+            {
+                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            if (request.Content is { } content)
+            {
+                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
+                foreach (var header in content.Headers)
+                {
+                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+            }
+
+            return _client.SendAsync(clone, cancellationToken);
+        }
+    }
+}

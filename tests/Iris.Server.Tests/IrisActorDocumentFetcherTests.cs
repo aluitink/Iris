@@ -137,6 +137,10 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(202);
 
         /// <inheritdoc/>
+        public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(202);
+
+        /// <inheritdoc/>
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
 

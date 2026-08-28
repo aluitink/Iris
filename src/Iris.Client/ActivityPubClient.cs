@@ -161,6 +161,24 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // The follow is delivered to the target's inbox (derived from the actor IRI) and is signed by
+        // the pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
+        // receiving store can dedupe a retried follow. The ActivityStreams Follow type has no typed
+        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
+        // the constructor sets `Type = "Follow"`.
+        var follow = new Follow
+        {
+            Id = $"{actorId.Value}/follows/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = targetId.Uri }],
+        };
+
+        return DeliverAsync(targetId.InboxOf(), follow, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);

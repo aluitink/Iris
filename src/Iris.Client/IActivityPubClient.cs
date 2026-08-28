@@ -52,6 +52,25 @@ public interface IActivityPubClient : IDisposable
     public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
 
     /// <summary>
+    /// Sends a signed <see cref="Follow"/> activity to the target actor's inbox so that
+    /// <paramref name="actorId"/> follows <paramref name="targetId"/>. This is the client's
+    /// one-call "follow" (it derives the target's inbox from the actor IRI via
+    /// <see cref="IriExtensions.InboxOf(Iri)"/> and builds the <see cref="Follow"/> — the caller does
+    /// not need to know the inbox IRI or hand-build the activity).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor performing the follow (must match the client's
+    /// signing identity so the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor (or community) to follow.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="Follow"/> is delivered to <c>targetId.InboxOf()</c> and is signed by the
+    /// pipeline. The target's <c>Accept</c> (outbound delivery) is the remote instance's
+    /// responsibility; a <c>202</c> here means the target's inbox accepted the follow.
+    /// </remarks>
+    public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
     /// Sends a raw HTTP request through the client's signed pipeline and returns the response.
     /// </summary>
     /// <param name="request">The request to send. It is signed by the pipeline (the
