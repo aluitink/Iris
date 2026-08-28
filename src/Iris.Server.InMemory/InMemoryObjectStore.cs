@@ -35,4 +35,11 @@ public sealed class InMemoryObjectStore : IObjectStore
         _objects[new Iri(obj.Id)] = obj;
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc/>
+    public Task<bool> TryDeleteObjectAsync(Iri objectIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_objects.TryRemove(objectIri, out _));
+    }
 }

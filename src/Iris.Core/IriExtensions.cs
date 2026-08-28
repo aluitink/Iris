@@ -139,6 +139,49 @@ public static class IriExtensions
         return null;
     }
 
+    /// <summary>
+    /// Builds the AS2.0 <see cref="Tombstone"/> for a deleted object, preserving the original object's
+    /// <c>Id</c> and <c>formerType</c>.
+    /// </summary>
+    /// <remarks>
+    /// When an object is deleted (the <c>Delete</c> activity, F-03/F-10), the IRI must still resolve and
+    /// serve the "deleted" marker rather than a <c>404</c>: a <see cref="Tombstone"/> with the original
+    /// object's <c>id</c> and <c>formerType</c>. This is the single boundary helper that constructs that
+    /// marker so the <c>Delete</c> handler and any future deletion path emit an identical document.
+    /// </remarks>
+    /// <param name="objectIri">The IRI of the deleted object (becomes the tombstone's <c>id</c>).</param>
+    /// <param name="formerType">The deleted object's AS2.0 type (e.g. <c>"Note"</c>), or <c>null</c> to omit <c>formerType</c>.</param>
+    /// <returns>The <see cref="Tombstone"/> for the deleted object.</returns>
+    public static Tombstone BuildTombstone(this Iri objectIri, string? formerType = null)
+    {
+        var tombstone = new Tombstone { Id = objectIri.Value, Deleted = DateTime.UtcNow };
+        if (!string.IsNullOrWhiteSpace(formerType))
+        {
+            tombstone.FormerType = [formerType];
+        }
+
+        return tombstone;
+    }
+
+    /// <summary>
+    /// Extracts the embedded content object from an activity's <c>object</c> (its first entry) when it is
+    /// an <see cref="IObject"/> with an <c>Id</c>; returns <c>null</c> when the object is a bare
+    /// <see cref="Link"/> reference (or absent).
+    /// </summary>
+    /// <remarks>
+    /// Shared by the content-object paths: the <c>Create</c> handler stores the embedded object in the
+    /// object store, and the <c>Update</c> handler stores the updated embedded object. A bare link
+    /// reference (common in <c>Delete</c>) has no content to store, so callers fall back to the
+    /// reference-only behavior.
+    /// </remarks>
+    /// <param name="activity">The activity whose <c>object</c> is read. May be null.</param>
+    /// <returns>The embedded <see cref="IObject"/>, or <see langword="null"/> when absent or a link reference.</returns>
+    public static IObject? ExtractEmbeddedObject(this Activity? activity)
+    {
+        var first = activity?.Object?.FirstOrDefault();
+        return first is IObject { Id: { Length: > 0 } } obj ? obj : null;
+    }
+
     private static Iri AppendSegment(Iri iri, string segment)
     {
         if (!iri.IsAbsolute)

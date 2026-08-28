@@ -92,6 +92,11 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         // recipient is either a local person, a local community, or neither.
         if (await _localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
         {
+            // Store the embedded object in the object store so it can be served by IRI, refreshed by an
+            // Update, and tombstoned by a Delete (F-02/F-03). A Create without an embedded object (a
+            // bare link reference) stores nothing here.
+            await StoreEmbeddedObjectAsync(activity, ct).ConfigureAwait(false);
+
             await _persistence.Activities
                 .AddToOutboxAsync(recipient, activity, ct)
                 .ConfigureAwait(false);
@@ -125,6 +130,9 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 .TryGetCommunityAsync(recipient, out _, ct)
                 .ConfigureAwait(false))
         {
+            // Store the embedded object (shared with the person branch) so followed-community content is
+            // also served by IRI and can be updated/deleted.
+            await StoreEmbeddedObjectAsync(activity, ct).ConfigureAwait(false);
             await CommunityContentRecorder.RecordToMembersAsync(
                 _persistence,
                 _localActors,
@@ -136,5 +144,19 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
 
         // Neither a local person nor a local community: no-op. The activity is still stored by the
         // processor; an unknown recipient's inbox 404s before the handler runs, so this is a safety net.
+    }
+
+    /// <summary>
+    /// Stores the <see cref="Create"/>'s embedded object in the object store under its own IRI, so it
+    /// can be served by IRI and later refreshed (an <see cref="Update"/>) or tombstoned (a
+    /// <see cref="Delete"/>). A <see cref="Create"/> whose object is a bare link reference stores nothing.
+    /// </summary>
+    private async Task StoreEmbeddedObjectAsync(Create activity, CancellationToken ct)
+    {
+        var embedded = activity.ExtractEmbeddedObject();
+        if (embedded is not null)
+        {
+            await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
+        }
     }
 }

@@ -206,6 +206,8 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, RejectActivityHandler>();
         services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
         services.AddSingleton<IActivityHandler, CreateActivityHandler>();
+        services.AddSingleton<IActivityHandler, UpdateActivityHandler>();
+        services.AddSingleton<IActivityHandler, DeleteActivityHandler>();
         services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
@@ -389,6 +391,13 @@ public static class ActivityPubServerExtensions
         // Requires a valid HTTP signature (validated by SignatureValidationMiddleware); unsigned or
         // invalidly-signed requests are rejected with 401.
         group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
+
+        // Object document: GET /ap/v1/o/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
+        // {**path} is the object IRI's path relative to the route prefix, escaped (e.g. the Note at
+        // https://a.test/ap/v1/u/alice/notes/1 is GET /ap/v1/o/u/alice/notes/1). The absolute IRI is
+        // reconstructed from the base URL + the catch-all path. A stored object is served as itself; a
+        // deleted object is served as its AS2.0 Tombstone ({"type":"Tombstone",…}); an unknown IRI 404s.
+        group.MapGet("/o/{**path}", ObjectDocumentHandler).WithName("object-document-endpoint");
 
         // Proxy fallback: POST /ap/v1/proxy/{target} — an authenticated actor's browser cannot reach a
         // cross-origin remote instance (CORS / no signed outbound from the browser), so it posts the
@@ -736,6 +745,52 @@ public static class ActivityPubServerExtensions
     {
         var normalized = baseUrl.TrimEnd('/');
         return new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/u/{handle}");
+    }
+
+    /// <summary>
+    /// The object-document endpoint (<c>GET /ap/v1/o/{**path}</c>, F-02/F-03/F-10). Serves a content
+    /// object by its IRI: the <c>{**path}</c> catch-all is the object IRI's path relative to the route
+    /// prefix (e.g. <c>u/alice/notes/1</c>), which is combined with the base URL to reconstruct the
+    /// absolute object IRI. A stored object is served as itself (the <c>Note</c> a <c>Create</c> stored,
+    /// refreshed in place by an <c>Update</c>); a deleted object is served as its AS2.0
+    /// <see cref="KristofferStrube.ActivityStreams.Tombstone"/> ({"type":"Tombstone","id":…,"formerType":[…]});
+    /// an IRI this instance does not store 404s. This is the wire surface that makes <c>Update</c> (the
+    /// object reflects the edit) and <c>Delete</c> (the object serves a tombstone, not a 404) observable.
+    /// </summary>
+    /// <param name="context">The HTTP context.</param>
+    /// <param name="path">The object IRI's path relative to the route prefix (the <c>{**path}</c> catch-all).</param>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/>).</param>
+    /// <param name="optionsAccessor">The server options (provides the advertised base URL).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The object (or its tombstone) as <c>application/activity+json</c>, or <c>404</c>.</returns>
+    private static async Task<IResult> ObjectDocumentHandler(
+        HttpContext context,
+        string path,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var normalized = baseUrl.TrimEnd('/');
+        // The {**path} catch-all is the object IRI's path relative to the route prefix (e.g. the Note at
+        // https://host/ap/v1/u/alice/notes/n1 is served at /ap/v1/o/u/alice/notes/n1, so the catch-all
+        // binds u/alice/notes/n1). The /o/ segment is only the serving prefix — it is NOT part of the
+        // object IRI — so the IRI is reconstructed as base + route prefix + path.
+        var objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
+
+        if (!await persistence.Objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false) ||
+            obj is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Cache-Control: an object (or its tombstone) is a stable, addressable document; cache it like
+        // the actor document (max-age=60, stale-while-revalidate=300).
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(ActivityJson.Serialize(obj), ActivityJson.ActivityJsonContentType);
     }
 
     /// <summary>
