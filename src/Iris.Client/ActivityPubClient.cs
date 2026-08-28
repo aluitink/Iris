@@ -295,22 +295,47 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             obj = value;
         }
 
-        if (obj is not OrderedCollectionPage page)
+        // A collection page is either an OrderedCollectionPage (page N>1) or the collection's first
+        // page served as an OrderedCollection (page 1 — the server serves the collection document
+        // itself, carrying its first page of items + a self `first`, with the `next` pointer living
+        // on the page). Both are valid first/current pages, so both are accepted.
+        if (obj is OrderedCollectionPage page)
         {
-            return null;
+            var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            return new CollectionPage
+            {
+                Page = page,
+                Items = items,
+                NextPage = TryGetIri(page.Next, out var next) ? next : null,
+                PrevPage = TryGetIri(page.Prev, out var prev) ? prev : null,
+                TotalItems = page.TotalItems is { } total ? (int)total : null,
+                PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
+            };
         }
 
-        var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
-
-        return new CollectionPage
+        if (obj is OrderedCollection collection)
         {
-            Page = page,
-            Items = items,
-            NextPage = TryGetIri(page.Next, out var next) ? next : null,
-            PrevPage = TryGetIri(page.Prev, out var prev) ? prev : null,
-            TotalItems = page.TotalItems is { } total ? (int)total : null,
-            PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
-        };
+            // Page 1 served as the collection document itself. CollectionPage.Page is typed
+            // OrderedCollectionPage, so a minimal page carrying the collection's own id/items/total
+            // is synthesized (the flattened Items below is the source of truth for callers).
+            var items = collection.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            return new CollectionPage
+            {
+                Page = new OrderedCollectionPage
+                {
+                    Id = collection.Id,
+                    Items = items,
+                    TotalItems = collection.TotalItems,
+                },
+                Items = items,
+                NextPage = null,
+                PrevPage = null,
+                TotalItems = collection.TotalItems is { } total ? (int)total : null,
+                PageId = collection.Id is { Length: > 0 } id ? new Iri(id) : null,
+            };
+        }
+
+        return null;
     }
 
     private async Task<IObject?> GetObjectAsync(HttpRequestMessage request, CancellationToken ct)

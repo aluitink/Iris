@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Samples.SampleBlazorClient</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      A runnable sample client: the Iris client pipeline (session → Basic-auth login → PEM private
+      key → pre-configured signed client → community feed → proxy fallback) wired as a Blazor host
+      would wire it, demonstrated against the SampleServer.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iris.Client.Extensions\Iris.Client.Extensions.csproj" />
+  </ItemGroup>
+
+</Project>

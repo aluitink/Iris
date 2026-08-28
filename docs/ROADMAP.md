@@ -17,7 +17,7 @@
 | 4 — Inbox & Delivery | ✅ complete |
 | 5 — Community / Group Support | ✅ complete |
 | 6 — Proxy Fallback | ✅ complete |
-| 7 — Blazor Client Extensions & Samples | 🚧 in progress |
+| 7 — Blazor Client Extensions & Samples | ✅ complete |
 | 8 — Sample Docker Composition | 📋 planned |
 | 9 — Real-World Deployment Preparation | 📋 planned |
 | 10 — Project & Test Review | 📋 planned |
@@ -42,8 +42,9 @@
 - [x] `IrisSession` (identity selection, in-memory key persistence for session lifetime).
 - [x] Pre-configured pipeline with proxy fallback (`IrisClientFactory` + `IrisClientBuilder`; the `AddIrisClient(services, …)` DI sugar is intentionally out of scope — Decision #38).
 - [x] `SampleServer` app (ASP.NET Core + Iris.Server + in-memory persistence + Basic auth + a sample community; 9 integration tests).
-- [ ] `SampleBlazorClient` app (WASM + Iris.Client — personal feed + community feed UI).
-- [ ] End-to-end: Blazor client authenticates → gets key → signs requests → community feed → proxy fallback to remote server.
+- [x] `SampleBlazorClient` app (a console composition root mirroring `SampleServer`; injectable transport so the same composition runs against a real server or an in-process `TestServer`. A WASM host is deferred — the composition is the Blazor `Program.cs` equivalent).
+- [x] End-to-end: client authenticates → gets key → signs requests → community feed → proxy fallback to remote server (4 integration tests, incl. a two-instance proxy allowlist + relay test).
+- [ ] WASM host for `SampleBlazorClient` (a Blazor WASM app rendering the composition; deferred to Phase 8 with the Docker topology).
 
 ## Phase 8 — Sample Docker Composition 📋
 

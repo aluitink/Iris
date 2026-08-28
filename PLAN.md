@@ -74,7 +74,7 @@ The full rules, including the per-turn workflow, are in [docs/AUTONOMOUS_LOOP.md
 
 ## Current Status
 
-Phases 0–6 are complete; Phase 7 is in progress. Per-slice detail (what was built, key types, test counts, resolved decisions) lives in [docs/CHANGELOG.md](docs/CHANGELOG.md); the phased plan and open questions are in [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 0–7 are complete. Per-slice detail (what was built, key types, test counts, resolved decisions) lives in [docs/CHANGELOG.md](docs/CHANGELOG.md); the phased plan and open questions are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | Phase | Status | One-line summary |
 |---|---|---|
@@ -85,7 +85,7 @@ Phases 0–6 are complete; Phase 7 is in progress. Per-slice detail (what was bu
 | 4 — Inbox & Delivery | ✅ complete | Inbound signature validation, inbox processor + activity handlers, outbound delivery queue/worker, two-sided Follow/Accept/Reject lifecycle, per-actor delivery signing, cached remote fetches. |
 | 5 — Community / Group Support | ✅ complete | Community store (membership + follows), community endpoints (doc/members/inbox/feed/search), unified feed, community following, `iris:capabilities`. |
 | 6 — Proxy Fallback | ✅ complete | Server proxy endpoint + policy stack (allowlist, rate limit), client `ProxyFallbackHandler`. |
-| 7 — Blazor Client Extensions & Samples | 🚧 in progress | `Iris.Client.Extensions` package done (session, builder, pre-configured pipeline); samples + E2E remain. |
+| 7 — Blazor Client Extensions & Samples | ✅ complete | `Iris.Client.Extensions` package + `SampleServer` + `SampleBlazorClient` (console composition root) + E2E tests (login → signed feed → proxy fallback); `Iris.Client` page-1 collection fix. WASM host deferred to Phase 8. |
 | 8 — Sample Docker Composition | 📋 planned | Dockerfiles + compose for the samples; real cross-container federation; opt-in CI job. |
 | 9 — Real-World Deployment Preparation | 📋 planned | FQDN/TLS plan, bootstrap runbook, real-user enumeration design, compatibility matrix (Mastodon/Threads/Lemmy). Prep only — no live tests yet. |
 | 10 — Project & Test Review | 📋 planned | Full audit: remove redundant/useless tests, consolidate code, dead-code sweep, API surface pass. |
