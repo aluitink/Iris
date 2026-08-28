@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using Iris.Client;
@@ -223,6 +224,21 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
         services.AddHostedService<DeliveryWorker>();
 
+        // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
+        // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
+        // rate limit (how often). Both come from ActivityPubServerOptions.ProxySettings (defaults:
+        // empty allowlist = all hosts; DefaultProxyMaxRequestsPerMinute). A host may replace
+        // IProxyTargetPolicy with its own (e.g. a distributed rate limiter).
+        services.TryAddSingleton<IProxyTargetPolicy>(sp =>
+        {
+            var settings = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.ProxySettings;
+            return new CompositeProxyTargetPolicy(
+                [
+                    new AllowlistProxyTargetPolicy(settings?.AllowedHosts),
+                    new RateLimitingProxyPolicy(settings?.MaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute),
+                ]);
+        });
+
         // Outbound account resolution (Phase 4): resolves a remote account (e.g. @bob@b.test) to its
         // actor IRI via WebFinger, reading through the Phase 3 WebFingerCache. The WebFingerClient is
         // backed by a plain (unsigned, no content-negotiation) HTTP pipeline — WebFinger (RFC 8410)
@@ -362,6 +378,16 @@ public static class ActivityPubServerExtensions
         // invalidly-signed requests are rejected with 401.
         group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
 
+        // Proxy fallback: POST /ap/v1/proxy/{target} — an authenticated actor's browser cannot reach a
+        // cross-origin remote instance (CORS / no signed outbound from the browser), so it posts the
+        // request to its own instance's proxy, which signs it with the actor's key (the same per-actor
+        // signing the delivery worker uses) and forwards it to the target, returning the remote
+        // response. Basic auth identifies the actor (IActorCredentialValidator); the target must pass
+        // the IProxyTargetPolicy (allowlist + rate limit). {target} is a catch-all of the absolute
+        // target IRI (slash-containing); the path is reconstructed with Uri.EscapeDataString so the
+        // signature's (request-target) component matches the forwarded request.
+        group.MapPost("/proxy/{**target}", ProxyHandler).WithName("proxy-endpoint");
+
         return endpoints;
     }
 
@@ -438,6 +464,113 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(rendered, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// The proxy-fallback endpoint (<c>POST /ap/v1/proxy/{target}</c>, Phase 6). An authenticated
+    /// actor's browser cannot reach a cross-origin remote instance directly (CORS, and the browser
+    /// cannot produce an ActivityPub HTTP signature), so it posts the request it wants to make to its
+    /// own instance's proxy. The endpoint: (1) identifies the actor from the request's Basic auth
+    /// (<see cref="IActorCredentialValidator"/>), (2) checks the target against the
+    /// <see cref="IProxyTargetPolicy"/> (allowlist + rate limit), and (3) signs and forwards the
+    /// request to the target with the actor's own key (the per-actor <c>X-Iris-Actor</c> override,
+    /// Resolved Decision #29), relaying the remote response's status and body back.
+    /// <para>
+    /// The proxied request is a <c>GET</c> to the target: the proxy signs it with the actor's key
+    /// (the remote instance validates the signature by the actor's document) and copies the client's
+    /// <c>Accept</c> header. The client's <c>Authorization</c> is <em>not</em> forwarded — the remote
+    /// authenticates by the HTTP signature, not Basic auth. The target is the <c>{target}</c> catch-all
+    /// route value (an absolute IRI); the path is passed through as-is so the forwarded request's
+    /// <c>(request-target)</c> component (the escaped path the <see cref="Iris.Client.SigningHandler"/>
+    /// signs) is exactly the target's path.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> ProxyHandler(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IProxyTargetPolicy proxyPolicy,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+
+        // 1. Identify the actor from Basic auth. The validator returns the authenticated handle (the
+        // local username); the actor IRI is {base}/ap/v1/u/{handle}.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(BuildActorIri(baseUrl, "proxy"), authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var actorIri = BuildActorIri(baseUrl, authenticatedHandle);
+
+        // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
+        // The catch-all route parameter is named "target" (the route template is /proxy/{**target}),
+        // so the route value key is "target", not the segment name "proxy".
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Check the target against the policy (allowlist + rate limit). A rate-limit rejection is
+        // 429; an allowlist rejection is 403.
+        if (!await proxyPolicy.TryAuthorizeAsync(actorIri, target, out var reason, ct).ConfigureAwait(false))
+        {
+            var status = reason is not null && reason.Contains("rate limit", StringComparison.OrdinalIgnoreCase)
+                ? (HttpStatusCode)429
+                : HttpStatusCode.Forbidden;
+            return Results.Json(new { error = reason }, statusCode: (int)status);
+        }
+
+        // 4. Build the forwarded GET. The proxy relays the client's Accept header (ActivityPub content
+        // negotiation) and signs as the authenticated actor (the X-Iris-Actor override — the
+        // SigningHandler resolves the actor's key from the IKeyProvider). The client's Authorization is
+        // deliberately not copied (the remote authenticates by signature).
+        using var request = new HttpRequestMessage(HttpMethod.Get, target.Value);
+        if (context.Request.Headers.Accept is { Count: > 0 } accept)
+        {
+            foreach (var value in accept)
+            {
+                request.Headers.TryAddWithoutValidation("Accept", value);
+            }
+        }
+
+        request.Headers.TryAddWithoutValidation("X-Iris-Actor", actorIri.Value);
+
+        // 5. Sign + forward, relaying the remote response (status + body + content type). The transport
+        // is the Func<HttpMessageHandler> seam (default: a real HttpClientHandler; a test routes it to a
+        // TestServer in-process).
+        using var client = clientFactory.Create(
+            new ActivityPubClientOptions
+            {
+                ActorId = actorIri,
+                EnableRetry = false,
+            },
+            transportFactory());
+
+        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+
+        // Relay the remote response's status and body (content type defaults to ActivityPub JSON-LD).
+        var statusCode = (int)response.StatusCode;
+        var mediaType = response.Content.Headers.ContentType?.MediaType ?? ActivityJson.ActivityJsonContentType;
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = mediaType;
+        return Results.Content(body, mediaType);
     }
 
     private static async Task<IResult> InboxHandler(

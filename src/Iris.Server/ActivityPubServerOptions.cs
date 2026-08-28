@@ -43,4 +43,39 @@ public sealed class ActivityPubServerOptions
     /// instance's first registered actor when not set. See Resolved Decision #27.
     /// </summary>
     public Iri? InstanceActorId { get; set; }
+
+    /// <summary>
+    /// The proxy-fallback settings (Phase 6) for the <c>POST /ap/v1/proxy/{target}</c> endpoint: the
+    /// target allowlist and the per-actor rate limit. When null, the defaults apply: an empty
+    /// allowlist (every target is allowed) and <see cref="ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute"/>
+    /// requests per actor per minute.
+    /// </summary>
+    public ProxySettings? ProxySettings { get; set; }
+}
+
+/// <summary>
+/// Settings for the proxy-fallback endpoint (<c>POST /ap/v1/proxy/{target}</c>, Phase 6).
+/// </summary>
+/// <remarks>
+/// The proxy signs an authenticated actor's requests with that actor's own key and forwards them to
+/// an arbitrary target, so it is a powerful capability and is bounded by two independent policies:
+/// a <strong>target allowlist</strong> (which hosts may be proxied) and a <strong>per-actor rate
+/// limit</strong> (how often a given actor may use the proxy). Both default to permissive (empty
+/// allowlist = all targets allowed; <see cref="ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute"/>
+/// /minute) so a host that does not configure <see cref="ActivityPubServerOptions.ProxySettings"/>
+/// gets a working proxy out of the box, and a production host tightens the allowlist.
+/// </remarks>
+public sealed class ProxySettings
+{
+    /// <summary>
+    /// The hostnames an authenticated actor may proxy to (e.g. <c>b.domain.local</c>). When empty (the
+    /// default), every target host is allowed. Matching is case-insensitive and exact (no wildcards).
+    /// </summary>
+    public IReadOnlyCollection<string> AllowedHosts { get; set; } = [];
+
+    /// <summary>
+    /// The maximum number of proxy requests a single actor may issue per minute. Defaults to
+    /// <see cref="ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute"/>.
+    /// </summary>
+    public int MaxRequestsPerMinute { get; set; } = ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute;
 }

@@ -131,4 +131,17 @@ public static class ActivityPubServerConstants
     /// Decision #6).
     /// </summary>
     public const string OffsetQueryParameterName = "offset";
+
+    /// <summary>
+    /// The route segment for the proxy endpoint (the <c>POST /ap/v1/proxy/{target}</c> proxy
+    /// fallback, Phase 6). Mapped as <c>{RoutePrefix}/proxy/{target}</c> — i.e. the proxy lives
+    /// under the versioned prefix, like every other endpoint (Resolved Decision #10).
+    /// </summary>
+    public const string ProxyRouteSegment = "proxy";
+
+    /// <summary>
+    /// The default per-actor rate limit for the proxy endpoint (requests per minute) when
+    /// <see cref="ActivityPubServerOptions.ProxySettings"/> does not override it.
+    /// </summary>
+    public const int DefaultProxyMaxRequestsPerMinute = 60;
 }
