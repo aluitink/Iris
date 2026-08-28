@@ -19,11 +19,8 @@ namespace Iris.Server;
 /// from that follow (fetched from the local activity store — the follower stored it when it sent the
 /// follow). A missing target (the follow was never stored) is a no-op.
 /// </remarks>
-public sealed class AcceptActivityHandler : ActivityHandlerBase<Accept>
+public sealed class AcceptActivityHandler : FollowResponseActivityHandler<Accept>
 {
-    private readonly IPersistenceProvider _persistence;
-    private readonly ILocalActorResolver _localActors;
-
     /// <summary>
     /// Initializes a new <see cref="AcceptActivityHandler"/>.
     /// </summary>
@@ -33,68 +30,13 @@ public sealed class AcceptActivityHandler : ActivityHandlerBase<Accept>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localActors"/> is null.</exception>
     public AcceptActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+        : base(persistence, localActors)
     {
-        ArgumentNullException.ThrowIfNull(persistence);
-        ArgumentNullException.ThrowIfNull(localActors);
-        _persistence = persistence;
-        _localActors = localActors;
     }
 
     /// <inheritdoc/>
-    public override async Task HandleAsync(InboxDelivery delivery, Accept accept, CancellationToken ct = default)
+    protected override Task ApplyAsync(Iri followerIri, Iri targetIri, CancellationToken ct)
     {
-        ArgumentNullException.ThrowIfNull(delivery);
-        ArgumentNullException.ThrowIfNull(accept);
-
-        // The Accept is delivered to the follower's inbox (the Accept's actor is the followed side,
-        // which accepted the follow). The follower — the local actor whose follow is being accepted —
-        // is the delivery's recipient (the inbox the Accept was delivered to).
-        var followerIri = delivery.RecipientIri;
-
-        // Finalize only a local actor's own follow (a remote follower's follow is the remote
-        // instance's concern).
-        if (!await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        // The Accept's object references the original Follow (by IRI). Resolve the follow's target
-        // from the local activity store (the follower stored the follow when it sent it).
-        var targetIri = await ResolveFollowTargetAsync(accept.Object?.FirstOrDefault(), ct).ConfigureAwait(false);
-        if (!targetIri.HasValue)
-        {
-            return;
-        }
-
-        await _persistence.Follows
-            .RecordFollowAsync(followerIri, targetIri.Value, ct)
-            .ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Resolves the target of the <see cref="Follow"/> that an <see cref="Accept"/> references, by
-    /// fetching the original follow (referenced by IRI in the Accept's object) from the local activity
-    /// store and reading its object (the followed actor).
-    /// </summary>
-    /// <param name="acceptObject">The Accept's object (a reference to the original Follow, by IRI).</param>
-    /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes with the followed actor's IRI, or null when it could not be
-    /// resolved (the follow was never stored, or carries no target).</returns>
-    private async Task<Iri?> ResolveFollowTargetAsync(IObjectOrLink? acceptObject, CancellationToken ct)
-    {
-        var followIri = acceptObject.ResolveObjectIri();
-        if (!followIri.HasValue)
-        {
-            return null;
-        }
-
-        if (!await _persistence.Activities.TryGetActivityAsync(followIri.Value, out var storedFollow, ct)
-            .ConfigureAwait(false) ||
-            storedFollow is not Follow follow)
-        {
-            return null;
-        }
-
-        return follow.Object?.FirstOrDefault().ResolveObjectIri();
+        return Persistence.Follows.RecordFollowAsync(followerIri, targetIri, ct);
     }
 }
