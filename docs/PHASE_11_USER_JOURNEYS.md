@@ -112,10 +112,10 @@
 **Journey.** A user references an account as `@handle@host`. The *client* has `IDiscoveryService.ResolveActorAsync(account)` → `WebFingerDiscoveryService` → `WebFingerClient` (WebFinger). The *server* has `IAccountResolver` (`WebFingerAccountResolver`) for resolving a handle to an actor IRI, used during key resolution.
 
 **Gaps / friction.**
-- **J-21 (High) — The client's discovery service is not exposed in the bundle.** `IDiscoveryService` / `WebFingerClient` / `WebFingerDiscoveryService` exist and are unit-tested, but `IrisClientBundle` (`IrisClientServiceExtensions.cs:108-160`) does **not** expose a discovery service, and the sample never uses it. So a user who has `@bob@host` has *no public way* through the bundle to resolve it to an actor IRI — they must hand-construct the IRI or wire `WebFingerClient` themselves. This breaks the "follow @bob@host" and "fetch @bob@host's outbox" journeys at the very first step (handle → IRI). **Fix plan:** expose `IDiscoveryService` on `IrisClientBundle` (and optionally a convenience `bundle.ResolveActorAsync("@bob@host")`), and have `FollowAsync`/`PostNoteAsync` accept a handle and resolve it.
+- **J-21 (High) — RESOLVED (Slice 11.3). The client's discovery service is now exposed in the bundle.** `IrisClientBundle` now exposes `Discovery` (`IDiscoveryService`) and a `ResolveActorAsync(account, ct)` convenience; `IrisClientBuilder.Build()` builds a default WebFinger-backed service (plain unsigned `HttpClient`, reusing the bundle's WebFinger cache) and `WithDiscovery(...)` supplies a custom one. Proven by 4 unit tests + 1 e2e test resolving a handle through the real server's `/.well-known/webfinger` (482→486). **Remaining (Phase 12, J-9/J-18):** have a future `FollowAsync`/`PostNoteAsync` accept a handle and resolve it via this service, so the handle→IRI step is one call rather than a separate `ResolveActorAsync` + fetch.
 - **J-22 (Low) — `WebFinger` is served at both `/.well-known/webfinger` and `/ap/v1/.well-known/webfinger`.** Correct (RFC 8410 root + versioned symmetry), but a user must know the root path is the one a *remote* instance will hit. Documented in the route comment; no action.
 
-**Coverage.** ✅ `WebFingerClientTests` (unit); 🟡 the server's WebFinger/NodeInfo endpoints are exercised by `ServerEndpointIntegrationTests` (single-instance). The client's handle→IRI resolution is *not* exercised end-to-end because it isn't wired into the bundle (J-21).
+**Coverage.** ✅ `WebFingerClientTests` (unit); ✅ the client's handle→IRI resolution is now exercised end-to-end — `EndToEndSessionIntegrationTests.Bundle_ResolveActor_HandlesWebFinger_ReturnsActorIri` resolves a handle through the real server's `/.well-known/webfinger` via the bundle's exposed discovery service (Slice 11.3); 🟡 the server's WebFinger/NodeInfo endpoints are also exercised by `ServerEndpointIntegrationTests` (single-instance).
 
 ---
 
@@ -126,7 +126,7 @@ The capability gaps below are **new to this walkthrough** (the rest are confirma
 | ID | Gap | Severity | Capability | Fix plan (Phase 12) |
 |----|-----|----------|-----------|---------------------|
 | **J-6** | No client "post a note" API; the user cannot post (sample never posts). | **Blocker** | C. Post | `client.PostNoteAsync(content)` + a server path that records into the actor's outbox and schedules delivery to followers. |
-| **J-21** | Client discovery service (`@handle@host` → IRI) not exposed in the bundle; the first step of follow/fetch is a dead-end. | **High** | H. Discovery | Expose `IDiscoveryService` on `IrisClientBundle`; let follow/post accept a handle and resolve it. |
+| **J-21** ✅ | Client discovery service (`@handle@host` → IRI) now exposed on `IrisClientBundle` (`Discovery` + `ResolveActorAsync`) — Slice 11.3. Remaining: let a future follow/post accept a handle and resolve it. | **High** | H. Discovery | Done (exposure). Follow/post handle-resolution → Phase 12 (J-9/J-18). |
 | **J-9** | No client "follow" API (must hand-build a `Follow` + know the inbox IRI). | **High** | D. Follow | `client.FollowAsync(Iri target)` → `target.InboxOf()` + signed `Follow`. |
 | **J-18** | Outbound delivery only *responds*; user content never federates (no outbound `Create`/group-follow). | **High** | G. Delivery | Outbound `Create` to followers (G-1) + outbound group-follow (G-3). |
 | **J-19** | No "followed feed" endpoint; a followed remote actor's posts are not surfaced locally. | **Medium** | G. Delivery | A feed endpoint that pulls each followed remote outbox via `IRemoteCollectionFetcher` and merges it. |
@@ -148,7 +148,7 @@ The capability gaps below are **new to this walkthrough** (the rest are confirma
 | **J-20** | Delivery failures are logged, not surfaced to the user. | **Low** | G. Delivery | A user-visible delivery-status surface later. |
 | **J-22** | WebFinger served at two paths (correct); discoverability nit. | **Low** | H. Discovery | None (documented in the route comment). |
 
-**Headline for Phase 12.** The single largest user-facing dead-end is **J-6 (no post)** — it blocks "post and have it federate" and, together with **J-18/J-9/J-21**, means the *write* side of the platform (post, follow, follow-a-community) is not reachable through the client as a user would drive it, even though the *read* side (auth, signed fetch, community feed, discovery) is solid. Phase 12 should close the write path first (post → outbound `Create` → followed feed), then the secondary gaps.
+**Headline for Phase 12.** The single largest user-facing dead-end is **J-6 (no post)** — it blocks "post and have it federate" and, together with **J-18/J-9**, means the *write* side of the platform (post, follow, follow-a-community) is not reachable through the client as a user would drive it, even though the *read* side (auth, signed fetch, community feed, discovery) is solid. (The handle→IRI step that gated follow/fetch — **J-21** — is now resolved in Slice 11.3: `IrisClientBundle` exposes `Discovery`/`ResolveActorAsync`, so follow/post can build on it.) Phase 12 should close the write path first (post → outbound `Create` → followed feed), then the secondary gaps.
 
 ---
 

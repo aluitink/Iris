@@ -90,6 +90,7 @@
 - [ ] **Integration test expansion**: for each gap and journey, add or extend integration tests (multi-instance `TestServer`) that prove the end-to-end path now works — not just the happy path, but the realistic sequences a user performs.
 - [ ] **Error-path coverage**: ensure failure modes (bad signature, unknown actor, 404, rate-limit, proxy fallback trigger) are exercised end-to-end, not just in isolation.
 - [x] Close the carried-forward **client/server page-1 interop gap** (Slice 11.1): the server's page-1 `OrderedCollection` now carries a `next` pointer (via `ExtensionData`, since the ActivityStreams type has no typed `next`) when more pages remain, and the client reads it to walk past page 1. Proven end-to-end by `ClientServerCollectionInteropTests` (real signed client over a live in-process server, multi-page outbox).
+- [x] Close **J-21 — the client's discovery service was not exposed in the bundle** (Slice 11.3): the handle→IRI step (`@user@host` → actor IRI) was a dead-end. `IrisClientBundle` now exposes `Discovery` (`IDiscoveryService`) + a `ResolveActorAsync(account, ct)` convenience; `IrisClientBuilder.Build()` builds a default WebFinger-backed service (plain unsigned `HttpClient`, reusing the bundle's WebFinger cache) and `WithDiscovery(...)` supplies a custom one. Proven by 4 unit tests (exposure/override/delegation/unknown-handle) + 1 e2e test resolving a handle through the real server's `/.well-known/webfinger` (482→486).
 
 ## Phase 12 — Spec Conformance & Missing Features 📋
 
