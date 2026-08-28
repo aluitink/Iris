@@ -36,11 +36,12 @@ namespace Iris.Server;
 /// followers are targeted: a local follower already sees the post in the author's outbox on <em>this</em>
 /// instance (surfaced by J-8), so it needs no cross-instance delivery — the inverse of
 /// <see cref="AnnounceActivityHandler"/>, which propagates a boost to <em>local</em> followers (a boost
-/// originates remotely and must reach local readers). The ActivityStreams <c>Create</c> type has no public
-/// <c>sharedInbox</c> property in this library, so a follower's shared inbox is not resolvable; delivery is
-/// therefore to each remote follower's own inbox. The follower set is this instance's server-side state
-/// (<see cref="IFollowStore.GetFollowersAsync(Iri, CancellationToken)"/>), which is exactly why federation
-/// must happen here (server-side) and not in the client.
+/// originates remotely and must reach local readers). Delivery to a remote follower goes to that
+/// follower's <em>delivery target</em>, which <see cref="IDeliveryService.DeliverToActorAsync(Iri, Activity, CancellationToken)"/>
+/// resolves as the follower's advertised <c>endpoints.sharedInbox</c> when its document advertises one
+/// (F-01) and otherwise as the follower's own inbox. The follower set is this instance's server-side
+/// state (<see cref="IFollowStore.GetFollowersAsync(Iri, CancellationToken)"/>), which is exactly why
+/// federation must happen here (server-side) and not in the client.
 /// </para>
 /// <para>
 /// <strong>Idempotency.</strong> The <see cref="IActivityStore.AddToOutboxAsync"/> does not de-duplicate by

@@ -28,11 +28,11 @@ namespace Iris.Server;
 /// <para>
 /// <strong>Local followers only.</strong> Only local followers are propagated to: a local follower
 /// is a local actor who follows the recipient, and its inbox is delivered by <em>this</em> instance's
-/// <see cref="DeliveryWorker"/>. The ActivityStreams <c>Announce</c> type has no public
-/// <c>sharedInbox</c> property in this library, so a follower's <em>shared inbox</em> (which a remote
-/// follower's instance might expose for its members) is not resolvable here; remote followers are
-/// therefore skipped (they are the remote instance's concern — that instance receives the announce
-/// via its own federation path). Propagation is therefore limited to the recipient's <em>local</em>
+/// <see cref="DeliveryWorker"/>. Remote followers are skipped (they are the remote instance's concern —
+/// that instance receives the announce via its own federation path). When a local follower's delivery
+/// target is resolved by <see cref="IDeliveryService.DeliverToActorAsync(Iri, Activity, CancellationToken)"/>,
+/// it is the follower's own inbox (local actors advertise no <c>endpoints.sharedInbox</c> unless the
+/// instance configures one). Propagation is therefore limited to the recipient's <em>local</em>
 /// followers, which is the in-scope, verifiable behavior this feature targets.
 /// </para>
 /// <para>

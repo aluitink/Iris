@@ -45,8 +45,9 @@ public interface IDeliveryService
     public Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default);
 
     /// <summary>
-    /// Schedules an activity for delivery to the recipient actor's inbox. The inbox IRI is derived
-    /// from the recipient's actor IRI (<c>actorIri + "/inbox"</c>, the ActivityPub convention).
+    /// Schedules an activity for delivery to the recipient actor's inbox. The inbox IRI is resolved
+    /// from the recipient's advertised <c>endpoints.sharedInbox</c> (when its document advertises one)
+    /// and otherwise falls back to the ActivityPub convention (<c>recipientIri + "/inbox"</c>).
     /// </summary>
     /// <param name="recipientIri">The absolute IRI of the recipient actor.</param>
     /// <param name="activity">The activity to deliver. Must not be null.</param>
@@ -54,18 +55,21 @@ public interface IDeliveryService
     /// <returns>A task that completes when the delivery has been enqueued.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
     /// <remarks>
-    /// This convenience overload derives the inbox as <c>recipientIri.InboxOf()</c> and signs as the
-    /// instance actor. A recipient whose document advertises a <c>sharedInbox</c> (or whose inbox is at
-    /// a non-conventional IRI) should be delivered via
+    /// This convenience overload resolves the recipient's delivery target and signs as the instance
+    /// actor. A remote actor's <c>sharedInbox</c> is read from its document (via
+    /// <see cref="IActorDocumentFetcher"/>, which reads through the remote-actor cache); when the
+    /// document cannot be fetched or advertises no <c>sharedInbox</c>, delivery falls back to
+    /// <c>recipientIri.InboxOf()</c>. A recipient whose inbox is at a non-conventional IRI and that
+    /// advertises no <c>sharedInbox</c> should be delivered via
     /// <see cref="DeliverAsync(Iri, Activity, CancellationToken)"/> with the explicit inbox IRI.
-    /// Resolving a remote actor's advertised inbox from its document is a follow-up (the remote object
-    /// caches from Phase 3 are the seam).
     /// </remarks>
     public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default);
 
     /// <summary>
     /// Schedules an activity for delivery to the recipient actor's inbox, signed as a specific local
-    /// actor. The inbox IRI is derived from the recipient's actor IRI.
+    /// actor. The inbox IRI is resolved from the recipient's advertised <c>endpoints.sharedInbox</c>
+    /// (when its document advertises one) and otherwise falls back to
+    /// <c>recipientIri + "/inbox"</c>.
     /// </summary>
     /// <param name="recipientIri">The absolute IRI of the recipient actor.</param>
     /// <param name="activity">The activity to deliver. Must not be null.</param>

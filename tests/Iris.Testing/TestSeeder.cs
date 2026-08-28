@@ -168,6 +168,32 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Person"/> actor that advertises an <c>endpoints.sharedInbox</c> (F-01) — the
+    /// shape a remote instance's actor document takes when it exposes a shared inbox for its actors. The
+    /// actor carries no signing key; it is a delivery <em>target</em> (its inbox / shared inbox is where a
+    /// remote sender posts). Idempotent (re-seeding replaces).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="host">The instance hostname (e.g. <c>b.domain.local</c>).</param>
+    /// <param name="handle">The actor's handle (e.g. <c>bob</c>).</param>
+    /// <param name="sharedInbox">The shared inbox IRI to advertise in <c>endpoints.sharedInbox</c>.</param>
+    /// <returns>The actor's IRI.</returns>
+    public static Iri SeedPersonWithSharedInbox(
+        InMemoryPersistenceProvider persistence, string host, string handle, Iri sharedInbox)
+    {
+        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
+        var actor = new Person
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [handle],
+            Endpoints = new Endpoints { SharedInbox = sharedInbox.Uri },
+        };
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+        return actorIri;
+    }
+
+    /// <summary>
     /// Adds <paramref name="memberIri"/> as a member of <paramref name="communityIri"/> (idempotent).
     /// </summary>
     /// <param name="persistence">The persistence provider to update.</param>

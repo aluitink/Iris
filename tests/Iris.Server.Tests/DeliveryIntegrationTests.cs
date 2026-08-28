@@ -123,6 +123,58 @@ public sealed class DeliveryIntegrationTests : IDisposable
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _));
     }
 
+    // --- F-01: the recipient's advertised endpoints.sharedInbox is honored end-to-end ---------
+    //
+    // Topology: instance B (b.domain.local) hosts bob, who advertises endpoints.sharedInbox =
+    // https://b.domain.local/ap/v1/shared-inbox, and serves that shared inbox (a local actor). A's
+    // delivery service resolves bob's shared inbox from B's live actor document (via the fetcher wired
+    // to B) and delivers to it — not to bob's per-actor inbox. This is the full serve→resolve→deliver
+    // loop, so it doubles as the proof that the shared inbox is advertised on the actor document.
+
+    [Fact]
+    public async Task DeliverToActor_RemoteAdvertisesSharedInbox_ResolvedFromRemoteDocument()
+    {
+        // B hosts bob, who advertises endpoints.sharedInbox = https://b.domain.local/ap/v1/shared-inbox.
+        var bPersistence = new InMemoryPersistenceProvider();
+        var bSharedInbox = new Iri($"https://{BHost}/ap/v1/shared-inbox");
+        var bobIri = TestSeeder.SeedPersonWithSharedInbox(bPersistence, BHost, Bob, bSharedInbox);
+        using var bServer = StartServer(BHost, Bob, bPersistence);
+
+        // A's delivery service resolves bob's delivery target by fetching bob's document from B's live
+        // actor-document endpoint (the fetcher is wired to B). It must land on bob's advertised shared
+        // inbox, not bob's per-actor inbox.
+        var fetcher = BuildFetcherFor(AHost, Alice, _aliceKey, targetServer: bServer);
+        var queue = new InMemoryDeliveryQueue();
+        var service = new DeliveryService(queue, fetcher, NullLogger<DeliveryService>.Instance);
+
+        var create = BuildCreate(AliceActorIri);
+        await service.DeliverToActorAsync(bobIri, create);
+        Assert.Equal(1, queue.Count);
+        Assert.Equal(bSharedInbox, (await queue.TryDequeueAsync())!.InboxIri);
+    }
+
+    // --- F-01: an instance with a configured shared inbox advertises endpoints.sharedInbox ------
+
+    [Fact]
+    public async Task ActorDocument_InstanceHasSharedInbox_AdvertisesEndpointsSharedInbox()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
+        var sharedInbox = new Iri($"https://{BHost}/ap/v1/shared-inbox");
+        using var server = StartServer(BHost, Bob, persistence, sharedInboxIri: sharedInbox);
+
+        var client = server.CreateClient();
+        using var response = await client.GetAsync($"/ap/v1/u/{Bob}");
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadAsStringAsync();
+        var doc = ActivityJson.Deserialize<Actor>(body)!;
+
+        Assert.NotNull(doc.Endpoints);
+        var shared = (doc.Endpoints as Endpoints)?.SharedInbox;
+        Assert.NotNull(shared);
+        Assert.Equal(sharedInbox.Value, shared.AbsoluteUri);
+    }
+
     // --- A delivery to an unknown inbox is dropped (logged), not crashing the worker --
 
     [Fact]
@@ -237,17 +289,19 @@ public sealed class DeliveryIntegrationTests : IDisposable
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, optionally
-    /// overriding the <see cref="IActorDocumentFetcher"/> (for the federation wiring).
+    /// overriding the <see cref="IActorDocumentFetcher"/> (for the federation wiring) and the instance's
+    /// shared inbox (F-01, so local documents advertise <c>endpoints.sharedInbox</c>).
     /// </summary>
     private static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence,
-        IActorDocumentFetcher? fetcher = null)
+        IActorDocumentFetcher? fetcher = null, Iri? sharedInboxIri = null)
         => ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
             Host = host,
             Handle = handle,
             Persistence = persistence,
             Fetcher = fetcher,
+            SharedInboxIri = sharedInboxIri,
             RegisterLocalKey = false,
         });
 

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Iris.Server;
@@ -222,7 +223,16 @@ public static class ActivityPubServerExtensions
         // deliveries (e.g. to a TestServer in-process, or to an IHttpClientFactory-backed handler for
         // proxying/timeouts). DeliveryWorker is registered as a hosted service so it starts with the host.
         services.TryAddSingleton<IDeliveryQueue, InMemoryDeliveryQueue>();
-        services.TryAddSingleton<IDeliveryService, DeliveryService>();
+        services.TryAddSingleton<IDeliveryService>(sp =>
+            new DeliveryService(
+                sp.GetRequiredService<IDeliveryQueue>(),
+                // F-01: the delivery service resolves a remote recipient's advertised
+                // endpoints.sharedInbox from its document. The fetcher is the same registration the
+                // inbound signature path uses (reads through the remote-actor cache); when it is a
+                // NoopActorDocumentFetcher (no instance actor configured) the delivery service simply
+                // falls back to the per-actor inbox.
+                sp.GetRequiredService<IActorDocumentFetcher>(),
+                sp.GetRequiredService<ILogger<DeliveryService>>()));
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
         services.AddHostedService<DeliveryWorker>();
 
@@ -674,6 +684,18 @@ public static class ActivityPubServerExtensions
         doc.Followers ??= new Link { Href = new Uri(actorIri.FollowersOf().Value) };
         doc.Following ??= new Link { Href = new Uri(actorIri.FollowingOf().Value) };
 
+        // Advertise the instance's shared inbox (F-01) when the host configured one: a remote sender may
+        // POST to it instead of the actor's own inbox. The per-actor Inbox is still advertised (above), so
+        // a sender that ignores endpoints.sharedInbox still lands on the right collection.
+        if (options.SharedInboxIri is { } sharedInbox)
+        {
+            doc.Endpoints ??= new Endpoints();
+            if (doc.Endpoints is Endpoints typedEndpoints)
+            {
+                typedEndpoints.SharedInbox ??= sharedInbox.Uri;
+            }
+        }
+
         // Echo manuallyApprovesFollowers when the host set it (the library's Actor type does not model
         // it, so it rides in ExtensionData; it must appear on the public document so a remote follower
         // can tell the follow will not be auto-accepted — J-10 / Resolved Decision #46). A false value is
@@ -954,6 +976,18 @@ public static class ActivityPubServerExtensions
         doc.Outbox ??= new Link { Href = new Uri(communityIri.OutboxOf().Value) };
         doc.Followers ??= new Link { Href = new Uri(communityIri.FollowersOf().Value) };
         doc.Following ??= new Link { Href = new Uri(communityIri.FollowingOf().Value) };
+
+        // Advertise the instance's shared inbox (F-01) when configured, so remote senders may POST to it
+        // instead of the community's own inbox (mirrors the actor document above).
+        if (options.SharedInboxIri is { } sharedInbox)
+        {
+            doc.Endpoints ??= new Endpoints();
+            if (doc.Endpoints is Endpoints typedEndpoints)
+            {
+                typedEndpoints.SharedInbox ??= sharedInbox.Uri;
+            }
+        }
+
         var ext = doc.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
         var changed = false;
         if (!ext.ContainsKey("members"))

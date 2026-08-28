@@ -45,6 +45,17 @@ public sealed class ActivityPubServerOptions
     public Iri? InstanceActorId { get; set; }
 
     /// <summary>
+    /// The IRI of this instance's <em>shared inbox</em>: a single collection that accepts activity for
+    /// every local actor and community (the ActivityPub <c>endpoints.sharedInbox</c> property). When set,
+    /// it is advertised on the public actor and community documents so remote instances may deliver to
+    /// it instead of each recipient's own inbox (F-01). When not set, local documents advertise no
+    /// <c>endpoints</c> and remote senders fall back to the per-actor inbox (the ActivityPub
+    /// convention). Outbound delivery to a <em>remote</em> actor always honors the <em>remote</em> actor's
+    /// own advertised <c>sharedInbox</c> (resolved from its document), independent of this option.
+    /// </summary>
+    public Iri? SharedInboxIri { get; set; }
+
+    /// <summary>
     /// The proxy-fallback settings (Phase 6) for the <c>POST /ap/v1/proxy/{target}</c> endpoint: the
     /// target allowlist and the per-actor rate limit. When null, the defaults apply: an empty
     /// allowlist (every target is allowed) and <see cref="ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute"/>

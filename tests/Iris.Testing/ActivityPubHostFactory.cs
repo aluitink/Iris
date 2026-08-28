@@ -45,6 +45,12 @@ public sealed class ActivityPubHostOptions
     public ProxySettings? ProxySettings { get; init; }
 
     /// <summary>
+    /// The instance's shared inbox IRI (F-01) to advertise on local actor/community documents and (when
+    /// set) route local deliveries to. When null, the instance advertises no <c>endpoints.sharedInbox</c>.
+    /// </summary>
+    public Iri? SharedInboxIri { get; init; }
+
+    /// <summary>
     /// Additional local-actor keys to register with the host's <see cref="IKeyProvider"/> (so the outbound
     /// <c>DeliveryWorker</c> can sign as a second local identity). Each IRI's key is resolved by the
     /// <c>#key-1</c> convention (matching <see cref="TestSeeder"/>).
@@ -119,6 +125,11 @@ public static class ActivityPubHostFactory
                     if (options.ProxySettings is not null)
                     {
                         opts.ProxySettings = options.ProxySettings;
+                    }
+
+                    if (options.SharedInboxIri is not null)
+                    {
+                        opts.SharedInboxIri = options.SharedInboxIri;
                     }
                 });
                 s.AddInMemoryPersistence();

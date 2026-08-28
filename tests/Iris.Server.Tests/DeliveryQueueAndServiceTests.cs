@@ -1,3 +1,4 @@
+using System;
 using Iris.Core;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
@@ -8,8 +9,9 @@ namespace Iris.Server.Tests;
 /// <summary>
 /// Unit tests for the outbound delivery infrastructure: the in-memory
 /// <see cref="InMemoryDeliveryQueue"/> (a bounded <c>Channel</c>) and the <see cref="DeliveryService"/>
-/// (enqueues a <see cref="DeliveryJob"/>; resolves a recipient actor's inbox). These exercise the pure
-/// enqueue/dispatch logic — no HTTP; the over-the-wire delivery is covered by the integration tests.
+/// (enqueues a <see cref="DeliveryJob"/>; resolves a recipient actor's inbox or advertised shared inbox).
+/// These exercise the pure enqueue/dispatch logic — no HTTP; the over-the-wire delivery is covered by the
+/// integration tests.
 /// </summary>
 public sealed class DeliveryQueueAndServiceTests
 {
@@ -225,7 +227,88 @@ public sealed class DeliveryQueueAndServiceTests
         Assert.Throws<ArgumentNullException>(() => new DeliveryService(new InMemoryDeliveryQueue(), null!));
     }
 
+    // --- Service: DeliverToActorAsync honors the recipient's advertised shared inbox (F-01) --
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_SharedInboxAdvertised_DeliversToSharedInbox()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var fetcher = new FixedActorDocumentFetcher(new Person
+        {
+            Id = ActorIri.Value,
+            Endpoints = new Endpoints { SharedInbox = new Uri("https://a.domain.local/ap/v1/shared-inbox") },
+        });
+        var service = new DeliveryService(queue, fetcher, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(ActorIri, BuildCreate("shared-1"));
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        // The recipient advertises a shared inbox → deliver to it (not the per-actor inbox).
+        Assert.Equal(new Iri("https://a.domain.local/ap/v1/shared-inbox"), job!.InboxIri);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_NoSharedInbox_FallsBackToActorInbox()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        // The remote actor's document is present but advertises no endpoints/sharedInbox.
+        var fetcher = new FixedActorDocumentFetcher(new Person { Id = ActorIri.Value });
+        var service = new DeliveryService(queue, fetcher, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(ActorIri, BuildCreate("fallback-1"));
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(ActorIri.InboxOf(), job!.InboxIri);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_FetchFails_FallsBackToActorInbox()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        // The fetcher returns null (fetch failed / not an actor) → fall back to the per-actor inbox.
+        var fetcher = new FixedActorDocumentFetcher(null);
+        var service = new DeliveryService(queue, fetcher, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(ActorIri, BuildCreate("fetchfail-1"));
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(ActorIri.InboxOf(), job!.InboxIri);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_SharedInbox_WithActor_ThreadsActorAndSharedInbox()
+    {
+        var queue = new InMemoryDeliveryQueue();
+        var fetcher = new FixedActorDocumentFetcher(new Person
+        {
+            Id = ActorIri.Value,
+            Endpoints = new Endpoints { SharedInbox = new Uri("https://a.domain.local/ap/v1/shared-inbox") },
+        });
+        var service = new DeliveryService(queue, fetcher, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(ActorIri, BuildCreate("shared-actor"), ActorIri);
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(new Iri("https://a.domain.local/ap/v1/shared-inbox"), job!.InboxIri);
+        Assert.Equal(ActorIri, job.ActorIri);
+    }
+
     // --- Helpers ----------------------------------------------------------------------
+
+    /// <summary>
+    /// An <see cref="IActorDocumentFetcher"/> that returns a fixed actor (or null) for every request —
+    /// the seam <see cref="DeliveryService"/> uses to resolve a recipient's advertised shared inbox
+    /// (F-01) without HTTP.
+    /// </summary>
+    private sealed class FixedActorDocumentFetcher(Actor? actor) : IActorDocumentFetcher
+    {
+        public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+            => Task.FromResult(actor);
+    }
 
     /// <summary>
     /// Builds a <see cref="Create"/> activity (a real <see cref="Activity"/>) wrapping a

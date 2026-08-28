@@ -17,6 +17,7 @@ namespace Iris.Server;
 public sealed class DeliveryService : IDeliveryService
 {
     private readonly IDeliveryQueue _queue;
+    private readonly IActorDocumentFetcher? _actorDocuments;
     private readonly ILogger<DeliveryService> _logger;
 
     /// <summary>
@@ -26,10 +27,26 @@ public sealed class DeliveryService : IDeliveryService
     /// <param name="logger">The logger. Must not be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="queue"/> or <paramref name="logger"/> is null.</exception>
     public DeliveryService(IDeliveryQueue queue, ILogger<DeliveryService> logger)
+        : this(queue, null, logger)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="DeliveryService"/>.
+    /// </summary>
+    /// <param name="queue">The delivery queue to enqueue jobs onto. Must not be null.</param>
+    /// <param name="actorDocuments">The actor-document fetcher used to resolve a remote recipient's
+    /// advertised <c>endpoints.sharedInbox</c> (F-01). May be null, in which case
+    /// <see cref="DeliverToActorAsync(Iri, Activity, CancellationToken)"/> always falls back to the
+    /// per-actor inbox (the ActivityPub convention).</param>
+    /// <param name="logger">The logger. Must not be null.</param>
+    /// <exception cref="ArgumentNullException">When <paramref name="queue"/> or <paramref name="logger"/> is null.</exception>
+    public DeliveryService(IDeliveryQueue queue, IActorDocumentFetcher? actorDocuments, ILogger<DeliveryService> logger)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(logger);
         _queue = queue;
+        _actorDocuments = actorDocuments;
         _logger = logger;
     }
 
@@ -62,14 +79,40 @@ public sealed class DeliveryService : IDeliveryService
         => DeliverToActorAsync(recipientIri, activity, actorIri: null, ct);
 
     /// <inheritdoc/>
-    public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+    public async Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
     {
+        ArgumentNullException.ThrowIfNull(activity);
         if (!recipientIri.IsAbsolute)
         {
             throw new ArgumentException("The recipient IRI must be an absolute IRI.", nameof(recipientIri));
         }
 
-        // The ActivityPub convention: an actor's inbox is the actor IRI with "/inbox" appended.
-        return DeliverAsync(recipientIri.InboxOf(), activity, actorIri, ct);
+        // F-01: honor the recipient's advertised endpoints.sharedInbox (a shared inbox collects activity
+        // for a whole instance). Read from the recipient's document via the fetcher (which reads through
+        // the remote-actor cache, so a repeated delivery to the same recipient reuses the cached
+        // document). When the document cannot be fetched or advertises no sharedInbox, fall back to the
+        // ActivityPub convention: the actor IRI with "/inbox" appended.
+        var inboxIri = await ResolveInboxAsync(recipientIri, ct).ConfigureAwait(false);
+        await DeliverAsync(inboxIri, activity, actorIri, ct).ConfigureAwait(false);
+    }
+
+    private async Task<Iri> ResolveInboxAsync(Iri recipientIri, CancellationToken ct)
+    {
+        if (_actorDocuments is not null)
+        {
+            var actor = await _actorDocuments.GetActorAsync(recipientIri, ct).ConfigureAwait(false);
+            if (actor is not null &&
+                actor.Endpoints is Endpoints endpoints &&
+                endpoints.SharedInbox is { } sharedInbox)
+            {
+                _logger.LogDebug(
+                    "Delivering to shared inbox {SharedInbox} for recipient {Recipient}",
+                    sharedInbox,
+                    recipientIri.Value);
+                return new Iri(sharedInbox);
+            }
+        }
+
+        return recipientIri.InboxOf();
     }
 }
