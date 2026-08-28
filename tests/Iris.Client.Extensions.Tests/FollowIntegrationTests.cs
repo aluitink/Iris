@@ -147,6 +147,57 @@ public sealed class FollowIntegrationTests : IDisposable
             "the follow edge should be removed after the signed Undo is accepted");
     }
 
+    [Fact]
+    public async Task Session_Login_SelfFollow_ThenReject_RemovesFollowEdge()
+    {
+        // Slice 11.10 / J-10 end-to-end: the full Reject lifecycle through the client. The follower
+        // (alice) follows her own actor (a local actor) — the server records the follow edge. Because a
+        // self-follow is not a real remote request, there is no remote Accept to finalize it; instead the
+        // operator (alice, the owner of the followed actor) responds with an explicit Reject, signed as
+        // the followed actor. The server's RejectActivityHandler removes the follow edge.
+        var authenticator = new BasicAuthClientAuthenticator(
+            _server.CreateClient(), new Iri(FollowerIri), Follower, Password);
+
+        var options = new IrisClientOptions
+        {
+            ServerBaseUri = new Uri($"https://{Host}"),
+            UseProxyFallback = false,
+            EnableRetry = false,
+        };
+        using var bundle = IrisClientBuilder.Create(options)
+            .WithAuthenticator(authenticator)
+            .Build();
+
+        var actor = await bundle.Session.LoginAsync(new Iri(FollowerIri));
+        Assert.NotNull(actor);
+
+        using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
+
+        // Step 1: alice follows herself (a local actor). The server records the follow edge.
+        var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(FollowerIri));
+        Assert.Equal(202, followStatus);
+        Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(FollowerIri)),
+            "the follow edge should be recorded after the signed self-Follow is accepted");
+
+        // Step 2: the operator rejects the follow. The Reject's actor is the followed actor (alice — the
+        // owner of the followed actor), so the client signs it as alice; the server resolves alice's
+        // public key from the self-fetcher. The Reject references the original Follow by its
+        // deterministic IRI, which the server stores (the Follow was stored when it was accepted).
+        var followIri = new Iri($"{FollowerIri}/follows/{FollowerIri}");
+        var reject = new KristofferStrube.ActivityStreams.Reject
+        {
+            Id = $"{FollowerIri}/rejects/{followIri}",
+            Actor = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(FollowerIri) }],
+            Object = [new KristofferStrube.ActivityStreams.Link { Href = followIri.Uri }],
+        };
+        var rejectStatus = await client.DeliverAsync(new Iri(FollowerIri).InboxOf(), reject);
+        Assert.Equal(202, rejectStatus);
+
+        // The server's RejectActivityHandler removed the follow edge.
+        Assert.False(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(FollowerIri)),
+            "the follow edge should be removed after the signed Reject is accepted");
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     /// <summary>

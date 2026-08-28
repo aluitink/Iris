@@ -80,6 +80,32 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Person"/> actor with <c>manuallyApprovesFollowers</c> set (in the actor's
+    /// <c>ExtensionData</c>, the library-untyped property). An inbound follow of such an actor is
+    /// <em>not</em> auto-accepted — the operator responds with an explicit
+    /// <c>Accept</c>/<c>Reject</c> (Resolved Decision #46). Idempotent (re-seeding replaces).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
+    /// <param name="handle">The actor's handle (e.g. <c>alice</c>).</param>
+    /// <returns>The actor's IRI.</returns>
+    public static Iri SeedManuallyApprovingPerson(InMemoryPersistenceProvider persistence, string host, string handle)
+    {
+        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
+        var actor = new Person
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+            JsonDocument.Parse("true").RootElement.Clone();
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+        return actorIri;
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Group"/> community under its standard IRI. Idempotent (re-seeding replaces).
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>

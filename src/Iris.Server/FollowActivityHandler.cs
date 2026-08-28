@@ -105,9 +105,18 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         else
         {
             // The recipient is a local person: record the directed follow edge follower → recipient.
+            // When the person has manuallyApprovesFollowers set, the edge is still recorded (the
+            // follower's content should reach the local followers' outboxes via the federation path),
+            // but the follow is NOT auto-accepted — the operator must respond with an explicit
+            // Accept or Reject (J-10 / Resolved Decision #46).
             await _persistence.Follows
                 .RecordFollowAsync(followerIri.Value, delivery.RecipientIri, ct)
                 .ConfigureAwait(false);
+
+            if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
+            {
+                return;
+            }
         }
 
         // Respond to the follow: construct an Accept (actor = the local actor/community being followed,
@@ -120,5 +129,28 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         await _delivery
             .DeliverToActorAsync(followerIri.Value, accept, delivery.RecipientIri, ct)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reports whether the local actor has <c>manuallyApprovesFollowers</c> set (i.e. should not
+    /// auto-accept an inbound follow). The library's <c>Actor</c> type does not model the property, so
+    /// it is read from the actor's <c>ExtensionData</c> (seeded by the host and echoed onto the public
+    /// document — Resolved Decision #46). A missing actor or a missing/false value means auto-accept
+    /// (the default).
+    /// </summary>
+    /// <param name="actorIri">The IRI of the local actor being followed.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the actor manually approves followers; otherwise <see langword="false"/>.</returns>
+    private async Task<bool> IsManuallyApprovingAsync(Iri actorIri, CancellationToken ct)
+    {
+        if (!await _persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            || actor is not { } localActor)
+        {
+            return false;
+        }
+
+        return localActor.ExtensionData is { } ext
+            && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.True;
     }
 }

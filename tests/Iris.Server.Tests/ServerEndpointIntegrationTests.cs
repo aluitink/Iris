@@ -120,6 +120,22 @@ public class ServerEndpointIntegrationTests : IDisposable
         });
 
         persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+
+        // A second local actor (carol) with manuallyApprovesFollowers set (the library-untyped property,
+        // carried in ExtensionData). The public document must echo it so a remote follower can tell the
+        // follow will not be auto-accepted (J-10 / Resolved Decision #46).
+        var carolIri = $"https://{Host}/ap/v1/u/carol";
+        var carol = new Person
+        {
+            Id = carolIri,
+            PreferredUsername = "carol",
+            Name = ["carol"],
+        };
+        carol.ExtensionData ??= new Dictionary<string, JsonElement>();
+        carol.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+            JsonDocument.Parse("true").RootElement.Clone();
+        persistence.ActorStore.PutActorAsync(carol).GetAwaiter().GetResult();
+
         return keyPair;
     }
 
@@ -170,6 +186,31 @@ public class ServerEndpointIntegrationTests : IDisposable
     {
         var response = await _client.GetAsync("/ap/v1/u/nobody");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ActorDoc_ManuallyApprovesFollowers_EchoesFlagOnPublicDocument()
+    {
+        // The public document of a manually-approving actor (carol) must carry manuallyApprovesFollowers
+        // so a remote follower can tell the follow will not be auto-accepted (J-10 / Resolved Decision
+        // #46). The seeded actor has no publicKey extension, so the document carries only the flag.
+        var response = await _client.GetAsync("/ap/v1/u/carol");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.Contains("\"manuallyApprovesFollowers\":true", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActorDoc_AutoApproving_OmitsManuallyApprovesFollowers()
+    {
+        // The auto-approving actor (the default) must NOT carry the flag: a missing/false value is the
+        // default (auto-accept), so it is omitted from the public document.
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("manuallyApprovesFollowers", json, StringComparison.Ordinal);
     }
 
     // --- Authenticated actor document (owner-only extension) -------------------

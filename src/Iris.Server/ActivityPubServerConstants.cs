@@ -50,6 +50,15 @@ public static class ActivityPubServerConstants
     public const string KeyAlgorithmEcP256 = "ecdsa-p256";
 
     /// <summary>
+    /// The ActivityPub actor property <c>manuallyApprovesFollowers</c>: when <c>true</c> on a local
+    /// actor, an inbound follow is <em>not</em> auto-accepted — the actor (operator) must respond with an
+    /// explicit <c>Accept</c> or <c>Reject</c>. The library's <c>Actor</c> type does not model this
+    /// property, so it is carried in the actor's <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/>
+    /// (seeded by the host) and echoed onto the public actor document (Resolved Decision #46).
+    /// </summary>
+    public const string ManuallyApprovesFollowersExtensionName = "manuallyApprovesFollowers";
+
+    /// <summary>
     /// The <c>iris:capabilities</c> extension property name (Resolved Decision #11).
     /// The full IRI is <c>{NamespaceIri}capabilities</c>; this is the local term.
     /// </summary>

@@ -674,6 +674,18 @@ public static class ActivityPubServerExtensions
         doc.Followers ??= new Link { Href = new Uri(actorIri.FollowersOf().Value) };
         doc.Following ??= new Link { Href = new Uri(actorIri.FollowingOf().Value) };
 
+        // Echo manuallyApprovesFollowers when the host set it (the library's Actor type does not model
+        // it, so it rides in ExtensionData; it must appear on the public document so a remote follower
+        // can tell the follow will not be auto-accepted — J-10 / Resolved Decision #46). A false value is
+        // omitted (the default is auto-accept, so it need not be spelled out).
+        if (actor.ExtensionData is { } actorExt &&
+            actorExt.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var maf) &&
+            maf.ValueKind == System.Text.Json.JsonValueKind.True)
+        {
+            doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            doc.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = maf;
+        }
+
         // If authenticated as the owner, include the privateKey + keyAlgorithm extensions.
         if (authenticatedHandle is not null)
         {
