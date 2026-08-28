@@ -77,7 +77,7 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
         ArgumentNullException.ThrowIfNull(announce);
 
         // The announcer is the activity's actor (Rule 3: read multi-valued as IEnumerable, null-safe).
-        var announcerIri = AnnounceIris.ResolveObjectIri(announce.Actor?.FirstOrDefault());
+        var announcerIri = announce.Actor?.FirstOrDefault().ResolveObjectIri();
         if (!announcerIri.HasValue)
         {
             // An announce with no resolvable actor is malformed; nothing to record or propagate. The
@@ -87,7 +87,7 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
 
         // The announced object is the activity's object (Rule 3: read multi-valued as IEnumerable,
         // null-safe).
-        var objectIri = AnnounceIris.ResolveObjectIri(announce.Object?.FirstOrDefault());
+        var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
         if (!objectIri.HasValue)
         {
             // An announce with no resolvable object is malformed; nothing to record or propagate.

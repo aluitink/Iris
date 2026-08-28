@@ -5,8 +5,9 @@ namespace Iris.Server;
 
 /// <summary>
 /// Shared helpers for the follow lifecycle: the deterministic IRIs for the <c>Accept</c>/<c>Reject</c>
-/// response to a follow, the <c>Accept</c>/<c>Reject</c> activities themselves, and resolving an actor
-/// IRI from an <see cref="IObjectOrLink"/>.
+/// response to a follow, and the <c>Accept</c>/<c>Reject</c> activities themselves. (Resolving an actor
+/// or object IRI from an <see cref="IObjectOrLink"/> lives in
+/// <see cref="IriExtensions.ResolveObjectIri(IObjectOrLink?)"/>.)
 /// </summary>
 /// <remarks>
 /// The <see cref="FollowActivityHandler"/> builds these on the followed side; the
@@ -61,25 +62,4 @@ public static class FollowIris
         Actor = [new Link { Href = new Uri(localActorIri.Value) }],
         Object = [new Link { Href = new Uri(follow.Id!) }],
     };
-
-    /// <summary>
-    /// Resolves the IRI of an <see cref="IObjectOrLink"/>: a <see cref="Link"/> contributes its
-    /// <c>Href</c>; an embedded object contributes its <c>Id</c>. Returns null when neither is set.
-    /// </summary>
-    /// <param name="objOrLink">The object or link to resolve.</param>
-    /// <returns>The resolved IRI, or null when the object/link carries no IRI.</returns>
-    public static Iri? ResolveActorIri(IObjectOrLink? objOrLink)
-    {
-        if (objOrLink is ILink { Href: { } href })
-        {
-            return new Iri(href);
-        }
-
-        if (objOrLink is IObject { Id: { Length: > 0 } id })
-        {
-            return new Iri(id);
-        }
-
-        return null;
-    }
 }

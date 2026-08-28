@@ -49,7 +49,7 @@ Verified against the source. This is the basis for the "expected" column in §3�
 
 **Community / Group**:
 - Remote actors **can follow local Groups** — the edge is recorded (`FollowActivityHandler.cs:96-104`) and
-  answered with `Accept` (`CommunityIris.cs:38`); follow ≠ membership grant
+  answered with `Accept` (`FollowIris.cs` `BuildAccept`); follow ≠ membership grant
   (`FollowActivityHandler.cs:33-36`).
 - Groups expose `members`, `feed` (union of local members' outboxes, `CommunityFeedService.cs:31-62`),
   `search`, `following`, `followers` (followers intentionally always empty,
@@ -145,7 +145,7 @@ Each scenario is one checkable assertion in Phase 13. The **Iris expected** colu
 
 | # | Scenario | Direction | Iris expected (ground truth) |
 |---|---|---|---|
-| G1 | A platform user follows our local community (`Group`); we respond `Accept`; the user appears in the community `members`/followers. | in | **PASS-expected.** `FollowActivityHandler` records the edge for a `Group` and answers `Accept` (`CommunityIris.cs:38`). |
+| G1 | A platform user follows our local community (`Group`); we respond `Accept`; the user appears in the community `members`/followers. | in | **PASS-expected.** `FollowActivityHandler` records the edge for a `Group` and answers `Accept` (`FollowIris.cs` `BuildAccept`). |
 | G2 | Our community follows a remote community/platform group. | out | **[GAP]** The server never follows remote Groups (no outbound group-follow path). |
 | G3 | A platform community follows our local community (community→community). | in | **PASS-expected.** Same path as G1 (a `Group` following a `Group`); edge recorded, `Accept` sent. |
 | G4 | A remote user posts into a community we follow; it lands in our local feed. | in | **PASS-expected** via the community-inbox catch-all (C3), *if* we were following it — but see G2 (we can't initiate the follow), so this is only reachable if the platform community follows us first. |

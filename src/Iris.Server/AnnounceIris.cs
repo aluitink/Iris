@@ -5,8 +5,9 @@ namespace Iris.Server;
 
 /// <summary>
 /// Shared helpers for the <c>Announce</c> (boost/repost) lifecycle: the deterministic IRI for an
-/// <see cref="Announce"/> and the <see cref="Announce"/> activity itself, plus resolving an object
-/// IRI from an <see cref="IObjectOrLink"/>.
+/// <see cref="Announce"/> and the <see cref="Announce"/> activity itself. (Resolving an object IRI
+/// from an <see cref="IObjectOrLink"/> lives in
+/// <see cref="IriExtensions.ResolveObjectIri(IObjectOrLink?)"/>.)
 /// </summary>
 /// <remarks>
 /// An <c>Announce</c> is a local actor re-sharing an object (a boost/repost). When the local actor's
@@ -56,25 +57,4 @@ public static class AnnounceIris
         To = [new Link { Href = new Uri(followerIri.Value) }],
         Cc = [new Link { Href = new Uri(announcerIri.Value) }],
     };
-
-    /// <summary>
-    /// Resolves the IRI of an <see cref="IObjectOrLink"/>: a <see cref="Link"/> contributes its
-    /// <c>Href</c>; an embedded object contributes its <c>Id</c>. Returns null when neither is set.
-    /// </summary>
-    /// <param name="objOrLink">The object or link to resolve.</param>
-    /// <returns>The resolved IRI, or null when the object/link carries no IRI.</returns>
-    public static Iri? ResolveObjectIri(IObjectOrLink? objOrLink)
-    {
-        if (objOrLink is ILink { Href: { } href })
-        {
-            return new Iri(href);
-        }
-
-        if (objOrLink is IObject { Id: { Length: > 0 } id })
-        {
-            return new Iri(id);
-        }
-
-        return null;
-    }
 }

@@ -1,4 +1,5 @@
 using Iris.Core;
+using KristofferStrube.ActivityStreams;
 
 namespace Iris.Core.Tests;
 
@@ -105,5 +106,45 @@ public class IriExtensionsTests
 
         Assert.Equal(new Uri("https://a.domain.local/n/1"), nullableIri.ToLinkHref());
         Assert.Null(default(Iri?).ToLinkHref());
+    }
+
+    [Fact]
+    public void ResolveObjectIri_FromLink_ReturnsHref()
+    {
+        IObjectOrLink link = new Link { Href = new Uri("https://a.domain.local/u/alice") };
+
+        Assert.Equal(new Iri("https://a.domain.local/u/alice"), link.ResolveObjectIri());
+    }
+
+    [Fact]
+    public void ResolveObjectIri_FromEmbeddedObject_ReturnsId()
+    {
+        IObjectOrLink person = new Person { Id = "https://a.domain.local/u/alice" };
+
+        Assert.Equal(new Iri("https://a.domain.local/u/alice"), person.ResolveObjectIri());
+    }
+
+    [Fact]
+    public void ResolveObjectIri_FromLinkWithoutHref_ReturnsNull()
+    {
+        IObjectOrLink link = new Link();
+
+        Assert.Null(link.ResolveObjectIri());
+    }
+
+    [Fact]
+    public void ResolveObjectIri_FromObjectWithoutId_ReturnsNull()
+    {
+        IObjectOrLink person = new Person { Name = ["No Id"] };
+
+        Assert.Null(person.ResolveObjectIri());
+    }
+
+    [Fact]
+    public void ResolveObjectIri_FromNull_ReturnsNull()
+    {
+        IObjectOrLink? none = null;
+
+        Assert.Null(none.ResolveObjectIri());
     }
 }

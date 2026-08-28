@@ -85,6 +85,32 @@ public static class IriExtensions
     /// <returns>The <see cref="Uri"/>, or <see langword="null"/> for the default <see cref="Iri"/>.</returns>
     public static Uri? ToLinkHref(this Iri? iri) => iri.HasValue ? iri.Value.Uri : null;
 
+    /// <summary>
+    /// Resolves the IRI of an <see cref="IObjectOrLink"/>: a <see cref="Link"/> contributes its
+    /// <c>Href</c>; an embedded object contributes its <c>Id</c>.
+    /// </summary>
+    /// <remarks>
+    /// The single shared boundary conversion for turning an activity's <c>actor</c>/<c>object</c>
+    /// (an <see cref="IObjectOrLink"/>) into an <see cref="Iri"/>. Used by the follow/accept/reject and
+    /// announce handlers to resolve the IRI of the relevant party or target.
+    /// </remarks>
+    /// <param name="objOrLink">The object or link to resolve. May be null.</param>
+    /// <returns>The resolved <see cref="Iri"/>, or <see langword="null"/> when the object/link carries no IRI.</returns>
+    public static Iri? ResolveObjectIri(this IObjectOrLink? objOrLink)
+    {
+        if (objOrLink is ILink { Href: { } href })
+        {
+            return new Iri(href);
+        }
+
+        if (objOrLink is IObject { Id: { Length: > 0 } id })
+        {
+            return new Iri(id);
+        }
+
+        return null;
+    }
+
     private static Iri AppendSegment(Iri iri, string segment)
     {
         if (!iri.IsAbsolute)

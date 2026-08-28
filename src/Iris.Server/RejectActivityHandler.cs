@@ -79,7 +79,7 @@ public sealed class RejectActivityHandler : ActivityHandlerBase<Reject>
     /// resolved (the follow was never stored, or carries no target).</returns>
     private async Task<Iri?> ResolveFollowTargetAsync(IObjectOrLink? rejectObject, CancellationToken ct)
     {
-        var followIri = FollowIris.ResolveActorIri(rejectObject);
+        var followIri = rejectObject.ResolveObjectIri();
         if (!followIri.HasValue)
         {
             return null;
@@ -92,6 +92,6 @@ public sealed class RejectActivityHandler : ActivityHandlerBase<Reject>
             return null;
         }
 
-        return FollowIris.ResolveActorIri(follow.Object?.FirstOrDefault());
+        return follow.Object?.FirstOrDefault().ResolveObjectIri();
     }
 }

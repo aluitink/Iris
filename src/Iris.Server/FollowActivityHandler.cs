@@ -70,7 +70,7 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
 
         // The follower is the activity's actor (Rule 3: read multi-valued as IEnumerable, null-safe).
         // The actor is an IObjectOrLink: either a Link (Href) or an embedded Object (Id).
-        var followerIri = FollowIris.ResolveActorIri(follow.Actor?.FirstOrDefault());
+        var followerIri = follow.Actor?.FirstOrDefault().ResolveObjectIri();
         if (!followerIri.HasValue)
         {
             // A follow with no resolvable actor is malformed; nothing to record. The activity is
