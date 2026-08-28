@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/SampleServer/SampleServer.csproj" />
+  </Folder>
   <Folder Name="/src/">
     <Project Path="src/Iris.Client.Extensions/Iris.Client.Extensions.csproj" />
     <Project Path="src/Iris.Client/Iris.Client.csproj" />
@@ -12,5 +15,6 @@
     <Project Path="tests/Iris.Core.Tests/Iris.Core.Tests.csproj" />
     <Project Path="tests/Iris.Server.Tests/Iris.Server.Tests.csproj" />
     <Project Path="tests/Iris.Testing/Iris.Testing.csproj" />
+    <Project Path="tests/SampleServer.Tests/SampleServer.Tests.csproj" />
   </Folder>
 </Solution>

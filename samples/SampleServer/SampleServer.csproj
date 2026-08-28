@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Samples.SampleServer</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      A runnable sample ActivityPub server: ASP.NET Core + Iris.Server + in-memory persistence +
+      Basic auth + a sample community (alice, bob, and the iris community).
+    </Description>
+    <!--
+      The sample hosts the Iris server endpoints (AddActivityPubServer / MapActivityPubEndpoints /
+      UseSignatureValidation) and, like the in-process test harness, wires them through
+      WebHostBuilder + IApplicationBuilder. Those builder APIs are obsolete in .NET 10
+      (ASPDEPR004/ASPDEPR008), so the specific deprecation codes are suppressed here (sample only;
+      production library code stays deprecation-clean).
+    -->
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008;ASP0014</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server.InMemory\Iris.Server.InMemory.csproj" />
+  </ItemGroup>
+
+</Project>

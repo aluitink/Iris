@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Samples.SampleServer.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      Integration tests: hosts the SampleServer (via its CreateWebHostBuilder + an in-process
+      TestServer) and asserts the seeded actor, community, and WebFinger endpoints respond as the
+      sample intends.
+    </Description>
+    <!--
+      The sample drives the (soft-deprecated) WebHostBuilder / IApplicationBuilder pipeline APIs, so
+      the specific deprecation codes are suppressed here (test + sample projects only; production
+      library code stays deprecation-clean).
+    -->
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\SampleServer\SampleServer.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Client\Iris.Client.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>
