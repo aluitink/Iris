@@ -1223,8 +1223,11 @@ public static class ActivityPubServerExtensions
         if (page == 1)
         {
             // Page 1 is the collection document itself: it carries its own first page of items and a
-            // self-referencing `first` link. The `next` pointer lives on the first page, so a reader
-            // walks page 2 onward via the page's `next` (this document's own items are page 1).
+            // self-referencing `first` link. When more pages remain, it also carries a `next` pointer
+            // to page 2 — without it a client that treats the OrderedCollection as the first page
+            // (as the Iris client does) cannot walk past page 1. The ActivityStreams OrderedCollection
+            // type has no typed `next` property (only OrderedCollectionPage does), so the pointer is
+            // carried in ExtensionData, which serializes as raw JSON at the document root.
             var collection = new OrderedCollection
             {
                 Id = collectionIri.Value,
@@ -1232,6 +1235,15 @@ public static class ActivityPubServerExtensions
                 First = new Link { Href = new Uri(collectionIri.Value) },
                 TotalItems = (uint)total,
             };
+
+            if (pageCount > 1)
+            {
+                var ext = collection.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                // Emitted as a bare IRI string — the same wire shape the typed `Link` (next/prev)
+                // properties produce on OrderedCollectionPage — so page 1 and page N>1 are uniform.
+                ext["next"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                    $"{collectionIri.Value}/?page=2");
+            }
 
             return ActivityJson.Serialize(collection);
         }

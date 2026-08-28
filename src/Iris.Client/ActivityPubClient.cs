@@ -291,7 +291,20 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             // Page 1 served as the collection document itself. CollectionPage.Page is typed
             // OrderedCollectionPage, so a minimal page carrying the collection's own id/items/total
             // is synthesized (the flattened Items below is the source of truth for callers).
+            //
+            // The ActivityStreams OrderedCollection type has no typed `next` property (only
+            // OrderedCollectionPage does), so a well-formed server carries the pointer in
+            // ExtensionData. It is what lets enumeration walk past page 1 — without it the client
+            // stops after the first page for any multi-page collection served this way.
+            //
+            // The page-1 IRI is the `next` pointer, NOT the collection's own IRI: the server serves
+            // page N>1 at {collection}?page=N, so fetching the bare collection IRI again would
+            // re-serve page 1 and loop forever. When there is no `next` (single-page collection) the
+            // collection's own IRI is the first page and the walk terminates.
             var items = collection.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            var nextLink = ResolveCollectionNextLink(collection);
+            var firstPageIri = nextLink
+                ?? (collection.Id is { Length: > 0 } collectionId ? new Iri(collectionId) : null);
             return new CollectionPage
             {
                 Page = new OrderedCollectionPage
@@ -301,11 +314,46 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
                     TotalItems = collection.TotalItems,
                 },
                 Items = items,
-                NextPage = null,
+                NextPage = nextLink,
                 PrevPage = null,
                 TotalItems = collection.TotalItems is { } total ? (int)total : null,
-                PageId = collection.Id is { Length: > 0 } id ? new Iri(id) : null,
+                PageId = firstPageIri,
             };
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the <c>next</c> pointer of an <see cref="OrderedCollection"/> first page (the
+    /// collection document served as page 1) into a page IRI, or <see langword="null"/> when the
+    /// collection has no further page. The ActivityStreams <c>OrderedCollection</c> type exposes no
+    /// typed <c>next</c> property (only <c>OrderedCollectionPage</c> does), so a well-formed server
+    /// carries the pointer in <see cref="IObject.ExtensionData"/>; both a JSON-object link
+    /// (<c>{"href": "..."}</c>) and a bare IRI string are accepted for leniency.
+    /// </summary>
+    private static Iri? ResolveCollectionNextLink(OrderedCollection collection)
+    {
+        if (collection.ExtensionData is not { } ext ||
+            !ext.TryGetValue("next", out var nextElement))
+        {
+            return null;
+        }
+
+        // A bare IRI string (the wire shape Iris's server emits).
+        if (nextElement.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var value = nextElement.GetString();
+            return string.IsNullOrWhiteSpace(value) ? null : new Iri(value);
+        }
+
+        // A JSON-LD link object with an `href`.
+        if (nextElement.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            nextElement.TryGetProperty("href", out var href) &&
+            href.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var value = href.GetString();
+            return string.IsNullOrWhiteSpace(value) ? null : new Iri(value);
         }
 
         return null;
