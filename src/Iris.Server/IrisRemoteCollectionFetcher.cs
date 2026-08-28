@@ -13,7 +13,7 @@ namespace Iris.Server;
 /// configured identity (<see cref="ActivityPubServerOptions.InstanceActorId"/>). Reads go through the
 /// Phase 3 <see cref="CollectionPageCache"/> (keyed by the page IRI, the 30-second
 /// <see cref="CachePolicy.CollectionPage"/> policy), so a page is fetched once and reused across
-/// outbound paths within the TTL. A <c>forceRefresh</c> argument (mirroring the local collection
+/// outbound paths within the TTL. A <c>bypassCache</c> argument (mirroring the local collection
 /// endpoints' <c>?refresh=true</c>) bypasses the read for that call but writes a non-null page back.
 /// An absent result (the fetch failed or the object is not an <see cref="OrderedCollectionPage"/>) is
 /// not cached, so a later lookup retries.
@@ -31,12 +31,12 @@ public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, Colle
     private readonly CollectionPageCache _collectionPages = collectionPages!;
 
     /// <inheritdoc/>
-    public async Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default)
+    public async Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool bypassCache = false, CancellationToken ct = default)
     {
         var (page, _, _) = await _collectionPages
             .GetAsync(
                 pageIri,
-                forceRefresh,
+                bypassCache,
                 factory: iri => FetchPageAsync(iri, ct),
                 ct)
             .ConfigureAwait(false);

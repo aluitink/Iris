@@ -66,13 +66,13 @@ public sealed class AccountResolverIntegrationTests : IDisposable
         Assert.Equal(first, second);
     }
 
-    // --- A forceRefresh bypasses the cache and re-fetches over the wire -----------------
+    // --- A bypassCache bypasses the cache and re-fetches over the wire -----------------
 
     [Fact]
     public async Task Resolve_ForceRefresh_ReFetchesOverWire()
     {
         var first = await _resolver.ResolveAsync($"{Bob}@{BHost}");
-        var refreshed = await _resolver.ResolveAsync($"{Bob}@{BHost}", forceRefresh: true);
+        var refreshed = await _resolver.ResolveAsync($"{Bob}@{BHost}", bypassCache: true);
 
         // Both resolve to the same actor IRI (the endpoint is stable), but the forced refresh hit the
         // network again (the cache was bypassed for the read).

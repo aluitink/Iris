@@ -10,7 +10,7 @@ namespace Iris.Server.Tests;
 /// <summary>
 /// Unit tests for <see cref="IrisRemoteCollectionFetcher"/>: it reads remote collection pages through
 /// the Phase 3 <see cref="CollectionPageCache"/> (keyed by the page IRI) so a page is fetched once and
-/// reused across lookups, an absent result is not cached (retried), and a <c>forceRefresh</c> bypasses
+/// reused across lookups, an absent result is not cached (retried), and a <c>bypassCache</c> bypasses
 /// the read while writing back.
 /// </summary>
 /// <remarks>
@@ -103,8 +103,8 @@ public sealed class IrisRemoteCollectionFetcherTests
         await sut.GetCollectionPageAsync(pageIri); // populates the cache
         Assert.Equal(1, client.SendCalls);
 
-        // A forceRefresh bypasses the cached read (re-fetches) but writes the page back.
-        var refreshed = await sut.GetCollectionPageAsync(pageIri, forceRefresh: true);
+        // A bypassCache bypasses the cached read (re-fetches) but writes the page back.
+        var refreshed = await sut.GetCollectionPageAsync(pageIri, bypassCache: true);
 
         Assert.NotNull(refreshed);
         Assert.Equal(2, client.SendCalls); // the read was bypassed → a second network fetch

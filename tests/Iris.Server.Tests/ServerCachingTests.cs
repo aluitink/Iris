@@ -6,7 +6,7 @@ namespace Iris.Server.Tests;
 /// <summary>
 /// Phase 3 unit tests: the server-side read-through cache engine (<see cref="CachingReadThrough{TValue}"/>)
 /// and the concrete server caches (remote actor, remote key, collection page, WebFinger) plus the local
-/// actor document cache. These verify the TTL / stale-while-revalidate / <c>forceRefresh</c> semantics
+/// actor document cache. These verify the TTL / stale-while-revalidate / <c>bypassCache</c> semantics
 /// that back the server's <c>?refresh=true</c> bypass and <c>Cache-Control</c> behavior.
 /// </summary>
 /// <remarks>
@@ -107,7 +107,7 @@ public class ServerCachingTests
             return Task.FromResult<string?>("v1");
         });
 
-        // forceRefresh=true → factory consulted even though a fresh entry exists.
+        // bypassCache=true → factory consulted even though a fresh entry exists.
         var (value, wasStale, wasHit) = await sut.GetAsync(key, bypassCache: true, _ =>
         {
             factoryCalls++;
@@ -279,7 +279,7 @@ public class ServerCachingTests
             calls++;
             return Task.FromResult<string?>("v1");
         });
-        var (value, _, wasHit) = await sut.GetAsync(key, forceRefresh: true, _ =>
+        var (value, _, wasHit) = await sut.GetAsync(key, bypassCache: true, _ =>
         {
             calls++;
             return Task.FromResult<string?>("v2");

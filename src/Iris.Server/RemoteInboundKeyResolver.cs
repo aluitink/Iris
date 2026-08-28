@@ -30,7 +30,7 @@ public sealed class RemoteInboundKeyResolver(
     public async Task<KeyPair?> ResolveAsync(Iri keyId, CancellationToken ct = default)
     {
         var (jwkKey, _, _) = await _remoteKeys
-            .GetAsync(keyId, forceRefresh: false, factory: key => FetchJwkAsync(key, ct), ct)
+            .GetAsync(keyId, bypassCache: false, factory: key => FetchJwkAsync(key, ct), ct)
             .ConfigureAwait(false);
 
         if (jwkKey is null)

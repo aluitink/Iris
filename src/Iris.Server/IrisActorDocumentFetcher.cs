@@ -30,7 +30,7 @@ public sealed class IrisActorDocumentFetcher(IActivityPubClient client, RemoteAc
         var (value, _, _) = await _remoteActors
             .GetAsync(
                 actorIri,
-                forceRefresh: false,
+                bypassCache: false,
                 factory: iri => FetchDocumentAsync(iri, ct),
                 ct)
             .ConfigureAwait(false);

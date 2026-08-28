@@ -47,17 +47,17 @@ public sealed class RemoteKeyCache
 
     /// <summary>
     /// Gets the cached key for <paramref name="key"/>, fetching with <paramref name="factory"/> on a miss
-    /// (or when <paramref name="forceRefresh"/> is set).
+    /// (or when <paramref name="bypassCache"/> is set).
     /// </summary>
     /// <param name="key">The key IRI (the <c>publicKey.id</c> of the remote actor).</param>
-    /// <param name="forceRefresh">When true, the cache is skipped for the read but a non-null result is written back.</param>
+    /// <param name="bypassCache">When true, the cache is skipped for the read but a non-null result is written back.</param>
     /// <param name="factory">Invoked on a miss (or always, when refreshing) to fetch the JWK; null means absent.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The key (or null when absent), whether it was a stale-while-revalidate hit, and whether it was a hit at all.</returns>
     public Task<(JwkKey? Value, bool WasStale, bool WasHit)> GetAsync(
         Iri key,
-        bool forceRefresh,
+        bool bypassCache,
         Func<Iri, Task<JwkKey?>> factory,
         CancellationToken ct = default)
-        => _cache.GetAsync(key, forceRefresh, factory, ct);
+        => _cache.GetAsync(key, bypassCache, factory, ct);
 }

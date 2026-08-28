@@ -431,11 +431,11 @@ public static class ActivityPubServerExtensions
 
         // Public document: served through the local actor document cache (server → client layer).
         // ?refresh=true bypasses the read (re-fetch from persistence) but still writes back.
-        var forceRefresh = HasRefreshBypass(context);
+        var bypassCache = HasRefreshBypass(context);
         var (rendered, _, _) = await actorDocumentCache
             .GetAsync(
                 actorIri,
-                forceRefresh,
+                bypassCache,
                 async key =>
                 {
                     if (await persistence.Actors.TryGetActorAsync(key, out var actor, ct).ConfigureAwait(false) &&
@@ -459,7 +459,7 @@ public static class ActivityPubServerExtensions
         // re-fetched; intermediates must not serve a stale copy). A fresh hit, a stale-while-revalidate
         // hit, and a first fetch (a miss we now populate) are all cacheable: max-age=60,
         // stale-while-revalidate=300.
-        var cacheControl = forceRefresh
+        var cacheControl = bypassCache
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;

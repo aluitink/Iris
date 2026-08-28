@@ -5,7 +5,7 @@ namespace Iris.Server.Tests;
 /// <summary>
 /// Phase 4 unit tests: the <see cref="LocalCollectionPageCache"/> — the server → client response cache
 /// for paged local collections (outbox/followers/following). Mirrors the <see cref="LocalActorDocumentCache"/>
-/// semantics (miss → render + cache, fresh hit → no render, absent → not cached, forceRefresh → bypass read
+/// semantics (miss → render + cache, fresh hit → no render, absent → not cached, bypassCache → bypass read
 /// + write back, invalidate). The stale-while-revalidate path is exercised at the
 /// <see cref="CachingReadThrough{TValue}"/> engine level in <c>ServerCachingTests</c>; this suite covers the
 /// concrete cache's observable behavior (hit/miss/absent/force/invalidate).
@@ -22,7 +22,7 @@ public class LocalCollectionPageCacheTests
 
         var (value, wasStale, wasHit) = await sut.GetAsync(
             Page,
-            forceRefresh: false,
+            bypassCache: false,
             _ =>
             {
                 renderCalls++;

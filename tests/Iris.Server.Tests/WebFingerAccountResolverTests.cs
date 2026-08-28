@@ -6,7 +6,7 @@ namespace Iris.Server.Tests;
 /// <summary>
 /// Unit tests for <see cref="WebFingerAccountResolver"/>: it resolves a remote account to its actor IRI
 /// through the Phase 3 <see cref="WebFingerCache"/> so an account is resolved once and reused across
-/// lookups, an absent result is not cached (retried on the next lookup), and <c>forceRefresh</c>
+/// lookups, an absent result is not cached (retried on the next lookup), and <c>bypassCache</c>
 /// bypasses a fresh entry.
 /// </summary>
 /// <remarks>
@@ -99,8 +99,8 @@ public class WebFingerAccountResolverTests
         _ = await sut.ResolveAsync(account);
         Assert.Equal(1, webFinger.ResolveCalls);
 
-        // forceRefresh=true → the client is consulted even though a fresh entry exists.
-        var refreshed = await sut.ResolveAsync(account, forceRefresh: true);
+        // bypassCache=true → the client is consulted even though a fresh entry exists.
+        var refreshed = await sut.ResolveAsync(account, bypassCache: true);
 
         Assert.Equal(new Iri($"https://{BHost}/ap/v1/u/eve"), refreshed);
         Assert.Equal(2, webFinger.ResolveCalls);

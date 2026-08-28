@@ -34,7 +34,7 @@ namespace Iris.Server.Tests;
 /// </item>
 /// </list>
 /// The test asserts the miss→fetch→cache path, the per-page-IRI caching, the absent-result-not-cached
-/// path (the plain collection IRI), and the <c>forceRefresh</c> read bypass with write-back.
+/// path (the plain collection IRI), and the <c>bypassCache</c> read bypass with write-back.
 /// </remarks>
 public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
 {
@@ -112,8 +112,8 @@ public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
         var first = await _fetcher.GetCollectionPageAsync(BobOutboxPage2); // populates the cache
         Assert.Equal(1, _cache.Count);
 
-        // A forceRefresh bypasses the cached read (re-fetches over the wire) but writes the page back.
-        var refreshed = await _fetcher.GetCollectionPageAsync(BobOutboxPage2, forceRefresh: true);
+        // A bypassCache bypasses the cached read (re-fetches over the wire) but writes the page back.
+        var refreshed = await _fetcher.GetCollectionPageAsync(BobOutboxPage2, bypassCache: true);
 
         Assert.NotNull(refreshed);
         Assert.Equal(2, refreshed!.Items.Count);

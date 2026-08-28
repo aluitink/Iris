@@ -47,17 +47,17 @@ public sealed class RemoteActorCache
 
     /// <summary>
     /// Gets the cached remote actor for <paramref name="key"/>, fetching with <paramref name="factory"/> on
-    /// a miss (or when <paramref name="forceRefresh"/> is set).
+    /// a miss (or when <paramref name="bypassCache"/> is set).
     /// </summary>
     /// <param name="key">The actor IRI.</param>
-    /// <param name="forceRefresh">When true, the cache is skipped for the read but a non-null result is written back.</param>
+    /// <param name="bypassCache">When true, the cache is skipped for the read but a non-null result is written back.</param>
     /// <param name="factory">Invoked on a miss (or always, when refreshing) to fetch the actor; null means absent.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The actor (or null when absent), whether it was a stale-while-revalidate hit, and whether it was a hit at all.</returns>
     public Task<(IObject? Value, bool WasStale, bool WasHit)> GetAsync(
         Iri key,
-        bool forceRefresh,
+        bool bypassCache,
         Func<Iri, Task<IObject?>> factory,
         CancellationToken ct = default)
-        => _cache.GetAsync(key, forceRefresh, factory, ct);
+        => _cache.GetAsync(key, bypassCache, factory, ct);
 }

@@ -47,17 +47,17 @@ public sealed class WebFingerCache
 
     /// <summary>
     /// Gets the cached WebFinger resolution for <paramref name="key"/>, fetching with <paramref name="factory"/>
-    /// on a miss (or when <paramref name="forceRefresh"/> is set).
+    /// on a miss (or when <paramref name="bypassCache"/> is set).
     /// </summary>
     /// <param name="key">The account IRI.</param>
-    /// <param name="forceRefresh">When true, the cache is skipped for the read but a non-null result is written back.</param>
+    /// <param name="bypassCache">When true, the cache is skipped for the read but a non-null result is written back.</param>
     /// <param name="factory">Invoked on a miss (or always, when refreshing) to resolve the account; null means not found.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The hit (or null when not found), whether it was a stale-while-revalidate hit, and whether it was a hit at all.</returns>
     public Task<(WebFingerHit? Value, bool WasStale, bool WasHit)> GetAsync(
         Iri key,
-        bool forceRefresh,
+        bool bypassCache,
         Func<Iri, Task<WebFingerHit?>> factory,
         CancellationToken ct = default)
-        => _cache.GetAsync(key, forceRefresh, factory, ct);
+        => _cache.GetAsync(key, bypassCache, factory, ct);
 }

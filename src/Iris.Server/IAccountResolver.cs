@@ -21,7 +21,7 @@ public interface IAccountResolver
     /// </summary>
     /// <param name="account">The account handle (e.g. <c>@bob@b.test</c>, <c>bob@b.test</c>) or a full
     /// <c>acct:</c> URI. Normalized to an <c>acct:handle@host</c> resource URI.</param>
-    /// <param name="forceRefresh">When true, the cache is bypassed for the read (the resolution is
+    /// <param name="bypassCache">When true, the cache is bypassed for the read (the resolution is
     /// always re-fetched), but a non-null result is still written back. The server's <c>?refresh=true</c>
     /// escape hatch.</param>
     /// <param name="ct">The cancellation token.</param>
@@ -30,5 +30,5 @@ public interface IAccountResolver
     /// Resolution failures (unreachable host, 404, no self link) are an expected condition — return
     /// null, do not throw. An absent result is not cached, so a later lookup retries.
     /// </remarks>
-    public Task<Iri?> ResolveAsync(string account, bool forceRefresh = false, CancellationToken ct = default);
+    public Task<Iri?> ResolveAsync(string account, bool bypassCache = false, CancellationToken ct = default);
 }

@@ -25,7 +25,7 @@ public interface IRemoteCollectionFetcher
     /// <param name="pageIri">The absolute IRI of the page (e.g. a remote outbox's first page
     /// <c>https://b.test/ap/v1/u/bob/outbox?min_id=…</c>, or a query-string page
     /// <c>…/outbox/?page=2</c>).</param>
-    /// <param name="forceRefresh">When true, the collection-page cache is skipped for the read (a
+    /// <param name="bypassCache">When true, the collection-page cache is skipped for the read (a
     /// non-null page is written back). Mirrors the local collection endpoints' <c>?refresh=true</c>.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The page (its items plus the next-page link), or null when the fetch fails or the
@@ -34,5 +34,5 @@ public interface IRemoteCollectionFetcher
     /// Fetch failures (404, network error, not-a-page) are an expected condition — return null,
     /// do not throw.
     /// </remarks>
-    public Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default);
+    public Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool bypassCache = false, CancellationToken ct = default);
 }
