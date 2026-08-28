@@ -19,7 +19,7 @@
 | 6 — Proxy Fallback | ✅ complete |
 | 7 — Blazor Client Extensions & Samples | ✅ complete |
 | 8 — Sample Docker Composition | 🚧 in progress |
-| 9 — Real-World Deployment Preparation | 📋 planned |
+| 9 — Real-World Deployment Preparation | 🚧 in progress |
 | 10 — Project & Test Review | 📋 planned |
 | 11 — Implementation Gaps & Usability Exploration | 📋 planned |
 | 12 — Spec Conformance & Missing Features | 📋 planned |
@@ -62,8 +62,8 @@
 
 > Ideation + preparation only. **No live tests run yet** — we cannot exercise real instances until the operator provides a public, routable FQDN. This phase produces the artifacts and plans that make Phase 13 runnable.
 
-- [ ] **FQDN & TLS plan**: document the operator-provided FQDN requirements (DNS, A/AAAA record, TLS certificate provisioning, reverse-proxy config) and the exact config surface Iris needs to bind to it.
-- [ ] **Instance bootstrap runbook**: step-by-step to stand up a public Iris instance (key generation, actor creation, community setup, NodeInfo/WebFinger publication) against the FQDN.
+- [x] **FQDN & TLS plan**: document the operator-provided FQDN requirements (DNS, A/AAAA record, TLS certificate provisioning, reverse-proxy config) and the exact config surface Iris needs to bind to it (`docs/DEPLOYMENT_PREP.md` §1; resolves OQ #3 → Decision #40).
+- [x] **Instance bootstrap runbook**: step-by-step to stand up a public Iris instance (key generation, actor creation, community setup, NodeInfo/WebFinger publication) against the FQDN (`docs/DEPLOYMENT_PREP.md` §2, grounded in `ActivityPubServerOptions` + the `SampleServer` seed).
 - [ ] **Real-user enumeration design**: plan for discovering and enumerating real users/communities on other instances (WebFinger lookups, NodeInfo discovery, directory/search endpoints) — the read-only reconnaissance we'll run once the FQDN is live.
 - [ ] **Compatibility matrix**: define the target ecosystems (Mastodon, Threads, Lemmy, Pleroma, and others) and, for each, the concrete interop scenarios to verify (follow, post, receive, community/group, search, pagination, content types, signatures).
 - [ ] **Test harness extension**: design the opt-in live-interop suite structure (gated by env flag + FQDN config) so Phase 13 is a matter of filling in targets, not building the harness.
@@ -136,7 +136,7 @@
 ## Open Questions (to resolve as we go)
 
 1. **Route prefix shape**: confirm the exact prefix convention (e.g. `/ap/v1/...` vs `/v1/ap/...`) and whether the unversioned root (`/ap/...`) should alias to the latest version for convenience/back-compat.
-2. **Sample Docker topology** (Phase 8): the exact compose layout — how many `SampleServer` instances, hostname assignments, whether to include a relay, and how the Blazor client is served (static host vs. ASP.NET Core host).
-3. **FQDN & TLS provisioning** (Phase 9): the operator-provided FQDN details — DNS record type, TLS certificate source (Let's Encrypt vs. operator-managed), reverse-proxy choice, and the exact Iris config surface to bind to it.
-4. **Compatibility matrix scope** (Phase 9): which ecosystems are in-scope for Phase 13 live testing (Mastodon, Threads, Lemmy, Pleroma, others) and the priority ordering; Threads' non-standard ActivityPub surface may need special handling or deferral.
-5. **Live-interop CI gating** (Phase 13): how the opt-in live suite is gated in CI (env flag + FQDN secret) and how often it runs (on-demand vs. scheduled), given it depends on external, mutable third-party instances.
+2. **Compatibility matrix scope** (Phase 9): which ecosystems are in-scope for Phase 13 live testing (Mastodon, Threads, Lemmy, Pleroma, others) and the priority ordering; Threads' non-standard ActivityPub surface may need special handling or deferral.
+3. **Live-interop CI gating** (Phase 13): how the opt-in live suite is gated in CI (env flag + FQDN secret) and how often it runs (on-demand vs. scheduled), given it depends on external, mutable third-party instances.
+
+> Resolved (moved to [CHANGELOG.md](CHANGELOG.md) "Resolved Decisions"): #2 Sample Docker topology (→ #39) and #3 FQDN & TLS provisioning (→ #40).
