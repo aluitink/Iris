@@ -18,7 +18,7 @@
 | 5 — Community / Group Support | ✅ complete |
 | 6 — Proxy Fallback | ✅ complete |
 | 7 — Blazor Client Extensions & Samples | ✅ complete |
-| 8 — Sample Docker Composition | 📋 planned |
+| 8 — Sample Docker Composition | 🚧 in progress |
 | 9 — Real-World Deployment Preparation | 📋 planned |
 | 10 — Project & Test Review | 📋 planned |
 | 11 — Implementation Gaps & Usability Exploration | 📋 planned |
@@ -50,12 +50,13 @@
 
 > Prove the Phase 7 samples deploy and interoperate as a **real system**, not just in-process `TestServer` instances.
 
-- [ ] Dockerfiles for `SampleServer` (ASP.NET Core + Iris.Server + in-memory persistence) and `SampleBlazorClient` (WASM, served by a static host).
-- [ ] `docker-compose.yml` wiring both on an internal network with routable hostnames (e.g. `iris-server:8080`, `iris-client:80`); the Blazor client configured to reach the server by hostname.
-- [ ] A second `SampleServer` instance in the compose file (distinct hostname) to exercise **real cross-container federation** (follow, post, feed) over genuine network I/O — not in-process.
-- [ ] Health-check + readiness probes; a smoke-test script that boots the stack, authenticates the Blazor client, and asserts a federated post is visible.
-- [ ] Document the compose topology, hostname assignments, and how to run/tear down locally.
-- [ ] Wire as an opt-in CI job (Docker available); skip in local/dev runs without Docker.
+- [x] Dockerfile for `SampleServer` (multi-stage SDK → aspnet runtime; `samples/SampleServer/Dockerfile` + root `.dockerignore`).
+- [ ] Dockerfile for `SampleBlazorClient` (WASM, served by a static host) — deferred with the WASM host.
+- [x] `docker-compose.yml` wiring **two `SampleServer` instances** (`iris-a`, `iris-b`) on an internal network (`iris-net`) with routable service-name hostnames; each advertises its own base URI.
+- [x] A second `SampleServer` instance in the compose file (distinct hostname) to exercise **real cross-container federation** over genuine network I/O — not in-process.
+- [x] Health-check probes (TCP connect to `:8080`); a smoke-test script (`scripts/docker-smoke-test.sh`) that boots the stack, waits for health, and asserts cross-container WebFinger reachability. The Blazor-client auth + federated-post assertion is deferred with the WASM host (the in-process two-instance integration tests cover the client path).
+- [x] Document the compose topology, hostname assignments, and how to run/tear down locally (`docs/DEPLOYMENT.md`).
+- [ ] Wire as an opt-in CI job (Docker available); skip in local/dev runs without Docker — deferred until a baseline CI workflow exists; the smoke script's opt-in gate (skip when Docker is unavailable) is the interim measure.
 
 ## Phase 9 — Real-World Deployment Preparation 📋
 

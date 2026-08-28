@@ -74,7 +74,7 @@ The full rules, including the per-turn workflow, are in [docs/AUTONOMOUS_LOOP.md
 
 ## Current Status
 
-Phases 0–7 are complete. Per-slice detail (what was built, key types, test counts, resolved decisions) lives in [docs/CHANGELOG.md](docs/CHANGELOG.md); the phased plan and open questions are in [docs/ROADMAP.md](docs/ROADMAP.md).
+Phases 0–7 are complete; Phase 8 (Sample Docker Composition) is in progress — the server-side Docker foundation (SampleServer Dockerfile + a two-instance compose stack + smoke test) is done and verified. Per-slice detail (what was built, key types, test counts, resolved decisions) lives in [docs/CHANGELOG.md](docs/CHANGELOG.md); the phased plan and open questions are in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 | Phase | Status | One-line summary |
 |---|---|---|
@@ -86,7 +86,7 @@ Phases 0–7 are complete. Per-slice detail (what was built, key types, test cou
 | 5 — Community / Group Support | ✅ complete | Community store (membership + follows), community endpoints (doc/members/inbox/feed/search), unified feed, community following, `iris:capabilities`. |
 | 6 — Proxy Fallback | ✅ complete | Server proxy endpoint + policy stack (allowlist, rate limit), client `ProxyFallbackHandler`. |
 | 7 — Blazor Client Extensions & Samples | ✅ complete | `Iris.Client.Extensions` package + `SampleServer` + `SampleBlazorClient` (console composition root) + E2E tests (login → signed feed → proxy fallback); `Iris.Client` page-1 collection fix. WASM host deferred to Phase 8. |
-| 8 — Sample Docker Composition | 📋 planned | Dockerfiles + compose for the samples; real cross-container federation; opt-in CI job. |
+| 8 — Sample Docker Composition | 🚧 in progress | `SampleServer` multi-stage Dockerfile + `.dockerignore`; two-instance compose (`iris-a`/`iris-b` on `iris-net`, routable hostnames); health checks + smoke-test script (verified: both healthy, cross-container WebFinger 200); `UseKestrel()` fix so the server starts. Blazor-client Dockerfile (WASM host) + CI job deferred. |
 | 9 — Real-World Deployment Preparation | 📋 planned | FQDN/TLS plan, bootstrap runbook, real-user enumeration design, compatibility matrix (Mastodon/Threads/Lemmy). Prep only — no live tests yet. |
 | 10 — Project & Test Review | 📋 planned | Full audit: remove redundant/useless tests, consolidate code, dead-code sweep, API surface pass. |
 | 11 — Implementation Gaps & Usability Exploration | 📋 planned | Walk every feature end-to-end as a user; catalog gaps; expand integration tests to cover realistic journeys + error paths. |
