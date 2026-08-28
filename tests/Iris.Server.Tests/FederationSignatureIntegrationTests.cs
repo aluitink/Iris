@@ -6,6 +6,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -62,12 +63,12 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         _aPersistence = new InMemoryPersistenceProvider();
         _bPersistence = new InMemoryPersistenceProvider();
 
-        var aSeeded = Seed(_aPersistence, AHost, Alice);
+        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
         _aliceKey = aSeeded.Key;
         AliceActorIri = aSeeded.ActorIri;
         AliceKeyId = aSeeded.KeyId;
 
-        var bSeeded = Seed(_bPersistence, BHost, Bob);
+        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
         _bobKey = bSeeded.Key;
         BobActorIri = bSeeded.ActorIri;
         BobInboxIri = BobActorIri.InboxOf();
@@ -145,8 +146,8 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // inbox over the wire (signed as bob); A validates bob's signature by fetching B's actor doc.
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
-        var bSeeded = Seed(bPersistence, BHost, Bob);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
         var aliceActorIri = aSeeded.ActorIri;
         var bobActorIri = bSeeded.ActorIri;
         var bobInboxIri = bobActorIri.InboxOf();
@@ -216,8 +217,8 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
     {
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
-        var bSeeded = Seed(bPersistence, BHost, Bob);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
         var aliceActorIri = aSeeded.ActorIri;
         var bobActorIri = bSeeded.ActorIri;
         var aliceFollowingIri = new Iri($"{aliceActorIri}/following");
@@ -310,11 +311,11 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
     {
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
 
         // B hosts TWO local actors: bob (the instance actor) and carol (a second local actor).
-        var bBob = Seed(bPersistence, BHost, Bob);
-        var bCarol = Seed(bPersistence, BHost, Carol);
+        var bBob = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
+        var bCarol = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Carol);
         var bobActorIri = bBob.ActorIri;
         var bobInboxIri = bobActorIri.InboxOf();
         var carolActorIri = bCarol.ActorIri;
@@ -381,9 +382,9 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // local actors (bob = instance actor, carol = a second local actor).
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
-        var bBob = Seed(bPersistence, BHost, Bob);
-        var bCarol = Seed(bPersistence, BHost, Carol);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        var bBob = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
+        var bCarol = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Carol);
         var bobActorIri = bBob.ActorIri;
         var carolActorIri = bCarol.ActorIri;
         var carolInboxIri = carolActorIri.InboxOf();
@@ -558,51 +559,6 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
     }
 
     // --- Helpers ----------------------------------------------------------------
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key.
-    /// The actor's <c>publicKey</c> extension carries the real JWK (so a remote resolver can verify).
-    /// Returns the key, the actor IRI (string + <see cref="Iri"/>), and the key IRI.
-    /// </summary>
-    private static (KeyPair Key, string ActorIriString, Iri ActorIri, Iri KeyId) Seed(
-        InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            // The real JWK, so a remote instance can reconstruct the public key and verify signatures.
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        return (key, actorIriString, actorIri, keyId);
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        // The JWK is the canonical serialization; pull the component out of it.
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
-
 
     /// <summary>
     /// Builds a delivery <see cref="IActivityPubClient"/> signed with the given key (as the given

@@ -3,7 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Iris.Core;
 using Iris.Server.InMemory;
-using KristofferStrube.ActivityStreams;
+using Iris.Testing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -99,7 +99,7 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
 
         // Both local members are present (as bare IRI strings — the one-or-multiple converter renders a
         // single-Link item as its IRI), and totalItems reflects the full member count.
-        var memberIris = GetItems(doc.RootElement).Select(MemberIri).ToHashSet();
+        var memberIris = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToHashSet();
         Assert.Equal(2, memberIris.Count);
         Assert.Contains($"{_base}/ap/v1/u/{Alice}", memberIris);
         Assert.Contains($"{_base}/ap/v1/u/{Bob}", memberIris);
@@ -157,7 +157,7 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         Assert.Equal($"{_base}/ap/v1/c/{Community}/following", doc.RootElement.GetProperty("id").GetString());
 
         // The followed IRIs are present (as bare IRI strings), and totalItems reflects the count.
-        var followedIris = GetItems(doc.RootElement).Select(ItemIri).ToHashSet();
+        var followedIris = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToHashSet();
         Assert.Equal(2, followedIris.Count);
         Assert.Contains(remote1.Value, followedIris);
         Assert.Contains(remote2.Value, followedIris);
@@ -175,7 +175,7 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
-        Assert.Empty(GetItems(doc.RootElement));
+        Assert.Empty(JsonDoc.GetItems(doc.RootElement));
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
@@ -218,69 +218,17 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
     // --- Helpers ------------------------------------------------------------------
 
     /// <summary>
-    /// Normalizes the <c>items</c> property to a list of element values (the one-or-multiple converter
-    /// emits a single item as a scalar/object, not an array).
-    /// </summary>
-    private static List<JsonElement> GetItems(JsonElement root)
-    {
-        var items = root.GetProperty("items");
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
-    }
-
-    /// <summary>
-    /// A members item serializes as a bare IRI string (a single <c>Link</c>).
-    /// </summary>
-    private static string MemberIri(JsonElement element) => element.GetString()!;
-
-    /// <summary>
-    /// A following/followers item serializes as a bare IRI string (a single <c>Link</c>).
-    /// </summary>
-    private static string ItemIri(JsonElement element) => element.GetString()!;
-
-    /// <summary>
     /// Seeds the persistence provider: a community <c>iris</c> (a <c>Group</c> actor) with two local
-    /// members (alice, bob), and the two member actors.
+    /// members (alice, bob), via the shared <see cref="TestSeeder"/>.
     /// </summary>
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
-        var baseUrl = _Base();
-        var communityIri = new Iri($"{baseUrl}/ap/v1/c/{Community}");
-
-        var community = new Group
-        {
-            Id = communityIri.Value,
-            PreferredUsername = Community,
-            Name = [Community],
-        };
-        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
-
-        var alice = new Person
-        {
-            Id = $"{baseUrl}/ap/v1/u/{Alice}",
-            PreferredUsername = Alice,
-            Name = [Alice],
-        };
-        persistence.ActorStore.PutActorAsync(alice).GetAwaiter().GetResult();
-
-        var bob = new Person
-        {
-            Id = $"{baseUrl}/ap/v1/u/{Bob}",
-            PreferredUsername = Bob,
-            Name = [Bob],
-        };
-        persistence.ActorStore.PutActorAsync(bob).GetAwaiter().GetResult();
-
-        persistence.Communities
-            .AddMemberAsync(communityIri, new Iri($"{baseUrl}/ap/v1/u/{Alice}"))
-            .GetAwaiter().GetResult();
-        persistence.Communities
-            .AddMemberAsync(communityIri, new Iri($"{baseUrl}/ap/v1/u/{Bob}"))
-            .GetAwaiter().GetResult();
+        var communityIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
+        var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
+        var bobIri = TestSeeder.SeedPerson(persistence, AHost, Bob);
+        TestSeeder.AddMember(persistence, communityIri, aliceIri);
+        TestSeeder.AddMember(persistence, communityIri, bobIri);
     }
-
-    private static string _Base() => $"https://{AHost}";
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> hosting the real community endpoints.

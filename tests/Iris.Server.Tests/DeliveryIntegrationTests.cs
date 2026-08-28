@@ -3,6 +3,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -49,10 +50,10 @@ public sealed class DeliveryIntegrationTests : IDisposable
         var aPersistence = new InMemoryPersistenceProvider();
         _bPersistence = new InMemoryPersistenceProvider();
 
-        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
         _aliceKey = aSeeded.Key;
         AliceActorIri = aSeeded.ActorIri;
-        var bSeeded = Seed(_bPersistence, BHost, Bob);
+        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
         BobActorIri = bSeeded.ActorIri;
         BobInboxIri = BobActorIri.InboxOf();
 
@@ -210,47 +211,6 @@ public sealed class DeliveryIntegrationTests : IDisposable
             .Build();
 
         return new TestWorker(host, worker, service, queue);
-    }
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key, carrying the real
-    /// JWK in the <c>publicKey</c> extension (so a remote resolver can verify signatures).
-    /// </summary>
-    private static (KeyPair Key, Iri ActorIri) Seed(
-        InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        return (key, actorIri);
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
     }
 
     /// <summary>

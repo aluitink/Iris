@@ -3,6 +3,7 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -81,16 +82,16 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
 
         // A hosts alice (a public actor, so B can resolve alice's key) and a community <c>lumen</c>
         // (a Group with a real key, so B's community can follow it over the wire and A can sign back).
-        var aSeeded = Seed(_aPersistence, AHost, Alice);
+        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
         _aliceKey = aSeeded.Key;
         _aliceActorIri = aSeeded.ActorIri;
-        _aCommunityKey = SeedCommunity(_aPersistence, AHost, RemoteCommunity);
+        _aCommunityKey = TestSeeder.SeedCommunityWithKey(_aPersistence, AHost, RemoteCommunity).Key;
 
         // B hosts bob and a community <c>iris</c> (a Group with bob as its only local member and a real
         // key, so it can sign the outbound follow).
-        var bSeeded = Seed(_bPersistence, BHost, Bob);
+        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
         _bobActorIri = bSeeded.ActorIri;
-        _bCommunityKey = SeedCommunity(_bPersistence, BHost, LocalCommunity, _bobActorIri);
+        _bCommunityKey = TestSeeder.SeedCommunityWithKey(_bPersistence, BHost, LocalCommunity, _bobActorIri).Key;
 
         _localCommunityIri = new Iri($"https://{BHost}/ap/v1/c/{LocalCommunity}");
         _localCommunityInboxIri = _localCommunityIri.InboxOf();
@@ -221,91 +222,11 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
         var response = await _bHttp.GetAsync($"https://{BHost}/ap/v1/c/{LocalCommunity}/feed?limit=10");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var itemIds = GetItems(doc.RootElement).Select(ItemId).ToList();
+        var itemIds = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();
         Assert.Contains(create.Id!, itemIds);
     }
 
     // --- Helpers ------------------------------------------------------------------
-
-    /// <summary>
-    /// Seeds a community (a <see cref="Group"/>) with a real EC key (carried in the <c>publicKey</c>
-    /// extension, so a remote resolver can verify signatures the community signs) and an optional local
-    /// member. Returns the community's key (so it can be registered for outbound signing).
-    /// </summary>
-    private static KeyPair SeedCommunity(
-        InMemoryPersistenceProvider persistence, string host, string name, Iri? memberIri = null)
-    {
-        var communityIri = new Iri($"https://{host}/ap/v1/c/{name}");
-        var keyId = new Iri($"{communityIri.Value}#key-1");
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var community = new Group
-        {
-            Id = communityIri.Value,
-            PreferredUsername = name,
-            Name = [name],
-        };
-        community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = communityIri.Value,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
-
-        if (memberIri is not null)
-        {
-            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
-        }
-
-        return key;
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key, carrying the real JWK
-    /// in the <c>publicKey</c> extension (so a remote resolver can verify signatures).
-    /// </summary>
-    private static (KeyPair Key, Iri ActorIri) Seed(
-        InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        return (key, actorIri);
-    }
 
     /// <summary>
     /// A hosted <see cref="DeliveryWorker"/> (signed as the given actor, routing deliveries to the target
@@ -517,21 +438,8 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
         var response = await http.GetAsync(url + "?limit=100");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return GetItems(doc.RootElement).Select(ItemId).ToList();
+        return JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();
     }
-
-    private static List<JsonElement> GetItems(JsonElement root)
-    {
-        var items = root.GetProperty("items");
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
-    }
-
-    private static string ItemId(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString()!
-            : element.GetProperty("id").GetString()!;
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
     {

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -67,7 +68,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/search", doc.RootElement.GetProperty("id").GetString());
 
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         // Feed order: alice's posts precede bob's; within a member, newest first.
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]); // FEDERAL
@@ -89,7 +90,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(4, items.Length);
         Assert.Equal(4, doc.RootElement.GetProperty("totalItems").GetInt32());
 
@@ -128,7 +129,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
             $"{_base}/ap/v1/c/{Community}/search/?offset=2&limit=2",
             doc.RootElement.GetProperty("id").GetString());
 
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[0]);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[1]);
@@ -148,7 +149,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[1]);
@@ -172,7 +173,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        var items = GetItems(doc.RootElement);
+        var items = JsonDoc.GetItems(doc.RootElement);
         Assert.Empty(items);
         Assert.Equal(4, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
@@ -215,99 +216,32 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
 
     // --- Helpers ------------------------------------------------------------------
 
-    private static List<JsonElement> GetItems(JsonElement root)
-    {
-        if (!root.TryGetProperty("items", out var items))
-        {
-            return [];
-        }
-
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
-    }
-
-    private static string ItemId(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString()!
-            : element.GetProperty("id").GetString()!;
-
     /// <summary>
     /// Seeds: community <c>iris</c> with members alice (2 posts: GARDEN, FEDERAL) and bob (2 posts:
-    /// federation, weather), plus a second member-less community <c>empty</c>.
+    /// federation, weather), plus a second member-less community <c>empty</c>, via the shared
+    /// <see cref="TestSeeder"/>.
     /// </summary>
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
-        var baseUrl = _Base();
-        var communityIri = new Iri($"{baseUrl}/ap/v1/c/{Community}");
-
-        persistence.Communities.PutCommunityAsync(new Group
-        {
-            Id = communityIri.Value,
-            PreferredUsername = Community,
-            Name = [Community],
-        }).GetAwaiter().GetResult();
-
-        var aliceIri = new Iri($"{baseUrl}/ap/v1/u/{Alice}");
-        persistence.ActorStore.PutActorAsync(new Person
-        {
-            Id = aliceIri.Value,
-            PreferredUsername = Alice,
-            Name = [Alice],
-        }).GetAwaiter().GetResult();
-
-        var bobIri = new Iri($"{baseUrl}/ap/v1/u/{Bob}");
-        persistence.ActorStore.PutActorAsync(new Person
-        {
-            Id = bobIri.Value,
-            PreferredUsername = Bob,
-            Name = [Bob],
-        }).GetAwaiter().GetResult();
-
-        persistence.Communities.AddMemberAsync(communityIri, aliceIri).GetAwaiter().GetResult();
-        persistence.Communities.AddMemberAsync(communityIri, bobIri).GetAwaiter().GetResult();
+        var communityIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
+        var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
+        var bobIri = TestSeeder.SeedPerson(persistence, AHost, Bob);
+        TestSeeder.AddMember(persistence, communityIri, aliceIri);
+        TestSeeder.AddMember(persistence, communityIri, bobIri);
 
         // alice: 2 posts, added oldest→newest (GARDEN create-1, FEDERAL create-2) so the outbox is
         // newest first (FEDERAL, GARDEN).
-        persistence.Activities.AddToOutboxAsync(aliceIri, new Create
-        {
-            Id = $"{aliceIri.Value}/activities/create-1",
-            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
-            Object = [new Note { Id = $"{aliceIri.Value}/objects/note-1", Content = ["a GARDEN post"] }],
-        }).GetAwaiter().GetResult();
-        persistence.Activities.AddToOutboxAsync(aliceIri, new Create
-        {
-            Id = $"{aliceIri.Value}/activities/create-2",
-            Actor = [new Link { Href = new Uri(aliceIri.Value) }],
-            Object = [new Note { Id = $"{aliceIri.Value}/objects/note-2", Content = ["a FEDERAL post"] }],
-        }).GetAwaiter().GetResult();
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post");
 
         // bob: 2 posts, added oldest→newest (weather create-1, federation create-2) so the outbox is
         // newest first (federation, weather).
-        persistence.Activities.AddToOutboxAsync(bobIri, new Create
-        {
-            Id = $"{bobIri.Value}/activities/create-1",
-            Actor = [new Link { Href = new Uri(bobIri.Value) }],
-            Object = [new Note { Id = $"{bobIri.Value}/objects/note-1", Content = ["about federation"] }],
-        }).GetAwaiter().GetResult();
-        persistence.Activities.AddToOutboxAsync(bobIri, new Create
-        {
-            Id = $"{bobIri.Value}/activities/create-2",
-            Actor = [new Link { Href = new Uri(bobIri.Value) }],
-            Object = [new Note { Id = $"{bobIri.Value}/objects/note-2", Content = ["the weather today"] }],
-        }).GetAwaiter().GetResult();
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about federation");
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "the weather today");
 
         // A member-less community for completeness.
-        var emptyIri = new Iri($"{baseUrl}/ap/v1/c/empty");
-        persistence.Communities.PutCommunityAsync(new Group
-        {
-            Id = emptyIri.Value,
-            PreferredUsername = "empty",
-            Name = ["empty"],
-        }).GetAwaiter().GetResult();
+        TestSeeder.SeedCommunity(persistence, AHost, "empty");
     }
-
-    private static string _Base() => $"https://{AHost}";
 
     private static TestServer StartServer(InMemoryPersistenceProvider persistence)
     {

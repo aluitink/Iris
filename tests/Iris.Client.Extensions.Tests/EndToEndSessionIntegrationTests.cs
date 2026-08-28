@@ -5,6 +5,7 @@ using Iris.Client.Extensions;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -37,27 +38,7 @@ public sealed class EndToEndSessionIntegrationTests : IDisposable
     public EndToEndSessionIntegrationTests()
     {
         _persistence = new InMemoryPersistenceProvider();
-        var key = KeyPairGenerator.GenerateEcP256(new Iri(KeyIri));
-        _persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = ActorIri,
-            PreferredUsername = Handle,
-            Name = [Handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = KeyIri,
-            owner = ActorIri,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        _persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
+        TestSeeder.SeedPersonWithKey(_persistence, Host, Handle);
         _server = StartServer(_persistence);
     }
 
@@ -179,11 +160,5 @@ public sealed class EndToEndSessionIntegrationTests : IDisposable
             });
 
         return new TestServer(builder);
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
     }
 }

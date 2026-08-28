@@ -2,6 +2,7 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -36,7 +37,7 @@ public sealed class AccountResolverIntegrationTests : IDisposable
     public AccountResolverIntegrationTests()
     {
         var persistence = new InMemoryPersistenceProvider();
-        Seed(persistence, BHost, Bob);
+        TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
         _b = StartServer(BHost, Bob, persistence);
         _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
 
@@ -91,44 +92,6 @@ public sealed class AccountResolverIntegrationTests : IDisposable
     }
 
     // --- Helpers ----------------------------------------------------------------------
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key, carrying the real
-    /// JWK in the <c>publicKey</c> extension (mirrors the delivery/federation tests).
-    /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> (host/handle/persistence) that hosts the real

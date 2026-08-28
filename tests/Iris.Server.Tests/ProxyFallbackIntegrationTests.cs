@@ -6,6 +6,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -50,8 +51,8 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
 
-        var aSeeded = Seed(aPersistence, AHost, Alice);
-        var bSeeded = Seed(bPersistence, BHost, Bob);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
         AliceActorIri = aSeeded.ActorIri;
         BobActorIri = bSeeded.ActorIri;
 
@@ -137,7 +138,7 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     public async Task Proxy_TargetNotInAllowlist_IsRejectedWith403()
     {
         var aPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
+        TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
 
         var b = StartServer(BHost, Bob, new InMemoryPersistenceProvider());
         var a = StartServer(
@@ -162,12 +163,12 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     public async Task Proxy_RateLimitExceeded_IsRejectedWith429()
     {
         var aPersistence = new InMemoryPersistenceProvider();
-        var aSeeded = Seed(aPersistence, AHost, Alice);
+        TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
 
         // B must be seeded (serve bob's actor doc) so the first two in-budget forwards succeed;
         // only the third is rejected by the rate-limit policy.
         var bPersistence = new InMemoryPersistenceProvider();
-        Seed(bPersistence, BHost, Bob);
+        TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
         var b = StartServer(BHost, Bob, bPersistence);
         var a = StartServer(
             AHost, Alice, aPersistence,
@@ -229,48 +230,6 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
     private Task<HttpResponseMessage> ProxyGetAsync(Iri target, string? username, string? password)
         => ProxyGetAsync(_a, target, username, password);
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key. The actor's
-    /// <c>publicKey</c> extension carries the real JWK (so a remote resolver can verify). Returns the
-    /// key, the actor IRI (string + <see cref="Iri"/>), and the key IRI.
-    /// </summary>
-    private static (KeyPair Key, string ActorIriString, Iri ActorIri, Iri KeyId) Seed(
-        InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        return (key, actorIriString, actorIri, keyId);
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
 
     /// <summary>
     /// Starts a single-instance <c>TestServer</c> with the given host/handle/persistence, optionally

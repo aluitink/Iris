@@ -3,6 +3,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -70,25 +71,25 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
 
         // A hosts alice (public actor document, so B can resolve alice's key) and a second community
         // <c>lumen</c> (a Group with a real key) that B's community can follow over the wire.
-        var aSeeded = Seed(aPersistence, AHost, Alice);
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
         _aliceKey = aSeeded.Key;
         _aliceActorIri = aSeeded.ActorIri;
         _aliceInboxIri = _aliceActorIri.InboxOf();
 
         _remoteCommunityIri = new Iri($"https://{AHost}/ap/v1/c/{RemoteCommunity}");
         _remoteCommunityInboxIri = _remoteCommunityIri.InboxOf();
-        _remoteCommunityKey = SeedCommunity(aPersistence, AHost, RemoteCommunity);
+        _remoteCommunityKey = TestSeeder.SeedCommunityWithKey(aPersistence, AHost, RemoteCommunity).Key;
 
         // B hosts bob; its fetcher is wired to A so B can validate signatures by fetching A's actor doc
         // (and A's community doc, so B can resolve A's community-as-follower's key).
-        var bSeeded = Seed(_bPersistence, BHost, Bob);
+        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
         _bobActorIri = bSeeded.ActorIri;
 
         // B also hosts a community <c>iris</c> with bob as its (only) local member, and a real key so it
         // can sign outbound follows (a Group is a follower just like a Person).
         _communityIri = new Iri($"https://{BHost}/ap/v1/c/{Community}");
         _communityInboxIri = new Iri($"{_communityIri.Value}/inbox");
-        var communityKey = SeedCommunity(_bPersistence, BHost, Community, _bobActorIri);
+        var communityKey = TestSeeder.SeedCommunityWithKey(_bPersistence, BHost, Community, _bobActorIri).Key;
 
         _a = StartServer(AHost, Alice, aPersistence, _aliceKey);
         _b = StartServer(BHost, Bob, _bPersistence, bSeeded.Key, communityKey,
@@ -171,7 +172,7 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
         var response = await _bHttp.GetAsync($"https://{BHost}/ap/v1/c/{Community}/feed?limit=10");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var itemIds = GetItems(doc.RootElement).Select(ItemId).ToList();
+        var itemIds = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();
         // The followed community content (alice's Create) appears in the community feed.
         Assert.Contains(create.Id!, itemIds);
     }
@@ -197,87 +198,6 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
     }
 
     // --- Helpers ----------------------------------------------------------------------------
-
-    /// <summary>
-    /// Seeds a community (a <see cref="Group"/>) with a real EC key (carried in the <c>publicKey</c>
-    /// extension, so a remote resolver can verify signatures the community signs) and an optional
-    /// local member. Returns the community's key (so it can be registered for outbound signing).
-    /// </summary>
-    private static KeyPair SeedCommunity(
-        InMemoryPersistenceProvider persistence, string host, string name,
-        Iri? memberIri = null)
-    {
-        var communityIri = new Iri($"https://{host}/ap/v1/c/{name}");
-        var keyId = new Iri($"{communityIri.Value}#key-1");
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var community = new Group
-        {
-            Id = communityIri.Value,
-            PreferredUsername = name,
-            Name = [name],
-        };
-        community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = communityIri.Value,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
-
-        if (memberIri is not null)
-        {
-            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
-        }
-
-        return key;
-    }
-
-    /// <summary>
-    /// Seeds a persistence provider with a single actor (Person) + a real EC key, carrying the real
-    /// JWK in the <c>publicKey</c> extension (so a remote resolver can verify signatures).
-    /// </summary>
-    private static (KeyPair Key, Iri ActorIri) Seed(
-        InMemoryPersistenceProvider persistence, string host, string handle)
-    {
-        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = handle,
-            Name = [handle],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        return (key, actorIri);
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
 
     /// <summary>
     /// A hosted <see cref="DeliveryWorker"/> (signed as the instance actor, routing deliveries to the
@@ -452,19 +372,6 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
             new Note { Id = $"https://{AHost}/objects/note-{Guid.NewGuid():N}", Content = ["followed content"] },
         ],
     };
-
-    private static List<JsonElement> GetItems(JsonElement root)
-    {
-        var items = root.GetProperty("items");
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
-    }
-
-    private static string ItemId(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString()!
-            : element.GetProperty("id").GetString()!;
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
     {

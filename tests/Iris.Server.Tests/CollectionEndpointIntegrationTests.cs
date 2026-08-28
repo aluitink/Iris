@@ -3,6 +3,7 @@ using System.Net;
 using System.Text.Json;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -63,7 +64,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
 
         // Items are newest-first; with limit=2 the outbox (seeded newest-first) yields the two most
         // recent. Outbox items are full activity objects, so read their `id`.
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.EndsWith("-5", items[0]);
         Assert.EndsWith("-4", items[1]);
@@ -97,7 +98,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
             doc.RootElement.GetProperty("partOf").GetString());
 
         // Page 2 holds items 3 and 4 (1-based), newest-first within the page.
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.EndsWith("-3", items[0]);
         Assert.EndsWith("-2", items[1]);
@@ -124,7 +125,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal("OrderedCollectionPage", doc.RootElement.GetProperty("type").GetString());
 
         // Page 3 holds the final (5th) item only.
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
         Assert.EndsWith("-1", items[0]);
 
@@ -148,7 +149,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(
             $"{_base}/ap/v1/u/{Alice}/outbox/?page=3",
             doc.RootElement.GetProperty("id").GetString());
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
     }
 
@@ -162,7 +163,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.Equal($"https://{AHost}/ap/v1/u/bob", items[0]);
         Assert.Equal($"https://{AHost}/ap/v1/u/carol", items[1]);
@@ -177,7 +178,7 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        var items = GetItems(doc.RootElement).Select(ItemId).ToArray();
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
         Assert.Equal($"https://{AHost}/ap/v1/u/dave", items[0]);
     }
@@ -208,28 +209,6 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
     }
 
     // --- Helpers ------------------------------------------------------------------
-
-    /// <summary>
-    /// Normalizes the <c>items</c> property to a list of element values. The ActivityStreams
-    /// one-or-multiple converter emits a single item as a scalar/object (not an array), so this
-    /// wraps non-array values in a one-element list.
-    /// </summary>
-    private static List<JsonElement> GetItems(JsonElement root)
-    {
-        var items = root.GetProperty("items");
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
-    }
-
-    /// <summary>
-    /// Extracts an item's IRI from a serialized collection item: a full activity object carries an
-    /// <c>id</c>, whereas a single-Link item (followers/following) serializes as a bare IRI string.
-    /// </summary>
-    private static string ItemId(JsonElement element)
-        => element.ValueKind == JsonValueKind.String
-            ? element.GetString()!
-            : element.GetProperty("id").GetString()!;
 
     /// <summary>
     /// Seeds the persistence provider: an actor (alice) with a 5-item outbox (newest-first) and follow

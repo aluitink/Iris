@@ -2,6 +2,7 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -140,29 +141,7 @@ public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
     /// </summary>
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
-        var actorIriString = $"https://{BHost}/ap/v1/u/{Bob}";
-        var actorIri = new Iri(actorIriString);
-        var keyId = new Iri($"{actorIriString}#key-1");
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(key);
-
-        var actor = new Person
-        {
-            Id = actorIriString,
-            PreferredUsername = Bob,
-            Name = [Bob],
-        };
-        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
-        {
-            id = keyId.Value,
-            owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
-        });
-        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+        var (_, actorIri, _) = TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
 
         var outbox = (InMemoryActivityStore)persistence.Activities;
         // Outbox items, added oldest→newest so AddToOutboxAsync (inserts at index 0) leaves the list
@@ -171,18 +150,12 @@ public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
         {
             var create = new Create
             {
-                Id = $"{actorIriString}/activities/create-{i}",
-                Actor = [new Link { Href = new Uri(actorIriString) }],
-                Object = [new Note { Id = $"{actorIriString}/objects/note-{i}", Content = [$"note {i}"] }],
+                Id = $"{actorIri.Value}/activities/create-{i}",
+                Actor = [new Link { Href = new Uri(actorIri.Value) }],
+                Object = [new Note { Id = $"{actorIri.Value}/objects/note-{i}", Content = [$"note {i}"] }],
             };
             outbox.AddToOutboxAsync(actorIri, create).GetAwaiter().GetResult();
         }
-    }
-
-    private static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
     }
 
     /// <summary>
