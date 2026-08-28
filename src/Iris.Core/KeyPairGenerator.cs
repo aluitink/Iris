@@ -28,7 +28,10 @@ public static class KeyPairGenerator
         {
             KeyAlgorithm.Rsa => new KeyPair(RSA.Create(RsaKeySizeBits), algorithm, keyId),
             KeyAlgorithm.EcP256 => new KeyPair(ECDsa.Create(ECCurve.NamedCurves.nistP256), algorithm, keyId),
-            _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm, "Unsupported key algorithm."),
+            // Ed25519 is not an <see cref="AsymmetricAlgorithm"/> and has no BCL type on this
+            // runtime; it is handled by the dedicated <see cref="Ed25519Key"/> type instead.
+            _ => throw new ArgumentOutOfRangeException(nameof(algorithm), algorithm,
+                $"Algorithm {algorithm} is not supported by KeyPairGenerator (use Ed25519Key for Ed25519)."),
         };
 
     /// <summary>

@@ -831,6 +831,7 @@ public static class ActivityPubServerExtensions
     {
         KeyAlgorithm.Rsa => ActivityPubServerConstants.KeyAlgorithmRsa,
         KeyAlgorithm.EcP256 => ActivityPubServerConstants.KeyAlgorithmEcP256,
+        KeyAlgorithm.Ed25519 => ActivityPubServerConstants.KeyAlgorithmEd25519,
         _ => throw new NotSupportedException($"Algorithm {algorithm} is not supported."),
     };
 

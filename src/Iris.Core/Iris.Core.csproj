@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="KristofferStrube.ActivityStreams" />
+    <PackageReference Include="BouncyCastle.Cryptography" />
   </ItemGroup>
 
 </Project>

@@ -5,8 +5,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- ActivityStreams / ActivityPub object model + JSON-LD converters (only non-BCL dependency of Iris.Core). -->
+    <!-- ActivityStreams / ActivityPub object model + JSON-LD converters (the only non-crypto dependency of Iris.Core). -->
     <PackageVersion Include="KristofferStrube.ActivityStreams" Version="0.2.4" />
+    <!-- Managed Ed25519 (RFC 8032) for ActivityPub signatures. The BCL has no Ed25519 type on this
+         runtime (MLDsa is Windows/CNG-only and reports IsSupported=false), so Ed25519 — the default
+         algorithm Pleroma and several modern servers use — is provided by BouncyCastle. -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.4.0" />
     <!-- ASP.NET Core (framework reference surface for Iris.Server). -->
     <PackageVersion Include="Microsoft.AspNetCore.App" Version="10.0.0" />
     <!-- In-process TestServer for integration tests (not part of the shared framework). -->

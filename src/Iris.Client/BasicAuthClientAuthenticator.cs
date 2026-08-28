@@ -148,6 +148,12 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
             {
                 return KeyAlgorithm.EcP256;
             }
+
+            if (string.Equals(text, "ed25519", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(text, "eddsa", StringComparison.OrdinalIgnoreCase))
+            {
+                return KeyAlgorithm.Ed25519;
+            }
         }
 
         return KeyAlgorithm.Rsa;

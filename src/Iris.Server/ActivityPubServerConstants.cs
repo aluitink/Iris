@@ -50,6 +50,11 @@ public static class ActivityPubServerConstants
     public const string KeyAlgorithmEcP256 = "ecdsa-p256";
 
     /// <summary>
+    /// The value of <see cref="KeyAlgorithmExtensionName"/> for an Ed25519 key.
+    /// </summary>
+    public const string KeyAlgorithmEd25519 = "ed25519";
+
+    /// <summary>
     /// The ActivityPub actor property <c>manuallyApprovesFollowers</c>: when <c>true</c> on a local
     /// actor, an inbound follow is <em>not</em> auto-accepted — the actor (operator) must respond with an
     /// explicit <c>Accept</c> or <c>Reject</c>. The library's <c>Actor</c> type does not model this

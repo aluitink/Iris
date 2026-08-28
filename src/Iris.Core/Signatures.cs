@@ -75,12 +75,13 @@ public static class Signatures
     /// Returns the <c>algorithm</c> value for the <see cref="SignatureHeader"/> for the given key algorithm.
     /// </summary>
     /// <param name="algorithm">The key algorithm.</param>
-    /// <returns><c>rsa-sha256</c> for RSA, <c>ecdsa-p256-sha256</c> for EC P-256.</returns>
+    /// <returns><c>rsa-sha256</c> for RSA, <c>ecdsa-p256-sha256</c> for EC P-256, <c>ed25519</c> for Ed25519.</returns>
     public static string AlgorithmLabel(KeyAlgorithm algorithm)
         => algorithm switch
         {
             KeyAlgorithm.Rsa => "rsa-sha256",
             KeyAlgorithm.EcP256 => "ecdsa-p256-sha256",
+            KeyAlgorithm.Ed25519 => "ed25519",
             _ => throw new NotSupportedException($"Algorithm {algorithm} is not supported."),
         };
 

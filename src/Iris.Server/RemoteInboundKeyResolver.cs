@@ -123,12 +123,13 @@ public sealed class RemoteInboundKeyResolver(
     /// <summary>
     /// Maps a JWK <c>kty</c> value to an <see cref="KeyAlgorithm"/>.
     /// </summary>
-    /// <param name="kty">The JWK key type (<c>"RSA"</c> or <c>"EC"</c>).</param>
+    /// <param name="kty">The JWK key type (<c>"RSA"</c>, <c>"EC"</c>, or <c>"OKP"</c>).</param>
     /// <returns>The algorithm, or null when the <c>kty</c> is not supported.</returns>
     private static KeyAlgorithm? AlgorithmFromKty(string? kty) => kty switch
     {
         "RSA" => KeyAlgorithm.Rsa,
         "EC" => KeyAlgorithm.EcP256,
+        "OKP" => KeyAlgorithm.Ed25519,
         _ => null,
     };
 
@@ -147,11 +148,28 @@ public sealed class RemoteInboundKeyResolver(
             return KeyAlgorithm.Rsa;
         }
 
+        // The PKIX envelope names the Ed25519 AlgorithmIdentifier, so FromPem succeeds only for
+        // Ed25519 public keys. Pleroma signs with Ed25519, so check it up front. The keyId is
+        // irrelevant here (we only classify the PEM); a placeholder satisfies the parameter. An
+        // EC/RSA PEM makes FromPem throw FormatException (the envelope does not carry a 32-byte
+        // Ed25519 key) — treat that as "not Ed25519" and fall through to EC/RSA.
+        try
+        {
+            if (Iri.TryParse("urn:placeholder", out var placeholder) && Ed25519Key.FromPem(pem, placeholder) is not null)
+            {
+                return KeyAlgorithm.Ed25519;
+            }
+        }
+        catch (FormatException)
+        {
+            // Not an Ed25519 public key; fall through to EC.
+        }
+
         try
         {
             // ImportFromPem on an ECDSA key with the P-256 curve set succeeds only for EC public
             // keys; an RSA public key fails to import into an ECDSA instance and vice versa. Try EC
-            // first (the Iris default), then RSA.
+            // next (the Iris historical default), then RSA.
             using var ec = ECDsa.Create(ECCurve.NamedCurves.nistP256);
             ec.ImportFromPem(pem);
             return KeyAlgorithm.EcP256;
@@ -185,7 +203,7 @@ public sealed class RemoteInboundKeyResolver(
             return null;
         }
 
-        foreach (KeyAlgorithm algorithm in new[] { KeyAlgorithm.Rsa, KeyAlgorithm.EcP256 })
+        foreach (KeyAlgorithm algorithm in new[] { KeyAlgorithm.Rsa, KeyAlgorithm.EcP256, KeyAlgorithm.Ed25519 })
         {
             if (string.Equals(Signatures.AlgorithmLabel(algorithm), label, StringComparison.OrdinalIgnoreCase))
             {
