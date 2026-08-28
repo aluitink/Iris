@@ -47,10 +47,12 @@ the concrete, code-level unknowns — not platform quirks.
 | **G-5** | **No EdDSA validation.** The server supports only RSA `rsa-sha256` + EC P-256 `ecdsa-p256-sha256`; no Ed25519. EdDSA-signed inbound posts are rejected (401). | High | Predicted | Matrix **SIG2** (in): "an Ed25519-signed POST is rejected." | Affects platforms configured for EdDSA (some Pleroma/Akkoma). Fix = add EdDSA key support to `KeyPairGenerator`/`HttpSignatureVerifier`. |
 | **G-6** | **Person-inbox `Create`/`Like` uninterpreted.** Posts to a local *person* inbox are stored but not surfaced in a personal feed (only community inboxes interpret them via the catch-all). | Medium | Predicted | Matrix **C2** (in): "a `Create` to a person inbox is stored but not in a personal feed." | Fix = a person-inbox `Create` handler that records into the person's outbox (mirroring the community-inbox catch-all). |
 
-> **G-1 is the headline.** Until it is fixed, Iris is a *receiving-only* instance — it can follow and
-> be followed, and it receives content into community inboxes, but it cannot *post* to the federation.
-> Every other gap degrades a feature; G-1 blocks the core "publish" use case. The follow-up phase that
-> closes G-1 is the highest-priority work after Phase 9.
+ > **G-1 is the headline.** Until it is fixed, Iris is a *receiving-only* instance — it can follow and
+ > be followed, and it receives content into community inboxes, but it cannot *post* to the federation.
+ > Every other gap degrades a feature; G-1 blocks the core "publish" use case. The follow-up phase that
+ > closes G-1 is the highest-priority work after Phase 9.
+
+> **Cross-reference — user-journey walkthrough (Phase 11, Slice 11.2).** [PHASE_11_USER_JOURNEYS.md](PHASE_11_USER_JOURNEYS.md) re-derives these capability gaps **from the user's point of view** (each capability walked end-to-end as an app would drive it) and confirms G-1…G-6 (as J-18/J-10/J-11/J-15/J-4/J-8 respectively). It also surfaces a **new usability-friction register (J-1…J-22)** the capability register does not cover — most notably **J-6 (no client "post" API)**, **J-21 (client discovery service not exposed in the bundle)**, and **J-9 (no client "follow" API)**: the *write* side of the platform is not reachable through the client as a user would drive it, even though the *read* side is solid. Phase 12 should close the write path first (post → outbound `Create` → followed feed).
 
 ## 3. Platform unknowns (from ENUMERATION_DESIGN.md §3.5 + COMPATIBILITY_MATRIX.md §3)
 
