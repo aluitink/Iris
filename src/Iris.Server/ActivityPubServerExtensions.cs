@@ -898,9 +898,12 @@ public static class ActivityPubServerExtensions
             },
         };
 
+        // RFC 8615 §4.1: the WebFinger response is a JRD document served as application/jrd+json
+        // (not the generic application/json). The client (WebFingerClient.WebFingerContentType) already
+        // expects this media type, and a spec-conformant remote client may check it.
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(webFinger),
-            "application/json");
+            "application/jrd+json");
     }
 
     private static IResult NodeInfoHandler(IOptions<ActivityPubServerOptions> optionsAccessor)
