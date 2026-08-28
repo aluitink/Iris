@@ -29,7 +29,7 @@ public sealed class LocalActorDocumentCache
     /// </summary>
     public static readonly TimeSpan DefaultStaleFor = TimeSpan.FromSeconds(300);
 
-    private readonly CachingServerCache<string> _cache;
+    private readonly CachingReadThrough<string> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="LocalActorDocumentCache"/>.
@@ -39,7 +39,7 @@ public sealed class LocalActorDocumentCache
     public LocalActorDocumentCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.Create(DefaultTtl, DefaultStaleFor);
-        _cache = new CachingServerCache<string>(new MemoryCache<string>(resolved, capacity));
+        _cache = new CachingReadThrough<string>(new MemoryCache<string>(resolved, capacity));
     }
 
     /// <summary>

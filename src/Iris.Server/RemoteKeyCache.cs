@@ -15,7 +15,7 @@ namespace Iris.Server;
 /// </remarks>
 public sealed class RemoteKeyCache
 {
-    private readonly CachingServerCache<JwkKey> _cache;
+    private readonly CachingReadThrough<JwkKey> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="RemoteKeyCache"/>.
@@ -25,7 +25,7 @@ public sealed class RemoteKeyCache
     public RemoteKeyCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.Key;
-        _cache = new CachingServerCache<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
+        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
     }
 
     /// <summary>

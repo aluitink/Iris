@@ -15,7 +15,7 @@ namespace Iris.Server;
 /// </remarks>
 public sealed class RemoteActorCache
 {
-    private readonly CachingServerCache<IObject> _cache;
+    private readonly CachingReadThrough<IObject> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="RemoteActorCache"/>.
@@ -25,7 +25,7 @@ public sealed class RemoteActorCache
     public RemoteActorCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.Create(TimeSpan.FromHours(1), TimeSpan.FromHours(1));
-        _cache = new CachingServerCache<IObject>(new MemoryCache<IObject>(resolved, capacity));
+        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity));
     }
 
     /// <summary>

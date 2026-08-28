@@ -15,7 +15,7 @@ namespace Iris.Server;
 /// </remarks>
 public sealed class WebFingerCache
 {
-    private readonly CachingServerCache<WebFingerHit> _cache;
+    private readonly CachingReadThrough<WebFingerHit> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="WebFingerCache"/>.
@@ -25,7 +25,7 @@ public sealed class WebFingerCache
     public WebFingerCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.WebFinger;
-        _cache = new CachingServerCache<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity));
+        _cache = new CachingReadThrough<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity));
     }
 
     /// <summary>

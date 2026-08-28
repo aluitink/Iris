@@ -14,7 +14,7 @@ namespace Iris.Client;
 /// </remarks>
 public sealed class KeyCache
 {
-    private readonly CachingClientCache<JwkKey> _cache;
+    private readonly CachingReadThrough<JwkKey> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="KeyCache"/>.
@@ -24,7 +24,7 @@ public sealed class KeyCache
     public KeyCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.Key;
-        _cache = new CachingClientCache<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
+        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
     }
 
     /// <summary>
@@ -41,10 +41,13 @@ public sealed class KeyCache
     /// <param name="factory">Invoked on a miss (or always, when bypassing) to fetch the JWK; null means absent.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The key (or null when absent) and whether it was a stale-while-revalidate hit.</returns>
-    public Task<(JwkKey? Value, bool WasStale)> GetAsync(
+    public async Task<(JwkKey? Value, bool WasStale)> GetAsync(
         Iri key,
         bool bypassCache,
         Func<Iri, Task<JwkKey?>> factory,
         CancellationToken ct = default)
-        => _cache.GetAsync(key, bypassCache, factory, ct);
+    {
+        var (value, wasStale, _) = await _cache.GetAsync(key, bypassCache, factory, ct).ConfigureAwait(false);
+        return (value, wasStale);
+    }
 }

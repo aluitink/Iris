@@ -16,7 +16,7 @@ namespace Iris.Server;
 /// </remarks>
 public sealed class CollectionPageCache
 {
-    private readonly CachingServerCache<CollectionPage> _cache;
+    private readonly CachingReadThrough<CollectionPage> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="CollectionPageCache"/>.
@@ -26,7 +26,7 @@ public sealed class CollectionPageCache
     public CollectionPageCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.CollectionPage;
-        _cache = new CachingServerCache<CollectionPage>(new MemoryCache<CollectionPage>(resolved, capacity));
+        _cache = new CachingReadThrough<CollectionPage>(new MemoryCache<CollectionPage>(resolved, capacity));
     }
 
     /// <summary>

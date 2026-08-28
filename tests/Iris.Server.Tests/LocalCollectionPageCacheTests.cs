@@ -7,7 +7,7 @@ namespace Iris.Server.Tests;
 /// for paged local collections (outbox/followers/following). Mirrors the <see cref="LocalActorDocumentCache"/>
 /// semantics (miss → render + cache, fresh hit → no render, absent → not cached, forceRefresh → bypass read
 /// + write back, invalidate). The stale-while-revalidate path is exercised at the
-/// <see cref="CachingServerCache{TValue}"/> engine level in <c>ServerCachingTests</c>; this suite covers the
+/// <see cref="CachingReadThrough{TValue}"/> engine level in <c>ServerCachingTests</c>; this suite covers the
 /// concrete cache's observable behavior (hit/miss/absent/force/invalidate).
 /// </summary>
 public class LocalCollectionPageCacheTests

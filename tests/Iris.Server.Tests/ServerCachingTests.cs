@@ -4,7 +4,7 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Server.Tests;
 
 /// <summary>
-/// Phase 3 unit tests: the server-side read-through cache engine (<see cref="CachingServerCache{TValue}"/>)
+/// Phase 3 unit tests: the server-side read-through cache engine (<see cref="CachingReadThrough{TValue}"/>)
 /// and the concrete server caches (remote actor, remote key, collection page, WebFinger) plus the local
 /// actor document cache. These verify the TTL / stale-while-revalidate / <c>forceRefresh</c> semantics
 /// that back the server's <c>?refresh=true</c> bypass and <c>Cache-Control</c> behavior.
@@ -15,18 +15,18 @@ namespace Iris.Server.Tests;
 /// </remarks>
 public class ServerCachingTests
 {
-    // --- CachingServerCache engine ---------------------------------------------
+    // --- CachingReadThrough engine ---------------------------------------------
 
     [Fact]
     public async Task Engine_Miss_FetchesAndStores()
     {
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var factoryCalls = 0;
 
         var (value, wasStale, wasHit) = await sut.GetAsync(
             new Iri("https://x.test/actor"),
-            forceRefresh: false,
+            bypassCache: false,
             _ =>
             {
                 factoryCalls++;
@@ -44,7 +44,7 @@ public class ServerCachingTests
     public async Task Engine_FreshHit_DoesNotFetch()
     {
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var key = new Iri("https://x.test/actor");
         var factoryCalls = 0;
 
@@ -74,7 +74,7 @@ public class ServerCachingTests
         // window is 5–10 minutes. The engine reads with DateTime.UtcNow, so seed an entry stamped
         // 7 minutes in the past → past fresh (5), within the usable window (10) → stale.
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var key = new Iri("https://x.test/actor");
         var factoryCalls = 0;
 
@@ -97,7 +97,7 @@ public class ServerCachingTests
     public async Task Engine_ForceRefresh_SkipsCacheAndWritesBack()
     {
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var key = new Iri("https://x.test/actor");
         var factoryCalls = 0;
 
@@ -108,7 +108,7 @@ public class ServerCachingTests
         });
 
         // forceRefresh=true → factory consulted even though a fresh entry exists.
-        var (value, wasStale, wasHit) = await sut.GetAsync(key, forceRefresh: true, _ =>
+        var (value, wasStale, wasHit) = await sut.GetAsync(key, bypassCache: true, _ =>
         {
             factoryCalls++;
             return Task.FromResult<string?>("v2");
@@ -125,7 +125,7 @@ public class ServerCachingTests
     public async Task Engine_AbsentResult_IsNotCached()
     {
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var key = new Iri("https://x.test/missing");
 
         var (value, _, wasHit) = await sut.GetAsync(key, false, _ => Task.FromResult<string?>(null));
@@ -139,7 +139,7 @@ public class ServerCachingTests
     public async Task Engine_Invalidate_RemovesEntry()
     {
         var cache = new MemoryCache<string>(CachePolicy.Create(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5)));
-        var sut = new CachingServerCache<string>(cache);
+        var sut = new CachingReadThrough<string>(cache);
         var key = new Iri("https://x.test/actor");
         var factoryCalls = 0;
 

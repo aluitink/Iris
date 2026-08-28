@@ -14,7 +14,7 @@ namespace Iris.Client;
 /// </remarks>
 public sealed class CollectionPageCache
 {
-    private readonly CachingClientCache<IObject> _cache;
+    private readonly CachingReadThrough<IObject> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="CollectionPageCache"/>.
@@ -24,7 +24,7 @@ public sealed class CollectionPageCache
     public CollectionPageCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.CollectionPage;
-        _cache = new CachingClientCache<IObject>(new MemoryCache<IObject>(resolved, capacity));
+        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity));
     }
 
     /// <summary>
@@ -41,10 +41,13 @@ public sealed class CollectionPageCache
     /// <param name="factory">Invoked on a miss (or always, when bypassing) to fetch the page; null means absent.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The page (or null when absent) and whether it was a stale-while-revalidate hit.</returns>
-    public Task<(IObject? Value, bool WasStale)> GetAsync(
+    public async Task<(IObject? Value, bool WasStale)> GetAsync(
         Iri key,
         bool bypassCache,
         Func<Iri, Task<IObject?>> factory,
         CancellationToken ct = default)
-        => _cache.GetAsync(key, bypassCache, factory, ct);
+    {
+        var (value, wasStale, _) = await _cache.GetAsync(key, bypassCache, factory, ct).ConfigureAwait(false);
+        return (value, wasStale);
+    }
 }

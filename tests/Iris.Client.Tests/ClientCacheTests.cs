@@ -5,8 +5,8 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Client.Tests;
 
 /// <summary>
-/// Unit tests for the client caching layer: <see cref="CachingClientCache{TValue}"/> (the generic
-/// engine) and the four concrete caches (<see cref="ActorCache"/>, <see cref="CollectionPageCache"/>,
+/// Unit tests for the client caching layer: <see cref="CachingReadThrough{TValue}"/> (the generic
+/// engine in Iris.Core) and the four concrete caches (<see cref="ActorCache"/>, <see cref="CollectionPageCache"/>,
 /// <see cref="WebFingerCache"/>, <see cref="KeyCache"/>). Covers fresh hit, miss→store,
 /// stale-while-revalidate, bypass, and "absent is not cached".
 /// </summary>
@@ -14,12 +14,12 @@ public class ClientCacheTests
 {
     private static Iri Key(string s) => new($"https://a.domain.local/k/{s}");
 
-    // --- CachingClientCache<TValue> (generic engine) --------------------------
+    // --- CachingReadThrough<TValue> (generic engine in Iris.Core) --------------
 
     [Fact]
     public async Task GetAsync_Miss_FetchesAndStores()
     {
-        var cache = new CachingClientCache<string>(new MemoryCache<string>(CachePolicy.Actor));
+        var cache = new CachingReadThrough<string>(new MemoryCache<string>(CachePolicy.Actor));
         var calls = 0;
 
         async Task<string?> Factory(Iri _)
@@ -29,13 +29,13 @@ public class ClientCacheTests
             return "v";
         }
 
-        var (value, wasStale) = await cache.GetAsync(Key("a"), bypassCache: false, Factory);
+        var (value, wasStale, _) = await cache.GetAsync(Key("a"), bypassCache: false, Factory);
         Assert.Equal("v", value);
         Assert.False(wasStale);
         Assert.Equal(1, calls);
 
         // Second call is served from cache; factory not invoked.
-        var (value2, wasStale2) = await cache.GetAsync(Key("a"), bypassCache: false, Factory);
+        var (value2, wasStale2, _) = await cache.GetAsync(Key("a"), bypassCache: false, Factory);
         Assert.Equal("v", value2);
         Assert.False(wasStale2);
         Assert.Equal(1, calls);
@@ -44,7 +44,7 @@ public class ClientCacheTests
     [Fact]
     public async Task GetAsync_Bypass_SkipsReadButWritesBack()
     {
-        var cache = new CachingClientCache<string>(new MemoryCache<string>(CachePolicy.Actor));
+        var cache = new CachingReadThrough<string>(new MemoryCache<string>(CachePolicy.Actor));
 
         // Seed the cache via the first (non-bypass) call.
         async Task<string?> SeedFactory(Iri _)
@@ -64,13 +64,13 @@ public class ClientCacheTests
             return "fetched";
         }
 
-        var (value, wasStale) = await cache.GetAsync(Key("c"), bypassCache: true, BypassFactory);
+        var (value, wasStale, _) = await cache.GetAsync(Key("c"), bypassCache: true, BypassFactory);
         Assert.Equal("fetched", value);
         Assert.False(wasStale);
         Assert.Equal(1, calls);
 
         // Subsequent non-bypass read gets the written-back value without re-fetching.
-        var (value2, _) = await cache.GetAsync(Key("c"), bypassCache: false, BypassFactory);
+        var (value2, _, _) = await cache.GetAsync(Key("c"), bypassCache: false, BypassFactory);
         Assert.Equal("fetched", value2);
         Assert.Equal(1, calls);
     }
@@ -78,7 +78,7 @@ public class ClientCacheTests
     [Fact]
     public async Task GetAsync_NullResult_NotCached()
     {
-        var cache = new CachingClientCache<string>(new MemoryCache<string>(CachePolicy.Actor));
+        var cache = new CachingReadThrough<string>(new MemoryCache<string>(CachePolicy.Actor));
         var calls = 0;
 
         async Task<string?> Factory(Iri _)
@@ -88,13 +88,13 @@ public class ClientCacheTests
             return null;
         }
 
-        var (value, wasStale) = await cache.GetAsync(Key("d"), bypassCache: false, Factory);
+        var (value, wasStale, _) = await cache.GetAsync(Key("d"), bypassCache: false, Factory);
         Assert.Null(value);
         Assert.False(wasStale);
         Assert.Equal(1, calls);
 
         // A null result is not memoized → the next lookup retries the factory.
-        var (value2, _) = await cache.GetAsync(Key("d"), bypassCache: false, Factory);
+        var (value2, _, _) = await cache.GetAsync(Key("d"), bypassCache: false, Factory);
         Assert.Null(value2);
         Assert.Equal(2, calls);
     }
@@ -106,7 +106,7 @@ public class ClientCacheTests
     {
         // TTL = 50ms (stale after that), stale window = 10 minutes.
         var policy = CachePolicy.Create(TimeSpan.FromMilliseconds(50), TimeSpan.FromMinutes(10));
-        var cache = new CachingClientCache<string>(new MemoryCache<string>(policy));
+        var cache = new CachingReadThrough<string>(new MemoryCache<string>(policy));
         var calls = 0;
 
         async Task<string?> Factory(Iri _)
@@ -118,7 +118,7 @@ public class ClientCacheTests
         }
 
         // First call: miss → fetch "old" and store.
-        var (value, wasStale) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
+        var (value, wasStale, _) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
         Assert.Equal("old", value);
         Assert.False(wasStale);
         Assert.Equal(1, calls);
@@ -127,13 +127,13 @@ public class ClientCacheTests
         await Task.Delay(300);
 
         // Second call: stale hit → serves "old" immediately and refreshes to "new".
-        var (value2, wasStale2) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
+        var (value2, wasStale2, _) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
         Assert.Equal("old", value2);
         Assert.True(wasStale2);
         Assert.Equal(2, calls);
 
         // Third call: now fresh (refreshed) → served from cache, no re-fetch.
-        var (value3, wasStale3) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
+        var (value3, wasStale3, _) = await cache.GetAsync(Key("s"), bypassCache: false, Factory);
         Assert.Equal("new", value3);
         Assert.False(wasStale3);
         Assert.Equal(2, calls);
@@ -143,7 +143,7 @@ public class ClientCacheTests
     public async Task GetAsync_StaleHit_RefreshYieldsNull_KeepsStale()
     {
         var policy = CachePolicy.Create(TimeSpan.FromMilliseconds(50), TimeSpan.FromMinutes(10));
-        var cache = new CachingClientCache<string>(new MemoryCache<string>(policy));
+        var cache = new CachingReadThrough<string>(new MemoryCache<string>(policy));
         var calls = 0;
 
         async Task<string?> Factory(Iri _)
@@ -159,13 +159,13 @@ public class ClientCacheTests
         await Task.Delay(300);
 
         // Stale hit: serves "stale-value"; refresh returns null → stale value is kept.
-        var (value, wasStale) = await cache.GetAsync(Key("e"), bypassCache: false, Factory);
+        var (value, wasStale, _) = await cache.GetAsync(Key("e"), bypassCache: false, Factory);
         Assert.Equal("stale-value", value);
         Assert.True(wasStale);
         Assert.Equal(2, calls);
 
         // Still present (stale kept), served again (still stale since the refresh was null).
-        var (value2, wasStale2) = await cache.GetAsync(Key("e"), bypassCache: false, Factory);
+        var (value2, wasStale2, _) = await cache.GetAsync(Key("e"), bypassCache: false, Factory);
         Assert.Equal("stale-value", value2);
         Assert.True(wasStale2);
         Assert.Equal(3, calls);

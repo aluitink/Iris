@@ -13,7 +13,7 @@ namespace Iris.Client;
 /// </remarks>
 public sealed class WebFingerCache
 {
-    private readonly CachingClientCache<WebFingerHit> _cache;
+    private readonly CachingReadThrough<WebFingerHit> _cache;
 
     /// <summary>
     /// Initializes a new <see cref="WebFingerCache"/>.
@@ -23,7 +23,7 @@ public sealed class WebFingerCache
     public WebFingerCache(CachePolicy? policy = null, int capacity = 1024)
     {
         var resolved = policy ?? CachePolicy.WebFinger;
-        _cache = new CachingClientCache<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity));
+        _cache = new CachingReadThrough<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity));
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ public sealed class WebFingerCache
         Func<Iri, Task<Iri?>> factory,
         CancellationToken ct = default)
     {
-        var (hit, wasStale) = await _cache.GetAsync(
+        var (hit, wasStale, _) = await _cache.GetAsync(
             key,
             bypassCache,
             async account =>
