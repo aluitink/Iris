@@ -19,7 +19,7 @@
 | 6 — Proxy Fallback | ✅ complete |
 | 7 — Blazor Client Extensions & Samples | ✅ complete |
 | 8 — Sample Docker Composition | 🚧 in progress |
-| 9 — Real-World Deployment Preparation | 🚧 in progress |
+| 9 — Real-World Deployment Preparation | ✅ complete |
 | 10 — Project & Test Review | 📋 planned |
 | 11 — Implementation Gaps & Usability Exploration | 📋 planned |
 | 12 — Spec Conformance & Missing Features | 📋 planned |
@@ -58,16 +58,16 @@
 - [x] Document the compose topology, hostname assignments, and how to run/tear down locally (`docs/DEPLOYMENT.md`).
 - [ ] Wire as an opt-in CI job (Docker available); skip in local/dev runs without Docker — deferred until a baseline CI workflow exists; the smoke script's opt-in gate (skip when Docker is unavailable) is the interim measure.
 
-## Phase 9 — Real-World Deployment Preparation 📋
+## Phase 9 — Real-World Deployment Preparation ✅
 
-> Ideation + preparation only. **No live tests run yet** — we cannot exercise real instances until the operator provides a public, routable FQDN. This phase produces the artifacts and plans that make Phase 13 runnable.
+> Ideation + preparation only. **No live tests run yet** — we cannot exercise real instances until the operator provides a public, routable FQDN. This phase produces the artifacts and plans that make Phase 13 runnable. **All five deliverables are done** (FQDN/TLS plan + bootstrap runbook, real-user enumeration design, compatibility matrix, test-harness extension, risk & gap register), all grounded in the real config/client/server/test surface.
 
 - [x] **FQDN & TLS plan**: document the operator-provided FQDN requirements (DNS, A/AAAA record, TLS certificate provisioning, reverse-proxy config) and the exact config surface Iris needs to bind to it (`docs/DEPLOYMENT_PREP.md` §1; resolves OQ #3 → Decision #40).
 - [x] **Instance bootstrap runbook**: step-by-step to stand up a public Iris instance (key generation, actor creation, community setup, NodeInfo/WebFinger publication) against the FQDN (`docs/DEPLOYMENT_PREP.md` §2, grounded in `ActivityPubServerOptions` + the `SampleServer` seed).
 - [x] **Real-user enumeration design**: plan for discovering and enumerating real users/communities on other instances (WebFinger lookups, NodeInfo discovery, directory/search endpoints) — the read-only reconnaissance we'll run once the FQDN is live (`docs/ENUMERATION_DESIGN.md`, grounded in the real client surface: `IWebFingerResolver` + `GetActorAsync` + `GetCollectionItemsAsync` + `IriExtensions.*Of`; NodeInfo/directory/search via `SendAsync`).
 - [x] **Compatibility matrix**: define the target ecosystems (Mastodon, Threads, Lemmy, Pleroma, and others) and, for each, the concrete interop scenarios to verify (follow, post, receive, community/group, search, pagination, content types, signatures) (`docs/COMPATIBILITY_MATRIX.md`, grounded in the real capability map; predicts 6 concrete gaps for Phase 13 to confirm).
 - [x] **Test harness extension**: design the opt-in live-interop suite structure (gated by env flag + FQDN config) so Phase 13 is a matter of filling in targets, not building the harness (`docs/INTEROP_TEST_HARNESS.md`; Decision #41 — separate runtime-gated project `Iris.LiveInterop.Tests` + hoisted `Iris.Testing` harness; live = in-process + a real `HttpClientHandler` transport).
-- [ ] **Risk & gap register**: capture known unknowns (Threads' non-standard AP surface, Lemmy's group semantics, rate limits, moderation) that live testing must resolve.
+- [x] **Risk & gap register**: capture known unknowns (Threads' non-standard AP surface, Lemmy's group semantics, rate limits, moderation) that live testing must resolve (`docs/RISK_GAP_REGISTER.md` — synthesizes the 6 predicted gaps from the compatibility matrix + the Threads/Lemmy platform unknowns + operational + harness risks, with Phase 13 entry criteria).
 
 ## Phase 10 — Project & Test Review 📋
 
