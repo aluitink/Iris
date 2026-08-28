@@ -29,7 +29,7 @@ public sealed class TestHelperTests
     }
 
     [Fact]
-    public async Task SeedPersonWithKey_StoresActorAndKey_WithJwkInPublicKeyExtension()
+    public async Task SeedPersonWithKey_StoresActorAndKey_WithRsaPemInPublicKeyExtension()
     {
         var persistence = new InMemoryPersistenceProvider();
         var (key, actorIri, keyId) = TestSeeder.SeedPersonWithKey(persistence, "b.domain.local", "bob");
@@ -37,20 +37,21 @@ public sealed class TestHelperTests
         Assert.Equal("https://b.domain.local/ap/v1/u/bob", actorIri.Value);
         Assert.Equal("https://b.domain.local/ap/v1/u/bob#key-1", keyId.Value);
 
+        // The seeded key is the default: RSA-2048.
+        Assert.Equal(KeyAlgorithm.Rsa, key.Algorithm);
+
         // The key is stored in the provider's key store under its IRI.
         Assert.True(persistence.Keys.TryGetKey(keyId, out var stored));
         Assert.Same(key, stored);
 
-        // The actor carries the key's JWK in its publicKey extension, with the real x/y components.
+        // The actor serves the key's public key as PEM (publicKeyPem) in its publicKey extension.
         var found = await persistence.ActorStore.TryGetActorAsync(actorIri, out var actor, CancellationToken.None);
         Assert.True(found);
-        using var jwk = JsonDocument.Parse(actor!.ExtensionData!["publicKey"].GetRawText());
-        Assert.Equal(keyId.Value, jwk.RootElement.GetProperty("id").GetString());
-        Assert.Equal(actorIri.Value, jwk.RootElement.GetProperty("owner").GetString());
-        Assert.Equal("EC", jwk.RootElement.GetProperty("kty").GetString());
-        Assert.Equal("P-256", jwk.RootElement.GetProperty("crv").GetString());
-        Assert.Equal(Jwk.ExtractComponent(key, "x"), jwk.RootElement.GetProperty("x").GetString());
-        Assert.Equal(Jwk.ExtractComponent(key, "y"), jwk.RootElement.GetProperty("y").GetString());
+        using var publicKey = JsonDocument.Parse(actor!.ExtensionData!["publicKey"].GetRawText());
+        Assert.Equal(keyId.Value, publicKey.RootElement.GetProperty("id").GetString());
+        Assert.Equal(actorIri.Value, publicKey.RootElement.GetProperty("owner").GetString());
+        Assert.Equal(key.ExportPublicKeyPem(), publicKey.RootElement.GetProperty("publicKeyPem").GetString());
+        Assert.Contains("-----BEGIN PUBLIC KEY-----", publicKey.RootElement.GetProperty("publicKeyPem").GetString());
     }
 
     [Fact]
@@ -92,19 +93,18 @@ public sealed class TestHelperTests
         Assert.Single(outbox);
     }
 
-    // --- Jwk ------------------------------------------------------------------------
+    // --- Jwk (publicKey extension builder) --------------------------------------------
 
     [Fact]
-    public void ExtractComponent_ReturnsTheNamedJwkMember()
+    public void BuildPublicExtension_CarriesKeyIdOwnerAndPem()
     {
-        var key = KeyPairGenerator.GenerateEcP256(new Iri("https://a.domain.local/ap/v1/u/alice#key-1"));
+        var key = KeyPairGenerator.GenerateRsa(new Iri("https://a.domain.local/ap/v1/u/alice#key-1"));
 
-        var x = Jwk.ExtractComponent(key, "x");
-        var y = Jwk.ExtractComponent(key, "y");
+        using var doc = JsonDocument.Parse(Jwk.BuildPublicExtension(key, "https://a.domain.local/ap/v1/u/alice").GetRawText());
 
-        Assert.False(string.IsNullOrWhiteSpace(x));
-        Assert.False(string.IsNullOrWhiteSpace(y));
-        Assert.NotEqual(x, y); // the x and y components of a P-256 point are (almost surely) distinct
+        Assert.Equal(key.KeyId.Value, doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal("https://a.domain.local/ap/v1/u/alice", doc.RootElement.GetProperty("owner").GetString());
+        Assert.Equal(key.ExportPublicKeyPem(), doc.RootElement.GetProperty("publicKeyPem").GetString());
     }
 
     // --- JsonDoc --------------------------------------------------------------------

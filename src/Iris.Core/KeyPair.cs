@@ -176,12 +176,15 @@ public sealed class KeyPair : IDisposable
     }
 
     /// <summary>
-    /// Creates a <see cref="KeyPair"/> from a PKCS#8 PEM private key.
+    /// Creates a <see cref="KeyPair"/> from a PEM key. Private keys must be PKCS#8
+    /// (<c>-----BEGIN PRIVATE KEY-----</c>). RSA public keys may be PKIX
+    /// (<c>-----BEGIN PUBLIC KEY-----</c>) or PKCS#1 (<c>-----BEGIN RSA PUBLIC KEY-----</c>, the form
+    /// several real-world servers serve in <c>publicKeyPem</c>); EC public keys must be PKIX.
     /// </summary>
-    /// <param name="pem">The PEM-encoded private key.</param>
+    /// <param name="pem">The PEM-encoded private or public key.</param>
     /// <param name="algorithm">The algorithm the key was generated with.</param>
     /// <param name="keyId">The IRI that identifies the key.</param>
-    /// <returns>The loaded <see cref="KeyPair"/> (owns the key material).</returns>
+    /// <returns>The loaded <see cref="KeyPair"/> (owns the key material; public-only when a public key was given).</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="pem"/> is null.</exception>
     /// <exception cref="CryptographicException">When <paramref name="pem"/> is not a valid key for the algorithm.</exception>
     public static KeyPair FromPem(string pem, KeyAlgorithm algorithm, Iri keyId)
@@ -197,7 +200,7 @@ public sealed class KeyPair : IDisposable
 
         try
         {
-            key.ImportFromPem(pem);
+            ImportFromPem(key, pem);
             return new KeyPair(key, algorithm, keyId);
         }
         catch
@@ -205,6 +208,143 @@ public sealed class KeyPair : IDisposable
             key.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Imports a PEM key into <paramref name="key"/>, accepting a PKCS#1 RSA public key
+    /// (<c>-----BEGIN RSA PUBLIC KEY-----</c>) for <see cref="RSA"/> in addition to the forms
+    /// <see cref="AsymmetricAlgorithm.ImportFromPem"/> already supports.
+    /// </summary>
+    private static void ImportFromPem(AsymmetricAlgorithm key, string pem)
+    {
+        try
+        {
+            key.ImportFromPem(pem);
+            return;
+        }
+        catch (CryptographicException)
+        {
+            if (key is not RSA rsa || !pem.Contains("RSA PUBLIC KEY", StringComparison.Ordinal))
+            {
+                throw;
+            }
+
+            // PKCS#1 (raw) RSA public key (the form real-world servers serve in publicKeyPem):
+            // import the RsaPublicKey DER directly.
+            ImportPkcs1(rsa, pem);
+        }
+    }
+
+    /// <summary>
+    /// Imports the PKCS#1 (raw) RSA public key carried by <paramref name="pem"/> into
+    /// <paramref name="rsa"/>: the PEM's base64 body is the <c>RsaPublicKey</c> DER, which is wrapped
+    /// in a SubjectPublicKeyInfo (PKIX) envelope so <see cref="RSA.ImportSubjectPublicKeyInfo"/> accepts
+    /// it (the BCL has no PKCS#1 public-key import).
+    /// </summary>
+    private static void ImportPkcs1(RSA rsa, string pem)
+    {
+        var pkcs1 = Convert.FromBase64String(PemBody(pem));
+        rsa.ImportSubjectPublicKeyInfo(WrapInSubjectPublicKeyInfo(pkcs1), out _);
+    }
+
+    /// <summary>
+    /// Wraps a PKCS#1 <c>RsaPublicKey</c> DER in a SubjectPublicKeyInfo (PKIX) envelope: a
+    /// <c>SubjectPublicKeyInfo ::= SEQUENCE { algorithm, subjectPublicKey }</c> whose algorithm is the
+    /// rsaEncryption AlgorithmIdentifier (1.2.840.113549.1.1.1, NULL parameters) and whose
+    /// <c>subjectPublicKey</c> is an OCTET STRING carrying the <c>RsaPublicKey</c> bytes.
+    /// </summary>
+    private static byte[] WrapInSubjectPublicKeyInfo(byte[] pkcs1)
+    {
+        // AlgorithmIdentifier: SEQUENCE { OID 1.2.840.113549.1.1.1, NULL }.
+        var rsaEncryptionOid = new byte[]
+        {
+            0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x01, 0x01,
+            0x05, 0x00,
+        };
+        var algorithm = new byte[rsaEncryptionOid.Length + 2];
+        algorithm[0] = 0x30;
+        algorithm[1] = (byte)rsaEncryptionOid.Length;
+        Array.Copy(rsaEncryptionOid, 0, algorithm, 2, rsaEncryptionOid.Length);
+
+        var subjectPublicKey = DerOctetString(pkcs1);
+        var inner = Concat(algorithm, subjectPublicKey);
+        return Concat([0x30, (byte)inner.Length], inner);
+    }
+
+    /// <summary>
+    /// Encodes <paramref name="content"/> as a DER OCTET STRING (0x04 + length + content), handling
+    /// long-form lengths.
+    /// </summary>
+    private static byte[] DerOctetString(byte[] content)
+    {
+        var length = DerLength(content.Length);
+        var octetString = new byte[1 + length.Length + content.Length];
+        octetString[0] = 0x04;
+        Array.Copy(length, 0, octetString, 1, length.Length);
+        Array.Copy(content, 0, octetString, 1 + length.Length, content.Length);
+        return octetString;
+    }
+
+    /// <summary>
+    /// Encodes a DER length (short form when it fits in one byte, long form otherwise).
+    /// </summary>
+    private static byte[] DerLength(int value)
+    {
+        if (value < 0x80)
+        {
+            return [(byte)value];
+        }
+
+        var bytes = new List<byte>();
+        for (var v = value; v > 0; v >>= 8)
+        {
+            bytes.Insert(0, (byte)(v & 0xFF));
+        }
+
+        var length = new byte[1 + bytes.Count];
+        length[0] = (byte)(0x80 | bytes.Count);
+        bytes.CopyTo(1, length, 0, bytes.Count);
+        return length;
+    }
+
+    private static byte[] Concat(byte[] a, byte[] b)
+    {
+        var result = new byte[a.Length + b.Length];
+        Array.Copy(a, 0, result, 0, a.Length);
+        Array.Copy(b, 0, result, a.Length, b.Length);
+        return result;
+    }
+
+    /// <summary>
+    /// Extracts the concatenated base64 body of a PEM block (the lines between the BEGIN and END
+    /// markers, with the BEGIN/END type stripped).
+    /// </summary>
+    private static string PemBody(string pem)
+    {
+        var lines = pem.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var body = new StringBuilder();
+        var inBody = false;
+        foreach (var line in lines)
+        {
+            if (line.StartsWith("-----BEGIN ", StringComparison.Ordinal))
+            {
+                inBody = true;
+                continue;
+            }
+
+            if (line.StartsWith("-----END ", StringComparison.Ordinal))
+            {
+                inBody = false;
+                continue;
+            }
+
+            if (inBody)
+            {
+                body.Append(line);
+            }
+        }
+
+        return body.ToString();
     }
 
     /// <summary>

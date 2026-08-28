@@ -181,7 +181,7 @@ public static partial class SampleServer
         ArgumentNullException.ThrowIfNull(actorHandle);
 
         var keyId = new Iri($"{actorIri}#key-1");
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
+        var key = KeyPairGenerator.GenerateRsa(keyId);
         persistence.Keys.PutKey(key);
 
         var actor = new Person
@@ -195,10 +195,7 @@ public static partial class SampleServer
         {
             id = keyId.Value,
             owner = actorIri.Value,
-            kty = "EC",
-            crv = "P-256",
-            x = ExtractJwkComponent(key, "x"),
-            y = ExtractJwkComponent(key, "y"),
+            publicKeyPem = key.ExportPublicKeyPem(),
         });
         persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
 
@@ -244,17 +241,6 @@ public static partial class SampleServer
         persistence.Activities.AddToOutboxAsync(bobIri, note2).GetAwaiter().GetResult();
     }
 
-    /// <summary>
-    /// Extracts a named component from a <see cref="KeyPair"/>'s public JWK.
-    /// </summary>
-    /// <param name="key">The key pair.</param>
-    /// <param name="name">The JWK component name.</param>
-    /// <returns>The component value.</returns>
-    public static string ExtractJwkComponent(KeyPair key, string name)
-    {
-        using var doc = JsonDocument.Parse(key.GetPublicJwk());
-        return doc.RootElement.GetProperty(name).GetString()!;
-    }
 }
 
 /// <summary>

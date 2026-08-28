@@ -40,9 +40,9 @@ public class InboundKeyResolverTests
     [Fact]
     public async Task Resolve_PemPublicKey_ReturnsVerifyingKey()
     {
-        // A document that carries the public key as a PEM (e.g. an Iris-seeded document).
-        var bobKey = KeyPairGenerator.GenerateEcP256(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
-        // Export the public key as a PEM (SubjectPublicKeyInfo / PKIX).
+        // A document that carries the public key as a PKIX PEM (e.g. an Iris-seeded document;
+        // the default seeding algorithm is now RSA-2048).
+        var bobKey = KeyPairGenerator.GenerateRsa(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
         var pem = bobKey.ExportPublicKeyPem();
         var fetcher = new StubActorDocumentFetcher(ActorWithPublicKeyPem(
             id: $"https://{AHost}/ap/v1/u/bob#key-1",
@@ -57,6 +57,54 @@ public class InboundKeyResolverTests
         {
             byte[] payload = [9, 8, 7];
             var signature = bobKey.Sign(payload);
+            Assert.True(resolved.Verify(payload, signature));
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_Pkcs1PemPublicKey_ReturnsVerifyingKey()
+    {
+        // A document that carries the public key as a PKCS#1 RSA public key PEM
+        // (-----BEGIN RSA PUBLIC KEY-----), the raw form some real-world servers serve in
+        // publicKeyPem.
+        var bobKey = KeyPairGenerator.GenerateRsa(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
+        var rsa = (System.Security.Cryptography.RSA)bobKey.Key;
+        var pem = $"-----BEGIN RSA PUBLIC KEY-----\n{Convert.ToBase64String(rsa.ExportRSAPublicKey(), Base64FormattingOptions.InsertLineBreaks)}\n-----END RSA PUBLIC KEY-----\n";
+        var fetcher = new StubActorDocumentFetcher(ActorWithPublicKeyPem(
+            id: $"https://{AHost}/ap/v1/u/bob#key-1",
+            owner: $"https://{AHost}/ap/v1/u/bob",
+            pem: pem));
+
+        var resolver = new RemoteInboundKeyResolver(fetcher, new RemoteKeyCache());
+        var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
+
+        Assert.NotNull(resolved);
+        using (resolved!)
+        {
+            byte[] payload = [5, 6, 7];
+            var signature = bobKey.Sign(payload);
+            Assert.True(resolved.Verify(payload, signature));
+        }
+    }
+
+    [Fact]
+    public async Task Resolve_EcPemPublicKey_ReturnsVerifyingKey()
+    {
+        // EC P-256 documents are still accepted (the algorithm is inferred from the PEM).
+        var erinKey = KeyPairGenerator.GenerateEcP256(new Iri($"https://{AHost}/ap/v1/u/erin#key-1"));
+        var fetcher = new StubActorDocumentFetcher(ActorWithPublicKeyPem(
+            id: $"https://{AHost}/ap/v1/u/erin#key-1",
+            owner: $"https://{AHost}/ap/v1/u/erin",
+            pem: erinKey.ExportPublicKeyPem()));
+
+        var resolver = new RemoteInboundKeyResolver(fetcher, new RemoteKeyCache());
+        var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/erin#key-1"));
+
+        Assert.NotNull(resolved);
+        using (resolved!)
+        {
+            byte[] payload = [1, 1, 2];
+            var signature = erinKey.Sign(payload);
             Assert.True(resolved.Verify(payload, signature));
         }
     }

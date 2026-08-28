@@ -109,7 +109,22 @@ public sealed class SampleServerTests : IDisposable
         var privateKeyPem = ext["privateKey"].GetString();
         Assert.NotNull(privateKeyPem);
         Assert.Contains("-----BEGIN PRIVATE KEY-----", privateKeyPem);
-        Assert.Equal("ecdsa-p256", ext["keyAlgorithm"].GetString());
+        Assert.Equal("rsa", ext["keyAlgorithm"].GetString());
+    }
+
+    [Fact]
+    public async Task ActorDoc_Public_ServesRsaPublicKeyPem()
+    {
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var publicKey = doc.RootElement.GetProperty("publicKey");
+
+        // The sample now seeds an RSA-2048 key and serves its public half as PEM (publicKeyPem).
+        var pem = publicKey.GetProperty("publicKeyPem").GetString();
+        Assert.NotNull(pem);
+        Assert.StartsWith("-----BEGIN PUBLIC KEY-----", pem);
     }
 
     [Fact]

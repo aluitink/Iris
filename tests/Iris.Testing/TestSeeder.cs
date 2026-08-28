@@ -41,10 +41,11 @@ public static class TestSeeder
     }
 
     /// <summary>
-    /// Seeds a <see cref="Person"/> actor together with a real EC P-256 signing key, storing the key in
-    /// the provider's <see cref="IPersistenceProvider.Keys"/> and embedding the key's JWK in the actor's
-    /// <c>publicKey</c> extension so a remote resolver can verify signatures. Idempotent (re-seeding
-    /// replaces the actor and key).
+    /// Seeds a <see cref="Person"/> actor together with a real RSA-2048 signing key, storing the key in
+    /// the provider's <see cref="IPersistenceProvider.Keys"/> and serving the key's public key as PEM
+    /// (<c>publicKeyPem</c>) in the actor's <c>publicKey</c> extension — the most widely compatible
+    /// wire format — so a remote resolver can verify signatures. Idempotent (re-seeding replaces the
+    /// actor and key).
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>
     /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
@@ -57,7 +58,7 @@ public static class TestSeeder
         var actorIri = new Iri(actorIriString);
         var keyId = new Iri($"{actorIriString}#key-1");
 
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
+        var key = KeyPairGenerator.GenerateRsa(keyId);
         persistence.Keys.PutKey(key);
 
         var actor = new Person
@@ -71,10 +72,7 @@ public static class TestSeeder
         {
             id = keyId.Value,
             owner = actorIriString,
-            kty = "EC",
-            crv = "P-256",
-            x = Jwk.ExtractComponent(key, "x"),
-            y = Jwk.ExtractComponent(key, "y"),
+            publicKeyPem = key.ExportPublicKeyPem(),
         });
         persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
 
@@ -101,10 +99,11 @@ public static class TestSeeder
     }
 
     /// <summary>
-    /// Seeds a <see cref="Group"/> community together with a real EC P-256 signing key, storing the key
-    /// in the provider's <see cref="IPersistenceProvider.Keys"/> and embedding the key's JWK in the
-    /// community's <c>publicKey</c> extension (so a remote resolver can verify signatures the community
-    /// signs). An optional local member can be recorded. Idempotent (re-seeding replaces).
+    /// Seeds a <see cref="Group"/> community together with a real RSA-2048 signing key, storing the key
+    /// in the provider's <see cref="IPersistenceProvider.Keys"/> and serving the key's public key as PEM
+    /// (<c>publicKeyPem</c>) in the community's <c>publicKey</c> extension (so a remote resolver can
+    /// verify signatures the community signs). An optional local member can be recorded. Idempotent
+    /// (re-seeding replaces).
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>
     /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
@@ -116,7 +115,7 @@ public static class TestSeeder
     {
         var communityIri = new Iri($"https://{host}/ap/v1/c/{name}");
         var keyId = new Iri($"{communityIri.Value}#key-1");
-        var key = KeyPairGenerator.GenerateEcP256(keyId);
+        var key = KeyPairGenerator.GenerateRsa(keyId);
         persistence.Keys.PutKey(key);
 
         var community = new Group
@@ -130,10 +129,7 @@ public static class TestSeeder
         {
             id = keyId.Value,
             owner = communityIri.Value,
-            kty = "EC",
-            crv = "P-256",
-            x = Jwk.ExtractComponent(key, "x"),
-            y = Jwk.ExtractComponent(key, "y"),
+            publicKeyPem = key.ExportPublicKeyPem(),
         });
         persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
 

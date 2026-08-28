@@ -133,12 +133,20 @@ public sealed class RemoteInboundKeyResolver(
     };
 
     /// <summary>
-    /// Determines the <see cref="KeyAlgorithm"/> of a public key PEM (PKIX / SubjectPublicKeyInfo).
+    /// Determines the <see cref="KeyAlgorithm"/> of a public key PEM. Accepts PKIX
+    /// (<c>-----BEGIN PUBLIC KEY-----</c>) and PKCS#1 (<c>-----BEGIN RSA PUBLIC KEY-----</c>, the raw
+    /// RSA form some real-world servers serve in <c>publicKeyPem</c>) for RSA, and PKIX for EC P-256.
     /// </summary>
     /// <param name="pem">The PEM-encoded public key.</param>
     /// <returns>The algorithm, or null when the PEM cannot be parsed as a supported public key.</returns>
     private static KeyAlgorithm? AlgorithmFromPem(string pem)
     {
+        // The PKCS#1 header names the algorithm explicitly; it needs no import to classify.
+        if (pem.Contains("RSA PUBLIC KEY", StringComparison.Ordinal))
+        {
+            return KeyAlgorithm.Rsa;
+        }
+
         try
         {
             // ImportFromPem on an ECDSA key with the P-256 curve set succeeds only for EC public

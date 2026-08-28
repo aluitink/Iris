@@ -36,11 +36,12 @@ public class ServerEndpointIntegrationTests : IDisposable
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly HttpClient _client;
     private readonly IServiceProvider _services;
+    private readonly KeyPair _key;
 
     public ServerEndpointIntegrationTests()
     {
         _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence);
+        _key = Seed(_persistence);
 
         var builder = new WebHostBuilder()
             .ConfigureLogging(l =>
@@ -89,14 +90,20 @@ public class ServerEndpointIntegrationTests : IDisposable
     {
         // TestServer owns the DI container; disposing the server disposes the services too.
         _server.Dispose();
+        _key.Dispose();
     }
 
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    private static KeyPair Seed(InMemoryPersistenceProvider persistence)
     {
         var actorIri = $"https://{Host}/ap/v1/u/{Handle}";
         var keyId = new Iri($"{actorIri}#key-1");
 
-        // A Person actor with a publicKey extension (the library carries publicKey in ExtensionData).
+        // A signing key for the actor (the private key that gets revealed on auth).
+        var keyPair = KeyPairGenerator.GenerateRsa(keyId);
+        persistence.Keys.PutKey(keyPair);
+
+        // A Person actor with a publicKey extension (the library carries publicKey in ExtensionData);
+        // the public half is served as PEM (publicKeyPem), matching the TestSeeder shape.
         var actor = new Person
         {
             Id = actorIri,
@@ -109,14 +116,11 @@ public class ServerEndpointIntegrationTests : IDisposable
         {
             id = keyId.Value,
             owner = actorIri,
-            publicKeyPem = "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n-----END PUBLIC KEY-----",
+            publicKeyPem = keyPair.ExportPublicKeyPem(),
         });
 
         persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
-
-        // A signing key for the actor (the private key that gets revealed on auth).
-        var keyPair = KeyPairGenerator.GenerateEcP256(keyId);
-        persistence.Keys.PutKey(keyPair);
+        return keyPair;
     }
 
     private static string BasicAuth(string user, string pass)
@@ -196,8 +200,24 @@ public class ServerEndpointIntegrationTests : IDisposable
         Assert.NotNull(privateKeyPem);
         Assert.Contains("-----BEGIN PRIVATE KEY-----", privateKeyPem);
 
-        // The keyAlgorithm label matches the EC key we seeded.
-        Assert.Equal("ecdsa-p256", ext["keyAlgorithm"].GetString());
+        // The keyAlgorithm label matches the RSA key we seeded.
+        Assert.Equal("rsa", ext["keyAlgorithm"].GetString());
+    }
+
+    [Fact]
+    public async Task ActorDoc_Public_ServesSeededRsaPublicKeyPem()
+    {
+        var response = await _client.GetAsync($"/ap/v1/u/{Handle}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var publicKey = doc.RootElement.GetProperty("publicKey");
+
+        // The seeded RSA key's public half is served as PEM and re-imports to the same key.
+        var servedPem = publicKey.GetProperty("publicKeyPem").GetString();
+        Assert.NotNull(servedPem);
+        Assert.Contains("-----BEGIN PUBLIC KEY-----", servedPem);
+        Assert.Equal(_key.ExportPublicKeyPem(), servedPem);
     }
 
     [Fact]

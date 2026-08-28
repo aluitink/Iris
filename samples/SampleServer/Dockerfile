@@ -12,6 +12,8 @@ WORKDIR /src
 # Copy the project + props files first so the restore layer is cached independently of source.
 COPY Directory.Build.props Directory.Packages.props ./
 COPY src/Iris.Core/Iris.Core.csproj src/Iris.Core/
+COPY src/Iris.Client/Iris.Client.csproj src/Iris.Client/
+COPY src/Iris.Client.Extensions/Iris.Client.Extensions.csproj src/Iris.Client.Extensions/
 COPY src/Iris.Server/Iris.Server.csproj src/Iris.Server/
 COPY src/Iris.Server.InMemory/Iris.Server.InMemory.csproj src/Iris.Server.InMemory/
 COPY samples/SampleServer/SampleServer.csproj samples/SampleServer/

@@ -249,7 +249,7 @@ public class CacheWiringTests
     public async Task Factory_WithCaches_WiresActorCache()
     {
         var keyStore = new InMemoryKeyStore();
-        using var keyPair = KeyPairGenerator.GenerateEcP256(new Iri("https://a.domain.local/users/factory-tester#key-1"));
+        using var keyPair = KeyPairGenerator.GenerateRsa(new Iri("https://a.domain.local/users/factory-tester#key-1"));
         keyStore.PutKey(keyPair);
         var keyProvider = new InMemoryKeyProvider(keyStore);
         var signer = new HttpSignatureSigner(keyStore);

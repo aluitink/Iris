@@ -41,7 +41,7 @@ public class ClientServerIntegrationTests : IDisposable
         var keyStore = new InMemoryKeyStore();
         // Not disposed here: the key must live for the whole lifetime of the client (its signer
         // holds it). It is owned by the key store, which the factory retains.
-        var keyPair = KeyPairGenerator.GenerateEcP256(new Iri($"https://{LocalHost}/u/{LocalActor}#key-1"));
+        var keyPair = KeyPairGenerator.GenerateRsa(new Iri($"https://{LocalHost}/u/{LocalActor}#key-1"));
         keyStore.PutKey(keyPair);
         var keyProvider = new InMemoryKeyProvider(keyStore);
         var signer = new HttpSignatureSigner(keyStore);

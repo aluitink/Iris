@@ -47,6 +47,35 @@ public class KeyPemTests
     }
 
     [Fact]
+    public void Load_Pkcs1RsaPublicPem_LoadsVerifyingKey()
+    {
+        // A real-world wire form (e.g. Rayven): publicKeyPem carries a raw RSA public key
+        // (-----BEGIN RSA PUBLIC KEY-----, PKCS#1), not a PKIX public key.
+        using var original = KeyPairGenerator.GenerateRsa(KeyId);
+        var pkcs1Pem = original.Key is RSA rsa
+            ? $"-----BEGIN RSA PUBLIC KEY-----\n{Convert.ToBase64String(rsa.ExportRSAPublicKey(), Base64FormattingOptions.InsertLineBreaks)}\n-----END RSA PUBLIC KEY-----\n"
+            : throw new InvalidOperationException("expected an RSA key");
+
+        var signature = original.Sign(Payload);
+        using var loaded = KeyPem.Load(pkcs1Pem, KeyAlgorithm.Rsa, KeyId);
+
+        // Same public key material; the loaded (public-only) key verifies the original's signature.
+        Assert.Equal(rsa.ExportSubjectPublicKeyInfo(), ((RSA)loaded.Key).ExportSubjectPublicKeyInfo());
+        Assert.True(loaded.Verify(Payload, signature));
+    }
+
+    [Fact]
+    public void Load_PkixRsaPublicPem_LoadsVerifyingKey()
+    {
+        using var original = KeyPairGenerator.GenerateRsa(KeyId);
+        var signature = original.Sign(Payload);
+
+        using var loaded = KeyPem.Load(original.ExportPublicKeyPem(), KeyAlgorithm.Rsa, KeyId);
+
+        Assert.True(loaded.Verify(Payload, signature));
+    }
+
+    [Fact]
     public void Load_InvalidPem_Throws()
     {
         // ImportFromPem rejects non-PEM input with an ArgumentException.
