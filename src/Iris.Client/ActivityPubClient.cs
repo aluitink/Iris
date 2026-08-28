@@ -179,6 +179,57 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+    {
+        // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:
+        // the note id derives from the actor + a content hash, and the Create id from the note id.
+        var noteIri = $"{actorId.Value}/notes/{CreateNoteIdSuffix(content)}";
+        var createIri = $"{actorId.Value}/creates/{CreateNoteIdSuffix(content)}";
+
+        var note = new Note
+        {
+            Id = noteIri,
+            Content = [content],
+            AttributedTo = [new Link { Href = actorId.Uri }],
+        };
+
+        if (to is not null)
+        {
+            var audience = to.Select(i => new Link { Href = i.Uri }).ToList();
+            if (audience.Count > 0)
+            {
+                note.To = audience;
+            }
+        }
+
+        // The constructor sets Type = "Create"; the embedded Note sets Type = "Note". The Create's
+        // object is the embedded note (a full object, not a link) so the receiver stores the content
+        // without a second fetch.
+        var create = new Create
+        {
+            Id = createIri,
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [note],
+        };
+
+        // Delivered to the author's own inbox (the "local post" path): the author's instance records
+        // the note and federates it to followers.
+        return DeliverAsync(actorId.InboxOf(), create, ct);
+    }
+
+    /// <summary>
+    /// Derives a short, deterministic suffix for a note/Create IRI from its content (a stable
+    /// content hash), so identical posts from the same actor map to the same IRI (dedupe) and
+    /// distinct posts map to distinct IRIs.
+    /// </summary>
+    private static string CreateNoteIdSuffix(string content)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
+    }
+
+    /// <inheritdoc/>
     public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);

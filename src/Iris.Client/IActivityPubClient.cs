@@ -71,6 +71,30 @@ public interface IActivityPubClient : IDisposable
     public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
+    /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
+    /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the
+    /// caller supplies only the content — the <see cref="Create"/>, the embedded <see cref="Note"/>,
+    /// and the delivery target are all derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor authoring the note (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="content">The note's content (plain text or HTML).</param>
+    /// <param name="to">Optional audience link(s) for the note (e.g. the public
+    /// <c>as:Public</c> address). When null the note carries no explicit <c>to</c>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox) —
+    /// the "local post" path: the post reaches the author's instance, which records it and federates
+    /// it to followers (the outbound-to-followers leg is the server's responsibility, not the
+    /// client's). The <see cref="Create"/> and the embedded <see cref="Note"/> each get a
+    /// deterministic, unique IRI so a retried post dedupes on the receiver. The note's
+    /// <c>attributedTo</c> is the author.
+    /// </remarks>
+    public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
+
+    /// <summary>
     /// Sends a raw HTTP request through the client's signed pipeline and returns the response.
     /// </summary>
     /// <param name="request">The request to send. It is signed by the pipeline (the

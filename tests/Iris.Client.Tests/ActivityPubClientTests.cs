@@ -161,4 +161,79 @@ public class ActivityPubClientTests
         // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed follow).
         Assert.Equal(400, status);
     }
+
+    // --- PostNoteAsync (J-6): the client's one-call "post a note" ----------------------
+
+    [Fact]
+    public async Task PostNoteAsync_PostsCreateToAuthorInbox_WithEmbeddedNote()
+    {
+        // A fresh response per call: DeliverAsync disposes the response it receives, so a shared
+        // response instance would be disposed after the first call (the dedupe re-posts below).
+        var fake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var author = new Iri("https://a.domain.local/u/alice");
+        var status = await client.PostNoteAsync(author, "hello world");
+
+        Assert.Equal(202, status);
+        // The post is delivered to the *author's own* inbox (the "local post" path).
+        Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
+        Assert.Equal("https://a.domain.local/u/alice/inbox", fake.LastUri!.ToString());
+        Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest.Content!.Headers.ContentType!.MediaType);
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Create", root.GetProperty("type").GetString());
+        // A Link in a multi-valued slot serializes as its bare IRI (a string).
+        Assert.Equal(author.Value, root.GetProperty("actor").GetString());
+        // The embedded note is a full object (not a link) so the receiver stores the content without
+        // a second fetch.
+        var note = root.GetProperty("object");
+        Assert.Equal("Note", note.GetProperty("type").GetString());
+        Assert.Equal("hello world", note.GetProperty("content").GetString());
+        // The note is attributed to the author.
+        Assert.Equal(author.Value, note.GetProperty("attributedTo").GetString());
+        // Deterministic, unique ids so a retried post dedupes on the receiver.
+        var noteId = note.GetProperty("id").GetString()!;
+        var createId = root.GetProperty("id").GetString()!;
+        Assert.StartsWith($"{author.Value}/notes/", noteId);
+        Assert.StartsWith($"{author.Value}/creates/", createId);
+        // Same content → same ids (dedupe); different content → different ids.
+        var again = await client.PostNoteAsync(author, "hello world");
+        Assert.Equal(202, again);
+        using var doc2 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
+        Assert.Equal(noteId, doc2.RootElement.GetProperty("object").GetProperty("id").GetString());
+        var different = await client.PostNoteAsync(author, "a different note");
+        Assert.Equal(202, different);
+        using var doc3 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
+        Assert.NotEqual(noteId, doc3.RootElement.GetProperty("object").GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task PostNoteAsync_WithAudience_SetsNoteTo()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var author = new Iri("https://a.domain.local/u/alice");
+        var publicIri = new Iri("https://www.w3.org/ns/activitystreams#Public");
+        await client.PostNoteAsync(author, "public post", to: [publicIri]);
+
+        using var doc = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
+        var note = doc.RootElement.GetProperty("object");
+        Assert.Equal(publicIri.Value, note.GetProperty("to").GetString());
+    }
+
+    [Fact]
+    public async Task PostNoteAsync_InboxReturnsNotAccepted_PropagatesStatusCode()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.BadRequest));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var status = await client.PostNoteAsync(new Iri("https://a.domain.local/u/alice"), "hello");
+
+        // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed post).
+        Assert.Equal(400, status);
+    }
 }
