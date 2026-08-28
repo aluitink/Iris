@@ -80,7 +80,7 @@
 - [ ] **Documentation sync**: ensure `ARCHITECTURE.md`, `PROJECTS.md`, `TESTING.md`, and `CODING_STYLE.md` reflect the post-review reality.
 - [ ] Record test-count deltas and consolidation decisions in the [Changelog](CHANGELOG.md).
 
-## Phase 11 — Implementation Gaps & Usability Exploration 📋
+## Phase 11 — Implementation Gaps & Usability Exploration 🚧
 
 > Walk every feature **end-to-end as a user** to find where the journey breaks, then close those gaps with more complete integration tests.
 
@@ -89,7 +89,7 @@
 - [ ] **Usability questions**: answer "if I were a user, how do I get from X to Y?" for the core flows; document friction points (discovery, error messages, required config, mental model).
 - [ ] **Integration test expansion**: for each gap and journey, add or extend integration tests (multi-instance `TestServer`) that prove the end-to-end path now works — not just the happy path, but the realistic sequences a user performs.
 - [ ] **Error-path coverage**: ensure failure modes (bad signature, unknown actor, 404, rate-limit, proxy fallback trigger) are exercised end-to-end, not just in isolation.
-- [ ] Close the carried-forward **client/server page-1 interop gap** if it surfaces in a user journey.
+- [x] Close the carried-forward **client/server page-1 interop gap** (Slice 11.1): the server's page-1 `OrderedCollection` now carries a `next` pointer (via `ExtensionData`, since the ActivityStreams type has no typed `next`) when more pages remain, and the client reads it to walk past page 1. Proven end-to-end by `ClientServerCollectionInteropTests` (real signed client over a live in-process server, multi-page outbox).
 
 ## Phase 12 — Spec Conformance & Missing Features 📋
 
@@ -131,7 +131,8 @@
 
 - **Spec research pass** (Phase 0): the research directive is in [ARCHITECTURE.md](ARCHITECTURE.md#spec-research); concrete findings are not yet captured/folded back.
 - **Bare root build** (Phase 0): a bare `dotnet build` in the repo root is blocked by MSB1011 — stray root scratch files (`Program.cs`/`inspect.csproj`/`packages.lock.json`) need manual deletion to restore it.
-- **Client/server page-1 interop gap** (Phase 5): the client's `FetchCollectionPageAsync` accepts only an `OrderedCollectionPage` first page, while the Iris server serves page 1 as an `OrderedCollection` — affects all collections, not feed-specific.
+
+> Resolved in Phase 11 (Slice 11.1): the **client/server page-1 interop gap** (Phase 5) is closed — the server's page-1 `OrderedCollection` now carries a `next` pointer and the client walks past page 1 (see [CHANGELOG.md](CHANGELOG.md)).
 
 ## Open Questions (to resolve as we go)
 
