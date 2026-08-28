@@ -26,7 +26,7 @@ This is the "does it" column — the surface the audit checks against. Anything 
 | Surface | Route(s) | Notes |
 |---|---|---|
 | Actor document | `GET /ap/v1/u/{handle}` | Public (owner-only `privateKey` for Basic auth); RSA-2048 `publicKeyPem` (Slice 11.8); echoes `manuallyApprovesFollowers` when true (Slice 11.10). |
-| WebFinger | `GET /ap/v1/.well-known/webfinger` **and** `GET /.well-known/webfinger` | Served at **both** the route-prefixed and the bare `/.well-known` path (RFC 8615 requires the bare path; the prefixed copy is an Iris convenience). J-22. |
+ | WebFinger | `GET /ap/v1/.well-known/webfinger` **and** `GET /.well-known/webfinger` | Served at **both** the route-prefixed and the bare `/.well-known` path (RFC 8615 requires the bare path; the prefixed copy is an Iris convenience); served as `application/jrd+json` (RFC 8615 §4.1, Slice 12.6). J-22. |
 | NodeInfo | `GET /ap/v1/nodeinfo/2.0` + `GET /ap/v1/.well-known/nodeinfo` | Instance metadata (software, openRegistrations, usage). |
 | Inbox | `POST /ap/v1/u/{handle}/inbox` | Signature-gated (401 on unsigned / invalid). |
 | Paged collections | `GET /ap/v1/u/{handle}/{outbox\|followers\|following}` | `OrderedCollection` (page 1, `first`) / `OrderedCollectionPage` (page N>1), `?page=N` / `?limit=N`, `next` on page 1 via `ExtensionData` (Slice 11.1). |
@@ -130,7 +130,7 @@ These are behaviors that exist today but deviate from the spec in a way worth re
 |---|---|---|---|---|
 | **C-01** | **WebFinger is served at both `/ap/v1/.well-known/webfinger` and `/.well-known/webfinger`.** The bare path is the RFC 8615 requirement; the prefixed path is an Iris route-prefix convenience (Decision #10). | RFC 8615 §4.1 | **Low** | **Deliberate** — the bare path satisfies the spec; the prefixed copy is additive. Documented in the route comment. (F-30.) |
 | **C-02** | **GETs are not signature-validated** — only inbox POSTs are gated. A key-resolution GET (fetching an actor doc to verify a signature) would recurse, so GETs are open by design. | AP §5.1.3 (signing is for *delivery*; document fetching is unsigned) | **Low** | **Deliberate** — matches real-world ActivityPub (actor docs are public GETs). A one-line doc note on `SignatureValidationMiddleware` improves discoverability (J-5). |
-| **C-03** | **The `ServerToServer` signature profile signs `content-type` but the inbound validator does not require it.** The outbound signer covers `content-type` (per draft-cavage-03 for a body-carrying request); the inbound verifier is lenient (does not mandate the full header set). | draft-cavage-03 | **Medium** | **Lenient by design** (Decision #4, content-type flexibility) — accepting a superset is safe; a strict peer's signature is still verified. Worth a conformance-test assertion that the *outbound* signature base includes `content-type` for a body-carrying delivery. |
+| **C-03** | **The `ServerToServer` signature profile signs `content-type` but the inbound validator does not require it.** The outbound signer covers `content-type` (per draft-cavage-03 for a body-carrying request); the inbound verifier is lenient (does not mandate the full header set). | draft-cavage-03 | **Medium** | **Lenient by design** (Decision #4, content-type flexibility) — accepting a superset is safe; a strict peer's signature is still verified. **Now regression-protected (Slice 12.6):** `OutboundSignatureConformanceTests` asserts the outbound delivery's `Signature` header lists `digest` + `content-type` and round-trips through `HttpSignatureVerifier`. |
 | **C-04** | **NodeInfo is served but its `openRegistrations` / `usage` values are host-seeded, not derived.** The values reflect the host's `ActivityPubServerOptions`; there is no live accounting of registrations/usage. | NodeInfo 2.0 | **Low** | **Acceptable** — NodeInfo is informational; live accounting is a host concern. |
 | **C-05** | **The `ClientToServer` profile signs only `(request-target) host date`** — no `digest`/`content-type` (correct for a bodyless or browser-originated request). The `ServerToServer` profile adds `digest` + `content-type`. | draft-cavage-03 | **Low** | **Conformant** — the two profiles match the spec's intent (browser vs server-to-server). |
 | **C-06** | **`@context` is always the default ActivityStreams context** — Iris never emits a non-default `@context` (Rule 10). Iris-namespaced terms (`iris:capabilities`) are full IRIs, so no `@context` change is needed. | AS2.0 / JSON-LD | **Low** | **Conformant** — adding an Iris `@context` would be a future option (Rule 10 permits it, documented why). |
@@ -170,14 +170,15 @@ Ranked by (a) spec-mandated vs nice-to-have, (b) interop impact, (c) effort. ★
 
 17. **F-15 outbound `Announce`** (Low, S) · **F-16 membership primitives** (Medium, S) · **F-17 intransitive activities** (Low, S) · **F-18 unordered `Collection`** (Low, S) · **F-19 typed `DeliverAsync` result** (Medium, S) · **F-21 key-rotation invalidation** (Medium, S) · **F-23 `FeedFilter`** (Low, S) · **F-24 community `followers` doc** (Medium, S) · **F-26…F-31** (Low, S).
 
-### Conformance test suite (regression-protection)
+ ### Conformance test suite (regression-protection)
 
-For each Wave 1/2 item, add an integration test asserting the spec-required **wire format, headers, status codes, and pagination semantics** (per the Phase 12 "Conformance test suite" bullet). Concretely:
-- `sharedInbox`: the actor doc's `endpoints.sharedInbox` is present; a delivery to a remote `sharedInbox` is signed correctly.
-- `Update`/`Delete`/`Move`: the stored object is refreshed / tombstoned / re-pointed after the activity arrives (a real signed delivery over the in-process server).
-- EdDSA: a signed round-trip with an Ed25519 key (sign → verify) + a PKIX Ed25519 `publicKeyPem` resolves on the actor doc.
-- `content-type` in the `ServerToServer` signature base (C-03): assert the outbound delivery's signature base includes `content-type`.
-- `Tombstone`: a deleted object is served as `{"type":"Tombstone","id":…}`.
+For each Wave 1/2 item, add an integration test asserting the spec-required **wire format, headers, status codes, and pagination semantics** (per the Phase 12 "Conformance test suite" bullet). **Landed in Slice 12.6** (`ConformanceSuiteTests` + `OutboundSignatureConformanceTests` in `Iris.Server.Tests`, 9 tests):
+- ~~WebFinger: served as `application/jrd+json` (RFC 8615) with a `subject` + a `self` link typed `application/activity+json`~~ **✅ Done** (and the content-type fix applied — see C-01 / the WebFinger row above).
+- ~~NodeInfo 2.0: `version "2.0"`, `software` (name+version), `protocols` incl. `activitypub`, `usage.users.total`, `openRegistrations`~~ **✅ Done**.
+- ~~Actor document: served as `application/activity+json` with a JSON-LD `@context` + `endpoints`~~ **✅ Done**.
+- ~~`sharedInbox`: the actor doc's `endpoints.sharedInbox` is present when configured~~ **✅ Done** (serve side; the signed-delivery-to-remote-shared-inbox half is covered by the Slice 12.2 `DeliveryIntegrationTests`).
+- ~~`content-type` in the `ServerToServer` signature base (C-03): assert the outbound delivery's signature base includes `content-type`~~ **✅ Done** (`OutboundSignatureConformanceTests` — the captured signed delivery's header list covers `digest`+`content-type`, the algorithm label, and round-trips through `HttpSignatureVerifier`; a bodyless GET uses `ClientToServer`).
+- `Update`/`Delete`/`Move` wire behavior (refreshed / tombstoned / re-pointed) and the EdDSA sign→verify round-trip are already covered by the functional integration tests of Slices 12.3–12.5 (`ObjectEndpointIntegrationTests`, `MoveFederationIntegrationTests`, `FederationEd25519SignatureIntegrationTests`); the `Tombstone` wire shape is asserted by `ObjectEndpointIntegrationTests`.
 
 ## 5. Fold-back of the Phase 0 spec-research findings
 
