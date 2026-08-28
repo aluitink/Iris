@@ -66,6 +66,15 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
             pipeline = new RetryHandler(options.MaxRetryAttempts, pipeline);
         }
 
+        // Proxy fallback (Phase 6): when the home instance's proxy is configured, wrap the whole
+        // signed pipeline so a 401/403 from a remote instance is retried through the proxy (which
+        // re-signs with the actor's key). The proxy POST is unsigned (the proxy signs the forwarded
+        // request), so it must bypass the SigningHandler — hence ProxyFallbackHandler is outermost.
+        if (options.ProxyBaseUrl is { } proxyBase && options.ProxyCredentials is { } proxyCreds)
+        {
+            pipeline = new ProxyFallbackHandler(proxyBase, proxyCreds, pipeline);
+        }
+
         // The client owns this HttpClient (and disposes the pipeline on Dispose); the transport
         // httpHandler is NOT disposed by it.
         var httpClient = new HttpClient(pipeline, disposeHandler: true)

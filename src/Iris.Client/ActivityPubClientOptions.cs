@@ -36,4 +36,20 @@ public sealed class ActivityPubClientOptions
     /// <see cref="RetryHandler.DefaultMaxAttempts"/> (3).
     /// </summary>
     public int MaxRetryAttempts { get; set; } = RetryHandler.DefaultMaxAttempts;
+
+    /// <summary>
+    /// Gets or sets the proxy-fallback base (the home instance that hosts the
+    /// <c>POST /ap/v1/proxy/{target}</c> endpoint). When set, the
+    /// <see cref="ProxyFallbackHandler"/> retries requests rejected by a remote instance (401/403)
+    /// by routing them through this proxy, which signs them with the actor's key. When null the
+    /// handler is disabled and the client talks to remote instances directly.
+    /// </summary>
+    public Iri? ProxyBaseUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Basic-auth credentials (username:password) used to authenticate to the
+    /// proxy endpoint. Required when <see cref="ProxyBaseUrl"/> is set. The proxy identifies the
+    /// actor from these credentials and signs the forwarded request with the actor's key.
+    /// </summary>
+    public ProxyCredentials? ProxyCredentials { get; set; }
 }
