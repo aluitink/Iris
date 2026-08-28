@@ -573,34 +573,28 @@ public static class ActivityPubServerExtensions
         return Results.Content(body, mediaType);
     }
 
-    private static async Task<IResult> InboxHandler(
+    /// <summary>
+    /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
+    /// existence check, body read + deserialize + cast, and inbox-processor dispatch.
+    /// </summary>
+    private static async Task<IResult> HandleInboxPostAsync(
         HttpContext context,
-        string handle,
-        IPersistenceProvider persistence,
+        Iri recipientIri,
+        bool exists,
         IInboxProcessor inboxProcessor,
-        IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
-        // Signature validation policy: an inbox POST must be signed and valid. The middleware
-        // buffered the body and stored the outcome; an unsigned or invalid signature → 401.
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
             return Results.Unauthorized();
         }
 
-        var options = optionsAccessor.Value;
-        var baseUrl = options.BaseUri?.Value
-            ?? $"{context.Request.Scheme}://{context.Request.Host}";
-        var actorIri = BuildActorIri(baseUrl, handle);
-
-        // The inbox belongs to a local actor; an unknown handle → 404.
-        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        if (!exists)
         {
             return Results.NotFound();
         }
 
-        // The body was buffered by the middleware; re-read it from the start.
         context.Request.Body.Position = 0;
         using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
         var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
@@ -609,21 +603,16 @@ public static class ActivityPubServerExtensions
             return Results.BadRequest();
         }
 
-        // Rule 1: deserialize into the range interface, then cast.
         IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
         if (payload is not Activity { Id: not null } activity)
         {
             return Results.BadRequest();
         }
 
-        // Hand the validated activity to the inbox processor: it stores the activity and dispatches
-        // it to the registered activity handler for its type (e.g. Follow records the follow edge).
-        // A handler failure is a server-side error → 500 (the activity may already be stored; the
-        // remote can retry, and the store is idempotent on the activity IRI).
         try
         {
             await inboxProcessor
-                .ProcessAsync(new InboxDelivery(actorIri, activity), ct)
+                .ProcessAsync(new InboxDelivery(recipientIri, activity), ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -636,6 +625,23 @@ public static class ActivityPubServerExtensions
         }
 
         return Results.Accepted();
+    }
+
+    private static async Task<IResult> InboxHandler(
+        HttpContext context,
+        string handle,
+        IPersistenceProvider persistence,
+        IInboxProcessor inboxProcessor,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -983,15 +989,16 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Serves the community's member actor IRIs as a paged collection for <c>GET /ap/v1/c/{name}/members</c>.
-    /// Page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
-    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>), paged via <c>?page</c>/<c>?limit</c>.
+    /// Shared core for the community collection endpoints (members, feed, following/followers):
+    /// community existence check, page/limit parsing, collection-page document build, and response.
     /// </summary>
-    private static async Task<IResult> CommunityMembersHandler(
+    private static async Task<IResult> CommunityCollectionEndpointAsync(
         string name,
+        string collectionPath,
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        Func<Iri, Task<IReadOnlyList<IObjectOrLink>>> fetchItems,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -1004,19 +1011,39 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        var memberIris = await persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
-        var items = ActorIrisToLinks(memberIris.ToList());
+        var items = await fetchItems(communityIri).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
-        var collectionIri = new Iri($"{communityIri.Value}/members");
-        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri.Value}/?page={page}");
+        var collectionIri = new Iri($"{communityIri.Value}/{collectionPath}");
         var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
         return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the community's member actor IRIs as a paged collection for <c>GET /ap/v1/c/{name}/members</c>.
+    /// Page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
+    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>), paged via <c>?page</c>/<c>?limit</c>.
+    /// </summary>
+    private static Task<IResult> CommunityMembersHandler(
+        string name,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        return CommunityCollectionEndpointAsync(
+            name,
+            "members",
+            context,
+            persistence,
+            optionsAccessor,
+            async communityIri => ActorIrisToLinks((await persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false)).ToList()),
+            ct);
     }
 
     /// <summary>
@@ -1026,7 +1053,7 @@ public static class ActivityPubServerExtensions
     /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>),
     /// paged via <c>?page</c>/<c>?limit</c>.
     /// </summary>
-    private static async Task<IResult> CommunityFeedHandler(
+    private static Task<IResult> CommunityFeedHandler(
         string name,
         HttpContext context,
         IPersistenceProvider persistence,
@@ -1034,27 +1061,14 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
-        var options = optionsAccessor.Value;
-        var baseUrl = options.BaseUri?.Value
-            ?? $"{context.Request.Scheme}://{context.Request.Host}";
-        var communityIri = BuildCommunityIri(baseUrl, name);
-
-        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
-        {
-            return Results.NotFound();
-        }
-
-        var items = await feedService.GetFeedAsync(communityIri, ct).ConfigureAwait(false);
-
-        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
-        var page = ParsePageNumber(context.Request.Query["page"].ToString());
-
-        var collectionIri = new Iri($"{communityIri.Value}/feed");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
-
-        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return CommunityCollectionEndpointAsync(
+            name,
+            "feed",
+            context,
+            persistence,
+            optionsAccessor,
+            communityIri => feedService.GetFeedAsync(communityIri, ct),
+            ct);
     }
 
     /// <summary>
@@ -1075,7 +1089,7 @@ public static class ActivityPubServerExtensions
     /// with <c>partOf</c>/<c>prev</c>/<c>next</c>). An unknown community 404s. The response carries the
     /// collection <c>Cache-Control</c>.
     /// </remarks>
-    private static async Task<IResult> CommunityCollectionHandler(
+    private static Task<IResult> CommunityCollectionHandler(
         string name,
         string collection,
         HttpContext context,
@@ -1083,33 +1097,23 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
-        var options = optionsAccessor.Value;
-        var baseUrl = options.BaseUri?.Value
-            ?? $"{context.Request.Scheme}://{context.Request.Host}";
-        var communityIri = BuildCommunityIri(baseUrl, name);
+        return CommunityCollectionEndpointAsync(
+            name,
+            collection,
+            context,
+            persistence,
+            optionsAccessor,
+            async communityIri =>
+            {
+                if (collection != "following")
+                {
+                    return Array.Empty<IObjectOrLink>();
+                }
 
-        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
-        {
-            return Results.NotFound();
-        }
-
-        // The community's follows set is the directed "community follows X" edge set. It backs the
-        // `following` collection (what the community follows); a community being followed has no
-        // followers set recorded (a follow of a community records an edge in the follows set, not a
-        // followers set), so `followers` serves the empty collection.
-        var items = collection == "following"
-            ? ActorIrisToLinks((await persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false)).ToList())
-            : [];
-
-        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
-        var page = ParsePageNumber(context.Request.Query["page"].ToString());
-
-        var collectionIri = new Iri($"{communityIri.Value}/{collection}");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
-
-        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+                var follows = await persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false);
+                return ActorIrisToLinks(follows.ToList());
+            },
+            ct);
     }
 
     /// <summary>
@@ -1175,54 +1179,13 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
-        var outcome = SignatureValidationMiddleware.GetResult(context);
-        if (!outcome.IsValid)
-        {
-            return Results.Unauthorized();
-        }
-
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var communityIri = BuildCommunityIri(baseUrl, name);
 
-        // The inbox belongs to a local community; an unknown name → 404.
-        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
-        {
-            return Results.NotFound();
-        }
-
-        context.Request.Body.Position = 0;
-        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
-        {
-            return Results.BadRequest();
-        }
-
-        // Rule 1: deserialize into the range interface, then cast.
-        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
-        if (payload is not Activity { Id: not null } activity)
-        {
-            return Results.BadRequest();
-        }
-
-        try
-        {
-            await inboxProcessor
-                .ProcessAsync(new InboxDelivery(communityIri, activity), ct)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            return Results.StatusCode(StatusCodes.Status500InternalServerError);
-        }
-
-        return Results.Accepted();
+        var exists = await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, ct).ConfigureAwait(false);
     }
 
     /// <summary>
