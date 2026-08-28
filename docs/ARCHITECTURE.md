@@ -29,7 +29,7 @@ Iris.sln
 │   ├── Iris.Server/                net10.0 — ASP.NET Core extensions, endpoints, middleware, community feeds
 │   └── Iris.Server.InMemory/       net10.0 — in-memory persistence implementation
 ├── tests/
-│   ├── Iris.Testing/               shared multi-instance TestServer harness
+│   ├── Iris.Testing/               shared TestServer harness: ActivityPubHostFactory + TestSeeder/Jwk/JsonDoc
 │   ├── Iris.Core.Tests/
 │   ├── Iris.Client.Tests/
 │   └── Iris.Server.Tests/

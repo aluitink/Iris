@@ -279,7 +279,7 @@ public sealed class CollectionPage
 - **Integration-first** — see [Testing](TESTING.md). Unit tests only for pure logic (crypto, IRI, cache).
 - **Test naming**: `MethodName_Scenario_ExpectedOutcome` (e.g. `SignAndVerify_RoundTrip_BothProfiles_Succeeds`).
 - **One `Fact`/`Theory` per behavior**; no multi-assert "kitchen sink" tests.
-- **Fixtures** live in `Iris.Testing` (shared harness) — test projects reference it, don't duplicate setup.
+ - **Fixtures** live in `Iris.Testing` (shared harness) — test projects reference it, don't duplicate setup. The single real-pipeline `TestServer` bootstrap is **`ActivityPubHostFactory.Create(ActivityPubHostOptions)`**; do not add a private per-test `StartServer`. Seeding uses **`TestSeeder`**; wire-format assertions use **`JsonDoc`** + **`Jwk`**.
 - **No mocking of ActivityStreams types** — they're plain data; construct real instances.
 - **Assert on the wire format** (serialized JSON) for serialization tests, not just in-memory state.
 

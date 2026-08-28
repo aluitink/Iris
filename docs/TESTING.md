@@ -6,10 +6,12 @@
 
 ## In-Process Multi-Instance Test Harness
 
-- **`TestServer` harness** (in a shared `tests/Iris.Testing` project): spins up **multiple fully in-process `WebApplication` instances**, each with:
-  - Its own `Iris.Server` pipeline + `Iris.Server.InMemory` persistence.
-  - A **distinct hostname** from the `*.domain.local` range — **start with `a.domain.local` and `b.domain.local`** for basic federation; the harness scales to **N instances** (`a.domain.local`, `b.domain.local`, `c.domain.local`, …) for relay/fan-out scenarios. Each instance has its own system identity + key.
-  - A real `HttpClient` wired to the instance's `TestServer`/Kestrel endpoint so requests go through the full HTTP stack (headers, content negotiation, signature validation, caching).
+ - **`TestServer` harness** (in a shared `tests/Iris.Testing` project): spins up **multiple fully in-process `WebApplication` instances** through a single shared bootstrap, **`ActivityPubHostFactory.Create(ActivityPubHostOptions)`**. Each instance has:
+   - Its own `Iris.Server` pipeline (`AddActivityPubServer` + `AddInMemoryPersistence` + `UseSignatureValidation` + `MapActivityPubEndpoints`) + `Iris.Server.InMemory` persistence.
+   - A **distinct hostname** from the `*.domain.local` range — **start with `a.domain.local` and `b.domain.local`** for basic federation; the harness scales to **N instances** (`a.domain.local`, `b.domain.local`, `c.domain.local`, …) for relay/fan-out scenarios. Each instance has its own system identity + key.
+   - A real `HttpClient` wired to the instance's `TestServer`/Kestrel endpoint so requests go through the full HTTP stack (headers, content negotiation, signature validation, caching).
+   - The options object captures the union of the per-test seams — `Fetcher`, `DeliveryTransport`, `CredentialValidator`, `ProxySettings`, `ExtraLocalActors`, `CommunityKey`, `ExtraServices`, `RegisterLocalKey`, and `IdentityKeys` (a custom signer triple) — so the integration tests no longer each carry a private `StartServer` copy.
+   - **Seeding** via the shared **`TestSeeder`** (`SeedPerson`/`SeedPersonWithKey`/`SeedCommunity`/`SeedCommunityWithKey`/`AddMember`/`AddCreateActivity`), **`Jwk.ExtractComponent`**, and **`JsonDoc`** (`GetItems`/`ItemId`) — the per-test `Seed`/`ExtractJwkComponent`/`GetItems`/`ItemId` copies were removed in Phase 10.
 - **Instance-to-instance federation**: tests create actors on instance A, follow actors/communities on instance B, and assert that activities are delivered, signature-validated, stored, and visible in feeds/outboxes on the receiving instance. This proves **instance-to-instance compatibility** — the core property of a federated protocol.
 - **N-instance relay/fan-out**: the harness is designed from the start to spin up **N servers** so we can test relay and fan-out topologies (one actor followed by many, a relay re-broadcasting, etc.) — not just pairwise federation.
 - **Client against server**: the `Iris.Client` (including proxy fallback) is exercised against these live instances, including the Basic-auth → private-key → signed-request flow.
@@ -19,8 +21,8 @@
 
 ```
 tests/
-├── Iris.Testing/                 shared harness: TestServer factory, multi-instance topology,
-│                                 actor/credential fixtures, assertion helpers
+├── Iris.Testing/                 shared harness: ActivityPubHostFactory (the single real-pipeline
+│                                 TestServer bootstrap), TestSeeder, Jwk, JsonDoc, assertion helpers
 ├── Iris.Core.Tests/              focused unit tests ONLY for pure logic:
 │                                 sign/verify round-trip (both profiles), tamper detection,
 │                                 key generation, IRI helpers, cache TTL/eviction/stale-revalidate
