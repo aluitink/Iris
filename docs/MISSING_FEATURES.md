@@ -72,7 +72,7 @@ Severity-ranked. **Spec-mandated** items are marked **★** — an ActivityPub p
 
 | ID | Gap | Spec | Severity | Interop impact | Cross-ref | Effort |
 |---|---|---|---|---|---|---|
-| **F-01** ★ | **`sharedInbox`** is neither **served** on the actor document's `endpoints` nor **used** as a delivery target. An instance with many followers cannot accept a `sharedInbox` delivery, and Iris does not deliver to a remote actor's `endpoints.sharedInbox` (it always targets the per-actor inbox). | AP §5.1.3 ("An actor MAY include a `sharedInbox` … to reduce the load on the server") | **Blocker** | **Mastodon, Pleroma, and most production servers publish `sharedInbox` and prefer it.** A remote instance that delivers a `Create` to Iris's (absent) shared inbox will 404; conversely Iris's per-follower fan-out (Slice 11.7) is the high-cost path every large server avoids. Phase 13 (Mastodon) will hit this immediately. | J-18 (outbound delivery) | **M** |
+| ~~**F-01** ★~~ ✅ | ~~**`sharedInbox`** is neither **served** on the actor document's `endpoints` nor **used** as a delivery target.~~ **Resolved (Slice 12.2):** an instance with `ActivityPubServerOptions.SharedInboxIri` set advertises `endpoints.sharedInbox` on its public actor/community documents (serve side), and `DeliveryService.DeliverToActorAsync` resolves a remote recipient's delivery target to its advertised `endpoints.sharedInbox` from its document (via `IActorDocumentFetcher`, cached through the `RemoteActorCache`), falling back to the per-actor inbox when the document is absent or advertises no `sharedInbox` (consume side). | AP §5.1.3 ("An actor MAY include a `sharedInbox` … to reduce the load on the server") | ~~**Blocker**~~ | (was) Mastodon, Pleroma, and most production servers publish `sharedInbox` and prefer it; a remote instance delivering a `Create` to an absent shared inbox would 404, and Iris's per-follower fan-out (Slice 11.7) was the high-cost path. Both halves now work. Phase 13 (Mastodon) is unblocked on this gap. | J-18 (outbound delivery) | **M** |
 
 ### Tier 1 — High (break a common interop path or a spec-mandated requirement)
 
@@ -140,7 +140,7 @@ Ranked by (a) spec-mandated vs nice-to-have, (b) interop impact, (c) effort. ★
 
 ### Wave 1 — spec-mandated & interop-critical (do these first)
 
-1. **F-01 `sharedInbox`** (★, Blocker, M) — serve `endpoints.sharedInbox` on the actor/community doc **and** deliver to a remote actor's `sharedInbox` when advertised (falling back to the per-actor inbox). *Unblocks* realistic fan-out and is the single most-likely Phase 13 blocker.
+1. ~~**F-01 `sharedInbox`** (★, Blocker, M) — serve `endpoints.sharedInbox` on the actor/community doc **and** deliver to a remote actor's `sharedInbox` when advertised (falling back to the per-actor inbox). *Unblocks* realistic fan-out and is the single most-likely Phase 13 blocker.~~ **✅ Done (Slice 12.2).**
 2. **F-05 EdDSA** (★, High, M) — add Ed25519 to `KeyPairGenerator` / `KeyPair` / `HttpSignatureSigner` / `HttpSignatureVerifier` + `AlgorithmFromPem`. *Unblocks* Pleroma federation.
 3. **F-02 `Update`** (★, High, S) — a `UpdateActivityHandler` that refreshes the stored object. *Unblocks* profile/post editing propagation.
 4. **F-03 `Delete`** (★, High, S) — a `DeleteActivityHandler` that removes the object and serves a `Tombstone` (F-10). *Unblocks* deletion propagation.
