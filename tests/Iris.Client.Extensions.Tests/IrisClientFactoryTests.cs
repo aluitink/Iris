@@ -138,6 +138,61 @@ public sealed class IrisClientFactoryTests
         Assert.False(store.TryGetKey(new Iri(ActorKey), out _));
     }
 
+    // --- Discovery (J-21): the bundle exposes a public handle→IRI path ----------------
+
+    [Fact]
+    public void Builder_Builds_Bundle_ExposesDiscovery()
+    {
+        using var bundle = IrisClientBuilder.Create(new IrisClientOptions())
+            .WithAuthenticator(new FakeAuthenticator())
+            .Build();
+
+        Assert.NotNull(bundle.Discovery);
+        // The default discovery service is the WebFinger-backed one.
+        Assert.IsType<WebFingerDiscoveryService>(bundle.Discovery);
+    }
+
+    [Fact]
+    public void Builder_WithDiscovery_UsesProvidedService()
+    {
+        var discovery = new RecordingDiscovery();
+        using var bundle = IrisClientBuilder.Create(new IrisClientOptions())
+            .WithAuthenticator(new FakeAuthenticator())
+            .WithDiscovery(discovery)
+            .Build();
+
+        Assert.Same(discovery, bundle.Discovery);
+    }
+
+    [Fact]
+    public async Task Bundle_ResolveActorAsync_DelegatesToDiscovery()
+    {
+        var discovery = new RecordingDiscovery(result: new Iri(Actor));
+        using var bundle = IrisClientBuilder.Create(new IrisClientOptions())
+            .WithAuthenticator(new FakeAuthenticator())
+            .WithDiscovery(discovery)
+            .Build();
+
+        var resolved = await bundle.ResolveActorAsync("@alice@a.domain.local");
+
+        Assert.Equal(new Iri(Actor), resolved);
+        // Both the convenience method and the Discovery property route to the same service.
+        Assert.Equal("@alice@a.domain.local", discovery.LastAccount);
+        Assert.Same(bundle.Discovery, discovery);
+    }
+
+    [Fact]
+    public async Task Bundle_ResolveActorAsync_UnknownHandle_ReturnsNull()
+    {
+        var discovery = new RecordingDiscovery(result: null);
+        using var bundle = IrisClientBuilder.Create(new IrisClientOptions())
+            .WithAuthenticator(new FakeAuthenticator())
+            .WithDiscovery(discovery)
+            .Build();
+
+        Assert.Null(await bundle.ResolveActorAsync("@nobody@nowhere.local"));
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     private static (IrisClientFactory, RecordingClientFactory) Build(
@@ -203,5 +258,27 @@ public sealed class IrisClientFactoryTests
 
         public Task<AuthenticatedActor?> AuthenticateAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult(_result);
+    }
+
+    /// <summary>
+    /// A fake <see cref="IDiscoveryService"/> that returns a fixed result and records the account it
+    /// was asked to resolve.
+    /// </summary>
+    private sealed class RecordingDiscovery : IDiscoveryService
+    {
+        private readonly Iri? _result;
+
+        public RecordingDiscovery(Iri? result = null)
+        {
+            _result = result;
+        }
+
+        public string? LastAccount { get; private set; }
+
+        public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
+        {
+            LastAccount = account;
+            return Task.FromResult(_result);
+        }
     }
 }

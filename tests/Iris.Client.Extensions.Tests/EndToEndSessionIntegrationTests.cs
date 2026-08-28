@@ -102,6 +102,36 @@ public sealed class EndToEndSessionIntegrationTests : IDisposable
         Assert.False(bundle.Session.KeyStore.TryGetKey(new Iri(KeyIri), out _));
     }
 
+    // --- Discovery (J-21): a handle resolves to the actor IRI via the real WebFinger ----
+
+    [Fact]
+    public async Task Bundle_ResolveActor_HandlesWebFinger_ReturnsActorIri()
+    {
+        // The bundle's default discovery service (WebFinger) must reach the server's
+        // /.well-known/webfinger endpoint. We point its plain HttpClient at the in-process
+        // server (the server is bound to a fixed Host header, so a direct base URI is enough).
+        var authenticator = new BasicAuthClientAuthenticator(
+            _server.CreateClient(), new Iri(ActorIri), Handle, Password);
+
+        var options = new IrisClientOptions
+        {
+            ServerBaseUri = new Uri($"https://{Host}"),
+            UseProxyFallback = false,
+        };
+
+        // A discovery service whose WebFinger transport is the in-process server handler.
+        var webFinger = new WebFingerClient(_server.CreateClient());
+        using var bundle = IrisClientBuilder.Create(options)
+            .WithAuthenticator(authenticator)
+            .WithDiscovery(new WebFingerDiscoveryService(webFinger))
+            .Build();
+
+        // Resolve the handle → the seeded actor's IRI (the same IRI the client then fetches).
+        var resolved = await bundle.ResolveActorAsync($"@{Handle}@{Host}");
+        Assert.NotNull(resolved);
+        Assert.Equal(new Iri(ActorIri), resolved);
+    }
+
     // --- The authenticated (owner-only) document is never served publicly ---------------
 
     [Fact]

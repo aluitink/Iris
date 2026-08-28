@@ -23,6 +23,7 @@ public sealed class IrisClientBuilder
     private IKeyStore? _keyStore;
     private IKeyProvider? _keyProvider;
     private IClientAuthenticator? _authenticator;
+    private IDiscoveryService? _discovery;
 
     private IrisClientBuilder(IrisClientOptions options)
     {
@@ -74,6 +75,19 @@ public sealed class IrisClientBuilder
     }
 
     /// <summary>
+    /// Overrides the <see cref="IDiscoveryService"/> the bundle exposes for resolving an account
+    /// handle (<c>@user@host</c> / <c>acct:</c> URI) to an actor IRI. Defaults to a WebFinger-backed
+    /// <see cref="WebFingerDiscoveryService"/> over a plain (unsigned) <c>HttpClient</c>.
+    /// </summary>
+    /// <param name="discovery">The discovery service. Must not be null.</param>
+    /// <returns>This builder, for chaining.</returns>
+    public IrisClientBuilder WithDiscovery(IDiscoveryService discovery)
+    {
+        _discovery = discovery ?? throw new ArgumentNullException(nameof(discovery));
+        return this;
+    }
+
+    /// <summary>
     /// Builds the <see cref="IrisClientBundle"/>.
     /// </summary>
     /// <returns>The composed session + client factory.</returns>
@@ -96,7 +110,17 @@ public sealed class IrisClientBuilder
             new SessionKeyStoreProvider(keyStore),
             _options);
 
-        return new IrisClientBundle(session, clientFactory, keyStore, keyProvider, _options);
+        // The discovery service resolves an account handle (@user@host / acct: URI) to an actor IRI
+        // via WebFinger (the client's first step in "follow/fetch @user@host"). It is exposed on the
+        // bundle so a user has a public path from a handle to an IRI (the handle→IRI step that was
+        // previously a dead-end; see PHASE_11_USER_JOURNEYS.md J-21). When no discovery service was
+        // supplied via WithDiscovery, a WebFinger-backed one is built over a plain (unsigned)
+        // HttpClient — WebFinger is a public GET that needs no signature — reusing the bundle's
+        // WebFinger cache (when configured) so resolutions are shared with the read paths.
+        var discovery = _discovery ?? new WebFingerDiscoveryService(
+            new WebFingerClient(new HttpClient(), _options.Caches?.WebFinger));
+
+        return new IrisClientBundle(session, clientFactory, keyStore, keyProvider, _options, discovery);
     }
 }
 
@@ -115,13 +139,15 @@ public sealed class IrisClientBundle : IDisposable
         IrisClientFactory clientFactory,
         IKeyStore keyStore,
         IKeyProvider keyProvider,
-        IrisClientOptions options)
+        IrisClientOptions options,
+        IDiscoveryService discovery)
     {
         Session = session ?? throw new ArgumentNullException(nameof(session));
         ClientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         KeyStore = keyStore ?? throw new ArgumentNullException(nameof(keyStore));
         KeyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
         Options = options ?? throw new ArgumentNullException(nameof(options));
+        Discovery = discovery ?? throw new ArgumentNullException(nameof(discovery));
     }
 
     /// <summary>
@@ -148,6 +174,25 @@ public sealed class IrisClientBundle : IDisposable
     /// Gets the client options the bundle was built with.
     /// </summary>
     public IrisClientOptions Options { get; }
+
+    /// <summary>
+    /// Gets the discovery service that resolves an account handle (e.g. <c>@user@example.com</c> or an
+    /// <c>acct:</c> URI) to the actor's IRI via WebFinger. This is the client's public path from a
+    /// handle to an IRI — the first step of "follow/fetch @user@host" (see
+    /// <see cref="IActivityPubClient"/>). Resolutions are cached in the bundle's WebFinger cache
+    /// (when <see cref="IrisClientOptions.Caches"/> configures one).
+    /// </summary>
+    public IDiscoveryService Discovery { get; }
+
+    /// <summary>
+    /// Resolves an account handle to an actor IRI (a convenience for
+    /// <see cref="Discovery"/>/<see cref="IDiscoveryService.ResolveActorAsync(string, CancellationToken)"/>).
+    /// </summary>
+    /// <param name="account">The account handle (e.g. <c>@user@example.com</c>) or an <c>acct:</c> URI.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The actor IRI, or <see langword="null"/> if the account could not be resolved.</returns>
+    public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
+        => Discovery.ResolveActorAsync(account, ct);
 
     /// <summary>
     /// Builds a pre-configured <see cref="IActivityPubClient"/> for the given actor.
