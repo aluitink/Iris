@@ -210,6 +210,21 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, DeleteActivityHandler>();
         services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
+        // Move (F-08): re-points the local follow edges when an actor migrates to a new IRI. It needs the
+        // local community IRIs and the outbound caches (to invalidate the moved actor's stale key/doc), so
+        // it is registered via a factory that resolves them from the provider (not a direct
+        // AddSingleton<IActivityHandler, MoveActivityHandler> — the handler has a non-default ctor).
+        services.AddSingleton<IActivityHandler>(sp =>
+        {
+            var persistence = sp.GetRequiredService<IPersistenceProvider>();
+            var localCommunities = persistence.Communities
+                .GetAllCommunityIrisAsync()
+                .GetAwaiter()
+                .GetResult();
+            var remoteKeys = sp.GetService<RemoteKeyCache>();
+            var remoteActors = sp.GetService<RemoteActorCache>();
+            return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors);
+        });
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
         // Community feed (Phase 5): computes a community's unified feed (the union of its local

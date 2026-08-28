@@ -97,4 +97,11 @@ public interface ICommunityStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when a follow was removed; <see langword="false"/> when the community did not follow the actor.</returns>
     public Task<bool> RemoveFollowAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of all communities this store hosts (the local communities).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the community IRIs (possibly empty).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetAllCommunityIrisAsync(CancellationToken ct = default);
 }

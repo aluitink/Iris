@@ -117,4 +117,12 @@ public sealed class InMemoryCommunityStore : ICommunityStore
 
         return Task.FromResult(follows.TryRemove(actorIri, out _));
     }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetAllCommunityIrisAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new List<Iri>(_communities.Keys);
+        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
+    }
 }
