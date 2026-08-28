@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using CollectionPage = Iris.Core.CollectionPage;
 
 namespace Iris.Client;
 

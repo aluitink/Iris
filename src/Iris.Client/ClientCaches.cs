@@ -8,7 +8,7 @@ namespace Iris.Client;
 /// Each field is optional. When a cache is null the corresponding read path goes straight to the
 /// network (no caching). Caches are shared across the client's lifetime; a caller that wants
 /// per-request isolation supplies a fresh <see cref="ClientCaches"/> (or null). The
-/// <see cref="CollectionPage"/> cache is used for <c>GetCollectionAsync</c> page fetches and honors
+/// <see cref="CollectionPageCache"/> is used for <c>GetCollectionAsync</c> page fetches and honors
 /// <see cref="CollectionQuery.BypassCache"/>.
 /// </remarks>
 public sealed record ClientCaches(

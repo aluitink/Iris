@@ -111,6 +111,34 @@ public static class IriExtensions
         return null;
     }
 
+    /// <summary>
+    /// Resolves the IRI of an <see cref="ICollectionOrLink"/>: a <see cref="Link"/> contributes its
+    /// <c>Href</c>; an embedded collection contributes its <c>Id</c>.
+    /// </summary>
+    /// <remarks>
+    /// The shared boundary conversion for collection page <c>next</c>/<c>prev</c>/<c>first</c>
+    /// links (an <see cref="ICollectionOrLink"/>). Same semantics as
+    /// <see cref="ResolveObjectIri(IObjectOrLink?)" /> but typed for the collection range so callers
+    /// don't need an upcast. Used by <see cref="CollectionPageFactory.FromOrderedCollectionPage"/>
+    /// and the client's collection enumeration to resolve page-IRIs.
+    /// </remarks>
+    /// <param name="collectionOrLink">The collection or link to resolve. May be null.</param>
+    /// <returns>The resolved <see cref="Iri"/>, or <see langword="null"/> when the collection/link carries no IRI.</returns>
+    public static Iri? ResolveCollectionIri(this ICollectionOrLink? collectionOrLink)
+    {
+        if (collectionOrLink is ILink { Href: { } href })
+        {
+            return new Iri(href);
+        }
+
+        if (collectionOrLink is IObject { Id: { Length: > 0 } id })
+        {
+            return new Iri(id);
+        }
+
+        return null;
+    }
+
     private static Iri AppendSegment(Iri iri, string segment)
     {
         if (!iri.IsAbsolute)

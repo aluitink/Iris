@@ -1,6 +1,7 @@
 using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using CollectionPage = Iris.Core.CollectionPage;
 
 namespace Iris.Server;
 
@@ -18,9 +19,9 @@ namespace Iris.Server;
 /// not cached, so a later lookup retries.
 /// <para>
 /// The page is built by fetching the page document and flattening it into a
-/// <see cref="Iris.Client.CollectionPage"/> (items + the next-page link), the same shape the
+/// <see cref="Iris.Core.CollectionPage"/> (items + the next-page link), the same shape the
 /// client's <see cref="IActivityPubClient.GetCollectionAsync"/> yields per page — so callers can
-/// follow the collection themselves via <see cref="Iris.Client.CollectionPage.NextPage"/>.
+/// follow the collection themselves via <see cref="Iris.Core.CollectionPage.NextPage"/>.
 /// </para>
 /// </remarks>
 public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, CollectionPageCache collectionPages)
@@ -30,7 +31,7 @@ public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, Colle
     private readonly CollectionPageCache _collectionPages = collectionPages!;
 
     /// <inheritdoc/>
-    public async Task<Iris.Client.CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default)
+    public async Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default)
     {
         var (page, _, _) = await _collectionPages
             .GetAsync(
@@ -45,14 +46,14 @@ public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, Colle
 
     /// <summary>
     /// Fetches a page document from the network (bypassing the cache) and flattens it into a
-    /// <see cref="Iris.Client.CollectionPage"/>.
+    /// <see cref="Iris.Core.CollectionPage"/>.
     /// </summary>
     /// <param name="pageIri">The absolute IRI of the page (the collection IRI for the first page, or a
     /// page IRI for a later page).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The page, or null when the fetch fails or the fetched object is not an
     /// <see cref="OrderedCollectionPage"/>.</returns>
-    private async Task<Iris.Client.CollectionPage?> FetchPageAsync(Iri pageIri, CancellationToken ct)
+    private async Task<CollectionPage?> FetchPageAsync(Iri pageIri, CancellationToken ct)
     {
         // Fetch the page document directly (signed GET). When pageIri is a plain collection IRI the
         // remote returns the OrderedCollection (whose `first` is the first page) — not a page — so the
@@ -73,51 +74,6 @@ public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, Colle
 
         // Rule 1: deserialize into the range interface, then cast.
         var objectOrLink = ActivityJson.Deserialize<IObjectOrLink>(json);
-        return FromObject(objectOrLink as IObject);
-    }
-
-    /// <summary>
-    /// Builds a <see cref="Iris.Client.CollectionPage"/> from a fetched page document (the same shape
-    /// the client's <see cref="IActivityPubClient.GetCollectionAsync"/> yields per page).
-    /// </summary>
-    /// <param name="obj">The fetched page document.</param>
-    /// <returns>The flattened page, or null when <paramref name="obj"/> is not an
-    /// <see cref="OrderedCollectionPage"/>.</returns>
-    private static Iris.Client.CollectionPage? FromObject(IObject? obj)
-    {
-        if (obj is not OrderedCollectionPage page)
-        {
-            return null;
-        }
-
-        var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
-        return new Iris.Client.CollectionPage
-        {
-            Page = page,
-            Items = items,
-            NextPage = TryGetIri(page.Next, out var next) ? next : null,
-            PrevPage = TryGetIri(page.Prev, out var prev) ? prev : null,
-            TotalItems = page.TotalItems is { } total ? (int)total : null,
-            PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
-        };
-    }
-
-    private static bool TryGetIri(ICollectionOrLink? objOrLink, out Iri? iri)
-    {
-        iri = null;
-        // A page/collection link is either a Link (with Href) or a document (with Id).
-        if (objOrLink is ILink { Href: { } href })
-        {
-            iri = new Iri(href);
-            return true;
-        }
-
-        if (objOrLink is IObject { Id: { Length: > 0 } id })
-        {
-            iri = new Iri(id);
-            return true;
-        }
-
-        return false;
+        return CollectionPageFactory.FromOrderedCollectionPage(objectOrLink as IObject);
     }
 }

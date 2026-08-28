@@ -1,6 +1,7 @@
 using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using CollectionPage = Iris.Core.CollectionPage;
 
 namespace Iris.Server;
 
@@ -33,5 +34,5 @@ public interface IRemoteCollectionFetcher
     /// Fetch failures (404, network error, not-a-page) are an expected condition — return null,
     /// do not throw.
     /// </remarks>
-    public Task<Iris.Client.CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default);
+    public Task<CollectionPage?> GetCollectionPageAsync(Iri pageIri, bool forceRefresh = false, CancellationToken ct = default);
 }

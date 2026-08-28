@@ -147,4 +147,50 @@ public class IriExtensionsTests
 
         Assert.Null(none.ResolveObjectIri());
     }
+
+    [Fact]
+    public void ResolveCollectionIri_FromLink_ReturnsHref()
+    {
+        ICollectionOrLink link = new Link { Href = new Uri("https://a.domain.local/pages/2") };
+
+        var iri = link.ResolveCollectionIri();
+
+        Assert.NotNull(iri);
+        Assert.Equal("https://a.domain.local/pages/2", iri!.Value.Value);
+    }
+
+    [Fact]
+    public void ResolveCollectionIri_FromObjectWithId_ReturnsId()
+    {
+        ICollectionOrLink collection = new OrderedCollection { Id = "https://a.domain.local/col" };
+
+        var iri = collection.ResolveCollectionIri();
+
+        Assert.NotNull(iri);
+        Assert.Equal("https://a.domain.local/col", iri!.Value.Value);
+    }
+
+    [Fact]
+    public void ResolveCollectionIri_FromLinkWithoutHref_ReturnsNull()
+    {
+        ICollectionOrLink link = new Link();
+
+        Assert.Null(link.ResolveCollectionIri());
+    }
+
+    [Fact]
+    public void ResolveCollectionIri_FromObjectWithoutId_ReturnsNull()
+    {
+        ICollectionOrLink collection = new OrderedCollection { Name = ["No Id"] };
+
+        Assert.Null(collection.ResolveCollectionIri());
+    }
+
+    [Fact]
+    public void ResolveCollectionIri_FromNull_ReturnsNull()
+    {
+        ICollectionOrLink? none = null;
+
+        Assert.Null(none.ResolveCollectionIri());
+    }
 }

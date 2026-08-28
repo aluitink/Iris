@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using CollectionPage = Iris.Core.CollectionPage;
 
 namespace Iris.Client;
 
@@ -251,31 +252,12 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         }
 
         // Otherwise follow the collection's `first` link to reach the first page.
-        if (collection is Collection { First: { } first } && TryGetIri(first, out var firstIri))
+        if (collection is Collection { First: { } first })
         {
-            return firstIri;
+            return first.ResolveCollectionIri();
         }
 
         return null;
-    }
-
-    private static bool TryGetIri(ICollectionOrLink? objOrLink, out Iri? iri)
-    {
-        iri = null;
-        // A page/collection link is either a Link (with Href) or a document (with Id).
-        if (objOrLink is ILink { Href: { } href })
-        {
-            iri = new Iri(href);
-            return true;
-        }
-
-        if (objOrLink is IObject { Id: { Length: > 0 } id })
-        {
-            iri = new Iri(id);
-            return true;
-        }
-
-        return false;
     }
 
     private async Task<CollectionPage?> FetchCollectionPageAsync(Iri pageIri, bool bypassCache, CancellationToken ct)
@@ -299,18 +281,9 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // page served as an OrderedCollection (page 1 — the server serves the collection document
         // itself, carrying its first page of items + a self `first`, with the `next` pointer living
         // on the page). Both are valid first/current pages, so both are accepted.
-        if (obj is OrderedCollectionPage page)
+        if (obj is OrderedCollectionPage)
         {
-            var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
-            return new CollectionPage
-            {
-                Page = page,
-                Items = items,
-                NextPage = TryGetIri(page.Next, out var next) ? next : null,
-                PrevPage = TryGetIri(page.Prev, out var prev) ? prev : null,
-                TotalItems = page.TotalItems is { } total ? (int)total : null,
-                PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
-            };
+            return CollectionPageFactory.FromOrderedCollectionPage(obj);
         }
 
         if (obj is OrderedCollection collection)
