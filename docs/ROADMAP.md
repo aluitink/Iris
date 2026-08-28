@@ -21,8 +21,8 @@
 | 8 — Sample Docker Composition | 🚧 in progress |
 | 9 — Real-World Deployment Preparation | ✅ complete |
  | 10 — Project & Test Review | 🚧 in progress |
-| 11 — Implementation Gaps & Usability Exploration | 📋 planned |
-| 12 — Spec Conformance & Missing Features | 📋 planned |
+| 11 — Implementation Gaps & Usability Exploration | 🚧 in progress |
+| 12 — Spec Conformance & Missing Features | 🚧 in progress |
 | 13 — Live Federation Compatibility | 📋 planned (FQDNs allocated) |
 | 14+ — Future | 📋 abstract |
 
@@ -102,12 +102,12 @@
 
 > A focused audit against the ActivityPub/ActivityStreams specifications to confirm conformance and surface missing features before going live.
 
-- [ ] **Spec conformance audit**: systematically check the implementation against the ActivityPub spec (signing, delivery, WebFinger, NodeInfo, collections, object/activity types) and the ActivityStreams 2.0 data model; record every deviation.
-- [ ] **Missing-feature inventory**: identify spec-mandated or widely-expected features not yet implemented (e.g. `Undo`, `Delete`, `Update` activity handling, `sharedInbox`, `relay`, `tag`/`attachment` handling, `ordered` vs `unordered` collections, `manuallyApprovesFollowers`).
-- [ ] **Prioritized fix plan**: rank conformance gaps and missing features by (a) spec-mandated vs nice-to-have, (b) impact on real-world interop, (c) effort.
-- [ ] **Implement high-priority gaps**: close the spec-mandated and interop-critical items; defer the rest to Phase 14+.
-- [ ] **Conformance test suite**: add integration tests that assert spec-required behaviors (wire format, headers, status codes, pagination semantics) so conformance is regression-protected.
-- [ ] Fold the carried-forward **spec-research findings** (from Phase 0) into this audit's output.
+- [x] **Spec conformance audit**: systematically check the implementation against the ActivityPub spec (signing, delivery, WebFinger, NodeInfo, collections, object/activity types) and the ActivityStreams 2.0 data model; record every deviation. *(Slice 12.1: the full audit is in [MISSING_FEATURES.md](MISSING_FEATURES.md) §2 (the implemented surface) + §3 (conformance notes C-01…C-08).)*
+- [x] **Missing-feature inventory**: identify spec-mandated or widely-expected features not yet implemented (e.g. `Undo`, `Delete`, `Update` activity handling, `sharedInbox`, `relay`, `tag`/`attachment` handling, `ordered` vs `unordered` collections, `manuallyApprovesFollowers`). *(Slice 12.1: [MISSING_FEATURES.md](MISSING_FEATURES.md) §2 — F-01…F-31, severity-ranked, spec-mandated items marked ★. Note: `Undo` (Slice 11.9) and `manuallyApprovesFollowers` (Slice 11.10) are already implemented; the inventory lists what remains — `Update`/`Delete`/`Like`/`Move`/`Add`/`Remove`, `sharedInbox`, `relay`, EdDSA, moderation, the followed feed, etc.)*
+- [x] **Prioritized fix plan**: rank conformance gaps and missing features by (a) spec-mandated vs nice-to-have, (b) impact on real-world interop, (c) effort. *(Slice 12.1: [MISSING_FEATURES.md](MISSING_FEATURES.md) §4 — four waves; Wave 1 (spec-mandated & interop-critical) = `sharedInbox`, EdDSA, `Update`, `Delete`, `Move`.)*
+- [ ] **Implement high-priority gaps**: close the spec-mandated and interop-critical items; defer the rest to Phase 14+. *(Remaining: Wave 1 first — `sharedInbox` (F-01), EdDSA (F-05), `Update` (F-02), `Delete` (F-03), `Move` (F-08).)*
+- [ ] **Conformance test suite**: add integration tests that assert spec-required behaviors (wire format, headers, status codes, pagination semantics) so conformance is regression-protected. *(Remaining: per the per-item test list in [MISSING_FEATURES.md](MISSING_FEATURES.md) §4.)*
+- [x] Fold the carried-forward **spec-research findings** (from Phase 0) into this audit's output. *(Slice 12.1: [MISSING_FEATURES.md](MISSING_FEATURES.md) §5 — the inventory is the fold-back of the Phase 0 spec-research directive.)*
 
 ## Phase 13 — Live Federation Compatibility 📋 (FQDNs allocated — ready to stand up)
 
