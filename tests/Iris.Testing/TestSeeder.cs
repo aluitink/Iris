@@ -80,6 +80,46 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Person"/> actor together with a real Ed25519 signing key, storing the key in
+    /// the provider's <see cref="IPersistenceProvider.Keys"/> and serving the key's public key as PEM
+    /// (<c>publicKeyPem</c>) in the actor's <c>publicKey</c> extension (with a <c>keyAlgorithm</c>
+    /// marker) so a remote resolver can verify Ed25519 signatures. Idempotent (re-seeding replaces the
+    /// actor and key).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
+    /// <param name="handle">The actor's handle (e.g. <c>alice</c>).</param>
+    /// <returns>The seeded Ed25519 key, the actor's IRI, and the key's IRI (<c>{actorIri}#key-1</c>).</returns>
+    public static (Ed25519Key Key, Iri ActorIri, Iri KeyId) SeedPersonWithEd25519Key(
+        InMemoryPersistenceProvider persistence, string host, string handle)
+    {
+        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
+        var actorIri = new Iri(actorIriString);
+        var keyId = new Iri($"{actorIriString}#key-1");
+
+        var key = Ed25519Key.Generate(keyId);
+        persistence.Keys.PutKey(key);
+
+        var actor = new Person
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = actorIriString,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        actor.ExtensionData["keyAlgorithm"] = JsonSerializer.SerializeToElement("ed25519");
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+
+        return (key, actorIri, keyId);
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Person"/> actor with <c>manuallyApprovesFollowers</c> set (in the actor's
     /// <c>ExtensionData</c>, the library-untyped property). An inbound follow of such an actor is
     /// <em>not</em> auto-accepted — the operator responds with an explicit

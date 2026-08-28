@@ -74,7 +74,7 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
 
         var keyId = ExtractKeyId(actor, actorId);
         var algorithm = ExtractKeyAlgorithm(actor);
-        KeyPair key;
+        ISigningKey key;
         try
         {
             key = KeyPem.Load(pem, algorithm, keyId);

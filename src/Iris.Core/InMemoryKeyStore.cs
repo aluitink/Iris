@@ -10,19 +10,19 @@ namespace Iris.Core;
 /// </remarks>
 public sealed class InMemoryKeyStore : IKeyStore, IDisposable
 {
-    private readonly Dictionary<Iri, KeyPair> _keys = new();
+    private readonly Dictionary<Iri, ISigningKey> _keys = new();
 
     /// <inheritdoc/>
-    public bool TryGetKey(Iri keyId, out KeyPair? keyPair)
-        => _keys.TryGetValue(keyId, out keyPair);
+    public bool TryGetKey(Iri keyId, out ISigningKey? key)
+        => _keys.TryGetValue(keyId, out key);
 
     /// <inheritdoc/>
-    public void PutKey(KeyPair key)
+    public void PutKey(ISigningKey key)
     {
         ArgumentNullException.ThrowIfNull(key);
         if (_keys.TryGetValue(key.KeyId, out var existing))
         {
-            existing.Dispose();
+            DisposeIfDisposable(existing);
         }
         _keys[key.KeyId] = key;
     }
@@ -32,7 +32,7 @@ public sealed class InMemoryKeyStore : IKeyStore, IDisposable
     {
         if (_keys.TryGetValue(keyId, out var existing))
         {
-            existing.Dispose();
+            DisposeIfDisposable(existing);
             _keys.Remove(keyId);
             return true;
         }
@@ -41,15 +41,23 @@ public sealed class InMemoryKeyStore : IKeyStore, IDisposable
     }
 
     /// <summary>
-    /// Disposes all stored key pairs and clears the store.
+    /// Disposes all stored keys (when they are <see cref="IDisposable"/>) and clears the store.
     /// </summary>
     public void Dispose()
     {
         foreach (var key in _keys.Values)
         {
-            key.Dispose();
+            DisposeIfDisposable(key);
         }
 
         _keys.Clear();
+    }
+
+    private static void DisposeIfDisposable(ISigningKey key)
+    {
+        if (key is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 }

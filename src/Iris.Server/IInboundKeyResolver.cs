@@ -21,11 +21,13 @@ public interface IInboundKeyResolver
     /// <param name="keyId">The key IRI (the <c>keyId</c> in a <c>Signature</c> header; the
     /// <c>publicKey.id</c> of the signing actor).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A public-only <see cref="KeyPair"/> suitable for verification, or null when the key
-    /// cannot be resolved (unknown actor, missing <c>publicKey</c>, fetch failure).</returns>
+    /// <returns>A public-only key suitable for verification (an RSA / EC <see cref="KeyPair"/> or an
+    /// Ed25519 <see cref="Ed25519Key"/>), or null when the key cannot be resolved (unknown actor,
+    /// missing <c>publicKey</c>, fetch failure).</returns>
     /// <remarks>
-    /// The returned key, when non-null, is owned by the caller and must be disposed after use.
-    /// Resolution failures are an expected condition (return null), not an error (do not throw).
+    /// The returned key, when non-null and <see cref="IDisposable"/>, is owned by the caller and must
+    /// be disposed after use. Resolution failures are an expected condition (return null), not an
+    /// error (do not throw).
     /// </remarks>
-    public Task<KeyPair?> ResolveAsync(Iri keyId, CancellationToken ct = default);
+    public Task<ISigningKey?> ResolveAsync(Iri keyId, CancellationToken ct = default);
 }

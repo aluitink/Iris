@@ -27,7 +27,7 @@ public sealed class RemoteInboundKeyResolver(
     private readonly RemoteKeyCache _remoteKeys = remoteKeys!;
 
     /// <inheritdoc/>
-    public async Task<KeyPair?> ResolveAsync(Iri keyId, CancellationToken ct = default)
+    public async Task<ISigningKey?> ResolveAsync(Iri keyId, CancellationToken ct = default)
     {
         var (jwkKey, _, _) = await _remoteKeys
             .GetAsync(keyId, bypassCache: false, factory: key => FetchJwkAsync(key, ct), ct)
@@ -46,7 +46,11 @@ public sealed class RemoteInboundKeyResolver(
 
         try
         {
-            return KeyPair.FromJwk(jwkKey.Jwk, algorithm.Value, keyId);
+            return algorithm.Value switch
+            {
+                KeyAlgorithm.Ed25519 => Ed25519Key.FromJwk(jwkKey.Jwk, keyId),
+                _ => KeyPair.FromJwk(jwkKey.Jwk, algorithm.Value, keyId),
+            };
         }
         catch (FormatException)
         {
@@ -98,6 +102,19 @@ public sealed class RemoteInboundKeyResolver(
             if (pemAlgorithm is null)
             {
                 return null;
+            }
+
+            // Ed25519 is not an AsymmetricAlgorithm; load it with the dedicated type. The
+            // ownerActorIri keyId is irrelevant here (only the JWK is kept), but a placeholder
+            // satisfies the parameter.
+            if (pemAlgorithm.Value == KeyAlgorithm.Ed25519)
+            {
+                if (!Iri.TryParse("urn:placeholder", out var placeholder) || Ed25519Key.FromPem(pem, placeholder) is not { } edKey)
+                {
+                    return null;
+                }
+
+                return new JwkKey(edKey.GetPublicJwk(), Signatures.AlgorithmLabel(pemAlgorithm.Value));
             }
 
             using var key = KeyPair.FromPem(pem, pemAlgorithm.Value, ownerActorIri);

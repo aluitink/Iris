@@ -62,7 +62,7 @@ public sealed class HttpSignatureValidator(
 
         // Resolve the remote public key. A null result (unknown actor / missing publicKey / fetch
         // failure) is an invalid signature, not an error.
-        KeyPair? key = null;
+        ISigningKey? key = null;
         try
         {
             key = await _keyResolver.ResolveAsync(keyId, ct).ConfigureAwait(false);
@@ -80,14 +80,17 @@ public sealed class HttpSignatureValidator(
 
         // Verify with the resolved key directly: the key came from a remote source (the sender's
         // actor document), not from this instance's key store, so it is passed to the verifier
-        // explicitly rather than looked up by IRI.
-        bool isValid;
-        using (key)
+        // explicitly rather than looked up by IRI. Dispose the key only when it is disposable
+        // (a KeyPair is; an Ed25519Key is not — BouncyCastle params are not IDisposable).
+        var disposableKey = key as IDisposable;
+        try
         {
-            isValid = _verifier.Verify(metadata, key, signatureHeader);
+            return new SignatureValidationResult(_verifier.Verify(metadata, key, signatureHeader), keyId, ExtractActorIri(body));
         }
-
-        return new SignatureValidationResult(isValid, keyId, ExtractActorIri(body));
+        finally
+        {
+            disposableKey?.Dispose();
+        }
     }
 
     /// <summary>

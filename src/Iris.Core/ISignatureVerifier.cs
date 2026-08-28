@@ -39,7 +39,8 @@ public interface ISignatureVerifier
     /// This overload exists because a server validating an inbound federation request resolves the
     /// signing key from a *remote* source (the sender's actor document), not from its own key store.
     /// It performs the same base reconstruction and cryptographic check as
-    /// <see cref="Verify(HttpRequestMetadata, string)"/> but with the key supplied directly.
+    /// <see cref="Verify(HttpRequestMetadata, string)"/> but with the key supplied directly. The key
+    /// may be an RSA / EC <see cref="KeyPair"/> or an Ed25519 <see cref="Ed25519Key"/>.
     /// </remarks>
-    public bool Verify(HttpRequestMetadata metadata, KeyPair key, string signatureHeader);
+    public bool Verify(HttpRequestMetadata metadata, ISigningKey key, string signatureHeader);
 }

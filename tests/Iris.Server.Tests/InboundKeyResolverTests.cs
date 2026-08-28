@@ -28,12 +28,17 @@ public class InboundKeyResolverTests
         var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/alice#key-1"));
 
         Assert.NotNull(resolved);
-        using (resolved!)
+        var disposable = resolved as IDisposable;
+        try
         {
             // The resolved public key must verify a signature made with alice's private key.
             byte[] payload = [1, 2, 3, 4, 5];
             var signature = aliceKey.Sign(payload);
             Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
         }
     }
 
@@ -53,11 +58,16 @@ public class InboundKeyResolverTests
         var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
 
         Assert.NotNull(resolved);
-        using (resolved!)
+        var disposable = resolved as IDisposable;
+        try
         {
             byte[] payload = [9, 8, 7];
             var signature = bobKey.Sign(payload);
             Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
         }
     }
 
@@ -79,11 +89,16 @@ public class InboundKeyResolverTests
         var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/bob#key-1"));
 
         Assert.NotNull(resolved);
-        using (resolved!)
+        var disposable = resolved as IDisposable;
+        try
         {
             byte[] payload = [5, 6, 7];
             var signature = bobKey.Sign(payload);
             Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
         }
     }
 
@@ -101,11 +116,16 @@ public class InboundKeyResolverTests
         var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/erin#key-1"));
 
         Assert.NotNull(resolved);
-        using (resolved!)
+        var disposable = resolved as IDisposable;
+        try
         {
             byte[] payload = [1, 1, 2];
             var signature = erinKey.Sign(payload);
             Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
         }
     }
 
@@ -146,12 +166,12 @@ public class InboundKeyResolverTests
 
         var first = await resolver.ResolveAsync(keyId);
         Assert.NotNull(first);
-        first!.Dispose();
+        (first as IDisposable)?.Dispose();
 
         // Second call is a cache hit: the fetcher is not invoked again.
         var second = await resolver.ResolveAsync(keyId);
         Assert.NotNull(second);
-        second.Dispose();
+        (second as IDisposable)?.Dispose();
 
         Assert.Equal(1, fetcher.FetchCount);
         Assert.Equal(1, cache.Count);

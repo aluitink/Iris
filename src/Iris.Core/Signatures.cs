@@ -157,10 +157,10 @@ public static class Signatures
     /// <summary>
     /// Signs a signature base with the given key.
     /// </summary>
-    /// <param name="key">The key pair.</param>
+    /// <param name="key">The signing key (RSA / EC <see cref="KeyPair"/> or Ed25519 <see cref="Ed25519Key"/>).</param>
     /// <param name="baseBytes">The signature base bytes (see <see cref="BuildSignatureBase"/>).</param>
     /// <returns>The signature bytes (base64 is applied by the caller when building the header).</returns>
-    public static byte[] SignBase(KeyPair key, byte[] baseBytes)
+    public static byte[] SignBase(ISigningKey key, byte[] baseBytes)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(baseBytes);
@@ -170,11 +170,11 @@ public static class Signatures
     /// <summary>
     /// Verifies a signature over a signature base with the given key.
     /// </summary>
-    /// <param name="key">The key pair.</param>
+    /// <param name="key">The signing key (RSA / EC <see cref="KeyPair"/> or Ed25519 <see cref="Ed25519Key"/>).</param>
     /// <param name="baseBytes">The signature base bytes (see <see cref="BuildSignatureBase"/>).</param>
     /// <param name="signature">The signature bytes.</param>
     /// <returns><see langword="true"/> when valid; otherwise <see langword="false"/>.</returns>
-    public static bool VerifyBase(KeyPair key, byte[] baseBytes, byte[] signature)
+    public static bool VerifyBase(ISigningKey key, byte[] baseBytes, byte[] signature)
     {
         ArgumentNullException.ThrowIfNull(key);
         ArgumentNullException.ThrowIfNull(baseBytes);

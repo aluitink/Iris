@@ -37,7 +37,7 @@ public sealed class HttpSignatureVerifier(IKeyStore keyStore) : ISignatureVerifi
     }
 
     /// <inheritdoc/>
-    public bool Verify(HttpRequestMetadata metadata, KeyPair key, string signatureHeader)
+    public bool Verify(HttpRequestMetadata metadata, ISigningKey key, string signatureHeader)
     {
         ArgumentNullException.ThrowIfNull(metadata);
         ArgumentNullException.ThrowIfNull(key);
@@ -54,7 +54,7 @@ public sealed class HttpSignatureVerifier(IKeyStore keyStore) : ISignatureVerifi
         return VerifyWithKey(metadata, key, header);
     }
 
-    private static bool VerifyWithKey(HttpRequestMetadata metadata, KeyPair key, SignatureHeader header)
+    private static bool VerifyWithKey(HttpRequestMetadata metadata, ISigningKey key, SignatureHeader header)
     {
         var components = header.Headers.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (components.Length == 0)

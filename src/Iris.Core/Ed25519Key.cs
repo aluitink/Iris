@@ -22,7 +22,7 @@ namespace Iris.Core;
 /// conventions as <see cref="KeyPair"/> so the two are interchangeable at the wire boundary.
 /// A key is public-only when built from a public key/PEM/JWK (it can verify but not sign).
 /// </remarks>
-public sealed class Ed25519Key
+public sealed class Ed25519Key : ISigningKey
 {
     private readonly Ed25519PublicKeyParameters _public;
     private readonly Ed25519PrivateKeyParameters? _private;
@@ -33,9 +33,10 @@ public sealed class Ed25519Key
         _private = privateKey;
     }
 
-    /// <summary>
-    /// Gets the IRI that identifies this key (the <c>keyId</c> / <c>publicKey.id</c> in a signature).
-    /// </summary>
+    /// <inheritdoc/>
+    public KeyAlgorithm Algorithm => KeyAlgorithm.Ed25519;
+
+    /// <inheritdoc/>
     public Iri KeyId { get; internal set; }
 
     /// <summary>

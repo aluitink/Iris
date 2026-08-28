@@ -20,12 +20,14 @@ public class KeyPemTests
         var signature = original.Sign(Payload);
 
         var pem = KeyPem.Save(original);
-        using var loaded = KeyPem.Load(pem, algorithm, KeyId);
+        var loaded = KeyPem.Load(pem, algorithm, KeyId);
+        Assert.IsType<KeyPair>(loaded);
+        using var loadedKeyPair = (KeyPair)loaded;
 
         // Same algorithm, key id, and public key material.
         Assert.Equal(algorithm, loaded.Algorithm);
         Assert.Equal(KeyId, loaded.KeyId);
-        Assert.Equal(original.Key.ExportSubjectPublicKeyInfo(), loaded.Key.ExportSubjectPublicKeyInfo());
+        Assert.Equal(original.Key.ExportSubjectPublicKeyInfo(), loadedKeyPair.Key.ExportSubjectPublicKeyInfo());
 
         // The loaded key verifies a signature made by the original (and vice versa).
         Assert.True(loaded.Verify(Payload, signature));
@@ -57,10 +59,12 @@ public class KeyPemTests
             : throw new InvalidOperationException("expected an RSA key");
 
         var signature = original.Sign(Payload);
-        using var loaded = KeyPem.Load(pkcs1Pem, KeyAlgorithm.Rsa, KeyId);
+        var loaded = KeyPem.Load(pkcs1Pem, KeyAlgorithm.Rsa, KeyId);
+        Assert.IsType<KeyPair>(loaded);
+        using var loadedKeyPair = (KeyPair)loaded;
 
         // Same public key material; the loaded (public-only) key verifies the original's signature.
-        Assert.Equal(rsa.ExportSubjectPublicKeyInfo(), ((RSA)loaded.Key).ExportSubjectPublicKeyInfo());
+        Assert.Equal(rsa.ExportSubjectPublicKeyInfo(), ((RSA)loadedKeyPair.Key).ExportSubjectPublicKeyInfo());
         Assert.True(loaded.Verify(Payload, signature));
     }
 
@@ -70,7 +74,9 @@ public class KeyPemTests
         using var original = KeyPairGenerator.GenerateRsa(KeyId);
         var signature = original.Sign(Payload);
 
-        using var loaded = KeyPem.Load(original.ExportPublicKeyPem(), KeyAlgorithm.Rsa, KeyId);
+        var loaded = KeyPem.Load(original.ExportPublicKeyPem(), KeyAlgorithm.Rsa, KeyId);
+        Assert.IsType<KeyPair>(loaded);
+        using var loadedKeyPair = (KeyPair)loaded;
 
         Assert.True(loaded.Verify(Payload, signature));
     }

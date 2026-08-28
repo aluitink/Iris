@@ -15,7 +15,7 @@ namespace Iris.Core;
 /// A <see cref="KeyPair"/> is immutable with respect to its algorithm and key id. It owns
 /// the underlying key material and disposes it via <see cref="Dispose"/>.
 /// </remarks>
-public sealed class KeyPair : IDisposable
+public sealed class KeyPair : ISigningKey, IDisposable
 {
     private readonly AsymmetricAlgorithm _key;
 
