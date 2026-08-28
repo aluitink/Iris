@@ -314,46 +314,14 @@ public sealed class CommunityFollowingIntegrationTests : IDisposable
         }
         var signer = new HttpSignatureSigner(keyStore);
 
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{host}");
-                    opts.InstanceName = $"iris-{host}";
-                    opts.InstanceActorId = instanceActorIri;
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-
-                // Register the community key so the server's DeliveryWorker can sign as the community.
-                if (communityKey is not null)
-                {
-                    s.AddSingleton<IKeyStore>(keyStore);
-                    s.AddSingleton<IKeyProvider>(keyProvider);
-                    s.AddSingleton<ISignatureSigner>(signer);
-                }
-
-                if (fetcher is not null)
-                {
-                    s.AddSingleton<IActorDocumentFetcher>(fetcher);
-                }
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        return new TestServer(builder);
+        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = host,
+            Handle = handle,
+            Persistence = persistence,
+            Fetcher = fetcher,
+            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
+        });
     }
 
     private static Follow BuildFollow(Iri followerIri, Iri targetIri) => new()

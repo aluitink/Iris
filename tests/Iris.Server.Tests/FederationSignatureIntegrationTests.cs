@@ -615,77 +615,16 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Func<HttpMessageHandler>? deliveryTransport = null,
         Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? extraServices = null,
         IEnumerable<Iri>? extraLocalActors = null)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{host}");
-                    opts.InstanceName = $"iris-{host}";
-                    // The instance actor is the federation signing identity (outbound fetches).
-                    opts.InstanceActorId = new Iri($"https://{host}/ap/v1/u/{handle}");
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-                // The seeded persistence carries the local actor's private signing key; bind the
-                // IKeyStore seam to it so the outbound DeliveryWorker (which signs as InstanceActorId)
-                // can find the key. AddInMemoryPersistence otherwise registers a fresh, empty
-                // InMemoryKeyStore.
-                s.AddSingleton<IKeyStore>(persistence.Keys);
-
-                if (fetcher is not null)
-                {
-                    // Override the default fetcher (which would use a real HttpClientHandler and fail
-                    // to resolve the in-process host) with one wired to the other TestServer.
-                    s.AddSingleton<IActorDocumentFetcher>(fetcher);
-                }
-
-                if (deliveryTransport is { } transport)
-                {
-                    // Override the default delivery transport (real HttpClientHandler) so this
-                    // instance's outbound DeliveryWorker routes to the other in-process TestServer.
-                    s.AddSingleton<Func<HttpMessageHandler>>(() => transport());
-                }
-
-                extraServices?.Invoke(s);
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        var server = new TestServer(builder);
-
-        // Register the local actor's key with the IKeyProvider so the outbound DeliveryWorker (which
-        // signs as InstanceActorId = the local actor) can find the key. The key IRI is the actor's
-        // publicKey.id (the #key-1 convention used by Seed).
-        var keyProvider = server.Services.GetRequiredService<IKeyProvider>();
-        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
-        keyProvider.RegisterKey(actorIri, new Iri($"{actorIri}#key-1"));
-
-        // Register any additional local actors' keys (e.g. a second local actor on the same
-        // instance) so the outbound DeliveryWorker can sign a delivery as them. The key IRI is the
-        // actor's publicKey.id (the #key-1 convention used by Seed).
-        if (extraLocalActors is not null)
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
-            foreach (var extraActor in extraLocalActors)
-            {
-                keyProvider.RegisterKey(extraActor, new Iri($"{extraActor}#key-1"));
-            }
-        }
-
-        return server;
-    }
+            Host = host,
+            Handle = handle,
+            Persistence = persistence,
+            Fetcher = fetcher,
+            DeliveryTransport = deliveryTransport,
+            ExtraServices = extraServices,
+            ExtraLocalActors = extraLocalActors,
+        });
 
     private static Follow BuildFollow(Iri actorIri, Iri targetIri)
     {

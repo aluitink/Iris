@@ -121,44 +121,18 @@ public sealed class EndToEndSessionIntegrationTests : IDisposable
     // --- Helpers ----------------------------------------------------------------------
 
     private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = Host,
+            Handle = Handle,
+            Persistence = persistence,
+            // Basic-auth credential validator for the seeded actor (owner-only doc gate).
+            CredentialValidator = new BasicAuthCredentialValidator((actorIri, username, password) =>
             {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{Host}");
-                    opts.InstanceName = $"iris-{Host}";
-                    opts.InstanceActorId = new Iri(ActorIri);
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-                s.AddSingleton<IKeyStore>(persistence.Keys);
-
-                // Basic-auth credential validator for the seeded actor (owner-only doc gate).
-                s.AddSingleton<IActorCredentialValidator>(new BasicAuthCredentialValidator(
-                    (actorIri, username, password) =>
-                    {
-                        var valid = username == Handle &&
-                            System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
-                                Encoding.UTF8.GetBytes(password), Encoding.UTF8.GetBytes(Password));
-                        return new ValueTask<bool>(valid);
-                    }));
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        return new TestServer(builder);
-    }
+                var valid = username == Handle &&
+                    System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                        Encoding.UTF8.GetBytes(password), Encoding.UTF8.GetBytes(Password));
+                return new ValueTask<bool>(valid);
+            }),
+        });
 }

@@ -242,59 +242,15 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         IActorCredentialValidator? credentialValidator = null,
         ProxySettings? proxySettings = null,
         Func<HttpMessageHandler>? deliveryTransport = null)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{host}");
-                    opts.InstanceName = $"iris-{host}";
-                    opts.InstanceActorId = new Iri($"https://{host}/ap/v1/u/{handle}");
-                    if (proxySettings is not null)
-                    {
-                        opts.ProxySettings = proxySettings;
-                    }
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-                s.AddSingleton<IKeyStore>(persistence.Keys);
-
-                if (credentialValidator is not null)
-                {
-                    s.AddSingleton<IActorCredentialValidator>(credentialValidator);
-                }
-
-                if (deliveryTransport is { } transport)
-                {
-                    s.AddSingleton<Func<HttpMessageHandler>>(() => transport());
-                }
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        var server = new TestServer(builder);
-
-        // Register the local actor's key with the IKeyProvider so the proxy (which signs as the
-        // authenticated actor via the X-Iris-Actor override) and the outbound DeliveryWorker can find
-        // the key. The key IRI is the actor's publicKey.id (the #key-1 convention used by Seed).
-        var keyProvider = server.Services.GetRequiredService<IKeyProvider>();
-        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
-        keyProvider.RegisterKey(actorIri, new Iri($"{actorIri}#key-1"));
-
-        return server;
-    }
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = host,
+            Handle = handle,
+            Persistence = persistence,
+            CredentialValidator = credentialValidator,
+            ProxySettings = proxySettings,
+            DeliveryTransport = deliveryTransport,
+        });
 
     /// <summary>
     /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first

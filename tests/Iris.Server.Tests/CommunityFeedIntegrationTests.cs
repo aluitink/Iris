@@ -199,33 +199,10 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
     }
 
     private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{AHost}");
-                    opts.InstanceName = $"iris-{AHost}";
-                    opts.InstanceActorId = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        return new TestServer(builder);
-    }
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = AHost,
+            Handle = Alice,
+            Persistence = persistence,
+        });
 }

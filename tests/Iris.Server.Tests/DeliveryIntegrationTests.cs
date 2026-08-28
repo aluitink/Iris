@@ -242,40 +242,14 @@ public sealed class DeliveryIntegrationTests : IDisposable
     private static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence,
         IActorDocumentFetcher? fetcher = null)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{host}");
-                    opts.InstanceName = $"iris-{host}";
-                    opts.InstanceActorId = new Iri($"https://{host}/ap/v1/u/{handle}");
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-
-                if (fetcher is not null)
-                {
-                    s.AddSingleton<IActorDocumentFetcher>(fetcher);
-                }
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        return new TestServer(builder);
-    }
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = host,
+            Handle = handle,
+            Persistence = persistence,
+            Fetcher = fetcher,
+            RegisterLocalKey = false,
+        });
 
     private static Accept BuildAccept(Iri actorIri, Iri objectIri) => new()
     {

@@ -164,43 +164,12 @@ public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
     /// <c>IKeyProvider</c> so the outbound fetcher (signed as bob) can sign its requests.
     /// </summary>
     private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-    {
-        var builder = new WebHostBuilder()
-            .ConfigureLogging(l =>
-            {
-                l.ClearProviders();
-                l.SetMinimumLevel(LogLevel.None);
-            })
-            .ConfigureServices(s =>
-            {
-                s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
-                s.AddRouting();
-                s.AddActivityPubServer(opts =>
-                {
-                    opts.BaseUri = new Iri($"https://{BHost}");
-                    opts.InstanceName = $"iris-{BHost}";
-                    opts.InstanceActorId = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
-                });
-                s.AddInMemoryPersistence();
-                s.AddSingleton<IPersistenceProvider>(persistence);
-                s.AddSingleton<IKeyStore>(persistence.Keys);
-            })
-            .Configure(webApp =>
-            {
-                webApp.UseRouting();
-                webApp.UseSignatureValidation();
-                webApp.UseEndpoints(endpoints => endpoints.MapActivityPubEndpoints());
-            });
-
-        var server = new TestServer(builder);
-
-        // Register bob's key with the IKeyProvider so the outbound fetcher (signed as bob) can find it.
-        var keyProvider = server.Services.GetRequiredService<IKeyProvider>();
-        var bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
-        keyProvider.RegisterKey(bobActorIri, new Iri($"{bobActorIri}#key-1"));
-
-        return server;
-    }
+        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+        {
+            Host = BHost,
+            Handle = Bob,
+            Persistence = persistence,
+        });
 
     /// <summary>
     /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first
