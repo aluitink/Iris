@@ -1,0 +1,118 @@
+using Iris.Core;
+using KristofferStrube.ActivityStreams;
+
+namespace Iris.Server;
+
+/// <summary>
+/// Handles inbound <see cref="Undo"/> activities: when the <em>local</em> actor (the recipient of the
+/// delivery, i.e. the follower) undoes a follow it made, the local follow edge is removed from the
+/// <see cref="IFollowStore"/> (an un-follow).
+/// </summary>
+/// <remarks>
+/// An <c>Undo</c> is the ActivityStreams inverse primitive: it undoes the activity referenced by its
+/// <c>object</c>. The <c>object</c> here is the original <c>Follow</c> (referenced by IRI). The handler
+/// resolves the follow's target from the stored <c>Follow</c> (fetched from the local activity store —
+/// the follower stored it when it sent the follow) and, when the recipient is a <em>local</em> actor,
+/// removes the <c>follower → target</c> edge.
+/// </remarks>
+/// <para>
+/// <strong>Recipient is the follower.</strong> A follow is undone by the party that made it, so the
+/// <c>Undo</c> is delivered to the follower's inbox and <see cref="InboxDelivery.RecipientIri"/> is the
+/// follower — the same convention the <see cref="AcceptActivityHandler"/>/<see cref="RejectActivityHandler"/>
+/// use for follow responses. An <c>Undo</c> whose recipient is a <em>remote</em> actor is not this
+/// instance's concern (the remote instance owns that actor's follow state), so it is a no-op.
+/// </para>
+/// <para>
+/// <strong>Person vs. community.</strong> The person and community stores are disjoint. When the
+/// follower is a local <em>person</em> (in the actor store) the edge is removed from the
+/// <see cref="IFollowStore"/>. When the follower is a local <em>community</em> (in the community store)
+/// the edge is removed from the community's follows set (<see cref="ICommunityStore.RemoveFollowAsync"/>),
+/// the inverse of <see cref="FollowActivityHandler"/>'s community branch. A missing target (the follow was
+/// never stored) is a no-op (there is no edge to remove).
+/// </para>
+public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
+{
+    private readonly IPersistenceProvider _persistence;
+    private readonly ILocalActorResolver _localActors;
+
+    /// <summary>
+    /// Initializes a new <see cref="UndoActivityHandler"/>.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IFollowStore"/>,
+    /// <see cref="IActivityStore"/>, and <see cref="ICommunityStore"/>).</param>
+    /// <param name="localActors">Resolves whether an actor IRI is a local person.</param>
+    /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
+    /// <paramref name="localActors"/> is null.</exception>
+    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    {
+        ArgumentNullException.ThrowIfNull(persistence);
+        ArgumentNullException.ThrowIfNull(localActors);
+        _persistence = persistence;
+        _localActors = localActors;
+    }
+
+    /// <inheritdoc/>
+    public override async Task HandleAsync(InboxDelivery delivery, Undo activity, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(delivery);
+        ArgumentNullException.ThrowIfNull(activity);
+
+        // The recipient of the Undo is the follower (the party that made the follow being undone).
+        var followerIri = delivery.RecipientIri;
+
+        // Resolve the follow's target from the original Follow (referenced by IRI in the Undo's object,
+        // fetched from the local activity store). A missing target (the follow was never stored) is a
+        // no-op — there is no edge to remove.
+        var targetIri = await ResolveFollowTargetAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false);
+        if (!targetIri.HasValue)
+        {
+            return;
+        }
+
+        // A person follower (in the actor store): remove the follower → target edge. The person and
+        // community stores are disjoint, so check the person store first.
+        if (await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
+        {
+            await _persistence.Follows
+                .RemoveFollowAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        // A community follower (in the community store): remove the follow from the community's follows
+        // set — the inverse of the FollowActivityHandler's community branch.
+        if (await _persistence.Communities
+                .TryGetCommunityAsync(followerIri, out _, ct)
+                .ConfigureAwait(false))
+        {
+            await _persistence.Communities
+                .RemoveFollowAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        // Neither a local person nor a local community (a remote follower): not this instance's concern.
+    }
+
+    /// <summary>
+    /// Resolves the original follow's target from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Follow"/>, by IRI).
+    /// </summary>
+    private async Task<Iri?> ResolveFollowTargetAsync(IObjectOrLink? responseObject, CancellationToken ct)
+    {
+        var followIri = responseObject.ResolveObjectIri();
+        if (!followIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(followIri.Value, out var storedFollow, ct)
+            .ConfigureAwait(false) ||
+            storedFollow is not Follow follow)
+        {
+            return null;
+        }
+
+        return follow.Object?.FirstOrDefault().ResolveObjectIri();
+    }
+}

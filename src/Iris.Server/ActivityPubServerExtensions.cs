@@ -205,6 +205,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, RejectActivityHandler>();
         services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
         services.AddSingleton<IActivityHandler, CreateActivityHandler>();
+        services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 

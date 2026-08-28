@@ -62,4 +62,29 @@ public static class FollowIris
         Actor = [new Link { Href = new Uri(localActorIri.Value) }],
         Object = [new Link { Href = new Uri(follow.Id!) }],
     };
+
+    /// <summary>
+    /// Builds the deterministic IRI of the <see cref="Undo"/> of a follow (an un-follow).
+    /// </summary>
+    /// <param name="localActorIri">The IRI of the local actor undoing the follow (the Undo's actor — the
+    /// follower).</param>
+    /// <param name="follow">The original follow activity being undone.</param>
+    /// <returns>The Undo's IRI (<c>{localActorIri}/undoes/{followId}</c>).</returns>
+    public static Iri UndoIri(Iri localActorIri, Follow follow)
+        => new($"{localActorIri}/undoes/{follow.Id}");
+
+    /// <summary>
+    /// Builds the <see cref="Undo"/> of a follow (an un-follow): the local actor (the follower) undoes the
+    /// original follow activity (object = the original follow, by IRI).
+    /// </summary>
+    /// <param name="localActorIri">The IRI of the local actor undoing the follow (the Undo's actor — the
+    /// follower).</param>
+    /// <param name="follow">The original follow activity being undone.</param>
+    /// <returns>The constructed <see cref="Undo"/>.</returns>
+    public static Undo BuildUndo(Iri localActorIri, Follow follow) => new()
+    {
+        Id = UndoIri(localActorIri, follow).Value,
+        Actor = [new Link { Href = new Uri(localActorIri.Value) }],
+        Object = [new Link { Href = new Uri(follow.Id!) }],
+    };
 }

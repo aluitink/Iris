@@ -100,6 +100,53 @@ public sealed class FollowIntegrationTests : IDisposable
         Assert.True(following, "the follow edge should be recorded after the signed Follow is accepted");
     }
 
+    [Fact]
+    public async Task Session_Login_ThenUndoFollow_RemovesFollowEdge()
+    {
+        // Authenticate as the follower (Basic auth → owner-only doc + PEM key).
+        var authenticator = new BasicAuthClientAuthenticator(
+            _server.CreateClient(), new Iri(FollowerIri), Follower, Password);
+
+        var options = new IrisClientOptions
+        {
+            ServerBaseUri = new Uri($"https://{Host}"),
+            UseProxyFallback = false,
+            EnableRetry = false,
+        };
+        using var bundle = IrisClientBuilder.Create(options)
+            .WithAuthenticator(authenticator)
+            .Build();
+
+        var actor = await bundle.Session.LoginAsync(new Iri(FollowerIri));
+        Assert.NotNull(actor);
+
+        using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
+
+        // Step 1: follow the target. The signed Follow is delivered to the target's inbox; the server
+        // records the follow edge and stores the Follow (deduping on its deterministic IRI).
+        var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
+        Assert.Equal(202, followStatus);
+        Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri)),
+            "the follow edge should be recorded after the signed Follow is accepted");
+
+        // Step 2: un-follow. The Undo is delivered to the FOLLOWER's own inbox (the recipient of the
+        // delivery is the follower, who made the follow). The Undo references the original Follow by its
+        // deterministic IRI, which the server resolved the follow edge from.
+        var followIri = new Iri($"{FollowerIri}/follows/{TargetIri}");
+        var undo = new KristofferStrube.ActivityStreams.Undo
+        {
+            Id = $"{FollowerIri}/undoes/{followIri}",
+            Actor = [new KristofferStrube.ActivityStreams.Link { Href = new Uri(FollowerIri) }],
+            Object = [new KristofferStrube.ActivityStreams.Link { Href = followIri.Uri }],
+        };
+        var undoStatus = await client.DeliverAsync(new Iri(FollowerIri).InboxOf(), undo);
+        Assert.Equal(202, undoStatus);
+
+        // The server's UndoActivityHandler removed the follow edge.
+        Assert.False(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri)),
+            "the follow edge should be removed after the signed Undo is accepted");
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     /// <summary>
