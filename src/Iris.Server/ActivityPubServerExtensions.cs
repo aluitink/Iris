@@ -193,17 +193,18 @@ public static class ActivityPubServerExtensions
         // when the followed side rejects). Announce (records the announce in the recipient's outbox
         // and propagates it to the recipient's local followers' inboxes, so a boost is visible to a
         // local follower's client). A host may add more IActivityHandler registrations
-        // (e.g. Create) to extend the pipeline; the processor picks them up automatically.
+        // to extend the pipeline.
         services.TryAddSingleton<ILocalActorResolver, DefaultLocalActorResolver>();
         // The activity handlers are an OPEN list: each is a distinct implementation registered under
         // the same service type (IActivityHandler), so AddSingleton (not TryAddSingleton) is required —
         // TryAddSingleton would treat the second and later registrations as duplicates of the first
         // (the same ServiceType) and skip them, leaving only the FollowActivityHandler. A host may add
-        // more IActivityHandler registrations (e.g. Create) to extend the pipeline.
+        // more IActivityHandler registrations to extend the pipeline.
         services.AddSingleton<IActivityHandler, FollowActivityHandler>();
         services.AddSingleton<IActivityHandler, AcceptActivityHandler>();
         services.AddSingleton<IActivityHandler, RejectActivityHandler>();
         services.AddSingleton<IActivityHandler, AnnounceActivityHandler>();
+        services.AddSingleton<IActivityHandler, CreateActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
