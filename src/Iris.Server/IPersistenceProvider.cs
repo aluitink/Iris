@@ -7,7 +7,7 @@ namespace Iris.Server;
 /// </summary>
 /// <remarks>
 /// Bundles the per-concern stores (<see cref="IActorStore"/>, <see cref="IActivityStore"/>,
-/// <see cref="IFollowStore"/>, <see cref="IObjectStore"/>, <see cref="ICommunityStore"/>, and
+/// <see cref="IFollowStore"/>, <see cref="ILikeStore"/>, <see cref="IObjectStore"/>, <see cref="ICommunityStore"/>, and
 /// <see cref="IKeyStore"/> for the local actor's signing keys) behind one interface so that
 /// <c>AddActivityPubServer()</c> can register a single dependency and endpoints can resolve a
 /// cohesive persistence surface. Implementations: <c>Iris.Server.InMemory</c> (ephemeral) and,
@@ -29,6 +29,11 @@ public interface IPersistenceProvider
     /// The follow store.
     /// </summary>
     public IFollowStore Follows { get; }
+
+    /// <summary>
+    /// The like store.
+    /// </summary>
+    public ILikeStore Likes { get; }
 
     /// <summary>
     /// The object store.

@@ -29,6 +29,7 @@ public static class InMemoryPersistenceExtensions
         services.TryAddSingleton<InMemoryActorStore>();
         services.TryAddSingleton<InMemoryActivityStore>();
         services.TryAddSingleton<InMemoryFollowStore>();
+        services.TryAddSingleton<InMemoryLikeStore>();
         services.TryAddSingleton<InMemoryObjectStore>();
         services.TryAddSingleton<InMemoryCommunityStore>();
 
@@ -40,6 +41,7 @@ public static class InMemoryPersistenceExtensions
             sp.GetRequiredService<InMemoryActorStore>(),
             sp.GetRequiredService<InMemoryActivityStore>(),
             sp.GetRequiredService<InMemoryFollowStore>(),
+            sp.GetRequiredService<InMemoryLikeStore>(),
             sp.GetRequiredService<InMemoryObjectStore>(),
             sp.GetRequiredService<InMemoryCommunityStore>(),
             sp.GetRequiredService<IKeyStore>()));

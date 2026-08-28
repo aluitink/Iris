@@ -15,6 +15,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryActorStore _actors;
     private readonly InMemoryActivityStore _activities;
     private readonly InMemoryFollowStore _follows;
+    private readonly InMemoryLikeStore _likes;
     private readonly InMemoryObjectStore _objects;
     private readonly InMemoryCommunityStore _communities;
     private readonly IKeyStore _keys;
@@ -24,7 +25,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// </summary>
     public InMemoryPersistenceProvider()
         : this(new InMemoryActorStore(), new InMemoryActivityStore(), new InMemoryFollowStore(),
-            new InMemoryObjectStore(), new InMemoryCommunityStore(), new InMemoryKeyStore())
+            new InMemoryLikeStore(), new InMemoryObjectStore(), new InMemoryCommunityStore(), new InMemoryKeyStore())
     {
     }
 
@@ -34,6 +35,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="actors">The actor store.</param>
     /// <param name="activities">The activity store.</param>
     /// <param name="follows">The follow store.</param>
+    /// <param name="likes">The like store.</param>
     /// <param name="objects">The object store.</param>
     /// <param name="communities">The community store.</param>
     /// <param name="keys">The key store. Must not be null.</param>
@@ -41,6 +43,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryActorStore actors,
         InMemoryActivityStore activities,
         InMemoryFollowStore follows,
+        InMemoryLikeStore likes,
         InMemoryObjectStore objects,
         InMemoryCommunityStore communities,
         IKeyStore keys)
@@ -48,6 +51,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _actors = actors ?? throw new ArgumentNullException(nameof(actors));
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
         _follows = follows ?? throw new ArgumentNullException(nameof(follows));
+        _likes = likes ?? throw new ArgumentNullException(nameof(likes));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
@@ -61,6 +65,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public IFollowStore Follows => _follows;
+
+    /// <inheritdoc/>
+    public ILikeStore Likes => _likes;
 
     /// <inheritdoc/>
     public IObjectStore Objects => _objects;

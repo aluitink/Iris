@@ -42,6 +42,14 @@ public static class IriExtensions
     public static Iri FollowingOf(this Iri iri) => AppendSegment(iri, "following");
 
     /// <summary>
+    /// Derives the liked-collection IRI by appending <c>/liked</c>.
+    /// </summary>
+    /// <param name="iri">The actor IRI. Must be absolute.</param>
+    /// <returns>The liked-collection IRI (e.g. <c>https://a.domain.local/u/alice/liked</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri LikedOf(this Iri iri) => AppendSegment(iri, "liked");
+
+    /// <summary>
     /// Derives the community-feed IRI by appending <c>/feed</c>.
     /// </summary>
     /// <param name="iri">The community IRI. Must be absolute.</param>
