@@ -1,7 +1,7 @@
 using Iris.Core;
 using Iris.Server;
 
-namespace Iris.Server.InMemory;
+namespace Iris.Server.InMemory.Stores;
 
 /// <summary>
 /// An in-memory <see cref="IModerationStore"/> (F-07) backed by concurrent dictionaries: a forward

@@ -2,7 +2,7 @@ using Iris.Core;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
 
-namespace Iris.Server.InMemory;
+namespace Iris.Server.InMemory.Stores;
 
 /// <summary>
 /// An in-memory <see cref="IActivityStore"/> backed by a concurrent dictionary.

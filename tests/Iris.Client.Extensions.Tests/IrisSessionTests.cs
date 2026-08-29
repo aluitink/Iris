@@ -1,4 +1,5 @@
 using Iris.Client;
+using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 

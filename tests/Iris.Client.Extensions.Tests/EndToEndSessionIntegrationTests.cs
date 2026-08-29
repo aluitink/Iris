@@ -3,6 +3,7 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Client.Extensions;
 using Iris.Core;
+using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Testing;

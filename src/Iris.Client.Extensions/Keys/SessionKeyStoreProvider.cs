@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client.Extensions;
+namespace Iris.Client.Extensions.Keys;
 
 /// <summary>
 /// An <see cref="IKeyStoreProvider"/> that exposes an explicitly supplied <see cref="IKeyStore"/>.

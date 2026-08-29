@@ -2,7 +2,7 @@ using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
-namespace Iris.Client.Extensions;
+namespace Iris.Client.Extensions.Sessions;
 
 /// <summary>
 /// Manages the client's identity for the lifetime of the session: it authenticates an actor

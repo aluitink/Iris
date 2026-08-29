@@ -10,3 +10,5 @@ global using Iris.Server.Inbox;
 global using Iris.Server.Security;
 global using Iris.Server.Services;
 global using Iris.Server.Stores;
+
+global using Iris.Server.InMemory.Stores;

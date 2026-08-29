@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client.Extensions;
+namespace Iris.Client.Extensions.Keys;
 
 /// <summary>
 /// Provides the <see cref="IKeyStore"/> the <see cref="IrisClientFactory"/> uses to resolve
