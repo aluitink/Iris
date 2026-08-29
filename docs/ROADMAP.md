@@ -1,12 +1,12 @@
-# Iris — Roadmap (Compressed)
+# Iris — Roadmap
 
-This is the shortened working roadmap. The detailed phase notes and design evidence remain in [ROADMAP.md](ROADMAP.md), [CHANGELOG.md](CHANGELOG.md), and the docs under [decisions/](decisions/README.md).
+This is the shortened working roadmap. The detailed phase notes and design evidence live in [changes/](changes/README.md) (one doc per slice) and [decisions/](decisions/README.md) (substantial design calls).
 
 ## Status at a glance
 
 | Phase | Status |
 |---|---|
-| -1 — Project Reorganization | 🚧 in progress (selected next) |
+| -1 — Project Reorganization | ✅ complete |
 | 0 — Scaffolding | ✅ complete |
 | 1 — Core: Identity, Keys, Signatures & Caching | ✅ complete |
 | 2 — Client Library | ✅ complete |
@@ -25,7 +25,7 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 
 ## Completed work (short summary)
 
-- Phase -1 — project reorganization not yet started; planned as the structural cleanup phase.
+- Phase -1 — project reorganization complete: every `src` project and its test project now use domain folders with nested namespaces (mirrored layout), absorbed via per-project `GlobalUsings.cs`; build + all 850 tests green with no behavior change. See [change 068](changes/068-phase1-domain-folder-reorganization.md) and [decision 054](decisions/054-domain-folders-and-global-usings.md).
 - Phase 0 — baseline solution, project structure, shared packages, test harness, and green build/test setup.
 - Phase 1 — identity, keys, HTTP-signature support, JSON-LD handling, and cache primitives.
 - Phase 2 — signed ActivityPub client, discovery, WebFinger, retries, collections, and client caching.
@@ -37,15 +37,6 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 - Phase 9 — deployment planning, TLS/FQDN runbook, compatibility matrix, and interop risk register.
 
 ## Remaining work
-
-### Phase -1 — Project Reorganization
-> Selected as the next active phase (2026-08-29). Build + tests green at entry (850 tests). Structural cleanup only — move code without changing behavior.
-- [ ] Review the current project and solution layout for structural drift.
-- [ ] Organize source files into clearer folder structures within each project.
-- [ ] Group related features by domain such as actors, delivery, inbox processing, discovery, persistence, and server endpoints.
-- [ ] Reconcile test project organization so helpers, fixtures, and shared test utilities are easier to find and maintain.
-- [ ] Consolidate duplicate helper code and naming patterns before deeper work builds on the current structure.
-- [ ] Keep the reorganization low-risk by moving code without changing behavior.
 
 ### Phase 8 — Project & Test Review
 - [ ] Audit the suite for redundant, duplicate, or low-value tests.

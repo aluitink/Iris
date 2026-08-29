@@ -80,7 +80,7 @@ The full rules, including the per-turn workflow, are in [docs/reference/AUTONOMO
 
 Phases 0–9 are complete.
 
-Current focus is the **Phase -1 (Project Reorganization)** structural cleanup, selected as the next active phase (2026-08-29). Phases 8/10/11/12 remain in progress in parallel and are tracked in the table below, with full per-slice notes in [docs/phase-notes/README.md](docs/phase-notes/README.md).
+**Phase -1 (Project Reorganization)** is complete (2026-08-29): every `src` project and its test project now use domain folders with nested namespaces (mirrored layout), absorbed by a `GlobalUsings.cs` in each project and every consuming project; build + all 850 tests green with no behavior change. Phases 8/10/11/12 remain in progress in parallel and are tracked in the table below, with full per-slice notes in [docs/phase-notes/README.md](docs/phase-notes/README.md).
 
 Highlights since the Phase 10 review began:
 
@@ -94,6 +94,7 @@ Use the phase table below as the concise status ledger; use phase notes/decision
 
 | Phase | Status | One-line summary |
 |---|---|---|
+| -1 — Project Reorganization | ✅ complete | Domain folders + nested namespaces for all 5 `src` projects and their test projects (mirrored); `GlobalUsings.cs` per project + consumer; build + 850 tests green, no behavior change. |
 | 0 — Scaffolding | ✅ complete | Solution, projects (net10.0), central package management, multi-instance `TestServer` harness; build + tests green. |
 | 1 — Core: Identity, Keys, Signatures & Caching | ✅ complete | `Iri`, identity/key foundation, HTTP-signature layer, caching layer — all unit-tested. |
 | 2 — Client Library | ✅ complete | Signing pipeline, WebFinger discovery, client caching, rich paged collections, retry/content-negotiation handlers. |
@@ -110,6 +111,6 @@ Use the phase table below as the concise status ledger; use phase notes/decision
 | 13 — Live Federation Compatibility | ⏸ deferred | Run the public instance against real Mastodon/Lemmy/Threads; real-user enumeration. Blocked on the Phase 9 FQDN. |
 | 14+ — Future | 📋 abstract | Auth upgrade, real persistence, delivery at scale, shared inbox, observability, 1.0 API review. |
 
-**Carried forward:** (a) spec-research findings not yet captured/folded back; (b) a small set of untracked root scratch files remain (`probe.csproj` placeholder + three emptied/scratch debug test files) — not part of the solution, safe to delete before the Phase -1 reorganization begins.
+**Carried forward:** (a) spec-research findings not yet captured/folded back; (b) a small set of untracked root scratch files remain (`probe.csproj` placeholder + three emptied/scratch debug test files) — not part of the solution, safe to delete.
 
 Track progress in [docs/ROADMAP.md](docs/ROADMAP.md).
