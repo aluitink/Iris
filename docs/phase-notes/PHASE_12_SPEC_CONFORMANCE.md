@@ -239,13 +239,52 @@ Phase 12 shifted the project from feature completion to correctness and compatib
    moderation edge, never the follow edge.
  - *Scope note:* this is the **un-block** (`Undo` of `Block`). `Mute` / `Flag` remain open; F-06
    (shared-inbox / relay) is the next item after F-07.
-  - `UndoActivityHandlerTests` (5) covers the un-block in isolation (local-blocker un-block, block-of-local
-    un-block [inverse query cleared], block-not-stored no-op, unknown-block-IRI no-op, un-block does not
-    touch follow edges); the pre-existing 10 follow/un-follow tests are unchanged (`BuildUndo` generalized
-    to `Activity`). `BlocksCollectionIntegrationTests` (1) is the end-to-end proof: `BlockAsync` (202)
-    records the edge + the feed excludes the blocked actor's post, then `UnblockAsync` (202) removes the
-    edge (the `blocks` collection is empty again) + the feed re-includes the post.
+   - `UndoActivityHandlerTests` (5) covers the un-block in isolation (local-blocker un-block, block-of-local
+     un-block [inverse query cleared], block-not-stored no-op, unknown-block-IRI no-op, un-block does not
+     touch follow edges); the pre-existing 10 follow/un-follow tests are unchanged (`BuildUndo` generalized
+     to `Activity`). `BlocksCollectionIntegrationTests` (1) is the end-to-end proof: `BlockAsync` (202)
+     records the edge + the feed excludes the blocked actor's post, then `UnblockAsync` (202) removes the
+     edge (the `blocks` collection is empty again) + the feed re-includes the post.
 
-  ## Result
+## Slice 12.16 — F-07 moderation: flag (`Flag` + `Undo` of `Flag`)
+
+  - `IModerationStore` gained four **flag** methods, symmetric to the block methods: `RecordFlagAsync`
+    (records the directed `flagger → flagged` edge, idempotent), `RemoveFlagAsync` (removes it — the
+    un-flag, no-op when absent), `GetFlagsAsync` (the forward flags collection, insertion-ordered), and
+    `HasFlaggedAsync` (the directed predicate). `InMemoryModerationStore` implements them against a
+    forward-only `_flags` index (reusing the block index's `Add`/`Remove`/`Snapshot`/`Contains` helpers).
+    The `flags` collection is served at `GET /ap/v1/u/{handle}/flags` (a paged `OrderedCollection` of
+    flagged-actor links) and advertised on the actor document as a `flags` extension link (the same wire
+    shape as `blocks`).
+  - A new `FlagActivityHandler` records the `flagger → flagged` edge when **either** party is a local
+    actor (a local flagger's `flags` collection lists the flagged actor; a local flagged actor is known
+    to have been flagged). It mirrors `BlockActivityHandler`'s "either party local" rule and its no-op
+    guards (a flag with no resolvable actor/object, a flag between two remote actors). **Unlike a
+    `Block`, a `Flag` has no apply half** — it is a moderation *report* a human (or auto-moderator) acts
+    on, not an automatic ban, so it does not exclude the flagged actor's content or suppress delivery
+    (that is `Block`'s job, Slice 12.14).
+  - `UndoActivityHandler` now also handles an `Undo` whose object is a `Flag`: it resolves the original
+    `Flag`'s parties from the local activity store (a new `ResolveFlagEdgeAsync` helper mirroring
+    `ResolveBlockEdgeAsync`) and removes the `flagger → flagged` edge via `RemoveFlagAsync`. An `Undo` of
+    any other activity type (not a `Follow`, a `Block`, or a `Flag`) remains a no-op.
+  - Client: `IActivityPubClient` / `ActivityPubClient` gained `FlagAsync` (a signed `Flag` → target inbox,
+    deterministic `{actor}/flags/{target}` IRI), `UnflagAsync` (a signed `Undo` of the `Flag` → target
+    inbox, the inverse of `FlagAsync`), and `GetFlagsAsync` (enumerates the `flags` collection read
+    through the `CollectionPageCache`, the same semantics as `GetBlocksAsync`).
+  - *Scope note:* this is the **flag** (`Flag` + `Undo` of `Flag`). `Mute` (no ActivityStreams type —
+    Iris-specific, to be handled as a typed Iris extension) remains open; F-06 (shared-inbox / relay) is
+    the next item after F-07.
+  - `FlagActivityHandlerTests` (10) covers the flag handler in isolation (local flagger, two flags,
+    local-of-local, idempotent, local-flagged, both-remote no-op, no-actor/no-object guards, null ctor
+    guards). `UndoActivityHandlerTests` (+5) covers the un-flag in isolation (local-flagger un-flag,
+    flag-of-local un-flag, flag-not-stored no-op, unknown-flag-IRI no-op, un-flag does not touch block
+    edges). `FlagsCollectionIntegrationTests` (6) is the end-to-end proof: the actor document advertises
+    the `flags` collection; the empty collection is an `OrderedCollection`; `FlagAsync` (202) records the
+    edge + the flag appears in the flagger's `flags`; the client's `GetFlagsAsync` reads back the flagged
+    actor's IRI; `UnflagAsync` (202) removes the edge (the `flags` collection is empty again); and a
+    `Flag` does **not** exclude the flagged actor's content from the flagger's followed feed (a flag is a
+    report, not a block).
+
+   ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
