@@ -41,6 +41,11 @@ public interface IPersistenceProvider
     public IReplyStore Replies { get; }
 
     /// <summary>
+    /// The moderation (block) store (F-07).
+    /// </summary>
+    public IModerationStore Moderation { get; }
+
+    /// <summary>
     /// The object store.
     /// </summary>
     public IObjectStore Objects { get; }

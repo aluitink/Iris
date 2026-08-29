@@ -157,6 +157,39 @@ Phase 12 shifted the project from feature completion to correctness and compatib
    beyond capacity; and the backoff delay grows exponentially and is capped (unit-tested via the
    worker's private `BackoffDelay`).
 
- ## Result
+ ## Slice 12.13 — F-07 moderation: `Block` + moderation store + `blocks` collection
+
+ - Added `IModerationStore` / `InMemoryModerationStore`: records the directed block edge
+   `blocker → blocked` in **both** directions — a forward map (for a local actor's `blocks`
+   collection) and an inverse map (so the instance knows when a local actor is *blocked by* someone,
+   enabling delivery suppression in a follow-up slice). `RecordBlockAsync` is idempotent (a retried
+   `Block` never duplicates the edge); `GetBlocksAsync` / `GetBlockersAsync` return IRI-sorted
+   snapshots; `IsBlockedAsync` is the directed predicate; `RemoveBlockAsync` (an un-block) is present
+   for the follow-up `Undo`-of-`Block` slice. Wired into `IPersistenceProvider` as `Moderation`.
+ - Added `BlockActivityHandler` (`ActivityHandlerBase<Block>`, registered as a singleton): on a `Block`
+   it resolves the actor + object IRIs and, when **either** is a local actor (via
+   `ILocalActorResolver`), records the edge. A block between two remote actors is a no-op; a malformed
+   `Block` (no resolvable actor or object) records nothing.
+ - The `blocks` collection: the collection route now accepts `…/blocks`; `CollectionEndpointHandler`
+   serves it from `persistence.Moderation.GetBlocksAsync` (the blocked actors' IRIs as links, paged
+   like `following` / `liked`); the actor document advertises the `blocks` link via `ExtensionData`
+   (the library's `Person` has no typed `blocks` property, the same pattern as `feed`).
+ - Client: `IActivityPubClient.BlockAsync(actorId, targetId)` builds a `Block` (deterministic,
+   unique-per-`(actor, target)` `Id`) and delivers it to `targetId.InboxOf()` (mirroring
+   `FollowAsync`); `GetBlocksAsync(actorId, query)` reads the actor's `blocks` collection at
+   `actorId.BlocksOf()` (through the `CollectionPageCache`, mirroring `GetRepliesAsync`).
+   `Iri.BlocksOf()` was added. The three `IActivityPubClient` test stubs gained no-op
+   `BlockAsync` / `GetBlocksAsync` to satisfy the widened interface.
+ - *Scope note:* this is the **`Block` edge + the `blocks` collection** (the F-07 "Block" half). The
+   edge is *recorded but not yet applied* (feed filtering / delivery suppression), and `Mute` / `Flag`
+   are still open.
+  - `BlockActivityHandlerTests` (10) covers the handler in isolation (local-blocker, local-blocked
+    [inverse query], both-remote no-op, idempotent, the no-actor / no-object guards, and the null
+    guards). `BlocksCollectionIntegrationTests` (6) covers the live surface: the actor document
+    advertises `blocks`, the empty collection is an `OrderedCollection`, a signed inbound `Block`
+    (delivered to the target's inbox, signature-validated) records the edge, the `blocks` endpoint
+    serves it, a second block appends a second item, and the client's `GetBlocksAsync` reads it back.
+
+  ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.

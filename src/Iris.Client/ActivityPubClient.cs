@@ -179,6 +179,36 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // A block is delivered to the target's inbox (per ActivityPub §5.2.1.3) and is signed by the
+        // pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
+        // receiving moderation store can dedupe a retried block. The ActivityStreams Block type
+        // (a subclass of Ignore) has no typed `id`/`actor`/`object` scalar beyond the library's, so the
+        // object-initializer form is used and the constructor sets `Type = "Block"`.
+        var block = new Block
+        {
+            Id = $"{actorId.Value}/blocks/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = targetId.Uri }],
+        };
+
+        return DeliverAsync(targetId.InboxOf(), block, ct);
+    }
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The actors an actor has blocked form a stable, paged collection at {actor}/blocks, so it is
+        // enumerated exactly like any other collection (GetCollectionItemsAsync reads through the
+        // CollectionPageCache). The items are the blocked actors' IRIs (links).
+        return GetCollectionItemsAsync(actorId.BlocksOf(), query, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
     {
         // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:

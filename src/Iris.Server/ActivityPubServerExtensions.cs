@@ -210,6 +210,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, DeleteActivityHandler>();
         services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
+        services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         // Move (F-08): re-points the local follow edges when an actor migrates to a new IRI. It needs the
         // local community IRIs and the outbound caches (to invalidate the moved actor's stale key/doc), so
@@ -422,13 +423,13 @@ public static class ActivityPubServerExtensions
 
         // Paged collections: GET /ap/v1/u/{handle}/{collection} where {collection} is one of outbox
         // (the actor's posted activities, newest first), followers (actors following the local actor),
-        // following (actors the local actor follows), or liked (objects the local actor has liked,
-        // F-04). Each serves an OrderedCollection (page 1, with `first`) or an OrderedCollectionPage
-        // (page N>1), paged via ?page=N and ?limit=N, and served through the local collection-page
-        // response cache. The {collection} route value is bound as `collectionName` (it is not a query
-        // parameter).
+        // following (actors the local actor follows), liked (objects the local actor has liked, F-04),
+        // or blocks (actors the local actor has blocked, F-07 moderation). Each serves an
+        // OrderedCollection (page 1, with `first`) or an OrderedCollectionPage (page N>1), paged via
+        // ?page=N and ?limit=N, and served through the local collection-page response cache. The
+        // {collection} route value is bound as `collectionName` (it is not a query parameter).
         group.MapGet(
-                "/u/{handle}/{collection:regex(outbox|followers|following|liked)}",
+                "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks)}",
                 (string handle, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
                     LocalCollectionPageCache collectionCache, CancellationToken ct)
@@ -815,6 +816,18 @@ public static class ActivityPubServerExtensions
         // actor has liked (the ActivityPub `Liked` relationship, served at /u/{handle}/liked).
         doc.Liked ??= new Link { Href = new Uri(actorIri.LikedOf().Value) };
 
+        // Advertise the blocks collection (F-07 moderation): a client (or another instance) reads it to
+        // enumerate the actors the actor has blocked (served at /u/{handle}/blocks). The library's Actor
+        // type does not model a `blocks` property, so it rides in ExtensionData (the same wire shape the
+        // `feed` extension uses, served at /u/{handle}/feed).
+        {
+            var blocksExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            if (!blocksExt.ContainsKey("blocks"))
+            {
+                blocksExt["blocks"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/blocks");
+            }
+        }
+
         // Advertise the followed feed (F-14): a client (or another instance) reads it to get the actor's
         // home timeline (the union of the actor's local and remote follows' outbox items). The library's
         // Actor type does not model a `feed` property, so it rides in ExtensionData (the same wire shape
@@ -1164,13 +1177,15 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        // Resolve the collection items (newest-first outbox; insertion-ordered followers/following/liked).
+        // Resolve the collection items (newest-first outbox; insertion-ordered followers/following/liked;
+        // IRI-sorted blocks, F-07).
         IReadOnlyList<IObjectOrLink> items = collectionName switch
         {
             "outbox" => await persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false),
             "followers" => ActorIrisToLinks(await persistence.Follows.GetFollowersAsync(actorIri, ct).ConfigureAwait(false)),
             "following" => ActorIrisToLinks(await persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false)),
             "liked" => ActorIrisToLinks(await persistence.Likes.GetLikedAsync(actorIri, ct).ConfigureAwait(false)),
+            "blocks" => ActorIrisToLinks(await persistence.Moderation.GetBlocksAsync(actorIri, ct).ConfigureAwait(false)),
             _ => [],
         };
 

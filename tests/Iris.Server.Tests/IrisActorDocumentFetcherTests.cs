@@ -201,6 +201,15 @@ public class IrisActorDocumentFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
+            Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
         /// <inheritdoc/>
         public void Dispose()
         {

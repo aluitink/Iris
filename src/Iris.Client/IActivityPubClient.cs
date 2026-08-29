@@ -71,6 +71,52 @@ public interface IActivityPubClient : IDisposable
     public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
+    /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity and delivers it through the signed
+    /// pipeline to the target actor's inbox so that <paramref name="actorId"/> blocks
+    /// <paramref name="targetId"/>. This is the client's one-call "block" (it derives the target's
+    /// inbox from the actor IRI via <see cref="IriExtensions.InboxOf(Iri)"/> and builds the
+    /// <see cref="KristofferStrube.ActivityStreams.Block"/> — the caller does not need to know the inbox
+    /// IRI or hand-build the activity).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor performing the block (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor to block.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Block"/> is delivered to <c>targetId.InboxOf()</c>
+    /// (the blocked actor's inbox, per ActivityPub §5.2.1.3) and is signed by the pipeline. The receiving
+    /// instance records the <c>actorId → targetId</c> block edge in its moderation store. The
+    /// <see cref="KristofferStrube.ActivityStreams.Block"/> gets a deterministic, unique-per-(actor,target)
+    /// IRI so a retried block dedupes on the receiver.
+    /// </remarks>
+    public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the actors that <paramref name="actorId"/> has blocked (F-07 moderation): reads the
+    /// actor's <c>blocks</c> collection (served at <c>actorId.BlocksOf()</c>, i.e.
+    /// <c>{actor}/blocks</c>) as a paged <see cref="OrderedCollection"/> of items, so the same
+    /// enumeration/caching semantics apply (read through the <see cref="CollectionPageCache"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose blocks collection is requested.</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>,
+    /// <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the blocked actors (as <see cref="IObjectOrLink"/> — a
+    /// <see cref="Link"/> to each blocked actor's IRI), in the order the collection yields them.</returns>
+    /// <remarks>
+    /// The <c>blocks</c> collection is a stable, paged collection (page 1 an
+    /// <see cref="OrderedCollection"/> with <c>first</c>; page N&gt;1 an
+    /// <see cref="OrderedCollectionPage"/>), so it is enumerated exactly like any other collection (the
+    /// items are the blocked actors' IRIs).
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
     /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
     /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the
