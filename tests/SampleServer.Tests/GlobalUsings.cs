@@ -8,3 +8,11 @@ global using Iris.Client.Caching;
 global using Iris.Client.Collections;
 global using Iris.Client.Discovery;
 global using Iris.Client.Pipeline;
+
+global using Iris.Server.Caching;
+global using Iris.Server.Delivery;
+global using Iris.Server.Http.Proxy;
+global using Iris.Server.Inbox;
+global using Iris.Server.Security;
+global using Iris.Server.Services;
+global using Iris.Server.Stores;

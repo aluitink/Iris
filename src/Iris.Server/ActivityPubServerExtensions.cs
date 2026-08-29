@@ -10,6 +10,8 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using CollectionPageCache = Iris.Server.Caching.CollectionPageCache;
+using WebFingerCache = Iris.Server.Caching.WebFingerCache;
 using Microsoft.Extensions.Options;
 
 namespace Iris.Server;
