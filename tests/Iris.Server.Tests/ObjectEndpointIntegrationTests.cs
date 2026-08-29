@@ -70,7 +70,7 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     {
         // The local owner updates the stored object (an embedded updated Note).
         var update = BuildUpdate(NoteIri, "hello (edited)");
-        await new UpdateActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence))
+        await new UpdateActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence), BuildNoopPropagation(_persistence))
             .HandleAsync(new InboxDelivery(ActorIri, update), update);
 
         var response = await _http.GetAsync(ObjectPath(NoteIri));
@@ -88,7 +88,7 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     {
         // The local owner deletes the stored object (a bare link reference — the common Delete shape).
         var delete = BuildDelete(NoteIri);
-        await new DeleteActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence))
+        await new DeleteActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence), BuildNoopPropagation(_persistence))
             .HandleAsync(new InboxDelivery(ActorIri, delete), delete);
 
         var response = await _http.GetAsync(ObjectPath(NoteIri));
@@ -117,7 +117,7 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     public async Task SiblingObject_UnaffectedByOtherDeletion()
     {
         var delete = BuildDelete(NoteIri);
-        await new DeleteActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence))
+        await new DeleteActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence), BuildNoopPropagation(_persistence))
             .HandleAsync(new InboxDelivery(ActorIri, delete), delete);
 
         // The sibling note (n2) is untouched — still a Note, not a tombstone.
@@ -172,6 +172,30 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     private string ObjectPath(Iri objectIri) => ObjectPathFor(objectIri);
 
     private static string ObjectPathFor(Iri objectIri) => new Uri(objectIri.Value).AbsolutePath;
+
+    /// <summary>
+    /// An <see cref="IDeletePropagationService"/> with a no-op delivery (the object-endpoint tests
+    /// exercise the local store, not the federated propagation — that is covered by
+    /// <c>UpdateActivityHandlerTests</c> / <c>DeleteActivityHandlerTests</c> and the
+    /// <c>ObjectPropagationIntegrationTests</c>).
+    /// </summary>
+    private static IDeletePropagationService BuildNoopPropagation(IPersistenceProvider persistence)
+        => new DeletePropagationService(persistence, new NoopDeliveryService(), new DefaultLocalActorResolver(persistence));
+
+    private sealed class NoopDeliveryService : IDeliveryService
+    {
+        public Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 
     private Update BuildUpdate(Iri objectIri, string content) => new()
     {

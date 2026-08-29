@@ -228,6 +228,12 @@ public static class ActivityPubServerExtensions
         });
         services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
 
+        // Object Update/Delete propagation (the federated half of F-02/F-03): schedules an object's
+        // Update/Delete to the remote actors that hold a copy (the author's remote followers, the
+        // remote attributedTo, and the remote parent's owner for a deleted reply) so their copies are
+        // refreshed / tombstoned. The UpdateActivityHandler and DeleteActivityHandler depend on it.
+        services.TryAddSingleton<IDeletePropagationService, DeletePropagationService>();
+
         // Community feed (Phase 5): computes a community's unified feed (the union of its local
         // members' outbox activities, newest first) for the /c/{name}/feed endpoint and the client's
         // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.

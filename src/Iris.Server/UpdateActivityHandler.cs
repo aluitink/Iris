@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Server;
 
@@ -30,25 +31,38 @@ namespace Iris.Server;
 /// interpreted). The updated object's <c>Id</c> must match the stored object's IRI; a mismatch is a
 /// no-op (the handler does not silently re-store under a different IRI).
 /// </para>
+/// <para>
+/// <strong>Federated propagation (the federated half of F-02).</strong> After refreshing the stored
+/// object locally, the handler propagates the <see cref="Update"/> to the author's remote followers
+/// via <see cref="IDeletePropagationService"/>. A local refresh is enough only while the object lives
+/// on this instance; every remote instance that holds a copy (via the outbound <c>Create</c>
+/// federation, Slice 11.7) must be told, or it keeps serving the pre-edit content.
+/// </para>
 public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
 {
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
+    private readonly IDeletePropagationService _propagation;
 
     /// <summary>
     /// Initializes a new <see cref="UpdateActivityHandler"/>.
     /// </summary>
     /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/>).</param>
     /// <param name="localActors">Resolves whether the updating actor is a local actor.</param>
+    /// <param name="propagation">The propagation service (schedules the <see cref="Update"/> to the
+    /// author's remote followers, the federated half of F-02).</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public UpdateActivityHandler(
         IPersistenceProvider persistence,
-        ILocalActorResolver localActors)
+        ILocalActorResolver localActors,
+        IDeletePropagationService propagation)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
+        ArgumentNullException.ThrowIfNull(propagation);
         _persistence = persistence;
         _localActors = localActors;
+        _propagation = propagation;
     }
 
     /// <inheritdoc/>
@@ -78,19 +92,62 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
-        // Owner guard: only a local actor may update an object stored on this instance.
-        if (!await _localActors.IsLocalActorAsync(actorIri.Value, ct).ConfigureAwait(false))
+        // Refresh only an object this instance actually stores (one created by a Create, or previously
+        // stored). An object with no local record is not this instance's to update.
+        if (!await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out var stored, ct).ConfigureAwait(false))
         {
             return;
         }
 
-        // Refresh only an object this instance actually stores (one created by a Create, or previously
-        // stored). An object with no local record is not this instance's to update.
-        if (!await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out _, ct).ConfigureAwait(false))
+        // Owner guard: the updating actor must own the stored object. A <em>local</em> author is always
+        // the owner of an object this instance stores (it created it); a <em>remote</em> author is
+        // accepted only when this instance holds a copy of the author's object (stored via the outbound
+        // <c>Create</c> federation) and the stored object is attributed to that author. This is the
+        // federated half of F-02: a remote instance that received an author's post stores a copy and must
+        // apply the author's later <c>Update</c> to it (the actor is remote, so it is not "local" here,
+        // but it is the owner of this instance's copy). A remote actor updating an object it does not own
+        // is rejected.
+        var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri.Value, ct).ConfigureAwait(false);
+        if (!actorIsLocal && (stored is null || !IsAttributedTo(stored, actorIri)))
         {
             return;
         }
 
         await _persistence.Objects.PutObjectAsync(updated, ct).ConfigureAwait(false);
+
+        // F-02 (federated half): propagate the Update to the author's remote followers so their copies
+        // of the object are refreshed (a local refresh alone leaves remote instances serving stale
+        // pre-edit content). Only the author's <em>home</em> instance (where the actor is local)
+        // re-propagates: a remote instance that received the Update has already been told by the home
+        // instance, so re-propagating here would fan out the update again (and this instance does not
+        // own the author's follower set).
+        if (actorIsLocal)
+        {
+            await _propagation
+                .PropagateUpdateAsync(actorIri.Value, objectIri.Value, activity, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Reports whether the stored object is attributed to <paramref name="actorIri"/> (its
+    /// <c>attributedTo</c> link resolves to that IRI). Used to accept a federated <see cref="Update"/>
+    /// from a remote owner of a copy this instance holds.
+    /// </summary>
+    private static bool IsAttributedTo(IObject stored, Iri? actorIri)
+    {
+        if (actorIri is not { } actor)
+        {
+            return false;
+        }
+
+        var attributed = (stored as ActivityObject)?.AttributedTo?.FirstOrDefault();
+        if (attributed is null)
+        {
+            return false;
+        }
+
+        var iri = attributed.ResolveObjectIri();
+        return iri is { } a && string.Equals(a.Value, actor.Value, StringComparison.Ordinal);
     }
 }

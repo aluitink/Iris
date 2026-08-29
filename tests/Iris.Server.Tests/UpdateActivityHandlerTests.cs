@@ -8,16 +8,21 @@ namespace Iris.Server.Tests;
 /// Unit tests for the <see cref="UpdateActivityHandler"/> — the handler for an inbound
 /// <see cref="Update"/> (an actor editing one of their objects). When the updating actor is a local
 /// actor and the referenced object is one this instance stores in the <see cref="IObjectStore"/>, the
-/// stored object is refreshed with the updated content (F-02). Covers: a local owner updating a stored
-/// object (the stored content is replaced), updating an object this instance does not store (no-op), a
-/// reference-only update (no content to apply → no-op), a remote (non-local) updating actor (no-op —
-/// the owner guard), an update with no embedded object, and the null-guard contract.
+/// stored object is refreshed with the updated content (F-02) <em>and</em> the <see cref="Update"/> is
+/// propagated to the author's remote followers (the federated half of F-02, via
+/// <see cref="IDeletePropagationService"/>). Covers: a local owner updating a stored object (the stored
+/// content is replaced and the Update is propagated to the remote follower), updating an object this
+/// instance does not store (no-op, no propagation), a reference-only update (no content to apply →
+/// no-op, no propagation), a remote (non-local) updating actor (no-op — the owner guard), an update
+/// with no embedded object, an update with only local followers (no propagation), and the null-guard
+/// contract.
 /// </summary>
 public sealed class UpdateActivityHandlerTests
 {
     private static readonly Iri LocalPerson = new("https://b.domain.local/ap/v1/u/bob");
     private static readonly Iri RemotePerson = new("https://a.domain.local/ap/v1/u/alice");
     private static readonly Iri NoteIri = new("https://b.domain.local/ap/v1/u/bob/notes/n1");
+    private static readonly Iri LocalFollower = new("https://b.domain.local/ap/v1/u/carol");
 
     // --- Local owner updates a stored object ------------------------------------------------
 
@@ -26,7 +31,8 @@ public sealed class UpdateActivityHandlerTests
     {
         var persistence = new InMemoryPersistenceProvider();
         await SeedLocalActorAsync(persistence, LocalPerson);
-        var sut = BuildHandler(persistence);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
 
         // The original object (as a Create would have stored it).
         await persistence.Objects.PutObjectAsync(BuildNote("original body"));
@@ -38,6 +44,110 @@ public sealed class UpdateActivityHandlerTests
         // The stored object now reflects the edit.
         Assert.True(await persistence.Objects.TryGetObjectAsync(NoteIri, out var stored));
         Assert.Equal("edited body", stored!.Content?.FirstOrDefault());
+
+        // No followers recorded → nothing to propagate.
+        Assert.Empty(delivery.Delivered);
+    }
+
+    // --- Federated propagation (F-02) ------------------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerUpdates_PropagatesToRemoteFollower()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        await persistence.Objects.PutObjectAsync(BuildNote("original body"));
+
+        var update = BuildUpdate(LocalPerson, BuildNote("edited body"));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The Update is propagated to the remote follower's inbox, signed as the local owner.
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(RemotePerson.InboxOf(), job.InboxIri);
+        Assert.Same(update, job.Activity);
+        Assert.Equal(LocalPerson, job.ActorIri);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerUpdates_OnlyLocalFollowers_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await SeedLocalActorAsync(persistence, LocalFollower);
+        await persistence.Follows.RecordFollowAsync(LocalFollower, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        await persistence.Objects.PutObjectAsync(BuildNote("original body"));
+
+        var update = BuildUpdate(LocalPerson, BuildNote("edited body"));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // A local follower's copy is on this instance (refreshed locally) → no cross-instance
+        // delivery.
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_UpdateObjectNotStored_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        // The update references an object this instance never stored → no-op, and nothing is
+        // propagated (the guard fires before the propagation).
+        var update = BuildUpdate(LocalPerson, BuildNote("new body", NoteIri));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.False(await persistence.Objects.TryGetObjectAsync(NoteIri, out _));
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ReferenceOnlyUpdate_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        await persistence.Objects.PutObjectAsync(BuildNote("original body"));
+
+        var update = new Update
+        {
+            Id = $"{LocalPerson}/updates/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(LocalPerson.Value) }],
+            Object = [new Link { Href = new Uri(NoteIri.Value) }],
+        };
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.Equal("original body", (await GetAsync(persistence, NoteIri))!.Content?.FirstOrDefault());
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RemoteActorUpdates_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        await persistence.Objects.PutObjectAsync(BuildNote("original body"));
+
+        var update = BuildUpdate(RemotePerson, BuildNote("hijacked body", NoteIri));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The owner guard fires before the propagation → nothing is delivered.
+        Assert.Equal("original body", (await GetAsync(persistence, NoteIri))!.Content?.FirstOrDefault());
+        Assert.Empty(delivery.Delivered);
     }
 
     [Fact]
@@ -137,20 +247,81 @@ public sealed class UpdateActivityHandlerTests
     public void Ctor_NullPersistence_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
+            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new NoopPropagationService()));
     }
 
     [Fact]
     public void Ctor_NullLocalActors_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
+            new InMemoryPersistenceProvider(), null!, new NoopPropagationService()));
+    }
+
+    [Fact]
+    public void Ctor_NullPropagation_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
+            new InMemoryPersistenceProvider(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), null!));
     }
 
     // --- Helpers --------------------------------------------------------------------------
 
-    private static UpdateActivityHandler BuildHandler(IPersistenceProvider persistence)
-        => new(persistence, new DefaultLocalActorResolver(persistence));
+    private static UpdateActivityHandler BuildHandler(
+        IPersistenceProvider persistence,
+        IDeliveryService? delivery = null)
+        => new(
+            persistence,
+            new DefaultLocalActorResolver(persistence),
+            new DeletePropagationService(persistence, delivery ?? new NoopDeliveryService(), new DefaultLocalActorResolver(persistence)));
+
+    /// <summary>
+    /// An <see cref="IDeliveryService"/> that records every scheduled delivery (instead of enqueuing) so
+    /// a test can assert on <see cref="Delivered"/> — the target inbox, the activity, and the signing
+    /// actor.
+    /// </summary>
+    private sealed class RecordingDeliveryService : IDeliveryService
+    {
+        public List<DeliveryJob> Delivered { get; } = [];
+
+        public Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default)
+            => DeliverAsync(inboxIri, activity, actorIri: null, ct);
+
+        public Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+        {
+            Delivered.Add(new DeliveryJob(inboxIri, activity, actorIri));
+            return Task.CompletedTask;
+        }
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default)
+            => DeliverToActorAsync(recipientIri, activity, actorIri: null, ct);
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+            => DeliverAsync(recipientIri.InboxOf(), activity, actorIri, ct);
+    }
+
+    private sealed class NoopDeliveryService : IDeliveryService
+    {
+        public Task DeliverAsync(Iri inboxIri, Activity activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverAsync(Iri inboxIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task DeliverToActorAsync(Iri recipientIri, Activity activity, Iri? actorIri, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
+
+    private sealed class NoopPropagationService : IDeletePropagationService
+    {
+        public Task PropagateUpdateAsync(Iri authorIri, Iri objectIri, Update activity, CancellationToken ct = default)
+            => Task.CompletedTask;
+
+        public Task PropagateDeleteAsync(Iri authorIri, Iri objectIri, Delete activity, IObject? parentObject = null, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 
     private static Task SeedLocalActorAsync(IPersistenceProvider persistence, Iri actorIri)
     {
