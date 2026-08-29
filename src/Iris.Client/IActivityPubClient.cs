@@ -160,4 +160,28 @@ public interface IActivityPubClient : IDisposable
         Iri communityId,
         CollectionQuery? query = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the **followed feed** (home timeline) items by actor IRI: the union of the actor's
+    /// local and remote follows' outbox items (newest first, de-duplicated, capped by the server's feed
+    /// options), served by the server's <c>GET /u/{handle}/feed</c> endpoint. Works
+    /// identically to a community feed (a paged <see cref="OrderedCollection"/> of items), so the same
+    /// enumeration/caching semantics apply.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor (e.g. <c>https://a.domain.local/ap/v1/u/alice</c>).</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>, <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the followed feed's items (each an <see cref="IObjectOrLink"/>;
+    /// callers pattern-match). Yields nothing when the feed cannot be fetched (e.g. 404) or the actor
+    /// follows no one.</returns>
+    /// <remarks>
+    /// The feed IRI is derived from the actor IRI as <c>{actor}/feed</c> (the same wire shape the server
+    /// advertises in the actor document's <c>feed</c> extension). The feed is read through the client's
+    /// <see cref="CollectionPageCache"/> like any other collection, so a feed page is fetched once and
+    /// reused within the TTL.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
 }

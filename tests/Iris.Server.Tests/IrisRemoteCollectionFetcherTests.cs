@@ -245,6 +245,13 @@ public sealed class IrisRemoteCollectionFetcherTests
             => EmptyAsync<IObjectOrLink>(ct);
 
         /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
+            Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        /// <inheritdoc/>
         public void Dispose()
         {
         }

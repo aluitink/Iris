@@ -233,6 +233,43 @@ public static class ActivityPubServerExtensions
         // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.
         services.TryAddSingleton<ICommunityFeedService, CommunityFeedService>();
 
+        // Followed feed (F-14): computes an actor's home timeline (the union of the actor's local and
+        // remote follows' outbox items, newest first) for the /u/{handle}/feed endpoint and the client's
+        // GetFollowFeedAsync. FeedOptions bounds how many outbox pages are walked per remote follow
+        // (PagesPerActor) and the total merged item count (MaxItems); a host may rebind FeedOptions to
+        // tune both. The service needs the outbound ActivityPub client (to walk a remote follow's
+        // outbox over the wire) — the same instance the IRemoteCollectionFetcher uses (a real
+        // HttpClientHandler transport, signed as the instance actor).
+        services.TryAddSingleton<FeedOptions>(_ => new FeedOptions());
+        services.TryAddSingleton<IFollowFeedService>(sp =>
+        {
+            var factory = sp.GetRequiredService<IActivityPubClientFactory>();
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+
+            // Without a configured instance actor the service cannot sign outbound outbox fetches, so
+            // remote follows contribute nothing (local follows still work). A host that sets
+            // ActivityPubServerOptions.InstanceActorId gets full remote-outbox walking.
+            if (options.InstanceActorId is null)
+            {
+                throw new InvalidOperationException(
+                    "IFollowFeedService requires ActivityPubServerOptions.InstanceActorId to be set (remote outbox fetches must be signed).");
+            }
+
+            var clientOptions = new ActivityPubClientOptions
+            {
+                ActorId = options.InstanceActorId.Value,
+                // Outbound outbox fetches do not need retries; keep the pipeline minimal.
+                EnableRetry = false,
+            };
+
+            return new FeedService(
+                sp.GetRequiredService<IPersistenceProvider>(),
+                sp.GetRequiredService<ILocalActorResolver>(),
+                sp.GetRequiredService<IActorDocumentFetcher>(),
+                factory.Create(clientOptions, new HttpClientHandler()),
+                sp.GetRequiredService<IOptions<FeedOptions>>());
+        });
+
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
         // (handlers call it to schedule a delivery — it enqueues and returns), and the background
         // DeliveryWorker (pumps jobs off the queue and POSTs them, signed as InstanceActorId).
@@ -368,6 +405,23 @@ public static class ActivityPubServerExtensions
                     LocalCollectionPageCache collectionCache, CancellationToken ct)
                     => CollectionEndpointHandler(handle, collection, context, persistence, optionsAccessor, collectionCache, ct))
             .WithName("collection-endpoint");
+
+        // Followed feed: GET /ap/v1/u/{handle}/feed — the actor's home timeline (F-14): the union of the
+        // actor's local and remote follows' outbox items, newest first, de-duplicated, capped by
+        // FeedOptions. Served as a paged collection (page 1 is an OrderedCollection with `first`; page
+        // N>1 an OrderedCollectionPage), paged via ?page/?limit. Unlike the local outbox/followers/
+        // following/liked collections, this is NOT served through the LocalCollectionPageCache: the feed
+        // merges remote follows' outboxes over the wire on every request, so caching the rendered page
+        // would hide new remote content (a remote follow posting is not reflected until the cache TTL
+        // lapses). The response still carries the collection Cache-Control so intermediates may cache
+        // briefly.
+        group.MapGet(
+                "/u/{handle}/feed",
+                (string handle, HttpContext context,
+                    IPersistenceProvider persistence, IFollowFeedService feedService,
+                    IOptions<ActivityPubServerOptions> optionsAccessor, CancellationToken ct)
+                    => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, ct))
+            .WithName("follow-feed-endpoint");
 
         // Community document: GET /ap/v1/c/{name} — the community (the library's Group actor) document.
         // A community is addressed by its handle (not an actor IRI), so the route uses {name}.
@@ -713,6 +767,18 @@ public static class ActivityPubServerExtensions
         // actor has liked (the ActivityPub `Liked` relationship, served at /u/{handle}/liked).
         doc.Liked ??= new Link { Href = new Uri(actorIri.LikedOf().Value) };
 
+        // Advertise the followed feed (F-14): a client (or another instance) reads it to get the actor's
+        // home timeline (the union of the actor's local and remote follows' outbox items). The library's
+        // Actor type does not model a `feed` property, so it rides in ExtensionData (the same wire shape
+        // the community document uses for its `feed` extension, served at /u/{handle}/feed).
+        {
+            var feedExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            if (!feedExt.ContainsKey("feed"))
+            {
+                feedExt["feed"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/feed");
+            }
+        }
+
         // Advertise the instance's shared inbox (F-01) when the host configured one: a remote sender may
         // POST to it instead of the actor's own inbox. The per-actor Inbox is still advertised (above), so
         // a sender that ignores endpoints.sharedInbox still lands on the right collection.
@@ -1023,6 +1089,54 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves an actor's followed feed (home timeline, F-14) as a paged collection for
+    /// <c>GET /ap/v1/u/{handle}/feed</c>. The feed is the union of the actor's local and remote
+    /// follows' outbox items (newest first, de-duplicated, capped by <see cref="FeedOptions"/>),
+    /// computed by the <see cref="IFollowFeedService"/>. Page 1 is an <c>OrderedCollection</c> (with
+    /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>
+    /// /<c>next</c>), paged via <c>?page</c>/<c>?limit</c>. Unlike the local collections, the feed is not
+    /// served through the local collection-page response cache (it merges remote follows' outboxes over
+    /// the wire on every request), but it still carries the collection <c>Cache-Control</c> so
+    /// intermediates may cache briefly. An unknown actor 404s.
+    /// </summary>
+    private static async Task<IResult> FollowFeedHandler(
+        string handle,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IFollowFeedService feedService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            || actor is null)
+        {
+            return Results.NotFound();
+        }
+
+        var items = await feedService.GetFeedAsync(actorIri, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var collectionIri = new Iri($"{actorIri.Value}/feed");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        // The feed is not served through the local collection-page response cache (it merges remote
+        // follows' outboxes over the wire on every request), but it still carries the collection
+        // Cache-Control so intermediates may cache briefly.
+        var refresh = HasRefreshBypass(context);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
         return Results.Text(document, ActivityJson.ActivityJsonContentType);
     }
 

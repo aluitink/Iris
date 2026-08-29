@@ -312,6 +312,17 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return GetCollectionItemsAsync(communityId.FeedOf(), query, ct);
     }
 
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The followed feed is a paged collection at {actor}/feed, so it is enumerated exactly like
+        // any other collection (GetCollectionItemsAsync reads through the CollectionPageCache).
+        return GetCollectionItemsAsync(new Iri($"{actorId.Value}/feed"), query, ct);
+    }
+
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)
     {
         // If the fetched object is itself a page, use it directly.
