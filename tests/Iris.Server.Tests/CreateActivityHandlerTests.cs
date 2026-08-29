@@ -233,6 +233,58 @@ public sealed class CreateActivityHandlerTests
             new InMemoryPersistenceProvider(), new RecordingDeliveryService(), null!));
     }
 
+    // --- F-12: reply (inReplyTo) edge recording -------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_ReplyRecordsParentToChildEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        var parentNote = new Iri("https://a.domain.local/ap/v1/u/alice/notes/parent");
+        var create = BuildCreate(LocalPerson, inReplyTo: parentNote.Value);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The stored reply's inReplyTo (the parent) → the reply note IRI edge is recorded.
+        var replyIri = EmbeddedNoteId(create);
+        Assert.True(await persistence.Replies.HasReplyAsync(parentNote, replyIri));
+        Assert.Equal([replyIri], await persistence.Replies.GetRepliesAsync(parentNote));
+    }
+
+    [Fact]
+    public async Task HandleAsync_ToplevelNoteRecordsNoReplyEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        var create = BuildCreate(LocalPerson); // no inReplyTo
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // No parent → no reply edge anywhere.
+        var replyIri = EmbeddedNoteId(create);
+        Assert.False(await persistence.Replies.HasReplyAsync(replyIri, replyIri));
+    }
+
+    [Fact]
+    public async Task HandleAsync_CommunityReplyRecordsEdge()
+    {
+        // A reply whose parent is a note is recorded even when delivered to a local community.
+        var persistence = new InMemoryPersistenceProvider();
+        await persistence.Communities.PutCommunityAsync(BuildCommunity());
+        await SeedLocalActorAsync(persistence, LocalMember);
+        await persistence.Communities.AddMemberAsync(Community, LocalMember);
+        var sut = BuildHandler(persistence);
+        var parentNote = new Iri("https://a.domain.local/ap/v1/u/alice/notes/parent");
+        var create = BuildCreate(LocalMember, inReplyTo: parentNote.Value);
+
+        await sut.HandleAsync(new InboxDelivery(Community, create), create);
+
+        var replyIri = EmbeddedNoteId(create);
+        Assert.True(await persistence.Replies.HasReplyAsync(parentNote, replyIri));
+    }
+
     // --- Helpers -------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()
@@ -261,19 +313,28 @@ public sealed class CreateActivityHandlerTests
         return persistence.Actors.PutActorAsync(actor);
     }
 
-    private static Create BuildCreate(Iri authorIri) => new()
+    private static Create BuildCreate(Iri authorIri, string? inReplyTo = null)
     {
-        Id = $"{authorIri}/creates/{Guid.NewGuid():N}",
-        Actor = [new Link { Href = new Uri(authorIri.Value) }],
-        Object =
-        [
-            new Note
-            {
-                Id = $"{authorIri}/notes/{Guid.NewGuid():N}",
-                Content = ["hello"],
-            },
-        ],
-    };
+        var note = new Note
+        {
+            Id = $"{authorIri}/notes/{Guid.NewGuid():N}",
+            Content = ["hello"],
+        };
+        if (inReplyTo is not null)
+        {
+            note.InReplyTo = [new Link { Href = new Uri(inReplyTo) }];
+        }
+
+        return new Create
+        {
+            Id = $"{authorIri}/creates/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(authorIri.Value) }],
+            Object = [note],
+        };
+    }
+
+    private static Iri EmbeddedNoteId(Create create)
+        => new(create.ExtractEmbeddedObject()!.Id!);
 
     private static List<string> OutboxIds(IReadOnlyList<IObjectOrLink> outbox)
         => outbox.Where(o => o is IObject { Id: not null }).Select(o => ((IObject)o!).Id!).ToList();

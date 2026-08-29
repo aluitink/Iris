@@ -95,6 +95,68 @@ public interface IActivityPubClient : IDisposable
     public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
+    /// builds a <see cref="Create"/> carrying an embedded <see cref="Note"/> whose <c>inReplyTo</c> is
+    /// the parent note and whose <c>tag</c> carries an <see cref="Mention"/> per <c>@mention</c> in
+    /// <paramref name="mentions"/>, then delivers it through the signed pipeline to the author's inbox
+    /// (F-12). This is the client's one-call "reply to a note" (the caller supplies the parent IRI, the
+    /// content, and any mentions — the <see cref="Create"/>/embedded <see cref="Note"/>, the
+    /// <c>inReplyTo</c>, the <c>tag</c> mentions, and the delivery target are all derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor authoring the reply (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="parentIri">The IRI of the note being replied to (the thread's parent). It is set as
+    /// the note's <c>inReplyTo</c> and is what the parent's replies collection
+    /// (<see cref="GetRepliesAsync"/>) lists.</param>
+    /// <param name="content">The reply's content (plain text or HTML).</param>
+    /// <param name="mentions">Optional IRIs of actors to <c>@mention</c> (each becomes an
+    /// <see cref="Mention"/> <c>tag</c> whose <c>href</c> is the actor IRI). When null/empty the note
+    /// carries no mention tags.</param>
+    /// <param name="to">Optional audience link(s) for the reply (e.g. the public <c>as:Public</c>
+    /// address). When null the reply carries no explicit <c>to</c>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// Mirrors <see cref="PostNoteAsync"/> but sets <c>inReplyTo</c> (the parent) and, when
+    /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
+    /// receiving server's <c>Create</c> handler records the parent → child reply edge (via the note's
+    /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The
+    /// <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox).
+    /// </remarks>
+    public Task<int> PostReplyAsync(
+        Iri actorId,
+        Iri parentIri,
+        string content,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<Iri>? to = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the **replies** to a content object by the object's IRI: the objects that reply to it
+    /// (their <c>inReplyTo</c> is the object's IRI), served by the server's
+    /// <c>GET /o/{object-path}/replies</c> endpoint as a paged <see cref="OrderedCollection"/> of the
+    /// reply objects' IRIs (F-12). Works identically to a personal/community/followed feed (a paged
+    /// <see cref="OrderedCollection"/> of items), so the same enumeration/caching semantics apply.
+    /// </summary>
+    /// <param name="objectIri">The IRI of the object whose replies are requested (e.g. a
+    /// <c>https://a.domain.local/ap/v1/u/alice/notes/n1</c> note).</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>, <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the reply IRIs (each an <see cref="IObjectOrLink"/> — a
+    /// <see cref="Link"/> to the reply object; resolve it to the full object via
+    /// <see cref="GetObjectAsync"/>). Yields nothing when the object has no replies, cannot be fetched,
+    /// or is not stored by its instance.</returns>
+    /// <remarks>
+    /// The replies-collection IRI is derived from the object IRI via <see cref="IriExtensions.RepliesOf(Iri)"/>
+    /// (<c>{object}/replies</c>). It is read through the client's <see cref="CollectionPageCache"/> like
+    /// any other collection, so a replies page is fetched once and reused within the TTL.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Sends a raw HTTP request through the client's signed pipeline and returns the response.
     /// </summary>
     /// <param name="request">The request to send. It is signed by the pipeline (the

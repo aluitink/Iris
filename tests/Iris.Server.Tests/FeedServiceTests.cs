@@ -438,6 +438,15 @@ public sealed class FeedServiceTests
         public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
             => Task.FromResult(202);
 
+        public Task<int> PostReplyAsync(
+            Iri actorId,
+            Iri parentIri,
+            string content,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<Iri>? to = null,
+            CancellationToken ct = default)
+            => Task.FromResult(202);
+
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
         {
             var iri = request.RequestUri is { } uri ? new Iri(uri) : default;
@@ -498,6 +507,12 @@ public sealed class FeedServiceTests
 
         public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
             Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(
+            Iri objectIri,
             CollectionQuery? query = null,
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);

@@ -157,6 +157,19 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         if (embedded is not null)
         {
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
+
+            // F-12 threading: when the stored object is a reply (its inReplyTo is set), record the
+            // parent → child edge so the parent's replies collection ({object}/replies) lists this
+            // reply. A top-level object (no inReplyTo) records no edge. The edge is recorded in both
+            // the person and community branches (a reply to a community-posted note threads there too).
+            var parentIri = embedded.GetParentIri();
+            var childIri = embedded.ResolveObjectIri();
+            if (parentIri is { } parent && childIri is { } child)
+            {
+                await _persistence.Replies
+                    .RecordReplyAsync(parent, child, ct)
+                    .ConfigureAwait(false);
+            }
         }
     }
 }

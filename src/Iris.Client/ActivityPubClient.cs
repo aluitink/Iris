@@ -217,6 +217,78 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return DeliverAsync(actorId.InboxOf(), create, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<int> PostReplyAsync(
+        Iri actorId,
+        Iri parentIri,
+        string content,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<Iri>? to = null,
+        CancellationToken ct = default)
+    {
+        // A deterministic, unique IRI per (actor, parent, content) so a retried reply dedupes on the
+        // receiver: the note id derives from the actor + parent + a content hash, and the Create id
+        // from the note id. Including the parent in the hash keeps replies to different parents distinct
+        // even for identical content.
+        var noteIri = $"{actorId.Value}/notes/{CreateReplyIdSuffix(parentIri.Value, content)}";
+        var createIri = $"{actorId.Value}/creates/{CreateReplyIdSuffix(parentIri.Value, content)}";
+
+        var note = new Note
+        {
+            Id = noteIri,
+            Content = [content],
+            AttributedTo = [new Link { Href = actorId.Uri }],
+            // F-12 threading: the parent note is the reply's inReplyTo (a link to the parent).
+            InReplyTo = [new Link { Href = parentIri.Uri }],
+        };
+
+        // F-12 mentions: each mentioned actor becomes a Mention tag whose href is the actor IRI (the
+        // ActivityPub @mention convention). Non-mention tags (e.g. hashtags) are not part of this API.
+        if (mentions is not null)
+        {
+            var mentionTags = mentions
+                .Select(mentionIri => new Mention { Href = mentionIri.Uri })
+                .ToList();
+            if (mentionTags.Count > 0)
+            {
+                note.Tag = mentionTags;
+            }
+        }
+
+        if (to is not null)
+        {
+            var audience = to.Select(i => new Link { Href = i.Uri }).ToList();
+            if (audience.Count > 0)
+            {
+                note.To = audience;
+            }
+        }
+
+        // The embedded Note (a full object, not a link) carries inReplyTo + the mention tags, so the
+        // receiver's Create handler records the parent → child reply edge from the note's inReplyTo.
+        var create = new Create
+        {
+            Id = createIri,
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [note],
+        };
+
+        return DeliverAsync(actorId.InboxOf(), create, ct);
+    }
+
+    /// <summary>
+    /// Derives a short, deterministic suffix for a reply note/Create IRI from its parent IRI + content
+    /// (a stable content hash), so identical replies to the same parent from the same actor map to the
+    /// same IRI (dedupe) and replies to different parents (or with different content) map to distinct
+    /// IRIs.
+    /// </summary>
+    private static string CreateReplyIdSuffix(string parentIri, string content)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(parentIri + "\u0000" + content);
+        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
+        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
+    }
+
     /// <summary>
     /// Derives a short, deterministic suffix for a note/Create IRI from its content (a stable
     /// content hash), so identical posts from the same actor map to the same IRI (dedupe) and
@@ -321,6 +393,18 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // The followed feed is a paged collection at {actor}/feed, so it is enumerated exactly like
         // any other collection (GetCollectionItemsAsync reads through the CollectionPageCache).
         return GetCollectionItemsAsync(new Iri($"{actorId.Value}/feed"), query, ct);
+    }
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The replies to an object are a paged collection at {object}/replies, so they are enumerated
+        // exactly like any other collection (GetCollectionItemsAsync reads through the
+        // CollectionPageCache). The items are the reply objects' IRIs (links).
+        return GetCollectionItemsAsync(objectIri.RepliesOf(), query, ct);
     }
 
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)

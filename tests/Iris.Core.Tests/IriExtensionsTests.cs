@@ -193,4 +193,170 @@ public class IriExtensionsTests
 
         Assert.Null(none.ResolveCollectionIri());
     }
+
+    [Fact]
+    public void RepliesOf_AppendsReplies()
+    {
+        var replies = new Iri("https://a.domain.local/ap/v1/u/alice/notes/n1").RepliesOf();
+
+        Assert.Equal("https://a.domain.local/ap/v1/u/alice/notes/n1/replies", replies.Value);
+    }
+
+    [Fact]
+    public void RepliesOf_TrailingSlashIsNotDuplicated()
+    {
+        var replies = new Iri("https://a.domain.local/ap/v1/u/alice/notes/n1/").RepliesOf();
+
+        Assert.Equal("https://a.domain.local/ap/v1/u/alice/notes/n1/replies", replies.Value);
+    }
+
+    [Fact]
+    public void RepliesOf_RelativeIri_Throws()
+    {
+        var relative = new Iri("/u/alice/notes/n1");
+
+        Assert.Throws<ArgumentException>(() => relative.RepliesOf());
+    }
+
+    [Fact]
+    public void GetParentIri_FromLink_ReturnsParentIri()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
+            InReplyTo = [new Link { Href = new Uri("https://a.domain.local/ap/v1/u/alice/notes/n1") }],
+        };
+
+        Assert.Equal(new Iri("https://a.domain.local/ap/v1/u/alice/notes/n1"), note.GetParentIri());
+    }
+
+    [Fact]
+    public void GetParentIri_FromEmbeddedParentObject_ReturnsParentId()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
+            InReplyTo = [new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" }],
+        };
+
+        Assert.Equal(new Iri("https://a.domain.local/ap/v1/u/alice/notes/n1"), note.GetParentIri());
+    }
+
+    [Fact]
+    public void GetParentIri_ToplevelNote_ReturnsNull()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Null(note.GetParentIri());
+    }
+
+    [Fact]
+    public void GetParentIri_Null_ReturnsNull()
+    {
+        IObject? none = null;
+
+        Assert.Null(none.GetParentIri());
+    }
+
+    [Fact]
+    public void GetMentionIris_ExtractsMentionHrefs()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
+            Tag =
+            [
+                new Mention { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
+                new Mention { Href = new Uri("https://c.domain.local/ap/v1/u/dave") },
+            ],
+        };
+
+        Assert.Equal(
+            [new Iri("https://b.domain.local/ap/v1/u/carol"), new Iri("https://c.domain.local/ap/v1/u/dave")],
+            note.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetMentionIris_IgnoresNonMentionTags()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
+            Tag =
+            [
+                new Link { Href = new Uri("https://example.com/tags/hashtag") },
+                new Mention { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
+            ],
+        };
+
+        Assert.Equal([new Iri("https://b.domain.local/ap/v1/u/carol")], note.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetMentionIris_NoTags_ReturnsEmpty()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Empty(note.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetMentionIris_Null_ReturnsEmpty()
+    {
+        IObject? none = null;
+
+        Assert.Empty(none.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetAttachmentIris_FromImageWithId_ReturnsId()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Image { Id = "https://cdn.example.com/media/1.jpg" }],
+        };
+
+        Assert.Equal([new Iri("https://cdn.example.com/media/1.jpg")], note.GetAttachmentIris());
+    }
+
+    [Fact]
+    public void GetAttachmentIris_FromLink_ReturnsHref()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Link { Href = new Uri("https://cdn.example.com/media/2.jpg") }],
+        };
+
+        Assert.Equal([new Iri("https://cdn.example.com/media/2.jpg")], note.GetAttachmentIris());
+    }
+
+    [Fact]
+    public void GetAttachmentIris_FromImageWithoutId_FallsBackToUrl()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Image { Url = [new Link { Href = new Uri("https://cdn.example.com/media/3.jpg") }] }],
+        };
+
+        Assert.Equal([new Iri("https://cdn.example.com/media/3.jpg")], note.GetAttachmentIris());
+    }
+
+    [Fact]
+    public void GetAttachmentIris_NoAttachments_ReturnsEmpty()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Empty(note.GetAttachmentIris());
+    }
+
+    [Fact]
+    public void GetAttachmentIris_Null_ReturnsEmpty()
+    {
+        IObject? none = null;
+
+        Assert.Empty(none.GetAttachmentIris());
+    }
 }

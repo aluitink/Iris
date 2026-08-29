@@ -58,6 +58,14 @@ public static class IriExtensions
     public static Iri FeedOf(this Iri iri) => AppendSegment(iri, "feed");
 
     /// <summary>
+    /// Derives the replies-collection IRI for a content object by appending <c>/replies</c> (F-12).
+    /// </summary>
+    /// <param name="iri">The object IRI (e.g. a <c>Note</c>). Must be absolute.</param>
+    /// <returns>The replies-collection IRI (e.g. <c>https://a.domain.local/ap/v1/u/alice/notes/n1/replies</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri RepliesOf(this Iri iri) => AppendSegment(iri, "replies");
+
+    /// <summary>
     /// Converts a library <c>string?</c> IRI (e.g. an object's <c>Id</c>) to an <see cref="Iri"/>.
     /// </summary>
     /// <param name="value">The IRI string. May be null.</param>
@@ -120,7 +128,89 @@ public static class IriExtensions
     }
 
     /// <summary>
-    /// Resolves the IRI of an <see cref="ICollectionOrLink"/>: a <see cref="Link"/> contributes its
+    /// Resolves the IRI of an object's <c>inReplyTo</c> (its parent note) from an <see cref="IObject"/>.
+    /// </summary>
+    /// <remarks>
+    /// F-12 threading: a reply carries the object it answers to in its <c>inReplyTo</c> (an
+    /// <see cref="IObjectOrLink"/> — a <see cref="Link"/> to the parent, or an embedded parent object).
+    /// This is the single boundary read for that field, used by the <c>Create</c> handler (to record the
+    /// reply edge) and by any client that needs to render a thread. Returns <see langword="null"/> when
+    /// the object has no <c>inReplyTo</c> (it is a top-level note) or the entry carries no IRI.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>inReplyTo</c> is read. May be null.</param>
+    /// <returns>The parent object's <see cref="Iri"/>, or <see langword="null"/> for a top-level object.</returns>
+    public static Iri? GetParentIri(this IObject? obj)
+    {
+        var first = obj?.InReplyTo?.FirstOrDefault();
+        return first?.ResolveObjectIri();
+    }
+
+    /// <summary>
+    /// Resolves the IRIs of an object's <c>tag</c> entries that are <see cref="Mention"/>s (F-12).
+    /// </summary>
+    /// <remarks>
+    /// A mention is a <c>tag</c> entry of type <c>Mention</c> whose <c>Href</c> is the mentioned actor's
+    /// IRI (the ActivityPub convention for <c>@mentions</c>). Non-mention <c>tag</c> entries (e.g. hashtag
+    /// tags, which are plain <see cref="Link"/>s) are excluded. Returns an empty list when the object has
+    /// no mention tags.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>tag</c> is read. May be null.</param>
+    /// <returns>The mentioned actors' IRIs (in the order they appear in <c>tag</c>); possibly empty.</returns>
+    public static IReadOnlyList<Iri> GetMentionIris(this IObject? obj)
+    {
+        var tags = obj?.Tag;
+        if (tags is null)
+        {
+            return [];
+        }
+
+        var mentions = new List<Iri>();
+        foreach (var tag in tags)
+        {
+            if (tag is Mention mention && mention.Href is { } href)
+            {
+                mentions.Add(new Iri(href));
+            }
+        }
+
+        return mentions;
+    }
+
+    /// <summary>
+    /// Resolves the IRIs of an object's <c>attachment</c> entries (F-12).
+    /// </summary>
+    /// <remarks>
+    /// An attachment is a <c>attachment</c> entry — an <see cref="Image"/>/object (e.g. a photo, whose
+    /// <c>Id</c> or <c>Url</c> is the media IRI) or a plain <see cref="Link"/>. This is the single
+    /// boundary read for that field, used to surface a note's media. Returns an empty list when the
+    /// object has no attachments.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>attachment</c> is read. May be null.</param>
+    /// <returns>The attachment IRIs (in the order they appear in <c>attachment</c>); possibly empty.</returns>
+    public static IReadOnlyList<Iri> GetAttachmentIris(this IObject? obj)
+    {
+        var attachments = obj?.Attachment;
+        if (attachments is null)
+        {
+            return [];
+        }
+
+        var iris = new List<Iri>();
+        foreach (var attachment in attachments)
+        {
+            // An embedded attachment (e.g. an Image) carries its IRI in Id; a plain Link in Href.
+            var iri = attachment.ResolveObjectIri() ?? ResolveAttachmentImageIri(attachment);
+            if (iri is { } resolved)
+            {
+                iris.Add(resolved);
+            }
+        }
+
+        return iris;
+    }
+
+    /// <summary>
+    /// Resolves the IRI of an <see cref="IObjectOrLink"/>: a <see cref="Link"/> contributes its
     /// <c>Href</c>; an embedded collection contributes its <c>Id</c>.
     /// </summary>
     /// <remarks>
@@ -188,6 +278,21 @@ public static class IriExtensions
     {
         var first = activity?.Object?.FirstOrDefault();
         return first is IObject { Id: { Length: > 0 } } obj ? obj : null;
+    }
+
+    /// <summary>
+    /// Fallback IRI resolution for an attachment that is an embedded <see cref="Image"/> without an
+    /// <c>Id</c>: reads the <c>url</c> of the image (the media IRI). Returns null when unavailable.
+    /// </summary>
+    private static Iri? ResolveAttachmentImageIri(IObjectOrLink? attachment)
+    {
+        if (attachment is Image image)
+        {
+            var firstUrl = image.Url?.FirstOrDefault();
+            return firstUrl is { Href: { } href } ? new Iri(href) : null;
+        }
+
+        return null;
     }
 
     private static Iri AppendSegment(Iri iri, string segment)

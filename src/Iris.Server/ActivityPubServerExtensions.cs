@@ -463,12 +463,23 @@ public static class ActivityPubServerExtensions
         // invalidly-signed requests are rejected with 401.
         group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
 
-        // Object document: GET /ap/v1/o/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
-        // {**path} is the object IRI's path relative to the route prefix, escaped (e.g. the Note at
-        // https://a.test/ap/v1/u/alice/notes/1 is GET /ap/v1/o/u/alice/notes/1). The absolute IRI is
+        // Object document: GET /ap/v1/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
+        // {**path} is the object IRI's path relative to the route prefix (e.g. the Note at
+        // https://a.test/ap/v1/u/alice/notes/1 is GET /ap/v1/u/alice/notes/1). The absolute IRI is
         // reconstructed from the base URL + the catch-all path. A stored object is served as itself; a
         // deleted object is served as its AS2.0 Tombstone ({"type":"Tombstone",…}); an unknown IRI 404s.
-        group.MapGet("/o/{**path}", ObjectDocumentHandler).WithName("object-document-endpoint");
+        // The catch-all is the LAST route segment (ASP0017 forbids a segment after {**path}), so the
+        // object IRI IS the endpoint IRI (no /o/ prefix) — a client fetching GET {objectIri} reaches
+        // this route. More specific routes (/u/{handle}, /u/{handle}/{collection}, /c/{name}, …) match
+        // first by routing priority, so the catch-all only serves content objects.
+        //
+        // Object replies (F-12): when the catch-all path ends in a /replies segment (e.g.
+        // /u/alice/notes/n1/replies), the route instead serves the parent object's replies — the
+        // objects that set their inReplyTo to the parent's IRI (the parent IRI is the catch-all path
+        // minus the trailing /replies). Served as a paged collection (items are the reply IRIs as
+        // links), paged via ?page/?limit. A catch-all cannot be followed by another segment, so the
+        // replies surface is handled inside ObjectDocumentHandler by stripping the trailing /replies.
+        group.MapGet("/{**path}", ObjectDocumentHandler).WithName("object-document-endpoint");
 
         // Proxy fallback: POST /ap/v1/proxy/{target} — an authenticated actor's browser cannot reach a
         // cross-origin remote instance (CORS / no signed outbound from the browser), so it posts the
@@ -834,11 +845,12 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// The object-document endpoint (<c>GET /ap/v1/o/{**path}</c>, F-02/F-03/F-10). Serves a content
+    /// The object-document endpoint (<c>GET /ap/v1/{**path}</c>, F-02/F-03/F-10). Serves a content
     /// object by its IRI: the <c>{**path}</c> catch-all is the object IRI's path relative to the route
     /// prefix (e.g. <c>u/alice/notes/1</c>), which is combined with the base URL to reconstruct the
-    /// absolute object IRI. A stored object is served as itself (the <c>Note</c> a <c>Create</c> stored,
-    /// refreshed in place by an <c>Update</c>); a deleted object is served as its AS2.0
+    /// absolute object IRI (the object IRI IS the endpoint IRI — no serving prefix). A stored object is
+    /// served as itself (the <c>Note</c> a <c>Create</c> stored, refreshed in place by an
+    /// <c>Update</c>); a deleted object is served as its AS2.0
     /// <see cref="KristofferStrube.ActivityStreams.Tombstone"/> ({"type":"Tombstone","id":…,"formerType":[…]});
     /// an IRI this instance does not store 404s. This is the wire surface that makes <c>Update</c> (the
     /// object reflects the edit) and <c>Delete</c> (the object serves a tombstone, not a 404) observable.
@@ -861,9 +873,24 @@ public static class ActivityPubServerExtensions
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var normalized = baseUrl.TrimEnd('/');
         // The {**path} catch-all is the object IRI's path relative to the route prefix (e.g. the Note at
-        // https://host/ap/v1/u/alice/notes/n1 is served at /ap/v1/o/u/alice/notes/n1, so the catch-all
-        // binds u/alice/notes/n1). The /o/ segment is only the serving prefix — it is NOT part of the
-        // object IRI — so the IRI is reconstructed as base + route prefix + path.
+        // https://host/ap/v1/u/alice/notes/n1 is served at /ap/v1/u/alice/notes/n1, so the catch-all
+        // binds u/alice/notes/n1). The object IRI IS the endpoint IRI (no serving prefix), so the IRI is
+        // reconstructed as base + route prefix + path.
+        //
+        // F-12 replies: when the catch-all path ends in a /replies segment, the request is for the
+        // parent object's replies collection, not the object itself. The parent IRI is the catch-all
+        // path minus the trailing /replies (e.g. u/alice/notes/n1/replies → parent u/alice/notes/n1).
+        // A catch-all route cannot be followed by another segment, so the replies surface is dispatched
+        // here (the same route) rather than a separate {**path}/replies route.
+        const string repliesSegment = "replies";
+        var isReplies = path.EndsWith($"/{repliesSegment}", StringComparison.Ordinal)
+            && path.Length > repliesSegment.Length + 1;
+        if (isReplies)
+        {
+            var parentPath = path.Substring(0, path.Length - (repliesSegment.Length + 1));
+            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
+        }
+
         var objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
 
         if (!await persistence.Objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false) ||
@@ -877,6 +904,53 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
         return Results.Text(ActivityJson.Serialize(obj), ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the replies to a content object as a paged collection for <c>GET /ap/v1/{**path}/replies</c>
+    /// (F-12). The <c>{**path}</c> catch-all is the parent object's IRI path relative to the route prefix
+    /// (the same convention the object-document endpoint uses); the absolute parent IRI is reconstructed
+    /// from the base URL. The items are the IRIs of the objects that reply to the parent (their
+    /// <c>inReplyTo</c> is the parent's IRI), read from the <see cref="IReplyStore"/> and embedded as
+    /// <see cref="Link"/>s (the same shape as the followers/following/liked collections — a client
+    /// resolves a reply's full object via the object endpoint). Page 1 is an <c>OrderedCollection</c>
+    /// (with <c>first</c>); page N &gt; 1 an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/
+    /// <c>next</c>), paged via <c>?page</c>/<c>?limit</c>. An object this instance does not store 404s.
+    /// The response carries the collection <c>Cache-Control</c>.
+    /// </summary>
+    private static async Task<IResult> ObjectRepliesAsync(
+        HttpContext context,
+        string parentPath,
+        IPersistenceProvider persistence,
+        string normalizedBase,
+        CancellationToken ct)
+    {
+        // The object IRI IS the endpoint IRI (no serving prefix), so the parent IRI is base + route
+        // prefix + parent path (the same reconstruction the object-document endpoint uses).
+        var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
+
+        // An object this instance does not store has no replies to serve (404, mirroring the object
+        // document). The replies of a stored object are listed even when there are none (empty
+        // collection).
+        if (!await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var replyIris = await persistence.Replies.GetRepliesAsync(parentIri, ct).ConfigureAwait(false);
+        var items = ActorIrisToLinks(replyIris);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var collectionIri = parentIri.RepliesOf();
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        var refresh = HasRefreshBypass(context);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
     }
 
     /// <summary>

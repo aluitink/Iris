@@ -145,6 +145,16 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(202);
 
         /// <inheritdoc/>
+        public Task<int> PostReplyAsync(
+            Iri actorId,
+            Iri parentIri,
+            string content,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<Iri>? to = null,
+            CancellationToken ct = default)
+            => Task.FromResult(202);
+
+        /// <inheritdoc/>
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
 
@@ -172,6 +182,13 @@ public class IrisActorDocumentFetcherTests
         /// <inheritdoc/>
         public IAsyncEnumerable<IObjectOrLink> GetFollowFeedAsync(
             Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(
+            Iri objectIri,
             CollectionQuery? query = null,
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);

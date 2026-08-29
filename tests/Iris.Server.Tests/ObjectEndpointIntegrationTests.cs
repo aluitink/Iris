@@ -165,20 +165,13 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
         });
 
     /// <summary>
-    /// The object-document path for an object IRI: <c>/ap/v1/o/</c> + the IRI's path relative to the
-    /// route prefix (e.g. <c>u/alice/notes/n1</c> for <c>https://host/ap/v1/u/alice/notes/n1</c>).
+    /// The object-document path for an object IRI: the IRI's absolute path (the object IRI IS the
+    /// endpoint IRI — the catch-all route is at the /ap/v1 group root, so GET {objectIri} reaches the
+    /// object-document endpoint).
     /// </summary>
     private string ObjectPath(Iri objectIri) => ObjectPathFor(objectIri);
 
-    private static string ObjectPathFor(Iri objectIri)
-    {
-        var path = new Uri(objectIri.Value).AbsolutePath; // /ap/v1/u/alice/notes/n1
-        var prefix = "/ap/v1/";
-        var relative = path.StartsWith(prefix, System.StringComparison.Ordinal)
-            ? path[prefix.Length..]
-            : path.TrimStart('/');
-        return $"/ap/v1/o/{relative}";
-    }
+    private static string ObjectPathFor(Iri objectIri) => new Uri(objectIri.Value).AbsolutePath;
 
     private Update BuildUpdate(Iri objectIri, string content) => new()
     {

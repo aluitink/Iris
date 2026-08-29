@@ -36,6 +36,11 @@ public interface IPersistenceProvider
     public ILikeStore Likes { get; }
 
     /// <summary>
+    /// The reply (thread) store (F-12).
+    /// </summary>
+    public IReplyStore Replies { get; }
+
+    /// <summary>
     /// The object store.
     /// </summary>
     public IObjectStore Objects { get; }
