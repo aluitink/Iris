@@ -134,36 +134,4 @@ public sealed class PostNoteSurfacesInOutboxIntegrationTests : IDisposable
 
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
-
-    private sealed class LazyHandler(Func<TestServer> server) : HttpMessageHandler
-    {
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= server().CreateHandler(), disposeHandler: false);
-
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }

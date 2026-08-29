@@ -756,47 +756,4 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// An <see cref="IActorDocumentFetcher"/> that records each fetch (actor IRI + outcome) then
-    /// forwards to an inner fetcher. Used to detect whether the inbound key resolver's fetch runs
-    /// (and whether it completes) during a signed inbox request.
-    /// </summary>
-    /// <summary>
-    /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first
-    /// request. Used to break the A↔B wiring chicken-and-egg (A's fetcher needs B's handler; B's
-    /// transport needs A's handler) — both servers exist by the time any request flows.
-    /// </summary>
-    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
-    {
-        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
-            // Clone the request: the inner pipeline may retry (RetryHandler), and HttpClient
-            // forbids sending the same request message more than once.
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }

@@ -189,43 +189,4 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
         Object = [new Link { Href = new Uri(objectIri.Value) }],
     };
 
-    /// <summary>
-    /// A <see cref="HttpMessageHandler"/> that defers creating its inner handler until the first
-    /// request, breaking the build-order dependency between the fetcher and the <see cref="TestServer"/>.
-    /// It clones each request: the inner pipeline may retry, and <see cref="HttpClient"/> forbids sending
-    /// the same <see cref="HttpRequestMessage"/> more than once.
-    /// </summary>
-    private sealed class LazyHandler(Func<TestServer> server) : HttpMessageHandler
-    {
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= server().CreateHandler(), disposeHandler: false);
-
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(
-                    content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }

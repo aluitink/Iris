@@ -171,40 +171,4 @@ public sealed class RemoteCollectionFetcherIntegrationTests : IDisposable
             Persistence = persistence,
         });
 
-    /// <summary>
-    /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first
-    /// request (breaks the B-handler wiring chicken-and-egg) and clones each request so the inner
-    /// pipeline (which may retry) never re-sends the same message instance.
-    /// </summary>
-    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
-    {
-        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }

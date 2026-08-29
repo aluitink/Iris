@@ -256,38 +256,6 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     /// An <see cref="HttpMessageHandler"/> that defers resolution of its inner handler until the first
     /// request (breaks the A↔B wiring chicken-and-egg; both servers exist by the time any request flows).
     /// </summary>
-    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
-    {
-        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
-
     /// <summary>Disposes two <see cref="TestServer"/> instances.</summary>
     private sealed class DisposeBoth(TestServer one, TestServer two) : IDisposable
     {

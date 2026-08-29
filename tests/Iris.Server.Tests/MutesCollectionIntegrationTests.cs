@@ -299,44 +299,4 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    /// <summary>
-    /// A <see cref="HttpMessageHandler"/> that defers creating its inner handler until the first
-    /// request, breaking the build-order dependency between the client/fetcher and the
-    /// <see cref="TestServer"/>. It clones each request: the inner pipeline may retry, and
-    /// <see cref="HttpClient"/> forbids sending the same <see cref="HttpRequestMessage"/> more than once.
-    /// </summary>
-    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
-    {
-        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
-
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(
-                    content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }

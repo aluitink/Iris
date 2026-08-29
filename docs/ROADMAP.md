@@ -15,9 +15,9 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 | 5 — Community / Group Support | ✅ complete |
 | 6 — Proxy Fallback | ✅ complete |
 | 7 — Blazor Client Extensions & Samples | ✅ complete |
-| 8 — Sample Docker Composition | 🚧 in progress |
+| 10 — Sample Docker Composition | 🚧 in progress |
 | 9 — Real-World Deployment Preparation | ✅ complete |
-| 10 — Project & Test Review | 🚧 in progress |
+| 8 — Project & Test Review | ✅ complete |
 | 11 — Implementation Gaps & Usability Exploration | 🚧 in progress |
 | 12 — Spec Conformance & Missing Features | 🚧 in progress |
 | 13 — Live Federation Compatibility | 📋 planned |
@@ -35,16 +35,21 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 - Phase 6 — proxy fallback and signed proxy delivery.
 - Phase 7 — sample server/client composition and end-to-end federation validation.
 - Phase 9 — deployment planning, TLS/FQDN runbook, compatibility matrix, and interop risk register.
+- Phase 10 — project & test review: suite consolidated from 850 → 832 tests (scratch + duplicate + engine re-tests removed), the 17 duplicated `LazyHandler` copies collapsed into `Iris.Testing.LazyHandler`, and shared federation helpers added in `Iris.Testing.TestFederation`; build + all 832 tests green. See [change 069](changes/069-phase10-project-test-review.md).
 
 ## Remaining work
 
 ### Phase 8 — Project & Test Review
-- [ ] Audit the suite for redundant, duplicate, or low-value tests.
-- [ ] Remove or merge tests that add no signal or duplicate existing coverage.
-- [ ] Consolidate repeated test setup, seeding, and host helpers into shared utilities.
-- [ ] Keep the remaining tests focused on real behavior and regression protection.
-- [ ] Review dead fixtures and over-mocked tests; keep only tests that prove real behavior.
-- [ ] Add final changelog/test-count records for the consolidation work.
+- [x] Audit the suite for redundant, duplicate, or low-value tests.
+- [x] Remove or merge tests that add no signal or duplicate existing coverage.
+- [x] Consolidate repeated test setup, seeding, and host helpers into shared utilities.
+- [x] Keep the remaining tests focused on real behavior and regression protection.
+- [x] Review dead fixtures and over-mocked tests; keep only tests that prove real behavior.
+- [x] Add final changelog/test-count records for the consolidation work.
+
+Suite consolidation complete: 850 → 832 tests (scratch + duplicate + engine re-tests removed), the 17
+duplicated `LazyHandler` copies collapsed into `Iris.Testing.LazyHandler`, and shared federation helpers
+added in `Iris.Testing.TestFederation`. See [change 069](changes/069-phase10-project-test-review.md).
 
 ### Phase 10 — Sample Docker Composition
 - [ ] Finish the Blazor WASM host for the sample client.

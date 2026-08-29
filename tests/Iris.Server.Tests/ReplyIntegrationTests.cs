@@ -348,38 +348,4 @@ public sealed class ReplyIntegrationTests : IDisposable
         _ => throw new InvalidOperationException("replies item carries no IRI"),
     };
 
-    /// <summary>
-    /// An <see cref="HttpMessageHandler"/> that defers to a <see cref="TestServer"/> created after this
-    /// handler (chicken-and-egg: the server's own fetcher must reach the in-process server, which does not
-    /// exist yet while the server is being constructed).
-    /// </summary>
-    private sealed class LazyHandler(Func<HttpMessageHandler> innerFactory) : HttpMessageHandler
-    {
-        private readonly Func<HttpMessageHandler> _innerFactory = innerFactory;
-        private HttpMessageHandler? _inner;
-        private HttpClient? _client;
-
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            _client ??= new HttpClient(_inner ??= _innerFactory(), disposeHandler: false);
-            var clone = new HttpRequestMessage(request.Method, request.RequestUri)
-            {
-                Version = request.Version,
-            };
-            foreach (var header in request.Headers)
-            {
-                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
-            }
-            if (request.Content is { } content)
-            {
-                clone.Content = new ByteArrayContent(content.ReadAsByteArrayAsync().GetAwaiter().GetResult());
-                foreach (var header in content.Headers)
-                {
-                    clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
-                }
-            }
-            return _client.SendAsync(clone, cancellationToken);
-        }
-    }
 }
