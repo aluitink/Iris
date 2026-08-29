@@ -80,7 +80,7 @@ The full rules, including the per-turn workflow, are in [docs/reference/AUTONOMO
 
 Phases 0–9 are complete.
 
-Current focus is **Phase 10+**, with implementation details tracked in the table below and full per-slice notes in [docs/phase-notes/README.md](docs/phase-notes/README.md).
+Current focus is the **Phase -1 (Project Reorganization)** structural cleanup, selected as the next active phase (2026-08-29). Phases 8/10/11/12 remain in progress in parallel and are tracked in the table below, with full per-slice notes in [docs/phase-notes/README.md](docs/phase-notes/README.md).
 
 Highlights since the Phase 10 review began:
 
@@ -110,6 +110,6 @@ Use the phase table below as the concise status ledger; use phase notes/decision
 | 13 — Live Federation Compatibility | ⏸ deferred | Run the public instance against real Mastodon/Lemmy/Threads; real-user enumeration. Blocked on the Phase 9 FQDN. |
 | 14+ — Future | 📋 abstract | Auth upgrade, real persistence, delivery at scale, shared inbox, observability, 1.0 API review. |
 
-**Carried forward:** (a) spec-research findings not yet captured/folded back; (b) a bare `dotnet build` in the root is blocked by MSB1011 (stray root scratch files — delete `Program.cs`/`inspect.csproj`/`packages.lock.json` manually).
+**Carried forward:** (a) spec-research findings not yet captured/folded back; (b) a small set of untracked root scratch files remain (`probe.csproj` placeholder + three emptied/scratch debug test files) — not part of the solution, safe to delete before the Phase -1 reorganization begins.
 
 Track progress in [docs/ROADMAP.md](docs/ROADMAP.md).

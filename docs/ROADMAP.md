@@ -6,7 +6,7 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 
 | Phase | Status |
 |---|---|
-| -1 — Project Reorganization | 📋 planned |
+| -1 — Project Reorganization | 🚧 in progress (selected next) |
 | 0 — Scaffolding | ✅ complete |
 | 1 — Core: Identity, Keys, Signatures & Caching | ✅ complete |
 | 2 — Client Library | ✅ complete |
@@ -39,6 +39,7 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 ## Remaining work
 
 ### Phase -1 — Project Reorganization
+> Selected as the next active phase (2026-08-29). Build + tests green at entry (850 tests). Structural cleanup only — move code without changing behavior.
 - [ ] Review the current project and solution layout for structural drift.
 - [ ] Organize source files into clearer folder structures within each project.
 - [ ] Group related features by domain such as actors, delivery, inbox processing, discovery, persistence, and server endpoints.
