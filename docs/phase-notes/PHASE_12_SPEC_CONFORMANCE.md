@@ -220,6 +220,32 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     end-to-end proof: a signed inbound `Block` of a followed actor excludes that actor's post from the
     blocker's followed feed over the wire (present before, absent after).
 
+## Slice 12.15 — F-07 moderation: un-block (`Undo` of `Block`)
+
+ - `UndoActivityHandler` (the F-11 un-follow `Undo` handler) now also handles an `Undo` whose object is a
+   `Block`: it resolves the original `Block`'s parties from the local activity store (the `Undo`'s object
+   is a reference to the original `Block`, by IRI — the same resolution the follow branch uses for the
+   original `Follow`) and removes the `blocker → blocked` edge via `IModerationStore.RemoveBlockAsync` —
+   the inverse of `BlockActivityHandler`. The block branch runs before the follow branch (a `Block` has no
+   follow target); an `Undo` of any other activity type remains a no-op.
+ - Client: `IActivityPubClient` / `ActivityPubClient` gained `UnblockAsync(actorId, targetId, ct)` — the
+   inverse of `BlockAsync`. It builds an `Undo` (actor = `actorId`, object = a link to the original
+   `Block`'s deterministic `{actor}/blocks/{target}` IRI) and delivers it to `targetId.InboxOf()` (the
+   previously-blocked actor's inbox). The `Undo` gets a deterministic unique-per-`(actor, target)` `Id` so
+   a retried un-block dedupes.
+ - The block and un-block are now **symmetric writes** against the same store (`RecordBlockAsync` /
+   `RemoveBlockAsync`); Slice 12.14's feed/delivery logic reads the live edge set, so a block and its later
+   un-block automatically flip feed exclusion and delivery suppression on/off. An un-block clears only the
+   moderation edge, never the follow edge.
+ - *Scope note:* this is the **un-block** (`Undo` of `Block`). `Mute` / `Flag` remain open; F-06
+   (shared-inbox / relay) is the next item after F-07.
+  - `UndoActivityHandlerTests` (5) covers the un-block in isolation (local-blocker un-block, block-of-local
+    un-block [inverse query cleared], block-not-stored no-op, unknown-block-IRI no-op, un-block does not
+    touch follow edges); the pre-existing 10 follow/un-follow tests are unchanged (`BuildUndo` generalized
+    to `Activity`). `BlocksCollectionIntegrationTests` (1) is the end-to-end proof: `BlockAsync` (202)
+    records the edge + the feed excludes the blocked actor's post, then `UnblockAsync` (202) removes the
+    edge (the `blocks` collection is empty again) + the feed re-includes the post.
+
   ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
