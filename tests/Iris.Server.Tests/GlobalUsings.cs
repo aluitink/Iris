@@ -21,3 +21,5 @@ global using CollectionPageCache = Iris.Server.Caching.CollectionPageCache;
 global using WebFingerCache = Iris.Server.Caching.WebFingerCache;
 
 global using Iris.Server.InMemory.Stores;
+
+global using Iris.Server.Tests;
