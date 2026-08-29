@@ -27,10 +27,14 @@ namespace Iris.Server;
 /// <para>
 /// <strong>Person vs. community.</strong> The person and community stores are disjoint. When the
 /// follower is a local <em>person</em> (in the actor store) the edge is removed from the
-/// <see cref="IFollowStore"/>. When the follower is a local <em>community</em> (in the community store)
-/// the edge is removed from the community's follows set (<see cref="ICommunityStore.RemoveFollowAsync"/>),
-/// the inverse of <see cref="FollowActivityHandler"/>'s community branch. A missing target (the follow was
-/// never stored) is a no-op (there is no edge to remove).
+/// <see cref="IFollowStore"/>; and when the un-followed target is a local <em>community</em>, the
+/// follower is also removed from the community's followers set
+/// (<see cref="ICommunityStore.RemoveFollowerAsync"/>) and follows set
+/// (<see cref="ICommunityStore.RemoveFollowAsync"/>) — the inverse of the community follow
+/// (<see cref="FollowActivityHandler"/>'s community branch, F-24). When the follower is a local
+/// <em>community</em> (in the community store) the edge is removed from the community's follows set
+/// (<see cref="ICommunityStore.RemoveFollowAsync"/>), the inverse of the community's own follow. A
+/// missing target (the follow was never stored) is a no-op (there is no edge to remove).
 /// </para>
 /// <para>
 /// <strong>Un-block (F-07).</strong> When the <c>Undo</c>'s object is a <see cref="Block"/> (an un-block),
@@ -117,6 +121,25 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
             await _persistence.Follows
                 .RemoveFollowAsync(followerIri, targetIri.Value, ct)
                 .ConfigureAwait(false);
+
+            // When the un-followed target is a local community, the follow was also recorded in the
+            // community's follows + followers sets (FollowActivityHandler's community branch, F-24):
+            // remove the follower from the community's followers set and the follower from the
+            // community's follows set — the inverse of the follow. A person un-following a community
+            // leaves no IFollowStore edge (the follow of a community is recorded in the community
+            // store, not the person follow store), so this is the real removal.
+            if (await _persistence.Communities
+                    .TryGetCommunityAsync(targetIri.Value, out _, ct)
+                    .ConfigureAwait(false))
+            {
+                await _persistence.Communities
+                    .RemoveFollowerAsync(targetIri.Value, followerIri, ct)
+                    .ConfigureAwait(false);
+                await _persistence.Communities
+                    .RemoveFollowAsync(targetIri.Value, followerIri, ct)
+                    .ConfigureAwait(false);
+            }
+
             return;
         }
 

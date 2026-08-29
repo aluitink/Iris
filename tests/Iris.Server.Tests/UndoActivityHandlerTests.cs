@@ -83,6 +83,36 @@ public sealed class UndoActivityHandlerTests
         Assert.DoesNotContain(RemoteTarget, follows);
     }
 
+    // --- Local person un-follows a local community: remove from the community's followers + follows sets (F-24)
+
+    [Fact]
+    public async Task HandleAsync_LocalPersonUndoesFollowOfLocalCommunity_RemovesCommunityFollowerAndFollow()
+    {
+        // F-24 inverse: when a local person follows a local community, the FollowActivityHandler records
+        // BOTH the community's follows edge (community → follower) and the community's followers edge
+        // (follower → community). The Undo (the person un-following the community) must remove BOTH, so
+        // the community's `followers` collection no longer lists the person and the community no longer
+        // follows the person.
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Communities.PutCommunityAsync(BuildCommunity());
+        var sut = BuildHandler(persistence);
+
+        // The person follows the community: both edges are recorded (as the FollowActivityHandler would).
+        await persistence.Communities.AddFollowAsync(Community, LocalPerson);
+        await persistence.Communities.AddFollowerAsync(Community, LocalPerson);
+        var follow = BuildFollow(LocalPerson, Community);
+        await persistence.Activities.PutActivityAsync(follow);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, BuildUndo(follow)), BuildUndo(follow));
+
+        // The person is removed from BOTH the community's followers set and the community's follows set.
+        var followers = await persistence.Communities.GetFollowersAsync(Community);
+        Assert.DoesNotContain(LocalPerson, followers);
+        var follows = await persistence.Communities.GetFollowsAsync(Community);
+        Assert.DoesNotContain(LocalPerson, follows);
+    }
+
     // --- Malformed / unresolvable: no-op ----------------------------------------------------
 
     [Fact]

@@ -493,9 +493,10 @@ public static class ActivityPubServerExtensions
         // a community is followed (and follows) the same way a person is, so it carries the same
         // following/followers collections. `following` is backed by the community's follows set
         // (ICommunityStore.GetFollowsAsync — the community follows the follower, Resolved Decision #36).
-        // `followers` (a community being followed) has no follow edge recorded against it (a follow of a
-        // community records an edge in the community's *follows* set, not a followers set), so it serves
-        // the empty collection. Paged via ?page/?limit (the shared page/limit shape).
+        // `followers` is backed by the community's followers set (ICommunityStore.GetFollowersAsync —
+        // F-24: the FollowActivityHandler records a follower in this set when an actor follows a local
+        // community, so the collection lists the actors/communities that follow it). Paged via
+        // ?page/?limit (the shared page/limit shape).
         group.MapGet(
                 "/c/{name}/{collection:regex(following|followers)}",
                 (string name, string collection, HttpContext context,
@@ -1662,10 +1663,14 @@ public static class ActivityPubServerExtensions
     /// <c>following</c> is backed by the community's follows set
     /// (<see cref="ICommunityStore.GetFollowsAsync"/> — the community "follows" the follower, Resolved
     /// Decision #36); the items are the followed actors'/communities' IRIs as <c>Link</c>s.
-    /// <c>followers</c> (a community being followed) has no follow edge recorded against it — a follow of
-    /// a community records an edge in the community's <em>follows</em> set, not a followers set — so it
-    /// serves the empty collection. Pagination is the shared <c>?page</c>/<c>?limit</c> shape (page 1 is
-    /// the <c>OrderedCollection</c> with a self <c>first</c>; page N&gt;1 an <c>OrderedCollectionPage</c>
+    /// <c>followers</c> is backed by the community's followers set
+    /// (<see cref="ICommunityStore.GetFollowersAsync"/> — F-24: when an actor follows a local community,
+    /// the <c>FollowActivityHandler</c> records the follower in this set, so the collection lists the
+    /// actors/communities that follow the community); the items are the follower IRIs as <c>Link</c>s.
+    /// Both were previously the community's follows set only — the followers set was absent, so
+    /// <c>followers</c> always served the empty collection (the documented J-12 asymmetry); F-24 closes
+    /// that. Pagination is the shared <c>?page</c>/<c>?limit</c> shape (page 1 is the
+    /// <c>OrderedCollection</c> with a self <c>first</c>; page N&gt;1 an <c>OrderedCollectionPage</c>
     /// with <c>partOf</c>/<c>prev</c>/<c>next</c>). An unknown community 404s. The response carries the
     /// collection <c>Cache-Control</c>.
     /// </remarks>
@@ -1685,13 +1690,12 @@ public static class ActivityPubServerExtensions
             optionsAccessor,
             async communityIri =>
             {
-                if (collection != "following")
-                {
-                    return Array.Empty<IObjectOrLink>();
-                }
-
-                var follows = await persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false);
-                return ActorIrisToLinks(follows.ToList());
+                // `following` = the actors/communities the community follows (the follows set);
+                // `followers` = the actors/communities that follow the community (the followers set, F-24).
+                var items = collection == "following"
+                    ? await persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false)
+                    : await persistence.Communities.GetFollowersAsync(communityIri, ct).ConfigureAwait(false);
+                return ActorIrisToLinks(items.ToList());
             },
             ct);
     }

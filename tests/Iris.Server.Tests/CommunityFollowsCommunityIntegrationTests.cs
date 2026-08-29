@@ -36,10 +36,11 @@ namespace Iris.Server.Tests;
 /// document (resolving the <c>Group</c>'s key) and records the follow in <c>lumen</c>'s follows set
 /// (lumen follows iris) + queues an <see cref="Accept"/> back to iris's inbox, which B finalizes into
 /// iris's follows set (iris follows lumen). Both sides' <c>following</c> collections then carry the edge.</item>
-/// <item><em>The follow edge is queryable:</em> <c>GET /ap/v1/c/{name}/following</c> (the community
-/// <c>following</c> collection, the production gap this slice closes) returns the followed community's
-/// IRI; <c>followers</c> returns the empty collection (a follow of a community records an edge in the
-/// community's follows set, not a followers set).</item>
+ /// <item><em>The follow edge is queryable:</em> <c>GET /ap/v1/c/{name}/following</c> (the community
+ /// <c>following</c> collection) returns the followed community's IRI; <c>GET /ap/v1/c/{name}/followers</c>
+ /// (F-24) returns the follower's IRI — the <c>FollowActivityHandler</c> records the inverse edge
+ /// (follower → community) in the community's followers set when it processes an inbound follow, so the
+ /// followed community's <c>followers</c> collection lists its followers.</item>
 /// <item><em>Followed-community content reaches the feed:</em> A's community <c>lumen</c> posts a
 /// <see cref="Create"/> to B's community inbox; B's <see cref="CommunityInboxActivityHandler"/> records
 /// it in local member <c>bob</c>'s outbox, so it appears in the community feed (the followed-content
@@ -172,14 +173,18 @@ public sealed class CommunityFollowsCommunityIntegrationTests : IDisposable
 
         // B's community `following` collection is empty until B finalizes its side of the edge (the
         // Accept A queues back to iris is not delivered in this test — no DeliveryWorker on A) — so the
-        // edge is one-sided here. The followers collection (a community being followed has no followers
-        // set recorded) is empty on both sides.
+        // following edge is one-sided here.
         var bFollowing = await CollectionItemsAsync(_bHttp, $"https://{BHost}/ap/v1/c/{LocalCommunity}/following");
         Assert.Empty(bFollowing);
+
+        // F-24: A's community `followers` collection carries the follower's IRI (iris follows lumen) —
+        // the FollowActivityHandler on A recorded the inverse edge (follower → community) in lumen's
+        // followers set when it processed the inbound Follow. B's community `followers` is empty (no
+        // actor has followed iris in this test).
+        var aFollowers = await CollectionItemsAsync(_aHttp, $"https://{AHost}/ap/v1/c/{RemoteCommunity}/followers");
+        Assert.Contains(_localCommunityIri.Value, aFollowers);
         var bFollowers = await CollectionItemsAsync(_bHttp, $"https://{BHost}/ap/v1/c/{LocalCommunity}/followers");
         Assert.Empty(bFollowers);
-        var aFollowers = await CollectionItemsAsync(_aHttp, $"https://{AHost}/ap/v1/c/{RemoteCommunity}/followers");
-        Assert.Empty(aFollowers);
     }
 
     // --- The community following/followers collections 404 for an unknown community

@@ -16,6 +16,7 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Group> _communities = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _members = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _follows = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _followers = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
@@ -116,6 +117,42 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         }
 
         return Task.FromResult(follows.TryRemove(actorIri, out _));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetFollowersAsync(Iri communityIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new List<Iri>();
+        if (_followers.TryGetValue(communityIri, out var followers))
+        {
+            foreach (var follower in followers.Keys)
+            {
+                result.Add(follower);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> AddFollowerAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var added = _followers.GetOrAdd(communityIri, _ => new System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>()).TryAdd(actorIri, 0);
+        return Task.FromResult(added);
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFollowerAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!_followers.TryGetValue(communityIri, out var followers))
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(followers.TryRemove(actorIri, out _));
     }
 
     /// <inheritdoc/>

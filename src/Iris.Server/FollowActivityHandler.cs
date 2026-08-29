@@ -17,10 +17,12 @@ namespace Iris.Server;
 /// <c>actor</c>, and the target is the delivery's <see cref="InboxDelivery.RecipientIri"/> (the inbox
 /// the follow was delivered to — authoritative for the target). When the recipient is a local
 /// <em>person</em>, the edge goes to the <see cref="IFollowStore"/>; when the recipient is a local
-/// <em>community</em>, the edge goes to the community's follows set
-/// (<see cref="ICommunityStore.AddFollowAsync"/>) — a community "follows" the follower, not the
-/// reverse (Resolved Decision #36). A follow addressed to a remote actor is not this instance's
-/// concern.</item>
+/// <em>community</em>, <em>two</em> edges are recorded (Resolved Decision #36, extended for F-24): the
+/// community's follows set (<see cref="ICommunityStore.AddFollowAsync"/>) — the community "follows"
+/// the follower, so the follower's content reaches the community's members via the federation path —
+/// and the community's followers set (<see cref="ICommunityStore.AddFollowerAsync"/>) — the follower
+/// "follows" the community, so the community's <c>followers</c> collection lists the follower (F-24).
+/// A follow addressed to a remote actor is not this instance's concern.</item>
 /// <item>Constructs an <c>Accept</c> (actor = the local actor/community being followed, object = the
 /// original follow) and schedules it for delivery to the follower's inbox via
 /// <see cref="IDeliveryService"/> (asynchronous — the handler returns after enqueuing; the
@@ -100,6 +102,16 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
             // follower's content reach the community's members via the federation path.
             await _persistence.Communities
                 .AddFollowAsync(delivery.RecipientIri, followerIri.Value, ct)
+                .ConfigureAwait(false);
+
+            // Also record the inverse — that the follower follows the community — in the community's
+            // "followers" set (F-24). This is what populates the community's `followers` collection
+            // (`GET /c/{name}/followers`): without it, a community being followed has no followers
+            // recorded and the collection is always empty. The two edges are symmetric: the follows
+            // edge (community → follower) drives the federated feed; the followers edge (follower →
+            // community) drives the `followers` collection.
+            await _persistence.Communities
+                .AddFollowerAsync(delivery.RecipientIri, followerIri.Value, ct)
                 .ConfigureAwait(false);
         }
         else

@@ -100,10 +100,39 @@ public sealed class FollowActivityHandlerTests
         // The follow is recorded in the community's follows set (the community follows the follower)
         // ...
         Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowsAsync(Community));
+        // ... and in the community's followers set (F-24: the follower follows the community), so the
+        // community's `followers` collection lists the follower ...
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
         // ... and an Accept is scheduled, signed as the community.
         var job = Assert.Single(await DequeueAllAsync(delivery));
         Assert.IsType<Accept>(job.Activity);
         Assert.Equal(Community, job.ActorIri);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalCommunity_RecordsFollowerInFollowersSet()
+    {
+        // F-24: a follow of a local community records BOTH directions — the community follows the
+        // follower (the follows set, so the follower's content reaches the community's members) and the
+        // follower follows the community (the followers set, so the community's `followers` collection
+        // lists the follower). Before F-24 only the follows edge was recorded, so the `followers`
+        // collection was always empty.
+        var persistence = new InMemoryPersistenceProvider();
+        await persistence.Communities.PutCommunityAsync(new Group
+        {
+            Id = Community.Value,
+            Name = ["Iris"],
+            PreferredUsername = "iris",
+        });
+        var (handler, _) = BuildHandler(persistence);
+        var follow = BuildFollow(RemoteFollower, Community);
+
+        await handler.HandleAsync(new InboxDelivery(Community, follow), follow);
+
+        // Both edges are recorded: the follows set (community → follower) and the followers set
+        // (follower → community). The follows edge was pre-F-24; the followers edge is F-24.
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowsAsync(Community));
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
     }
 
     // --- Guards ---------------------------------------------------------------------------

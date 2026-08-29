@@ -165,10 +165,11 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task Followers_IsEmpty_WhenCommunityHasNoFollowers()
+    public async Task Followers_IsEmpty_WhenNoActorFollowsTheCommunity()
     {
-        // A follow of a community records an edge in the community's *follows* set, not a followers set,
-        // so a community being followed has no followers recorded: the followers collection is empty.
+        // A community with no recorded followers (no actor has followed it) serves an empty followers
+        // collection. (F-24: the followers set exists and is populated by the FollowActivityHandler when
+        // an actor follows the community; here no follow has been recorded, so it is empty.)
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/followers");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -177,6 +178,33 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
         Assert.Empty(JsonDoc.GetItems(doc.RootElement));
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Followers_Page1_IsOrderedCollection_WithFollowerIris()
+    {
+        // Seed the community's followers set (F-24): two remote actors/communities follow the community.
+        // This mirrors the follows-set seeding in Following_Page1 — the followers set is the inverse
+        // direction (follower → community), recorded by the FollowActivityHandler on an inbound follow.
+        var communityIri = new Iri($"{_base}/ap/v1/c/{Community}");
+        var follower1 = new Iri($"https://remote1.example/ap/v1/u/carol");
+        var follower2 = new Iri($"https://remote2.example/ap/v1/c/hub");
+        await Persistence.Communities.AddFollowerAsync(communityIri, follower1);
+        await Persistence.Communities.AddFollowerAsync(communityIri, follower2);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/followers");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("id").GetString());
+
+        // The follower IRIs are present (as bare IRI strings), and totalItems reflects the count.
+        var followerIris = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToHashSet();
+        Assert.Equal(2, followerIris.Count);
+        Assert.Contains(follower1.Value, followerIris);
+        Assert.Contains(follower2.Value, followerIris);
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]

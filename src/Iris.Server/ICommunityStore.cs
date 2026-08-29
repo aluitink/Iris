@@ -99,6 +99,41 @@ public interface ICommunityStore
     public Task<bool> RemoveFollowAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the IRIs of all actors (communities or persons) that follow the community.
+    /// </summary>
+    /// <remarks>
+    /// The community's "followers" set is the inverse of its follows set: when an actor follows a local
+    /// community, the <see cref="FollowActivityHandler"/> records both that the community follows the
+    /// follower (the follows set, so the follower's content reaches the community's members via the
+    /// federation path) and that the follower follows the community (this set, so the community's
+    /// <c>followers</c> collection — <c>GET /c/{name}/followers</c> — lists the follower). This closes
+    /// F-24 (the community's <c>followers</c> collection was always empty because no edge was recorded
+    /// in the follower → community direction).
+    /// </remarks>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the follower IRIs (empty when the community does not exist or has no followers).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetFollowersAsync(Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records that the given actor follows the community. Idempotent: recording an existing follower is a no-op.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="actorIri">The IRI of the actor that follows the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a new follower was recorded; <see langword="false"/> when the actor already followed the community.</returns>
+    public Task<bool> AddFollowerAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a follower recorded for the community (the actor no longer follows the community).
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="actorIri">The IRI of the actor that no longer follows the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a follower was removed; <see langword="false"/> when the actor did not follow the community.</returns>
+    public Task<bool> RemoveFollowerAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the IRIs of all communities this store hosts (the local communities).
     /// </summary>
     /// <param name="ct">Cancellation token.</param>
