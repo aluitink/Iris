@@ -34,11 +34,22 @@ substantial design calls: [decisions/](decisions/README.md).
 ## Remaining work
 
 ### Phase 8 — Sample Docker Composition
-- [ ] Finish the Blazor WASM host for the sample client.
-- [ ] Complete the Dockerfile for the sample Blazor client and serve it through a static host.
-- [ ] Complete the remaining Docker smoke-path and CI wiring.
-- [ ] Validate the compose topology remains stable for local and CI runs.
-- [ ] Keep the smoke script as an opt-in guard when Docker is unavailable.
+
+> Full detailed plan: [SAMPLE_PLAN.md](SAMPLE_PLAN.md). The sample becomes a one-command, self-contained
+> (Docker-only routable addresses) **server + Blazor WASM server-explorer** that is the project's real-world
+> interop test platform (instance→instance and instance→external).
+
+- [ ] Sample server: enable inbound signature validation (federation-ready) + register all seeded actors' keys.
+- [ ] Sample server: richer per-instance seed (distinct actors incl. a `manuallyApprovesFollowers` + one Ed25519 actor, reply threads, per-instance unique content).
+- [ ] Sample server: `samples/SampleServer/README.md` documenting implemented features with pointer information.
+- [ ] Blazor WASM: convert `SampleBlazorClient` to a Blazor WASM app with a DI composition root (`ExplorerSession`/`ClientService`).
+- [ ] Blazor WASM: log on to an instance by WebFinger address + instance switching (local + external).
+- [ ] Blazor WASM: base-URL-vs-IRI-host separation (browser dials host-published ports; IRIs carry service-name hosts).
+- [ ] Blazor WASM: explorer read screens (instance overview, actors directory/search, actor detail, object+replies, community).
+- [ ] Blazor WASM: explorer write screens (post/reply, cross-instance follow, like, moderation) + raw JSON inspector + proxy-fallback screen.
+- [ ] Blazor WASM: Dockerfile (multi-stage → static host) + `iris-ui` compose service (host:8090, routable as `iris-ui`).
+- [ ] Smoke test: UI reachability over `iris-net` + signed cross-container federation (a→b Follow + Accept) + proxy fallback; keep opt-in gate.
+- [ ] Docs: `samples/SampleBlazorClient/README.md` (explorer + external-instance mechanism, no real dev FQDN committed) + `DEPLOYMENT.md` 3-service topology.
 
 ### Phase 11 — Implementation Gaps & Usability Exploration
 - [ ] Finalize the gap register and prioritize the remaining usability issues.
@@ -71,10 +82,12 @@ substantial design calls: [decisions/](decisions/README.md).
 
 ## Near-term priorities
 
-1. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
-2. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
-3. Stand up the live federation test instances for Phase 13.
-4. Use live interop results to update the gap register and roadmap priorities.
+1. Build the Phase 8 sample per [SAMPLE_PLAN.md](SAMPLE_PLAN.md): federation-ready server + rich seed → Blazor
+   WASM server-explorer (logon-by-WebFinger, explore + write, external-instance) → 3-service compose + smoke path.
+2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
+3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
+4. Use the sample (instance→instance + instance→external via dev FQDNs) to feed Phase 13 live-interop results
+   back into the gap register and roadmap priorities.
 
 ## Summary
 
