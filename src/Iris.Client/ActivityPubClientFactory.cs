@@ -82,10 +82,20 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
             Timeout = options.HttpClientTimeout ?? Timeout.InfiniteTimeSpan,
         };
 
+        // Local moderation (F-07 mute): when the home instance's Basic-auth credentials are configured,
+        // the client can perform local, non-federated moderation requests (a mute is not a signed inbox
+        // delivery — it is a Basic-authenticated POST to the actor's own instance). The local-auth
+        // handler is a separate, unsigned pipeline (it must not go through the SigningHandler, which
+        // would throw for a request it cannot sign).
+        var localAuth = options.LocalCredentials is { } localCreds
+            ? new LocalAuthHandler(localCreds, httpHandler)
+            : null;
+
         var caches = options.Caches;
         return new ActivityPubClient(
             httpClient,
             caches?.Actors,
-            caches?.CollectionPages);
+            caches?.CollectionPages,
+            localAuth);
     }
 }

@@ -20,13 +20,15 @@ namespace Iris.Server;
 /// the community feed) so the feed is reproducible for a given set of follows.
 /// </remarks>
 /// <remarks>
-/// <strong>Block filtering (F-07, apply the block edge).</strong> When constructed with a
-/// <see cref="IModerationStore"/>, a follow the actor has <em>blocked</em> (per the store's
-/// <see cref="IModerationStore.GetBlocksAsync(Iri, CancellationToken)"/>) is excluded from the feed:
-/// the block is applied on the blocker's side, so the blocked actor's content does not appear in the
-/// actor's home timeline. When the service is constructed without a moderation store (moderation
-/// disabled) every follow is merged (no filtering). The block check is by the follow's actor IRI (the
-/// edge is recorded on the actor IRI), so it applies uniformly to local and remote follows.
+/// <strong>Block and mute filtering (F-07, apply the moderation edges).</strong> When constructed with
+/// a <see cref="IModerationStore"/>, a follow the actor has <em>blocked</em> (per the store's
+/// <see cref="IModerationStore.GetBlocksAsync(Iri, CancellationToken)"/>) or <em>muted</em> (per
+/// <see cref="IModerationStore.GetMutesAsync(Iri, CancellationToken)"/>) is excluded from the feed: the
+/// moderation is applied on the actor's side, so the other actor's content does not appear in the actor's
+/// home timeline. A block is a hard exclusion (the relationship is severed); a mute is a soft one (the
+/// follow is kept, only its content is hidden). When the service is constructed without a moderation
+/// store (moderation disabled) every follow is merged (no filtering). The check is by the follow's actor
+/// IRI (the edge is recorded on the actor IRI), so it applies uniformly to local and remote follows.
 /// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
@@ -48,8 +50,8 @@ public sealed class FeedService : IFollowFeedService
     /// <param name="client">Fetches a remote followed actor's outbox pages over the wire.</param>
     /// <param name="optionsAccessor">The feed options (pages per actor + max items).</param>
     /// <param name="moderation">The moderation store (F-07): when present, a follow the actor has
-    /// <em>blocked</em> is excluded from the feed. Null disables block filtering (every follow is
-    /// merged).</param>
+    /// <em>blocked</em> or <em>muted</em> is excluded from the feed. Null disables block/mute filtering
+    /// (every follow is merged).</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FeedService(
         IPersistenceProvider persistence,
@@ -84,20 +86,25 @@ public sealed class FeedService : IFollowFeedService
         // Deterministic order across follows (IRI order), like the community feed.
         var ordered = followed.OrderBy(f => f.Value, StringComparer.Ordinal).ToList();
 
-        // F-07 (apply the block edge): the set of follows the actor has blocked. When the moderation
-        // store is present, a blocked follow contributes nothing to the feed (the actor's block is
-        // applied on its side — the blocked actor's content is excluded from the actor's home timeline).
-        // Without a moderation store (moderation disabled), the set is empty and no follow is filtered.
+        // F-07 (apply the block + mute edges): the sets of follows the actor has blocked and muted. When
+        // the moderation store is present, a blocked or muted follow contributes nothing to the feed (the
+        // moderation is applied on the actor's side — the other actor's content is excluded from the
+        // actor's home timeline). A block is a hard exclusion; a mute is a soft one (the follow is kept,
+        // only its content is hidden). Without a moderation store (moderation disabled), both sets are
+        // empty and no follow is filtered.
         var blocked = await _persistence.Moderation
             .GetBlocksAsync(actorIri, ct)
+            .ConfigureAwait(false);
+        var muted = await _persistence.Moderation
+            .GetMutesAsync(actorIri, ct)
             .ConfigureAwait(false);
 
         var feed = new List<IObjectOrLink>();
         foreach (var followIri in ordered)
         {
-            if (blocked.Contains(followIri))
+            if (blocked.Contains(followIri) || muted.Contains(followIri))
             {
-                // The actor blocked this follow: its content is excluded from the feed (F-07).
+                // The actor blocked or muted this follow: its content is excluded from the feed (F-07).
                 continue;
             }
 

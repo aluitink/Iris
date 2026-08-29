@@ -4,7 +4,8 @@ namespace Iris.Server;
 
 /// <summary>
 /// Records and queries moderation relationships (F-07): the directed block edges
-/// <c>blocker → blocked</c> and flag edges <c>flagger → flagged</c> an instance knows about.
+/// <c>blocker → blocked</c>, flag edges <c>flagger → flagged</c>, and mute edges
+/// <c>muter → muted</c> an instance knows about.
 /// </summary>
 /// <remarks>
 /// A <c>Block</c> activity (ActivityPub §5.2.1.3) carries <c>actor</c> = the blocking actor and
@@ -18,6 +19,11 @@ namespace Iris.Server;
 /// </list>
 /// The edge is recorded for <em>either</em> direction of locality: when a <em>local</em> actor blocks
 /// someone, or when someone blocks a <em>local</em> actor (so the local actor knows it is blocked).
+/// A <c>Flag</c> (AS2.0) is the same shape (a moderation report) and is recorded identically when
+/// either party is local. A <c>Mute</c> is Iris-specific (there is no ActivityStreams type): it is a
+/// local moderation decision (a local actor mutes a follow to hide its content from its feed without
+/// severing the follow, the inverse of a block's hard exclusion) recorded from a local, authenticated
+/// request — it is not interpreted from a federated activity.
 /// A production host may swap in a persistent store; the handlers and endpoints depend only on this
 /// interface.
 /// </remarks>
@@ -105,4 +111,47 @@ public interface IModerationStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when the flag edge exists.</returns>
     public Task<bool> HasFlaggedAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a mute edge from <paramref name="muterIri"/> to <paramref name="mutedIri"/> (F-07
+    /// moderation — a local mute). Idempotent (recording the same mute twice is a no-op).
+    /// </summary>
+    /// <param name="muterIri">The IRI of the actor issuing the mute (a local actor).</param>
+    /// <param name="mutedIri">The IRI of the actor being muted (a follow of the muter).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <remarks>
+    /// A mute is a local moderation decision: a local actor hides a follow's content from its feed
+    /// without severing the follow (the inverse of a block's hard exclusion). It is recorded from a
+    /// local, authenticated request — it is not interpreted from a federated activity (there is no
+    /// ActivityStreams <c>Mute</c> type). The mute edge is applied in the muter's followed feed
+    /// (the muted follow's content is hidden).
+    /// </remarks>
+    public Task RecordMuteAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a mute edge (an un-mute).
+    /// </summary>
+    /// <param name="muterIri">The IRI of the actor who issued the mute.</param>
+    /// <param name="mutedIri">The IRI of the actor who was muted.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a mute edge was removed.</returns>
+    public Task<bool> RemoveMuteAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors that <paramref name="muterIri"/> has muted (the actor's
+    /// <c>mutes</c> collection).
+    /// </summary>
+    /// <param name="muterIri">The IRI of the actor whose mutes collection is requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the muted-actor IRIs (possibly empty).</returns>
+    public Task<IReadOnlyList<Iri>> GetMutesAsync(Iri muterIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns whether <paramref name="muterIri"/> has muted <paramref name="mutedIri"/>.
+    /// </summary>
+    /// <param name="muterIri">The IRI of the potential muter.</param>
+    /// <param name="mutedIri">The IRI of the potential muted actor.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when the mute edge exists.</returns>
+    public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default);
 }

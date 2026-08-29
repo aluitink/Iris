@@ -6,21 +6,23 @@ namespace Iris.Server.InMemory;
 /// <summary>
 /// An in-memory <see cref="IModerationStore"/> (F-07) backed by concurrent dictionaries: a forward
 /// index (blocker IRI → set of blocked IRIs) and an inverse index (blocked IRI → set of blocker IRIs)
-/// for block edges, and a forward index (flagger IRI → set of flagged IRIs) for flag edges.
+/// for block edges, a forward index (flagger IRI → set of flagged IRIs) for flag edges, and a forward
+/// index (muter IRI → set of muted IRIs) for mute edges.
 /// </summary>
 /// <remarks>
 /// Ephemeral: moderation edges vanish on restart. Thread-safe. The block indexes are kept in lockstep
 /// (a record removes nothing from the other; a remove clears both), so the forward
 /// (<see cref="IModerationStore.GetBlocksAsync"/>) and inverse
-/// (<see cref="IModerationStore.GetBlockersAsync"/>) queries are both O(1) lookups. The flag index is
-/// forward-only (an actor's <c>flags</c> collection) — there is no inverse flag query (no
-/// delivery-suppression use), so a single forward index suffices.
+/// (<see cref="IModerationStore.GetBlockersAsync"/>) queries are both O(1) lookups. The flag and mute
+/// indexes are forward-only (an actor's <c>flags</c> / <c>mutes</c> collection) — there is no inverse
+/// flag/mute query (no delivery-suppression use), so a single forward index suffices for each.
 /// </remarks>
 public sealed class InMemoryModerationStore : IModerationStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _blocks = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _blockers = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _flags = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _mutes = new();
 
     /// <inheritdoc/>
     public Task RecordBlockAsync(Iri blockerIri, Iri blockedIri, CancellationToken ct = default)
@@ -89,6 +91,35 @@ public sealed class InMemoryModerationStore : IModerationStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(Contains(_flags, flaggerIri, flaggedIri));
+    }
+
+    /// <inheritdoc/>
+    public Task RecordMuteAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        Add(_mutes, muterIri, mutedIri);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveMuteAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Remove(_mutes, muterIri, mutedIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Iri>> GetMutesAsync(Iri muterIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_mutes, muterIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Contains(_mutes, muterIri, mutedIri));
     }
 
     private static void Add(

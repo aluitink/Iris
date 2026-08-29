@@ -199,6 +199,80 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Mutes an actor (F-07 moderation): a local moderation decision that hides
+    /// <paramref name="targetId"/>'s content from <paramref name="actorId"/>'s feed without severing
+    /// the follow (the inverse of a block's hard exclusion). Because there is no ActivityStreams
+    /// <c>Mute</c> type (and a mute is a local, not federated, decision), this is a local,
+    /// Basic-authenticated request to the actor's own instance (<c>POST {actorId}/mutes/{targetId}</c>),
+    /// not a signed delivery to an inbox.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor performing the mute.</param>
+    /// <param name="targetId">The IRI of the actor (a follow of the muter) to mute.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    /// <remarks>
+    /// The request is authenticated by Basic auth (the acting actor's credentials, supplied via
+    /// <see cref="ActivityPubClientOptions.LocalCredentials"/> or the explicit-credentials overload
+    /// <c>MuteAsync(Iri, Iri, ProxyCredentials, CancellationToken)</c>), not by an ActivityPub HTTP
+    /// signature: a mute is not a federated activity, so it is not signed or delivered to an inbox.
+    /// </remarks>
+    public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mutes an actor (F-07 moderation) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor performing the mute.</param>
+    /// <param name="targetId">The IRI of the actor (a follow of the muter) to mute.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes an actor (F-07 moderation): the inverse of <see cref="MuteAsync(Iri, Iri,
+    /// CancellationToken)"/> — a local, Basic-authenticated request to the actor's own instance
+    /// (<c>POST {actorId}/mutes/{targetId}/unmute</c>) that removes the recorded mute edge.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor un-muting.</param>
+    /// <param name="targetId">The IRI of the actor to un-mute (previously muted).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes an actor (F-07 moderation) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor un-muting.</param>
+    /// <param name="targetId">The IRI of the actor to un-mute.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the actors that <paramref name="actorId"/> has muted (F-07 moderation): reads the
+    /// actor's <c>mutes</c> collection (served at <c>actorId.MutesOf()</c>, i.e.
+    /// <c>{actor}/mutes</c>) as a paged <see cref="OrderedCollection"/> of items, so the same
+    /// enumeration/caching semantics apply (read through the <see cref="CollectionPageCache"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose mutes collection is requested.</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>,
+    /// <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the muted actors (as <see cref="IObjectOrLink"/> — a
+    /// <see cref="Link"/> to each muted actor's IRI), in the order the collection yields them.</returns>
+    /// <remarks>
+    /// The <c>mutes</c> collection is a stable, paged collection (page 1 an
+    /// <see cref="OrderedCollection"/> with <c>first</c>; page N&gt;1 an
+    /// <see cref="OrderedCollectionPage"/>), so it is enumerated exactly like any other collection (the
+    /// items are the muted actors' IRIs).
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
     /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
     /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the

@@ -179,6 +179,114 @@ public sealed class FeedServiceTests
         Assert.Equal($"https://{LocalHost}/notes/d-1", IdOf(feed[0]));
     }
 
+    // --- Mute filtering (F-07: apply the mute edge) ----------------------------------
+
+    [Fact]
+    public async Task Feed_MutedLocalFollow_IsExcludedFromFeed()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // Alice muted bob (the mute edge alice → bob): bob's content must not appear in alice's
+            // feed (a soft exclusion — the follow is kept, only its content is hidden).
+            persistence.Moderation.RecordMuteAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, bob, "b-2", "bob 2");
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // bob is followed AND muted: the mute wins, so the feed is empty (bob contributes nothing).
+        Assert.Empty(feed);
+    }
+
+    [Fact]
+    public async Task Feed_MutedRemoteFollow_IsExcludedFromFeed()
+    {
+        var remote = Actor(RemoteHost, "bob");
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                persistence.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+                // Alice muted the remote bob: the mute edge (alice → bob) excludes the remote outbox.
+                persistence.Moderation.RecordMuteAsync(alice, remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages(
+                Page($"{remote.Value}/outbox", [Item("r-1")], next: null))));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The remote bob is muted: its outbox is not merged (the feed is empty).
+        Assert.Empty(feed);
+    }
+
+    [Fact]
+    public async Task Feed_PartialMute_KeepsUnmutedFollows()
+    {
+        // Alice follows bob and dave, mutes only bob: dave's content is kept, bob's is excluded.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var dave = Actor(LocalHost, "dave");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, dave, "Dave");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            persistence.Follows.RecordFollowAsync(alice, dave).GetAwaiter().GetResult();
+            persistence.Moderation.RecordMuteAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, dave, "d-1", "dave 1");
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Only dave's post survives (bob is muted).
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/d-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_MuteDoesNotSeverFollow_UnlikeBlock()
+    {
+        // A mute is a soft exclusion (the follow is kept, only the content is hidden) — unlike a block,
+        // which severs the relationship. Pin the mute edge: bob is still in alice's following (the
+        // follow edge is intact), and removing the mute restores bob's content to the feed.
+        var (service, persistence) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            persistence.Moderation.RecordMuteAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var bob = Actor(LocalHost, "bob");
+
+        // The follow edge survives the mute (a mute does not sever the relationship).
+        Assert.Contains(bob, await persistence.Follows.GetFollowingAsync(alice));
+        // But bob's content is hidden from the feed.
+        Assert.Empty(await service.GetFeedAsync(alice));
+
+        // Un-muting (removing the mute edge) restores bob's content to the feed (the follow was never
+        // severed).
+        await persistence.Moderation.RemoveMuteAsync(alice, bob);
+        var restored = await service.GetFeedAsync(alice);
+        Assert.Single(restored);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(restored[0]));
+    }
+
     [Fact]
     public async Task Feed_NoModerationStore_IncludesAllFollows()
     {
@@ -639,6 +747,24 @@ public sealed class FeedServiceTests
             => Task.FromResult(0);
 
         public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
+            Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> MuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
             Iri actorId,
             CollectionQuery? query = null,
             CancellationToken ct = default)

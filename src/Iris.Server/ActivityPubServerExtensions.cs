@@ -430,13 +430,14 @@ public static class ActivityPubServerExtensions
         // Paged collections: GET /ap/v1/u/{handle}/{collection} where {collection} is one of outbox
         // (the actor's posted activities, newest first), followers (actors following the local actor),
         // following (actors the local actor follows), liked (objects the local actor has liked, F-04),
-        // blocks (actors the local actor has blocked, F-07 moderation), or flags (actors the local
-        // actor has flagged, F-07 moderation). Each serves an
+        // blocks (actors the local actor has blocked, F-07 moderation), flags (actors the local actor
+        // has flagged, F-07 moderation), or mutes (actors the local actor has muted, F-07 moderation).
+        // Each serves an
         // OrderedCollection (page 1, with `first`) or an OrderedCollectionPage (page N>1), paged via
         // ?page=N and ?limit=N, and served through the local collection-page response cache. The
         // {collection} route value is bound as `collectionName` (it is not a query parameter).
         group.MapGet(
-                "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks|flags)}",
+                "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks|flags|mutes)}",
                 (string handle, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
                     LocalCollectionPageCache collectionCache, CancellationToken ct)
@@ -535,6 +536,15 @@ public static class ActivityPubServerExtensions
         // target IRI (slash-containing); the path is reconstructed with Uri.EscapeDataString so the
         // signature's (request-target) component matches the forwarded request.
         group.MapPost("/proxy/{**target}", ProxyHandler).WithName("proxy-endpoint");
+
+        // Local moderation (mute): POST /ap/v1/u/{handle}/mutes/{target} — a local actor records a mute
+        // (F-07); the same route with ?unmute=true removes it. A mute is Iris-specific (no
+        // ActivityStreams type) and is a local moderation decision, so it is not interpreted from a
+        // federated activity: the endpoint authenticates the requesting actor by Basic auth
+        // (IActorCredentialValidator — the same credential seam as the actor document's owner-only
+        // extension and the proxy endpoint) and records/removes the mute edge in the moderation store.
+        // {target} is a catch-all of the absolute IRI of the actor being muted.
+        group.MapPost("/u/{handle}/mutes/{**target}", LocalMuteHandler).WithName("local-mute-endpoint");
 
         return endpoints;
     }
@@ -722,6 +732,75 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Records (or removes) a local mute (F-07). The requesting actor is identified by Basic auth
+    /// (IActorCredentialValidator); the muted actor is the {target} catch-all route value (an absolute
+    /// IRI); <c>?unmute=true</c> removes the mute instead of recording it.
+    /// </summary>
+    /// <remarks>
+    /// A mute is Iris-specific (there is no ActivityStreams <c>Mute</c> type) and is a local moderation
+    /// decision: a local actor hides a follow's content from its feed without severing the follow. It is
+    /// therefore recorded from an authenticated local request — it is not interpreted from a federated
+    /// activity (which the inbox endpoint would reject, the ActivityStreams library deserializing an
+    /// unknown <c>type</c> to a generic <c>Object</c> rather than an <c>Activity</c>). The handler:
+    /// (1) authenticates the actor, (2) resolves the target IRI, and (3) records or removes the mute
+    /// edge in the moderation store (an un-mute is signalled by <c>?unmute=true</c>). The response is
+    /// <c>204</c> on success.
+    /// </remarks>
+    private static async Task<IResult> LocalMuteHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the requesting actor (Basic auth) for this actor's IRI.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Record or remove the mute edge (?unmute=true removes). The mute is idempotent (re-muting is
+        // a no-op); an un-mute of a non-existent mute is also a no-op (both return 204 — the mute's
+        // steady state is authoritative).
+        var remove = context.Request.Query.TryGetValue("unmute", out var unmuteValues)
+            && unmuteValues.Count > 0
+            && string.Equals(unmuteValues[0], "true", StringComparison.OrdinalIgnoreCase);
+        if (remove)
+        {
+            await persistence.Moderation.RemoveMuteAsync(actorIri, target, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Moderation.RecordMuteAsync(actorIri, target, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
     /// existence check, body read + deserialize + cast, and inbox-processor dispatch.
     /// </summary>
@@ -844,6 +923,17 @@ public static class ActivityPubServerExtensions
             if (!flagsExt.ContainsKey("flags"))
             {
                 flagsExt["flags"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/flags");
+            }
+        }
+
+        // Advertise the mutes collection (F-07 moderation): a client reads it to enumerate the actors
+        // the actor has muted (served at /u/{handle}/mutes). A mute is Iris-specific (no ActivityStreams
+        // type), so — like `blocks`/`flags` — it rides in ExtensionData (the same wire shape).
+        {
+            var mutesExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            if (!mutesExt.ContainsKey("mutes"))
+            {
+                mutesExt["mutes"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/mutes");
             }
         }
 
@@ -1197,7 +1287,7 @@ public static class ActivityPubServerExtensions
         }
 
         // Resolve the collection items (newest-first outbox; insertion-ordered followers/following/liked;
-        // IRI-sorted blocks, F-07).
+        // IRI-sorted blocks/flags/mutes, F-07).
         IReadOnlyList<IObjectOrLink> items = collectionName switch
         {
             "outbox" => await persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false),
@@ -1206,6 +1296,7 @@ public static class ActivityPubServerExtensions
             "liked" => ActorIrisToLinks(await persistence.Likes.GetLikedAsync(actorIri, ct).ConfigureAwait(false)),
             "blocks" => ActorIrisToLinks(await persistence.Moderation.GetBlocksAsync(actorIri, ct).ConfigureAwait(false)),
             "flags" => ActorIrisToLinks(await persistence.Moderation.GetFlagsAsync(actorIri, ct).ConfigureAwait(false)),
+            "mutes" => ActorIrisToLinks(await persistence.Moderation.GetMutesAsync(actorIri, ct).ConfigureAwait(false)),
             _ => [],
         };
 

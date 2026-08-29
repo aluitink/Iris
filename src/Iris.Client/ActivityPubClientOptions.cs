@@ -52,4 +52,14 @@ public sealed class ActivityPubClientOptions
     /// actor from these credentials and signs the forwarded request with the actor's key.
     /// </summary>
     public ProxyCredentials? ProxyCredentials { get; set; }
+
+    /// <summary>
+    /// Gets or sets the Basic-auth credentials (username:password) used for local, non-federated
+    /// moderation requests (F-07 mute: <c>POST {actor}/mutes/{target}</c>). A mute is Iris-specific
+    /// (no ActivityStreams type) and is a local decision, so it is authenticated by Basic auth to the
+    /// actor's own instance rather than signed and delivered to an inbox. When null, the local-mute
+    /// overloads that take no explicit credentials throw
+    /// <see cref="InvalidOperationException"/> (call the overload that supplies credentials instead).
+    /// </summary>
+    public ProxyCredentials? LocalCredentials { get; set; }
 }

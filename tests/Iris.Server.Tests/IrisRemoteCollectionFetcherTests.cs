@@ -300,6 +300,24 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> MuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(0);
+
+        public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
+            Iri actorId,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
         /// <inheritdoc/>
         public void Dispose()
         {
