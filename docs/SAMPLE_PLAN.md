@@ -339,8 +339,10 @@ throughout.
   stand-in, a community, follows, notes/reply/like), kept `CreateWebHostBuilder` the
   composition root. Extended `tests/SampleServer.Tests` with 8 federation facts (signed inbox accept
   RSA + Ed25519, unsigned 401, per-actor auth, remote-host boundary, seed edges).
-- **S2 — Sample server README.** `samples/SampleServer/README.md` (Deliverable A) — feature table +
-  pointers + config + seed inventory + test pointers.
+- [x] **S2 — Sample server README** (done). `samples/SampleServer/README.md` (Deliverable A) — what-it-is,
+  quick start (local `dotnet run` + Docker compose + smoke script), logon credential + base URIs,
+  feature → endpoint → library → pointer table, `Iris:` config table, seeded-data inventory, and test
+  pointers (in-process suite + compose smoke).
 - **S3 — Blazor WASM scaffold + composition root.** Convert `SampleBlazorClient` to a Blazor WASM app;
   register `ExplorerSession`/`ClientService` in DI; app shell + routing. Keep the existing console
   composition tests green (or port them).
