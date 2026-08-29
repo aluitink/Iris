@@ -104,6 +104,102 @@ public sealed class FeedServiceTests
         Assert.Equal($"https://{LocalHost}/notes/d-1", IdOf(feed[2]));
     }
 
+    // --- Block filtering (F-07: apply the block edge) ---------------------------------
+
+    [Fact]
+    public async Task Feed_BlockedLocalFollow_IsExcludedFromFeed()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // Alice blocked bob (the block edge alice → bob): bob's content must not appear in alice's feed.
+            persistence.Moderation.RecordBlockAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, bob, "b-2", "bob 2");
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // bob is followed AND blocked: the block wins, so the feed is empty (bob contributes nothing).
+        Assert.Empty(feed);
+    }
+
+    [Fact]
+    public async Task Feed_BlockedRemoteFollow_IsExcludedFromFeed()
+    {
+        var remote = Actor(RemoteHost, "bob");
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                persistence.Follows.RecordFollowAsync(alice, remote).GetAwaiter().GetResult();
+                // Alice blocked the remote bob: the block edge (alice → bob) excludes the remote outbox.
+                persistence.Moderation.RecordBlockAsync(alice, remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages(
+                Page($"{remote.Value}/outbox", [Item("r-1")], next: null))));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The remote bob is blocked: its outbox is not merged (the feed is empty).
+        Assert.Empty(feed);
+    }
+
+    [Fact]
+    public async Task Feed_PartialBlock_KeepsUnblockedFollows()
+    {
+        // Alice follows bob and dave, blocks only bob: dave's content is kept, bob's is excluded.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var dave = Actor(LocalHost, "dave");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, dave, "Dave");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            persistence.Follows.RecordFollowAsync(alice, dave).GetAwaiter().GetResult();
+            persistence.Moderation.RecordBlockAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob 1");
+            AddPost(persistence, dave, "d-1", "dave 1");
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Only dave's post survives (bob is blocked).
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/d-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_NoModerationStore_IncludesAllFollows()
+    {
+        // Without a moderation store (moderation disabled), a recorded block does not exist, so every
+        // follow is merged (the pre-F-07 behavior). The service is built WITHOUT a moderation store.
+        var persistence = new InMemoryPersistenceProvider();
+        var alice = Actor(LocalHost, "alice");
+        var bob = Actor(LocalHost, "bob");
+        SeedActor(persistence, bob, "Bob");
+        await persistence.Follows.RecordFollowAsync(alice, bob);
+        AddPost(persistence, bob, "b-1", "bob 1");
+        var localActors = new LocalOnlyResolver(persistence);
+        var service = new FeedService(persistence, localActors, new StubActorDocumentFetcher(_ => null),
+            new StubClient(Pages()), Options.Create(new FeedOptions()));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(feed[0]));
+    }
+
     // --- Remote follows --------------------------------------------------------------
 
     [Fact]

@@ -279,7 +279,9 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<ILocalActorResolver>(),
                 sp.GetRequiredService<IActorDocumentFetcher>(),
                 factory.Create(clientOptions, new HttpClientHandler()),
-                sp.GetRequiredService<IOptions<FeedOptions>>());
+                sp.GetRequiredService<IOptions<FeedOptions>>(),
+                // F-07 (apply the block edge): a follow the actor has blocked is excluded from its feed.
+                sp.GetRequiredService<IPersistenceProvider>().Moderation);
         });
 
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
@@ -299,6 +301,9 @@ public static class ActivityPubServerExtensions
                 // NoopActorDocumentFetcher (no instance actor configured) the delivery service simply
                 // falls back to the per-actor inbox.
                 sp.GetRequiredService<IActorDocumentFetcher>(),
+                // F-07 (apply the block edge): suppress an actor-targeted delivery when the recipient
+                // has blocked the signing actor (a blocker does not want content from a blocked actor).
+                sp.GetRequiredService<IPersistenceProvider>().Moderation,
                 sp.GetRequiredService<ILogger<DeliveryService>>()));
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
 

@@ -116,6 +116,16 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     continue;
                 }
 
+                // F-07 (apply the block edge): a remote follower who has blocked the author does not
+                // want the author's content — skip the delivery (the follower's own block edge, recorded
+                // when its Block arrived in the author's inbox, is read here).
+                if (await _persistence.Moderation
+                        .IsBlockedAsync(followerIri, recipient, ct)
+                        .ConfigureAwait(false))
+                {
+                    continue;
+                }
+
                 await _delivery
                     .DeliverToActorAsync(followerIri, activity, recipient, ct)
                     .ConfigureAwait(false);

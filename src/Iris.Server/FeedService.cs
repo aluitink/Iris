@@ -19,6 +19,15 @@ namespace Iris.Server;
 /// remote must not fail the whole feed. The merge is in IRI order across follows (deterministic, like
 /// the community feed) so the feed is reproducible for a given set of follows.
 /// </remarks>
+/// <remarks>
+/// <strong>Block filtering (F-07, apply the block edge).</strong> When constructed with a
+/// <see cref="IModerationStore"/>, a follow the actor has <em>blocked</em> (per the store's
+/// <see cref="IModerationStore.GetBlocksAsync(Iri, CancellationToken)"/>) is excluded from the feed:
+/// the block is applied on the blocker's side, so the blocked actor's content does not appear in the
+/// actor's home timeline. When the service is constructed without a moderation store (moderation
+/// disabled) every follow is merged (no filtering). The block check is by the follow's actor IRI (the
+/// edge is recorded on the actor IRI), so it applies uniformly to local and remote follows.
+/// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
     private readonly IPersistenceProvider _persistence;
@@ -26,24 +35,29 @@ public sealed class FeedService : IFollowFeedService
     private readonly IActorDocumentFetcher _actorDocs;
     private readonly IActivityPubClient _client;
     private readonly FeedOptions _options;
+    private readonly IModerationStore? _moderation;
 
     /// <summary>
     /// Initializes a new followed-feed service.
     /// </summary>
-    /// <param name="persistence">The persistence provider (the <see cref="IFollowStore"/> and
-    /// <see cref="IActivityStore"/>).</param>
+    /// <param name="persistence">The persistence provider (the <see cref="IFollowStore"/>,
+    /// <see cref="IActivityStore"/>, and <see cref="IModerationStore"/>).</param>
     /// <param name="localActors">Resolves whether a followed actor is local (its outbox is read from the
     /// local store) or remote (its outbox is fetched over the wire).</param>
     /// <param name="actorDocs">Fetches a remote followed actor's document to read its <c>outbox</c> IRI.</param>
     /// <param name="client">Fetches a remote followed actor's outbox pages over the wire.</param>
     /// <param name="optionsAccessor">The feed options (pages per actor + max items).</param>
+    /// <param name="moderation">The moderation store (F-07): when present, a follow the actor has
+    /// <em>blocked</em> is excluded from the feed. Null disables block filtering (every follow is
+    /// merged).</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FeedService(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         IActorDocumentFetcher actorDocs,
         IActivityPubClient client,
-        IOptions<FeedOptions> optionsAccessor)
+        IOptions<FeedOptions> optionsAccessor,
+        IModerationStore? moderation = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
@@ -55,6 +69,7 @@ public sealed class FeedService : IFollowFeedService
         _actorDocs = actorDocs;
         _client = client;
         _options = optionsAccessor.Value;
+        _moderation = moderation;
     }
 
     /// <inheritdoc/>
@@ -69,9 +84,23 @@ public sealed class FeedService : IFollowFeedService
         // Deterministic order across follows (IRI order), like the community feed.
         var ordered = followed.OrderBy(f => f.Value, StringComparer.Ordinal).ToList();
 
+        // F-07 (apply the block edge): the set of follows the actor has blocked. When the moderation
+        // store is present, a blocked follow contributes nothing to the feed (the actor's block is
+        // applied on its side — the blocked actor's content is excluded from the actor's home timeline).
+        // Without a moderation store (moderation disabled), the set is empty and no follow is filtered.
+        var blocked = await _persistence.Moderation
+            .GetBlocksAsync(actorIri, ct)
+            .ConfigureAwait(false);
+
         var feed = new List<IObjectOrLink>();
         foreach (var followIri in ordered)
         {
+            if (blocked.Contains(followIri))
+            {
+                // The actor blocked this follow: its content is excluded from the feed (F-07).
+                continue;
+            }
+
             IReadOnlyList<IObjectOrLink> items =
                 await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
                     ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)

@@ -1,6 +1,7 @@
 using System;
 using Iris.Core;
 using Iris.Server;
+using Iris.Server.InMemory;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -295,6 +296,74 @@ public sealed class DeliveryQueueAndServiceTests
         Assert.NotNull(job);
         Assert.Equal(new Iri("https://a.domain.local/ap/v1/shared-inbox"), job!.InboxIri);
         Assert.Equal(ActorIri, job.ActorIri);
+    }
+
+    // --- Service: block suppression (F-07: apply the block edge) ----------------------
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_RecipientBlockedSigner_SuppressesDelivery()
+    {
+        // The recipient (bob) blocked the signing actor (alice): the block edge bob → alice means bob
+        // does not want content from alice, so the delivery is suppressed (no job enqueued).
+        var queue = new InMemoryDeliveryQueue();
+        var moderation = new InMemoryModerationStore();
+        var bob = new Iri("https://b.domain.local/ap/v1/u/bob");
+        await moderation.RecordBlockAsync(bob, ActorIri);
+        var service = new DeliveryService(queue, null, moderation, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(bob, BuildCreate("blocked-1"), ActorIri);
+
+        // The queue is empty (no job was enqueued). The bounded queue's TryDequeueAsync blocks when
+        // empty, so emptiness is asserted via Count.
+        Assert.Equal(0, queue.Count);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_NoBlock_DeliversNormally()
+    {
+        // No block edge: the delivery is enqueued (the moderation store is present but empty).
+        var queue = new InMemoryDeliveryQueue();
+        var moderation = new InMemoryModerationStore();
+        var bob = new Iri("https://b.domain.local/ap/v1/u/bob");
+        var service = new DeliveryService(queue, null, moderation, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(bob, BuildCreate("ok-1"), ActorIri);
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Equal(bob.InboxOf(), job!.InboxIri);
+        Assert.Equal(ActorIri, job.ActorIri);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_InstanceActor_SkipsBlockCheck()
+    {
+        // A delivery signed as the instance actor (actorIri is null) is never suppressed, even when the
+        // recipient has blocked the instance actor (the instance actor is not the blocked party).
+        var queue = new InMemoryDeliveryQueue();
+        var moderation = new InMemoryModerationStore();
+        var bob = new Iri("https://b.domain.local/ap/v1/u/bob");
+        await moderation.RecordBlockAsync(bob, ActorIri); // bob blocked alice (the instance actor here).
+        var service = new DeliveryService(queue, null, moderation, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(bob, BuildCreate("instance-1")); // no acting actor → instance actor
+
+        var job = await queue.TryDequeueAsync();
+        Assert.NotNull(job);
+        Assert.Null(job!.ActorIri);
+    }
+
+    [Fact]
+    public async Task Service_DeliverToActorAsync_NoModerationStore_NeverSuppresses()
+    {
+        // Without a moderation store (moderation disabled), a delivery is never suppressed (pre-F-07).
+        var queue = new InMemoryDeliveryQueue();
+        var bob = new Iri("https://b.domain.local/ap/v1/u/bob");
+        var service = new DeliveryService(queue, null, NullLogger<DeliveryService>.Instance);
+
+        await service.DeliverToActorAsync(bob, BuildCreate("nomod-1"), ActorIri);
+
+        Assert.NotNull(await queue.TryDequeueAsync());
     }
 
     // --- Helpers ----------------------------------------------------------------------

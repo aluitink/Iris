@@ -140,6 +140,45 @@ public sealed class CreateActivityHandlerTests
         Assert.Contains(create.Id, OutboxIds(await persistence.Activities.GetOutboxAsync(LocalPerson)));
     }
 
+    // --- F-07: apply the block edge (skip a follower who blocked the author) --------------
+
+    [Fact]
+    public async Task HandleAsync_RemoteFollowerBlockedAuthor_SkipsDeliveryToFollower()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemoteFollower, LocalPerson); // erin follows bob
+        // erin (remote) blocked bob (local): the block edge erin → bob means erin does not want bob's content.
+        await persistence.Moderation.RecordBlockAsync(RemoteFollower, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The post is surfaced in the author's outbox (J-8) but NOT federated to the blocking follower.
+        Assert.Contains(create.Id, OutboxIds(await persistence.Activities.GetOutboxAsync(LocalPerson)));
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RemoteFollowerDidNotBlock_DeliversNormally()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemoteFollower, LocalPerson); // erin follows bob
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // No block edge → the post is federated to the remote follower's inbox (J-18).
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(RemoteFollower.InboxOf(), job.InboxIri);
+        Assert.Equal(LocalPerson, job.ActorIri);
+    }
+
     // --- Remote person: not this instance's concern ---------------------------------------
 
     [Fact]

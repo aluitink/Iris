@@ -190,6 +190,36 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     (delivered to the target's inbox, signature-validated) records the edge, the `blocks` endpoint
     serves it, a second block appends a second item, and the client's `GetBlocksAsync` reads it back.
 
+## Slice 12.14 — F-07 moderation: apply the block edge (feed exclusion + delivery suppression)
+
+ - `FeedService` (the F-14 followed feed, `GET /ap/v1/u/{handle}/feed`) now reads the actor's `blocks`
+   set from `persistence.Moderation.GetBlocksAsync(actorIri)` and **skips any follow the actor has
+   blocked** when merging outboxes — a blocked actor's content (local or remote) no longer appears in the
+   actor's home timeline. The check is by the follow's actor IRI (the edge is recorded on the actor IRI),
+   so it is uniform across local and remote follows.
+ - `CreateActivityHandler` (J-18 outbound federation) skips a remote follower who has **blocked the
+   author** (`Moderation.IsBlockedAsync(follower, author)`) before scheduling that follower's delivery;
+   the post is still surfaced in the author's outbox (J-8). `DeliveryService.DeliverToActorAsync` (the
+   generic actor-targeted seam) additionally suppresses a delivery **signed as a local actor** when the
+   recipient has blocked the signing actor — a boundary guard; a delivery signed as the instance actor
+   (null acting actor) is never suppressed.
+ - DI: `AddActivityPubServer` passes `persistence.Moderation` into the `FeedService` and `DeliveryService`
+   registrations. Both services take an **optional** `IModerationStore` (null disables the feature →
+   pre-F-07 behavior), so a host without a moderation store and the many direct-construction tests are
+   unchanged; the default wiring always registers the store, so the feature is on by default.
+ - *Scope note:* this is the **application** of the edge Slice 12.13 recorded (no new write path or wire
+   surface). The **un-block** (`Undo` of `Block`, via the existing `IModerationStore.RemoveBlockAsync`)
+   and `Mute` / `Flag` remain open; F-06 (shared-inbox / relay) is the next item after F-07.
+  - `FeedServiceTests` (4) covers feed exclusion in isolation (blocked local follow, blocked remote
+    follow, partial block keeps unblocked follows, no-moderation-store includes all).
+    `DeliveryQueueAndServiceTests` (4) covers delivery suppression (recipient-blocked-signer suppresses,
+    no block delivers, instance-actor skips the check, no-moderation-store never suppresses) — the
+    suppressed case is asserted via `queue.Count == 0` (the bounded queue's `TryDequeueAsync` blocks when
+    empty). `CreateActivityHandlerTests` (2) covers the J-18 skip (follower who blocked the author is not
+    federated to; a follower who did not block is). `BlocksCollectionIntegrationTests` (1) is the
+    end-to-end proof: a signed inbound `Block` of a followed actor excludes that actor's post from the
+    blocker's followed feed over the wire (present before, absent after).
+
   ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.

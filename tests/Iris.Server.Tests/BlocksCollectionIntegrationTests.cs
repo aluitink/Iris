@@ -177,6 +177,54 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         Assert.Equal(_carolActorIri.Value, blocked[0].Value);
     }
 
+    // --- F-07 (apply the block edge): a blocked follow is excluded from the feed -------
+
+    [Fact]
+    public async Task InboundBlock_BlocksFollow_IsExcludedFromFeed()
+    {
+        // bob follows carol and carol has a post in her outbox (so bob's feed would include it).
+        await _persistence.Follows.RecordFollowAsync(_bobActorIri, _carolActorIri);
+        const string noteIri = "https://b.domain.local/ap/v1/u/carol/notes/1";
+        await _persistence.Activities.AddToOutboxAsync(_carolActorIri, new Create
+        {
+            Id = "https://b.domain.local/ap/v1/u/carol/creates/1",
+            Actor = [new Link { Href = new Uri(_carolActorIri.Value) }],
+            Object = [new Note { Id = noteIri, Content = ["carol post"] }],
+        });
+
+        // Sanity: before the block, carol's post IS in bob's followed feed.
+        var before = await FeedNoteIrisAsync(_bobActorIri);
+        Assert.Contains(noteIri, before);
+
+        // bob blocks carol: the Block (actor = bob, object = carol) is delivered to carol's inbox.
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        await client.BlockAsync(_bobActorIri, _carolActorIri);
+
+        // The block edge is applied: carol's content is now excluded from bob's followed feed.
+        var after = await FeedNoteIrisAsync(_bobActorIri);
+        Assert.DoesNotContain(noteIri, after);
+    }
+
+    /// <summary>
+    /// Reads bob's followed feed over the wire and returns the IRIs of the content objects (the
+    /// <c>Note</c>s) it contains. The feed's items are the followed actors' <c>Create</c>s (objects);
+    /// each item's embedded note IRI is read from its <c>object</c> (a one-or-many array of one, or a
+    /// bare object).
+    /// </summary>
+    private async Task<IReadOnlyList<string>> FeedNoteIrisAsync(Iri actorIri)
+    {
+        var response = await _http.GetAsync($"https://{BHost}/ap/v1/u/{Bob}/feed");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return JsonDoc.GetItems(doc.RootElement)
+            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("object", out var obj))
+            .Select(e => e.GetProperty("object"))
+            .Select(o => o.ValueKind == JsonValueKind.Array
+                ? o.EnumerateArray().First().GetProperty("id").GetString()!
+                : o.GetProperty("id").GetString()!)
+            .ToList();
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     private static IActivityPubClient BuildDeliveryClient(
