@@ -117,6 +117,26 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Un-blocks an actor (F-07 moderation): builds an <see cref="Undo"/> of the
+    /// <see cref="Block"/> <paramref name="actorId"/> made of <paramref name="targetId"/> and delivers
+    /// it to the target's inbox (the inverse of <see cref="BlockAsync"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor un-blocking (must match the client's signing identity
+    /// so the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor to un-block (the actor previously blocked).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the previously-blocked actor's
+    /// inbox, so the receiving instance can remove the recorded edge) and is signed by the pipeline. Its
+    /// <c>object</c> references the original <see cref="Block"/> by IRI (the same deterministic
+    /// <c>{actor}/blocks/{target}</c> IRI <see cref="BlockAsync"/> mints), and the <see cref="Undo"/>
+    /// itself gets a deterministic, unique-per-(actor,target) IRI so a retried un-block dedupes on the
+    /// receiver.
+    /// </remarks>
+    public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
     /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
     /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the

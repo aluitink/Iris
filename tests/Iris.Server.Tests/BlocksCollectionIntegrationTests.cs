@@ -205,6 +205,38 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         Assert.DoesNotContain(noteIri, after);
     }
 
+    // --- F-07 (un-block): an Undo of a Block removes the edge (and re-includes the feed) --
+
+    [Fact]
+    public async Task Unblock_AfterBlock_RemovesEdgeAndReIncludesFeed()
+    {
+        // bob follows carol and carol has a post in her outbox (so bob's feed includes it).
+        await _persistence.Follows.RecordFollowAsync(_bobActorIri, _carolActorIri);
+        const string noteIri = "https://b.domain.local/ap/v1/u/carol/notes/1";
+        await _persistence.Activities.AddToOutboxAsync(_carolActorIri, new Create
+        {
+            Id = "https://b.domain.local/ap/v1/u/carol/creates/1",
+            Actor = [new Link { Href = new Uri(_carolActorIri.Value) }],
+            Object = [new Note { Id = noteIri, Content = ["carol post"] }],
+        });
+
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+
+        // bob blocks carol (202), the edge is recorded, and carol's post drops out of bob's feed.
+        Assert.Equal(202, await client.BlockAsync(_bobActorIri, _carolActorIri));
+        Assert.True(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
+        Assert.DoesNotContain(noteIri, await FeedNoteIrisAsync(_bobActorIri));
+
+        // bob un-blocks carol: the Undo of the Block (actor = bob, object = the original Block) is
+        // delivered to carol's inbox; the instance removes the recorded edge.
+        Assert.Equal(202, await client.UnblockAsync(_bobActorIri, _carolActorIri));
+        Assert.False(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
+        Assert.Empty(await _persistence.Moderation.GetBlocksAsync(_bobActorIri));
+
+        // The edge is gone, so carol's post reappears in bob's followed feed.
+        Assert.Contains(noteIri, await FeedNoteIrisAsync(_bobActorIri));
+    }
+
     /// <summary>
     /// Reads bob's followed feed over the wire and returns the IRIs of the content objects (the
     /// <c>Note</c>s) it contains. The feed's items are the followed actors' <c>Create</c>s (objects);

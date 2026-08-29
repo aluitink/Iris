@@ -209,6 +209,26 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // An un-block is the ActivityStreams inverse of a Block: an Undo whose object references the
+        // original Block by IRI. The Undo is delivered to targetId.InboxOf() (the previously-blocked
+        // actor's inbox, so the receiving instance removes the edge) and is signed by the pipeline as
+        // actorId. The object IRI reuses BlockAsync's deterministic {actor}/blocks/{target} IRI so it
+        // references exactly the block that was recorded; the Undo gets its own deterministic
+        // unique-per-(actor,target) IRI so a retried un-block dedupes on the receiver.
+        var blockIri = new Iri($"{actorId.Value}/blocks/{targetId.Value}");
+        var undo = new Undo
+        {
+            Id = $"{actorId.Value}/unblocks/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = blockIri.Uri }],
+        };
+
+        return DeliverAsync(targetId.InboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
     {
         // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:

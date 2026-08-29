@@ -150,6 +150,100 @@ public sealed class UndoActivityHandlerTests
         Assert.True(await persistence.Follows.IsFollowingAsync(LocalPerson, RemoteTarget));
     }
 
+    // --- Un-block (F-07): Undo of a Block removes the block edge ---------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalBlockerUndoesBlock_RemovesBlockEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // bob (local) blocks alice (remote): the edge is recorded and the Block is stored, then the
+        // Block is undone (an un-block).
+        var block = BuildBlock(LocalPerson, RemoteTarget);
+        await persistence.Moderation.RecordBlockAsync(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(block);
+
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(block)), BuildUndo(block));
+
+        // The block edge is removed (bob no longer has alice in his blocks).
+        Assert.False(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_BlockOfLocalUndone_RemovesBlockEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // alice (remote) blocked bob (local) — the edge is recorded (bob is blocked). bob (the local
+        // recipient) undoes the block he made of alice is the symmetric case; here the *remote* blocker
+        // is undone by a remote Undo, but the removal is still scoped to the recorded edge. We assert the
+        // inverse query (who blocked bob) is cleared when the edge is removed.
+        var block = BuildBlock(RemoteTarget, LocalPerson);
+        await persistence.Moderation.RecordBlockAsync(RemoteTarget, LocalPerson);
+        await persistence.Activities.PutActivityAsync(block);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, BuildUndo(block)), BuildUndo(block));
+
+        // The edge is removed: bob is no longer blocked by alice.
+        Assert.False(await persistence.Moderation.IsBlockedAsync(RemoteTarget, LocalPerson));
+        Assert.Empty(await persistence.Moderation.GetBlockersAsync(LocalPerson));
+    }
+
+    [Fact]
+    public async Task HandleAsync_BlockNotStored_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Moderation.RecordBlockAsync(LocalPerson, RemoteTarget);
+
+        // The Undo references a Block that was never stored → the edge cannot be resolved → no-op.
+        var block = BuildBlock(LocalPerson, RemoteTarget);
+        // (deliberately not PutActivityAsync)
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(block)), BuildUndo(block));
+
+        // The edge is untouched.
+        Assert.True(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_UnknownBlockIri_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Moderation.RecordBlockAsync(LocalPerson, RemoteTarget);
+
+        // The Undo references a block IRI that does not exist in the store → no-op.
+        var unknownBlockIri = new Iri($"{LocalPerson}/blocks/{RemoteTarget}");
+        var undo = BuildUndoReferencing(unknownBlockIri);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, undo), undo);
+
+        Assert.True(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_UndoOfBlock_DoesNotTouchFollowEdges()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Follows.RecordFollowAsync(LocalPerson, RemoteTarget);
+        await persistence.Moderation.RecordBlockAsync(LocalPerson, RemoteTarget);
+
+        // An un-block must only clear the block edge, leaving the follow edge intact.
+        var block = BuildBlock(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(block);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(block)), BuildUndo(block));
+
+        Assert.False(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
+        Assert.True(await persistence.Follows.IsFollowingAsync(LocalPerson, RemoteTarget));
+    }
+
     // --- Remote recipient: not this instance's concern --------------------------------------
 
     [Fact]
@@ -214,14 +308,21 @@ public sealed class UndoActivityHandlerTests
         Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
 
-    private static Undo BuildUndo(Follow follow)
+    private static Block BuildBlock(Iri blockerIri, Iri blockedIri) => new()
     {
-        var actorIri = follow.Actor!.First().ResolveObjectIri()!.Value;
+        Id = $"{blockerIri}/blocks/{blockedIri.Value}",
+        Actor = [new Link { Href = new Uri(blockerIri.Value) }],
+        Object = [new Link { Href = new Uri(blockedIri.Value) }],
+    };
+
+    private static Undo BuildUndo(Activity activity)
+    {
+        var actorIri = activity.Actor!.First().ResolveObjectIri()!.Value;
         return new Undo
         {
-            Id = $"{actorIri}/undoes/{follow.Id}",
+            Id = $"{actorIri}/undoes/{activity.Id}",
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
-            Object = [new Link { Href = new Uri(follow.Id!) }],
+            Object = [new Link { Href = new Uri(activity.Id!) }],
         };
     }
 

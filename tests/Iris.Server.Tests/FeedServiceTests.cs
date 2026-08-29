@@ -629,6 +629,9 @@ public sealed class FeedServiceTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(0);
+
         public void Dispose()
         {
         }
