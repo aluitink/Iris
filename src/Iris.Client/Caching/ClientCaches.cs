@@ -1,4 +1,4 @@
-namespace Iris.Client;
+namespace Iris.Client.Caching;
 
 /// <summary>
 /// The optional client-side caches an <see cref="ActivityPubClient"/> and <see cref="WebFingerClient"/>

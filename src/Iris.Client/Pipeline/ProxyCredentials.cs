@@ -1,4 +1,4 @@
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// The Basic-auth credentials a client uses to authenticate to the proxy-fallback endpoint.

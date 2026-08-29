@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Auth;
 
 /// <summary>
 /// An <see cref="IKeyProvider"/> backed by an in-memory <see cref="IKeyStore"/>.

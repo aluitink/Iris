@@ -5,9 +5,9 @@ using Iris.Core;
 namespace Iris.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="Iris.Client.WebFingerClient"/> (implements
-/// <see cref="Iris.Client.IDiscoveryService"/> via
-/// <see cref="Iris.Client.WebFingerDiscoveryService"/>).
+/// Unit tests for <see cref="Iris.Client.Discovery.WebFingerClient"/> (implements
+/// <see cref="Iris.Client.Discovery.IDiscoveryService"/> via
+/// <see cref="Iris.Client.Discovery.WebFingerDiscoveryService"/>).
 /// </summary>
 public class WebFingerClientTests
 {

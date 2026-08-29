@@ -4,7 +4,7 @@ using System.Text.Json;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
-namespace Iris.Client;
+namespace Iris.Client.Auth;
 
 /// <summary>
 /// An <see cref="IClientAuthenticator"/> that authenticates with HTTP Basic auth. It fetches the

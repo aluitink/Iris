@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Discovery;
 
 /// <summary>
 /// Caches WebFinger resolution results (account → actor IRI) by the account IRI, using the

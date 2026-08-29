@@ -26,8 +26,8 @@ namespace Iris.Server;
 /// falls back to <see cref="ActivityPubServerOptions.InstanceActorId"/> — the "system key for automated
 /// events". The acting actor is communicated to the <see cref="SigningHandler"/> via the
 /// <c>X-Iris-Actor</c> request header (which the handler treats as a per-request override of its default
-/// <see cref="Iris.Client.SigningHandler.ActorId"/>); the handler resolves that actor's key from the
-/// <see cref="Iris.Client.IKeyProvider"/>.
+/// <see cref="Iris.Client.Pipeline.SigningHandler.ActorId"/>); the handler resolves that actor's key from the
+/// <see cref="Iris.Client.Auth.IKeyProvider"/>.
 /// </remarks>
 /// <remarks>
 /// <strong>Failure policy (F-22 at-least-once delivery):</strong> a delivery that fails (network error

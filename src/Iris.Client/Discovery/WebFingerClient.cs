@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Discovery;
 
 /// <summary>
 /// Performs WebFinger (RFC 8410 / ActivityPub §3) discovery: resolves an account handle

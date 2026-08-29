@@ -1,7 +1,7 @@
 using System.Net;
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that retries <em>idempotent</em> ActivityPub requests

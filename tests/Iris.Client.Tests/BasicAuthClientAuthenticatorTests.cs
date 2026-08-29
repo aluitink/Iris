@@ -8,7 +8,7 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="Iris.Client.BasicAuthClientAuthenticator"/> (implements
+/// Unit tests for <see cref="Iris.Client.Auth.BasicAuthClientAuthenticator"/> (implements
 /// <see cref="IClientAuthenticator"/>): the Basic-auth → actor-doc-with-privateKey → loaded
 /// <see cref="KeyPair"/> flow.
 /// </summary>

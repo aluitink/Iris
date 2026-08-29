@@ -234,13 +234,13 @@ public class ServerCachingTests
         var sut = new WebFingerCache();
         Assert.Equal(CachePolicy.WebFinger.Ttl, sut.Policy.Ttl);
 
-        var hit = new Iris.Client.WebFingerHit(
+        var hit = new Iris.Client.Discovery.WebFingerHit(
             new Iri("acct:bob@remote.test"),
             new Iri("https://remote.test/actor"));
         var (value, _, wasHit) = await sut.GetAsync(
             new Iri("acct:bob@remote.test"),
             false,
-            _ => Task.FromResult<Iris.Client.WebFingerHit?>(hit));
+            _ => Task.FromResult<Iris.Client.Discovery.WebFingerHit?>(hit));
 
         Assert.Equal(hit, value);
         Assert.False(wasHit);

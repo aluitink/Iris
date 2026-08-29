@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Auth;
 
 /// <summary>
 /// Resolves the signing <see cref="IIdentity"/> for a given actor IRI.

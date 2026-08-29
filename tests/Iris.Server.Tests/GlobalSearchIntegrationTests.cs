@@ -208,7 +208,7 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
         var client = new ActivityPubClient(
             new HttpClient(_server.CreateHandler(), disposeHandler: false),
             new ActorCache(),
-            new Iris.Client.CollectionPageCache());
+            new Iris.Client.Collections.CollectionPageCache());
 
         var items = new List<string?>();
         await using (var enumerator = client.SearchAsync(new Iri($"{_base}/ap/v1"), "garden", new SearchOptions { Limit = 10 }).GetAsyncEnumerator())

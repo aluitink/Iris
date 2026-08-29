@@ -1,4 +1,4 @@
-namespace Iris.Client;
+namespace Iris.Client.Collections;
 
 /// <summary>
 /// Options for a collection enumeration request.

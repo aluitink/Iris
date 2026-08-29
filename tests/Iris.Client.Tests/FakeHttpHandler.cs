@@ -6,7 +6,7 @@ namespace Iris.Client.Tests;
 /// <summary>
 /// A recording <see cref="HttpMessageHandler"/> that returns a pre-configured response and
 /// captures the outgoing request for assertions. Used in place of a live server so the
-/// <see cref="Iris.Client.SigningHandler"/> pipeline can be exercised end-to-end in unit tests.
+/// <see cref="Iris.Client.Pipeline.SigningHandler"/> pipeline can be exercised end-to-end in unit tests.
 /// </summary>
 public sealed class FakeHttpHandler : HttpMessageHandler
 {

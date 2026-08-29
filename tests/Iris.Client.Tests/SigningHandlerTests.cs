@@ -5,7 +5,7 @@ using Iris.Core;
 namespace Iris.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="Iris.Client.SigningHandler"/>: it adds the <c>Date</c> and
+/// Unit tests for <see cref="Iris.Client.Pipeline.SigningHandler"/>: it adds the <c>Date</c> and
 /// <c>Signature</c> headers and produces a signature that <see cref="HttpSignatureVerifier"/>
 /// can verify (for both the bodyless ClientToServer profile and the body-carrying
 /// ServerToServer profile).

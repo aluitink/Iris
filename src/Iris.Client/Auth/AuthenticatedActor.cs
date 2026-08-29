@@ -1,7 +1,7 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
-namespace Iris.Client;
+namespace Iris.Client.Auth;
 
 /// <summary>
 /// The result of authenticating a session: the owner's actor document (including the

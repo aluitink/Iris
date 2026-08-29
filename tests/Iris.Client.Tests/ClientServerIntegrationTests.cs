@@ -6,8 +6,8 @@ namespace Iris.Client.Tests;
 /// <summary>
 /// Integration tests: the <strong>real</strong> <see cref="Iris.Client.ActivityPubClient"/> (built by the
 /// real <see cref="Iris.Client.ActivityPubClientFactory"/>, so its full pipeline —
-/// <see cref="Iris.Client.RetryHandler"/> → <see cref="Iris.Client.JsonLdHandler"/> →
-/// <see cref="Iris.Client.SigningHandler"/> — is active) exercised against a live in-process
+/// <see cref="Iris.Client.Pipeline.RetryHandler"/> → <see cref="Iris.Client.Pipeline.JsonLdHandler"/> →
+/// <see cref="Iris.Client.Pipeline.SigningHandler"/> — is active) exercised against a live in-process
 /// <see cref="FakeActivityPubServer"/> over a genuine HTTP stack.
 /// </summary>
 /// <remarks>

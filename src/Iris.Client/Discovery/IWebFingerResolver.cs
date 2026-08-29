@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Discovery;
 
 /// <summary>
 /// Resolves a remote account (WebFinger <c>resource</c>, e.g. <c>acct:bob@b.test</c>) to the actor IRI

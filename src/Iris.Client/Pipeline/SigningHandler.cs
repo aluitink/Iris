@@ -2,7 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that signs outgoing ActivityPub requests with the

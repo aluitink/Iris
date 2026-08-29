@@ -1,7 +1,7 @@
 using System.Net.Http.Headers;
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that performs ActivityPub content negotiation: it advertises
@@ -16,7 +16,7 @@ namespace Iris.Client;
 /// <item>Bodyless requests (GETs) get an <c>Accept</c> header listing both media types (in
 /// preference order), so a server may respond with either.</item>
 /// <item>Requests with a body (POSTs) get <c>application/activity+json</c> as the
-/// <c>Content-Type</c> when none is set, so the <see cref="Iris.Client.SigningHandler"/> signs the
+/// <c>Content-Type</c> when none is set, so the <see cref="SigningHandler"/> signs the
 /// correct <c>content-type</c> component.</item>
 /// </list>
 /// It is a no-op for responses (the <see cref="ActivityPubClient"/> deserializes both media types

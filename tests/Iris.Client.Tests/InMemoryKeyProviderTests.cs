@@ -5,7 +5,7 @@ using Iris.Core;
 namespace Iris.Client.Tests;
 
 /// <summary>
-/// Unit tests for <see cref="Iris.Client.InMemoryKeyProvider"/> (implements <see cref="IKeyProvider"/>).
+/// Unit tests for <see cref="Iris.Client.Auth.InMemoryKeyProvider"/> (implements <see cref="IKeyProvider"/>).
 /// </summary>
 public class InMemoryKeyProviderTests
 {

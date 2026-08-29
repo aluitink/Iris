@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Discovery;
 
 /// <summary>
 /// An <see cref="IDiscoveryService"/> backed by a <see cref="WebFingerClient"/>.

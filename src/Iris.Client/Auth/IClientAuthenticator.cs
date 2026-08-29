@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Auth;
 
 /// <summary>
 /// Authenticates a client session against an Iris server and yields the owner's actor

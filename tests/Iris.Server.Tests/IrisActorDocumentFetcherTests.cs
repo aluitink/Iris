@@ -228,13 +228,13 @@ public class IrisActorDocumentFetcherTests
         public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => Task.FromResult(0);
 
-        public Task<int> MuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+        public Task<int> MuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
             => Task.FromResult(0);
 
         public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => Task.FromResult(0);
 
-        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
             => Task.FromResult(0);
 
         public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
@@ -246,13 +246,13 @@ public class IrisActorDocumentFetcherTests
         public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
             => Task.FromResult(0);
 
-        public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+        public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
             => Task.FromResult(0);
 
         public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
             => Task.FromResult(0);
 
-        public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.ProxyCredentials credentials, CancellationToken ct = default)
+        public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
             => Task.FromResult(0);
 
         public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(

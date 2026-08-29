@@ -9,7 +9,7 @@ namespace Iris.Server;
 /// </summary>
 /// <remarks>
 /// The default implementation (<see cref="WebFingerAccountResolver"/>) wraps the
-/// <see cref="Iris.Client.WebFingerClient"/> and reads through the Phase 3
+/// <see cref="Iris.Client.Discovery.WebFingerClient"/> and reads through the Phase 3
 /// <see cref="WebFingerCache"/> (by account IRI), so a remote account is resolved once and reused
 /// across lookups within the cache's TTL. It is registered by <see cref="ActivityPubServerExtensions"/>
 /// via <c>AddActivityPubServer</c>.

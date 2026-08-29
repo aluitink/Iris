@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that authenticates local, non-federated requests with Basic auth.

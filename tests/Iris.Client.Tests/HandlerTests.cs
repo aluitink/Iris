@@ -9,7 +9,7 @@ namespace Iris.Client.Tests;
 /// <summary>
 /// A <see cref="HttpMessageHandler"/> double that returns a scripted sequence of
 /// <see cref="HttpResponseMessage"/> (or throws a scripted exception) per request, recording each
-/// call. Used to drive <see cref="Iris.Client.RetryHandler"/> and <see cref="Iris.Client.JsonLdHandler"/>
+/// call. Used to drive <see cref="Iris.Client.Pipeline.RetryHandler"/> and <see cref="Iris.Client.Pipeline.JsonLdHandler"/>
 /// deterministically.
 /// </summary>
 internal sealed class ScriptedHandler : HttpMessageHandler

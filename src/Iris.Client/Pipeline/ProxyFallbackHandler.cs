@@ -3,7 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Pipeline;
 
 /// <summary>
 /// A <see cref="DelegatingHandler"/> that implements Phase 6's proxy fallback: when a request to a

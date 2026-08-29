@@ -84,7 +84,7 @@ public sealed class FakeActivityPubServer : IDisposable
     /// <param name="actorHandle">The handle of the local actor (e.g. <c>bob</c>).</param>
     /// <param name="flaky">
     /// When true, the first request to each path returns a transient 503 and subsequent requests are
-    /// served normally — used to prove the client's <see cref="Iris.Client.RetryHandler"/> retries over a
+    /// served normally — used to prove the client's <see cref="Iris.Client.Pipeline.RetryHandler"/> retries over a
     /// real HTTP stack.
     /// </param>
     public static FakeActivityPubServer Start(string hostname, string actorHandle = "bob", bool flaky = false)

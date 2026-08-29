@@ -1,29 +1,29 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
-namespace Iris.Client;
+namespace Iris.Client.Caching;
 
 /// <summary>
-/// Caches fetched collection pages by their page IRI, using the default
-/// <see cref="CachePolicy.CollectionPage"/> (30 seconds fresh, 30 seconds stale).
+/// Caches fetched ActivityPub objects (actors and other documents) by their IRI, using the
+/// default <see cref="CachePolicy.Actor"/> (5 minutes fresh, 5 minutes stale).
 /// </summary>
 /// <remarks>
-/// The value type is <see cref="IObject"/> (the page document; callers cast to
-/// <see cref="OrderedCollectionPage"/>). Pages are short-lived, so the TTL is the tightest of the
-/// client caches. A not-found page (null factory result) is not cached.
+/// The value type is <see cref="IObject"/> (the library's object range) — callers pattern-match
+/// the returned object rather than receiving a concrete type. A 404 / not-found (a
+/// <see langword="null"/> factory result) is not cached, so it is retried on the next lookup.
 /// </remarks>
-public sealed class CollectionPageCache
+public sealed class ActorCache
 {
     private readonly CachingReadThrough<IObject> _cache;
 
     /// <summary>
-    /// Initializes a new <see cref="CollectionPageCache"/>.
+    /// Initializes a new <see cref="ActorCache"/>.
     /// </summary>
-    /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.CollectionPage"/>.</param>
+    /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.Actor"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public CollectionPageCache(CachePolicy? policy = null, int capacity = 1024)
+    public ActorCache(CachePolicy? policy = null, int capacity = 1024)
     {
-        var resolved = policy ?? CachePolicy.CollectionPage;
+        var resolved = policy ?? CachePolicy.Actor;
         _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity));
     }
 
@@ -33,14 +33,14 @@ public sealed class CollectionPageCache
     public CachePolicy Policy => _cache.Policy;
 
     /// <summary>
-    /// Gets the cached page for <paramref name="key"/>, fetching with <paramref name="factory"/> on a
+    /// Gets the cached object for <paramref name="key"/>, fetching with <paramref name="factory"/> on a
     /// miss (or when <paramref name="bypassCache"/> is set).
     /// </summary>
-    /// <param name="key">The page IRI.</param>
+    /// <param name="key">The object IRI.</param>
     /// <param name="bypassCache">When true, the cache is skipped for the read but a non-null result is written back.</param>
-    /// <param name="factory">Invoked on a miss (or always, when bypassing) to fetch the page; null means absent.</param>
+    /// <param name="factory">Invoked on a miss (or always, when bypassing) to fetch the object; null means absent.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The page (or null when absent) and whether it was a stale-while-revalidate hit.</returns>
+    /// <returns>The object (or null when absent) and whether it was a stale-while-revalidate hit.</returns>
     public async Task<(IObject? Value, bool WasStale)> GetAsync(
         Iri key,
         bool bypassCache,

@@ -1,6 +1,6 @@
 using Iris.Core;
 
-namespace Iris.Client;
+namespace Iris.Client.Caching;
 
 /// <summary>
 /// Caches remote actor public keys (JWKs) by their key IRI, using the default

@@ -658,7 +658,7 @@ public static class ActivityPubServerExtensions
     /// <c>Accept</c> header. The client's <c>Authorization</c> is <em>not</em> forwarded — the remote
     /// authenticates by the HTTP signature, not Basic auth. The target is the <c>{target}</c> catch-all
     /// route value (an absolute IRI); the path is passed through as-is so the forwarded request's
-    /// <c>(request-target)</c> component (the escaped path the <see cref="Iris.Client.SigningHandler"/>
+    /// <c>(request-target)</c> component (the escaped path the <see cref="Iris.Client.Pipeline.SigningHandler"/>
     /// signs) is exactly the target's path.
     /// </para>
     /// </summary>

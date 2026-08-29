@@ -11,7 +11,7 @@ namespace Iris.Client.Extensions;
 /// <remarks>
 /// <c>ServerBaseUri</c> is the root of the Iris home server (e.g. <c>https://a.example</c>);
 /// the proxy-fallback endpoint is always derived from it as
-/// <c>{ServerBaseUri}/ap/v1/proxy/{target}</c> (the <see cref="Iris.Client.ProxyFallbackHandler"/>
+/// <c>{ServerBaseUri}/ap/v1/proxy/{target}</c> (the <see cref="Iris.Client.Pipeline.ProxyFallbackHandler"/>
 /// appends the <c>ap/v1/proxy</c> path itself).
 /// </remarks>
 public sealed class IrisClientOptions
