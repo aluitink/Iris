@@ -212,6 +212,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
         services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, FlagActivityHandler>();
+        services.AddSingleton<IActivityHandler, AddRemoveActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         // Move (F-08): re-points the local follow edges when an actor migrates to a new IRI. It needs the
         // local community IRIs and the outbound caches (to invalidate the moved actor's stale key/doc), so
