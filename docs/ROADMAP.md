@@ -23,33 +23,15 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 | 13 — Live Federation Compatibility | 📋 planned |
 | 14+ — Future | 📋 abstract |
 
-## Completed work (short summary)
+## Completed work
 
-- Phase -1 — project reorganization complete: every `src` project and its test project now use domain folders with nested namespaces (mirrored layout), absorbed via per-project `GlobalUsings.cs`; build + all 850 tests green with no behavior change. See [change 068](changes/068-phase1-domain-folder-reorganization.md) and [decision 054](decisions/054-domain-folders-and-global-usings.md).
-- Phase 0 — baseline solution, project structure, shared packages, test harness, and green build/test setup.
-- Phase 1 — identity, keys, HTTP-signature support, JSON-LD handling, and cache primitives.
-- Phase 2 — signed ActivityPub client, discovery, WebFinger, retries, collections, and client caching.
-- Phase 3 — server foundation, actor/docs endpoints, in-memory persistence, versioning, and caching.
-- Phase 4 — inbound validation, inbox processing, delivery worker, follow lifecycle, and federated propagation.
-- Phase 5 — communities, membership/follow flows, unified feed, and community capability support.
-- Phase 6 — proxy fallback and signed proxy delivery.
-- Phase 7 — sample server/client composition and end-to-end federation validation.
-- Phase 9 — deployment planning, TLS/FQDN runbook, compatibility matrix, and interop risk register.
-- Phase 10 — project & test review: suite consolidated from 850 → 832 tests (scratch + duplicate + engine re-tests removed), the 17 duplicated `LazyHandler` copies collapsed into `Iris.Testing.LazyHandler`, and shared federation helpers added in `Iris.Testing.TestFederation`; build + all 832 tests green. See [change 069](changes/069-phase10-project-test-review.md).
+Phases -1, 0–9, and 10 are complete — core identity/keys/signatures, the signed client, the server
+foundation + inbox/delivery, communities, proxy fallback, samples, sample Docker composition, deployment
+preparation, and the project & test review (suite consolidated 850 → 832). Per-slice build notes:
+[changes/](changes/README.md); test tallies: [phase-notes/TEST_COUNT_HISTORY.md](phase-notes/TEST_COUNT_HISTORY.md);
+substantial design calls: [decisions/](decisions/README.md).
 
 ## Remaining work
-
-### Phase 10 — Project & Test Review
-- [x] Audit the suite for redundant, duplicate, or low-value tests.
-- [x] Remove or merge tests that add no signal or duplicate existing coverage.
-- [x] Consolidate repeated test setup, seeding, and host helpers into shared utilities.
-- [x] Keep the remaining tests focused on real behavior and regression protection.
-- [x] Review dead fixtures and over-mocked tests; keep only tests that prove real behavior.
-- [x] Add final changelog/test-count records for the consolidation work.
-
-Suite consolidation complete: 850 → 832 tests (scratch + duplicate + engine re-tests removed), the 17
-duplicated `LazyHandler` copies collapsed into `Iris.Testing.LazyHandler`, and shared federation helpers
-added in `Iris.Testing.TestFederation`. See [change 069](changes/069-phase10-project-test-review.md).
 
 ### Phase 8 — Sample Docker Composition
 - [ ] Finish the Blazor WASM host for the sample client.
