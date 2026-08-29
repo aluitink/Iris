@@ -330,6 +330,50 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     content from the feed **without severing the follow** (the follow edge is intact; un-muting restores
     the content); and an un-mute of a nonexistent mute is a no-op (204).
 
-   ## Result
+ ## Slice 12.18 — F-06 relay: relay subscription (`star`, local-only)
+
+  - A relay (a `star`-subscribed fan-out server, ActivityPub §5.1.3) is **not** an activity an actor
+    receives — it is a **remote fan-out server a local actor points at** to widen reach. So a relay
+    subscription is an **Iris-specific local** decision, **not** interpreted from an inbox POST: it is a
+    **Basic-authenticated** request to the acting actor's own instance (the same local-decision shape as a
+    `Mute`).
+  - A new `IRelayStore` / `InMemoryRelayStore` records the directed subscription edge
+    `<c>actor → relay</c>` against a forward-only `_relays` index: `RecordRelayAsync` (idempotent),
+    `RemoveRelayAsync` (the un-subscribe, returns `true` if an edge was removed), `GetRelaysAsync` (the
+    forward relays/`star` collection, IRI-sorted), and `IsRelayAsync` (the directed predicate).
+    `InMemoryPersistenceProvider` gained a `Relays` property (and a ctor param, defaulting to a fresh
+    store) and `IPersistenceProvider` exposes it.
+  - The `relays` collection is served at `GET /ap/v1/u/{handle}/relays` (a paged `OrderedCollection` of
+    relay links, the same wire shape as `following`/`mutes` — the collection route regex + `CollectionEndpointHandler`
+    gained a `relays` case). It is **advertised on the actor document via the `star` property** (via
+    `ExtensionData`, the library's `Person` has no typed `star`; the actor document's `ExtensionData`
+    already carried the `mutes`/`blocks`/`flags` links, and `star` is added alongside them, unconditionally
+    — every actor may have an empty `relays` set). `IriExtensions.RelaysOf()` builds the collection IRI.
+  - A new local endpoint `POST /ap/v1/u/{handle}/relays/{**target}` (and `?unsubscribe=true`) authenticates
+    the acting actor via `IActorCredentialValidator` (Basic auth) and records/removes the `actor → relay`
+    edge (204 on success, 401 unauthenticated, 400 unparseable target). It is served by a `LocalRelayHandler`
+    (mirroring the `LocalMuteHandler`). The route uses a catch-all target (must be the last segment), so
+    un-subscribe is signalled by `?unsubscribe=true` rather than a trailing path segment.
+  - Client: `IActivityPubClient` / `ActivityPubClient` gained `SubscribeRelayAsync` / `UnsubscribeRelayAsync`
+    (two Basic-auth body-less `POST` overloads each) and `GetRelaysAsync` (enumerates the `relays` collection
+    read through the `CollectionPageCache`). The private `LocalModerateAsync` was **generalized** into
+    `LocalLocalDecisionAsync(actorId, targetId, path, remove, removeQuery, …)` so the same Basic-auth
+    local-decision POST serves both mutes (`path="mutes"`, `removeQuery="unmute"`) and relays
+    (`path="relays"`, `removeQuery="unsubscribe"`); `LocalModerateAsync` now delegates to it. The existing
+    `IActivityPubClient` test stubs gained no-op relay members.
+  - *Scope note (fan-out):* this is the **subscription** (configuration) half only. **Relay fan-out** —
+    actually delivering a local actor's `Create`/`Announce` content to each subscribed relay (the delivery
+    half that gives a relay its reach benefit) — remains open as the **follow-up slice** (12.19). Until
+    then, content is still delivered only 1-to-1 to followers.
+  - `RelayStoreTests` (6) covers the relay store in isolation (record → collection + predicate,
+    directed/not-mutual, idempotent, sorted-by-IRI, remove, remove-nonexistent returns false).
+    `RelaysCollectionIntegrationTests` (8) is the end-to-end proof: the actor document advertises the
+    `star` (relays) collection; the empty collection is an `OrderedCollection`; an authenticated
+    `SubscribeRelayAsync` (204) records the edge + the relay appears in the actor's `relays`; the client's
+    `GetRelaysAsync` reads back the relay's IRI; an unauthenticated request is 401 (no edge); an
+    `UnsubscribeRelayAsync` (`?unsubscribe=true`, 204) removes the edge (the collection is empty again); and
+    an un-subscribe of a non-existent subscription is a no-op (204).
+
+    ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
