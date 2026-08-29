@@ -363,8 +363,7 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     `IActivityPubClient` test stubs gained no-op relay members.
   - *Scope note (fan-out):* this is the **subscription** (configuration) half only. **Relay fan-out** —
     actually delivering a local actor's `Create`/`Announce` content to each subscribed relay (the delivery
-    half that gives a relay its reach benefit) — remains open as the **follow-up slice** (12.19). Until
-    then, content is still delivered only 1-to-1 to followers.
+    half that gives a relay its reach benefit) — is the **follow-up slice** (12.19), now done (below).
   - `RelayStoreTests` (6) covers the relay store in isolation (record → collection + predicate,
     directed/not-mutual, idempotent, sorted-by-IRI, remove, remove-nonexistent returns false).
     `RelaysCollectionIntegrationTests` (8) is the end-to-end proof: the actor document advertises the
@@ -373,6 +372,37 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     `GetRelaysAsync` reads back the relay's IRI; an unauthenticated request is 401 (no edge); an
     `UnsubscribeRelayAsync` (`?unsubscribe=true`, 204) removes the edge (the collection is empty again); and
     an un-subscribe of a non-existent subscription is a no-op (204).
+
+ ## Slice 12.19 — F-06 relay: relay fan-out (the delivery half) — closes F-06
+
+   - **Relay fan-out** (the delivery half of F-06) is now wired: when a local actor's `Create` (their own
+     post) or `Announce` (their boost) is processed, the handler reads the actor's `relays`/`star` set
+     (`IPersistenceProvider.Relays.GetRelaysAsync`) and **adds each subscribed relay to the delivery
+     fan-out**, delivering the content to the relay's inbox **signed as the author**. This is the half that
+     gives a relay its reach benefit: a relay now actually receives the content of the local actors that
+     subscribe to it.
+   - `CreateActivityHandler` (the local-person branch) and `AnnounceActivityHandler` each gained a private
+     `DeliverToSubscribedRelaysAsync(authorIri, activity, ct)` that, after the existing follower federation,
+     calls `IDeliveryService.DeliverToActorAsync(relayIri, activity, authorIri, ct)` for every relay the
+     author has subscribed to (reusing the F-01 inbox resolution and F-07 block suppression). A relay is
+     always remote (never a local actor), so **no local-actor skip applies** — the relay delivery is
+     scheduled unconditionally; a relay that has blocked the author is suppressed by `DeliveryService`
+     (F-07) before it is enqueued.
+   - `InMemoryDeliveryQueue` gained a `Jobs` property (a point-in-time snapshot of the currently queued
+     `DeliveryJob`s, for inspection) so a test can assert which deliveries the handler scheduled (drains and
+     re-enqueues, preserving order).
+   - `CreateActivityHandlerTests` (4 new unit tests) drives the real `CreateActivityHandler` against a
+     recording `IDeliveryService`: a single subscribed relay fans the `Create` out to the relay's inbox
+     signed as the author; multiple relays fan out to each; no relays → no fan-out; and a follower **and** a
+     relay → both are delivered. `RelayFanOutIntegrationTests` (3 new end-to-end tests, mirroring
+     `PostFederationIntegrationTests`) is the wire-level proof: a local author on instance A who has
+     subscribed to a relay on instance R posts a `Create` (and, separately, an `Announce`); A's host
+     `DeliveryWorker` POSTs the activity to the relay's inbox signed as the author; R validates the
+     delivery (resolving the author's key from A's actor document) and stores the activity. A
+     no-relay author's post is surfaced locally but **not** fanned out to the relay.
+   - *Result:* **F-06 is fully resolved** — a local actor can configure which relays to fan out through
+     (12.18) **and** their `Create`/`Announce` content is actually delivered to each subscribed relay
+     (12.19).
 
     ## Result
 
