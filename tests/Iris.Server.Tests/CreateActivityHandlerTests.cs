@@ -8,11 +8,13 @@ namespace Iris.Server.Tests;
 /// Unit tests: the <see cref="CreateActivityHandler"/> — the dedicated handler for an inbound
 /// <see cref="Create"/>. When the recipient is a local person it records the <see cref="Create"/> in that
 /// person's outbox (the author's own post, J-8) <em>and</em> federates it to the author's remote followers
-/// (J-18); when the recipient is a local community it records it in the community's local members' outboxes
-/// (the "followed content" half, delegating to the shared <see cref="CommunityContentRecorder"/>). Covers:
-/// recording in the local person's outbox, federating the post to remote (but not local) followers signed
-/// as the author, skipping a non-local (remote) person, the community member-recording path, newest-first
-/// ordering, no-op for an unknown recipient, and the null-guard contract.
+/// (J-18) <em>and</em> to the author's subscribed relays (F-06 relay fan-out); when the recipient is a local
+/// community it records it in the community's local members' outboxes (the "followed content" half,
+/// delegating to the shared <see cref="CommunityContentRecorder"/>). Covers: recording in the local
+/// person's outbox, federating the post to remote (but not local) followers signed as the author, fanning
+/// the post out to the author's subscribed relays (and not when the author has none), skipping a non-local
+/// (remote) person, the community member-recording path, newest-first ordering, no-op for an unknown
+/// recipient, and the null-guard contract.
 /// </summary>
 public sealed class CreateActivityHandlerTests
 {
@@ -23,6 +25,8 @@ public sealed class CreateActivityHandlerTests
     private static readonly Iri RemoteMember = new("https://a.domain.local/ap/v1/u/dave");
     private static readonly Iri RemoteFollower = new("https://c.domain.local/ap/v1/u/erin");
     private static readonly Iri LocalFollower = new("https://b.domain.local/ap/v1/u/frank");
+    private static readonly Iri Relay = new("https://relay1.example.com");
+    private static readonly Iri RelayTwo = new("https://relay2.example.com");
 
     // --- Local person: the author's own post (J-8) -----------------------------------------
 
@@ -138,6 +142,87 @@ public sealed class CreateActivityHandlerTests
         // No followers → nothing scheduled, but the post is still surfaced in the author's outbox.
         Assert.Empty(delivery.Delivered);
         Assert.Contains(create.Id, OutboxIds(await persistence.Activities.GetOutboxAsync(LocalPerson)));
+    }
+
+    // --- F-06: relay fan-out (deliver the post to the author's subscribed relays) ---------
+
+    [Fact]
+    public async Task HandleAsync_LocalPersonWithSubscribedRelay_FansOutCreateToRelayInbox()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        // bob (local) has subscribed to a relay (a remote `star`-subscribed fan-out server, AP §5.1.3).
+        await persistence.Relays.RecordRelayAsync(LocalPerson, Relay);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The post is fanned out to the relay's inbox, signed as the author (bob). A relay is a remote
+        // fan-out server (never a local actor), so no local-actor skip applies — the delivery is
+        // scheduled regardless of any follower set.
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(Relay.InboxOf(), job.InboxIri);
+        Assert.Same(create, job.Activity);
+        Assert.Equal(LocalPerson, job.ActorIri); // signed as the author, not the instance actor
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalPersonWithMultipleRelays_FansOutToEachRelay()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Relays.RecordRelayAsync(LocalPerson, Relay);
+        await persistence.Relays.RecordRelayAsync(LocalPerson, RelayTwo);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The post is fanned out to BOTH subscribed relays (each a distinct delivery, signed as the author).
+        Assert.Equal(2, delivery.Delivered.Count);
+        Assert.Contains(delivery.Delivered, j => j.InboxIri == Relay.InboxOf() && j.ActorIri == LocalPerson);
+        Assert.Contains(delivery.Delivered, j => j.InboxIri == RelayTwo.InboxOf() && j.ActorIri == LocalPerson);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalPersonWithNoSubscribedRelays_DoesNotFanOut()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemoteFollower, LocalPerson); // a follower, but no relays
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // No subscribed relays → the only delivery is to the remote follower (no relay fan-out).
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(RemoteFollower.InboxOf(), job.InboxIri);
+        Assert.DoesNotContain(delivery.Delivered, j => j.InboxIri == Relay.InboxOf());
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalPersonWithFollowerAndRelay_FederatesToBoth()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemoteFollower, LocalPerson); // remote follower
+        await persistence.Relays.RecordRelayAsync(LocalPerson, Relay);           // subscribed relay
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+        var create = BuildCreate(LocalPerson);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // The post reaches BOTH the remote follower's inbox AND the relay's inbox (two deliveries, both
+        // signed as the author): relay fan-out is additive to 1-to-1 follower federation.
+        Assert.Equal(2, delivery.Delivered.Count);
+        Assert.Contains(delivery.Delivered, j => j.InboxIri == RemoteFollower.InboxOf() && j.ActorIri == LocalPerson);
+        Assert.Contains(delivery.Delivered, j => j.InboxIri == Relay.InboxOf() && j.ActorIri == LocalPerson);
     }
 
     // --- F-07: apply the block edge (skip a follower who blocked the author) --------------

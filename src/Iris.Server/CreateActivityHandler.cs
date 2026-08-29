@@ -44,6 +44,15 @@ namespace Iris.Server;
 /// federation must happen here (server-side) and not in the client.
 /// </para>
 /// <para>
+/// <strong>Relay fan-out (F-06).</strong> After federating to the author's remote followers, the handler
+/// also delivers the post to each <em>relay</em> the author has subscribed to (the author's
+/// <c>relays</c> / <c>star</c> set, AP §5.1.3), signed as the author. A relay is a remote fan-out server,
+/// so — unlike the follower loop — no local-actor skip is needed (a relay is never a local actor), and a
+/// relay that has blocked the author is suppressed by <see cref="IDeliveryService"/> (F-07) before it is
+/// enqueued. This is the delivery half of the relay feature; the subscription half (the local
+/// <c>relays</c> collection) is recorded by the Basic-authenticated relay endpoint (Slice 12.18).
+/// </para>
+/// <para>
 /// <strong>Idempotency.</strong> The <see cref="IActivityStore.AddToOutboxAsync"/> does not de-duplicate by
 /// IRI; a re-delivered <see cref="Create"/> with the same IRI is recorded again. The inbox pipeline is the
 /// authority for delivery (a given activity is delivered once), so re-recording is not expected in the
@@ -131,6 +140,13 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     .ConfigureAwait(false);
             }
 
+            // F-06 (relay fan-out): deliver the post to each relay the author has subscribed to (a
+            // `star`-subscribed fan-out server, AP §5.1.3), signed as the author. A relay is a remote
+            // fan-out server — always cross-instance — so no local-actor / block check is needed: the
+            // relay is never a local actor, and a relay that has blocked the author is suppressed by
+            // IDeliveryService.DeliverToActorAsync (F-07) before it is enqueued.
+            await DeliverToSubscribedRelaysAsync(recipient, activity, ct).ConfigureAwait(false);
+
             return;
         }
 
@@ -180,6 +196,33 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     .RecordReplyAsync(parent, child, ct)
                     .ConfigureAwait(false);
             }
+        }
+    }
+
+    /// <summary>
+    /// F-06 (relay fan-out): delivers <paramref name="activity"/> to each relay <paramref name="authorIri"/>
+    /// has subscribed to (the actor's <c>relays</c> / <c>star</c> set), signed as the author. A relay is a
+    /// remote <c>star</c>-subscribed fan-out server (AP §5.1.3); this is the delivery half of the relay
+    /// feature (the subscription half — recording the <c>actor → relay</c> edge — is the local
+    /// <c>relays</c> collection, Slice 12.18). When the author has no subscribed relays, nothing is
+    /// scheduled. A relay that has blocked the author is suppressed by
+    /// <see cref="IDeliveryService.DeliverToActorAsync(Iri, Activity, Iri?, CancellationToken)"/> (F-07)
+    /// before it is enqueued.
+    /// </summary>
+    /// <param name="authorIri">The author of the content (the signing actor of the relay delivery).</param>
+    /// <param name="activity">The activity to fan out (the author's <see cref="Create"/> or
+    /// <see cref="Announce"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task DeliverToSubscribedRelaysAsync(Iri authorIri, Activity activity, CancellationToken ct)
+    {
+        var relays = await _persistence.Relays
+            .GetRelaysAsync(authorIri, ct)
+            .ConfigureAwait(false);
+        foreach (var relayIri in relays)
+        {
+            await _delivery
+                .DeliverToActorAsync(relayIri, activity, authorIri, ct)
+                .ConfigureAwait(false);
         }
     }
 }

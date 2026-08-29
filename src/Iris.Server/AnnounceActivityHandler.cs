@@ -41,6 +41,16 @@ namespace Iris.Server;
 /// or no resolvable object) is stored (by the processor) but interpreted as a no-op: nothing is
 /// recorded and nothing is scheduled.
 /// </para>
+/// <para>
+/// <strong>Relay fan-out (F-06).</strong> After propagating the boost to the announcer's local followers,
+/// the handler also delivers the announce to each <em>relay</em> the announcer has subscribed to (the
+/// announcer's <c>relays</c> / <c>star</c> set, AP §5.1.3), signed as the announcer. A relay is a remote
+/// fan-out server, so — unlike the follower loop — no local-actor skip is needed (a relay is never a local
+/// actor), and a relay that has blocked the announcer is suppressed by <see cref="IDeliveryService"/>
+/// (F-07) before it is enqueued. This is the delivery half of the relay feature; the subscription half
+/// (the local <c>relays</c> collection) is recorded by the Basic-authenticated relay endpoint
+/// (Slice 12.18).
+/// </para>
 public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
 {
     private readonly IPersistenceProvider _persistence;
@@ -127,6 +137,40 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
             var propagated = AnnounceIris.BuildAnnounce(delivery.RecipientIri, objectIri.Value, followerIri);
             await _delivery
                 .DeliverToActorAsync(followerIri, propagated, delivery.RecipientIri, ct)
+                .ConfigureAwait(false);
+        }
+
+        // F-06 (relay fan-out): deliver the boost to each relay the announcer has subscribed to (a
+        // `star`-subscribed fan-out server, AP §5.1.3), signed as the announcer. A relay is a remote
+        // fan-out server — always cross-instance — so no local-actor / block check is needed: the relay
+        // is never a local actor, and a relay that has blocked the announcer is suppressed by
+        // IDeliveryService.DeliverToActorAsync (F-07) before it is enqueued.
+        await DeliverToSubscribedRelaysAsync(delivery.RecipientIri, announce, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// F-06 (relay fan-out): delivers the <paramref name="announce"/> to each relay the
+    /// <paramref name="announcerIri"/> has subscribed to (the announcer's <c>relays</c> / <c>star</c>
+    /// set), signed as the announcer. A relay is a remote <c>star</c>-subscribed fan-out server (AP
+    /// §5.1.3); this is the delivery half of the relay feature (the subscription half — recording the
+    /// <c>announcer → relay</c> edge — is the local <c>relays</c> collection, Slice 12.18). When the
+    /// announcer has no subscribed relays, nothing is scheduled. A relay that has blocked the announcer
+    /// is suppressed by <see cref="IDeliveryService.DeliverToActorAsync(Iri, Activity, Iri?,
+    /// CancellationToken)"/> (F-07) before it is enqueued.
+    /// </summary>
+    /// <param name="announcerIri">The announcer (the signing actor of the relay delivery).</param>
+    /// <param name="announce">The <see cref="Announce"/> to fan out (the original announce, carrying the
+    /// deterministic IRI).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task DeliverToSubscribedRelaysAsync(Iri announcerIri, Announce announce, CancellationToken ct)
+    {
+        var relays = await _persistence.Relays
+            .GetRelaysAsync(announcerIri, ct)
+            .ConfigureAwait(false);
+        foreach (var relayIri in relays)
+        {
+            await _delivery
+                .DeliverToActorAsync(relayIri, announce, announcerIri, ct)
                 .ConfigureAwait(false);
         }
     }

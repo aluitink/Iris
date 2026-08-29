@@ -53,6 +53,31 @@ public sealed class InMemoryDeliveryQueue : IDeliveryQueue
     /// <inheritdoc/>
     public int Count => _channel.Reader.Count;
 
+    /// <summary>
+    /// A point-in-time snapshot of the jobs currently queued, for inspection (e.g. by a test asserting
+    /// which deliveries the <see cref="DeliveryService"/> scheduled). Reading does not remove the jobs
+    /// (they are drained and re-enqueued, preserving order).
+    /// </summary>
+    /// <returns>The jobs currently pending, in queue order.</returns>
+    public List<DeliveryJob> Jobs
+    {
+        get
+        {
+            var jobs = new List<DeliveryJob>();
+            while (_channel.Reader.TryRead(out var job))
+            {
+                jobs.Add(job);
+            }
+
+            foreach (var job in jobs)
+            {
+                _channel.Writer.TryWrite(job);
+            }
+
+            return jobs;
+        }
+    }
+
     /// <inheritdoc/>
     public async Task EnqueueAsync(DeliveryJob job, CancellationToken ct = default)
     {
