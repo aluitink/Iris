@@ -74,6 +74,15 @@ public static class IriExtensions
     public static Iri MutesOf(this Iri iri) => AppendSegment(iri, "mutes");
 
     /// <summary>
+    /// Derives the relays-collection IRI by appending <c>/relays</c> (F-06 relay subscription, the
+    /// <c>star</c> set).
+    /// </summary>
+    /// <param name="iri">The actor IRI. Must be absolute.</param>
+    /// <returns>The relays-collection IRI (e.g. <c>https://a.domain.local/u/alice/relays</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri RelaysOf(this Iri iri) => AppendSegment(iri, "relays");
+
+    /// <summary>
     /// Derives the community-feed IRI by appending <c>/feed</c>.
     /// </summary>
     /// <param name="iri">The community IRI. Must be absolute.</param>

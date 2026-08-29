@@ -437,7 +437,7 @@ public static class ActivityPubServerExtensions
         // ?page=N and ?limit=N, and served through the local collection-page response cache. The
         // {collection} route value is bound as `collectionName` (it is not a query parameter).
         group.MapGet(
-                "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks|flags|mutes)}",
+                "/u/{handle}/{collection:regex(outbox|followers|following|liked|blocks|flags|mutes|relays)}",
                 (string handle, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
                     LocalCollectionPageCache collectionCache, CancellationToken ct)
@@ -545,6 +545,15 @@ public static class ActivityPubServerExtensions
         // extension and the proxy endpoint) and records/removes the mute edge in the moderation store.
         // {target} is a catch-all of the absolute IRI of the actor being muted.
         group.MapPost("/u/{handle}/mutes/{**target}", LocalMuteHandler).WithName("local-mute-endpoint");
+
+        // Local relay subscription: POST /ap/v1/u/{handle}/relays/{target} — a local actor subscribes to
+        // a relay (F-06); the same route with ?unsubscribe=true removes the subscription. A relay
+        // subscription is an Iris-specific local decision (a local actor configures the relays it wants
+        // to fan out through), so it is not interpreted from a federated activity: the endpoint
+        // authenticates the requesting actor by Basic auth (IActorCredentialValidator — the same
+        // credential seam as the mute endpoint) and records/removes the relay edge in the relay store.
+        // {target} is a catch-all of the absolute IRI of the relay being subscribed to.
+        group.MapPost("/u/{handle}/relays/{**target}", LocalRelayHandler).WithName("local-relay-endpoint");
 
         return endpoints;
     }
@@ -801,6 +810,74 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Records (or removes) a local relay subscription (F-06). The requesting actor is identified by
+    /// Basic auth (IActorCredentialValidator); the relay is the {target} catch-all route value (an
+    /// absolute IRI); <c>?unsubscribe=true</c> removes the subscription instead of recording it.
+    /// </summary>
+    /// <remarks>
+    /// A relay subscription is an Iris-specific local decision: a local actor configures the relays
+    /// (fan-out servers, ActivityPub §5.1.3) it wants its content fanned out through. It is therefore
+    /// recorded from an authenticated local request — it is not interpreted from a federated activity
+    /// (a relay is a remote server the actor points at, not an activity the actor receives). The handler:
+    /// (1) authenticates the actor, (2) resolves the relay IRI, and (3) records or removes the relay
+    /// edge in the relay store (an un-subscribe is signalled by <c>?unsubscribe=true</c>). The response
+    /// is <c>204</c> on success.
+    /// </remarks>
+    private static async Task<IResult> LocalRelayHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the requesting actor (Basic auth) for this actor's IRI.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the relay IRI from the catch-all route value ({target} = the absolute relay IRI).
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var relay))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Record or remove the relay edge (?unsubscribe=true removes). A subscription is idempotent
+        // (re-subscribing is a no-op); an un-subscribe of a non-existent subscription is also a no-op
+        // (both return 204 — the subscription's steady state is authoritative).
+        var remove = context.Request.Query.TryGetValue("unsubscribe", out var unsubscribeValues)
+            && unsubscribeValues.Count > 0
+            && string.Equals(unsubscribeValues[0], "true", StringComparison.OrdinalIgnoreCase);
+        if (remove)
+        {
+            await persistence.Relays.RemoveRelayAsync(actorIri, relay, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Relays.RecordRelayAsync(actorIri, relay, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
     /// existence check, body read + deserialize + cast, and inbox-processor dispatch.
     /// </summary>
@@ -934,6 +1011,20 @@ public static class ActivityPubServerExtensions
             if (!mutesExt.ContainsKey("mutes"))
             {
                 mutesExt["mutes"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/mutes");
+            }
+        }
+
+        // Advertise the relays collection (F-06): the relays (fan-out servers) the actor subscribes to —
+        // the ActivityPub `star` set (AP §5.1.3). A relay subscription is an Iris-specific local decision
+        // (a local actor configures the relays it fanned-out through), so — like `blocks`/`flags`/`mutes`
+        // — it rides in ExtensionData (the same wire shape), served at /u/{handle}/relays. It is
+        // advertised unconditionally (even when empty) so a remote instance can discover the relays a
+        // local actor fans out through and relay its content to them.
+        {
+            var relaysExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            if (!relaysExt.ContainsKey("star"))
+            {
+                relaysExt["star"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/relays");
             }
         }
 
@@ -1287,7 +1378,7 @@ public static class ActivityPubServerExtensions
         }
 
         // Resolve the collection items (newest-first outbox; insertion-ordered followers/following/liked;
-        // IRI-sorted blocks/flags/mutes, F-07).
+        // IRI-sorted blocks/flags/mutes, F-07; IRI-sorted relays/star, F-06).
         IReadOnlyList<IObjectOrLink> items = collectionName switch
         {
             "outbox" => await persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false),
@@ -1297,6 +1388,7 @@ public static class ActivityPubServerExtensions
             "blocks" => ActorIrisToLinks(await persistence.Moderation.GetBlocksAsync(actorIri, ct).ConfigureAwait(false)),
             "flags" => ActorIrisToLinks(await persistence.Moderation.GetFlagsAsync(actorIri, ct).ConfigureAwait(false)),
             "mutes" => ActorIrisToLinks(await persistence.Moderation.GetMutesAsync(actorIri, ct).ConfigureAwait(false)),
+            "relays" => ActorIrisToLinks(await persistence.Relays.GetRelaysAsync(actorIri, ct).ConfigureAwait(false)),
             _ => [],
         };
 

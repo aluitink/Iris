@@ -273,6 +273,73 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Subscribes an actor to a relay (F-06): a local, Basic-authenticated request to the actor's own
+    /// instance (<c>POST {actorId}/relays/{relayId}</c>) that records the relay (fan-out server) the
+    /// actor's content will be fanned out through (the ActivityPub <c>star</c> set, AP §5.1.3).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor subscribing to the relay.</param>
+    /// <param name="relayId">The IRI of the relay (fan-out server) to subscribe to.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    /// <remarks>
+    /// A relay subscription is an Iris-specific local decision (a local actor configures the relays it
+    /// wants to fan out through), so — like a mute — it is a Basic-authenticated local request, not a
+    /// signed inbox delivery (the acting actor's credentials are supplied via
+    /// <see cref="ActivityPubClientOptions.LocalCredentials"/> or the explicit-credentials overload
+    /// <c>SubscribeRelayAsync(Iri, Iri, ProxyCredentials, CancellationToken)</c>).
+    /// </remarks>
+    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Subscribes an actor to a relay (F-06) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor subscribing to the relay.</param>
+    /// <param name="relayId">The IRI of the relay (fan-out server) to subscribe to.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-subscribes an actor from a relay (F-06): the inverse of <see cref="SubscribeRelayAsync(Iri,
+    /// Iri, CancellationToken)"/> — a local, Basic-authenticated request to the actor's own instance
+    /// (<c>POST {actorId}/relays/{relayId}?unsubscribe=true</c>) that removes the recorded relay
+    /// subscription.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor un-subscribing.</param>
+    /// <param name="relayId">The IRI of the relay to un-subscribe from (previously subscribed).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-subscribes an actor from a relay (F-06) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor un-subscribing.</param>
+    /// <param name="relayId">The IRI of the relay to un-subscribe from.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the relays that <paramref name="actorId"/> subscribes to (F-06): reads the actor's
+    /// <c>relays</c> collection (served at <c>actorId.RelaysOf()</c>, i.e. <c>{actor}/relays</c> — the
+    /// <c>star</c> set) as a paged <see cref="OrderedCollection"/> of items, so the same
+    /// enumeration/caching semantics apply (read through the <see cref="CollectionPageCache"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose relay subscriptions are requested.</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>,
+    /// <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the subscribed relays (as <see cref="IObjectOrLink"/> — a
+    /// <see cref="Link"/> to each relay's IRI), in the order the collection yields them.</returns>
+    public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
     /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
     /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the

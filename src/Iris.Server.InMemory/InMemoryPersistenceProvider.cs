@@ -18,6 +18,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryLikeStore _likes;
     private readonly InMemoryReplyStore _replies;
     private readonly InMemoryModerationStore _moderation;
+    private readonly InMemoryRelayStore _relays;
     private readonly InMemoryObjectStore _objects;
     private readonly InMemoryCommunityStore _communities;
     private readonly IKeyStore _keys;
@@ -28,7 +29,8 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     public InMemoryPersistenceProvider()
         : this(new InMemoryActorStore(), new InMemoryActivityStore(), new InMemoryFollowStore(),
             new InMemoryLikeStore(), new InMemoryReplyStore(), new InMemoryModerationStore(),
-            new InMemoryObjectStore(), new InMemoryCommunityStore(), new InMemoryKeyStore())
+            new InMemoryRelayStore(), new InMemoryObjectStore(), new InMemoryCommunityStore(),
+            new InMemoryKeyStore())
     {
     }
 
@@ -41,6 +43,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="likes">The like store.</param>
     /// <param name="replies">The reply (thread) store (F-12).</param>
     /// <param name="moderation">The moderation (block) store (F-07).</param>
+    /// <param name="relays">The relay-subscription store (F-06).</param>
     /// <param name="objects">The object store.</param>
     /// <param name="communities">The community store.</param>
     /// <param name="keys">The key store. Must not be null.</param>
@@ -51,6 +54,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryLikeStore likes,
         InMemoryReplyStore replies,
         InMemoryModerationStore moderation,
+        InMemoryRelayStore relays,
         InMemoryObjectStore objects,
         InMemoryCommunityStore communities,
         IKeyStore keys)
@@ -61,6 +65,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _likes = likes ?? throw new ArgumentNullException(nameof(likes));
         _replies = replies ?? throw new ArgumentNullException(nameof(replies));
         _moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
+        _relays = relays ?? throw new ArgumentNullException(nameof(relays));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
@@ -83,6 +88,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public IModerationStore Moderation => _moderation;
+
+    /// <inheritdoc/>
+    public IRelayStore Relays => _relays;
 
     /// <inheritdoc/>
     public IObjectStore Objects => _objects;

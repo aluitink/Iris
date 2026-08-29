@@ -46,6 +46,11 @@ public interface IPersistenceProvider
     public IModerationStore Moderation { get; }
 
     /// <summary>
+    /// The relay-subscription store (F-06).
+    /// </summary>
+    public IRelayStore Relays { get; }
+
+    /// <summary>
     /// The object store.
     /// </summary>
     public IObjectStore Objects { get; }

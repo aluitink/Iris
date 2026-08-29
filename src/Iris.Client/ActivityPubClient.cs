@@ -332,19 +332,60 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return GetCollectionItemsAsync(actorId.MutesOf(), query, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials, ct);
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The relays an actor subscribes to form a stable, paged collection at {actor}/relays (the
+        // ActivityPub `star` set), so it is enumerated exactly like any other collection
+        // (GetCollectionItemsAsync reads through the CollectionPageCache). The items are the relays'
+        // IRIs (links).
+        return GetCollectionItemsAsync(actorId.RelaysOf(), query, ct);
+    }
+
     private async Task<int> LocalModerateAsync(
         Iri actorId,
         Iri targetId,
         bool remove,
         ProxyCredentials? credentials,
         CancellationToken ct)
+        => await LocalLocalDecisionAsync(
+            actorId, targetId, path: "mutes", remove, removeQuery: "unmute", credentials, ct)
+            .ConfigureAwait(false);
+
+    private async Task<int> LocalLocalDecisionAsync(
+        Iri actorId,
+        Iri targetId,
+        string path,
+        bool remove,
+        string removeQuery,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
     {
-        // A mute is Iris-specific (no ActivityStreams type) and is a local moderation decision, so it is
-        // not a signed inbox delivery: it is a Basic-authenticated POST to the acting actor's own
-        // instance. The local-auth handler is either the client's default (the configured
-        // LocalCredentials) or a one built for the request (explicit credentials). A missing
-        // handler/credentials is a programming error (the caller must configure LocalCredentials or
-        // pass credentials explicitly).
+        // A local decision (a mute, F-07, or a relay subscription, F-06) is Iris-specific (no
+        // ActivityStreams type for either) and is a local decision, so it is not a signed inbox
+        // delivery: it is a Basic-authenticated POST to the acting actor's own instance. The local-auth
+        // handler is either the client's default (the configured LocalCredentials) or a one built for the
+        // request (explicit credentials). A missing handler/credentials is a programming error (the
+        // caller must configure LocalCredentials or pass credentials explicitly).
         //
         // When the client's default local-auth handler is used it is SHARED across calls (the transport
         // is the factory's, and a test may route it through a deferred handler that is created once), so
@@ -378,12 +419,12 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
                 "Local moderation requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
         }
 
-        // The target is an absolute IRI; the catch-all route on the server preserves it. An un-mute is
-        // signalled by ?unmute=true (the same route records a mute otherwise). The local-mute request
-        // has no body (the target is in the path), so it is sent unsigned through the local-auth handler
-        // (not the signed pipeline, which would throw — a mute is not a federated activity).
-        var unmuteQuery = remove ? "?unmute=true" : string.Empty;
-        var requestUri = new Uri($"{actorId.Value.TrimEnd('/')}/mutes/{targetId.Value.TrimStart('/')}{unmuteQuery}");
+        // The target is an absolute IRI; the catch-all route on the server preserves it. A removal is
+        // signalled by ?{removeQuery}=true (the same route records the edge otherwise). The request has
+        // no body (the target is in the path), so it is sent unsigned through the local-auth handler (not
+        // the signed pipeline, which would throw — a local decision is not a federated activity).
+        var removeQueryString = remove ? $"?{removeQuery}=true" : string.Empty;
+        var requestUri = new Uri($"{actorId.Value.TrimEnd('/')}/{path}/{targetId.Value.TrimStart('/')}{removeQueryString}");
         using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
         {
             Timeout = Timeout.InfiniteTimeSpan,
