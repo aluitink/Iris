@@ -1,19 +1,52 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Iris.Samples.SampleBlazorClient</RootNamespace>
     <IsPackable>false</IsPackable>
+    <!--
+      The default build is the Blazor WebAssembly "server explorer" host (Deliverable B). The console
+      smoke entry (Program.cs's Main, which runs the full client pipeline against a running
+      SampleServer) is excluded from the WASM build (it uses Console, which is unavailable in WASM)
+      and is only compiled when built with -p:ConsoleSmoke=true, so `dotnet run -p:ConsoleSmoke=true`
+      still works as a pipeline smoke test.
+    -->
     <Description>
-      A runnable sample client: the Iris client pipeline (session → Basic-auth login → PEM private
-      key → pre-configured signed client → community feed → proxy fallback) wired as a Blazor host
-      would wire it, demonstrated against the SampleServer.
+      The Iris Blazor WebAssembly "server explorer" client (Deliverable B): a routed WASM host that
+      logs on to an ActivityPub instance by WebFinger address, explores actors/communities/objects,
+      and writes (post/reply/follow/like) — wired over the Iris.Client.Extensions pipeline (session →
+      Basic-auth login → PEM private key → pre-configured signed client → proxy fallback).
     </Description>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Iris.Client.Extensions\Iris.Client.Extensions.csproj" />
+  </ItemGroup>
+
+  <!-- Entry points are mutually exclusive by build tag so only one Main is ever in the assembly. The
+       SDK's default globbing already includes every .cs, so each configuration only *removes* the
+       entry point that does not belong to it:
+       - default (WASM): Program.cs (the Blazor host) stays; ConsoleSmoke.cs is removed.
+       - -p:ConsoleSmoke=true (console smoke): ConsoleSmoke.cs stays; Program.cs is removed. -->
+  <ItemGroup Condition="'$(ConsoleSmoke)' != 'true'">
+    <Compile Remove="ConsoleSmoke.cs" />
+  </ItemGroup>
+  <!-- Console smoke build: pure pipeline, no Blazor markup. Disable the SDK's default .razor item
+       globbing so the components (which reference the WASM host's Program type) are not compiled, and
+       drop the WASM host entry. The default WASM build leaves this condition false and includes
+       everything. -->
+  <PropertyGroup Condition="'$(ConsoleSmoke)' == 'true'">
+    <EnableDefaultRazorComponentItems>false</EnableDefaultRazorComponentItems>
+    <EnableDefaultContentItems>false</EnableDefaultContentItems>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(ConsoleSmoke)' == 'true'">
+    <Compile Remove="Program.cs" />
   </ItemGroup>
 
 </Project>

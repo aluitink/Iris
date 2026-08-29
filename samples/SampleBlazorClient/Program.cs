@@ -1,72 +1,30 @@
-using Iris.Core;
 using Iris.Samples.SampleBlazorClient;
+using Iris.Samples.SampleBlazorClient.Explorer;
+using Microsoft.AspNetCore.Components.Web;
+using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 
 namespace Iris.Samples.SampleBlazorClient;
 
 /// <summary>
-/// The runnable entry point: starts a <see cref="SampleBlazorClient"/> against a running sample
-/// server and exercises the full client pipeline (login → signed community feed → proxy fallback).
-/// Run the sample server first (or set <c>IRIS_SERVER_URI</c> to an already-running instance).
+/// The Blazor WebAssembly host entry point (Deliverable B). Registers the explorer's client pipeline
+/// (<see cref="ExplorerSession"/>) in DI and renders the routed app shell. This file is compiled only
+/// for the WASM build (the default); the console smoke entry (<c>ConsoleSmoke</c>) is compiled only
+/// under <c>-p:ConsoleSmoke=true</c>, so the two never coexist in one assembly.
 /// </summary>
 public static class Program
 {
     /// <summary>
-    /// Runs the sample client pipeline end to end.
+    /// Runs the WASM host.
     /// </summary>
-    /// <param name="args">Optional: the home server base URI (e.g. <c>http://localhost:5000</c>).</param>
-    /// <returns>0 on success; 1 on any pipeline failure.</returns>
-    public static async Task<int> Main(string[] args)
+    /// <param name="args">The command-line arguments.</param>
+    public static async Task Main(string[] args)
     {
-        var serverBaseUri = args is { Length: > 0 }
-            ? new Uri(args[0])
-            : Environment.GetEnvironmentVariable("IRIS_SERVER_URI") is { } envUri
-                ? new Uri(envUri)
-                : SampleBlazorClient.DefaultServerBaseUri;
+        var builder = WebAssemblyHostBuilder.CreateDefault(args);
+        builder.RootComponents.Add<App>("#app");
 
-        var handle = SampleBlazorClient.DefaultHandle;
-        // The SampleServer's seeded actor password (SampleServer.Password); passed here so the client
-        // sample stays free of a project reference to the server sample.
-        var password = SampleBlazorClient.SamplePassword;
+        builder.Services.AddIrisExplorer();
 
-        Console.WriteLine($"Iris SampleBlazorClient → {serverBaseUri}");
-        Console.WriteLine($"  Actor:     {handle} (Basic auth: {handle} / {password})");
-
-        using var service = SampleBlazorClient.CreateClientService(serverBaseUri, handle, password);
-
-        // 1. Login: Basic auth → owner-only actor document + PEM private key, held in the session.
-        var logged = await service.LoginAsync();
-        if (!logged)
-        {
-            Console.WriteLine("Login failed (is the sample server running with this actor?).");
-            return 1;
-        }
-
-        Console.WriteLine($"  Logged in:  {service.ActorIri.Value}");
-        Console.WriteLine($"  Authenticated: {service.Bundle.Session.CurrentActor?.PreferredUsername}");
-
-        using var client = service.GetClient();
-
-        // 2. Signed community feed: the client signs a GET of the iris community feed with the
-        //    session's key; the server's signature validation accepts it.
-        var communityIri = new Iri($"{serverBaseUri}/ap/v1/c/iris");
-        var feed = client.GetCommunityFeedAsync(communityIri);
-        var count = 0;
-        await foreach (var item in feed)
-        {
-            count++;
-            var content = item is KristofferStrube.ActivityStreams.Note note ? note.Content : null;
-            Console.WriteLine($"  Feed item: {item.Id} {content?.FirstOrDefault()}");
-        }
-
-        Console.WriteLine($"  Community feed items: {count}");
-
-        if (count == 0)
-        {
-            Console.WriteLine("Expected at least one feed item from the seeded community.");
-            return 1;
-        }
-
-        Console.WriteLine("Pipeline OK: login → signed feed succeeded.");
-        return 0;
+        var host = builder.Build();
+        await host.RunAsync();
     }
 }

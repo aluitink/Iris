@@ -1,0 +1,144 @@
+@page "/"
+@using Iris.Client
+
+<PageTitle>Iris · server explorer</PageTitle>
+
+<h1>Server explorer</h1>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <h2>Log on to an instance</h2>
+        <p class="muted">
+            Enter a WebFinger address (e.g. <code>alice@localhost</code>) and the actor's Basic-auth
+            password. The base URL is what the browser dials (a host-published port for the local
+            sample instances).
+        </p>
+
+        <label for="address">WebFinger address</label>
+        <input id="address" type="text" @bind="Address" placeholder="alice@localhost" />
+
+        <label for="password">Password</label>
+        <input id="password" type="password" @bind="Password" placeholder="iris-sample" />
+
+        <label for="base">Base URL (what the browser dials)</label>
+        <input id="base" type="url" @bind="BaseUrl" placeholder="http://localhost:5000" />
+
+        <button @onclick="LogOnAsync" disabled="Busy">Log on</button>
+        @if (Busy)
+        {
+            <span class="muted">Logging on…</span>
+        }
+        @if (Error is not null)
+        {
+            <div class="error">@Error</div>
+        }
+    </div>
+}
+else
+{
+    <div class="card">
+        <h2>Logged on</h2>
+        <p>Actor: <code>@Session.ActorIri?.Value</code></p>
+        <p class="muted">Dialing <code>@Session.DialBaseUri</code></p>
+        <p class="muted">
+            The explorer screens (instance overview, actors, actor detail, object view, community,
+            compose, follow/like) build on this session — see <code>ExplorerSession.GetClient()</code>.
+        </p>
+        <button class="secondary" @onclick="LogOut">Log out</button>
+    </div>
+
+    @if (FeedCount >= 0)
+    {
+        <div class="card">
+            <h2>Community feed</h2>
+            @if (FeedCount > 0)
+            {
+                <p class="muted">Fetched @FeedCount item(s) from the seeded <code>iris</code> community.</p>
+            }
+            else
+            {
+                <p class="muted">No feed items (is the community seeded?).</p>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string Address { get; set; } = "alice@localhost";
+    private string Password { get; set; } = "iris-sample";
+    private string BaseUrl { get; set; } = "http://localhost:5000";
+    private string? Error { get; set; }
+    private bool Busy { get; set; }
+    private int FeedCount { get; set; } = -1;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // When already logged on (e.g. after a re-login), surface the community feed so the shell
+        // demonstrates a signed read through the session's client.
+        if (Session.IsLoggedIn)
+        {
+            await LoadFeedAsync();
+        }
+    }
+
+    private async Task LogOnAsync()
+    {
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var dialBase))
+        {
+            Error = "The base URL is not a valid absolute URI.";
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        try
+        {
+            var ok = await Session.LogOnAsync(Address, Password, dialBase);
+            if (!ok)
+            {
+                Error = "Login failed (wrong address, password, or the instance is not running?).";
+                return;
+            }
+
+            await LoadFeedAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private void LogOut()
+    {
+        Session.LogOut();
+        FeedCount = -1;
+        StateHasChanged();
+    }
+
+    private async Task LoadFeedAsync()
+    {
+        try
+        {
+            var communityIri = new Iri($"{Session.DialBaseUri}/ap/v1/c/iris");
+            var count = 0;
+            await foreach (var _ in Session.GetClient().GetCommunityFeedAsync(communityIri))
+            {
+                count++;
+            }
+
+            FeedCount = count;
+        }
+        catch
+        {
+            FeedCount = -1;
+        }
+    }
+}

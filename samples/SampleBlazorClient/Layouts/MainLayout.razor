@@ -1,0 +1,22 @@
+@inherits LayoutComponentBase
+
+<div class="explorer-header">
+    <h1>Iris · server explorer</h1>
+    <span class="instance">
+        @if (Session.IsLoggedIn)
+        {
+            <span>@Session.ActorIri?.Value</span>
+        }
+        else
+        {
+            <span>not logged on</span>
+        }
+    </span>
+</div>
+
+@Body
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+}

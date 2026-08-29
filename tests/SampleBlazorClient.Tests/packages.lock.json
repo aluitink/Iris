@@ -46,6 +46,16 @@
         "resolved": "17.14.1",
         "contentHash": "pmTrhfFIoplzFVbhVwUquT+77CbGH+h4/3mBpdmIlYtBi9nAB+kKI6dN3A/nV4DFi3wLLx/BlHIPK+MkbQ6Tpg=="
       },
+      "Microsoft.DotNet.HotReload.WebAssembly.Browser": {
+        "type": "Transitive",
+        "resolved": "10.0.110",
+        "contentHash": "v2QuCGg7GLcuILPU+S57gi2bnLMcROOBFvLjqFKb3fF420eimHOmmZdALkRkd+qMku83SaGLy2bsL8Z1WFWbVw=="
+      },
+      "Microsoft.JSInterop.WebAssembly": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "j0lrmG+7X4OZh75IzOX00nkwAEjXSgt2Ul6kjwmVkAOBzd8JC1Q/yJ/fC4jWcIXe4h22881Qq1o46p/TnSNaRQ=="
+      },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -140,7 +150,9 @@
       "sampleblazorclient": {
         "type": "Project",
         "dependencies": {
-          "Iris.Client.Extensions": "[1.0.0, )"
+          "Iris.Client.Extensions": "[1.0.0, )",
+          "Microsoft.AspNetCore.Components.WebAssembly": "[10.0.0, )",
+          "Microsoft.DotNet.HotReload.WebAssembly.Browser": "[10.0.110, )"
         }
       },
       "sampleserver": {
@@ -161,6 +173,15 @@
         "requested": "[0.2.4, )",
         "resolved": "0.2.4",
         "contentHash": "D4ZRwcsJp7mtSERwjznNENKvUHg02GGxLiLMGcDfQVXI0xXpoI6xh0sEFwxL06cXQyQIByaWylNdYlb6hx1rkw=="
+      },
+      "Microsoft.AspNetCore.Components.WebAssembly": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.0",
+        "contentHash": "ens4WMX0PBTHxRDYpS3i//VktXi+24my01qXI0P91q2rDMHcIKRN0/sdE+4kB1ZwJpHec9vYxDmmnw/JOcXCwQ==",
+        "dependencies": {
+          "Microsoft.JSInterop.WebAssembly": "10.0.0"
+        }
       }
     }
   }
