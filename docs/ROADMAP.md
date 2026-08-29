@@ -15,9 +15,9 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 | 5 — Community / Group Support | ✅ complete |
 | 6 — Proxy Fallback | ✅ complete |
 | 7 — Blazor Client Extensions & Samples | ✅ complete |
-| 10 — Sample Docker Composition | 🚧 in progress |
+| 8 — Sample Docker Composition | 🚧 in progress |
 | 9 — Real-World Deployment Preparation | ✅ complete |
-| 8 — Project & Test Review | ✅ complete |
+| 10 — Project & Test Review | ✅ complete |
 | 11 — Implementation Gaps & Usability Exploration | 🚧 in progress |
 | 12 — Spec Conformance & Missing Features | 🚧 in progress |
 | 13 — Live Federation Compatibility | 📋 planned |
@@ -39,7 +39,7 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 
 ## Remaining work
 
-### Phase 8 — Project & Test Review
+### Phase 10 — Project & Test Review
 - [x] Audit the suite for redundant, duplicate, or low-value tests.
 - [x] Remove or merge tests that add no signal or duplicate existing coverage.
 - [x] Consolidate repeated test setup, seeding, and host helpers into shared utilities.
@@ -51,7 +51,7 @@ Suite consolidation complete: 850 → 832 tests (scratch + duplicate + engine re
 duplicated `LazyHandler` copies collapsed into `Iris.Testing.LazyHandler`, and shared federation helpers
 added in `Iris.Testing.TestFederation`. See [change 069](changes/069-phase10-project-test-review.md).
 
-### Phase 10 — Sample Docker Composition
+### Phase 8 — Sample Docker Composition
 - [ ] Finish the Blazor WASM host for the sample client.
 - [ ] Complete the Dockerfile for the sample Blazor client and serve it through a static host.
 - [ ] Complete the remaining Docker smoke-path and CI wiring.
@@ -89,7 +89,7 @@ added in `Iris.Testing.TestFederation`. See [change 069](changes/069-phase10-pro
 
 ## Near-term priorities
 
-1. Finish the remaining documentation and review tasks in Phase 10.
+1. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
 2. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
 3. Stand up the live federation test instances for Phase 13.
 4. Use live interop results to update the gap register and roadmap priorities.
