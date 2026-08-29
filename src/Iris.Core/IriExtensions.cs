@@ -66,6 +66,16 @@ public static class IriExtensions
     public static Iri RepliesOf(this Iri iri) => AppendSegment(iri, "replies");
 
     /// <summary>
+    /// Derives the instance-wide search (global search / directory) IRI by appending <c>/search</c> to
+    /// the instance's <c>/ap/v1</c> base (F-13).
+    /// </summary>
+    /// <param name="iri">The instance's <c>/ap/v1</c> base IRI (e.g. <c>https://a.domain.local/ap/v1</c>),
+    /// typically an actor or object IRI's base. Must be absolute.</param>
+    /// <returns>The global-search IRI (e.g. <c>https://a.domain.local/ap/v1/search</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri SearchOf(this Iri iri) => AppendSegment(iri, "search");
+
+    /// <summary>
     /// Converts a library <c>string?</c> IRI (e.g. an object's <c>Id</c>) to an <see cref="Iri"/>.
     /// </summary>
     /// <param name="value">The IRI string. May be null.</param>

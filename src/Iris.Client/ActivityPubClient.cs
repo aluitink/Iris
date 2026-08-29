@@ -407,6 +407,50 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return GetCollectionItemsAsync(objectIri.RepliesOf(), query, ct);
     }
 
+    /// <inheritdoc/>
+    public async IAsyncEnumerable<IObjectOrLink> SearchAsync(
+        Iri instanceBase,
+        string? query = null,
+        SearchOptions? options = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Global search (F-13) uses the limit/offset pagination shape, not the first/next shape of a
+        // stable collection, so the client requests a single page of up to `limit` items at `offset` and
+        // returns its items. The response is a fresh query (not cached) and the request is signed with
+        // the ClientToServer profile like any other GET.
+        var limit = options?.Limit ?? 100;
+        var offset = options?.Offset ?? 0;
+
+        // The q value is URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric.
+        var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
+        var searchIri = new Iri($"{instanceBase.Value}/search?q={encodedQuery}&limit={limit}&offset={offset}");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
+        var page = await GetObjectAsync(request, ct).ConfigureAwait(false);
+        // The first page (offset=0) is an OrderedCollection; subsequent pages are OrderedCollectionPage.
+        // Both carry `items`, so accept either and read the items from the shared property.
+        if (page is not (OrderedCollection or OrderedCollectionPage))
+        {
+            yield break;
+        }
+
+        var items = page switch
+        {
+            OrderedCollection { Items: { } c } => c,
+            OrderedCollectionPage { Items: { } p } => p,
+            _ => null,
+        };
+        if (items is null)
+        {
+            yield break;
+        }
+
+        foreach (var item in items)
+        {
+            yield return item;
+        }
+    }
+
     private static Iri? ResolveFirstPageIri(IObject? collection, Iri collectionId)
     {
         // If the fetched object is itself a page, use it directly.

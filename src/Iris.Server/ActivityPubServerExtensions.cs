@@ -239,6 +239,11 @@ public static class ActivityPubServerExtensions
         // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.
         services.TryAddSingleton<ICommunityFeedService, CommunityFeedService>();
 
+        // Global search (F-13): searches the instance's local actors (the directory) and stored content
+        // objects for the /ap/v1/search endpoint and the client's SearchAsync. A host may replace this to
+        // add ranking, full-text indexing, or cross-instance (relay/WebFinger) search.
+        services.TryAddSingleton<IGlobalSearchService, GlobalSearchService>();
+
         // Followed feed (F-14): computes an actor's home timeline (the union of the actor's local and
         // remote follows' outbox items, newest first) for the /u/{handle}/feed endpoint and the client's
         // GetFollowFeedAsync. FeedOptions bounds how many outbox pages are walked per remote follow
@@ -468,6 +473,14 @@ public static class ActivityPubServerExtensions
         // Requires a valid HTTP signature (validated by SignatureValidationMiddleware); unsigned or
         // invalidly-signed requests are rejected with 401.
         group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
+
+        // Global search: GET /ap/v1/search — instance-wide search / directory (F-13): searches the
+        // instance's local actors (the directory) and stored content objects case-insensitively via ?q
+        // (an empty query lists everything), paged via ?limit/?offset (the shared limit/offset
+        // pagination shape, Resolved Decision #6). Actors come first, then content objects, each sorted
+        // by IRI (deterministic). Like the community search, this is computed fresh per request (not
+        // served through the local collection-page cache).
+        group.MapGet("/search", GlobalSearchHandler);
 
         // Object document: GET /ap/v1/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
         // {**path} is the object IRI's path relative to the route prefix (e.g. the Note at
@@ -1480,6 +1493,42 @@ public static class ActivityPubServerExtensions
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
 
         var collectionIri = new Iri($"{communityIri.Value}/search");
+        var namespaceBase = options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
+        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, namespaceBase);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the instance-wide search / directory for <c>GET /ap/v1/search</c> (F-13). Searches the
+    /// instance's local actors (the directory) and stored content objects case-insensitively via <c>?q</c>
+    /// (an empty/whitespace query lists everything) and slices the result into the requested page
+    /// (<c>?limit</c>/<c>?offset</c>, the shared limit/offset pagination shape, Resolved Decision #6). The
+    /// search is computed fresh per request (like the community search — not served through the local
+    /// collection-page cache), and the response carries the collection <c>Cache-Control</c> so
+    /// intermediates may cache briefly.
+    /// </summary>
+    private static async Task<IResult> GlobalSearchHandler(
+        HttpContext context,
+        IGlobalSearchService searchService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var query = context.Request.Query["q"].ToString();
+        var items = await searchService.SearchAsync(query, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
+
+        // The collection IRI is the endpoint IRI (the /ap/v1 prefix is the route prefix), so the page
+        // links (?offset/?limit) are relative to it and resolve back to this route. Trim any trailing
+        // slash from the base before appending the route prefix (the same convention as the community
+        // search handler's BuildCommunityIri).
+        var baseUrl = (options.BaseUri?.Value ?? $"{context.Request.Scheme}://{context.Request.Host}").TrimEnd('/');
+        var collectionIri = new Iri($"{baseUrl}{ActivityPubServerConstants.RoutePrefix}/search");
         var namespaceBase = options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
         var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, namespaceBase);
 

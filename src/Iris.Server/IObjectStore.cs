@@ -45,4 +45,14 @@ public interface IObjectStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> if an object was removed; otherwise <see langword="false"/>.</returns>
     public Task<bool> TryDeleteObjectAsync(Iri objectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists every object this instance stores (content objects such as <c>Note</c>s, and
+    /// <see cref="Tombstone"/>s for deleted objects).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the stored objects (possibly empty). The order is
+    /// unspecified; callers that need a stable order sort the result (e.g. by IRI). Callers that search
+    /// content should skip <see cref="Tombstone"/>s (a deleted object has no searchable content).</returns>
+    public Task<IReadOnlyList<IObject>> ListObjectsAsync(CancellationToken ct = default);
 }

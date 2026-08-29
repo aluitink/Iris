@@ -246,4 +246,31 @@ public interface IActivityPubClient : IDisposable
         Iri actorId,
         CollectionQuery? query = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches an instance's local actors (the directory) and stored content objects (F-13 global
+    /// search), served by the server's <c>GET /ap/v1/search</c> endpoint.
+    /// </summary>
+    /// <param name="instanceBase">The instance's <c>/ap/v1</c> base IRI (e.g.
+    /// <c>https://a.domain.local/ap/v1</c>). The search IRI is derived from it as
+    /// <c>{base}/search</c> (via <see cref="IriExtensions.SearchOf(Iri)"/>).</param>
+    /// <param name="query">The search query (a case-insensitive substring). An empty/whitespace query
+    /// matches all actors and content objects (the directory / full listing).</param>
+    /// <param name="options">Optional enumeration options (<see cref="SearchOptions.Limit"/>,
+    /// <see cref="SearchOptions.BypassCache"/>, <see cref="SearchOptions.Offset"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The matching items (actors first, then content objects, each sorted by IRI), as an
+    /// <see cref="IObjectOrLink"/> sequence; callers pattern-match. Returns an empty sequence when the
+    /// endpoint is unreachable (e.g. 404) or the instance serves no global search.</returns>
+    /// <remarks>
+    /// Unlike the paged collections (which are walked by following <c>next</c> links), global search
+    /// uses the <c>limit</c>/<c>offset</c> pagination shape, so the client requests a single page of up to
+    /// <see cref="SearchOptions.Limit"/> items (default 100) at <see cref="SearchOptions.Offset"/> and
+    /// returns it. The response is not cached (a search is a fresh query, not a stable collection).
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> SearchAsync(
+        Iri instanceBase,
+        string? query = null,
+        SearchOptions? options = null,
+        CancellationToken ct = default);
 }

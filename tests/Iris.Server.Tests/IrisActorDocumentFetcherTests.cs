@@ -194,6 +194,14 @@ public class IrisActorDocumentFetcherTests
             => EmptyAsync<IObjectOrLink>(ct);
 
         /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> SearchAsync(
+            Iri instanceBase,
+            string? query = null,
+            SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        /// <inheritdoc/>
         public void Dispose()
         {
         }

@@ -38,4 +38,12 @@ public interface IActorStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when an actor was removed.</returns>
     public Task<bool> RemoveActorAsync(Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists every actor this instance stores (the local actors + communities).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the stored actors (possibly empty). The order is
+    /// unspecified; callers that need a stable order sort the result (e.g. by IRI).</returns>
+    public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default);
 }

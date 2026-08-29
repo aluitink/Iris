@@ -42,4 +42,11 @@ public sealed class InMemoryObjectStore : IObjectStore
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(_objects.TryRemove(objectIri, out _));
     }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> ListObjectsAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<IObject>>(_objects.Values.ToList());
+    }
 }

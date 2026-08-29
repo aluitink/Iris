@@ -42,4 +42,11 @@ public sealed class InMemoryActorStore : IActorStore
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(_actors.TryRemove(actorIri, out _));
     }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<Actor>>(_actors.Values.ToList());
+    }
 }

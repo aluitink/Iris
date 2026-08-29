@@ -517,6 +517,13 @@ public sealed class FeedServiceTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        public IAsyncEnumerable<IObjectOrLink> SearchAsync(
+            Iri instanceBase,
+            string? query = null,
+            SearchOptions? options = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
         public void Dispose()
         {
         }
