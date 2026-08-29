@@ -466,10 +466,61 @@ Phase 12 shifted the project from feature completion to correctness and compatib
        the stale cached key, invalidates the key + actor-doc entries, **re-fetches A's actor document** (now
        the rotated key), re-verifies successfully, and stores the follow — proving the rotation is picked up
        **on first contact**, not after the 1h TTL.
-     - *Result:* **F-21 is resolved** — a rotated remote key (same key IRI, new material) is accepted on
-       first contact (the stale cached key + actor doc are invalidated and re-fetched) instead of 401-ing for
-       up to an hour. A federation rotation test is present.
+      - *Result:* **F-21 is resolved** — a rotated remote key (same key IRI, new material) is accepted on
+        first contact (the stale cached key + actor doc are invalidated and re-fetched) instead of 401-ing for
+        up to an hour. A federation rotation test is present.
 
-      ## Result
+    ## Slice 12.22 — F-24 community `followers` collection — closes F-24
+
+      - **The gap (conformance, not a spec-mandated gap but a spec *relationship*):** AS2.0 defines a
+        `followers` relationship on actors — the collection of actors that follow a given actor. For a
+        community (`Group`), a remote server checking the community's `followers` collection expected to see
+        the actors that follow the community. Iris recorded only the **follows** edge (community → follower,
+        so the follower's content reaches the community's feed) but **not** the inverse **followers** edge
+        (follower → community), so `GET /ap/v1/c/{name}/followers` always served an **empty** collection — a
+        conformance surprise.
+      - **The fix — record both edges:** the `ICommunityStore` interface gained three methods —
+        `AddFollowerAsync(community, follower)`, `RemoveFollowerAsync(community, follower)`, and
+        `GetFollowersAsync(community)` — maintaining a **followers set** (inverse of the follows set) per
+        community. The `InMemoryCommunityStore` implements them with a `_followers` `ConcurrentDictionary`.
+        The `FollowActivityHandler`'s community branch now calls `AddFollowerAsync(recipient, follower)` in
+        addition to the existing `AddFollowAsync(recipient, follower)` — so an inbound follow records **both**
+        the community's follows edge (community → follower) and the community's followers edge (follower →
+        community). The `UndoActivityHandler`'s person branch now checks if the un-follow target is a local
+        community and, if so, removes the person from **both** the community's followers set and follows set.
+        The `CommunityCollectionHandler` route for `GET /ap/v1/c/{name}/followers` now serves
+        `GetFollowersAsync` (previously hard-coded empty).
+      - **Scope note:** only a **local** person's follow/un-follow of a local community records/removes the
+        followers edge. A remote follower's edge is owned by the remote instance (the community's local
+        follows edge for a remote follower is already recorded by the `FollowActivityHandler`; the remote
+        instance records its own followers edge for the community).
+      - `FollowActivityHandlerTests` (1 new unit test): `HandleAsync_LocalCommunity_RecordsFollowerInFollowersSet`
+        verifies that an inbound follow of a local community records **both** the follows edge (community →
+        follower) and the followers edge (follower → community). The existing
+        `HandleAsync_LocalCommunity_RecordsCommunityFollowAndSchedulesAccept` test was extended to also
+        assert the followers edge.
+      - `UndoActivityHandlerTests` (1 new unit test):
+        `HandleAsync_LocalPersonUndoesFollowOfLocalCommunity_RemovesCommunityFollowerAndFollow` verifies that
+        a local person un-following a local community removes the person from **both** the community's
+        followers set and follows set.
+      - `CommunityEndpointIntegrationTests` (1 new integration test + 1 comment update):
+        `Followers_Page1_IsOrderedCollection_WithFollowerIris` seeds the community's followers set directly
+        (two remote followers) and asserts `GET /ap/v1/c/{name}/followers` returns an `OrderedCollection`
+        listing both follower IRIs with `totalItems` = 2. The existing
+        `Followers_IsEmpty_WhenCommunityHasNoFollowers` test was renamed to
+        `Followers_IsEmpty_WhenNoActorFollowsTheCommunity` and its comment updated (it still passes — a
+        community with no recorded followers serves an empty collection).
+      - `CommunityFollowsCommunityIntegrationTests` (1 test update): the existing
+        `Community_FollowOfRemoteCommunity_AppearsInBothCommunitiesFollowing` test now asserts that after B's
+        community follows A's community over the wire, **A's community `followers` collection** contains B's
+        community IRI (the `FollowActivityHandler` on A recorded the inverse edge), and B's community
+        `followers` remains empty (no actor has followed B's community in this test).
+      - *Result:* **F-24 is resolved** — a community's `followers` collection now lists its actual followers
+        (populated by the `FollowActivityHandler` on an inbound follow, removed by the `UndoActivityHandler`
+        on an un-follow) instead of being always empty. The `GET /ap/v1/c/{name}/followers` route serves the
+        followers set. A remote server checking a community's `followers` collection now sees the community's
+        actual followers.
+
+       ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
