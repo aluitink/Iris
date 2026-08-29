@@ -300,7 +300,25 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IActorDocumentFetcher>(),
                 sp.GetRequiredService<ILogger<DeliveryService>>()));
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
-        services.AddHostedService<DeliveryWorker>();
+
+        // F-22 delivery retry / dead-letter: the retry policy (MaxAttempts=5, BaseDelay=1s, MaxDelay=60s;
+        // a host may rebind DeliveryRetryOptions to tune the retry budget) and the dead-letter store
+        // (in-memory, bounded; a host may swap in a persistent IDeliveryDeadLetterStore). The worker
+        // retries a failed delivery with exponential backoff and dead-letters it when the budget is
+        // exhausted, giving at-least-once delivery (a re-delivered activity is deduped by its Id, C-07).
+        services.TryAddSingleton<DeliveryRetryOptions>(_ => new DeliveryRetryOptions());
+        services.TryAddSingleton<IDeliveryDeadLetterStore, InMemoryDeliveryDeadLetterStore>();
+        // The worker is constructed explicitly (not AddHostedService<DeliveryWorker>()) so the F-22 retry
+        // policy and dead-letter store are injected deterministically (the two-constructor overload would
+        // otherwise rely on DI's most-constructible overload selection).
+        services.AddHostedService(sp => new DeliveryWorker(
+            sp.GetRequiredService<IDeliveryQueue>(),
+            sp.GetRequiredService<IActivityPubClientFactory>(),
+            sp.GetRequiredService<Func<HttpMessageHandler>>(),
+            sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+            sp.GetRequiredService<ILogger<DeliveryWorker>>(),
+            sp.GetRequiredService<IOptions<DeliveryRetryOptions>>().Value,
+            sp.GetRequiredService<IDeliveryDeadLetterStore>()));
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor

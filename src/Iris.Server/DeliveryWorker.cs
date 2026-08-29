@@ -30,10 +30,15 @@ namespace Iris.Server;
 /// <see cref="Iris.Client.IKeyProvider"/>.
 /// </remarks>
 /// <remarks>
-/// <strong>Failure policy:</strong> a delivery that fails (network error, non-2xx) is logged at
-/// <c>Warning</c> and dropped — it is not re-queued (the activity remains in the recipient's-perspective
-/// store on the sender, and a production host may layer retry/dead-letter on top of the queue). This
-/// follows the error-handling convention: log, don't throw, for recoverable delivery failures.
+/// <strong>Failure policy (F-22 at-least-once delivery):</strong> a delivery that fails (network error
+/// or a non-2xx response) is <em>retried</em> up to <see cref="DeliveryRetryOptions.MaxAttempts"/> total
+/// attempts, with an exponentially-growing backoff between attempts (<see cref="DeliveryRetryOptions.BaseDelay"/>
+/// doubled each retry, capped at <see cref="DeliveryRetryOptions.MaxDelay"/>) so a downed peer is not
+/// hammered. When all attempts fail, the job is moved to the <see cref="IDeliveryDeadLetterStore"/>
+/// (an operator can inspect and re-drive it) rather than dropped silently. A successful (2xx) delivery
+/// is never retried. A retried delivery is harmless on the receiver: the inbox pipeline dedupes a
+/// re-delivered activity by its <c>Id</c> (C-07). This follows the error-handling convention (log, don't
+/// throw) — a delivery failure never crashes the worker.
 /// </remarks>
 public sealed class DeliveryWorker : BackgroundService
 {
@@ -41,6 +46,8 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly IActivityPubClientFactory _clientFactory;
     private readonly Func<HttpMessageHandler> _transportFactory;
     private readonly Iri? _instanceActorIri;
+    private readonly DeliveryRetryOptions _retryOptions;
+    private readonly IDeliveryDeadLetterStore? _deadLetter;
     private readonly ILogger<DeliveryWorker> _logger;
 
     /// <summary>
@@ -60,6 +67,33 @@ public sealed class DeliveryWorker : BackgroundService
         Func<HttpMessageHandler> transportFactory,
         IOptions<ActivityPubServerOptions> options,
         ILogger<DeliveryWorker> logger)
+        : this(queue, clientFactory, transportFactory, options, logger,
+            new DeliveryRetryOptions(), null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="DeliveryWorker"/> with an explicit retry / dead-letter policy (F-22).
+    /// </summary>
+    /// <param name="queue">The delivery queue to pump. Must not be null.</param>
+    /// <param name="clientFactory">The factory that builds the signed delivery client. Must not be null.</param>
+    /// <param name="transportFactory">A factory for the outbound <see cref="HttpMessageHandler"/> transport.
+    /// Must not be null.</param>
+    /// <param name="options">The server options (provides <see cref="ActivityPubServerOptions.InstanceActorId"/>).</param>
+    /// <param name="logger">The logger. Must not be null.</param>
+    /// <param name="retryOptions">The retry / dead-letter policy. Null uses the defaults
+    /// (<see cref="DeliveryRetryOptions"/>: 5 attempts, 1s base, 60s cap).</param>
+    /// <param name="deadLetter">The dead-letter store for exhausted jobs. Null disables dead-lettering
+    /// (exhausted jobs are logged at <c>Error</c> and dropped).</param>
+    /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
+    public DeliveryWorker(
+        IDeliveryQueue queue,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        IOptions<ActivityPubServerOptions> options,
+        ILogger<DeliveryWorker> logger,
+        DeliveryRetryOptions? retryOptions,
+        IDeliveryDeadLetterStore? deadLetter)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -71,6 +105,8 @@ public sealed class DeliveryWorker : BackgroundService
         _clientFactory = clientFactory;
         _transportFactory = transportFactory;
         _instanceActorIri = options.Value.InstanceActorId;
+        _retryOptions = retryOptions ?? new DeliveryRetryOptions();
+        _deadLetter = deadLetter;
         _logger = logger;
     }
 
@@ -102,43 +138,138 @@ public sealed class DeliveryWorker : BackgroundService
         _logger.LogDebug("DeliveryWorker stopped (queue complete and drained).");
     }
 
+    /// <summary>
+    /// Delivers a job with the F-22 retry / dead-letter policy: up to
+    /// <see cref="DeliveryRetryOptions.MaxAttempts"/> total attempts with an exponentially-growing
+    /// backoff between attempts; on a 2xx the delivery is done, and when the budget is exhausted the job
+    /// is moved to the dead-letter store (or logged at <c>Error</c> when no store is configured). A
+    /// delivery failure never throws out of the worker.
+    /// </summary>
     private async Task DeliverOneAsync(IActivityPubClient client, DeliveryJob job, CancellationToken ct)
     {
-        try
-        {
-            var statusCode = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
+        var maxAttempts = Math.Max(1, _retryOptions.MaxAttempts);
 
-            if (statusCode is >= 200 and < 300)
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            DeadLetterFailureKind kind;
+            string? detail;
+
+            try
             {
-                _logger.LogDebug(
-                    "Delivered activity {ActivityId} to {Inbox} ({Status})",
+                var statusCode = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
+                if (statusCode is >= 200 and < 300)
+                {
+                    _logger.LogDebug(
+                        "Delivered activity {ActivityId} to {Inbox} ({Status}) on attempt {Attempt}",
+                        job.Activity.Id,
+                        job.InboxIri,
+                        statusCode,
+                        attempt);
+                    return; // success — no retry
+                }
+
+                _logger.LogWarning(
+                    "Delivery of activity {ActivityId} to {Inbox} returned non-2xx status {Status} on attempt {Attempt}/{MaxAttempts}",
                     job.Activity.Id,
                     job.InboxIri,
-                    statusCode);
+                    statusCode,
+                    attempt,
+                    maxAttempts);
+                kind = DeadLetterFailureKind.NonSuccessStatus;
+                detail = statusCode.ToString();
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // shutting down — let the worker stop (do not retry / dead-letter on cancellation)
+            }
+            catch (Exception ex)
+            {
+                // Log, don't throw: a transport failure is retryable. Never crash the worker over one bad delivery.
+                _logger.LogWarning(
+                    ex,
+                    "Delivery of activity {ActivityId} to {Inbox} failed on attempt {Attempt}/{MaxAttempts}",
+                    job.Activity.Id,
+                    job.InboxIri,
+                    attempt,
+                    maxAttempts);
+                kind = DeadLetterFailureKind.TransportError;
+                detail = ex.Message;
+            }
+
+            // This attempt failed. If there are retries left, back off (exponential, capped) and retry;
+            // the backoff is observed via a cancellable delay so a host shutdown interrupts it promptly.
+            if (attempt < maxAttempts)
+            {
+                var delay = BackoffDelay(attempt);
+                await Task.Delay(delay, ct).ConfigureAwait(false);
             }
             else
             {
-                _logger.LogWarning(
-                    "Delivery of activity {ActivityId} to {Inbox} returned non-2xx status {Status}",
-                    job.Activity.Id,
-                    job.InboxIri,
-                    statusCode);
+                // Budget exhausted: dead-letter the job (or log at Error when no store is configured).
+                await DeadLetterAsync(job, kind, detail, maxAttempts, ct).ConfigureAwait(false);
             }
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+    }
+
+    /// <summary>
+    /// The backoff delay before retry <paramref name="attempt"/> (1-based): <see
+    /// cref="DeliveryRetryOptions.BaseDelay"/> doubled <c>(attempt − 1)</c> times, capped at
+    /// <see cref="DeliveryRetryOptions.MaxDelay"/> (exponential backoff; a downed peer is not hammered).
+    /// </summary>
+    private TimeSpan BackoffDelay(int attempt)
+    {
+        var baseTicks = _retryOptions.BaseDelay.Ticks;
+        var capTicks = _retryOptions.MaxDelay.Ticks;
+        if (baseTicks <= 0)
         {
-            throw;
+            return TimeSpan.Zero;
         }
-        catch (Exception ex)
+
+        // BaseDelay * 2^(attempt-1), saturating at MaxDelay (avoid overflow by capping the shift).
+        var delayTicks = baseTicks;
+        for (var i = 1; i < attempt && delayTicks < capTicks; i++)
         {
-            // Log, don't throw: a delivery failure is recoverable (the activity is stored; the remote
-            // can be retried by a production host). Never crash the worker over one bad delivery.
-            _logger.LogWarning(
-                ex,
-                "Delivery of activity {ActivityId} to {Inbox} failed",
+            delayTicks = delayTicks > capTicks / 2 ? capTicks : delayTicks * 2;
+        }
+
+        return delayTicks > capTicks ? _retryOptions.MaxDelay : TimeSpan.FromTicks(delayTicks);
+    }
+
+    /// <summary>
+    /// Moves an exhausted job to the dead-letter store (F-22) and logs it; when no store is configured,
+    /// logs at <c>Error</c> (the job is dropped, preserving the pre-F-22 behavior for hosts that opt out).
+    /// </summary>
+    private async Task DeadLetterAsync(
+        DeliveryJob job, DeadLetterFailureKind kind, string? detail, int attempts, CancellationToken ct)
+    {
+        if (_deadLetter is not { } store)
+        {
+            _logger.LogError(
+                "Delivery of activity {ActivityId} to {Inbox} exhausted {Attempts} attempts ({Kind}: {Detail}); no dead-letter store configured, dropping.",
                 job.Activity.Id,
-                job.InboxIri);
+                job.InboxIri,
+                attempts,
+                kind,
+                detail);
+            return;
         }
+
+        var entry = new DeadLetterEntry(
+            job.InboxIri,
+            job.Activity,
+            job.ActorIri,
+            attempts,
+            kind,
+            detail,
+            DateTimeOffset.UtcNow);
+        await store.AddAsync(entry, ct).ConfigureAwait(false);
+        _logger.LogError(
+            "Delivery of activity {ActivityId} to {Inbox} exhausted {Attempts} attempts ({Kind}: {Detail}); dead-lettered.",
+            job.Activity.Id,
+            job.InboxIri,
+            attempts,
+            kind,
+            detail);
     }
 
     /// <summary>

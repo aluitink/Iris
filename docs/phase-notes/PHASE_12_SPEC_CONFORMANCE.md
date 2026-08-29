@@ -124,12 +124,39 @@ Phase 12 shifted the project from feature completion to correctness and compatib
   and yields its items; the response is not cached.
 - *Scope note:* instance-local only — a cross-instance (relay / WebFinger) search is a separate,
   larger feature (out of scope for F-13, matching the per-community search).
-- `GlobalSearchIntegrationTests` (9) covers the live endpoint: actor + content matching,
-  case-insensitivity, the directory listing, `limit`/`offset` paging (page 1 `next` / page 2 `prev`
-  no `next` / offset-past-end), and a client `SearchAsync` round-trip. `GlobalSearchServiceTests`
-  (5) covers the service in isolation (ordering, the matching surfaces, no-match, and the
-  tombstone / content-pass-actor exclusions).
+ - `GlobalSearchIntegrationTests` (9) covers the live endpoint: actor + content matching,
+   case-insensitivity, the directory listing, `limit`/`offset` paging (page 1 `next` / page 2 `prev`
+   no `next` / offset-past-end), and a client `SearchAsync` round-trip. `GlobalSearchServiceTests`
+   (5) covers the service in isolation (ordering, the matching surfaces, no-match, and the
+   tombstone / content-pass-actor exclusions).
 
-## Result
+ ## Slice 12.12 — F-22 delivery retry / dead-letter (at-least-once delivery)
+
+ - Added `DeliveryRetryOptions` (`MaxAttempts`=5, `BaseDelay`=1s, `MaxDelay`=60s) — the worker's retry
+   policy; a host may rebind it to tune the retry budget (`MaxAttempts`=1 for fail-fast).
+ - `DeliveryJob` gained an `Attempts` counter (default 0) + `AfterAttempt()` so a retry can track how
+   many times a job has been tried.
+ - Added `IDeliveryDeadLetterStore` / `InMemoryDeliveryDeadLetterStore` (bounded, newest-first, the
+   oldest is evicted beyond `capacity`=1000) + `DeadLetterEntry` (inbox, activity, actor, attempts,
+   `DeadLetterFailureKind`, last failure detail, timestamp; `ToJob()` re-drives it). A production host
+   swaps in a persistent `IDeliveryDeadLetterStore`; the worker depends only on the interface.
+ - The `DeliveryWorker` now retries a failed delivery up to `MaxAttempts` total attempts with
+   exponential backoff (`BaseDelay` doubled per retry, capped at `MaxDelay`) so a downed peer is not
+   hammered; on a 2xx it is done. When the budget is exhausted the job is moved to the dead-letter
+   store (or logged at `Error` + dropped when no store is configured, preserving the pre-F-22 opt-out).
+   A delivery failure never throws out of the worker. This is *at-least-once for failed attempts* — a
+   re-delivered activity is deduped by its `Id` on the receiver (C-07), so a retry is a harmless no-op.
+ - The worker is registered via an explicit DI factory (not `AddHostedService<DeliveryWorker>()`) so the
+   retry policy + dead-letter store are injected deterministically (two-constructor overload would
+   otherwise rely on most-constructible overload selection).
+ - `DeliveryRetryTests` (8): a successful delivery is delivered on the first attempt (no retry); a
+   transient failure is retried until success (not dead-lettered); a permanent failure exhausts the
+   budget and is dead-lettered with the correct attempt count + failure kind + status; a transport
+   error is dead-lettered as `TransportError`; `MaxAttempts`=1 is fail-fast but still dead-letters;
+   without a store the exhausted job is dropped (not a crash); the dead-letter store evicts the oldest
+   beyond capacity; and the backoff delay grows exponentially and is capped (unit-tested via the
+   worker's private `BackoffDelay`).
+
+ ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.

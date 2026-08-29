@@ -18,4 +18,7 @@ namespace Iris.Server;
 /// <param name="Activity">The activity to deliver (must be a non-null <see cref="Activity"/>).</param>
 /// <param name="ActorIri">The local actor to sign the delivery as, or null to sign as the
 /// instance actor (the system key for automated events).</param>
-public sealed record DeliveryJob(Iri InboxIri, Activity Activity, Iri? ActorIri = null);
+/// <param name="Attempts">The number of delivery attempts already made (0 for a fresh job). The
+/// <see cref="DeliveryWorker"/> (F-22) tracks attempts as it retries a failed delivery and records the
+/// count on the <see cref="DeadLetterEntry"/> when the retry budget is exhausted.</param>
+public sealed record DeliveryJob(Iri InboxIri, Activity Activity, Iri? ActorIri = null, int Attempts = 0);
