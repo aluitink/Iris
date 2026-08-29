@@ -25,7 +25,7 @@ public sealed class FeedService : IFollowFeedService
     private readonly ILocalActorResolver _localActors;
     private readonly IActorDocumentFetcher _actorDocs;
     private readonly IActivityPubClient _client;
-        private readonly FeedOptions _options;
+    private readonly FeedOptions _options;
 
     /// <summary>
     /// Initializes a new followed-feed service.
