@@ -400,10 +400,38 @@ Phase 12 shifted the project from feature completion to correctness and compatib
      `DeliveryWorker` POSTs the activity to the relay's inbox signed as the author; R validates the
      delivery (resolving the author's key from A's actor document) and stores the activity. A
      no-relay author's post is surfaced locally but **not** fanned out to the relay.
-   - *Result:* **F-06 is fully resolved** — a local actor can configure which relays to fan out through
-     (12.18) **and** their `Create`/`Announce` content is actually delivered to each subscribed relay
-     (12.19).
+    - *Result:* **F-06 is fully resolved** — a local actor can configure which relays to fan out through
+      (12.18) **and** their `Create`/`Announce` content is actually delivered to each subscribed relay
+      (12.19).
 
-    ## Result
+  ## Slice 12.20 — F-09 `Add` / `Remove` (collection-modification primitives) — closes F-09
+
+    - **`Add`/`Remove` interpretation** (F-09): a new `AddRemoveActivityHandler` interprets the
+      ActivityStreams collection-modification primitives. When the **recipient** of the delivery (the inbox
+      the activity was posted to — the collection's owner, per `InboxDelivery.RecipientIri`) is a local
+      **community** (`Group`), the activity's `object` (the item being added/removed) is **added to /
+      removed from the community's member set** via `ICommunityStore.AddMemberAsync` /
+      `RemoveMemberAsync`. This is the case for a server that manages a community's membership with the spec's
+      `Add`/`Remove` primitives rather than a `Follow`.
+    - The handler derives from the **non-generic** `IActivityHandler` (a single
+      `ActivityHandlerBase<TActivity>` cannot be parameterized over two activity types) and pattern-matches
+      `Add`/`Remove` in `DispatchAsync`, throwing on any other type (the `InboxProcessor` only dispatches an
+      `Add` or `Remove` here). `HandledActivityType` is `typeof(Activity)`, so the processor still prefers it
+      over the `CommunityInboxActivityHandler` (also registered for `Activity`) as the **most specific**
+      handler for both `Add` and `Remove`.
+    - **Recipient scoping:** a **person** recipient is a no-op (a person's `followers` are owned by the follow
+      lifecycle — `FollowActivityHandler` / `AcceptActivityHandler` — not `Add`/`Remove`), and a **remote**
+      community is not this instance's concern. `AddMember` / `RemoveMember` are idempotent, so a re-delivered
+      activity (at-least-once delivery, C-07) is safe to re-apply.
+    - `AddRemoveActivityHandlerTests` (13 new unit tests) and `AddRemoveFederationIntegrationTests` (4 new
+      end-to-end tests, mirroring `MoveFederationIntegrationTests`): a signed `Add` delivered to a local
+      community adds the actor as a member (B validates the signature by fetching the sender's key from A's
+      actor document, then stores + interprets); a signed `Remove` removes an existing member; a signed `Add`
+      to a local **person** is stored but a no-op (no community membership, no follow edge); and an `Add`
+      signed by an **unresolvable-key** actor is **rejected (401)** (nothing stored, no member added).
+    - *Result:* **F-09 is resolved** — a community's membership is now synchronized from the spec's
+      `Add`/`Remove` collection-modification primitives (in addition to the `Follow`-based path).
+
+     ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
