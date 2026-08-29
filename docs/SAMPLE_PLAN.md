@@ -1,6 +1,6 @@
 # Sample Docker Composition — Build Plan (Phase 8 Enhancement)
 
-> Status: planning · Part of the [Iris plan](../PLAN.md). Detailed plan for the Phase 8 sample; the
+> Status: in progress (S1 done, [change 070](changes/070-sample-federation-ready.md)) · Part of the [Iris plan](../PLAN.md). Detailed plan for the Phase 8 sample; the
 > [Roadmap](ROADMAP.md) carries only the waypoints/checkboxes and the root [PLAN.md](../PLAN.md) carries
 > only the status row. Per the [doc-lean rules](reference/AUTONOMOUS_LOOP.md#keeping-the-docs-lean), heavy
 > build notes for each slice land in [changes/](changes/README.md) as they complete.
@@ -334,9 +334,11 @@ Each slice is one autonomous-loop turn (see [AUTONOMOUS_LOOP.md](reference/AUTON
 lands a change doc in [changes/](changes/README.md). Ordered so the stack stays green and deployable
 throughout.
 
-- **S1 — Sample server: federation-ready + rich seed.** Add `UseSignatureValidation()`, register all
-  seeded actors' keys, expand the per-instance seed (distinct variants), keep `CreateWebHostBuilder` the
-  composition root. Extend `tests/SampleServer.Tests` (signed inbox accept, unsigned 401, richer seed).
+- [x] **S1 — Sample server: federation-ready + rich seed** (done, [change 070](changes/070-sample-federation-ready.md)). Added `UseSignatureValidation()`, registered all
+  seeded actors' keys, expanded the per-instance seed (three actors incl. an Ed25519 remote-host
+  stand-in, a community, follows, notes/reply/like), kept `CreateWebHostBuilder` the
+  composition root. Extended `tests/SampleServer.Tests` with 8 federation facts (signed inbox accept
+  RSA + Ed25519, unsigned 401, per-actor auth, remote-host boundary, seed edges).
 - **S2 — Sample server README.** `samples/SampleServer/README.md` (Deliverable A) — feature table +
   pointers + config + seed inventory + test pointers.
 - **S3 — Blazor WASM scaffold + composition root.** Convert `SampleBlazorClient` to a Blazor WASM app;

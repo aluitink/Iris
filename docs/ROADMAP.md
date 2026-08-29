@@ -82,8 +82,9 @@ substantial design calls: [decisions/](decisions/README.md).
 
 ## Near-term priorities
 
-1. Build the Phase 8 sample per [SAMPLE_PLAN.md](SAMPLE_PLAN.md): federation-ready server + rich seed → Blazor
-   WASM server-explorer (logon-by-WebFinger, explore + write, external-instance) → 3-service compose + smoke path.
+1. Build the Phase 8 sample per [SAMPLE_PLAN.md](SAMPLE_PLAN.md): **S1 done** (federation-ready server +
+   rich seed, [change 070](changes/070-sample-federation-ready.md)) → S2 server README → Blazor WASM
+   server-explorer (logon-by-WebFinger, explore + write, external-instance) → 3-service compose + smoke path.
 2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
 3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
 4. Use the sample (instance→instance + instance→external via dev FQDNs) to feed Phase 13 live-interop results
