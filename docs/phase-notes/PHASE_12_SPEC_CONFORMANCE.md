@@ -429,9 +429,47 @@ Phase 12 shifted the project from feature completion to correctness and compatib
       actor document, then stores + interprets); a signed `Remove` removes an existing member; a signed `Add`
       to a local **person** is stored but a no-op (no community membership, no follow edge); and an `Add`
       signed by an **unresolvable-key** actor is **rejected (401)** (nothing stored, no member added).
-    - *Result:* **F-09 is resolved** — a community's membership is now synchronized from the spec's
-      `Add`/`Remove` collection-modification primitives (in addition to the `Follow`-based path).
+     - *Result:* **F-09 is resolved** — a community's membership is now synchronized from the spec's
+       `Add`/`Remove` collection-modification primitives (in addition to the `Follow`-based path).
 
-     ## Result
+   ## Slice 12.21 — F-21 key-rotation invalidation — closes F-21
+
+     - **The gap (operational, not a spec item):** when a remote actor *rotates* its key — a new RSA/Ed25519
+       key published at the **same key IRI** (`keyId`) in its actor document — the receiving instance's
+       `RemoteKeyCache` keeps serving the **old** public key until its 1h TTL (or a manual `?refresh=true`).
+       In that window, a validly-signed inbound request **fails verification and is rejected (401)** even
+       though the sender's new key is correct.
+     - **The fix — invalidate-on-failure:** the `HttpSignatureValidator` gained two *optional* ctor params
+       (`RemoteKeyCache?`, `RemoteActorCache?`), wired via the `ActivityPubServerExtensions` DI factory (a
+       validator constructed without them keeps the original single-attempt behavior). On a verification
+       **failure** (the signature does not verify against the resolved key — distinct from a *missing* key),
+       the validator treats it as the rotation signal: it invalidates the signing `keyId`'s entry in the
+       `RemoteKeyCache` **and** the owning actor's entry in the `RemoteActorCache`, then **re-resolves once**
+       and **re-verifies**. The actor entry must be invalidated too because the re-resolve re-derives the key
+       by *re-fetching the actor document* — a stale cached document would re-derive the old key and defeat
+       the rotation. The owning actor IRI is the `keyId` with its `#fragment` stripped (`keyId = actorIri +
+       "#key-N"`). A **missing** key (no resolvable public key) is *not* a rotation signal — it does not
+       invalidate or re-resolve (only a *failure* does).
+     - `RemoteKeyCache` is now a `public` (non-`sealed`) class with a `virtual bool Invalidate(Iri)` so a
+       host/test can extend it (the DI-registered instance and the fetcher's cache are the same instance).
+     - `KeyRotationInvalidationTests` (5 new unit tests): a verification **failure** invalidates the key +
+       actor-doc entries and re-resolves once (the re-resolved key is the one used to verify, and the stale
+       cache is empty afterward); a **missing** key does *not* invalidate or re-resolve; a **successful**
+       verification does not invalidate; and the **no-cache** constructor path still verifies (the
+       single-attempt behavior is preserved when neither cache is supplied).
+     - `KeyRotationFederationIntegrationTests` (1 new end-to-end test): instance A hosts `alice`, instance B
+       hosts `bob`. A signed `Follow` (alice's **original** key) is delivered and accepted, **warming B's
+       caches** (B fetched A's actor document and cached alice's key under its key IRI). `alice` then
+       **rotates her key** — a new RSA key at the **same key IRI**, republished in A's actor document (and
+       A's `LocalActorDocumentCache` invalidated so the re-fetch reads the rotated doc). A `Follow` signed
+       with the **rotated** key is delivered and **accepted (202)**: B's validator fails verification against
+       the stale cached key, invalidates the key + actor-doc entries, **re-fetches A's actor document** (now
+       the rotated key), re-verifies successfully, and stores the follow — proving the rotation is picked up
+       **on first contact**, not after the 1h TTL.
+     - *Result:* **F-21 is resolved** — a rotated remote key (same key IRI, new material) is accepted on
+       first contact (the stale cached key + actor doc are invalidated and re-fetched) instead of 401-ing for
+       up to an hour. A federation rotation test is present.
+
+      ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
