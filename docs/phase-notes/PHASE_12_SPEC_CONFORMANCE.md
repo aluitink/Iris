@@ -103,6 +103,33 @@ Phase 12 shifted the project from feature completion to correctness and compatib
   creates a post → remote C receives it via federation; A edits → C's copy is refreshed; A
   deletes → C's copy is tombstoned.
 
+## Slice 12.11 — F-13 global search (instance-wide actor + content directory)
+
+- Added `IGlobalSearchService` / `GlobalSearchService`: a case-insensitive substring search over
+  the instance's **own** local surface — the local actors (the directory, matched by `name` /
+  `preferredUsername` / IRI) and the stored content objects (matched by `content` / `name`).
+  `Tombstone`s are skipped and an object that is an actor is matched only by the actor pass (not
+  duplicated as content). An empty/whitespace query matches everything (the endpoint doubles as an
+  unfiltered directory / listing). Results are ordered deterministically: actors first, then content
+  objects, each sub-list IRI-sorted (ordinal).
+- `GET /ap/v1/search` serves the result as a paged `OrderedCollection` reusing the shared
+  `BuildSearchPageDocument` (page 1 `OrderedCollection` + `next`, page 2+ `OrderedCollectionPage` +
+  `prev`/`next`; the query term recorded under `iris:searchQuery`). Computed fresh per request (not
+  the local collection-page cache), like the community search. Registered in DI via
+  `TryAddSingleton<IGlobalSearchService, GlobalSearchService>`.
+- `IActorStore.ListActorsAsync` / `IObjectStore.ListObjectsAsync` (in-memory impls) are the new read
+  surface the search enumerates.
+- Client: `IActivityPubClient.SearchAsync(instanceBase, query, SearchOptions)` requests a single
+  page (up to `Limit`, default 100, at `Offset`) from `{base}/search` (derived by `Iri.SearchOf`)
+  and yields its items; the response is not cached.
+- *Scope note:* instance-local only — a cross-instance (relay / WebFinger) search is a separate,
+  larger feature (out of scope for F-13, matching the per-community search).
+- `GlobalSearchIntegrationTests` (9) covers the live endpoint: actor + content matching,
+  case-insensitivity, the directory listing, `limit`/`offset` paging (page 1 `next` / page 2 `prev`
+  no `next` / offset-past-end), and a client `SearchAsync` round-trip. `GlobalSearchServiceTests`
+  (5) covers the service in isolation (ordering, the matching surfaces, no-match, and the
+  tombstone / content-pass-actor exclusions).
+
 ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
