@@ -137,6 +137,68 @@ public interface IActivityPubClient : IDisposable
     public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Flags an actor (F-07 moderation): builds a <see cref="Flag"/> activity (actor =
+    /// <paramref name="actorId"/>, object = <paramref name="targetId"/>) and delivers it to the target's
+    /// inbox (a moderation report — the inverse is an <see cref="Undo"/> of the <see cref="Flag"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor flagging (must match the client's signing identity so
+    /// the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor to flag.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="Flag"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and is
+    /// signed by the pipeline. The receiving instance records the <c>actorId → targetId</c> flag edge in
+    /// its moderation store when either party is local (the flag is a report; it does not sever the
+    /// relationship the way a <see cref="BlockAsync"/> block does). The <see cref="Flag"/> gets a
+    /// deterministic, unique-per-(actor,target) IRI so a retried flag dedupes on the receiver.
+    /// </remarks>
+    public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-flags an actor (F-07 moderation): the inverse of <see cref="FlagAsync"/> — builds an
+    /// <see cref="Undo"/> activity referencing the original <see cref="Flag"/> (actor =
+    /// <paramref name="actorId"/>, object = the <see cref="Flag"/> IRI for the pair) and delivers it to
+    /// the target's inbox, removing the recorded <c>actorId → targetId</c> flag edge.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor un-flagging (must match the client's signing identity
+    /// so the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor to un-flag.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and
+    /// is signed by the pipeline. It references the deterministic <see cref="Flag"/> IRI
+    /// <c>{actorId}/flags/{targetId}</c> (the same IRI <see cref="FlagAsync"/> used), so the receiving
+    /// instance resolves the original flag's parties from the stored <see cref="Flag"/> and removes the
+    /// exact recorded edge (a local flagger of anyone, or a flagger of a local actor).
+    /// </remarks>
+    public Task<int> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates the actors that <paramref name="actorId"/> has flagged (F-07 moderation): reads the
+    /// actor's <c>flags</c> collection (served at <c>actorId.FlagsOf()</c>, i.e.
+    /// <c>{actor}/flags</c>) as a paged <see cref="OrderedCollection"/> of items, so the same
+    /// enumeration/caching semantics apply (read through the <see cref="CollectionPageCache"/>).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose flags collection is requested.</param>
+    /// <param name="query">Optional enumeration options (<see cref="CollectionQuery.Limit"/>,
+    /// <see cref="CollectionQuery.BypassCache"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>An async sequence of the flagged actors (as <see cref="IObjectOrLink"/> — a
+    /// <see cref="Link"/> to each flagged actor's IRI), in the order the collection yields them.</returns>
+    /// <remarks>
+    /// The <c>flags</c> collection is a stable, paged collection (page 1 an
+    /// <see cref="OrderedCollection"/> with <c>first</c>; page N&gt;1 an
+    /// <see cref="OrderedCollectionPage"/>), so it is enumerated exactly like any other collection (the
+    /// items are the flagged actors' IRIs).
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
     /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
     /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the

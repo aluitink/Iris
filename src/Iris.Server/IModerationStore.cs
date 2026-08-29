@@ -4,7 +4,7 @@ namespace Iris.Server;
 
 /// <summary>
 /// Records and queries moderation relationships (F-07): the directed block edges
-/// <c>blocker → blocked</c> an instance knows about.
+/// <c>blocker → blocked</c> and flag edges <c>flagger → flagged</c> an instance knows about.
 /// </summary>
 /// <remarks>
 /// A <c>Block</c> activity (ActivityPub §5.2.1.3) carries <c>actor</c> = the blocking actor and
@@ -68,4 +68,41 @@ public interface IModerationStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the blocker IRIs (possibly empty).</returns>
     public Task<IReadOnlyList<Iri>> GetBlockersAsync(Iri blockedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a flag edge from <paramref name="flaggerIri"/> to <paramref name="flaggedIri"/> (F-07
+    /// moderation — the <c>Flag</c> activity, AS2.0). Idempotent (recording the same flag twice is a
+    /// no-op).
+    /// </summary>
+    /// <param name="flaggerIri">The IRI of the actor issuing the flag.</param>
+    /// <param name="flaggedIri">The IRI of the actor being flagged.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task RecordFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a flag edge (an un-flag, e.g. an <c>Undo</c> of a <c>Flag</c>).
+    /// </summary>
+    /// <param name="flaggerIri">The IRI of the actor who issued the flag.</param>
+    /// <param name="flaggedIri">The IRI of the actor who was flagged.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a flag edge was removed.</returns>
+    public Task<bool> RemoveFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors that <paramref name="flaggerIri"/> has flagged (the actor's
+    /// <c>flags</c> collection).
+    /// </summary>
+    /// <param name="flaggerIri">The IRI of the actor whose flags collection is requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the flagged-actor IRIs (possibly empty).</returns>
+    public Task<IReadOnlyList<Iri>> GetFlagsAsync(Iri flaggerIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns whether <paramref name="flaggerIri"/> has flagged <paramref name="flaggedIri"/>.
+    /// </summary>
+    /// <param name="flaggerIri">The IRI of the potential flagger.</param>
+    /// <param name="flaggedIri">The IRI of the potential flagged actor.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when the flag edge exists.</returns>
+    public Task<bool> HasFlaggedAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default);
 }

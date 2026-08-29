@@ -58,6 +58,14 @@ public static class IriExtensions
     public static Iri BlocksOf(this Iri iri) => AppendSegment(iri, "blocks");
 
     /// <summary>
+    /// Derives the flagged-collection IRI by appending <c>/flags</c> (F-07 moderation).
+    /// </summary>
+    /// <param name="iri">The actor IRI. Must be absolute.</param>
+    /// <returns>The flagged-collection IRI (e.g. <c>https://a.domain.local/u/alice/flags</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri FlagsOf(this Iri iri) => AppendSegment(iri, "flags");
+
+    /// <summary>
     /// Derives the community-feed IRI by appending <c>/feed</c>.
     /// </summary>
     /// <param name="iri">The community IRI. Must be absolute.</param>

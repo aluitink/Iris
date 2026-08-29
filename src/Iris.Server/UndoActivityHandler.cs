@@ -6,8 +6,9 @@ namespace Iris.Server;
 /// <summary>
 /// Handles inbound <see cref="Undo"/> activities: when the <em>local</em> actor (the recipient of the
 /// delivery, i.e. the follower) undoes a follow it made, the local follow edge is removed from the
-/// <see cref="IFollowStore"/> (an un-follow); and when an actor undoes a <see cref="Block"/> it made,
-/// the local block edge is removed from the <see cref="IModerationStore"/> (an un-block, F-07).
+/// <see cref="IFollowStore"/> (an un-follow); when an actor undoes a <see cref="Block"/> it made, the
+/// local block edge is removed from the <see cref="IModerationStore"/> (an un-block, F-07); and when an
+/// actor undoes a <see cref="Flag"/> it made, the local flag edge is removed (an un-flag, F-07).
 /// </summary>
 /// <remarks>
 /// An <c>Undo</c> is the ActivityStreams inverse primitive: it undoes the activity referenced by its
@@ -37,8 +38,15 @@ namespace Iris.Server;
 /// <see cref="IModerationStore"/> via <see cref="IModerationStore.RemoveBlockAsync"/> — the inverse of the
 /// block. The block's parties are read from the original <c>Block</c> (fetched from the local activity
 /// store), so the removal is scoped to the exact edge that was recorded (a local blocker of anyone, or a
-/// blocker of a local actor). An <c>Undo</c> of any other activity type (not a <c>Follow</c> or a
-/// <c>Block</c>) is a no-op (there is no corresponding edge in a store this instance owns).
+/// blocker of a local actor).
+/// </para>
+/// <para>
+/// <strong>Un-flag (F-07).</strong> When the <c>Undo</c>'s object is a <see cref="Flag"/> (an un-flag),
+/// the <c>flagger → flagged</c> edge recorded by <see cref="FlagActivityHandler"/> is removed from the
+/// <see cref="IModerationStore"/> via <see cref="IModerationStore.RemoveFlagAsync"/> — the inverse of the
+/// flag. The flag's parties are read from the original <c>Flag</c> (fetched from the local activity
+/// store). An <c>Undo</c> of any other activity type (not a <c>Follow</c>, a <c>Block</c>, or a
+/// <c>Flag</c>) is a no-op (there is no corresponding edge in a store this instance owns).
 /// </para>
 public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
 {
@@ -75,6 +83,17 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         {
             await _persistence.Moderation
                 .RemoveBlockAsync(blockEdge.Blocker, blockEdge.Blocked, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        // An un-flag (F-07): when the Undo's object is a Flag, remove the recorded flag edge (the
+        // inverse of the FlagActivityHandler). Handled before the follow path like the block branch.
+        if (await ResolveFlagEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } flagEdge)
+        {
+            await _persistence.Moderation
+                .RemoveFlagAsync(flagEdge.Flagger, flagEdge.Flagged, ct)
                 .ConfigureAwait(false);
             return;
         }
@@ -172,5 +191,41 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (blockerIri.Value, blockedIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original flag's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Flag"/>, by IRI) when the undone activity is a <see cref="Flag"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="null"/> when the object is not a <see cref="Flag"/> (the follow path
+    /// applies), when the referenced flag was never stored, or when the stored flag's parties cannot be
+    /// resolved (a malformed flag) — in which case there is no recorded edge to remove.
+    /// </remarks>
+    private async Task<(Iri Flagger, Iri Flagged)?> ResolveFlagEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var flagIri = responseObject.ResolveObjectIri();
+        if (!flagIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(flagIri.Value, out var stored, ct)
+            .ConfigureAwait(false) ||
+            stored is not Flag flag)
+        {
+            return null;
+        }
+
+        var flaggerIri = flag.Actor?.FirstOrDefault().ResolveObjectIri();
+        var flaggedIri = flag.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!flaggerIri.HasValue || !flaggedIri.HasValue)
+        {
+            return null;
+        }
+
+        return (flaggerIri.Value, flaggedIri.Value);
     }
 }

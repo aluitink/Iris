@@ -229,6 +229,55 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // A flag is delivered to the target's inbox (the flagged actor's inbox) and is signed by the
+        // pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
+        // receiving moderation store can dedupe a retried flag. The ActivityStreams Flag type
+        // (a subclass of Activity) has no typed `id`/`actor`/`object` scalar beyond the library's, so
+        // the object-initializer form is used and the constructor sets `Type = "Flag"`.
+        var flag = new Flag
+        {
+            Id = $"{actorId.Value}/flags/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = targetId.Uri }],
+        };
+
+        return DeliverAsync(targetId.InboxOf(), flag, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // An un-flag is the inverse of FlagAsync: the Undo references the deterministic Flag IRI
+        // {actorId}/flags/{targetId} (the same IRI FlagAsync used), so the receiving instance resolves
+        // the original Flag's parties from the stored Flag and removes the recorded edge. The Undo is
+        // delivered to the flagged actor's inbox (the same inbox the Flag went to) and is signed by the
+        // pipeline as actorId.
+        var flagIri = new Iri($"{actorId.Value}/flags/{targetId.Value}");
+        var undo = new Undo
+        {
+            Id = $"{actorId.Value}/unflags/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = flagIri.Uri }],
+        };
+
+        return DeliverAsync(targetId.InboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
+        Iri actorId,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The actors an actor has flagged form a stable, paged collection at {actor}/flags, so it is
+        // enumerated exactly like any other collection (GetCollectionItemsAsync reads through the
+        // CollectionPageCache). The items are the flagged actors' IRIs (links).
+        return GetCollectionItemsAsync(actorId.FlagsOf(), query, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
     {
         // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:

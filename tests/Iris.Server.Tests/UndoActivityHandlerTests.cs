@@ -244,6 +244,98 @@ public sealed class UndoActivityHandlerTests
         Assert.True(await persistence.Follows.IsFollowingAsync(LocalPerson, RemoteTarget));
     }
 
+    // --- Un-flag (F-07): Undo of a Flag removes the flag edge ------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalFlaggerUndoesFlag_RemovesFlagEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // bob (local) flags alice (remote): the edge is recorded and the Flag is stored, then the
+        // Flag is undone (an un-flag).
+        var flag = BuildFlag(LocalPerson, RemoteTarget);
+        await persistence.Moderation.RecordFlagAsync(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(flag);
+
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(flag)), BuildUndo(flag));
+
+        // The flag edge is removed (bob no longer has alice in his flags).
+        Assert.False(await persistence.Moderation.HasFlaggedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_FlagOfLocalUndone_RemovesFlagEdge()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // alice (remote) flagged bob (local) — the edge is recorded (bob was flagged). The Undo (from
+        // alice, the remote flagger) removes the recorded edge. We assert the directed predicate is
+        // cleared when the edge is removed.
+        var flag = BuildFlag(RemoteTarget, LocalPerson);
+        await persistence.Moderation.RecordFlagAsync(RemoteTarget, LocalPerson);
+        await persistence.Activities.PutActivityAsync(flag);
+
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, BuildUndo(flag)), BuildUndo(flag));
+
+        // The edge is removed: bob is no longer flagged by alice.
+        Assert.False(await persistence.Moderation.HasFlaggedAsync(RemoteTarget, LocalPerson));
+    }
+
+    [Fact]
+    public async Task HandleAsync_FlagNotStored_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Moderation.RecordFlagAsync(LocalPerson, RemoteTarget);
+
+        // The Undo references a Flag that was never stored → the edge cannot be resolved → no-op.
+        var flag = BuildFlag(LocalPerson, RemoteTarget);
+        // (deliberately not PutActivityAsync)
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(flag)), BuildUndo(flag));
+
+        // The edge is untouched.
+        Assert.True(await persistence.Moderation.HasFlaggedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_UnknownFlagIri_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Moderation.RecordFlagAsync(LocalPerson, RemoteTarget);
+
+        // The Undo references a flag IRI that does not exist in the store → no-op.
+        var unknownFlagIri = new Iri($"{LocalPerson}/flags/{RemoteTarget}");
+        var undo = BuildUndoReferencing(unknownFlagIri);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, undo), undo);
+
+        Assert.True(await persistence.Moderation.HasFlaggedAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_UndoOfFlag_DoesNotTouchBlockEdges()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Moderation.RecordFlagAsync(LocalPerson, RemoteTarget);
+        await persistence.Moderation.RecordBlockAsync(LocalPerson, RemoteTarget);
+
+        // An un-flag must only clear the flag edge, leaving the block edge intact.
+        var flag = BuildFlag(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(flag);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, BuildUndo(flag)), BuildUndo(flag));
+
+        Assert.False(await persistence.Moderation.HasFlaggedAsync(LocalPerson, RemoteTarget));
+        Assert.True(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
+    }
+
     // --- Remote recipient: not this instance's concern --------------------------------------
 
     [Fact]
@@ -313,6 +405,13 @@ public sealed class UndoActivityHandlerTests
         Id = $"{blockerIri}/blocks/{blockedIri.Value}",
         Actor = [new Link { Href = new Uri(blockerIri.Value) }],
         Object = [new Link { Href = new Uri(blockedIri.Value) }],
+    };
+
+    private static Flag BuildFlag(Iri flaggerIri, Iri flaggedIri) => new()
+    {
+        Id = $"{flaggerIri}/flags/{flaggedIri.Value}",
+        Actor = [new Link { Href = new Uri(flaggerIri.Value) }],
+        Object = [new Link { Href = new Uri(flaggedIri.Value) }],
     };
 
     private static Undo BuildUndo(Activity activity)

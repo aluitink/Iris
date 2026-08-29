@@ -4,20 +4,23 @@ using Iris.Server;
 namespace Iris.Server.InMemory;
 
 /// <summary>
-/// An in-memory <see cref="IModerationStore"/> (F-07) backed by two concurrent dictionaries: the
-/// forward index (blocker IRI → set of blocked IRIs) and the inverse index (blocked IRI → set of
-/// blocker IRIs).
+/// An in-memory <see cref="IModerationStore"/> (F-07) backed by concurrent dictionaries: a forward
+/// index (blocker IRI → set of blocked IRIs) and an inverse index (blocked IRI → set of blocker IRIs)
+/// for block edges, and a forward index (flagger IRI → set of flagged IRIs) for flag edges.
 /// </summary>
 /// <remarks>
-/// Ephemeral: block edges vanish on restart. Thread-safe. Both indexes are kept in lockstep
+/// Ephemeral: moderation edges vanish on restart. Thread-safe. The block indexes are kept in lockstep
 /// (a record removes nothing from the other; a remove clears both), so the forward
 /// (<see cref="IModerationStore.GetBlocksAsync"/>) and inverse
-/// (<see cref="IModerationStore.GetBlockersAsync"/>) queries are both O(1) lookups.
+/// (<see cref="IModerationStore.GetBlockersAsync"/>) queries are both O(1) lookups. The flag index is
+/// forward-only (an actor's <c>flags</c> collection) — there is no inverse flag query (no
+/// delivery-suppression use), so a single forward index suffices.
 /// </remarks>
 public sealed class InMemoryModerationStore : IModerationStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _blocks = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _blockers = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _flags = new();
 
     /// <inheritdoc/>
     public Task RecordBlockAsync(Iri blockerIri, Iri blockedIri, CancellationToken ct = default)
@@ -57,6 +60,35 @@ public sealed class InMemoryModerationStore : IModerationStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_blockers, blockedIri));
+    }
+
+    /// <inheritdoc/>
+    public Task RecordFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        Add(_flags, flaggerIri, flaggedIri);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Remove(_flags, flaggerIri, flaggedIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Iri>> GetFlagsAsync(Iri flaggerIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_flags, flaggerIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<bool> HasFlaggedAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Contains(_flags, flaggerIri, flaggedIri));
     }
 
     private static void Add(
