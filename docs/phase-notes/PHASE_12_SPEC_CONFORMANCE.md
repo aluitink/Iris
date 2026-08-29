@@ -285,6 +285,51 @@ Phase 12 shifted the project from feature completion to correctness and compatib
     `Flag` does **not** exclude the flagged actor's content from the flagger's followed feed (a flag is a
     report, not a block).
 
+## Slice 12.17 — F-07 moderation: mute (`Mute`, local-only) — closes F-07
+
+  - `IModerationStore` gained four **mute** methods, symmetric to the block/flag methods:
+    `RecordMuteAsync` (records the directed `muter → muted` edge, idempotent), `RemoveMuteAsync` (removes
+    it — the un-mute, returns `true` if an edge was removed), `GetMutesAsync` (the forward mutes
+    collection, IRI-sorted), and `IsMutedAsync` (the directed predicate). `InMemoryModerationStore`
+    implements them against a forward-only `_mutes` index (reusing the block/flag index's
+    `Add`/`Remove`/`Snapshot`/`Contains` helpers). The `mutes` collection is served at
+    `GET /ap/v1/u/{handle}/mutes` (a paged `OrderedCollection` of muted-actor links) and advertised on the
+    actor document as a `mutes` extension link (the same wire shape as `blocks`/`flags`).
+  - A mute is an **Iris-specific** concept with **no ActivityStreams type**, so it is **not** interpreted
+    from a federated activity — it is a **local** moderation decision. A new local endpoint
+    `POST /ap/v1/u/{handle}/mutes/{**target}` (and `?unmute=true`) authenticates the acting actor via
+    `IActorCredentialValidator` (Basic auth) and records/removes the `muter → muted` edge (204 on success,
+    401 unauthenticated, 400 unparseable target). It is served by a new `LocalAuthHandler` (adds the
+    `Authorization: Basic` header, forwards **unsigned** — not the signed inbox pipeline, which throws for
+    an unresolvable signing identity). The route uses a catch-all target (must be the last segment), so
+    un-mute is signalled by `?unmute=true` rather than a trailing path segment.
+  - The edge is **applied** in `FeedService`: a muted follow's content is **excluded** from the muter's
+    home timeline, alongside the existing block exclusion. **Unlike a `Block` (a hard exclusion that
+    severs the follow), a mute is a soft exclusion** — the follow is kept, only the content is hidden;
+    un-muting restores the content without re-following.
+  - Client: `IActivityPubClient` / `ActivityPubClient` gained `MuteAsync` / `UnmuteAsync` (two Basic-auth
+    body-less `POST` overloads each, via a shared `LocalModerateAsync` helper) and `GetMutesAsync`
+    (enumerates the `mutes` collection read through the `CollectionPageCache`). `ActivityPubClientOptions.
+    LocalCredentials` configures the default local credentials; the factory wires a `LocalAuthHandler` from
+    them (an explicit per-call credential takes precedence). A request-scoped handler is disposed; a shared
+    default is not (an `ownsHandler` rule, so a shared/deferred transport is never disposed).
+  - *Scope note (federation):* a probe (`.scratch/muteprobe`) confirmed the library deserializes an unknown
+    `type: "Mute"` into a generic `Object` (not an `Activity`), so the inbox endpoint rejects it before any
+    handler runs — a federated mute would require a custom JSON converter (a new package-level dependency +
+    interop risk). Mute is therefore scoped to **local** state only; federation is explicitly out-of-scope.
+    **F-07 moderation is now complete** (Block + Flag + Mute). F-06 (relay / `star`) is the next Phase 12
+    item.
+  - `MuteStoreTests` (6) covers the mute store in isolation (record → collection + predicate,
+    directed/not-mutual, idempotent, sorted-by-IRI, remove, remove-nonexistent returns false).
+    `FeedServiceTests` (+4) covers the mute apply in isolation (excludes a local follow, excludes a remote
+    follow, partial mute keeps unmuted follows, mute does **not** sever the follow unlike a block).
+    `MutesCollectionIntegrationTests` (8) is the end-to-end proof: the actor document advertises the
+    `mutes` collection; the empty collection is an `OrderedCollection`; an authenticated `MuteAsync` (204)
+    records the edge + the mute appears in the muter's `mutes`; the client's `GetMutesAsync` reads back the
+    muted actor's IRI; an unauthenticated request is 401 (no edge); a mute excludes the muted actor's
+    content from the feed **without severing the follow** (the follow edge is intact; un-muting restores
+    the content); and an un-mute of a nonexistent mute is a no-op (204).
+
    ## Result
 
 Wave 1 is effectively closed; the project now has explicit regression coverage for conformance-sensitive semantics, and the major remaining work is in feature completeness and real-world interop testing rather than basic correctness.
