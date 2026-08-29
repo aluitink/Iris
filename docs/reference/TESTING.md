@@ -1,6 +1,6 @@
 # Iris — Testing Strategy
 
-> Part of the [Iris plan](../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Projects](PROJECTS.md), [Roadmap](ROADMAP.md), [Coding Style](CODING_STYLE.md).
+> Part of the [Iris plan](../../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Projects](PROJECTS.md), [Roadmap](../ROADMAP.md), [Coding Style](CODING_STYLE.md).
 
 **Philosophy: integration-first, end-to-end.** We maximize coverage with a small number of high-fidelity integration tests that exercise real HTTP, real signing, real persistence, and real federation — instead of a large sprawl of isolated unit tests. Unit tests exist only where they add value that integration tests can't reach (pure crypto edge cases, IRI parsing, cache TTL/eviction logic).
 

@@ -1,6 +1,6 @@
 # Iris — Project Details
 
-> Part of the [Iris plan](../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Testing](TESTING.md), [Roadmap](ROADMAP.md), [Coding Style](CODING_STYLE.md).
+> Part of the [Iris plan](../../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Testing](TESTING.md), [Roadmap](../ROADMAP.md), [Coding Style](CODING_STYLE.md).
 
 Per-project breakdown. All projects target **net10.0**. Conventions for working with the 3rd-party `KristofferStrube.ActivityStreams` types are in [Coding Style](CODING_STYLE.md).
 

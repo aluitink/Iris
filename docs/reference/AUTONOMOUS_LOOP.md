@@ -1,6 +1,6 @@
 # Iris — Autonomous Loop Instructions
 
-> Part of the [Iris plan](../PLAN.md). These are the operating instructions for an autonomous agent loop working on this project, one turn at a time.
+> Part of the [Iris plan](../../PLAN.md). These are the operating instructions for an autonomous agent loop working on this project, one turn at a time.
 
 ## Principles
 
@@ -8,7 +8,7 @@
 - **Red state ends the turn.** A broken build is never papered over with new work.
 - **"Done" is defined, not felt.** The Definition of Done below is the only exit from step 3.
 - **The docs are binding.** [CODING_STYLE.md](CODING_STYLE.md) wins over habit; [TESTING.md](TESTING.md) defines what coverage a phase needs before it's checkable.
-- **Docs stay lean.** PLAN.md and ROADMAP.md are *indexes and waypoints* — they must not accumulate detail. Heavy information (build notes, test counts, design rationale) belongs in [CHANGELOG.md](CHANGELOG.md) or a design-decision document in [decisions/](decisions/). See [Keeping the docs lean](#keeping-the-docs-lean).
+- **Docs stay lean.** PLAN.md and ROADMAP.md are *indexes and waypoints* — they must not accumulate detail. Heavy information (build notes, test counts, design rationale) belongs in [CHANGELOG.md](CHANGELOG.md) or a design-decision document in [decisions/](../decisions/). See [Keeping the docs lean](#keeping-the-docs-lean).
 
 ## The Loop
 <instructions>
@@ -16,11 +16,11 @@
 
 - Run `dotnet build` and `dotnet test` (a SubAgent may run and summarize the results; fixes happen in the main loop).
 - **If failures:** fix *only* the breakage, re-run until green (max 2 repair attempts), commit as `fix: repair broken state from previous turn`, then **end this turn**. No new work.
-- **If still failing after 2 attempts:** write a `BLOCKED` note in [PLAN.md](../PLAN.md) describing the failure, commit, and end this turn.
+- **If still failing after 2 attempts:** write a `BLOCKED` note in [PLAN.md](../../PLAN.md) describing the failure, commit, and end this turn.
 
 ### 2. Select the next work item
 
-- Select the next **phase** (or a coherent slice of it) from [ROADMAP.md](ROADMAP.md).
+- Select the next **phase** (or a coherent slice of it) from [ROADMAP.md](../ROADMAP.md).
 - A slice must be **vertically complete**: implementation + its tests. The phase's "Integration tests" / "Unit tests" bullet is *part of the item*, not a follow-up.
 - **If all phases are complete:** expand Phase 9+ into concrete phases in ROADMAP.md (it is explicitly "to be expanded later"), update PLAN.md's status section, commit, and end this turn. Do **not** rewrite PLAN.md wholesale.
 
@@ -51,7 +51,7 @@
 - Update PLAN.md's "Current Status" section if the phase changed.
 - **Route the detail correctly** (see [Keeping the docs lean](#keeping-the-docs-lean)):
   - What was built, key types, test counts → append to the phase's slice log in [CHANGELOG.md](CHANGELOG.md).
-  - Design decisions → append to "Resolved Decisions" in [CHANGELOG.md](CHANGELOG.md); if the decision is substantial (trade-offs, alternatives considered, spec references), write a full document in [decisions/](decisions/) and link it from the changelog entry.
+  - Design decisions → append to "Resolved Decisions" in [CHANGELOG.md](CHANGELOG.md); if the decision is substantial (trade-offs, alternatives considered, spec references), write a full document in [decisions/](../decisions/) and link it from the changelog entry.
   - ROADMAP.md gets only the checkbox tick and a one-line status; PLAN.md gets only the status-table row.
 - Commit separately as `docs: ...`.
 

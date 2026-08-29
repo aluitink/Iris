@@ -80,7 +80,7 @@ to change.
 - The **only** opt-in gate in the repo is `scripts/docker-smoke-test.sh` — it **skips (exit 0) when
   Docker/daemon/compose is unavailable** and honors `IRIS_COMPOSE_KEEP=1`. There is **no env-flag/skip
   pattern in any C# test project** today (all plain `[Fact]`).
-- The **planned** convention is already documented in `docs/TESTING.md:34-42` ("Live Mastodon
+- The **planned** convention is already documented in `docs/reference/TESTING.md:34-42` ("Live Mastodon
   Compatibility Test (deferred)"): a **separate, opt-in** suite, "Gated behind an environment flag (e.g.
   `IRIS_MASTODON_TEST=1`) and the Docker Compose environment, so CI can run it as a dedicated job while
   local/dev runs skip it."

@@ -1,6 +1,6 @@
 # Iris — Design Decisions
 
-One document per **substantial** design decision. This directory exists to keep [PLAN.md](../PLAN.md) and [ROADMAP.md](../ROADMAP.md) lean: heavy rationale lives here, and the [Changelog](../CHANGELOG.md) links to it.
+One document per **substantial** design decision. This directory exists to keep [PLAN.md](../../PLAN.md) and [ROADMAP.md](../ROADMAP.md) lean: heavy rationale lives here, and the [Changelog](../CHANGELOG.md) links to it.
 
 ## When to create a decision doc
 
@@ -44,4 +44,4 @@ Lightweight decisions (a naming choice, a default value) stay as a single number
 
 ## Full rules
 
-The doc-maintenance rules that govern this directory (and PLAN/ROADMAP/CHANGELOG) are in [AUTONOMOUS_LOOP.md — Keeping the docs lean](../AUTONOMOUS_LOOP.md#keeping-the-docs-lean).
+The doc-maintenance rules that govern this directory (and PLAN/ROADMAP/CHANGELOG) are in [AUTONOMOUS_LOOP.md — Keeping the docs lean](../reference/AUTONOMOUS_LOOP.md#keeping-the-docs-lean).

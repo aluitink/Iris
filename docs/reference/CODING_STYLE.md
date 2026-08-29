@@ -1,6 +1,6 @@
 # Iris — Coding Style Guide
 
-> Part of the [Iris plan](../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Projects](PROJECTS.md), [Testing](TESTING.md), [Roadmap](ROADMAP.md).
+> Part of the [Iris plan](../../PLAN.md). See also [Architecture](ARCHITECTURE.md), [Projects](PROJECTS.md), [Testing](TESTING.md), [Roadmap](../ROADMAP.md).
 >
 > This guide is **binding** for all code in the solution. Where it conflicts with a habit, the guide wins. The section on [3rd-Party ActivityStreams Types](#3rd-party-activitystreams-types) is the most important — it governs how we interoperate with `KristofferStrube.ActivityStreams`, and consistency there is what keeps the codebase legible.
 
@@ -42,7 +42,7 @@
 - `Iris.Server` depends on `Iris.Core` + `Iris.Client` + ASP.NET Core.
 - `Iris.Server.InMemory` depends on `Iris.Server`.
 - **No upward dependencies.** `Iris.Core` never references `Iris.Client` or `Iris.Server`.
-- **No new NuGet packages** without a note in the [Roadmap](ROADMAP.md) and a justification. The ActivityStreams package is the only non-BCL dependency in `Iris.Core`.
+- **No new NuGet packages** without a note in the [Roadmap](../ROADMAP.md) and a justification. The ActivityStreams package is the only non-BCL dependency in `Iris.Core`.
 
 ## Error Handling
 
@@ -290,7 +290,7 @@ public sealed class CollectionPage
 - **`<param>` / `<returns>` / `<exception>`** on public methods.
 - **Code samples** in XML doc (`<code>`) for high-level APIs (`IActivityPubClient`, etc.).
 - **README.md** per project: one-paragraph purpose, install, minimal usage example.
-- **This guide** lives in `docs/CODING_STYLE.md` and is linked from `PLAN.md`.
+- **This guide** lives in `docs/reference/CODING_STYLE.md` and is linked from `PLAN.md`.
 
 ## Lint & Formatting
 

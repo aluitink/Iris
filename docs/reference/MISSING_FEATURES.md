@@ -1,6 +1,6 @@
 # Phase 12 — Spec Conformance & Missing-Feature Inventory
 
-> Part of the [Iris plan](../PLAN.md). Companion to [ARCHITECTURE.md](ARCHITECTURE.md) (§Spec Research), [RISK_GAP_REGISTER.md](RISK_GAP_REGISTER.md) (the G-1…G-6 capability register), and [PHASE_11_USER_JOURNEYS.md](PHASE_11_USER_JOURNEYS.md) (the J-1…J-22 usability register).
+> Part of the [Iris plan](../../PLAN.md). Companion to [ARCHITECTURE.md](ARCHITECTURE.md) (§Spec Research), [RISK_GAP_REGISTER.md](RISK_GAP_REGISTER.md) (the G-1…G-6 capability register), and [PHASE_11_USER_JOURNEYS.md](PHASE_11_USER_JOURNEYS.md) (the J-1…J-22 usability register).
 >
 > This is the Phase 12 output for the **"Missing-feature inventory"** and **"Spec conformance audit"** bullets: a single, severity-ranked list of (a) what the implementation **does** today, (b) what the ActivityPub / ActivityStreams 2.0 / HTTP-Signatures / WebFinger / NodeInfo specs **require or widely expect** that is **missing**, and (c) a **prioritized fix plan** (spec-mandated vs nice-to-have, interop impact, effort) that drives "Implement high-priority gaps" and the "Conformance test suite".
 >
