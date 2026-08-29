@@ -1,7 +1,7 @@
 using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
-using CollectionPage = Iris.Core.CollectionPage;
+using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Server;
 
@@ -19,9 +19,9 @@ namespace Iris.Server;
 /// not cached, so a later lookup retries.
 /// <para>
 /// The page is built by fetching the page document and flattening it into a
-/// <see cref="Iris.Core.CollectionPage"/> (items + the next-page link), the same shape the
+/// <see cref="Iris.Core.Collections.CollectionPage"/> (items + the next-page link), the same shape the
 /// client's <see cref="IActivityPubClient.GetCollectionAsync"/> yields per page — so callers can
-/// follow the collection themselves via <see cref="Iris.Core.CollectionPage.NextPage"/>.
+/// follow the collection themselves via <see cref="Iris.Core.Collections.CollectionPage.NextPage"/>.
 /// </para>
 /// </remarks>
 public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, CollectionPageCache collectionPages)
@@ -46,7 +46,7 @@ public sealed class IrisRemoteCollectionFetcher(IActivityPubClient client, Colle
 
     /// <summary>
     /// Fetches a page document from the network (bypassing the cache) and flattens it into a
-    /// <see cref="Iris.Core.CollectionPage"/>.
+    /// <see cref="Iris.Core.Collections.CollectionPage"/>.
     /// </summary>
     /// <param name="pageIri">The absolute IRI of the page (the collection IRI for the first page, or a
     /// page IRI for a later page).</param>

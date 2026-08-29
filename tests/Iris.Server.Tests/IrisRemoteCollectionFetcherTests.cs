@@ -3,7 +3,7 @@ using System.Text;
 using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
-using ClientCollectionPage = Iris.Core.CollectionPage;
+using ClientCollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Server.Tests;
 

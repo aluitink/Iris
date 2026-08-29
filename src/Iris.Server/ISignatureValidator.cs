@@ -9,9 +9,9 @@ namespace Iris.Server;
 /// This is the server-side (inbound) counterpart to the client's <c>SigningHandler</c>. It reads the
 /// <c>Signature</c> header, resolves the signing key via an <see cref="IInboundKeyResolver"/> (the key
 /// is a *remote* public key, not in the local key store), and verifies the signature cryptographically
-/// via <see cref="Iris.Core.ISignatureVerifier"/>. It accepts both the
-/// <see cref="Iris.Core.SigningProfile.ClientToServer"/> and
-/// <see cref="Iris.Core.SigningProfile.ServerToServer"/> profiles (the verifier reconstructs the
+/// via <see cref="Iris.Core.Signing.ISignatureVerifier"/>. It accepts both the
+/// <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/> and
+/// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profiles (the verifier reconstructs the
 /// signature base from the <c>headers</c> list actually present).
 /// </remarks>
 public interface ISignatureValidator

@@ -9,7 +9,7 @@ namespace Iris.Server;
 /// The <see cref="NamespaceIri"/> is the configurable <c>iris:</c> namespace base (Resolved Decision
 /// #9). The <see cref="InstanceName"/> is the human-readable name of the instance (used in NodeInfo
 /// and the actor document's <c>name</c>). The <see cref="CachePolicies"/> override the default
-/// <see cref="Iris.Core.CachePolicy"/> TTLs for the server-side caches (Resolved Decision #8).
+/// <see cref="Iris.Core.Caching.CachePolicy"/> TTLs for the server-side caches (Resolved Decision #8).
 /// </remarks>
 public sealed class ActivityPubServerOptions
 {
@@ -33,7 +33,7 @@ public sealed class ActivityPubServerOptions
 
     /// <summary>
     /// The server-side cache policies (override defaults). When null, the defaults from
-    /// <see cref="Iris.Core.CachePolicy"/> are used.
+    /// <see cref="Iris.Core.Caching.CachePolicy"/> are used.
     /// </summary>
     public ServerCachePolicies? CachePolicies { get; set; }
 

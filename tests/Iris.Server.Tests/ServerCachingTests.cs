@@ -213,7 +213,7 @@ public class ServerCachingTests
         Assert.Equal(CachePolicy.CollectionPage.Ttl, sut.Policy.Ttl);
         Assert.Equal(TimeSpan.FromSeconds(30), sut.Policy.Ttl);
 
-        var page = new Iris.Core.CollectionPage
+        var page = new Iris.Core.Collections.CollectionPage
         {
             Page = new OrderedCollectionPage(),
             Items = [],
@@ -221,7 +221,7 @@ public class ServerCachingTests
         var (value, _, wasHit) = await sut.GetAsync(
             new Iri("https://remote.test/actor/outbox?page=1"),
             false,
-            _ => Task.FromResult<Iris.Core.CollectionPage?>(page));
+            _ => Task.FromResult<Iris.Core.Collections.CollectionPage?>(page));
 
         Assert.Same(page, value);
         Assert.False(wasHit);

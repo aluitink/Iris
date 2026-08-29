@@ -5,7 +5,7 @@ using Iris.Core;
 using Iris.Server.InMemory;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Options;
-using CollectionPage = Iris.Core.CollectionPage;
+using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Server.Tests;
 

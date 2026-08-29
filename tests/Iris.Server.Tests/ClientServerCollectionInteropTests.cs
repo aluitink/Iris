@@ -102,7 +102,7 @@ public sealed class ClientServerCollectionInteropTests : IDisposable
     {
         // Enumerate pages (not flattened items). Page 1 is served as an OrderedCollection and must
         // yield a NextPage pointing at page 2 (the OrderedCollectionPage); page 2 is the last page.
-        var pages = new List<Iris.Core.CollectionPage>();
+        var pages = new List<Iris.Core.Collections.CollectionPage>();
         await foreach (var page in _client.GetCollectionAsync(_outboxIri, null, CancellationToken.None))
         {
             pages.Add(page);

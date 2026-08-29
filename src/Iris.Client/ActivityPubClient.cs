@@ -2,7 +2,7 @@ using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
-using CollectionPage = Iris.Core.CollectionPage;
+using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Client;
 

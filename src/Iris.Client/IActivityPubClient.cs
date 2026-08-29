@@ -1,6 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
-using CollectionPage = Iris.Core.CollectionPage;
+using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Client;
 
@@ -10,8 +10,8 @@ namespace Iris.Client;
 /// </summary>
 /// <remarks>
 /// Requests are signed by the client's <see cref="SigningHandler"/> (wired into the
-/// <see cref="HttpMessageHandler"/> pipeline) using the <see cref="Iris.Core.SigningProfile.ClientToServer"/>
-/// profile for bodyless GETs and the <see cref="Iris.Core.SigningProfile.ServerToServer"/> profile for
+/// <see cref="HttpMessageHandler"/> pipeline) using the <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/>
+/// profile for bodyless GETs and the <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile for
 /// body-carrying POSTs. Responses are deserialized into <see cref="IObjectOrLink"/> and then
 /// pattern-matched — never into a concrete type. See <see cref="ActivityPubClient"/> for the
 /// default implementation and <see cref="IActivityPubClientFactory"/> for construction.
@@ -21,7 +21,7 @@ public interface IActivityPubClient : IDisposable
 {
     /// <summary>
     /// Fetches an object (actor or otherwise) by IRI, signed with the
-    /// <see cref="Iris.Core.SigningProfile.ClientToServer"/> profile.
+    /// <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/> profile.
     /// </summary>
     /// <param name="objectId">The IRI of the object to fetch.</param>
     /// <param name="ct">The cancellation token.</param>
@@ -29,7 +29,7 @@ public interface IActivityPubClient : IDisposable
     public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default);
 
     /// <summary>
-    /// Fetches an actor by IRI, signed with the <see cref="Iris.Core.SigningProfile.ClientToServer"/>
+    /// Fetches an actor by IRI, signed with the <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/>
     /// profile.
     /// </summary>
     /// <param name="actorId">The IRI of the actor to fetch.</param>
@@ -40,7 +40,7 @@ public interface IActivityPubClient : IDisposable
 
     /// <summary>
     /// Sends an ActivityPub activity to the given inbox IRI, signed with the
-    /// <see cref="Iris.Core.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
+    /// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
     /// <c>content-type</c>).
     /// </summary>
     /// <param name="inboxId">The inbox IRI to deliver to.</param>
