@@ -8,7 +8,7 @@
 - **Red state ends the turn.** A broken build is never papered over with new work.
 - **"Done" is defined, not felt.** The Definition of Done below is the only exit from step 3.
 - **The docs are binding.** [CODING_STYLE.md](CODING_STYLE.md) wins over habit; [TESTING.md](TESTING.md) defines what coverage a phase needs before it's checkable.
-- **Docs stay lean.** PLAN.md and ROADMAP.md are *indexes and waypoints* — they must not accumulate detail. Heavy information (build notes, test counts, design rationale) belongs in [CHANGELOG.md](CHANGELOG.md) or a design-decision document in [decisions/](../decisions/). See [Keeping the docs lean](#keeping-the-docs-lean).
+- **Docs stay lean.** PLAN.md and ROADMAP.md are *indexes and waypoints* — they must not accumulate detail. Heavy information (build notes, test counts, design rationale) belongs in a per-change document in [changes/](../changes/) or a design-decision document in [decisions/](../decisions/). See [Keeping the docs lean](#keeping-the-docs-lean).
 
 ## The Loop
 <instructions>
@@ -37,7 +37,7 @@
   - XML doc comments on all public API; `CancellationToken ct` is the last parameter; file-scoped namespaces.
   - No dependency-direction violations (`Iris.Core` never references `Iris.Client`/`Iris.Server`; no upward dependencies).
   - No new NuGet packages without a note in ROADMAP.md and a justification.
-- **Open Questions:** if you hit one, make the decision, record it in [CHANGELOG.md](CHANGELOG.md) under "Resolved Decisions" (removing it from "Open Questions" in ROADMAP.md), and continue. Don't stall, don't choose silently.
+- **Open Questions:** if you hit one, make the decision, record it in the slice's change doc under [changes/](../changes/) (removing it from "Open Questions" in ROADMAP.md), and continue. Don't stall, don't choose silently.
 - **If the slice won't finish this turn:** commit coherent progress, mark the item in-progress in ROADMAP.md with a `remaining:` note describing what's left, and end the turn.
 
 ### 4. Commit
@@ -50,10 +50,10 @@
 - Check off completed boxes in ROADMAP.md; note any decisions recorded.
 - Update PLAN.md's "Current Status" section if the phase changed.
 - **Route the detail correctly** (see [Keeping the docs lean](#keeping-the-docs-lean)):
-  - What was built, key types, test counts → append to the phase's slice log in [CHANGELOG.md](CHANGELOG.md).
-  - Design decisions → append to "Resolved Decisions" in [CHANGELOG.md](CHANGELOG.md); if the decision is substantial (trade-offs, alternatives considered, spec references), write a full document in [decisions/](../decisions/) and link it from the changelog entry.
+  - What was built, key types, test counts, and any lightweight decision → write a **per-change doc** in [changes/](../changes/) (one file per slice/change).
+  - If a decision is substantial (trade-offs, alternatives considered, spec references) → write a full document in [decisions/](../decisions/) and link it from the change doc.
   - ROADMAP.md gets only the checkbox tick and a one-line status; PLAN.md gets only the status-table row.
-- Commit separately as `docs: ...`.
+- Commit the change doc with the `docs: ...` commit (separate from the implementation commit).
 
 ### 6. End this turn
 </instructions>
@@ -68,17 +68,16 @@ PLAN.md and ROADMAP.md are the documents an agent re-reads every turn, so they m
 |---|---|
 | What the project is, doc index, conventions summary, current status table | `PLAN.md` (index only) |
 | Phases, waypoints, checkboxes, open questions, carried-forward items | `ROADMAP.md` (brief bullets only) |
-| What was built per slice, key types, test counts, build notes | `CHANGELOG.md` (append-only) |
-| Resolved design decisions (numbered, one entry each) | `CHANGELOG.md` → "Resolved Decisions" |
-| Substantial design decisions (trade-offs, alternatives, spec references) | `docs/decisions/NNN-slug.md` (one file per decision), linked from the changelog entry |
+| What was built per slice, key types, test counts, build notes, lightweight decisions | `docs/changes/NNN-slug.md` (one file per change) |
+| Substantial design decisions (trade-offs, alternatives, spec references) | `docs/decisions/NNN-slug.md` (one file per decision), linked from the change doc |
 | Architecture, per-project detail, testing strategy, coding rules | `ARCHITECTURE.md`, `PROJECTS.md`, `TESTING.md`, `CODING_STYLE.md` |
 
 **Rules:**
 
 - **PLAN.md** is an index. It may contain the status table and a short "carried forward" list — nothing else grows over time. Never paste build notes, decision rationale, or slice detail into it.
-- **ROADMAP.md** entries are waypoints: a phase gets a short description blockquote and checkbox bullets. A bullet is one line; if it needs a paragraph, the paragraph goes in CHANGELOG.md or a decision doc.
-- **CHANGELOG.md** is append-only history. When a slice completes, its detail lands here — not in PLAN.md or ROADMAP.md.
-- **Decision docs** (`docs/decisions/`): create one when a decision has real weight (multiple viable alternatives, spec implications, or it will be referenced repeatedly). Keep the changelog entry to a one-line summary + link. Lightweight decisions stay as a single changelog entry.
+- **ROADMAP.md** entries are waypoints: a phase gets a short description blockquote and checkbox bullets. A bullet is one line; if it needs a paragraph, the paragraph goes in a change doc or a decision doc.
+- **Change docs** (`docs/changes/`): one file per slice/change. When a slice completes, its build notes (what was built, key types, test counts) and any lightweight decision land here — not in PLAN.md or ROADMAP.md. This replaces the former append-only CHANGELOG.md (retired).
+- **Decision docs** (`docs/decisions/`): create one when a decision has real weight (multiple viable alternatives, spec implications, or it will be referenced repeatedly). The change doc keeps a one-line summary + link; the decision doc holds the detail. Lightweight decisions stay inline in the change doc.
 - **When in doubt, link instead of copy.** A pointer in PLAN/ROADMAP beats a duplicated paragraph.
 
 ## Failure Modes to Avoid
@@ -92,5 +91,5 @@ PLAN.md and ROADMAP.md are the documents an agent re-reads every turn, so they m
 | Drift from the ActivityStreams interop rules | Step 3: re-read CODING_STYLE.md before coding |
 | 40-minute turn that hits a wall mid-migration | Step 3: bounded turn — commit progress, note `remaining:`, end |
 | PLAN.md history lost to a wholesale rewrite | Step 2: expand ROADMAP.md, update PLAN.md status only |
-| Stalling on undecided design questions | Step 3: decide, record under Resolved Decisions, continue |
-| PLAN.md / ROADMAP.md growing wild with detail | "Keeping the docs lean": detail → CHANGELOG.md or `decisions/`; PLAN/ROADMAP stay index + waypoints |
+| Stalling on undecided design questions | Step 3: decide, record in the slice's change doc, continue |
+| PLAN.md / ROADMAP.md growing wild with detail | "Keeping the docs lean": detail → `changes/` or `decisions/`; PLAN/ROADMAP stay index + waypoints |
