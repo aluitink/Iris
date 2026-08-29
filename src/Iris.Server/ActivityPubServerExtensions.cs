@@ -127,7 +127,15 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<IActivityPubClientFactory, ActivityPubClientFactory>();
         services.TryAddSingleton<ISignatureVerifier, HttpSignatureVerifier>();
         services.TryAddSingleton<IInboundKeyResolver, RemoteInboundKeyResolver>();
-        services.TryAddSingleton<ISignatureValidator, HttpSignatureValidator>();
+        // F-21: the validator receives the outbound key cache and actor-document cache so a
+        // verification failure (a rotated remote key keeping the same key IRI) invalidates the stale
+        // key AND the stale actor document (the re-resolve re-derives the key from the re-fetched
+        // document) before re-resolving once.
+        services.TryAddSingleton<ISignatureValidator>(sp => new HttpSignatureValidator(
+            sp.GetRequiredService<IInboundKeyResolver>(),
+            sp.GetRequiredService<ISignatureVerifier>(),
+            sp.GetService<RemoteKeyCache>(),
+            sp.GetService<RemoteActorCache>()));
         services.TryAddSingleton<IActorDocumentFetcher>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;

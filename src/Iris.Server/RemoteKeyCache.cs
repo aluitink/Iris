@@ -12,8 +12,14 @@ namespace Iris.Server;
 /// server fetches from a remote actor's <c>publicKey</c> link and later uses to verify inbound
 /// signatures. A missing key (null factory result) is not cached, so it is retried on the next
 /// lookup. Key rotation invalidates the entry for that key IRI.
+/// <para>
+/// The type is (deliberately) not sealed so a host can extend it — for example, to count or observe
+/// <see cref="Invalidate"/> calls (the F-21 key-rotation invalidation path) or to back the cache with
+/// a different store — while still using the default <see cref="CachingReadThrough{TValue}"/> behavior
+/// for everything else.
+/// </para>
 /// </remarks>
-public sealed class RemoteKeyCache
+public class RemoteKeyCache
 {
     private readonly CachingReadThrough<JwkKey> _cache;
 
@@ -43,7 +49,11 @@ public sealed class RemoteKeyCache
     /// </summary>
     /// <param name="key">The key IRI (the <c>publicKey.id</c> of the remote actor).</param>
     /// <returns><see langword="true"/> when an entry was removed.</returns>
-    public bool Invalidate(Iri key) => _cache.Invalidate(key);
+    /// <remarks>
+    /// <see langword="virtual"/> so a host can extend the cache and observe or count invalidations
+    /// (the F-21 key-rotation path) while reusing the default read-through behavior.
+    /// </remarks>
+    public virtual bool Invalidate(Iri key) => _cache.Invalidate(key);
 
     /// <summary>
     /// Gets the cached key for <paramref name="key"/>, fetching with <paramref name="factory"/> on a miss

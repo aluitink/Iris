@@ -15,15 +15,31 @@ namespace Iris.Server;
 /// binding is advisory: the result carries <see cref="SignatureValidationResult.ActorIri"/> when the
 /// body's <c>actor</c> is present and parseable; a missing/unparseable actor does not, by itself, fail
 /// validation (the cryptographic check is authoritative).
+/// <para>
+/// F-21 key-rotation invalidation: when a <paramref name="remoteKeyCache"/> is supplied and a
+/// verification <em>fails</em> (distinct from a missing key), the cached key for the signing
+/// <c>keyId</c> is considered stale — the remote actor rotated its key but kept the same key IRI —
+/// and the entry is invalidated and the key re-resolved once (a fresh fetch of the actor document)
+/// before re-verifying. Because the key is re-resolved by re-fetching the actor document, the owning
+/// actor's entry in the <see cref="RemoteActorCache"/> is invalidated too (otherwise the re-resolve
+/// would re-read the stale document and re-derive the old key, defeating the rotation). This closes
+/// the window in which a rotated remote key would otherwise be served stale until the caches' TTL
+/// (1h). A missing key (no resolvable public key) is not treated as a rotation signal, so no
+/// invalidation occurs in that case.
+/// </para>
 /// </remarks>
 public sealed class HttpSignatureValidator(
     IInboundKeyResolver keyResolver,
-    ISignatureVerifier verifier) : ISignatureValidator
+    ISignatureVerifier verifier,
+    RemoteKeyCache? remoteKeyCache = null,
+    RemoteActorCache? remoteActorCache = null) : ISignatureValidator
 {
     private readonly IInboundKeyResolver _keyResolver = keyResolver
         ?? throw new ArgumentNullException(nameof(keyResolver));
     private readonly ISignatureVerifier _verifier = verifier
         ?? throw new ArgumentNullException(nameof(verifier));
+    private readonly RemoteKeyCache? _keyCache = remoteKeyCache;
+    private readonly RemoteActorCache? _actorCache = remoteActorCache;
 
     /// <inheritdoc/>
     public async ValueTask<SignatureValidationResult?> ValidateAsync(HttpContext context, CancellationToken ct = default)
@@ -80,17 +96,77 @@ public sealed class HttpSignatureValidator(
 
         // Verify with the resolved key directly: the key came from a remote source (the sender's
         // actor document), not from this instance's key store, so it is passed to the verifier
-        // explicitly rather than looked up by IRI. Dispose the key only when it is disposable
-        // (a KeyPair is; an Ed25519Key is not — BouncyCastle params are not IDisposable).
+        // explicitly rather than looked up by IRI.
+        var isValid = VerifyAndDispose(key, metadata, signatureHeader);
+
+        // F-21 key-rotation invalidation: a verification failure (as opposed to a missing key) is
+        // the signal that the cached key is stale — the remote actor rotated its key but kept the
+        // same key IRI, so the cache still holds the old public key. Invalidate the cached key for
+        // this key IRI and re-resolve once (a fresh fetch of the actor document), then re-verify.
+        // A missing key (key is null) is NOT a rotation signal: the actor simply has no resolvable
+        // key, so no invalidation is attempted (there is nothing to invalidate and a re-fetch would
+        // just repeat the same null).
+        if (!isValid && _keyCache is not null)
+        {
+            // Invalidate BOTH the key cache (key IRI) and the actor-document cache (owner actor IRI):
+            // the re-resolve re-derives the key by re-fetching the actor document, so a stale actor
+            // document would re-derive the old key and defeat the rotation. The owner actor IRI is
+            // the key IRI with any #fragment removed (the ActivityPub keyId = actorIri#key-N
+            // convention).
+            _keyCache.Invalidate(keyId);
+            _actorCache?.Invalidate(OwnerActorIriFromKeyId(keyId));
+            try
+            {
+                key = await _keyResolver.ResolveAsync(keyId, ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                key = null;
+            }
+
+            if (key is not null)
+            {
+                isValid = VerifyAndDispose(key, metadata, signatureHeader);
+            }
+        }
+
+        return new SignatureValidationResult(isValid, keyId, ExtractActorIri(body));
+    }
+
+    /// <summary>
+    /// Verifies a signature with the given key and disposes the key when it is disposable.
+    /// </summary>
+    /// <param name="key">The resolved key.</param>
+    /// <param name="metadata">The request metadata snapshot.</param>
+    /// <param name="signatureHeader">The raw <c>Signature</c> header value.</param>
+    /// <returns><see langword="true"/> when the signature is valid.</returns>
+    private bool VerifyAndDispose(ISigningKey key, HttpRequestMetadata metadata, string signatureHeader)
+    {
+        // Dispose the key only when it is disposable (a KeyPair is; an Ed25519Key is not —
+        // BouncyCastle params are not IDisposable).
         var disposableKey = key as IDisposable;
         try
         {
-            return new SignatureValidationResult(_verifier.Verify(metadata, key, signatureHeader), keyId, ExtractActorIri(body));
+            return _verifier.Verify(metadata, key, signatureHeader);
         }
         finally
         {
             disposableKey?.Dispose();
         }
+    }
+
+    /// <summary>
+    /// Derives the owner actor IRI from a key IRI by stripping the <c>#fragment</c> (the ActivityPub
+    /// convention <c>keyId = actorIri + "#key-N"</c>). Used to invalidate the owning actor's document
+    /// cache entry on a key rotation.
+    /// </summary>
+    /// <param name="keyId">The key IRI.</param>
+    /// <returns>The owner actor IRI (the key IRI with any <c>#fragment</c> removed).</returns>
+    private static Iri OwnerActorIriFromKeyId(Iri keyId)
+    {
+        var value = keyId.Value;
+        var fragment = value.IndexOf('#');
+        return fragment >= 0 ? new Iri(value[..fragment]) : keyId;
     }
 
     /// <summary>
