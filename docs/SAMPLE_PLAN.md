@@ -1,6 +1,6 @@
 # Sample Docker Composition — Build Plan (Phase 8 Enhancement)
 
-> Status: in progress (S1 done, [change 070](changes/070-sample-federation-ready.md)) · Part of the [Iris plan](../PLAN.md). Detailed plan for the Phase 8 sample; the
+> Status: in progress (S1–S3 done, [change 070](changes/070-sample-federation-ready.md) / [change 072](changes/072-sample-blazor-wasm-explorer.md)) · Part of the [Iris plan](../PLAN.md). Detailed plan for the Phase 8 sample; the
 > [Roadmap](ROADMAP.md) carries only the waypoints/checkboxes and the root [PLAN.md](../PLAN.md) carries
 > only the status row. Per the [doc-lean rules](reference/AUTONOMOUS_LOOP.md#keeping-the-docs-lean), heavy
 > build notes for each slice land in [changes/](changes/README.md) as they complete.
@@ -343,9 +343,14 @@ throughout.
   quick start (local `dotnet run` + Docker compose + smoke script), logon credential + base URIs,
   feature → endpoint → library → pointer table, `Iris:` config table, seeded-data inventory, and test
   pointers (in-process suite + compose smoke).
-- **S3 — Blazor WASM scaffold + composition root.** Convert `SampleBlazorClient` to a Blazor WASM app;
-  register `ExplorerSession`/`ClientService` in DI; app shell + routing. Keep the existing console
-  composition tests green (or port them).
+- [x] **S3 — Blazor WASM scaffold + composition root** (done, [change 072](changes/072-sample-blazor-wasm-explorer.md)).
+   `SampleBlazorClient` is a routed Blazor WASM host (Deliverable B): `ExplorerSession` (wraps the
+   existing `ClientService`/`CreateClientService` bundle) + `AddIrisExplorer` DI, app shell + routing,
+   `WebFingerAddress` parser, and a tagged console smoke entry (`-p:ConsoleSmoke=true`) so both `dotnet
+   run` (WASM) and the pipeline smoke build from one project. 17 in-process `ExplorerTests` (parser,
+   session log-on/switch/recents, DI); the Phase 7 pipeline facts stay green. (The session's log-on-by-
+   address + recents — the S4 core minus WebFinger *resolve* and the UI — are included here; S4 adds the
+   resolve step + screens.)
 - **S4 — Logon by WebFinger address + instance switching.** The headline feature (§4.2): address parse →
   WebFinger resolve → `LoginAsync` → signed client; recent-instances list; log out/switch. In-process
   tests: logon to two in-process instances by address, key loaded, client signs.

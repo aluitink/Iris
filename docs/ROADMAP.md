@@ -39,10 +39,10 @@ substantial design calls: [decisions/](decisions/README.md).
 > (Docker-only routable addresses) **server + Blazor WASM server-explorer** that is the project's real-world
 > interop test platform (instance→instance and instance→external).
 
-- [ ] Sample server: enable inbound signature validation (federation-ready) + register all seeded actors' keys.
-- [ ] Sample server: richer per-instance seed (distinct actors incl. a `manuallyApprovesFollowers` + one Ed25519 actor, reply threads, per-instance unique content).
-- [ ] Sample server: `samples/SampleServer/README.md` documenting implemented features with pointer information.
-- [ ] Blazor WASM: convert `SampleBlazorClient` to a Blazor WASM app with a DI composition root (`ExplorerSession`/`ClientService`).
+- [x] Sample server: enable inbound signature validation (federation-ready) + register all seeded actors' keys.
+- [x] Sample server: richer per-instance seed (distinct actors incl. a `manuallyApprovesFollowers` + one Ed25519 actor, reply threads, per-instance unique content).
+- [x] Sample server: `samples/SampleServer/README.md` documenting implemented features with pointer information.
+- [x] Blazor WASM: convert `SampleBlazorClient` to a Blazor WASM app with a DI composition root (`ExplorerSession`/`ClientService`).
 - [ ] Blazor WASM: log on to an instance by WebFinger address + instance switching (local + external).
 - [ ] Blazor WASM: base-URL-vs-IRI-host separation (browser dials host-published ports; IRIs carry service-name hosts).
 - [ ] Blazor WASM: explorer read screens (instance overview, actors directory/search, actor detail, object+replies, community).
@@ -83,8 +83,10 @@ substantial design calls: [decisions/](decisions/README.md).
 ## Near-term priorities
 
 1. Build the Phase 8 sample per [SAMPLE_PLAN.md](SAMPLE_PLAN.md): **S1 done** (federation-ready server +
-   rich seed, [change 070](changes/070-sample-federation-ready.md)), **S2 done** (server README) →
-   Blazor WASM server-explorer (logon-by-WebFinger, explore + write, external-instance) → 3-service
+   rich seed, [change 070](changes/070-sample-federation-ready.md)), **S2 done** (server README),
+   **S3 done** (Blazor WASM server-explorer scaffold + `ExplorerSession`/`AddIrisExplorer` DI + app
+   shell + `WebFingerAddress` + 17 in-process tests, [change 072](changes/072-sample-blazor-wasm-explorer.md)) →
+   Blazor WASM logon-by-WebFinger resolve + explorer read/write screens + external-instance → 3-service
    compose + smoke path.
 2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
 3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
