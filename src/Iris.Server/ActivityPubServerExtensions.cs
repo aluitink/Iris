@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Identity;
+using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -3271,6 +3273,46 @@ public static class ActivityPubServerExtensions
         // Replace the in-memory defaults with the file-backed implementations.
         services.AddSingleton<IDeliveryQueue>(_ => new FileBackedDeliveryQueue(deliveryJournalPath, queueCapacity));
         services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterJournalPath, deadLetterCapacity));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the file-backed <see cref="IPersistenceProvider"/> (Phase 16.4, production persistence):
+    /// every store (actors, activities, follows, likes, replies, moderation, relays, objects, communities)
+    /// and the local instance's signing keys are persisted to one JSON file per store under
+    /// <paramref name="directory"/> and survive a host restart.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="directory">The directory that holds the per-store files. It must already exist; the
+    /// files are created on first write.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to override the default
+    /// (in-memory) persistence. It replaces the <see cref="IPersistenceProvider"/> and
+    /// <see cref="IKeyStore"/> registrations with file-backed implementations, so a restart does not lose
+    /// the federation graph (follows, likes, replies, moderation, relays), the stored actor/object/
+    /// activity documents, or the local actor's signing key (a signature made before a restart still
+    /// verifies after one). A host that wants a real database swaps in a different
+    /// <see cref="IPersistenceProvider"/> behind the same seam.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or <paramref name="directory"/> is null or empty.</exception>
+    public static IServiceCollection UseFileBackedPersistence(this IServiceCollection services, string directory)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentException.ThrowIfNullOrWhiteSpace(directory);
+
+        // The directory must exist: the store files are created inside it, and a missing directory would
+        // fail on first write with a confusing IOException. Fail fast at registration instead.
+        if (!Directory.Exists(directory))
+        {
+            throw new DirectoryNotFoundException($"The persistence directory does not exist: {directory}");
+        }
+
+        // Replace whatever persistence provider the host registered (in-memory by default) with the
+        // file-backed aggregate. Re-registering IPersistenceProvider + IKeyStore overrides the
+        // in-memory singletons, so the server resolves the file-backed stores.
+        services.AddSingleton<IPersistenceProvider>(_ => new FileBackedPersistenceProvider(directory));
+        services.AddSingleton<IKeyStore>(_ => new FileBackedKeyStore(Path.Combine(directory, "keys.json")));
         return services;
     }
 }
