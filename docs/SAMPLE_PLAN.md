@@ -485,13 +485,18 @@ throughout.
    and the proxy fallback, iris-a relaying a GET to iris-b, 200). The signed request is driven by the new
    `tools/IrisSigner` helper (curl cannot produce an ActivityPub HTTP signature); the acting key is dumped to
    the container locally via the opt-in `Iris__DumpKeyTo` env var. [change 081](docs/changes/081-s10-signed-federation-proxy-smoke-test.md).
-- **S11 — Sample Blazor README + DEPLOYMENT.md update.** `samples/SampleBlazorClient/README.md`
-  (Deliverable B) + update `docs/reference/DEPLOYMENT.md` topology/files; document the manual
-  interop checklist + the external-instance (dev FQDN) mechanism (no real FQDN committed).
+ - **S11 — Sample Blazor README + DEPLOYMENT.md update.** `samples/SampleBlazorClient/README.md`
+   (Deliverable B) + update `docs/reference/DEPLOYMENT.md` topology/files; document the manual
+   interop checklist + the external-instance (dev FQDN) mechanism (no real FQDN committed). **Done** —
+   new `samples/SampleBlazorClient/README.md` (explorer screens → `IActivityPubClient` calls, logon + the
+   base-URL/IRI-host rule, the external-instance mechanism with placeholders only, testing, manual-exploration
+   checklist) + `DEPLOYMENT.md` smoke-test section + "real follow/post federation" note updated to the
+   post-S10 signed-federation story. [change 082](docs/changes/082-s11-sample-blazor-readme-deployment-update.md).
 
 > Slices S1–S2 make the **server** a real, documented federation peer. S3–S8 build the **explorer**.
 > S9–S10 wire the **stack** + **smoke path**. S11 finishes the **docs**. The stack is deployable and
-> green after S9; the full "boot + explore + interop" story is complete after S11.
+> green after S9; the full "boot + explore + interop" story is complete after S11. **All of S1–S11 are
+> done** — the Phase 8 enhancement is complete (acceptance criteria in §10 all satisfied).
 
 ---
 
@@ -511,24 +516,24 @@ throughout.
 
 ## 10. Acceptance criteria (definition of done for the whole Phase 8 enhancement)
 
-- [ ] `docker compose up --build` boots **three** healthy services (`iris-a`, `iris-b`, `iris-ui`) on
+- [x] `docker compose up --build` boots **three** healthy services (`iris-a`, `iris-b`, `iris-ui`) on
       routable addresses with no host-side .NET, no FQDN, no DNS config, no TLS.
-- [ ] Navigating to the **UI** (host:8090) lets a user **log on by WebFinger address** to `iris-a` and
+- [x] Navigating to the **UI** (host:8090) lets a user **log on by WebFinger address** to `iris-a` and
       `iris-b` (and switch between them), and **enumerate + explore** the seeded mock data (actors,
       objects, replies, community feed, search).
-- [ ] The UI can **post, reply, follow (cross-instance), like, and moderate**, and these are **accepted**
+- [x] The UI can **post, reply, follow (cross-instance), like, and moderate**, and these are **accepted**
       by the other instance over the Docker network (signed federation, not just reads).
-- [ ] The UI can be pointed at an **external instance** (runtime-supplied base URL + WebFinger address)
+- [x] The UI can be pointed at an **external instance** (runtime-supplied base URL + WebFinger address)
       and exercise the read + follow + proxy-fallback paths against it.
-- [ ] `samples/SampleServer/README.md` documents the implemented features with pointer information.
-- [ ] `samples/SampleBlazorClient/README.md` documents the explorer + the external-instance mechanism
+- [x] `samples/SampleServer/README.md` documents the implemented features with pointer information.
+- [x] `samples/SampleBlazorClient/README.md` documents the explorer + the external-instance mechanism
       (no real dev FQDN committed).
-- [ ] `scripts/docker-smoke-test.sh` (opt-in) boots the 3-service stack and asserts UI reachability +
+- [x] `scripts/docker-smoke-test.sh` (opt-in) boots the 3-service stack and asserts UI reachability +
       signed cross-container federation + proxy fallback; skips cleanly without Docker.
-- [ ] In-process `SampleServer.Tests` + `SampleBlazorClient.Tests` are green and cover the new server
+- [x] In-process `SampleServer.Tests` + `SampleBlazorClient.Tests` are green and cover the new server
       (signature validation, richer seed) and client (logon-by-address, cross-instance writes) surfaces.
-- [ ] Full solution `dotnet build` (0 warnings, `TreatWarningsAsErrors`) + `dotnet test` green.
-- [ ] No new NuGet package without a ROADMAP note + justification; no real dev FQDN in the repo.
+- [x] Full solution `dotnet build` (0 warnings, `TreatWarningsAsErrors`) + `dotnet test` green.
+- [x] No new NuGet package without a ROADMAP note + justification; no real dev FQDN in the repo.
 
 ---
 
