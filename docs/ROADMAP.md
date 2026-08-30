@@ -32,7 +32,7 @@ Phases -1 through 12 are complete, including the core federation layer, client/s
 - [x] **Priority: troubleshoot & fix the docker-compose sample UI** (`iris-ui` / `SampleBlazorClient` Blazor WASM server-explorer) — verified end-to-end against the compose stack with Playwright (2026-08-30): logon, actor directory/detail, note view, compose/post, follow/unfollow, community, like, and instance switching all work; `IrisStaticHost` SPA fallback fixed.
 - [ ] Phase 13.5–13.10: stand up real partner instances and verify interop with Mastodon, Lemmy, and Threads.
 - [ ] Phase 14: live-interop remediation and gap fixes.
-- [ ] Phase 15.2 (remaining): OAuth2 `/oauth2/authorize` browser-redirect endpoint + Blazor WASM integration (15.1, 15.2a, 15.2b, 15.3, 15.4 done).
+- [x] **Phase 15.2 (remaining): OAuth2 `/oauth2/authorize` + Blazor WASM integration** (2026-08-30) — the server `GET /ap/v1/oauth2/authorize` browser-redirect endpoint (auto-approve + one-time code + 302) and the `SampleBlazorClient` browser flow (`OAuth2BrowserFlow` + `LogOnWithOAuth2Async` + `Home.razor` OAuth2 logon + `IrisStaticHost` `/callback`); Phase 15 (auth upgrade) now fully done (15.1, 15.2a, 15.2b, 15.2, 15.3, 15.4).
 - [ ] Phase 16: production persistence and scaling.
 - [ ] Phase 17: observability and transport hardening.
 
