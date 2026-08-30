@@ -468,8 +468,15 @@ throughout.
    the home proxy, which re-signs with the acting actor's key). The two S7 follow-up write-surface screens
    (raw JSON inspector + proxy-fallback) are now complete. 2 in-process tests, incl. a full client pipeline
    over two in-process instances (direct 401 → A's proxy → B 200). [change 079](docs/changes/079-explorer-raw-inspector-and-proxy-fallback.md).
-- **S9 — WASM Dockerfile + `iris-ui` compose service.** Multi-stage build → static host; add `iris-ui` to
-  compose; routable-address documentation. (No automated browser test here; covered by S6/S7 in-process.)
+ - **S9 — WASM Dockerfile + `iris-ui` compose service.** Multi-stage build → static host; add `iris-ui` to
+   compose; routable-address documentation. (No automated browser test here; covered by S6/S7 in-process.)
+   **Done.** Multi-stage `samples/SampleBlazorClient/Dockerfile` (SDK → `aspnet` static-file host) publishes the
+   WASM site + the dedicated `samples/IrisStaticHost` (a minimal plain ASP.NET Core `UseStaticFiles` host on
+   `8090` — a separate project because the Blazor WASM SDK pins the browser-wasm/Mono target and cannot produce
+   a CoreCLR server app). `iris-ui` joins `iris-a`/`iris-b` on `iris-net` (host `8090:8090`, TCP-connect health
+   check). Verified: the image builds and serves `index.html` / `blazor.webassembly.js` / `app.css` / a `.wasm`
+   (all `200`) + SPA fallback on `8090`; `docker compose config` reports three services; full solution 0
+   warnings, 883 tests green. [change 080](docs/changes/080-wasm-dockerfile-and-iris-ui-compose-service.md).
 - **S10 — Smoke test: UI + signed federation over Docker.** Extend `docker-smoke-test.sh` (UI index 200
   over `iris-net`; signed cross-container Follow a→b + Accept; proxy 200). Opt-in gate preserved.
 - **S11 — Sample Blazor README + DEPLOYMENT.md update.** `samples/SampleBlazorClient/README.md`
