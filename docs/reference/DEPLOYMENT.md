@@ -86,12 +86,23 @@ docker compose -f docker-compose.yml down --remove-orphans
 
 The script:
 1. **Boots** the compose stack (`up --build`).
-2. **Waits** for both instances to be healthy.
+2. **Waits** for all three services to be healthy.
 3. **Asserts health**: each instance serves its own actor's WebFinger (HTTP 200, correct actor IRI).
 4. **Asserts cross-container reachability**: a request to `iris-b` over the `iris-net` network
    returns `iris-b`'s actor document (HTTP 200, `id: http://iris-b:8080/ap/v1/u/alice`), proving the
    two containers reach each other over genuine network I/O.
-5. **Tears down** the stack (unless `IRIS_COMPOSE_KEEP=1` is set).
+5. **Asserts the UI**: `iris-ui` serves the Blazor WebAssembly app's index page (HTTP 200, the app
+   root) over the network.
+6. **Asserts signed cross-container federation**: a genuine ActivityPub HTTP-**signed** Follow from
+   `iris-a`'s alice to `iris-b`'s alice (published to alice's own outbox on `iris-a`) is
+   **server-delivered** (signed) to `iris-b`'s inbox, **validated** (iris-b resolves alice's key from
+   iris-a's actor document), and the follow **edge is recorded** on `iris-b` — asserted on `iris-b`'s
+   public followers collection. The signed request is driven by the `tools/IrisSigner` helper (curl
+   cannot produce an ActivityPub HTTP signature); the acting key is dumped to the container locally via
+   the opt-in `Iris__DumpKeyTo` env var.
+7. **Asserts the proxy fallback**: `iris-a`'s proxy relays a request to `iris-b` (HTTP 200, the actor
+   document returned).
+8. **Tears down** the stack (unless `IRIS_COMPOSE_KEEP=1` is set).
 
 > **Opt-in gate**: the script skips (exit 0) when Docker or the daemon is unavailable, so local/dev
 > runs without Docker are unaffected. In CI, run it in a job with the Docker service enabled.
@@ -138,7 +149,8 @@ So the three services are reachable from the host at:
   mirrors at the network boundary.
 - **CI job**: a dedicated CI job (build → run → smoke → tear down) is deferred until a baseline CI
   workflow exists; the smoke script's opt-in gate is the interim measure.
-- **Real follow/post federation** (signed POST delivery between the two containers) is exercised by
-  the in-process two-instance integration tests; the Docker stack proves the **deployment and
-  network-connectivity** guarantee (both instances boot, advertise routable base URIs, and reach
-  each other).
+- **Signed cross-container federation** (a signed Follow from one instance delivered + validated on the
+  other) is exercised by the smoke test over genuine sockets (step 6 above), and in-process by the
+  two-instance integration tests. The Docker stack proves the **deployment + network + signed
+  federation** guarantee: both instances boot, advertise routable base URIs, reach each other, and a
+  signed write lands on the remote instance.
