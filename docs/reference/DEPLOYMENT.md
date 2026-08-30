@@ -23,7 +23,8 @@ unit/integration tests).
    host:8090 ─────► ┌─────────────────────────────┐
                     │  iris-ui  (iris-ui:8090)     │
                     │  Blazor WASM server explorer │
-                    │  static site on nginx         │
+                    │  static site on ASP.NET Core │
+                    │  static-file host (Kestrel)  │
                     └─────────────────────────────┘
 ```
 
@@ -38,17 +39,17 @@ unit/integration tests).
 - Both instances seed the same local actor (`alice`) and community (`iris`) — they are
   **independent instances**, each with its own in-memory state.
 - **`iris-ui`** is the Blazor WebAssembly "server explorer" (Deliverable B) served as a static site by
-  nginx on port `8090`. It is a **browser** app: all ActivityPub I/O is browser → server, so the
-  `iris-ui` container itself makes no outbound network calls — it only serves the WASM site. It is
-  routable as `iris-ui` on `iris-net` and published to the host on `8090` for manual use and the
-  smoke test.
+  a minimal ASP.NET Core static-file host (Kestrel on port `8090`). It is a **browser** app: all
+  ActivityPub I/O is browser → server, so the `iris-ui` container itself makes no outbound network
+  calls — it only serves the WASM site. It is routable as `iris-ui` on `iris-net` and published to the
+  host on `8090` for manual use and the smoke test.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `samples/SampleServer/Dockerfile` | Multi-stage build (SDK → aspnet runtime). Context = repo root. |
-| `samples/SampleBlazorClient/Dockerfile` | Multi-stage build (SDK → nginx static host). Context = repo root; the WASM app is static, so nginx serves the published `wwwroot` on `8090`. |
+| `samples/SampleBlazorClient/Dockerfile` | Multi-stage build (SDK → aspnet static-file host). Context = repo root; the WASM app is static, so a minimal ASP.NET Core static-file host (the dedicated `samples/IrisStaticHost` project) serves the published `wwwroot` on `8090`. |
 | `.dockerignore` | Keeps the build context lean (excludes bin/obj, tests, docs, scratch). Both sample projects' sources are included (both Dockerfiles build from the root context). |
 | `docker-compose.yml` | Two `SampleServer` instances + the `iris-ui` explorer on `iris-net`, health checks, host port mappings. |
 | `scripts/docker-smoke-test.sh` | Boots the stack, waits for health, asserts cross-container WebFinger reachability. |
@@ -131,7 +132,8 @@ So the three services are reachable from the host at:
 ## Notes / deferred
 
 - **Blazor client container**: the WASM host for `SampleBlazorClient` is now built and served by the
-  `iris-ui` service (static nginx host on `8090`). The client is also exercised end-to-end by the
+  `iris-ui` service (a minimal ASP.NET Core static-file host on `8090`). The client is also exercised
+  end-to-end by the
   in-process two-instance integration tests (`tests/SampleBlazorClient.Tests`), which the Docker stack
   mirrors at the network boundary.
 - **CI job**: a dedicated CI job (build → run → smoke → tear down) is deferred until a baseline CI

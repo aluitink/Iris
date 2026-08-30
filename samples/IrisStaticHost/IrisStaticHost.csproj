@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Samples.IrisStaticHost</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      The iris-ui container's static-file host (Deliverable B). The Blazor WebAssembly app
+      (samples/SampleBlazorClient) is a *static* site — the browser downloads index.html + _framework
+      and runs the app client-side — so this is a minimal ASP.NET Core app whose only job is to serve
+      the published WASM site from its WebRoot (the publish output's wwwroot folder) on port 8090. It
+      is a plain CoreCLR server app (the Blazor WebAssembly SDK cannot produce one — it pins the
+      browser-wasm/Mono target), so it is a separate project, not a build of the WASM project.
+    -->
+  </PropertyGroup>
+
+</Project>

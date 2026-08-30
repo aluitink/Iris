@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/samples/">
+    <Project Path="samples/IrisStaticHost/IrisStaticHost.csproj" />
     <Project Path="samples/SampleBlazorClient/SampleBlazorClient.csproj" />
     <Project Path="samples/SampleServer/SampleServer.csproj" />
   </Folder>

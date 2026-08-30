@@ -29,10 +29,13 @@
   </ItemGroup>
 
   <!-- Entry points are mutually exclusive by build tag so only one Main is ever in the assembly. The
-       SDK's default globbing already includes every .cs, so each configuration only *removes* the
-       entry point that does not belong to it:
-       - default (WASM): Program.cs (the Blazor host) stays; ConsoleSmoke.cs is removed.
-       - -p:ConsoleSmoke=true (console smoke): ConsoleSmoke.cs stays; Program.cs is removed. -->
+        SDK's default globbing already includes every .cs, so each configuration only *removes* the
+        entry point that does not belong to it:
+        - default (WASM): Program.cs (the Blazor host) stays; ConsoleSmoke.cs is removed.
+        - -p:ConsoleSmoke=true (console smoke): ConsoleSmoke.cs stays; Program.cs is removed.
+       (The iris-ui container's static-file host is a separate, plain ASP.NET project —
+       samples/IrisStaticHost — not a build of this WASM project, because the Blazor WebAssembly SDK
+       pins the browser-wasm/Mono target and cannot produce a plain CoreCLR server app.) -->
   <ItemGroup Condition="'$(ConsoleSmoke)' != 'true'">
     <Compile Remove="ConsoleSmoke.cs" />
   </ItemGroup>

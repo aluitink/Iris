@@ -5,7 +5,7 @@
 # Topology (see docs/DEPLOYMENT.md):
 #   iris-a  → iris-a:8080   actor alice / community iris   (the "home" instance)
 #   iris-b  → iris-b:8080   actor alice / community iris   (the "remote" instance)
-#   iris-ui → iris-ui:8090  the Blazor WebAssembly server-explorer (static site on nginx)
+#   iris-ui → iris-ui:8090  the Blazor WebAssembly server-explorer (static site on an ASP.NET Core static-file host)
 #
 # Each server container's Iris__HostName is its service name and Iris__Port is the real in-network
 # port (8080), so the server's advertised base URI (the actor/community IRIs) is routable from the
@@ -71,10 +71,11 @@ services:
       - iris-net
 
   iris-ui:
-    # The Blazor WebAssembly "server explorer" (Deliverable B) served as a static site by nginx.
-    # It dials the two servers from the browser (host-published ports 8081/8082), so the service
-    # itself needs no outbound network access — it only serves the WASM site. Routable as `iris-ui`
-    # on the internal network and published to the host on 8090 for the smoke test / manual use.
+    # The Blazor WebAssembly "server explorer" (Deliverable B) served as a static site by a minimal
+    # ASP.NET Core static-file host (Kestrel on 8090). It dials the two servers from the browser
+    # (host-published ports 8081/8082), so the service itself needs no outbound network access — it
+    # only serves the WASM site. Routable as `iris-ui` on the internal network and published to the
+    # host on 8090 for the smoke test / manual use.
     build:
       context: .
       dockerfile: samples/SampleBlazorClient/Dockerfile
@@ -83,9 +84,9 @@ services:
     ports:
       - "8090:8090"
     healthcheck:
-      # nginx:1.27-alpine ships a busybox wget (no curl); a GET of the WASM index asserts the static
-      # site is being served (a clean liveness probe).
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/ || exit 1"]
+      # A TCP connect to the static host's port (the aspnet base image has no curl/wget); a successful
+      # connect means the Kestrel web server is listening (the same liveness probe as iris-a/iris-b).
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8090' 2>/dev/null || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
