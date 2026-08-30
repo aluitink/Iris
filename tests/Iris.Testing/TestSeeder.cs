@@ -146,6 +146,42 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Person"/> actor with <c>manuallyApprovesFollowers</c> set (in the actor's
+    /// <c>ExtensionData</c>, the library-untyped property) together with a real RSA-2048 signing key, so
+    /// the actor both suppresses auto-accept on an inbound follow (Resolved Decision #46) and can sign
+    /// outbound federation (an operator Accept/Reject is delivered back to the follower signed as this
+    /// actor). The key is stored in the provider's <see cref="IPersistenceProvider.Keys"/> and served as
+    /// PEM (<c>publicKeyPem</c>) in the actor's <c>publicKey</c> extension. Idempotent (re-seeding
+    /// replaces the actor and key).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="host">The instance hostname (e.g. <c>b.domain.local</c>).</param>
+    /// <param name="handle">The actor's handle (e.g. <c>bob</c>).</param>
+    /// <returns>The seeded key, the actor's IRI, and the key's IRI (<c>{actorIri}#key-1</c>).</returns>
+    public static (KeyPair Key, Iri ActorIri, Iri KeyId) SeedManuallyApprovingPersonWithKey(
+        InMemoryPersistenceProvider persistence, string host, string handle)
+    {
+        var (key, actorIri, keyId) = SeedPersonWithKey(persistence, host, handle);
+        var actor = new Person
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = actorIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        actor.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+            JsonDocument.Parse("true").RootElement.Clone();
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+        return (key, actorIri, keyId);
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Group"/> community under its standard IRI. Idempotent (re-seeding replaces).
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>

@@ -295,6 +295,121 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Assert.DoesNotContain(items, i => i is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
     }
 
+    // --- The operator reject path (manuallyApprovesFollowers, J-10 / gap G-2's Reject half) --
+    //
+    // The live outbound half of the manually-approves-followers gate: bob (B's local actor) has
+    // manuallyApprovesFollowers set, so an inbound Follow of him is recorded but NOT auto-accepted —
+    // the operator must respond with an explicit Accept or Reject. This test exercises the Reject
+    // endpoint (POST /ap/v1/u/{bob}/follows/{followId}, Basic-authenticated as bob, body = the original
+    // Follow): B builds the deterministic Reject (bob's actor IRI + /rejects + the follow IRI), records
+    // it in B's activity store + bob's outbox, removes the provisional local follow edge (alice → bob),
+    // and server-delivers the Reject to alice's inbox over the wire, signed as bob. A validates bob's
+    // signature (fetching B's actor doc) and its RejectActivityHandler removes alice → bob from A's
+    // follow store. This is the end-to-end proof that an operator can reject a pending follow on a
+    // manually-approving actor, and that the reject federates back to the follower.
+    //
+    // Wiring: A's fetcher routes to B (lazy, to break the A↔B chicken-and-egg) so A can fetch bob's
+    // actor doc to resolve bob's key when validating the worker-signed Reject. B's outbound delivery
+    // transport routes to A so B's DeliveryWorker delivers the Reject back to alice's inbox. B's
+    // FollowActivityHandler would schedule an auto-Accept for a plain actor, but bob is
+    // manually-approving, so no Accept is scheduled (the gate's whole point) — no racing to contend with.
+
+    [Fact]
+    public async Task ManuallyApprovingActor_OperatorRejectsFollow_RejectDeliveredBackAndRemovesEdge()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
+        // bob is a manually-approving actor (no auto-Accept on inbound follow) with a signing key, so
+        // the Reject the operator triggers is delivered back to alice signed as bob.
+        var bBob = TestSeeder.SeedManuallyApprovingPersonWithKey(bPersistence, BHost, Bob);
+        var aliceActorIri = aSeeded.ActorIri;
+        var bobActorIri = bBob.ActorIri;
+        var bobInboxIri = bobActorIri.InboxOf();
+        var aliceFollowingIri = new Iri($"{aliceActorIri}/following");
+
+        // bob's Basic-auth credentials (the operator acting as bob) for the reject endpoint.
+        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
+            ValueTask.FromResult(iri == bobActorIri && username == Bob && password == "bob-password"));
+
+        TestServer? bRef = null;
+        var a = StartServer(AHost, Alice, aPersistence,
+            fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())));
+        bRef = StartServer(BHost, Bob, bPersistence,
+            fetcher: BuildFetcherFor(BHost, Bob, bBob.Key, a.CreateHandler()),
+            deliveryTransport: () => a.CreateHandler(),
+            credentialValidator: credentialValidator);
+        using var scope = new DisposeBoth(bRef, a);
+
+        // alice follows bob over the wire. B validates alice's signature and records the provisional
+        // follow edge (alice → bob). Because bob is manually-approving, B does NOT schedule an Accept.
+        var follow = BuildFollow(aliceActorIri, bobActorIri);
+        await aPersistence.Activities.PutActivityAsync(follow);
+        await aPersistence.Follows.RecordFollowAsync(aliceActorIri, bobActorIri);
+        using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
+        var statusCode = await client.DeliverAsync(bobInboxIri, follow);
+        Assert.Equal(202, statusCode);
+        Assert.True(
+            await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "B should record the provisional follow edge (alice → bob) without auto-accepting");
+        Assert.True(
+            await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "A should record alice's own follow of bob");
+
+        // The operator rejects the follow: a Basic-authenticated POST as bob to bob's reject endpoint,
+        // with the original Follow as the body. B builds the deterministic Reject, records it in its
+        // activity store + bob's outbox, removes the provisional edge, and delivers the Reject back.
+        var rejectUrl = $"{bobActorIri.Value.TrimEnd('/')}/follows/{follow.Id!.TrimStart('/')}";
+        using var http = new HttpClient(bRef.CreateHandler(), disposeHandler: false);
+        using var rejectRequest = new HttpRequestMessage(HttpMethod.Post, rejectUrl);
+        rejectRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Bob}:bob-password")));
+        rejectRequest.Content = new StringContent(ActivityJson.Serialize(follow));
+        rejectRequest.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue("application/activity+json");
+        var rejectResponse = await http.SendAsync(rejectRequest);
+        Assert.Equal(HttpStatusCode.Accepted, rejectResponse.StatusCode);
+
+        // B recorded the Reject under its deterministic IRI, in both the activity store and bob's outbox.
+        var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
+        Assert.True(
+            await bPersistence.Activities.TryGetActivityAsync(rejectIri, out var bStored),
+            "B should have recorded the operator's Reject under its deterministic IRI");
+        Assert.IsType<Reject>(bStored!);
+        var bobOutbox = await bPersistence.Activities.GetOutboxAsync(bobActorIri);
+        Assert.Contains(bobOutbox, a => a.Id == rejectIri.Value);
+
+        // B removed the provisional local follow edge (alice → bob) immediately, without waiting for A.
+        Assert.False(
+            await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "After the operator reject, B should no longer record that alice follows bob");
+
+        // B's DeliveryWorker delivers the Reject to alice's inbox over the wire, signed as bob. A
+        // validates bob's signature (fetching B's actor doc) and its RejectActivityHandler removes
+        // alice → bob from A's follow store. Wait for the worker to complete the round-trip.
+        await WaitForAsync(
+            async () => !await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            timeout: TimeSpan.FromSeconds(10));
+        Assert.False(
+            await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "After the Reject is delivered back to alice, alice should no longer follow bob in A's follow store");
+        Assert.True(
+            await aPersistence.Activities.TryGetActivityAsync(rejectIri, out var aStored),
+            "A should have stored the Reject delivered by B over the wire");
+        Assert.IsType<Reject>(aStored!);
+
+        // And the removal is visible on alice's public `following` collection: bob is gone. (Invalidate
+        // the page-1 cache key first so the endpoint re-renders rather than serving the pre-Reject page.)
+        a.Services.GetRequiredService<Iris.Server.Caching.LocalCollectionPageCache>().Invalidate(aliceFollowingIri);
+        using var aHttp = new HttpClient(a.CreateHandler());
+        var followingJson = await aHttp.GetStringAsync($"https://{AHost}/ap/v1/u/{Alice}/following");
+        var following = ActivityJson.Deserialize<IObjectOrLink>(followingJson);
+        var items = (following as OrderedCollection)?.OrderedItems
+            ?? (following as OrderedCollectionPage)?.OrderedItems
+            ?? [];
+        Assert.DoesNotContain(items, i => i is ILink { Href: { } href } && href == new Uri(bobActorIri.Value));
+    }
+
     // --- Delivery signs with the acting actor's key (not the instance actor) ---------
     //
     // The full loop, with B hosting two local actors (bob = instance actor, carol = a second
@@ -614,7 +729,8 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         IActorDocumentFetcher? fetcher = null,
         Func<HttpMessageHandler>? deliveryTransport = null,
         Action<Microsoft.Extensions.DependencyInjection.IServiceCollection>? extraServices = null,
-        IEnumerable<Iri>? extraLocalActors = null)
+        IEnumerable<Iri>? extraLocalActors = null,
+        Iris.Server.Security.IActorCredentialValidator? credentialValidator = null)
         => ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
             Host = host,
@@ -624,6 +740,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             DeliveryTransport = deliveryTransport,
             ExtraServices = extraServices,
             ExtraLocalActors = extraLocalActors,
+            CredentialValidator = credentialValidator,
         });
 
     private static Follow BuildFollow(Iri actorIri, Iri targetIri)
