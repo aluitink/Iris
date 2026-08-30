@@ -43,6 +43,14 @@ is the username, `iris-sample` is the password:
 | bob (local) | `bob` | `iris-sample` |
 | carla (remote-host stand-in) | `carla` | `iris-sample` |
 
+**OAuth2 (Bearer token) auth:** the server also supports Bearer-token auth (Phase 15). The
+`IActorCredentialValidator` seam is swappable: the sample registers a `BasicAuthCredentialValidator`
+by default, but a host app can register a `BearerTokenCredentialValidator` (wired to an
+`IOAuthTokenStore`) to use OAuth2 Bearer tokens instead. The token endpoints
+(`POST /ap/v1/oauth2/token` + `POST /ap/v1/oauth2/revoke`) are always mapped; the auth scheme is
+chosen by the host app's DI registration. See [DEPLOYMENT_PREP](../../docs/reference/DEPLOYMENT_PREP.md)
+for the production auth configuration.
+
 **Base URIs** (local run): actor `http://localhost:5000/ap/v1/u/alice`, community
 `http://localhost:5000/ap/v1/c/iris`, WebFinger
 `http://localhost:5000/.well-known/webfinger?resource=acct:alice@localhost`.
@@ -68,6 +76,8 @@ types, and meta headers live in `Iris.Server.ActivityPubServerConstants`.
 | Object document + tombstone | `GET /ap/v1/{**path}` (catch-all) | `ObjectDocumentHandler` | [Decision 048](../../docs/decisions/048-content-object-write-path.md) |
 | Proxy fallback (signed, as the acting actor) | `POST /ap/v1/proxy/{target}` | `ProxyHandler` | [Decision 037](../../docs/decisions/037-proxy-route-parameter-and-catch-all.md) |
 | Local moderation (mute / relay) | `POST /ap/v1/u/{handle}/mutes/{target}` (toggle `?unmute=true`), `POST /ap/v1/u/{handle}/relays/{target}` (toggle `?unsubscribe=true`) | `LocalMuteHandler` / `LocalRelayHandler` + `IModerationStore` / `IRelayStore` | [Change 062 / 063](../../docs/changes/) |
+| OAuth2 token exchange (code → Bearer token + refresh token) | `POST /ap/v1/oauth2/token` | `OAuthTokenHandler` + `IOAuthTokenStore` | [Change 104 / 106](../../docs/changes/) |
+| OAuth2 token revocation | `POST /ap/v1/oauth2/revoke` | `OAuthRevokeHandler` + `IOAuthTokenStore` | [Change 104](../../docs/changes/) |
 | Capabilities discovery (`iris:capabilities`) | advertised on the actor + community documents | `ActivityPubServerConstants` | [Decision 010](../../docs/decisions/010-versioned-api-prefix.md) |
 
 ### Federation (inbound)

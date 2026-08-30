@@ -64,7 +64,7 @@ must be reachable through the reverse proxy:
 
 | Path | Method | Purpose | Public? |
 |---|---|---|---|
-| `/ap/v1/u/{handle}` | GET | Actor document. Public by default; the owner-only `privateKey` + `keyAlgorithm` extensions are served **only** to the authenticated owner (Basic auth) with `Cache-Control: no-store`. | yes (public doc); owner-only fields gated |
+| `/ap/v1/u/{handle}` | GET | Actor document. Public by default; the owner-only `privateKey` + `keyAlgorithm` extensions are served **only** to the authenticated owner (Basic auth or Bearer token) with `Cache-Control: no-store`. | yes (public doc); owner-only fields gated |
 | `/ap/v1/c/{handle}` | GET | Community (`Group`) document. | yes |
 | `/ap/v1/c/{handle}/members` | GET | Community members. | yes |
 | `/ap/v1/c/{handle}/feed` | GET | Community feed (unified member outbox). | yes |
@@ -76,6 +76,8 @@ must be reachable through the reverse proxy:
 | `/ap/v1/u/{handle}/outbox` (and `followers`/`following`) | GET | Paged collections (page 1 = `OrderedCollection` carrying `first`; page N>1 = `OrderedCollectionPage`; `?page`, `?limit`, `?refresh=true`). | yes |
 | `/ap/v1/u/{handle}/inbox` | POST | Inbound activity delivery (signature-validated; the `SignatureValidationMiddleware` validates POSTs). | yes (authenticated by signature) |
 | `/ap/v1/proxy/{target}` | POST | Proxy fallback (Phase 6) — re-signs + relays an authenticated actor's request to an allowlisted target. | gated by `ProxySettings` |
+| `/ap/v1/oauth2/token` | POST | OAuth2 token exchange (Phase 15) — exchanges an authorization code or refresh token for a Bearer token + refresh token. | yes (form-encoded) |
+| `/ap/v1/oauth2/revoke` | POST | OAuth2 token revocation (Phase 15) — revokes a Bearer token (RFC 7009: always 200). | yes (form-encoded) |
 
 The `Iris-Version` meta header is added to every mapped endpoint via a route-group filter.
 
@@ -84,7 +86,9 @@ The `Iris-Version` meta header is added to every mapped endpoint via a route-gro
 Steps to stand up a public Iris instance against the operator-provided FQDN. The `SampleServer`
 (`samples/SampleServer`) is the reference host: it shows the exact `Iris:` configuration surface, the
 seed (actor + key + community), and the endpoint wiring. A production host replaces `InMemoryPersistenceProvider`
-with a real `IPersistenceProvider` (Phase 14) and the Basic-auth validator with the chosen auth (Phase 14+),
+with a real `IPersistenceProvider` (Phase 14) and the Basic-auth validator with the chosen auth
+(Phase 15: `BearerTokenCredentialValidator` + `IOAuthTokenStore` for OAuth2 Bearer tokens, or a
+custom `IActorCredentialValidator`),
 but the config shape and bootstrap sequence are the same.
 
 ### Step 1 — Provision the FQDN + TLS (operator)
