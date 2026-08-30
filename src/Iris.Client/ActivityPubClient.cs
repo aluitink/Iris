@@ -856,6 +856,30 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             };
         }
 
+        // An unordered Collection (F-18) served as its first page (the collection document carrying its
+        // first page of items + a self `first`). OrderedCollection derives from Collection, so this
+        // branch is guarded by `is not OrderedCollection` to preserve the extension-data `next`
+        // resolution above. An unordered Collection has no typed `next` (only CollectionPage does), so
+        // the walk terminates after page 1 — acceptable for a rarely-used, low-priority shape.
+        if (obj is Collection { Id: not null } unordered)
+        {
+            var items = unordered.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            return new CollectionPage
+            {
+                Page = new OrderedCollectionPage
+                {
+                    Id = unordered.Id,
+                    Items = items,
+                    TotalItems = unordered.TotalItems,
+                },
+                Items = items,
+                NextPage = null,
+                PrevPage = null,
+                TotalItems = unordered.TotalItems is { } total ? (int)total : null,
+                PageId = new Iri(unordered.Id),
+            };
+        }
+
         return null;
     }
 

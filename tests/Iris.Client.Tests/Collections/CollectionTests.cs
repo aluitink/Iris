@@ -170,6 +170,116 @@ public class CollectionTests
         Assert.Equal(0, count);
     }
 
+    // --- F-18: unordered Collection (base Collection, not OrderedCollection) ----
+
+    private const string UnorderedCollectionIri = "https://a.domain.local/c/unordered";
+    private const string UnorderedFirstIri = "https://a.domain.local/c/unordered/first";
+
+    /// <summary>
+    /// An unordered <c>Collection</c> served as its first page (the collection document carrying its
+    /// first page of items + a self <c>first</c>). No <c>next</c> (a base Collection has none), so the
+    /// walk terminates after page 1.
+    /// </summary>
+    private static string UnorderedCollectionDoc() => $$"""
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          "id": "{{UnorderedCollectionIri}}",
+          "type": "Collection",
+          "totalItems": 2,
+          "first": "{{UnorderedFirstIri}}",
+          "items": [
+            { "id": "https://a.domain.local/n/10", "type": "Note", "content": "ten" },
+            { "id": "https://a.domain.local/n/11", "type": "Note", "content": "eleven" }
+          ]
+        }
+        """;
+
+    /// <summary>
+    /// The first page of an unordered <c>Collection</c> (a <c>CollectionPage</c> with items + a
+    /// <c>prev</c> back to the collection but no <c>next</c> — the last page).
+    /// </summary>
+    private static string UnorderedFirstPageDoc() => $$"""
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          "id": "{{UnorderedFirstIri}}",
+          "type": "CollectionPage",
+          "partOf": "{{UnorderedCollectionIri}}",
+          "totalItems": 2,
+          "items": [
+            { "id": "https://a.domain.local/n/10", "type": "Note", "content": "ten" },
+            { "id": "https://a.domain.local/n/11", "type": "Note", "content": "eleven" }
+          ],
+          "prev": "{{UnorderedCollectionIri}}"
+        }
+        """;
+
+    private static FakeHttpHandler UnorderedRoutingHandler()
+    {
+        return new FakeHttpHandler(request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            if (uri.EndsWith("/c/unordered/first"))
+            {
+                return Json(UnorderedFirstPageDoc());
+            }
+
+            if (uri.EndsWith("/c/unordered"))
+            {
+                return Json(UnorderedCollectionDoc());
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_UnorderedCollection_YieldsPage1Items()
+    {
+        var client = Client(UnorderedRoutingHandler());
+        var pages = new List<CollectionPage>();
+        await foreach (var page in client.GetCollectionAsync(new Iri(UnorderedCollectionIri)))
+        {
+            pages.Add(page);
+        }
+
+        // One page yielded (the collection document is page 1; no next → the walk terminates).
+        Assert.True(pages.Count == 1, $"expected 1 page, got {pages.Count}");
+
+        var first = pages[0];
+        Assert.True(first.Items.Count == 2, $"expected 2 items, got {first.Items.Count}");
+        Assert.Equal(2, first.TotalItems);
+        Assert.Null(first.NextPage);
+        Assert.True(first.IsLastPage);
+    }
+
+    [Fact]
+    public async Task GetCollectionItemsAsync_UnorderedCollection_FlattensItems()
+    {
+        var client = Client(UnorderedRoutingHandler());
+        var itemIds = new List<string>();
+        await foreach (var item in client.GetCollectionItemsAsync(new Iri(UnorderedCollectionIri)))
+        {
+            itemIds.Add(item is KristofferStrube.ActivityStreams.Object o ? o.Id! : "?");
+        }
+
+        Assert.Equal(
+            ["https://a.domain.local/n/10", "https://a.domain.local/n/11"],
+            itemIds);
+    }
+
+    [Fact]
+    public async Task GetCollectionItemsAsync_UnorderedCollection_WithLimit_StopsAtLimit()
+    {
+        var client = Client(UnorderedRoutingHandler());
+        var itemIds = new List<string>();
+        await foreach (var item in client.GetCollectionItemsAsync(new Iri(UnorderedCollectionIri), new CollectionQuery(Limit: 1)))
+        {
+            itemIds.Add(item is KristofferStrube.ActivityStreams.Object o ? o.Id! : "?");
+        }
+
+        Assert.Equal(["https://a.domain.local/n/10"], itemIds);
+    }
+
     // --- GetCollectionItemsAsync -----------------------------------------------
 
     [Fact]
