@@ -28,8 +28,15 @@ public sealed class CommunityFeedService : ICommunityFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri communityIri, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri communityIri, string? query = null, CancellationToken ct = default)
     {
+        // A non-empty query filters the feed to the matching items (the same content/name match as the
+        // community search, F-23): the feed endpoint's ?q= is a filtered view of this same surface.
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            return await SearchCommunityAsync(communityIri, query, ct).ConfigureAwait(false);
+        }
+
         var memberIris = await _persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
         if (memberIris.Count == 0)
         {
@@ -66,7 +73,7 @@ public sealed class CommunityFeedService : ICommunityFeedService
     {
         // The search runs over the same surface as the feed (the union of the members' outbox
         // activities). An empty/whitespace query matches all items (the feed, unfiltered).
-        var feed = await GetFeedAsync(communityIri, ct).ConfigureAwait(false);
+        var feed = await GetFeedAsync(communityIri, null, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(query))
         {
             return feed;

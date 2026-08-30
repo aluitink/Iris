@@ -22,10 +22,19 @@ public interface ICommunityFeedService
     /// <summary>
     /// Returns the community's feed items: the union of the local members' outbox activities, newest first.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="query"/> is non-empty/whitespace, the feed is **filtered** to the items that
+    /// match it (the same content/name match as <see cref="SearchCommunityAsync"/>) — this is the source
+    /// for the <c>GET /c/{name}/feed?q=...</c> filter (F-23). A null/empty query returns the feed
+    /// unfiltered.
+    /// </remarks>
     /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="query">Optional content filter (matched case-insensitively against item content/name).
+    /// A null/empty/whitespace query returns the feed unfiltered.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes with the feed items (empty when the community has no members or no member content).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri communityIri, CancellationToken ct = default);
+    /// <returns>A task that completes with the feed items (filtered when a query is supplied; empty when the
+    /// community has no members or no member content, or nothing matches the query).</returns>
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri communityIri, string? query = null, CancellationToken ct = default);
 
     /// <summary>
     /// Searches the community's content (the feed surface) for items whose content or name contains the

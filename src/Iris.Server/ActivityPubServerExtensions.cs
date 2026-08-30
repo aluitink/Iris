@@ -2504,6 +2504,12 @@ public static class ActivityPubServerExtensions
     /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>),
     /// paged via <c>?page</c>/<c>?limit</c>.
     /// </summary>
+    /// <remarks>
+    /// A <c>?q</c> query filters the feed to the items whose content/name matches it, case-insensitively
+    /// (F-23 — the feed endpoint's content filter). An empty/absent <c>?q</c> returns the feed unfiltered.
+    /// The filtered and unfiltered shapes are identical (the same paged collection), so the client's
+    /// <c>GetCommunityFeedAsync</c> reads both identically.
+    /// </remarks>
     private static Task<IResult> CommunityFeedHandler(
         string name,
         HttpContext context,
@@ -2512,13 +2518,14 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
+        var query = context.Request.Query["q"].ToString();
         return CommunityCollectionEndpointAsync(
             name,
             "feed",
             context,
             persistence,
             optionsAccessor,
-            communityIri => feedService.GetFeedAsync(communityIri, ct),
+            communityIri => feedService.GetFeedAsync(communityIri, query, ct),
             ct);
     }
 

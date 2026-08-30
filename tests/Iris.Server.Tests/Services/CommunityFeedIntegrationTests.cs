@@ -136,6 +136,71 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         Assert.False(doc.RootElement.TryGetProperty("next", out _));
     }
 
+    // --- The ?q= content filter (F-23) -----------------------------------------------
+
+    [Fact]
+    public async Task Feed_WithQuery_FiltersToMatchingItems()
+    {
+        // "bob" matches only bob's 2 posts (the content "bob note 1"/"bob note 2"), not alice's 3.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?q=bob&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/feed", doc.RootElement.GetProperty("id").GetString());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[0]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[1]);
+
+        // totalItems reflects the filtered count (2), not the full feed (5).
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Feed_WithQuery_MatchesCaseInsensitive()
+    {
+        // "BOB" (uppercase) still matches bob's posts (case-insensitive substring).
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?q=BOB&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(2, items.Length);
+    }
+
+    [Fact]
+    public async Task Feed_WithQuery_NoMatch_ReturnsEmptyCollection()
+    {
+        // "zzz" matches nothing: an empty OrderedCollection with totalItems 0.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?q=zzz&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+        var items = doc.RootElement.GetProperty("items");
+        Assert.Equal(JsonValueKind.Array, items.ValueKind);
+        Assert.Equal(0, items.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Feed_WithQuery_StillPages()
+    {
+        // "alice" matches alice's 3 posts. limit=2, page=2 → page 2 holds alice's oldest post
+        // (create-1) only, and totalItems is the filtered count (3).
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?q=alice&limit=2&page=2");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollectionPage", doc.RootElement.GetProperty("type").GetString());
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Single(items);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[0]);
+        Assert.Equal(3, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
     // --- Edge cases -----------------------------------------------------------------
 
     [Fact]
