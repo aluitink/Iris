@@ -6,6 +6,7 @@ using System.Text;
 using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Server.Observability;
 using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
@@ -13,6 +14,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
 using CollectionPageCache = Iris.Server.Caching.CollectionPageCache;
 using WebFingerCache = Iris.Server.Caching.WebFingerCache;
@@ -373,6 +375,12 @@ public static class ActivityPubServerExtensions
         // (PerPeerMaxRequestsPerMinute > 0) to bound how fast the worker sends to a single peer; the
         // default is 0 (disabled — the worker delivers as fast as the concurrency cap allows).
         services.TryAddSingleton<DeliveryRateLimitOptions>(_ => new DeliveryRateLimitOptions());
+        // Phase 17.1: graceful shutdown. Registered BEFORE the DeliveryWorker so its StopAsync (which
+        // completes the queue) runs before the worker's BackgroundService.StopAsync (which cancels the
+        // worker's stopping token and awaits ExecuteAsync). Completing the queue first lets the worker's
+        // dequeue loop observe a complete-and-empty queue and exit cleanly, draining in-flight deliveries,
+        // instead of blocking on an open channel.
+        services.AddHostedService<DeliveryQueueShutdownService>();
         // The worker is constructed explicitly (not AddHostedService<DeliveryWorker>()) so the F-22 retry
         // policy, dead-letter store, concurrency cap, and rate limiter are injected deterministically (the
         // multiple constructor overloads would otherwise rely on DI's most-constructible overload
@@ -388,6 +396,18 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
             CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value)));
+
+        // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered
+        // IHealthCheck (IEnumerable<IHealthCheck>) and reports the aggregate status, so a host that wants
+        // the standard ASP.NET health-check middleware (UseHealthChecks("/health")) can additionally call
+        // AddHealthChecks() — but the Iris endpoint works without it. The checks are registered as
+        // singletons (multiple IHealthCheck registrations are allowed), not via AddHealthChecks().AddCheck,
+        // so the custom endpoint can resolve them directly. A host may rebind DeliveryQueueHealthOptions
+        // (WarningPending/CriticalPending > 0) to alert on a growing delivery backlog; the defaults (0)
+        // disable both thresholds.
+        services.TryAddSingleton<DeliveryQueueHealthOptions>(_ => new DeliveryQueueHealthOptions());
+        services.AddSingleton<IHealthCheck, InstanceHealthCheck>();
+        services.AddSingleton<IHealthCheck, DeliveryQueueHealthCheck>();
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
@@ -483,6 +503,13 @@ public static class ActivityPubServerExtensions
 
         // NodeInfo discovery root: GET /ap/v1/.well-known/nodeinfo (links to /nodeinfo/2.0).
         group.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
+
+        // Health: GET /ap/v1/health — the observability endpoint (Phase 17.1). Runs every registered
+        // IHealthCheck and reports the aggregate status. 200 when every check is healthy (or degraded),
+        // 503 when any check is unhealthy. The body is a JSON object { "status": "...", "checks": { name:
+        // { "status": "...", "description": "..." } } }. No authentication: a load balancer / orchestrator
+        // health probe must reach it without an ActivityPub signature.
+        group.MapGet($"/{ActivityPubServerConstants.HealthRouteSegment}", HealthHandler);
 
         // Inbox: POST /ap/v1/u/{handle}/inbox — receives federation activities (Follow, Accept,
         // Create, ...) that a REMOTE peer delivers TO this actor. Requires a valid HTTP signature
@@ -2313,6 +2340,79 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(link),
             "application/json");
+    }
+
+    /// <summary>
+    /// The <c>GET /ap/v1/health</c> handler (Phase 17.1). Runs every registered
+    /// <see cref="IHealthCheck"/> and reports the aggregate status: 200 when every check is
+    /// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Healthy"/> or
+    /// <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Degraded"/>, 503 when any
+    /// check is <see cref="Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus.Unhealthy"/> (or
+    /// a check faults). The body is <c>{ "status": "healthy" | "degraded" | "unhealthy", "checks": {
+    /// &lt;name&gt;: { "status": "...", "description": "..." } } }</c>.
+    /// </summary>
+    /// <param name="checks">The registered health checks (resolved from <c>IEnumerable&lt;IHealthCheck&gt;</c>).</param>
+    /// <param name="ct">The request's cancellation token.</param>
+    private static async Task<IResult> HealthHandler(
+        IEnumerable<IHealthCheck> checks,
+        CancellationToken ct)
+    {
+        var perCheck = new Dictionary<string, (HealthStatus Status, string? Description, Exception? Error)>();
+        var overall = HealthStatus.Healthy;
+
+        foreach (var check in checks)
+        {
+            string name = check.GetType().Name;
+            HealthCheckResult result;
+            try
+            {
+                // The checks Iris registers (InstanceHealthCheck, DeliveryQueueHealthCheck) do not read the
+            // context's Registration; a default context is sufficient. A host that registers its own
+            // context-reading check via UseHealthChecks gets the full context from the framework's runner
+            // (this Iris endpoint is the lightweight, no-runner path).
+            result = await check.CheckHealthAsync(new HealthCheckContext(), ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw; // the request was cancelled — let the host handle it
+            }
+            catch (Exception ex)
+            {
+                // A check that faults is treated as unhealthy (an exception is a recoverable report, not
+                // a reason to 500 the health endpoint).
+                perCheck[name] = (HealthStatus.Unhealthy, $"The health check threw: {ex.Message}", ex);
+                overall = HealthStatus.Unhealthy;
+                continue;
+            }
+
+            perCheck[name] = (result.Status, result.Description, result.Exception);
+            if (result.Status == HealthStatus.Unhealthy)
+            {
+                overall = HealthStatus.Unhealthy;
+            }
+            else if (result.Status == HealthStatus.Degraded && overall == HealthStatus.Healthy)
+            {
+                overall = HealthStatus.Degraded;
+            }
+        }
+
+        var payload = new
+        {
+            status = overall.ToString().ToLowerInvariant(),
+            checks = perCheck
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .ToDictionary(
+                    kv => kv.Key,
+                    kv => new { status = kv.Value.Status.ToString().ToLowerInvariant(), description = kv.Value.Description },
+                    StringComparer.Ordinal),
+        };
+
+        var status = overall == HealthStatus.Unhealthy ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK;
+        return Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            status);
     }
 
     // --- OAuth2 token endpoints ------------------------------------------------
