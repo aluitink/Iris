@@ -82,12 +82,16 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] Keep the implementation aligned with the ActivityPub and ActivityStreams rules already captured in the missing-features inventory.
 
 ### Phase 13 — Live Federation Compatibility
-- [ ] Stand up the public instance and the dev partner instances.
-- [ ] Verify interoperability with Mastodon, Lemmy, Threads, and the planned compatibility targets.
-- [ ] Record live findings, deviations, and required follow-up fixes.
-- [ ] Decide the CI gating/opt-in model for the live interop suite.
-- [ ] Run real-user enumeration against target instances via WebFinger, NodeInfo, and search-style discovery.
-- [ ] Assert server-to-external-server compatibility across signatures, content types, pagination, delivery, and error handling.
+- [x] 13.1: Mastodon extension passthrough tests — prove the "don't drop unknown properties" guarantee (F-01) holds for the Mastodon surface (`sensitive`, `toot:emoji`, `poll`, actor extensions), [change 097](changes/097-phase13-1-mastodon-extension-passthrough.md).
+- [ ] 13.2: `ld+json` accept behavior — confirm and document that Iris accepts `application/ld+json` on inbound (Decision #4); add a regression test.
+- [ ] 13.3: Mastodon `Question`/poll inbound handling — verify a `Question` activity is deserialized, stored, and served as an opaque object.
+- [ ] 13.4: Mastodon `sensitive` flag inbound handling — verify the `sensitive` boolean is forwarded as an opaque property on incoming objects.
+- [ ] 13.5: Stand up the public instance and the dev partner instances (Mastodon, Lemmy, Threads).
+- [ ] 13.6: Verify interoperability with Mastodon, Lemmy, Threads, and the planned compatibility targets.
+- [ ] 13.7: Record live findings, deviations, and required follow-up fixes.
+- [ ] 13.8: Decide the CI gating/opt-in model for the live interop suite.
+- [ ] 13.9: Run real-user enumeration against target instances via WebFinger, NodeInfo, and search-style discovery.
+- [ ] 13.10: Assert server-to-external-server compatibility across signatures, content types, pagination, delivery, and error handling.
 
 ### Phase 14+ — Future work
 - [ ] Replace Basic auth with OAuth2/Bearer tokens or a dedicated key-exchange flow.
