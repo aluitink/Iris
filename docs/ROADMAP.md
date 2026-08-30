@@ -91,7 +91,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [ ] 13.5: Stand up the public instance and the dev partner instances (Mastodon, Lemmy, Threads).
 - [ ] 13.6: Verify interoperability with Mastodon, Lemmy, Threads, and the planned compatibility targets.
 - [ ] 13.7: Record live findings, deviations, and required follow-up fixes.
-- [ ] 13.8: Decide the CI gating/opt-in model for the live interop suite.
+- [x] 13.8: Decide the CI gating/opt-in model for the live interop suite — implemented the runtime gate (`LiveInteropOptions` + `LiveGuard.TryRequires` + `Iris.LiveInterop.Tests` project, opt-in via `IRIS_LIVE_INTEROP=1` + FQDN config; default `dotnet test` stays green), [change 101](changes/101-phase13-8-ci-gating-model.md).
 - [ ] 13.9: Run real-user enumeration against target instances via WebFinger, NodeInfo, and search-style discovery.
 - [ ] 13.10: Assert server-to-external-server compatibility across signatures, content types, pagination, delivery, and error handling.
 

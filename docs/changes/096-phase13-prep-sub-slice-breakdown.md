@@ -25,7 +25,7 @@ completed in a CI-only environment from those that require live partner instance
 | 13.5 | Stand up the public instance and the dev partner instances (Mastodon, Lemmy, Threads). | Phase 9 FQDN + TLS |
 | 13.6 | Verify interoperability with Mastodon, Lemmy, Threads, and the planned compatibility targets. | 13.5 |
 | 13.7 | Record live findings, deviations, and required follow-up fixes. | 13.6 |
-| 13.8 | Decide the CI gating/opt-in model for the live interop suite. | 13.7 |
+| 13.8 | Decide the CI gating/opt-in model for the live interop suite. | ✅ Done (change 101) |
 | 13.9 | Run real-user enumeration against target instances via WebFinger, NodeInfo, and search-style discovery. | 13.5 |
 | 13.10 | Assert server-to-external-server compatibility across signatures, content types, pagination, delivery, and error handling. | 13.5 |
 
@@ -38,4 +38,4 @@ TLS is in place and real partner instances are available.
 
 ## Test count
 
-974 tests, 0 failures, 0 warnings (13.1 + 13.2 + 13.3 + 13.4 done — all CI-testable sub-slices complete, +13 tests).
+992 tests, 0 failures, 0 warnings (13.1 + 13.2 + 13.3 + 13.4 + 13.8 done, +31 tests).
