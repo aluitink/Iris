@@ -21,7 +21,7 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 | 11 — Implementation Gaps & Usability Exploration | ✅ complete |
 | 12 — Spec Conformance & Missing Features | ✅ complete |
 | 13 — Live Federation Compatibility | 🚧 in progress (CI-testable 13.1–13.4 done; live-interop 13.5–13.10 blocked on Phase 9 FQDN + real partner instances) |
-| 14+ — Future | 📋 abstract |
+| 14+ — Future (14–17) | 📋 planned (concrete) |
 
 ## Completed work
 
@@ -96,10 +96,37 @@ substantial design calls: [decisions/](decisions/README.md).
 - [ ] 13.10: Assert server-to-external-server compatibility across signatures, content types, pagination, delivery, and error handling.
 
 ### Phase 14+ — Future work
-- [ ] Replace Basic auth with OAuth2/Bearer tokens or a dedicated key-exchange flow.
-- [ ] Implement real persistence and distributed cache support.
-- [ ] Add shared inbox / relay support, moderation features, and larger-scale delivery.
-- [ ] Add the next round of observability, transport hardening, and multi-instance scaling work.
+
+> Phase 14+ is the post-Phase-13 work: the live-interop execution and gap remediation, then the
+> production-readiness phases (auth hardening, real persistence, observability). These are **to be
+> expanded into concrete slices** as Phase 13 live-interop results come in — the gap register
+> ([RISK_GAP_REGISTER.md](reference/RISK_GAP_REGISTER.md)) and compatibility matrix
+> ([COMPATIBILITY_MATRIX.md](reference/COMPATIBILITY_MATRIX.md)) are the sources of truth for what
+> needs fixing.
+
+#### Phase 14 — Live-Interop Execution & Gap Remediation
+- [ ] 14.1: Run the live-interop suite (13.5–13.10) against Mastodon, Lemmy, Pleroma, and Threads (the `Iris.LiveInterop.Tests` scenario stubs are the payload — fill in the per-platform admin-API adapters).
+- [ ] 14.2: Record live findings (PASS / GAP / MISMATCH per matrix scenario) and update the gap register.
+- [ ] 14.3: Fix the confirmed gaps (the six predicted gaps in COMPATIBILITY_MATRIX.md §5 + any MISMATCH findings), each with a regression test.
+- [ ] 14.4: Re-run the live suite to confirm the fixes; iterate until all matrix scenarios are PASS or the gap is Accepted (v1 limitation).
+
+#### Phase 15 — Authentication Hardening
+- [ ] 15.1: Replace Basic auth with OAuth2/Bearer tokens for client authentication (the `IActorCredentialValidator` seam is the swap point).
+- [ ] 15.2: Implement the OAuth2 authorization code + PKCE flow for the Blazor WASM client (the `BasicAuthClientAuthenticator` is the current implementation to replace).
+- [ ] 15.3: Add token refresh + revocation support.
+- [ ] 15.4: Update the sample + deployment docs for the new auth flow.
+
+#### Phase 16 — Production Persistence & Scaling
+- [ ] 16.1: Implement a database-backed persistence provider (PostgreSQL/SQLite) replacing the in-memory stores (the `IPersistenceProvider` seam is the swap point).
+- [ ] 16.2: Add distributed cache support (Redis) for the remote-actor/key caches (the `ICache<T>` seam).
+- [ ] 16.3: Add shared-inbox / relay support for larger-scale delivery (the F-01/F-06 relay infrastructure is the foundation).
+- [ ] 16.4: Multi-instance scaling (load balancing, session affinity, the delivery queue's distributed backpressure).
+
+#### Phase 17 — Observability & Transport Hardening
+- [ ] 17.1: Structured logging + OpenTelemetry metrics (request rate, delivery success rate, cache hit rate, signature validation failures).
+- [ ] 17.2: Circuit breaker + retry policy hardening for outbound delivery (the `DeliveryRetryOptions` is the foundation).
+- [ ] 17.3: Rate limiting on inbound endpoints (the existing 429 path is the seam).
+- [ ] 17.4: Health-check endpoints + graceful shutdown.
 
 ## Near-term priorities
 
