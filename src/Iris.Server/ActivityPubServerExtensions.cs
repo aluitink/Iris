@@ -231,13 +231,30 @@ public static class ActivityPubServerExtensions
         // (registered for the base Activity type) for the same activity.
         services.AddSingleton<IActivityHandler, AddActivityHandler>();
         services.AddSingleton<IActivityHandler, RemoveActivityHandler>();
+        // Intransitive activities (F-17): Read/View/Listen/Travel/Arrive are acknowledgments of
+        // receipt — they change no persistent state (no member set, like edge, or block edge to
+        // update). The handler accepts them (so they are stored by the InboxProcessor and not
+        // rejected) and interprets them as a no-op. Registered for the base Activity type (the five
+        // types share no single concrete base an ActivityHandlerBase{T} could be parameterized over)
+        // and BEFORE the MembershipActivityHandler (also registered for Activity): the InboxProcessor
+        // breaks the base-Activity tie by registration order, so this handler wins the intransitive
+        // family. It is registered via a factory (not a direct AddSingleton<IActivityHandler,
+        // IntransitiveActivityHandler>) because it needs the MembershipActivityHandler injected: a
+        // non-intransitive base-Activity activity (Offer/Invite/Join/Leave) is forwarded to it, so the
+        // membership family is not swallowed by this handler's catch-all.
+        services.AddSingleton<IActivityHandler>(sp =>
+            new IntransitiveActivityHandler(sp.GetRequiredService<MembershipActivityHandler>()));
         // Membership primitives (F-16): a server that manages a community's membership via Offer/Invite/
         // Join/Leave (rather than a Follow or Add/Remove) updates the local community's member set.
         // Registered for the base Activity type (a single ActivityHandlerBase{T} cannot cover the four
         // membership types); the InboxProcessor resolves each activity to the most specific registered
         // handler, so an Add/Remove reaches its exact-type handler and an Offer/Invite/Join/Leave
-        // reaches this catch-all.
-        services.AddSingleton<IActivityHandler, MembershipActivityHandler>();
+        // reaches this catch-all (directly, or forwarded by the IntransitiveActivityHandler registered
+        // before it). The concrete type is also registered so the IntransitiveActivityHandler factory
+        // can resolve the same instance it forwards to (a single MembershipActivityHandler instance is
+        // shared by both the IActivityHandler registration and the factory).
+        services.AddSingleton<MembershipActivityHandler>();
+        services.AddSingleton<IActivityHandler>(sp => sp.GetRequiredService<MembershipActivityHandler>());
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         // Move (F-08): re-points the local follow edges when an actor migrates to a new IRI. It needs the
         // local community IRIs and the outbound caches (to invalidate the moved actor's stale key/doc), so
