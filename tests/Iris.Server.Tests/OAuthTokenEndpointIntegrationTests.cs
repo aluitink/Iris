@@ -148,7 +148,7 @@ public class OAuthTokenEndpointIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task WrongGrantType_ReturnsInvalidRequest()
+    public async Task WrongGrantType_ReturnsUnsupportedGrantType()
     {
         await IssueCodeAsync();
 
@@ -159,7 +159,7 @@ public class OAuthTokenEndpointIntegrationTests : IDisposable
         Assert.Equal(System.Net.HttpStatusCode.BadRequest, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync();
         var doc = JsonDocument.Parse(body);
-        Assert.Equal("invalid_request", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal("unsupported_grant_type", doc.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
@@ -239,5 +239,123 @@ public class OAuthTokenEndpointIntegrationTests : IDisposable
         //  directly rather than through the endpoint.)
         var resolved = await _tokenStore.ResolveTokenAsync(token);
         Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task AuthorizationCode_ReturnsRefreshToken()
+    {
+        await IssueCodeAsync();
+
+        var resp = await _client.PostAsync(
+            $"https://{Host}/ap/v1/oauth2/token",
+            TokenForm("authorization_code", Code));
+
+        resp.EnsureSuccessStatusCode();
+        var body = await resp.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+        Assert.True(doc.RootElement.TryGetProperty("access_token", out _));
+        Assert.True(doc.RootElement.TryGetProperty("refresh_token", out var refreshToken));
+        Assert.False(string.IsNullOrWhiteSpace(refreshToken.GetString()));
+    }
+
+    [Fact]
+    public async Task RefreshToken_ExchangesForNewTokenPair()
+    {
+        await IssueCodeAsync();
+
+        // Exchange the code for a token + refresh token.
+        var tokenForm = TokenForm("authorization_code", Code);
+        var tokenResp = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", tokenForm);
+        tokenResp.EnsureSuccessStatusCode();
+        var tokenBody = await tokenResp.Content.ReadAsStringAsync();
+        var tokenDoc = JsonDocument.Parse(tokenBody);
+        var originalToken = tokenDoc.RootElement.GetProperty("access_token").GetString()!;
+        var originalRefresh = tokenDoc.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // Refresh: exchange the refresh token for a new token + new refresh token.
+        var refreshForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = originalRefresh,
+        });
+        var refreshResp = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", refreshForm);
+        refreshResp.EnsureSuccessStatusCode();
+        var refreshBody = await refreshResp.Content.ReadAsStringAsync();
+        var refreshDoc = JsonDocument.Parse(refreshBody);
+        var newToken = refreshDoc.RootElement.GetProperty("access_token").GetString()!;
+        var newRefresh = refreshDoc.RootElement.GetProperty("refresh_token").GetString()!;
+
+        // The new token pair is different from the original.
+        Assert.NotEqual(originalToken, newToken);
+        Assert.NotEqual(originalRefresh, newRefresh);
+
+        // The new access token is resolvable.
+        var resolved = await _tokenStore.ResolveTokenAsync(newToken);
+        Assert.NotNull(resolved);
+
+        // The old refresh token is no longer valid (rotated).
+        var oldRefreshResolved = await _tokenStore.RedeemRefreshTokenAsync(originalRefresh);
+        Assert.Null(oldRefreshResolved);
+    }
+
+    [Fact]
+    public async Task RefreshToken_IsOneTime()
+    {
+        await IssueCodeAsync();
+
+        // Exchange the code for a token + refresh token.
+        var tokenForm = TokenForm("authorization_code", Code);
+        var tokenResp = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", tokenForm);
+        tokenResp.EnsureSuccessStatusCode();
+        var originalRefresh = JsonDocument.Parse(await tokenResp.Content.ReadAsStringAsync())
+            .RootElement.GetProperty("refresh_token").GetString()!;
+
+        // First refresh succeeds.
+        var refreshForm1 = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = originalRefresh,
+        });
+        var refreshResp1 = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", refreshForm1);
+        Assert.Equal(System.Net.HttpStatusCode.OK, refreshResp1.StatusCode);
+
+        // Second refresh with the same (rotated) refresh token fails.
+        var refreshForm2 = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = originalRefresh,
+        });
+        var refreshResp2 = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", refreshForm2);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, refreshResp2.StatusCode);
+        var body = await refreshResp2.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+        Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task UnknownRefreshToken_ReturnsInvalidGrant()
+    {
+        var refreshForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = "unknown-refresh-token",
+        });
+        var resp = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", refreshForm);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync();
+        var doc = JsonDocument.Parse(body);
+        Assert.Equal("invalid_grant", doc.RootElement.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task MissingRefreshToken_ReturnsInvalidRequest()
+    {
+        var refreshForm = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["grant_type"] = "refresh_token",
+            ["refresh_token"] = "",
+        });
+        var resp = await _client.PostAsync($"https://{Host}/ap/v1/oauth2/token", refreshForm);
+        Assert.Equal(System.Net.HttpStatusCode.BadRequest, resp.StatusCode);
     }
 }

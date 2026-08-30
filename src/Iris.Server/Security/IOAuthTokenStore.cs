@@ -47,4 +47,22 @@ public interface IOAuthTokenStore
     /// <param name="token">The Bearer token to revoke.</param>
     /// <param name="ct">Cancellation token.</param>
     public Task RevokeTokenAsync(string token, CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores a refresh token, associating it with the authenticated actor.
+    /// </summary>
+    /// <param name="refreshToken">The refresh token (a random opaque string).</param>
+    /// <param name="actorIri">The IRI of the actor the refresh token was issued for.</param>
+    /// <param name="ct">Cancellation token.</param>
+    public Task StoreRefreshTokenAsync(string refreshToken, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Redeems a refresh token, returning the associated actor IRI and removing the refresh token
+    /// (rotation: each refresh token is one-time; the client must use the new refresh token returned
+    /// by the token endpoint).
+    /// </summary>
+    /// <param name="refreshToken">The refresh token to redeem.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The actor IRI the refresh token was issued for, or null if the token is unknown or already redeemed.</returns>
+    public Task<Iri?> RedeemRefreshTokenAsync(string refreshToken, CancellationToken ct = default);
 }

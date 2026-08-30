@@ -2297,10 +2297,18 @@ public static class ActivityPubServerExtensions
     // --- OAuth2 token endpoints ------------------------------------------------
 
     /// <summary>
-    /// Handles POST /ap/v1/oauth2/token — exchanges an authorization code for a Bearer token.
-    /// The request body is form-encoded: <c>grant_type=authorization_code</c> + <c>code</c>.
-    /// The server redeems the code (one-time), issues a random Bearer token, stores it in the
-    /// <see cref="IOAuthTokenStore"/>, and returns <c>{ access_token, token_type: "bearer" }</c>.
+    /// Handles POST /ap/v1/oauth2/token — exchanges an authorization code or a refresh token for a
+    /// Bearer token.
+    /// <para>
+    /// <c>grant_type=authorization_code</c> + <c>code</c>: redeems the code (one-time), issues a
+    /// random Bearer token + a random refresh token, stores both, and returns
+    /// <c>{ access_token, token_type: "bearer", refresh_token }</c>.
+    /// </para>
+    /// <para>
+    /// <c>grant_type=refresh_token</c> + <c>refresh_token</c>: redeems the refresh token (one-time,
+    /// rotation), issues a new Bearer token + a new refresh token, stores both, and returns
+    /// <c>{ access_token, token_type: "bearer", refresh_token }</c>.
+    /// </para>
     /// </summary>
     private static async Task<IResult> OAuthTokenHandler(
         HttpContext context,
@@ -2310,38 +2318,69 @@ public static class ActivityPubServerExtensions
         // Parse the form-encoded body.
         string? grantType;
         string? code;
+        string? refreshToken;
         try
         {
             var form = await context.Request.ReadFormAsync(ct);
             grantType = form["grant_type"].ToString();
             code = form["code"].ToString();
+            refreshToken = form["refresh_token"].ToString();
         }
         catch (BadHttpRequestException)
         {
             return Results.BadRequest(new { error = "unsupported_media_type" });
         }
 
-        if (!string.Equals(grantType, "authorization_code", StringComparison.Ordinal) ||
-            string.IsNullOrWhiteSpace(code))
+        Iri? actorIri;
+
+        if (string.Equals(grantType, "authorization_code", StringComparison.Ordinal))
         {
-            return Results.BadRequest(new { error = "invalid_request" });
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                return Results.BadRequest(new { error = "invalid_request" });
+            }
+
+            // Redeem the code (one-time).
+            var redeemed = await tokenStore.RedeemAuthorizationCodeAsync(code, ct).ConfigureAwait(false);
+            if (!redeemed.HasValue)
+            {
+                return Results.BadRequest(new { error = "invalid_grant" });
+            }
+
+            actorIri = redeemed.Value;
+        }
+        else if (string.Equals(grantType, "refresh_token", StringComparison.Ordinal))
+        {
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return Results.BadRequest(new { error = "invalid_request" });
+            }
+
+            // Redeem the refresh token (one-time, rotation).
+            var redeemed = await tokenStore.RedeemRefreshTokenAsync(refreshToken, ct).ConfigureAwait(false);
+            if (!redeemed.HasValue)
+            {
+                return Results.BadRequest(new { error = "invalid_grant" });
+            }
+
+            actorIri = redeemed.Value;
+        }
+        else
+        {
+            return Results.BadRequest(new { error = "unsupported_grant_type" });
         }
 
-        // Redeem the code (one-time).
-        var redeemed = await tokenStore.RedeemAuthorizationCodeAsync(code, ct).ConfigureAwait(false);
-        if (!redeemed.HasValue)
-        {
-            return Results.BadRequest(new { error = "invalid_grant" });
-        }
-
-        // Issue a random Bearer token and store it.
+        // Issue a random Bearer token + a random refresh token and store both.
         var token = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
-        await tokenStore.StoreTokenAsync(token, redeemed.Value, ct).ConfigureAwait(false);
+        var newRefreshToken = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        await tokenStore.StoreTokenAsync(token, actorIri.Value, ct).ConfigureAwait(false);
+        await tokenStore.StoreRefreshTokenAsync(newRefreshToken, actorIri.Value, ct).ConfigureAwait(false);
 
         return Results.Ok(new
         {
             access_token = token,
             token_type = "bearer",
+            refresh_token = newRefreshToken,
         });
     }
 
