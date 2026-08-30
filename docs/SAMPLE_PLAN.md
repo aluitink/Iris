@@ -477,8 +477,14 @@ throughout.
    check). Verified: the image builds and serves `index.html` / `blazor.webassembly.js` / `app.css` / a `.wasm`
    (all `200`) + SPA fallback on `8090`; `docker compose config` reports three services; full solution 0
    warnings, 883 tests green. [change 080](docs/changes/080-wasm-dockerfile-and-iris-ui-compose-service.md).
-- **S10 — Smoke test: UI + signed federation over Docker.** Extend `docker-smoke-test.sh` (UI index 200
-  over `iris-net`; signed cross-container Follow a→b + Accept; proxy 200). Opt-in gate preserved.
+ - **S10 — Smoke test: UI + signed federation over Docker.** Extend `docker-smoke-test.sh` (UI index 200
+   over `iris-net`; signed cross-container Follow a→b + Accept; proxy 200). Opt-in gate preserved. **Done** —
+   five checks over genuine sockets (per-instance WebFinger; cross-container WebFinger a→b; `iris-ui` index
+   200; a **signed** Follow from iris-a's alice to iris-b's alice — 202 + the federated edge recorded on iris-b,
+   validated by resolving alice's key from iris-a's actor document via the new `FederatedActorDocumentFetcher`;
+   and the proxy fallback, iris-a relaying a GET to iris-b, 200). The signed request is driven by the new
+   `tools/IrisSigner` helper (curl cannot produce an ActivityPub HTTP signature); the acting key is dumped to
+   the container locally via the opt-in `Iris__DumpKeyTo` env var. [change 081](docs/changes/081-s10-signed-federation-proxy-smoke-test.md).
 - **S11 — Sample Blazor README + DEPLOYMENT.md update.** `samples/SampleBlazorClient/README.md`
   (Deliverable B) + update `docs/reference/DEPLOYMENT.md` topology/files; document the manual
   interop checklist + the external-instance (dev FQDN) mechanism (no real FQDN committed).
