@@ -54,3 +54,7 @@ opencode.json
 opencode.jsonc
 opencode.md
 OPENCODE.md
+
+## Scratch (reflection probes / throwaway experiments)
+.probe_tmp/
+probe_*.txt
