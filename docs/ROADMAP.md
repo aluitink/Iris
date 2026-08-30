@@ -112,7 +112,7 @@ substantial design calls: [decisions/](decisions/README.md).
 
 #### Phase 15 — Authentication Hardening
 - [x] 15.1: Replace Basic auth with OAuth2/Bearer tokens for client authentication (the `IActorCredentialValidator` seam is the swap point).
-- [ ] 15.2: Implement the OAuth2 authorization code + PKCE flow for the Blazor WASM client (the `BasicAuthClientAuthenticator` is the current implementation to replace). **15.2a done**: server-side token + revoke endpoints (`/ap/v1/oauth2/token` + `/ap/v1/oauth2/revoke`) + `IOAuthTokenStore` + `InMemoryOAuthTokenStore` (8 integration tests, 999→1007, change 104). **remaining:** 15.2b — the `/oauth2/authorize` browser-redirect endpoint + the client-side `OAuth2ClientAuthenticator` (implements `IClientAuthenticator`, drives the PKCE flow: redirect → callback → code exchange → Bearer token → actor document).
+- [ ] 15.2: Implement the OAuth2 authorization code + PKCE flow for the Blazor WASM client (the `BasicAuthClientAuthenticator` is the current implementation to replace). **15.2a done**: server-side token + revoke endpoints + `IOAuthTokenStore` (8 tests, 999→1007, change 104). **15.2b done**: client-side `OAuth2ClientAuthenticator` (5 tests, 1007→1012, change 105). **remaining:** the `/oauth2/authorize` browser-redirect endpoint + the Blazor WASM client integration (the sample app drives the browser flow: redirect → callback → code exchange → Bearer token → `OAuth2ClientAuthenticator`).
 - [ ] 15.3: Add token refresh + revocation support.
 - [ ] 15.4: Update the sample + deployment docs for the new auth flow.
 
