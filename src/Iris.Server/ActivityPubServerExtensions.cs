@@ -655,6 +655,13 @@ public static class ActivityPubServerExtensions
         // even for unknown tokens, to avoid leaking token validity).
         group.MapPost("/oauth2/revoke", OAuthRevokeHandler).WithName("oauth-revoke-endpoint");
 
+        // OAuth2 authorization: GET /ap/v1/oauth2/authorize — the browser-redirect half of the
+        // authorization-code flow (RFC 6749 §4.1). The browser is redirected here by the client app
+        // with ?client_id (the actor handle), ?redirect_uri, and ?state (opaque, echoed back). The
+        // handler auto-approves (the v1 model — no interactive consent screen), issues a one-time
+        // authorization code, and 302-redirects to redirect_uri?code=...&state=....
+        group.MapGet("/oauth2/authorize", OAuthAuthorizeHandler).WithName("oauth-authorize-endpoint");
+
         return endpoints;
     }
 
@@ -2412,6 +2419,61 @@ public static class ActivityPubServerExtensions
 
         await tokenStore.RevokeTokenAsync(token, ct).ConfigureAwait(false);
         return Results.Ok();
+    }
+
+    /// <summary>
+    /// Handles GET /ap/v1/oauth2/authorize — the browser-redirect half of the OAuth2
+    /// authorization-code flow (RFC 6749 §4.1). The browser is redirected here by the client app
+    /// with <c>?client_id</c> (the actor handle to authenticate as), <c>?redirect_uri</c> (where the
+    /// authorization code is delivered), and <c>?state</c> (an opaque value echoed back to the client
+    /// to prevent CSRF). The handler auto-approves (the v1 model — there is no interactive consent
+    /// screen), issues a random one-time authorization code, stores it in the
+    /// <see cref="IOAuthTokenStore"/> keyed by the actor IRI, and responds with a 302 redirect to
+    /// <c>redirect_uri?code=...&amp;state=...</c>.
+    /// <para>
+    /// The authorization code is opaque (not an IRI) and is redeemed exactly once at
+    /// <c>POST /ap/v1/oauth2/token</c> (the code→token exchange implemented in Phase 15.2a). The
+    /// <c>state</c> parameter is required (RFC 6749 §10.12) and is echoed back verbatim.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> OAuthAuthorizeHandler(
+        HttpContext context,
+        IOAuthTokenStore tokenStore,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var clientId = context.Request.Query["client_id"].ToString();
+        var redirectUri = context.Request.Query["redirect_uri"].ToString();
+        var state = context.Request.Query["state"].ToString();
+
+        if (string.IsNullOrWhiteSpace(clientId)
+            || string.IsNullOrWhiteSpace(redirectUri)
+            || string.IsNullOrWhiteSpace(state))
+        {
+            return Results.BadRequest(new { error = "invalid_request", error_description = "client_id, redirect_uri, and state are required." });
+        }
+
+        if (!Uri.TryCreate(redirectUri, UriKind.Absolute, out _))
+        {
+            return Results.BadRequest(new { error = "invalid_request", error_description = "redirect_uri must be an absolute URI." });
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, clientId);
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.BadRequest(new { error = "invalid_client", error_description = "Unknown actor." });
+        }
+
+        var code = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        await tokenStore.StoreAuthorizationCodeAsync(code, actorIri, ct).ConfigureAwait(false);
+
+        var separator = redirectUri.Contains('?', StringComparison.Ordinal) ? '&' : '?';
+        return Results.Redirect($"{redirectUri}{separator}code={Uri.EscapeDataString(code)}&state={Uri.EscapeDataString(state)}");
     }
 
     // --- Paged collection endpoints (outbox / followers / following) -----------
