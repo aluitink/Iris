@@ -73,6 +73,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] F-17: intransitive activity handlers `Read`/`View`/`Listen`/`Travel`/`Arrive` (`IntransitiveActivityHandler` registered before `MembershipActivityHandler`, forwards non-intransitive activities, [change 091](changes/091-phase12-f17-intransitive-activities.md)).
 - [x] F-23: `?q=` content filter on the community feed endpoint (`ICommunityFeedService.GetFeedAsync` gained an optional `query` that delegates to `SearchCommunityAsync`, [change 092](changes/092-phase12-f23-feed-filter.md)).
 - [x] F-29: canonical `url` on served content objects (the object-document endpoint sets the object's own IRI as the `url` when absent, preserving an author-provided `url`, [change 093](changes/093-phase12-f29-canonical-url.md)).
+- [x] F-30: WebFinger two paths — regression tests for the bare RFC 8615 path (the two-path situation is deliberate, Decision #10 / C-01; no code change needed, [change 094](changes/094-phase12-f30-webfinger-two-paths.md)).
 - [ ] Finish the remaining lower-priority conformance gaps.
 - [ ] Keep the regression suite green for signatures, pagination, WebFinger, NodeInfo, and object handling.
 - [ ] Confirm the outstanding compatibility edge cases against the current feature inventory.
