@@ -324,6 +324,13 @@ public static partial class SampleServer
         persistence.Activities.AddToOutboxAsync(bobIri, bobNote).GetAwaiter().GetResult();
         persistence.Activities.AddToOutboxAsync(carlaIri, carlaNote).GetAwaiter().GetResult();
 
+        // The outbox holds the activity, but the object document endpoint (GET /ap/v1/{**path}) and
+        // global search read the *object store*, not the outbox. Storing each note makes it fetchable
+        // by IRI (the explorer's object view) and searchable (the directory / community search).
+        persistence.Objects.PutObjectAsync(aliceNote).GetAwaiter().GetResult();
+        persistence.Objects.PutObjectAsync(bobNote).GetAwaiter().GetResult();
+        persistence.Objects.PutObjectAsync(carlaNote).GetAwaiter().GetResult();
+
         var reply = new Note
         {
             Id = $"{bobIri.Value}/notes/2",
@@ -333,6 +340,7 @@ public static partial class SampleServer
             InReplyTo = [new Link { Href = new Uri(aliceNote.Id!) }],
         };
         persistence.Activities.AddToOutboxAsync(bobIri, reply).GetAwaiter().GetResult();
+        persistence.Objects.PutObjectAsync(reply).GetAwaiter().GetResult();
         persistence.Replies.RecordReplyAsync(new Iri(aliceNote.Id!), new Iri(reply.Id!)).GetAwaiter().GetResult();
 
         var like = new Like

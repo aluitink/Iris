@@ -133,6 +133,10 @@ public class IrisActorDocumentFetcherTests
         }
 
         /// <inheritdoc/>
+        public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)
+            => Task.FromResult<NodeInfo?>(null);
+
+        /// <inheritdoc/>
         public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
             => Task.FromResult(202);
 

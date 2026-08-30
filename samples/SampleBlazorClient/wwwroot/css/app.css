@@ -39,6 +39,24 @@ html, body {
     color: #9aa4b2;
 }
 
+/* Navigation (the S6 explorer screens) */
+.explorer-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.explorer-nav a {
+    color: #8fd3a7;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.explorer-nav a:hover {
+    text-decoration: underline;
+}
+
 /* Cards / sections */
 .card {
     background: #171c24;
@@ -125,6 +143,69 @@ ul.instances li, ul.feed li {
     border-radius: 6px;
     margin-bottom: 0.5rem;
     background: #12171f;
+}
+
+/* Key-value tables (instance overview, moderation) */
+table.kv {
+    border-collapse: collapse;
+    width: 100%;
+    margin-top: 0.5rem;
+}
+
+table.kv th, table.kv td {
+    text-align: left;
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid #2a3038;
+    font-size: 0.9rem;
+}
+
+table.kv th {
+    color: #9aa4b2;
+    width: 12rem;
+}
+
+/* Object lists (feeds, directory, replies, members) */
+ul.object-list {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+}
+
+ul.object-list li {
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #2a3038;
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+    background: #12171f;
+}
+
+.object-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.object-type {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #8fd3a7;
+}
+
+.object-handle {
+    color: #cdd6e1;
+    font-weight: 600;
+}
+
+.object-iri {
+    color: #9aa4b2;
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+.object-content {
+    color: #e6e9ef;
+    font-size: 0.9rem;
 }
 
 .muted {

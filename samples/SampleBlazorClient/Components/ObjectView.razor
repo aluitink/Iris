@@ -1,0 +1,43 @@
+@using Iris.Core
+@using KristofferStrube.ActivityStreams
+
+<div class="object-view">
+    @if (Item is IObject { Id: { Length: > 0 } id } obj)
+    {
+        <div class="object-item">
+            <span class="object-type">@obj.GetType().Name</span>
+            @if (obj is Actor { PreferredUsername: { Length: > 0 } username })
+            {
+                <span class="object-handle">@username</span>
+            }
+            <a href="#" title="@id" class="object-iri">@id</a>
+            @if (JoinStrings(obj.Content) is { Length: > 0 } content)
+            {
+                <div class="object-content">@content</div>
+            }
+        </div>
+    }
+    else if (Item is ILink { Href: { } linkHref })
+    {
+        <div class="object-item">
+            <span class="object-type">Link</span>
+            <a href="#" title="@linkHref" class="object-iri">@linkHref</a>
+        </div>
+    }
+    else
+    {
+        <div class="object-item"><span class="object-type">Unknown</span></div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The object (or link) to render. Pattern-matched into <see cref="IObject"/> / <see cref="ILink"/>
+    /// per the 3rd-Party ActivityStreams rules — never a concrete type.
+    /// </summary>
+    [Parameter]
+    public IObjectOrLink? Item { get; set; }
+
+    private static string? JoinStrings(IEnumerable<string>? values)
+        => values is null ? null : string.Join(" ", values);
+}

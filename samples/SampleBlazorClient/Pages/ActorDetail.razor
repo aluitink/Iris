@@ -1,0 +1,140 @@
+@page "/actor"
+@using Iris.Client
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Actor detail · Iris</PageTitle>
+
+<h2>Actor detail</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to view an actor.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <label for="handle">Actor (preferredUsername on this instance)</label>
+        <input id="handle" type="text" @bind="Handle" placeholder="alice" />
+        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        @if (Busy)
+        {
+            <span class="muted">Loading…</span>
+        }
+        @if (Error is not null)
+        {
+            <div class="error">@Error</div>
+        }
+    </div>
+
+    @if (ActorIri is not null)
+    {
+        <div class="card">
+            <h3>Actor</h3>
+            <ObjectView Item="ActorDoc" />
+            <p class="muted">IRI: <code>@ActorIri.Value</code></p>
+        </div>
+
+        @if (Feed is not null)
+        {
+            <div class="card">
+                <h3>Feed (outbox)</h3>
+                @if (Feed.Count == 0)
+                {
+                    <p class="muted">No items.</p>
+                }
+                else
+                {
+                    <p class="muted">@Feed.Count item(s).</p>
+                    <ul class="object-list">
+                        @foreach (var item in Feed)
+                        {
+                            <li><ObjectView Item="item" /></li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+
+        @if (Moderation is { } mod)
+        {
+            <div class="card">
+                <h3>Moderation</h3>
+                <table class="kv">
+                    <tr><th>Mutes</th><td>@mod.Mutes</td></tr>
+                    <tr><th>Blocks</th><td>@mod.Blocks</td></tr>
+                    <tr><th>Flags</th><td>@mod.Flags</td></tr>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string Handle { get; set; } = "alice";
+    private bool Busy { get; set; }
+    private string? Error { get; set; }
+    private Iri? ActorIri { get; set; }
+    private IObject? ActorDoc { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
+    private (int Mutes, int Blocks, int Flags)? Moderation { get; set; }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        ActorIri = null;
+        ActorDoc = null;
+        Feed = null;
+        Moderation = null;
+        try
+        {
+            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+            var actorIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/u/{Handle.Trim()}");
+            ActorIri = actorIri;
+
+            var client = Session.GetClient();
+            ActorDoc = await client.GetObjectAsync(actorIri);
+
+            var feed = new List<IObjectOrLink>();
+            await foreach (var item in client.GetCollectionItemsAsync(actorIri.OutboxOf()))
+            {
+                feed.Add(item);
+            }
+
+            Feed = feed;
+            Moderation = (
+                await CountAsync(client.GetMutesAsync(actorIri)),
+                await CountAsync(client.GetBlocksAsync(actorIri)),
+                await CountAsync(client.GetFlagsAsync(actorIri)));
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private static async Task<int> CountAsync(IAsyncEnumerable<IObjectOrLink> items)
+    {
+        var count = 0;
+        await foreach (var _ in items)
+        {
+            count++;
+        }
+
+        return count;
+    }
+}

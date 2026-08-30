@@ -167,6 +167,21 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         => (await GetObjectAsync(actorId, ct).ConfigureAwait(false)) as Actor;
 
     /// <inheritdoc/>
+    public async Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)
+    {
+        var nodeInfoIri = new Iri($"{instanceBase}/nodeinfo/2.0");
+        using var request = new HttpRequestMessage(HttpMethod.Get, nodeInfoIri.Value);
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return NodeInfo.FromJson(json);
+    }
+
+    /// <inheritdoc/>
     public async Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)

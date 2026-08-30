@@ -633,6 +633,9 @@ public sealed class FeedServiceTests
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(null);
 
+        public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)
+            => Task.FromResult<NodeInfo?>(null);
+
         public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
             => Task.FromResult(202);
 

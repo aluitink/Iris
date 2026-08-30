@@ -39,6 +39,23 @@ public interface IActivityPubClient : IDisposable
     public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default);
 
     /// <summary>
+    /// Fetches an instance's RFC 8555 NodeInfo document (instance metadata), served at
+    /// <c>{instanceBase}/nodeinfo/2.0</c>.
+    /// </summary>
+    /// <param name="instanceBase">The instance's <c>/ap/v1</c> base IRI (e.g.
+    /// <c>https://a.domain.local/ap/v1</c>). The NodeInfo IRI is derived from it as
+    /// <c>{base}/nodeinfo/2.0</c>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The parsed <see cref="NodeInfo"/>, or null if the request failed or the body was not
+    /// valid NodeInfo JSON.</returns>
+    /// <remarks>
+    /// The explorer's instance-overview screen reads this to show the instance name, software, and
+    /// protocols. Like other reads, the request is signed with the
+    /// <see cref="Iris.Core.Signing.SigningProfile.ClientToServer"/> profile.
+    /// </remarks>
+    public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default);
+
+    /// <summary>
     /// Sends an ActivityPub activity to the given inbox IRI, signed with the
     /// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
     /// <c>content-type</c>).

@@ -1,0 +1,176 @@
+@page "/community"
+@using Iris.Client
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Community · Iris</PageTitle>
+
+<h2>Community</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to view a community.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <label for="name">Community (name on this instance)</label>
+        <input id="name" type="text" @bind="Name" placeholder="iris" />
+        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        @if (Busy)
+        {
+            <span class="muted">Loading…</span>
+        }
+    </div>
+
+    @if (CommunityIri is not null)
+    {
+        <div class="card">
+            <h3>Feed</h3>
+            @if (Feed is not null)
+            {
+                @if (Feed.Count == 0)
+                {
+                    <p class="muted">No feed items.</p>
+                }
+                else
+                {
+                    <p class="muted">@Feed.Count item(s).</p>
+                    <ul class="object-list">
+                        @foreach (var item in Feed)
+                        {
+                            <li><ObjectView Item="item" /></li>
+                        }
+                    </ul>
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Members</h3>
+            @if (Members is not null)
+            {
+                @if (Members.Count == 0)
+                {
+                    <p class="muted">No members.</p>
+                }
+                else
+                {
+                    <p class="muted">@Members.Count member(s).</p>
+                    <ul class="object-list">
+                        @foreach (var item in Members)
+                        {
+                            <li><ObjectView Item="item" /></li>
+                        }
+                    </ul>
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Search</h3>
+            <label for="q">Query</label>
+            <input id="q" type="text" @bind="SearchQuery" placeholder="e.g. hello" />
+            <button @onclick="SearchAsync" disabled="SearchBusy">Search</button>
+            @if (SearchBusy)
+            {
+                <span class="muted">Searching…</span>
+            }
+            @if (SearchResults is not null)
+            {
+                <p class="muted">@SearchResults.Count result(s).</p>
+                <ul class="object-list">
+                    @foreach (var item in SearchResults)
+                    {
+                        <li><ObjectView Item="item" /></li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string Name { get; set; } = "iris";
+    private string SearchQuery { get; set; } = string.Empty;
+    private bool Busy { get; set; }
+    private bool SearchBusy { get; set; }
+    private Iri? CommunityIri { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Members { get; set; }
+    private IReadOnlyList<IObjectOrLink>? SearchResults { get; set; }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        Busy = true;
+        CommunityIri = null;
+        Feed = null;
+        Members = null;
+        try
+        {
+            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+            var communityIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/c/{Name.Trim()}");
+            CommunityIri = communityIri;
+
+            var client = Session.GetClient();
+
+            var feed = new List<IObjectOrLink>();
+            await foreach (var item in client.GetCommunityFeedAsync(communityIri))
+            {
+                feed.Add(item);
+            }
+
+            Feed = feed;
+
+            // Members: a community exposes its membership as an OrderedCollection at {community}/members.
+            var members = new List<IObjectOrLink>();
+            var membersIri = new Iri($"{communityIri.Value.TrimEnd('/')}/members");
+            await foreach (var item in client.GetCollectionItemsAsync(membersIri))
+            {
+                members.Add(item);
+            }
+
+            Members = members;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        SearchBusy = true;
+        SearchResults = null;
+        try
+        {
+            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+            var instanceBase = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1");
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in Session.GetClient().SearchAsync(instanceBase, SearchQuery))
+            {
+                results.Add(item);
+            }
+
+            SearchResults = results;
+        }
+        finally
+        {
+            SearchBusy = false;
+        }
+    }
+}

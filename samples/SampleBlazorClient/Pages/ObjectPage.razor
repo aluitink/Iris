@@ -1,0 +1,111 @@
+@page "/object"
+@using Iris.Client
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Object · Iris</PageTitle>
+
+<h2>Object</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to view an object.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <label for="iri">Object IRI</label>
+        <input id="iri" type="url" @bind="IriInput" placeholder="http://localhost/ap/v1/n/…" />
+        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        @if (Busy)
+        {
+            <span class="muted">Loading…</span>
+        }
+        @if (Error is not null)
+        {
+            <div class="error">@Error</div>
+        }
+    </div>
+
+    @if (ObjectDoc is not null)
+    {
+        <div class="card">
+            <h3>Object</h3>
+            <ObjectView Item="ObjectDoc" />
+        </div>
+
+        @if (Replies is not null)
+        {
+            <div class="card">
+                <h3>Replies</h3>
+                @if (Replies.Count == 0)
+                {
+                    <p class="muted">No replies.</p>
+                }
+                else
+                {
+                    <p class="muted">@Replies.Count reply(ies).</p>
+                    <ul class="object-list">
+                        @foreach (var item in Replies)
+                        {
+                            <li><ObjectView Item="item" /></li>
+                        }
+                    </ul>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string IriInput { get; set; } = string.Empty;
+    private bool Busy { get; set; }
+    private string? Error { get; set; }
+    private IObject? ObjectDoc { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Replies { get; set; }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(IriInput.Trim(), UriKind.Absolute, out var uri))
+        {
+            Error = "The object IRI is not a valid absolute URI.";
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        ObjectDoc = null;
+        Replies = null;
+        try
+        {
+            var objectIri = new Iri(uri);
+            var client = Session.GetClient();
+            ObjectDoc = await client.GetObjectAsync(objectIri);
+
+            var replies = new List<IObjectOrLink>();
+            await foreach (var item in client.GetRepliesAsync(objectIri))
+            {
+                replies.Add(item);
+            }
+
+            Replies = replies;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

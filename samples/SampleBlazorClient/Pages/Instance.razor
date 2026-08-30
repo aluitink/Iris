@@ -1,0 +1,74 @@
+@page "/instance"
+@using Iris.Client
+
+<PageTitle>Instance overview · Iris</PageTitle>
+
+<h2>Instance overview</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to see its overview.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        @if (Busy)
+        {
+            <p class="muted">Loading instance metadata…</p>
+        }
+        else if (NodeInfo is null)
+        {
+            <p class="muted">This instance does not serve NodeInfo (or the request failed).</p>
+        }
+        else
+        {
+            <table class="kv">
+                <tr><th>Instance</th><td>@(NodeInfo.InstanceName ?? "(unnamed)")</td></tr>
+                <tr><th>Software</th><td>@(NodeInfo.SoftwareName ?? "unknown")@(NodeInfo.SoftwareVersion is { Length: > 0 } v ? $" {v}" : "")</td></tr>
+                <tr><th>Protocols</th><td>@(NodeInfo.Protocols.Count > 0 ? string.Join(", ", NodeInfo.Protocols) : "—")</td></tr>
+                <tr><th>Open registrations</th><td>@(NodeInfo.OpenRegistrations ? "yes" : "no")</td></tr>
+                <tr><th>NodeInfo</th><td>@NodeInfo.Version</td></tr>
+            </table>
+            @if (NodeInfo.Description is { Length: > 0 } desc)
+            {
+                <p class="muted">@desc</p>
+            }
+            <p class="muted">
+                Logged on as <code>@Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value</code>,
+                dialing <code>@Session.DialBaseUri</code>.
+            </p>
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private NodeInfo? NodeInfo { get; set; }
+    private bool Busy { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            // The instance base IRI is the dial base + /ap/v1 (the route prefix the server maps its
+            // endpoints under). NodeInfo is served at {base}/nodeinfo/2.0.
+            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+            var instanceBase = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1");
+            NodeInfo = await Session.GetClient().GetNodeInfoAsync(instanceBase);
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}
