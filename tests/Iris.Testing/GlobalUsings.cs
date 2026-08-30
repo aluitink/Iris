@@ -1,3 +1,4 @@
+global using Iris.Core;
 global using Iris.Core.Caching;
 global using Iris.Core.Collections;
 global using Iris.Core.Identity;
