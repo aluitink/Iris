@@ -527,6 +527,19 @@ public static class ActivityPubServerExtensions
         // invalidly-signed requests are rejected with 401.
         group.MapPost("/c/{name}/inbox", CommunityInboxHandler);
 
+        // Community outbox publish: POST /ap/v1/c/{name}/outbox — the WRITE SURFACE for the activities the
+        // local community (a Group actor) AUTHORS: a Follow (the community follows a remote actor/community,
+        // gap G-3) or an Undo of such a Follow (an un-follow). Mirrors the actor outbox publish endpoint
+        // (POST /u/{handle}/outbox) for a Group: the client publishes the community-authored activity to the
+        // community's own outbox, the server records the activity in the community's outbox (so the
+        // community's `following` collection surfaces the edge) + the activity store, records the community's
+        // follows set edge (the inverse of the inbound FollowActivityHandler's community branch), and is the
+        // only thing that delivers the activity to the target's inbox (the server-delivery hop, signed as the
+        // community — the community is a Group actor and signs just like a Person). Only Follow and Undo are
+        // accepted (a community does not post content through its own outbox — that flows through the
+        // members' outboxes / the community inbox). Requires a valid HTTP signature from the community.
+        group.MapPost("/c/{name}/outbox", CommunityOutboxPublishHandler);
+
         // Global search: GET /ap/v1/search — instance-wide search / directory (F-13): searches the
         // instance's local actors (the directory) and stored content objects case-insensitively via ?q
         // (an empty query lists everything), paged via ?limit/?offset (the shared limit/offset
@@ -1231,6 +1244,211 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// The WRITE SURFACE for the activities a local community (a <see cref="Group"/> actor) AUTHORS: a
+    /// <see cref="Follow"/> (the community follows a remote actor/community — gap G-3) or an <see
+    /// cref="Undo"/> of such a follow (an un-follow). Mirrors <see cref="OutboxPublishHandler"/> for a
+    /// Group: the client publishes the community-authored activity to the community's own outbox, the
+    /// server records the activity in the community's outbox (so the community's <c>following</c>
+    /// collection surfaces the edge) + the activity store, records the community's follows-set edge (the
+    /// inverse of <see cref="FollowActivityHandler"/>'s community branch), and is the only thing that
+    /// delivers the activity to the target's inbox (the server→server hop, signed as the community — a
+    /// Group signs just like a Person). Requires a valid HTTP signature from the community (validated by
+    /// <c>SignatureValidationMiddleware</c>); unsigned or invalidly-signed requests are rejected with 401.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Follow vs. Undo.</strong> A <c>Follow</c> records the community's follows-set edge
+    /// (<see cref="ICommunityStore.AddFollowAsync"/>) and server-delivers the follow to the target's inbox
+    /// (signed as the community). An <c>Undo</c> of a follow resolves the original follow from the activity
+    /// store (the community stored it when it authored it), removes the community's follows-set edge (the
+    /// inverse of the follow), and server-delivers the <c>Undo</c> to the target's inbox (so the target
+    /// removes the edge it recorded on receipt). A <c>Follow</c> of a <em>local</em> target records the
+    /// local edge but performs no cross-instance hop (the local edge is already recorded; the local target
+    /// is not re-delivered to, matching <c>OutboxPublishHandler</c>'s local-recipient rule).
+    /// </remarks>
+    /// <param name="context">The HTTP context (the request body is the community-authored activity).</param>
+    /// <param name="name">The community's handle (the <c>{name}</c> route value).</param>
+    /// <param name="persistence">The persistence provider (activity store + community store).</param>
+    /// <param name="delivery">The delivery service (schedules the server→server delivery hop).</param>
+    /// <param name="optionsAccessor">The server options (the base URL, for the community IRI).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>
+    /// <see cref="StatusCodes.Status202Accepted"/> when the activity was recorded + (for a remote target)
+    /// delivery scheduled; <see cref="StatusCodes.Status401Unauthorized"/> when the request is unsigned or
+    /// invalidly signed (the middleware result); <see cref="StatusCodes.Status404NotFound"/> when the
+    /// community is unknown; <see cref="StatusCodes.Status403Forbidden"/> when the activity's actor is not
+    /// this community; <see cref="StatusCodes.Status400BadRequest"/> for a non-Follow/Undo or a follow/undo
+    /// whose target is not resolvable; <see cref="StatusCodes.Status500InternalServerError"/> on a store
+    /// failure.
+    /// </returns>
+    private static async Task<IResult> CommunityOutboxPublishHandler(
+        HttpContext context,
+        string name,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var outcome = SignatureValidationMiddleware.GetResult(context);
+        if (!outcome.IsValid)
+        {
+            return Results.Unauthorized();
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities
+                .TryGetCommunityAsync(communityIri, out _, ct)
+                .ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // The request body may not be seekable in TestHost (the middleware has already drained it), so
+        // read it into a buffer before deserializing — mirroring the operator reject endpoint's read.
+        var json = await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Results.BadRequest();
+        }
+
+        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
+
+        // The community is the only author of its outbox: the activity's actor must be this community
+        // (mirrors OutboxPublishHandler's acting-actor check). A Follow and the Undo of a follow both
+        // carry the community as their actor.
+        var actingIri = payload is Activity activity
+            ? activity.Actor?.FirstOrDefault().ResolveObjectIri()
+            : null;
+        if (actingIri is not { } actorIri || actorIri != communityIri)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        try
+        {
+            Iri? recipientIri = payload switch
+            {
+                Follow follow => await RecordCommunityFollowAsync(persistence, communityIri, follow, ct)
+                    .ConfigureAwait(false),
+                Undo undo => await RecordCommunityUnfollowAsync(persistence, communityIri, undo, ct)
+                    .ConfigureAwait(false),
+                _ => null,
+            };
+            if (recipientIri is null)
+            {
+                return Results.BadRequest();
+            }
+
+            // Record the activity in the community's outbox (so the `following` collection surfaces the
+            // edge) and the activity store (for Undo resolution + the remote side to look it up). The
+            // payload is a Follow/Undo (a non-null Activity) — recipientIri is only non-null in that case.
+            ArgumentNullException.ThrowIfNull(payload);
+            await persistence.Activities.AddToOutboxAsync(communityIri, payload, ct).ConfigureAwait(false);
+            await persistence.Activities.PutActivityAsync((IObject)payload, ct).ConfigureAwait(false);
+
+            // The server (not the client) delivers the activity to the target's inbox. A local target
+            // needs no cross-instance hop (the local edge is already recorded); only a remote target is
+            // delivered to, signed as the community.
+            if (recipientIri is { } recipient
+                && !await IsLocalCommunityAsync(persistence, recipient, ct).ConfigureAwait(false)
+                && !await IsLocalActorAsync(persistence, recipient, ct).ConfigureAwait(false))
+            {
+                await delivery.DeliverToActorAsync(recipient, (Activity)payload, communityIri, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Records the local follows-set edge for a <see cref="Follow"/> published to a community's outbox
+    /// and returns the follow's target (the recipient of the server→server delivery). A community follow
+    /// is recorded in the community's follows set (<see cref="ICommunityStore.AddFollowAsync"/>) — the
+    /// inverse of the inbound <see cref="FollowActivityHandler"/>'s community branch — so the community's
+    /// <c>following</c> collection lists the target. Returns <see langword="null"/> when the target is
+    /// not resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordCommunityFollowAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Follow follow,
+        CancellationToken ct)
+    {
+        var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!targetIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Communities
+            .AddFollowAsync(communityIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
+
+        return targetIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local follows-set edge removal for an <see cref="Undo"/> of a follow published to a
+    /// community's outbox and returns the original follow's target (the recipient of the server→server
+    /// delivery, so the target removes the edge it recorded). Resolves the undone follow from the activity
+    /// store (the community stored it when it authored it); a missing follow (never stored) is a
+    /// <see langword="null"/> (a bad request — there is no edge to remove and no target to deliver to).
+    /// </summary>
+    private static async Task<Iri?> RecordCommunityUnfollowAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Undo undo,
+        CancellationToken ct)
+    {
+        var referencedIri = undo.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!referencedIri.HasValue
+            || !await persistence.Activities
+                .TryGetActivityAsync(referencedIri.Value, out var stored, ct)
+                .ConfigureAwait(false)
+            || stored is not Follow follow)
+        {
+            return null;
+        }
+
+        var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!targetIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Communities
+            .RemoveFollowAsync(communityIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
+
+        return targetIri.Value;
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="actorIri"/> is a local community (in the
+    /// <see cref="ICommunityStore"/>).
+    /// </summary>
+    private static Task<bool> IsLocalCommunityAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
+        => persistence.Communities.TryGetCommunityAsync(actorIri, out _, ct);
+
+    /// <summary>
+    /// Reports whether <paramref name="actorIri"/> is a local person (in the
+    /// <see cref="IActorStore"/>).
+    /// </summary>
+    private static Task<bool> IsLocalActorAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
+        => persistence.Actors.TryGetActorAsync(actorIri, out _, ct);
+
+    /// <summary>
     /// Records the local follow edge for a <see cref="Follow"/> published to the actor's outbox and
     /// returns the follow's target (the recipient of the server→server delivery). A follow of a local
     /// person records the <c>follower → target</c> edge (honoring <c>manuallyApprovesFollowers</c>, which
@@ -1656,9 +1874,25 @@ public static class ActivityPubServerExtensions
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The request body as a UTF-8 string (empty when the body is empty).</returns>
     private static async Task<string> ReadAsBufferedStringAsync(HttpContext context, CancellationToken ct)
+        => await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Reads a (possibly non-seekable) request body stream into a buffered UTF-8 string. The signature
+    /// middleware drains the body to compute the digest, so the handler cannot seek back to position 0;
+    /// reading the (already-buffered) stream to a <see cref="MemoryStream"/> is safe and idempotent.
+    /// </summary>
+    private static async Task<string> ReadAsBufferedStringAsync(Stream body, CancellationToken ct)
     {
+        // The signature middleware (EnableBuffering + CopyToAsync) drains the body and leaves the
+        // stream at its end, so reset to position 0 (the buffered stream is seekable) before reading —
+        // otherwise the body reads empty and the activity never deserializes.
+        if (body.CanSeek && body.Position != 0)
+        {
+            body.Position = 0;
+        }
+
         using var memoryStream = new MemoryStream();
-        await context.Request.Body.CopyToAsync(memoryStream, ct).ConfigureAwait(false);
+        await body.CopyToAsync(memoryStream, ct).ConfigureAwait(false);
         return Encoding.UTF8.GetString(memoryStream.ToArray());
     }
 

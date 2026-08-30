@@ -30,10 +30,23 @@ public abstract class FollowResponseActivityHandler<TActivity> : ActivityHandler
     /// Applies the follow-response store operation (record or remove the follow edge).
     /// </summary>
     /// <param name="followerIri">The IRI of the local actor whose follow is being finalized or undone.</param>
-    /// <param name="targetIri">The IRI of the actor the follow was directed at.</param>
+    /// <param name="targetIri">The IRI of the actor the follow is directed at.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes when the store operation has been applied.</returns>
     protected abstract Task ApplyAsync(Iri followerIri, Iri targetIri, CancellationToken ct);
+
+    /// <summary>
+    /// Reports whether the follow-response's recipient (the follower) is local. The default is the
+    /// person-store check (<see cref="ILocalActorResolver.IsLocalActorAsync(Iri, CancellationToken)"/>);
+    /// a derived handler widens this when the follower may also be a local community (a
+    /// <see cref="Group"/> actor not in the person store) — see <see cref="AcceptActivityHandler"/>.
+    /// </summary>
+    /// <param name="followerIri">The IRI of the follower (the delivery's recipient).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the follower is local (the follow-response is this instance's
+    /// concern); otherwise <see langword="false"/> (a remote follower's follow is owned elsewhere).</returns>
+    protected virtual Task<bool> IsLocalRecipientAsync(Iri followerIri, CancellationToken ct)
+        => _localActors.IsLocalActorAsync(followerIri, ct);
 
     /// <inheritdoc/>
     public override async Task HandleAsync(InboxDelivery delivery, TActivity activity, CancellationToken ct = default)
@@ -43,7 +56,7 @@ public abstract class FollowResponseActivityHandler<TActivity> : ActivityHandler
 
         var followerIri = delivery.RecipientIri;
 
-        if (!await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
+        if (!await IsLocalRecipientAsync(followerIri, ct).ConfigureAwait(false))
         {
             return;
         }

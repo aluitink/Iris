@@ -102,24 +102,24 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
             return;
         }
 
-        // The recipient of the Undo is the follower (the party that made the follow being undone).
-        var followerIri = delivery.RecipientIri;
+        // The recipient of the Undo is the un-follower (the party that made the follow being undone).
+        var unFollowerIri = delivery.RecipientIri;
 
-        // Resolve the follow's target from the original Follow (referenced by IRI in the Undo's object,
-        // fetched from the local activity store). A missing target (the follow was never stored) is a
-        // no-op — there is no edge to remove.
-        var targetIri = await ResolveFollowTargetAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false);
-        if (!targetIri.HasValue)
+        // Resolve the original follow from the activity store (referenced by IRI in the Undo's object).
+        // A missing follow (never stored) is a no-op — there is no edge to remove.
+        var (targetIri, followerIri) = await ResolveFollowPartiesAsync(activity.Object?.FirstOrDefault(), ct)
+            .ConfigureAwait(false);
+        if (!targetIri.HasValue || !followerIri.HasValue)
         {
             return;
         }
 
-        // A person follower (in the actor store): remove the follower → target edge. The person and
-        // community stores are disjoint, so check the person store first.
-        if (await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
+        // A person un-follower (in the actor store): remove the un-follower → target edge. The person
+        // and community stores are disjoint, so check the person store first.
+        if (await _localActors.IsLocalActorAsync(unFollowerIri, ct).ConfigureAwait(false))
         {
             await _persistence.Follows
-                .RemoveFollowAsync(followerIri, targetIri.Value, ct)
+                .RemoveFollowAsync(unFollowerIri, targetIri.Value, ct)
                 .ConfigureAwait(false);
 
             // When the un-followed target is a local community, the follow was also recorded in the
@@ -133,51 +133,64 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
                     .ConfigureAwait(false))
             {
                 await _persistence.Communities
-                    .RemoveFollowerAsync(targetIri.Value, followerIri, ct)
+                    .RemoveFollowerAsync(targetIri.Value, unFollowerIri, ct)
                     .ConfigureAwait(false);
                 await _persistence.Communities
-                    .RemoveFollowAsync(targetIri.Value, followerIri, ct)
+                    .RemoveFollowAsync(targetIri.Value, unFollowerIri, ct)
                     .ConfigureAwait(false);
             }
 
             return;
         }
 
-        // A community follower (in the community store): remove the follow from the community's follows
-        // set — the inverse of the FollowActivityHandler's community branch.
+        // A community un-follower (in the community store): remove the edges recorded when the follow
+        // was delivered to this community's inbox. The community's follows + followers sets each hold a
+        // (community → otherParty) edge where otherParty is the party on the OTHER side of the follow
+        // (the target if this community made the follow, the follower if a remote party followed this
+        // community). Remove both edges.
         if (await _persistence.Communities
-                .TryGetCommunityAsync(followerIri, out _, ct)
+                .TryGetCommunityAsync(unFollowerIri, out _, ct)
                 .ConfigureAwait(false))
         {
+            var otherParty = followerIri.Value == unFollowerIri ? targetIri.Value : followerIri.Value;
             await _persistence.Communities
-                .RemoveFollowAsync(followerIri, targetIri.Value, ct)
+                .RemoveFollowAsync(unFollowerIri, otherParty, ct)
+                .ConfigureAwait(false);
+            await _persistence.Communities
+                .RemoveFollowerAsync(unFollowerIri, otherParty, ct)
                 .ConfigureAwait(false);
             return;
         }
 
-        // Neither a local person nor a local community (a remote follower): not this instance's concern.
+        // Neither a local person nor a local community (a remote un-follower): not this instance's
+        // concern.
     }
 
     /// <summary>
-    /// Resolves the original follow's target from the <see cref="Undo"/>'s object (a reference to the
-    /// original <see cref="Follow"/>, by IRI).
+    /// Resolves the original follow's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Follow"/>, by IRI). Returns the follow's target (the party being followed,
+    /// the follow's <c>object</c>) and the follow's follower (the party that made the follow, the
+    /// follow's <c>actor</c>).
     /// </summary>
-    private async Task<Iri?> ResolveFollowTargetAsync(IObjectOrLink? responseObject, CancellationToken ct)
+    private async Task<(Iri? Target, Iri? Follower)> ResolveFollowPartiesAsync(
+        IObjectOrLink? responseObject, CancellationToken ct)
     {
         var followIri = responseObject.ResolveObjectIri();
         if (!followIri.HasValue)
         {
-            return null;
+            return (null, null);
         }
 
         if (!await _persistence.Activities.TryGetActivityAsync(followIri.Value, out var storedFollow, ct)
             .ConfigureAwait(false) ||
             storedFollow is not Follow follow)
         {
-            return null;
+            return (null, null);
         }
 
-        return follow.Object?.FirstOrDefault().ResolveObjectIri();
+        var target = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        var follower = follow.Actor?.FirstOrDefault().ResolveObjectIri();
+        return (target, follower);
     }
 
     /// <summary>
