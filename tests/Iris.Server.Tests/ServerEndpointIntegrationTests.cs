@@ -305,6 +305,33 @@ public class ServerEndpointIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Fact]
+    public async Task WebFinger_BarePath_ResolvesHandleToActorIri()
+    {
+        // F-30: WebFinger is served at BOTH the route-prefixed path (/ap/v1/.well-known/webfinger,
+        // tested above) and the bare RFC 8615-required path (/.well-known/webfinger). This test proves
+        // the bare path — the one a remote WebFinger client queries per the RFC — resolves the same way.
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:{Handle}@{Host}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal($"acct:{Handle}@{Host}", doc.RootElement.GetProperty("subject").GetString());
+
+        var link = doc.RootElement.GetProperty("links")[0];
+        Assert.Equal("self", link.GetProperty("rel").GetString());
+        Assert.Equal($"https://{Host}/ap/v1/u/{Handle}", link.GetProperty("href").GetString());
+    }
+
+    [Fact]
+    public async Task WebFinger_BarePath_UnknownHandle_Returns404()
+    {
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:nobody@{Host}");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // --- NodeInfo --------------------------------------------------------------
 
     [Fact]
