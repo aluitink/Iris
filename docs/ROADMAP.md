@@ -68,6 +68,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] G-1 residual: outbox-publish `Create` full fan-out to all remote followers (`RecordCreateLocalAsync` → `IEnumerable<Iri>`, [change 086](changes/086-phase12-g1-residual-outbox-create-fanout.md)).
 - [x] F-15: outbox-publish `Announce` full fan-out to all remote followers (`OutboxPublishHandler` `Announce` branch + shared `GetRemoteNonBlockedFollowersAsync`, [change 087](changes/087-phase12-f15-outbox-announce-fanout.md)).
 - [x] F-19: typed `DeliveryResult` for all client write operations (`DeliverAsync` + convenience methods return `Task<DeliveryResult>` instead of `Task<int>`, [change 088](changes/088-phase12-f19-typed-delivery-result.md)).
+- [x] F-16: community membership primitives `Offer`/`Invite`/`Join`/`Leave` (`MembershipActivityHandler` + specificity-based `InboxProcessor` dispatch; `AddRemoveActivityHandler` split into exact-type `AddActivityHandler`/`RemoveActivityHandler`, [change 089](changes/089-phase12-f16-membership-primitives.md)).
 - [ ] Finish the remaining lower-priority conformance gaps.
 - [ ] Keep the regression suite green for signatures, pagination, WebFinger, NodeInfo, and object handling.
 - [ ] Confirm the outstanding compatibility edge cases against the current feature inventory.
