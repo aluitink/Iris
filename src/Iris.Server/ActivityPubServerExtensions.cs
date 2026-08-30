@@ -2033,7 +2033,59 @@ public static class ActivityPubServerExtensions
         // the actor document (max-age=60, stale-while-revalidate=300).
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
-        return Results.Text(ActivityJson.Serialize(obj), ActivityJson.ActivityJsonContentType);
+        return Results.Text(ServeObjectDocument(obj, objectIri), ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serializes a stored content object for the object-document endpoint, ensuring it carries a
+    /// canonical <c>url</c> (F-29): a client can offer a "view in browser" link pointing at the object's
+    /// own IRI. The object's IRI IS the canonical addressable form (Iris serves the object at its IRI),
+    /// so when the stored object has no <c>url</c> it is set to the object's own IRI.
+    /// </summary>
+    /// <remarks>
+    /// The object is deep-copied (via serialize/deserialize) before mutation so the stored object is
+    /// never modified — the <c>url</c> is a serving-time convenience, not stored state. An object that
+    /// already carries a <c>url</c> (e.g. authored by a remote instance with a separate HTML page) keeps
+    /// its author-provided value. A <see cref="KristofferStrube.ActivityStreams.Tombstone"/> (a deleted
+    /// object) is served as-is — it has no <c>url</c> to surface.
+    /// </remarks>
+    /// <param name="obj">The stored object to serve.</param>
+    /// <param name="objectIri">The object's canonical IRI (the addressable form this endpoint serves it at).</param>
+    /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
+    private static string ServeObjectDocument(IObject obj, Iri objectIri)
+    {
+        if (obj is KristofferStrube.ActivityStreams.Tombstone)
+        {
+            return ActivityJson.Serialize(obj);
+        }
+
+        // Deep-copy via serialize/deserialize so we never mutate the stored object (the same technique
+        // the actor/community document handlers use). The concrete type is unknown (a Note, an Article,
+        // a generic Object, ...), so re-serialize into the dynamic IObject and set `url` on it.
+        var document = ActivityJson.Deserialize<IObject>(ActivityJson.Serialize(obj))!;
+        if (!HasCanonicalUrl(document))
+        {
+            document.Url = [new Link { Href = new Uri(objectIri.Value) }];
+        }
+
+        return ActivityJson.Serialize(document);
+    }
+
+    /// <summary>
+    /// Returns true when the object already carries a non-empty <c>url</c> (an author-provided canonical
+    /// URL that must not be overwritten).
+    /// </summary>
+    private static bool HasCanonicalUrl(IObject obj)
+    {
+        foreach (var url in obj.Url ?? [])
+        {
+            if (url is Link { Href: { IsAbsoluteUri: true } })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

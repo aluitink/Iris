@@ -63,6 +63,55 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
         Assert.Equal("hello", doc.RootElement.GetProperty("content").GetString());
     }
 
+    // --- F-29: the served object carries a canonical `url` (view in browser) -----------
+
+    [Fact]
+    public async Task StoredObject_ServedByIri_CarriesCanonicalUrl()
+    {
+        // The stored Note has no `url`; the endpoint sets it to the object's own IRI (the canonical
+        // addressable form) so a client can offer a "view in browser" link.
+        var response = await _http.GetAsync(ObjectPath(NoteIri));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // `url` serializes as a plain string (a one-element collection of a single Link is rendered as
+        // its href value by the library's link converter).
+        Assert.Equal(NoteIri.Value, doc.RootElement.GetProperty("url").GetString());
+    }
+
+    [Fact]
+    public async Task StoredObject_WithAuthorUrl_KeepsAuthorUrl()
+    {
+        // An object that already carries an author-provided `url` (e.g. a separate HTML page) keeps it —
+        // the endpoint does not overwrite it with the object's own IRI.
+        var authorUrl = "https://blog.example.com/posts/42";
+        await _persistence.Objects.PutObjectAsync(new Note
+        {
+            Id = $"{ActorIri.Value}/notes/n3",
+            Content = ["with author url"],
+            Url = [new Link { Href = new Uri(authorUrl) }],
+            AttributedTo = [new Link { Href = new Uri(ActorIri.Value) }],
+        });
+
+        var response = await _http.GetAsync(ObjectPath(new Iri($"{ActorIri.Value}/notes/n3")));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // The author-provided `url` is preserved (not overwritten with the object's own IRI).
+        Assert.Equal(authorUrl, doc.RootElement.GetProperty("url").GetString());
+    }
+
+    [Fact]
+    public async Task ServedObject_DoesNotMutateStoredObject()
+    {
+        // Setting the canonical `url` at serve time must not mutate the stored object (the endpoint
+        // deep-copies before mutation). Re-fetching the object from the store shows no `url` was added.
+        await _http.GetAsync(ObjectPath(NoteIri));
+        var found = await _persistence.Objects.TryGetObjectAsync(NoteIri, out var stored, default);
+        Assert.True(found);
+        Assert.Null(stored?.Url);
+    }
+
     // --- An Update refreshes the served content ----------------------------------------
 
     [Fact]
