@@ -329,4 +329,91 @@ public sealed class ExplorerTests
         string resolvedValue = resolved!.Value.ToString();
         Assert.Equal("http://iris-a/ap/v1/u/alice", resolvedValue);
     }
+
+    // --- S5: base URL vs IRI host separation + instance base-URL config surface --------
+
+    [Fact]
+    public void InstanceBaseUrls_TryGet_KnownHost_ReturnsBrowserBase()
+    {
+        var baseUrls = new InstanceBaseUrls();
+        baseUrls.Set("iris-a", new Uri("http://localhost:8081"));
+        baseUrls.Set("iris-b", new Uri("http://localhost:8082"));
+
+        Assert.True(baseUrls.TryGet("iris-a", out var a));
+        Assert.Equal("http://localhost:8081", a.AbsoluteUri.TrimEnd('/'));
+        Assert.True(baseUrls.TryGet("iris-b", out var b));
+        Assert.Equal("http://localhost:8082", b.AbsoluteUri.TrimEnd('/'));
+
+        // Hosts are case-insensitive; unknown hosts report false.
+        Assert.True(baseUrls.TryGet("IRIS-A", out var upper));
+        Assert.Equal("http://localhost:8081", upper.AbsoluteUri.TrimEnd('/'));
+        Assert.False(baseUrls.TryGet("unknown", out _));
+        Assert.Equal(2, baseUrls.Count);
+    }
+
+    [Fact]
+    public void InstanceBaseUrls_Set_OverwritesAndCounts()
+    {
+        var baseUrls = new InstanceBaseUrls();
+        baseUrls.Set("iris-a", new Uri("http://localhost:8081"));
+        baseUrls.Set("iris-a", new Uri("http://localhost:9999"));
+
+        Assert.Equal(1, baseUrls.Count);
+        Assert.True(baseUrls.TryGet("iris-a", out var uri));
+        Assert.Equal("http://localhost:9999", uri.AbsoluteUri.TrimEnd('/'));
+    }
+
+    [Fact]
+    public async Task LogOn_DialsOneBaseUrl_RequestsIrisCarryingAnotherHost()
+    {
+        // The canonical §4.4 fact: the client *dials* the browser base URL (localhost, port stripped)
+        // while the actor IRIs it requests carry the instance's *advertised* host (iris-a). WebFinger
+        // resolves the address to the advertised-host IRI; the session authenticates as that IRI and
+        // reads the community feed whose items are authored on the advertised host — all over the
+        // single in-process transport.
+        using var server = StartLabeledServer("iris-a");
+        var baseUrls = new InstanceBaseUrls();
+        baseUrls.Set("iris-a", new Uri("http://localhost"));
+        using var session = new ExplorerSession(() => server.CreateHandler(), baseUrls);
+
+        // The config surface knows the browser base for iris-a.
+        Assert.True(session.BaseUrls.TryGet("iris-a", out var dialBase));
+        Assert.Equal("http://localhost", dialBase.AbsoluteUri.TrimEnd('/'));
+
+        var ok = await session.LogOnAsync("alice@iris-a", SampleServer.SampleServer.Password, dialBase);
+        Assert.True(ok);
+        Assert.True(session.IsLoggedIn);
+
+        // The dial base is localhost (what the transport reaches); the actor IRI carries iris-a.
+        Assert.Equal("http://localhost", session.DialBaseUri?.ToString().TrimEnd('/'));
+        Assert.Equal("http://iris-a/ap/v1/u/alice", session.ResolvedActorIri?.Value);
+        Assert.Equal("http://iris-a/ap/v1/u/alice", session.ActorIri?.Value);
+
+        // A signed read through the session's client: the community IRIs carry the advertised host
+        // (iris-a) even though the transport dials localhost.
+        var client = session.GetClient();
+        var communityIri = new Iri("http://iris-a/ap/v1/c/iris");
+        var count = 0;
+        await foreach (var _ in client.GetCommunityFeedAsync(communityIri))
+        {
+            count++;
+        }
+
+        Assert.True(count > 0, "the signed community feed read must succeed over the single transport");
+    }
+
+    [Fact]
+    public void AddIrisExplorer_WithBaseUrls_RegistersMapAndSession()
+    {
+        // The DI overload registers the instance base-URL map and a session wired to it.
+        var baseUrls = new InstanceBaseUrls();
+        baseUrls.Set("iris-a", new Uri("http://localhost:8081"));
+        var services = new ServiceCollection();
+        services.AddIrisExplorer(baseUrls);
+        using var provider = services.BuildServiceProvider();
+
+        var session = provider.GetRequiredService<ExplorerSession>();
+        Assert.True(session.BaseUrls.TryGet("iris-a", out var uri));
+        Assert.Equal("http://localhost:8081", uri.AbsoluteUri.TrimEnd('/'));
+    }
 }

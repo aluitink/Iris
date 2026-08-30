@@ -131,6 +131,14 @@ else
         Error = null;
         try
         {
+            // The instance base-URL config surface (§4.4): when the address's host has a known
+            // browser base URL, use it (the user needn't type it); otherwise use the entered base.
+            var host = Address.Contains('@') ? Address[(Address.LastIndexOf('@') + 1)..].Trim() : string.Empty;
+            if (!string.IsNullOrEmpty(host) && Session.BaseUrls.TryGet(host, out var knownBase))
+            {
+                dialBase = knownBase;
+            }
+
             var ok = await Session.LogOnAsync(Address, Password, dialBase);
             if (!ok)
             {

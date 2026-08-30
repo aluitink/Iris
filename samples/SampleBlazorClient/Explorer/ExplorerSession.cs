@@ -21,8 +21,13 @@ public static class ExplorerHostExtensions
     /// transport factory) into <paramref name="services"/>.
     /// </summary>
     /// <param name="services">The DI service collection. Must not be null.</param>
+    /// <param name="baseUrls">
+    /// An optional instance base-URL map (advertised host → browser base URL) to register for the
+    /// session. When <see langword="null"/> the session uses an empty map (every logon takes an
+    /// explicit base URL).
+    /// </param>
     /// <returns>The service collection, for chaining.</returns>
-    public static IServiceCollection AddIrisExplorer(this IServiceCollection services)
+    public static IServiceCollection AddIrisExplorer(this IServiceCollection services, InstanceBaseUrls? baseUrls = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -31,7 +36,15 @@ public static class ExplorerHostExtensions
         // hand a fresh handler to the authenticator and to each client it builds, while a single
         // shared instance is reused for the session lifetime (one connection pool).
         services.AddSingleton<Func<HttpMessageHandler>>(_ => (Func<HttpMessageHandler>)(() => new HttpClientHandler()));
-        services.AddSingleton<ExplorerSession>();
+        if (baseUrls is not null)
+        {
+            services.AddSingleton(baseUrls);
+        }
+
+        services.AddSingleton(sp =>
+            new ExplorerSession(
+                sp.GetRequiredService<Func<HttpMessageHandler>>(),
+                baseUrls ?? sp.GetService<InstanceBaseUrls>() ?? new InstanceBaseUrls()));
         return services;
     }
 }
@@ -62,6 +75,7 @@ public static class ExplorerHostExtensions
 public sealed class ExplorerSession : IDisposable
 {
     private readonly Func<HttpMessageHandler> _transportFactory;
+    private readonly InstanceBaseUrls _baseUrls;
     private readonly object _gate = new();
 
     private IrisClientBundle? _bundle;
@@ -78,10 +92,23 @@ public sealed class ExplorerSession : IDisposable
     /// Builds the innermost transport handler (a real <c>HttpClientHandler</c> in the WASM app; an
     /// in-process <c>TestServer</c> handler in the tests). Must not be null.
     /// </param>
-    public ExplorerSession(Func<HttpMessageHandler> transportFactory)
+    /// <param name="baseUrls">
+    /// The instance base-URL map (advertised host → browser base URL) used to pre-fill the dial base
+    /// for known local instances (SAMPLE_PLAN §4.4). When <see langword="null"/> an empty map is used
+    /// (every logon takes an explicit base URL).
+    /// </param>
+    public ExplorerSession(Func<HttpMessageHandler> transportFactory, InstanceBaseUrls? baseUrls = null)
     {
         _transportFactory = transportFactory ?? throw new ArgumentNullException(nameof(transportFactory));
+        _baseUrls = baseUrls ?? new InstanceBaseUrls();
     }
+
+    /// <summary>
+    /// Gets the instance base-URL map (advertised host → browser base URL). The UI uses this to
+    /// pre-fill the dial base URL for a known local instance so the user only enters the WebFinger
+    /// address and password.
+    /// </summary>
+    public InstanceBaseUrls BaseUrls => _baseUrls;
 
     /// <summary>
     /// Gets a value indicating whether the session is currently logged on to an instance.
