@@ -64,6 +64,7 @@ substantial design calls: [decisions/](decisions/README.md).
   - [x] Client failure modes end-to-end over the real signed pipeline: 404 not-found is a final answer (`GetObjectAsync`/`GetActorAsync` → `null`, no retry) and a direct 401 falls back through the home instance's proxy (`ProxyFallbackHandler` outermost, Basic-auth POST to `/ap/v1/proxy/{target}`); server-side bad-signature (401), unknown actor (401/404), proxy allowlist (403), and rate-limit (429) are already covered by the signature-middleware + proxy-fallback integration tests ([change 083](changes/083-phase11-5-client-failure-mode-e2e-tests.md)).
 
 ### Phase 12 — Spec Conformance & Missing Features
+- [x] G-3: community outbox write surface for outbound community follow (`POST /ap/v1/c/{name}/outbox`, [change 085](changes/085-phase12-community-outbox-g3.md)).
 - [ ] Finish the remaining lower-priority conformance gaps.
 - [ ] Keep the regression suite green for signatures, pagination, WebFinger, NodeInfo, and object handling.
 - [ ] Confirm the outstanding compatibility edge cases against the current feature inventory.
