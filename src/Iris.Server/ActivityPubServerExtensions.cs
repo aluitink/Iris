@@ -3198,6 +3198,66 @@ public static class ActivityPubServerExtensions
         ext[term] = System.Text.Json.JsonSerializer.SerializeToElement(value);
         document.ExtensionData = ext;
     }
+
+    /// <summary>
+    /// Replaces the default in-memory delivery queue and dead-letter store with the persistent,
+    /// file-backed implementations (Phase 16.2, production persistence): pending outbound deliveries
+    /// (and dead-lettered deliveries) are journaled to disk and survive a host restart.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="deliveryJournalPath">The path of the delivery-queue journal file (one JSON object per
+    /// line). The directory must already exist; the file is created if it does not exist.</param>
+    /// <param name="deadLetterJournalPath">The path of the dead-letter journal file. The directory must
+    /// already exist; the file is created if it does not exist.</param>
+    /// <param name="queueCapacity">The in-memory channel capacity (back-pressure bound). Defaults to
+    /// <see cref="FileBackedDeliveryQueue.DefaultCapacity"/>.</param>
+    /// <param name="deadLetterCapacity">The dead-letter store's bounded view capacity (newest-first).
+    /// Defaults to <see cref="FileBackedDeliveryDeadLetterStore.DefaultCapacity"/>.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to override the in-memory
+    /// defaults. A host
+    /// that calls this gets at-least-once, restart-surviving delivery: a job is journaled (and flushed)
+    /// to disk before it is handed to the in-memory channel, and on startup the journal is replayed into
+    /// the channel. A job that was already delivered before a crash is re-delivered and deduped by its
+    /// <c>Id</c> (C-07). Call <see cref="FileBackedDeliveryQueue.TruncateAsync"/> on a clean shutdown to
+    /// keep the journal from growing without bound.
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or a path is null or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">When a capacity is less than or equal to 0.</exception>
+    public static IServiceCollection UseFileBackedDelivery(
+        this IServiceCollection services,
+        string deliveryJournalPath,
+        string deadLetterJournalPath,
+        int queueCapacity = FileBackedDeliveryQueue.DefaultCapacity,
+        int deadLetterCapacity = FileBackedDeliveryDeadLetterStore.DefaultCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (string.IsNullOrWhiteSpace(deliveryJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deliveryJournalPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(deadLetterJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deadLetterJournalPath));
+        }
+
+        if (queueCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(queueCapacity), queueCapacity, "Capacity must be greater than zero.");
+        }
+
+        if (deadLetterCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(deadLetterCapacity), deadLetterCapacity, "Capacity must be greater than zero.");
+        }
+
+        // Replace the in-memory defaults with the file-backed implementations.
+        services.AddSingleton<IDeliveryQueue>(_ => new FileBackedDeliveryQueue(deliveryJournalPath, queueCapacity));
+        services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterJournalPath, deadLetterCapacity));
+        return services;
+    }
 }
 
 /// <summary>
