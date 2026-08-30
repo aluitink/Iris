@@ -274,6 +274,83 @@ public sealed class S7ScreenTests
         Assert.Contains(liked, o => IriOf(o) is { } iri && iri == target);
     }
 
+    // --- Moderation (local single instance) --------------------------------------
+
+    [Fact]
+    public async Task Moderation_MuteUnmute_RecordsAndRemovesMuteEdge()
+    {
+        var (server, client, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        var target = new Iri("http://localhost/ap/v1/u/bob");
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+
+        // A mute is a local, Basic-authenticated decision (204 No Content), recorded in the muter's
+        // mutes collection — not a signed inbox delivery.
+        Assert.Equal(204, await client.MuteAsync(actorIri, target));
+        Assert.True(
+            await persistence.Moderation.IsMutedAsync(actorIri, target),
+            "after a mute, the muter's mutes collection must list the target");
+        var mutes = await CollectAsync(client.GetMutesAsync(actorIri));
+        Assert.Contains(mutes, o => IriOf(o) is { } iri && iri == target);
+
+        // The inverse un-mute removes the edge.
+        Assert.Equal(204, await client.UnmuteAsync(actorIri, target));
+        Assert.False(
+            await persistence.Moderation.IsMutedAsync(actorIri, target),
+            "after an un-mute, the mute edge must be gone");
+    }
+
+    [Fact]
+    public async Task Moderation_BlockUnblock_RecordsAndRemovesBlockEdge()
+    {
+        var (server, client, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        var target = new Iri("http://localhost/ap/v1/u/bob");
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+
+        // A block is a signed write to the actor's own outbox (the delivery model); the instance records
+        // the block edge in the blocker's blocks collection (202 Accepted).
+        Assert.Equal(202, await client.BlockAsync(actorIri, target));
+        Assert.True(
+            await persistence.Moderation.IsBlockedAsync(actorIri, target),
+            "after a block, the blocker's blocks collection must list the target");
+        var blocks = await CollectAsync(client.GetBlocksAsync(actorIri));
+        Assert.Contains(blocks, o => IriOf(o) is { } iri && iri == target);
+
+        // The inverse un-block (an Undo published to the actor's outbox) removes the edge.
+        Assert.Equal(202, await client.UnblockAsync(actorIri, target));
+        Assert.False(
+            await persistence.Moderation.IsBlockedAsync(actorIri, target),
+            "after an un-block, the block edge must be gone");
+    }
+
+    [Fact]
+    public async Task Moderation_FlagUnflag_RecordsAndRemovesFlagEdge()
+    {
+        var (server, client, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        var target = new Iri("http://localhost/ap/v1/u/bob");
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+
+        // A flag is a signed write to the actor's own outbox (a moderation report); the instance records
+        // the flag edge in the flagger's flags collection (202 Accepted).
+        Assert.Equal(202, await client.FlagAsync(actorIri, target));
+        Assert.True(
+            await persistence.Moderation.HasFlaggedAsync(actorIri, target),
+            "after a flag, the flagger's flags collection must list the target");
+        var flags = await CollectAsync(client.GetFlagsAsync(actorIri));
+        Assert.Contains(flags, o => IriOf(o) is { } iri && iri == target);
+
+        // The inverse un-flag (an Undo published to the actor's outbox) removes the edge.
+        Assert.Equal(202, await client.UnflagAsync(actorIri, target));
+        Assert.False(
+            await persistence.Moderation.HasFlaggedAsync(actorIri, target),
+            "after an un-flag, the flag edge must be gone");
+    }
+
     // --- Follow / un-follow (local single instance) ------------------------------
 
     [Fact]

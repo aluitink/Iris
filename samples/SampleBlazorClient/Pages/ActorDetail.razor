@@ -86,6 +86,34 @@ else
                     <div class="error">@WriteError</div>
                 }
             </div>
+
+            <div class="card">
+                <h3>Moderation</h3>
+                <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code> → <code>@ActorIri.Value</code></p>
+                <button @onclick="MuteAsync" disabled="WriteBusy">Mute</button>
+                <button @onclick="UnmuteAsync" disabled="WriteBusy">Unmute</button>
+                <button @onclick="BlockAsync" disabled="WriteBusy">Block</button>
+                <button @onclick="UnblockAsync" disabled="WriteBusy">Unblock</button>
+                <button @onclick="FlagAsync" disabled="WriteBusy">Flag</button>
+                <button @onclick="UnflagAsync" disabled="WriteBusy">Unflag</button>
+                <p class="muted">
+                    Block / flag are signed writes to this actor's own outbox (the instance records the edge
+                    and federates to the target's inbox); mute is a local, Basic-authenticated decision
+                    (no federation).
+                </p>
+                @if (WriteBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (WriteResult is not null)
+                {
+                    <p class="muted">Status: <code>@WriteResult</code></p>
+                }
+                @if (WriteError is not null)
+                {
+                    <div class="error">@WriteError</div>
+                }
+            </div>
         }
     }
 }
@@ -165,6 +193,24 @@ else
 
     private async Task UnfollowAsync()
         => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, target));
+
+    private async Task MuteAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().MuteAsync(actor, target));
+
+    private async Task UnmuteAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnmuteAsync(actor, target));
+
+    private async Task BlockAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().BlockAsync(actor, target));
+
+    private async Task UnblockAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnblockAsync(actor, target));
+
+    private async Task FlagAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FlagAsync(actor, target));
+
+    private async Task UnflagAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnflagAsync(actor, target));
 
     private async Task FollowUnfollowAsync(Func<Iri, Iri, Task<int>> write)
     {

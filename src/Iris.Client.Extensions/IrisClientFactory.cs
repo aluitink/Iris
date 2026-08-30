@@ -78,6 +78,7 @@ public sealed class IrisClientFactory
             Caches = _options.Caches,
             ProxyBaseUrl = _options.UseProxyFallback ? new Iri(_options.ServerBaseUri) : null,
             ProxyCredentials = _options.UseProxyFallback ? _options.ProxyCredentials : null,
+            LocalCredentials = _options.LocalModeration ? _options.ProxyCredentials : null,
         };
 
         // The signer resolves identities through the key provider, which reads the session's key

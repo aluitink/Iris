@@ -30,6 +30,19 @@ public sealed class IrisClientOptions
     public ProxyCredentials? ProxyCredentials { get; init; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the built client is configured for <em>local</em>,
+    /// Basic-authenticated moderation (F-07: <c>MuteAsync</c>/<c>UnmuteAsync</c>). A mute is not a
+    /// signed ActivityPub delivery — it is a Basic-authenticated POST to the acting actor's own
+    /// instance — so the client needs the acting actor's credentials as
+    /// <see cref="Iris.Client.ActivityPubClientOptions.LocalCredentials"/> to perform one. When
+    /// <see langword="true"/> (the default, matching <see cref="UseProxyFallback"/>) the
+    /// <see cref="ProxyCredentials"/> are also used as the local credentials (the same acting user's
+    /// Basic auth). When <see langword="false"/> the client has no local credentials and
+    /// <c>MuteAsync</c>/<c>UnmuteAsync</c> throw.
+    /// </summary>
+    public bool LocalModeration { get; init; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the client falls back to the home server's proxy
     /// endpoint on a <c>401</c>/<c>403</c> from a remote instance. Requires
     /// <see cref="ProxyCredentials"/> to be set.
