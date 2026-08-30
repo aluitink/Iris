@@ -62,6 +62,11 @@ public static class ActivityPubServerExtensions
         // BasicAuthCredentialValidator (or another implementation) to enable the authenticated path.
         services.TryAddSingleton<IActorCredentialValidator, DefaultActorCredentialValidator>();
 
+        // The OAuth2 token store for the /ap/v1/oauth2/token + /ap/v1/oauth2/revoke endpoints
+        // (Phase 15.2a). The default is in-memory; a host app replaces this with a database-backed
+        // or Redis-backed store for production.
+        services.TryAddSingleton<IOAuthTokenStore, InMemoryOAuthTokenStore>();
+
         // The signing key provider for the local actor (Phase 4 delivery signs with the actor's key).
         services.TryAddSingleton<IKeyProvider, InMemoryKeyProvider>();
 
@@ -638,6 +643,17 @@ public static class ActivityPubServerExtensions
         // so the remote follower's RejectActivityHandler removes its own edge. {followId} is a catch-all
         // of the absolute IRI of the original Follow activity.
         group.MapPost("/u/{handle}/follows/{**followId}", LocalFollowRejectHandler).WithName("local-follow-reject-endpoint");
+
+        // OAuth2 token exchange: POST /ap/v1/oauth2/token — exchanges an authorization code for a
+        // Bearer token. The client sends grant_type=authorization_code + code; the server redeems the
+        // code (one-time), issues a random Bearer token, stores it in the IOAuthTokenStore, and returns
+        // { access_token, token_type: "bearer" }. Phase 15.2a (the CI-testable core of the OAuth2 flow).
+        group.MapPost("/oauth2/token", OAuthTokenHandler).WithName("oauth-token-endpoint");
+
+        // OAuth2 token revocation: POST /ap/v1/oauth2/revoke — revokes a Bearer token. The client sends
+        // token; the server removes it from the IOAuthTokenStore and returns 200 (RFC 7009: always 200,
+        // even for unknown tokens, to avoid leaking token validity).
+        group.MapPost("/oauth2/revoke", OAuthRevokeHandler).WithName("oauth-revoke-endpoint");
 
         return endpoints;
     }
@@ -2276,6 +2292,87 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(link),
             "application/json");
+    }
+
+    // --- OAuth2 token endpoints ------------------------------------------------
+
+    /// <summary>
+    /// Handles POST /ap/v1/oauth2/token — exchanges an authorization code for a Bearer token.
+    /// The request body is form-encoded: <c>grant_type=authorization_code</c> + <c>code</c>.
+    /// The server redeems the code (one-time), issues a random Bearer token, stores it in the
+    /// <see cref="IOAuthTokenStore"/>, and returns <c>{ access_token, token_type: "bearer" }</c>.
+    /// </summary>
+    private static async Task<IResult> OAuthTokenHandler(
+        HttpContext context,
+        IOAuthTokenStore tokenStore,
+        CancellationToken ct)
+    {
+        // Parse the form-encoded body.
+        string? grantType;
+        string? code;
+        try
+        {
+            var form = await context.Request.ReadFormAsync(ct);
+            grantType = form["grant_type"].ToString();
+            code = form["code"].ToString();
+        }
+        catch (BadHttpRequestException)
+        {
+            return Results.BadRequest(new { error = "unsupported_media_type" });
+        }
+
+        if (!string.Equals(grantType, "authorization_code", StringComparison.Ordinal) ||
+            string.IsNullOrWhiteSpace(code))
+        {
+            return Results.BadRequest(new { error = "invalid_request" });
+        }
+
+        // Redeem the code (one-time).
+        var redeemed = await tokenStore.RedeemAuthorizationCodeAsync(code, ct).ConfigureAwait(false);
+        if (!redeemed.HasValue)
+        {
+            return Results.BadRequest(new { error = "invalid_grant" });
+        }
+
+        // Issue a random Bearer token and store it.
+        var token = Convert.ToBase64String(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+        await tokenStore.StoreTokenAsync(token, redeemed.Value, ct).ConfigureAwait(false);
+
+        return Results.Ok(new
+        {
+            access_token = token,
+            token_type = "bearer",
+        });
+    }
+
+    /// <summary>
+    /// Handles POST /ap/v1/oauth2/revoke — revokes a Bearer token. The request body is
+    /// form-encoded: <c>token</c>. The server removes the token from the <see cref="IOAuthTokenStore"/>
+    /// and returns 200 (RFC 7009: always 200, even for unknown tokens, to avoid leaking token validity).
+    /// </summary>
+    private static async Task<IResult> OAuthRevokeHandler(
+        HttpContext context,
+        IOAuthTokenStore tokenStore,
+        CancellationToken ct)
+    {
+        string? token;
+        try
+        {
+            var form = await context.Request.ReadFormAsync(ct);
+            token = form["token"].ToString();
+        }
+        catch (BadHttpRequestException)
+        {
+            return Results.BadRequest(new { error = "unsupported_media_type" });
+        }
+
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Results.Ok();
+        }
+
+        await tokenStore.RevokeTokenAsync(token, ct).ConfigureAwait(false);
+        return Results.Ok();
     }
 
     // --- Paged collection endpoints (outbox / followers / following) -----------
