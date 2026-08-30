@@ -1223,6 +1223,19 @@ public static class ActivityPubServerExtensions
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
             }
+            else if (activity is Announce)
+            {
+                // An Announce (boost/repost) fans out to every remote, non-blocked follower, mirroring
+                // the Create branch (F-15: outbound Announce federation). Unlike a Create, an Announce
+                // carries no embedded object — it is a reference to an existing object IRI — so no
+                // object-store write is needed.
+                var recipients = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, actorIri, ct)
+                    .ConfigureAwait(false);
+                foreach (var recipient in recipients)
+                {
+                    await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+            }
             else
             {
                 Iri? recipientIri = activity switch
@@ -1714,6 +1727,27 @@ public static class ActivityPubServerExtensions
         // The federation targets are the author's remote, non-blocked followers (a local follower sees
         // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
         // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
+        return await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the <paramref name="authorIri"/> actor's remote, non-blocked followers (the federation
+    /// targets for an outbound <c>Create</c> or <c>Announce</c>). A local follower already sees the
+    /// content in the author's outbox on this instance, so only remote followers need a cross-instance
+    /// delivery. A remote follower who has blocked the author is skipped (F-07). Returns an empty
+    /// sequence when the author has no eligible remote followers.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IFollowStore"/> and
+    /// <see cref="IModerationStore"/>).</param>
+    /// <param name="localActors">Resolves whether a candidate follower is a local actor.</param>
+    /// <param name="authorIri">The actor whose followers are enumerated.</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task<IEnumerable<Iri>> GetRemoteNonBlockedFollowersAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri authorIri,
+        CancellationToken ct)
+    {
         var recipients = new List<Iri>();
         var followers = await persistence.Follows.GetFollowersAsync(authorIri, ct).ConfigureAwait(false);
         foreach (var followerIri in followers)
