@@ -14,6 +14,12 @@
 # host for the smoke test / manual inspection; the in-container federation uses the service names,
 # not the host mappings.
 #
+# Iris__PeerBase points each instance at the *other* instance's in-network base address (iris-a
+# → http://iris-b:8080, and vice versa). The sample server's FederatedActorDocumentFetcher uses it to
+# resolve the peer's actor key over the network when validating a peer signature or delivering to a
+# peer actor — what makes the S10 signed cross-container federation (a real Follow a→b) + the proxy
+# fallback work over genuine sockets.
+#
 # The explorer (iris-ui) is a browser app: the browser (on the host) dials the servers on their
 # host-published ports (8081/8082) or the operator's own address — the InstanceBaseUrls surface
 # (SAMPLE_PLAN §4.4) pre-fills a known base URL. The iris-ui service itself only needs to serve the
@@ -35,6 +41,15 @@ services:
       Iris__Port: "8080"
       Iris__Https: "false"
       Iris__Actor: alice
+      # The peer (iris-b) in-network base: lets iris-a resolve iris-b's actor key over the network
+      # (S10 signed cross-container federation + proxy fallback).
+      Iris__PeerBase: http://iris-b:8080
+      # The S10 smoke test drives a signed cross-container Follow from iris-a's alice, which requires
+      # signing with alice's private key. curl cannot produce an ActivityPub HTTP signature, so the
+      # smoke test runs an IrisSigner helper that signs with the key; Iris__DumpKeyTo dumps the key's
+      # private-key PEM to a local path so the helper can read it. Sample-only, opt-in, local — no
+      # secret is committed, and a production instance never sets this.
+      Iris__DumpKeyTo: /tmp/iris-alice-key.pem
     ports:
       - "8081:8080"
     healthcheck:
@@ -59,6 +74,9 @@ services:
       Iris__Port: "8080"
       Iris__Https: "false"
       Iris__Actor: alice
+      # The peer (iris-a) in-network base: lets iris-b resolve iris-a's actor key over the network
+      # (S10 signed cross-container federation + proxy fallback).
+      Iris__PeerBase: http://iris-a:8080
     ports:
       - "8082:8080"
     healthcheck:

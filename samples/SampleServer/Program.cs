@@ -175,7 +175,27 @@ public static partial class SampleServer
         // host label), so the inbound key resolver resolves them against this same store rather than
         // over the network. This is what makes the sample "federation-ready": a signed delivery to a
         // local inbox is verified by resolving the sender's key from the sender's own (local) document.
-        services.AddSingleton<IActorDocumentFetcher>(new LocalActorDocumentFetcher(persistence, baseString));
+        //
+        // The fetcher also resolves *remote* actor documents over the network (the cross-instance case:
+        // when this instance delivers to a peer's actor, or validates a peer's signature, the peer's key
+        // is read from the peer's own actor document, fetched by the peer's public base address). This is
+        // what enables the S10 signed cross-container federation (a real Follow a→b + the proxy fallback)
+        // over the Docker network — the two instances resolve each other's keys the way two real
+        // instances would. The peer's base address is supplied per instance by the Iris__PeerBase env var
+        // (the compose file sets it to the other service's in-network address).
+        services.AddSingleton<IActorDocumentFetcher>(sp =>
+        {
+            var factory = sp.GetRequiredService<IActivityPubClientFactory>();
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+            var peerBase = Environment.GetEnvironmentVariable("Iris__PeerBase");
+            return new FederatedActorDocumentFetcher(
+                persistence,
+                baseString,
+                actorIri,
+                factory,
+                options.InstanceActorId,
+                peerBase);
+        });
     }
 
     /// <summary>
@@ -249,6 +269,19 @@ public static partial class SampleServer
         var aliceKey = KeyPairGenerator.GenerateRsa(aliceKeyIri);
         persistence.Keys.PutKey(aliceKey);
         var alice = BuildActor(persistence, actorHandle, aliceIri, aliceKeyIri, aliceKey);
+
+        // The Phase 8 S10 smoke test drives a signed cross-container Follow from this instance's alice,
+        // which requires signing with alice's private key. curl (the smoke test's HTTP client) cannot
+        // produce an ActivityPub HTTP signature, so the smoke test runs a small IrisSigner helper that
+        // signs with the key. To give the helper the key without hard-coding a secret in the repo, the
+        // sample can dump the acting actor's private-key PEM to a local path (the Iris__DumpKeyTo env
+        // var; in-container, world-readable) when set. This is a sample-only, opt-in, local mechanism —
+        // no secret is committed, and a production instance never sets it.
+        var dumpKeyTo = Environment.GetEnvironmentVariable("Iris__DumpKeyTo");
+        if (!string.IsNullOrWhiteSpace(dumpKeyTo))
+        {
+            File.WriteAllText(dumpKeyTo, aliceKey.ExportPrivateKeyPem());
+        }
 
         var bobIri = new Iri($"{baseString}/ap/v1/u/{BobHandle}");
         var bobKeyIri = new Iri($"{bobIri}#key-1");
@@ -493,6 +526,80 @@ public sealed class LocalActorDocumentFetcher(IPersistenceProvider persistence, 
         var value = actorIri.Value;
         var lastSlash = value.LastIndexOf('/');
         return lastSlash >= 0 ? value[(lastSlash + 1)..] : value;
+    }
+}
+
+/// <summary>
+/// An <see cref="IActorDocumentFetcher"/> for the two-instance sample composition: it resolves a
+/// <em>local-host</em> actor document from this instance's own store (the local actors and community)
+/// and a <em>remote-host</em> actor document by fetching it over the network from the peer instance's
+/// public actor-document endpoint. This is what lets the two sample instances federate: when this
+/// instance validates a signature from the peer's actor (or resolves the peer actor to deliver to), it
+/// reads the peer's key from the peer's own actor document, fetched by the peer's base address — exactly
+/// as two real instances resolve each other's keys.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="LocalActorDocumentFetcher"/> serves only local-host actors (a remote-host IRI returns
+/// null). This fetcher layers a network fetch on top for the remote case: a local-host IRI is served
+/// from the store (no I/O); a remote-host IRI is fetched by <see cref="IActivityPubClient.GetActorAsync"/>
+/// (the client's outbound federation transport, signed as this instance's actor) and deserialized to an
+/// <see cref="Actor"/>. When no peer base is configured (the peer-base constructor argument is null —
+/// e.g. a single-instance dev run or a unit test) the remote case returns null, preserving the original
+/// local-only behavior.
+/// </para>
+/// </remarks>
+public sealed class FederatedActorDocumentFetcher(
+    IPersistenceProvider persistence,
+    string baseString,
+    Iri ownActorIri,
+    IActivityPubClientFactory clientFactory,
+    Iri? instanceActorIri,
+    string? peerBase)
+    : IActorDocumentFetcher
+{
+    private readonly LocalActorDocumentFetcher _local = new(persistence, baseString);
+    private readonly Iri _ownActorIri = ownActorIri;
+    private readonly IActivityPubClientFactory _clientFactory = clientFactory;
+    private readonly Iri? _instanceActorIri = instanceActorIri;
+
+    /// <inheritdoc/>
+    public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        // Local-host actors (alice, bob, the community) are served from the store, no network I/O.
+        if (actorIri.Value.StartsWith(baseString, StringComparison.Ordinal))
+        {
+            return _local.GetActorAsync(actorIri, ct);
+        }
+
+        // Remote-host actor (the peer instance's alice, e.g. http://iris-b:8080/ap/v1/u/alice). Without a
+        // configured peer base there is nothing to fetch (a single-instance dev run) — return null, the
+        // same as the local-only fetcher. With a peer base, fetch the peer's actor document over the
+        // network: the client signs the GET as this instance's actor (a real federation fetch), and the
+        // peer's document (public) is returned. The actorIri passed to GetActorAsync is the absolute
+        // actor IRI (e.g. http://iris-b:8080/ap/v1/u/alice); the client dials it directly.
+        if (peerBase is null)
+        {
+            return Task.FromResult<Actor?>(null);
+        }
+
+        return FetchRemoteActorAsync(actorIri, ct);
+    }
+
+    private async Task<Actor?> FetchRemoteActorAsync(Iri actorIri, CancellationToken ct)
+    {
+        // The instance actor signs the outbound fetch (a real federation fetch). When no instance actor
+        // is configured (defensive), there is nothing to sign with — return null.
+        if (_instanceActorIri is not { } signerIri)
+        {
+            return null;
+        }
+
+        using var client = _clientFactory.Create(
+            new ActivityPubClientOptions { ActorId = signerIri, EnableRetry = false },
+            new HttpClientHandler());
+        var actor = await client.GetActorAsync(actorIri, ct).ConfigureAwait(false);
+        return actor as Actor;
     }
 }
 

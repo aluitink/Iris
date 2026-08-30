@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Tools.IrisSigner</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!--
+      IrisSigner is a minimal ActivityPub HTTP-signature helper for the Phase 8 Docker smoke test
+      (S10). It signs a request the same way the Iris client's SigningHandler does (the exact
+      signature base + headers + profile), so a smoke test can drive a signed cross-container Follow
+      over genuine sockets (curl cannot produce an ActivityPub HTTP signature; the smoke test copies
+      this tool + the actor's private-key PEM into the home instance's container and runs it there).
+      It references Iris.Core (the crypto: KeyPair, HttpSignatureSigner, Signatures) — no HTTP
+      dependency of its own (it uses System.Net.Http from the BCL to send the signed request).
+    -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Iris.Core/Iris.Core.csproj" />
+    <ProjectReference Include="../../src/Iris.Client/Iris.Client.csproj" />
+  </ItemGroup>
+
+</Project>
