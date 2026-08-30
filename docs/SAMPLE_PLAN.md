@@ -459,8 +459,15 @@ throughout.
     resolved recipient's inbox. Follow/Block/Flag/Undo/Like/Post/Reply are all in scope; every test that
     asserts the old `…/inbox` delivery targets for authored activities is updated (inbound federation — a
     remote peer sending to this actor — still uses `…/inbox`). See §4.3a "Scope of the fix."
-- **S8 — Raw JSON inspector + proxy-fallback screen.** Raw signed request/response view; a screen that
-  forces the proxy path. Tests: proxy 401→relay over in-process two instances.
+ - **S8 — Raw JSON inspector + proxy-fallback screen.** Raw signed request/response view; a screen that
+   forces the proxy path. Tests: proxy 401→relay over in-process two instances.
+   **Status: done — pinned in-process against a live `Iris.Server` pipeline.** The raw inspector rides
+   `IActivityPubClient.SendAsync` (a raw request through the full signed pipeline, returning the unconsumed
+   response — the "exact signed request + raw response" interop tool); the proxy-fallback path rides
+   `ProxyFallbackHandler` + the server `ProxyHandler` (a direct 401 to a remote instance falls back through
+   the home proxy, which re-signs with the acting actor's key). The two S7 follow-up write-surface screens
+   (raw JSON inspector + proxy-fallback) are now complete. 2 in-process tests, incl. a full client pipeline
+   over two in-process instances (direct 401 → A's proxy → B 200). [change 079](docs/changes/079-explorer-raw-inspector-and-proxy-fallback.md).
 - **S9 — WASM Dockerfile + `iris-ui` compose service.** Multi-stage build → static host; add `iris-ui` to
   compose; routable-address documentation. (No automated browser test here; covered by S6/S7 in-process.)
 - **S10 — Smoke test: UI + signed federation over Docker.** Extend `docker-smoke-test.sh` (UI index 200

@@ -47,7 +47,8 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] Blazor WASM: base-URL-vs-IRI-host separation (browser dials host-published ports; IRIs carry service-name hosts) — `InstanceBaseUrls` config surface (advertised host → browser base URL) + session pre-fill + two-host test ([change 074](changes/074-base-url-vs-iri-host-config.md)).
 - [x] Blazor WASM: explorer read screens (instance overview, actors directory/search, actor detail, object+replies, community) — routed pages + shared `ObjectView`; new `NodeInfo` record + `GetNodeInfoAsync`; sample seed now stores seeded notes in the object store (so object/search endpoints have data); 7 in-process tests ([change 075](changes/075-explorer-read-screens.md)).
   - [x] Blazor WASM: explorer write screens — compose (post a note / reply under a parent), follow/unfollow (local + a genuine two-instance federated follow/unfollow), and like. New `Iris.Client` `UndoFollowAsync` (Undo to the follower's own inbox) + `LikeAsync` (Like to the liker's own inbox — a content object has no inbox, only actors do); `Compose` page, `ActorDetail` follow/unfollow card, `ObjectPage` like button; 6 in-process tests ([change 076](changes/076-explorer-write-screens.md)).
-  - [x] Blazor WASM: explorer **moderation write screen** — Mute/Unmute, Block/Unblock, and Flag/Unflag on the actor detail card (the S7 follow-up moderation surface). Block/flag are signed writes to the actor's own outbox (the [077] delivery model — the instance records the edge and federates to the target's inbox); mute is a local, Basic-authenticated decision (no federation). `IrisClientOptions.LocalModeration` (default on) flows the acting user's Basic auth to the client as `LocalCredentials` so `MuteAsync` works through the explorer's pre-configured client; 3 in-process tests ([change 078](changes/078-explorer-moderation-write-screen.md)). *(Remaining write-surface screens — raw JSON inspector and proxy-fallback — are follow-up slices; their client methods already exist.)*
+   - [x] Blazor WASM: explorer **moderation write screen** — Mute/Unmute, Block/Unblock, and Flag/Unflag on the actor detail card (the S7 follow-up moderation surface). Block/flag are signed writes to the actor's own outbox (the [077] delivery model — the instance records the edge and federates to the target's inbox); mute is a local, Basic-authenticated decision (no federation). `IrisClientOptions.LocalModeration` (default on) flows the acting user's Basic auth to the client as `LocalCredentials` so `MuteAsync` works through the explorer's pre-configured client; 3 in-process tests ([change 078](changes/078-explorer-moderation-write-screen.md)).
+   - [x] Blazor WASM: explorer **raw JSON inspector + proxy-fallback** — the two remaining write-surface screens, pinned in-process. The raw inspector rides `IActivityPubClient.SendAsync` (a raw request through the full signed pipeline, returning the unconsumed response — the "exact signed request + raw response" interop tool); the proxy-fallback path rides `ProxyFallbackHandler` + the server `ProxyHandler` (a direct 401 to a remote instance falls back through the home proxy, which re-signs with the acting actor's key). Full client pipeline over two in-process instances (direct 401 → A's proxy → B 200); 2 in-process tests ([change 079](changes/079-explorer-raw-inspector-and-proxy-fallback.md)).
 - [x] **Delivery-model fix — the outbox is the write surface.** Invariant ([SAMPLE_PLAN §4.3a](SAMPLE_PLAN.md), [ARCHITECTURE.md](reference/ARCHITECTURE.md)): an actor's **outbox** is the write surface for the activities it authors — the client POSTs an authored activity to the actor's *own* outbox (never a recipient's inbox); the server records it in the outbox + activity store and is the **only** thing that delivers to a recipient's inbox (server→server). Done: (1) a **POST-outbox write surface** on the server (`OutboxPublishHandler`), (2) handlers that record the local edge keying off the acting actor and server-deliver to the resolved recipient, (3) the **client routing every authored write (Follow/Block/Flag/Undo/Like/Post/Reply) to the actor's own outbox**, and (4) **updating every test** that asserted the old `…/inbox` delivery targets (inbound federation — a remote peer sending to this actor — still uses `…/inbox`); the actor's home follow edge is now recorded regardless of target locality ([change 077](changes/077-delivery-model-outbox-write-surface.md)).
 - [ ] Blazor WASM: Dockerfile (multi-stage → static host) + `iris-ui` compose service (host:8090, routable as `iris-ui`).
 - [ ] Smoke test: UI reachability over `iris-net` + signed cross-container federation (a→b Follow + Accept) + proxy fallback; keep opt-in gate.
@@ -98,18 +99,22 @@ substantial design calls: [decisions/](decisions/README.md).
        **S7 (core) done** (explorer write screens — compose (post/reply), follow/unfollow (local + a genuine
        two-instance federated follow/unfollow), and like; new `UndoFollowAsync`/`LikeAsync` client surface +
        `Compose`/follow/like pages + 6 in-process tests, [change 076](changes/076-explorer-write-screens.md);
-       the moderation / raw-JSON / proxy-fallback write screens are follow-up slices) →
-       **delivery-model fix done** (the outbox is the write surface: the client POSTs an authored activity to
-       the actor's *own* outbox; the server records it + server-delivers to the recipient's inbox — POST-outbox
-       write surface, handlers key off the acting actor, the client routes every authored write to the actor's
-       outbox, and every test asserting the old `…/inbox` delivery targets is updated; the actor's home follow
-       edge is recorded regardless of target locality, [change 077](changes/077-delivery-model-outbox-write-surface.md))
-       → **moderation write screen done** (mute/block/unblock/flag/unflag on the actor detail card —
-       block/flag are signed outbox writes, mute is a local Basic-auth decision; `IrisClientOptions.
-       LocalModeration` flows the acting user's Basic auth to the client as `LocalCredentials`,
-       [change 078](changes/078-explorer-moderation-write-screen.md))
-       → remaining write-surface screens (raw JSON inspector, proxy-fallback) + external-instance →
-       3-service compose + smoke path.
+        the moderation / raw-JSON / proxy-fallback write screens are follow-up slices) →
+        **delivery-model fix done** (the outbox is the write surface: the client POSTs an authored activity to
+        the actor's *own* outbox; the server records it + server-delivers to the recipient's inbox — POST-outbox
+        write surface, handlers key off the acting actor, the client routes every authored write to the actor's
+        outbox, and every test asserting the old `…/inbox` delivery targets is updated; the actor's home follow
+        edge is recorded regardless of target locality, [change 077](changes/077-delivery-model-outbox-write-surface.md))
+        → **moderation write screen done** (mute/block/unblock/flag/unflag on the actor detail card —
+        block/flag are signed outbox writes, mute is a local Basic-auth decision; `IrisClientOptions.
+        LocalModeration` flows the acting user's Basic auth to the client as `LocalCredentials`,
+        [change 078](changes/078-explorer-moderation-write-screen.md))
+        → **raw JSON inspector + proxy-fallback done** (the raw inspector rides `SendAsync` — a raw signed
+        request returned unconsumed; the proxy-fallback path rides `ProxyFallbackHandler` + the server
+        `ProxyHandler` — a direct 401 falls back through the home proxy, which re-signs with the acting
+        actor's key; full client pipeline over two in-process instances,
+        [change 079](changes/079-explorer-raw-inspector-and-proxy-fallback.md))
+        → external-instance → 3-service compose + smoke path.
 2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
 3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
 4. Use the sample (instance→instance + instance→external via dev FQDNs) to feed Phase 13 live-interop results
