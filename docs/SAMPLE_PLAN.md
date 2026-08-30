@@ -367,9 +367,14 @@ throughout.
   by `LogOn_DialsOneBaseUrl_RequestsIrisCarryingAnotherHost`: the client dials one base URL (localhost)
   while the actor IRIs it requests carry another host (iris-a). 4 in-process tests (map read/overwrite,
   two-host logon + signed feed read, DI wiring).
-- **S6 — Explorer screens: read paths.** Instance overview, actors directory (search), actor detail
-  (outbox/feed/moderation), object view (+replies), community (feed/members/search). Each screen's call
-  covered by an in-process test.
+ - **S6 — Explorer screens: read paths** ✅. Instance overview, actors directory (search), actor detail
+   (outbox/feed/moderation), object view (+replies), community (feed/members/search). Each screen's call
+   covered by an in-process test. Built: routed pages (`Instance`/`Actors`/`ActorDetail`/`ObjectPage`/
+   `Community`) + shared `ObjectView` component (`@if/else` — a `<switch>` in `.razor` fails RZ10012);
+   new `Iris.Client` surface `NodeInfo` record + `GetNodeInfoAsync` (served at `{base}/nodeinfo/2.0`);
+   the sample seed now also `PutObjectAsync`s each seeded note + reply (the object endpoint and global
+   search read the object store, not the outbox, so the seeded content was previously unfetchable and
+   unsearchable). 7 in-process tests (one per screen call), [change 075](docs/changes/075-explorer-read-screens.md).
 - **S7 — Explorer screens: write paths.** Compose (post/reply), follow/unfollow (cross-instance), like,
   moderation (mute local / block+flag federated). In-process two-instance tests for the federated writes.
 - **S8 — Raw JSON inspector + proxy-fallback screen.** Raw signed request/response view; a screen that
