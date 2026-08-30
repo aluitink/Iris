@@ -190,8 +190,8 @@ public sealed class S7ScreenTests
         using var _ = server;
 
         var content = "<p>S7: a note from the compose screen.</p>";
-        var status = await client.PostNoteAsync(actorIri, content);
-        Assert.Equal(202, status);
+        var result = await client.PostNoteAsync(actorIri, content);
+        Assert.Equal(202, result.StatusCode);
 
         // The note is stored as a fetchable content object (the object view loads it by IRI).
         var objects = await server.Services.GetRequiredService<IPersistenceProvider>().Objects.ListObjectsAsync();
@@ -223,9 +223,9 @@ public sealed class S7ScreenTests
             AttributedTo = [new Link { Href = actorIri.Uri }],
             Content = ["<p>parent</p>"],
         });
-        var status = await client.PostReplyAsync(
+        var result = await client.PostReplyAsync(
             actorIri, parent, "<p>S7: a reply from the compose screen.</p>", to: [Iri.Public]);
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
 
         // The reply is stored and lists under the parent's replies collection (the object view's thread).
         // The replies surface items as links (the object view renders each by Href); the reply's content
@@ -259,8 +259,8 @@ public sealed class S7ScreenTests
             AttributedTo = [new Link { Href = bob.Uri }],
             Content = ["<p>a note to like</p>"],
         });
-        var status = await client.LikeAsync(actorIri, target);
-        Assert.Equal(202, status);
+        var result = await client.LikeAsync(actorIri, target);
+        Assert.Equal(202, result.StatusCode);
 
         // The like is stored and the liker's `liked` collection lists the liked object's IRI.
         var activity = await server.Services.GetRequiredService<IPersistenceProvider>()
@@ -287,7 +287,7 @@ public sealed class S7ScreenTests
 
         // A mute is a local, Basic-authenticated decision (204 No Content), recorded in the muter's
         // mutes collection — not a signed inbox delivery.
-        Assert.Equal(204, await client.MuteAsync(actorIri, target));
+        Assert.Equal(204, (await client.MuteAsync(actorIri, target)).StatusCode);
         Assert.True(
             await persistence.Moderation.IsMutedAsync(actorIri, target),
             "after a mute, the muter's mutes collection must list the target");
@@ -295,7 +295,7 @@ public sealed class S7ScreenTests
         Assert.Contains(mutes, o => IriOf(o) is { } iri && iri == target);
 
         // The inverse un-mute removes the edge.
-        Assert.Equal(204, await client.UnmuteAsync(actorIri, target));
+        Assert.Equal(204, (await client.UnmuteAsync(actorIri, target)).StatusCode);
         Assert.False(
             await persistence.Moderation.IsMutedAsync(actorIri, target),
             "after an un-mute, the mute edge must be gone");
@@ -312,7 +312,7 @@ public sealed class S7ScreenTests
 
         // A block is a signed write to the actor's own outbox (the delivery model); the instance records
         // the block edge in the blocker's blocks collection (202 Accepted).
-        Assert.Equal(202, await client.BlockAsync(actorIri, target));
+        Assert.Equal(202, (await client.BlockAsync(actorIri, target)).StatusCode);
         Assert.True(
             await persistence.Moderation.IsBlockedAsync(actorIri, target),
             "after a block, the blocker's blocks collection must list the target");
@@ -320,7 +320,7 @@ public sealed class S7ScreenTests
         Assert.Contains(blocks, o => IriOf(o) is { } iri && iri == target);
 
         // The inverse un-block (an Undo published to the actor's outbox) removes the edge.
-        Assert.Equal(202, await client.UnblockAsync(actorIri, target));
+        Assert.Equal(202, (await client.UnblockAsync(actorIri, target)).StatusCode);
         Assert.False(
             await persistence.Moderation.IsBlockedAsync(actorIri, target),
             "after an un-block, the block edge must be gone");
@@ -337,7 +337,7 @@ public sealed class S7ScreenTests
 
         // A flag is a signed write to the actor's own outbox (a moderation report); the instance records
         // the flag edge in the flagger's flags collection (202 Accepted).
-        Assert.Equal(202, await client.FlagAsync(actorIri, target));
+        Assert.Equal(202, (await client.FlagAsync(actorIri, target)).StatusCode);
         Assert.True(
             await persistence.Moderation.HasFlaggedAsync(actorIri, target),
             "after a flag, the flagger's flags collection must list the target");
@@ -345,7 +345,7 @@ public sealed class S7ScreenTests
         Assert.Contains(flags, o => IriOf(o) is { } iri && iri == target);
 
         // The inverse un-flag (an Undo published to the actor's outbox) removes the edge.
-        Assert.Equal(202, await client.UnflagAsync(actorIri, target));
+        Assert.Equal(202, (await client.UnflagAsync(actorIri, target)).StatusCode);
         Assert.False(
             await persistence.Moderation.HasFlaggedAsync(actorIri, target),
             "after an un-flag, the flag edge must be gone");
@@ -360,8 +360,8 @@ public sealed class S7ScreenTests
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
-        var status = await client.FollowAsync(follower, target);
-        Assert.Equal(202, status);
+        var result = await client.FollowAsync(follower, target);
+        Assert.Equal(202, result.StatusCode);
 
         // The follow edge is recorded: bob's followers collection lists alice (by IRI).
         var followers = await CollectAsync(client.GetCollectionItemsAsync(target.FollowersOf()));
@@ -375,11 +375,11 @@ public sealed class S7ScreenTests
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
-        Assert.Equal(202, await client.FollowAsync(follower, target));
+        Assert.Equal(202, (await client.FollowAsync(follower, target)).StatusCode);
 
         // The un-follow is an Undo delivered to the follower's own inbox; the receiver resolves the
         // original Follow (stored when alice sent it) and removes the recorded edge.
-        Assert.Equal(202, await client.UndoFollowAsync(follower, target));
+        Assert.Equal(202, (await client.UndoFollowAsync(follower, target)).StatusCode);
 
         var followers = await CollectAsync(client.GetCollectionItemsAsync(target.FollowersOf()));
         Assert.DoesNotContain(followers, o => IriOf(o) is { } iri && iri == follower);
@@ -434,7 +434,7 @@ public sealed class S7ScreenTests
         // alice follows bob: the Follow is published to alice's own outbox (A); A records it in its own
         // follow store (the actor's `following` collection lists even a remote target) and the server
         // delivers it to bob's inbox (B), where B records the follow edge.
-        Assert.Equal(202, await toA.FollowAsync(aliceActorIri, bobActorIri));
+        Assert.Equal(202, (await toA.FollowAsync(aliceActorIri, bobActorIri)).StatusCode);
         Assert.True(
             await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "after a federated Follow, alice must follow bob in A's follow store (her own outbox)");
@@ -450,7 +450,7 @@ public sealed class S7ScreenTests
 
         // alice un-follows bob: the Undo is published to alice's own outbox (A); A resolves the stored
         // Follow (the same deterministic IRI FollowAsync used) and removes the edge.
-        Assert.Equal(202, await toA.UndoFollowAsync(aliceActorIri, bobActorIri));
+        Assert.Equal(202, (await toA.UndoFollowAsync(aliceActorIri, bobActorIri)).StatusCode);
         var aliceFollowing = await aPersistence.Follows.GetFollowingAsync(aliceActorIri);
         Assert.DoesNotContain(bobActorIri, aliceFollowing);
     }

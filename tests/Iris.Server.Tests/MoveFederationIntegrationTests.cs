@@ -79,7 +79,7 @@ public sealed class MoveFederationIntegrationTests : IDisposable
         // A client signed as the OLD alice (her key is on A), routing to B's TestServer.
         using var client = BuildDeliveryClient(_oldAliceIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_bobInboxIri, move);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B validated the signature (by fetching the OLD alice's actor doc from A to resolve her key) and
         // stored the Move.
@@ -113,7 +113,7 @@ public sealed class MoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_oldAliceIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_bobInboxIri, move);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The community's follows set is re-pointed: it no longer follows the old IRI, and now follows the
         // new IRI.
@@ -139,7 +139,7 @@ public sealed class MoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_oldAliceIri, _aliceKey, b.CreateHandler());
         var statusCode = await client.DeliverAsync(bSeeded.ActorIri.InboxOf(), move);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The Move is stored (validated), but there is no local edge to re-point: the follow store is
         // empty on both the old and the new IRI.

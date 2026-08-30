@@ -111,7 +111,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     public async Task SubscribeRelay_Authenticated_RecordsRelayEdge()
     {
         var statusCode = await _client.SubscribeRelayAsync(_bobActorIri, _relayIri);
-        Assert.Equal(204, statusCode);
+        Assert.Equal(204, statusCode.StatusCode);
 
         // The instance authenticated bob (Basic auth) and recorded the relay edge (bob → relay).
         Assert.True(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
@@ -181,7 +181,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
 
         // bob un-subscribes (?unsubscribe=true, 204): the edge is removed and the /relays collection is
         // empty again.
-        Assert.Equal(204, await _client.UnsubscribeRelayAsync(_bobActorIri, _relayIri));
+        Assert.Equal(204, (await _client.UnsubscribeRelayAsync(_bobActorIri, _relayIri)).StatusCode);
         Assert.False(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
         Assert.Empty(await _persistence.Relays.GetRelaysAsync(_bobActorIri));
 
@@ -199,7 +199,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
         // Un-subscribing from a relay that was never subscribed to is a no-op (204 — the subscription's
         // steady state is authoritative; no edge is created).
         var statusCode = await _client.UnsubscribeRelayAsync(_bobActorIri, _relayIri);
-        Assert.Equal(204, statusCode);
+        Assert.Equal(204, statusCode.StatusCode);
         Assert.False(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
         Assert.Empty(await _persistence.Relays.GetRelaysAsync(_bobActorIri));
     }

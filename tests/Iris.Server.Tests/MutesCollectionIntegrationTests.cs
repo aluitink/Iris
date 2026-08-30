@@ -113,7 +113,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     public async Task Mute_Authenticated_RecordsMuteEdge()
     {
         var statusCode = await _client.MuteAsync(_bobActorIri, _carolActorIri);
-        Assert.Equal(204, statusCode);
+        Assert.Equal(204, statusCode.StatusCode);
 
         // The instance authenticated bob (Basic auth) and recorded the mute edge (bob → carol).
         Assert.True(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
@@ -195,13 +195,13 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
 
         // bob mutes carol (204): the edge is recorded, the follow is intact, but carol's content is
         // excluded from bob's feed.
-        Assert.Equal(204, await _client.MuteAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(204, (await _client.MuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.True(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(_carolActorIri, await _persistence.Follows.GetFollowingAsync(_bobActorIri));
         Assert.DoesNotContain(noteIri, await FeedNoteIrisAsync());
 
         // bob un-mutes carol (?unmute=true, 204): the edge is removed and carol's content returns.
-        Assert.Equal(204, await _client.UnmuteAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(204, (await _client.UnmuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.False(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(noteIri, await FeedNoteIrisAsync());
     }
@@ -214,7 +214,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
         // Un-muting an actor that was never muted is a no-op (204 — the mute's steady state is
         // authoritative; no edge is created).
         var statusCode = await _client.UnmuteAsync(_bobActorIri, _carolActorIri);
-        Assert.Equal(204, statusCode);
+        Assert.Equal(204, statusCode.StatusCode);
         Assert.False(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetMutesAsync(_bobActorIri));
     }

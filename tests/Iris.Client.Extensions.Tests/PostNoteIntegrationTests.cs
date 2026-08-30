@@ -88,10 +88,10 @@ public sealed class PostNoteIntegrationTests : IDisposable
         // Build a signed client routed to the in-process server and post a note. The client builds the
         // Create (with the embedded Note) and delivers it to the author's own inbox, signed as the author.
         using var client = bundle.CreateClient(new Iri(AuthorIri), _server.CreateHandler());
-        var status = await client.PostNoteAsync(new Iri(AuthorIri), "hello from the client");
+        var result = await client.PostNoteAsync(new Iri(AuthorIri), "hello from the client");
 
         // The signed Create is accepted by the server's inbox (202) — signature validated, stored.
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
     }
 
     // --- Helpers ----------------------------------------------------------------------

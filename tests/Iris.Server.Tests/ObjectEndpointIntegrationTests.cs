@@ -265,17 +265,17 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
 
         // 1. Create — a signed Create arrives over the inbox; the embedded Note is stored and served.
         var createStatus = await client.DeliverAsync(inbox, BuildCreate(NoteIri, "hello"));
-        Assert.Equal(202, createStatus);
+        Assert.Equal(202, createStatus.StatusCode);
         await AssertServesNoteAsync(server, NoteIri, "hello", baseUri);
 
         // 2. Update — a signed Update (embedded edited Note) arrives; the served content is refreshed.
         var updateStatus = await client.DeliverAsync(inbox, BuildUpdate(NoteIri, "hello (edited)"));
-        Assert.Equal(202, updateStatus);
+        Assert.Equal(202, updateStatus.StatusCode);
         await AssertServesNoteAsync(server, NoteIri, "hello (edited)", baseUri);
 
         // 3. Delete — a signed Delete (bare link reference) arrives; the object is tombstoned.
         var deleteStatus = await client.DeliverAsync(inbox, BuildDelete(NoteIri));
-        Assert.Equal(202, deleteStatus);
+        Assert.Equal(202, deleteStatus.StatusCode);
         await AssertServesTombstoneAsync(server, NoteIri, baseUri);
     }
 

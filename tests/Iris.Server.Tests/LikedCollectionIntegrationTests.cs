@@ -96,7 +96,7 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
         var statusCode = await client.DeliverAsync(_bobActorIri.InboxOf(), like);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The instance validated the signature (bob's key is local) and stored the Like.
         Assert.True(
@@ -131,11 +131,11 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
 
         var like1 = BuildLike(_bobActorIri, object1);
         var status1 = await client.DeliverAsync(_bobActorIri.InboxOf(), like1);
-        Assert.Equal(202, status1);
+        Assert.Equal(202, status1.StatusCode);
 
         var like2 = BuildLike(_bobActorIri, object2);
         var status2 = await client.DeliverAsync(_bobActorIri.InboxOf(), like2);
-        Assert.Equal(202, status2);
+        Assert.Equal(202, status2.StatusCode);
 
         // Both liked objects are in the liked collection (2 items).
         var response = await _http.GetAsync($"{_base}/ap/v1/u/{Bob}/liked");

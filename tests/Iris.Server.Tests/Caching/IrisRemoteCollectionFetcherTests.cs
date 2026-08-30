@@ -200,34 +200,34 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult<NodeInfo?>(null);
 
         /// <inheritdoc/>
-        public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
-            => Task.FromResult(202);
+        public Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(202);
+        public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(202);
+        public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
-            => Task.FromResult(202);
+        public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
-            => Task.FromResult(202);
+        public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<int> PostReplyAsync(
+        public Task<DeliveryResult> PostReplyAsync(
             Iri actorId,
             Iri parentIri,
             string content,
             IEnumerable<Iri>? mentions = null,
             IEnumerable<Iri>? to = null,
             CancellationToken ct = default)
-            => Task.FromResult(202);
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
@@ -288,8 +288,8 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
-        public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
         public IAsyncEnumerable<IObjectOrLink> GetBlocksAsync(
             Iri actorId,
@@ -297,14 +297,14 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
-        public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
         public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
             Iri actorId,
@@ -312,17 +312,17 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
-        public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> MuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
         public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
             Iri actorId,
@@ -330,17 +330,17 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
-        public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
-        public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(0);
+        public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(0, false, ""));
 
         public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
             Iri actorId,

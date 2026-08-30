@@ -84,7 +84,7 @@ else
     private IReadOnlyList<IObjectOrLink>? Replies { get; set; }
     private Iri? LoadedObjectIri { get; set; }
     private bool WriteBusy { get; set; }
-    private int? WriteResult { get; set; }
+    private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
 
     private async Task LoadAsync()

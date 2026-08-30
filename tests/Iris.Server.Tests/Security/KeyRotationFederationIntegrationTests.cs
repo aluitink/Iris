@@ -87,7 +87,7 @@ public sealed class KeyRotationFederationIntegrationTests : IDisposable
         var follow1 = BuildFollow(_aliceActorIri);
         using (var client1 = BuildDeliveryClient(_aliceActorIri, _aliceOriginalKey, _b.CreateHandler()))
         {
-            Assert.Equal(202, await client1.DeliverAsync(_bobInboxIri, follow1));
+            Assert.Equal(202, (await client1.DeliverAsync(_bobInboxIri, follow1)).StatusCode);
         }
 
         // Alice rotates her key: a NEW RSA key at the SAME key IRI, republished in A's actor document
@@ -107,11 +107,11 @@ public sealed class KeyRotationFederationIntegrationTests : IDisposable
         // and accepts the request.
         var follow2 = BuildFollow(_aliceActorIri);
         using var client2 = BuildDeliveryClient(_aliceActorIri, rotatedKey, _b.CreateHandler());
-        var statusCode = await client2.DeliverAsync(_bobInboxIri, follow2);
+        var result = await client2.DeliverAsync(_bobInboxIri, follow2);
 
         Assert.True(
-            statusCode == 202,
-            $"Expected 202 (rotated-key follow accepted via F-21 invalidation + re-resolution), got {statusCode}");
+            result.StatusCode == 202,
+            $"Expected 202 (rotated-key follow accepted via F-21 invalidation + re-resolution), got {result.StatusCode}");
         // The re-resolved key B used to verify must be the rotated key (its public JWK), proving the
         // rotation was picked up (not the stale cached original).
         var bKeys = _b.Services.GetRequiredService<RemoteKeyCache>();

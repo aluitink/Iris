@@ -50,7 +50,7 @@ else
     private string ParentIri { get; set; } = string.Empty;
     private string Mentions { get; set; } = string.Empty;
     private bool Busy { get; set; }
-    private int? Result { get; set; }
+    private DeliveryResult? Result { get; set; }
     private string? Error { get; set; }
 
     private async Task PostAsync()
@@ -67,10 +67,9 @@ else
         try
         {
             var client = Session.GetClient();
-            var status = string.IsNullOrWhiteSpace(ParentIri)
+            Result = string.IsNullOrWhiteSpace(ParentIri)
                 ? await client.PostNoteAsync(actorIri, Content)
                 : await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions());
-            Result = status;
         }
         catch (Exception ex)
         {

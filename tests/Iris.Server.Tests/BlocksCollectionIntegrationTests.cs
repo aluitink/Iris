@@ -102,7 +102,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
     {
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
         var statusCode = await client.BlockAsync(_bobActorIri, _carolActorIri);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The instance validated the signature (bob's key is local) and recorded the block edge: carol
         // is in bob's blocks (the forward edge), and bob knows he blocked carol.
@@ -140,9 +140,9 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
         var status1 = await client.BlockAsync(_bobActorIri, _carolActorIri);
-        Assert.Equal(202, status1);
+        Assert.Equal(202, status1.StatusCode);
         var status2 = await client.BlockAsync(_bobActorIri, dave.ActorIri);
-        Assert.Equal(202, status2);
+        Assert.Equal(202, status2.StatusCode);
 
         var response = await _http.GetAsync($"https://{BHost}/ap/v1/u/{Bob}/blocks");
         response.EnsureSuccessStatusCode();
@@ -223,13 +223,13 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
 
         // bob blocks carol (202), the edge is recorded, and carol's post drops out of bob's feed.
-        Assert.Equal(202, await client.BlockAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(202, (await client.BlockAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.True(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
         Assert.DoesNotContain(noteIri, await FeedNoteIrisAsync(_bobActorIri));
 
         // bob un-blocks carol: the Undo of the Block (actor = bob, object = the original Block) is
         // delivered to carol's inbox; the instance removes the recorded edge.
-        Assert.Equal(202, await client.UnblockAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(202, (await client.UnblockAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.False(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetBlocksAsync(_bobActorIri));
 

@@ -87,8 +87,8 @@ public sealed class PostNoteSurfacesInOutboxIntegrationTests : IDisposable
         // Build a signed client routed to the in-process server and post a note. The client builds the
         // Create (with the embedded Note) and delivers it to the author's own inbox, signed as the author.
         using var client = bundle.CreateClient(new Iri(AuthorIri), _server.CreateHandler());
-        var status = await client.PostNoteAsync(new Iri(AuthorIri), "hello — now surfaced in my outbox");
-        Assert.Equal(202, status);
+        var result = await client.PostNoteAsync(new Iri(AuthorIri), "hello — now surfaced in my outbox");
+        Assert.Equal(202, result.StatusCode);
 
         // THE SERVER HALF (J-8): the CreateActivityHandler recorded the Create in the author's outbox.
         // Read the author's outbox collection endpoint over HTTP and assert the post is surfaced there.

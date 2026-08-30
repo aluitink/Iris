@@ -182,7 +182,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
+    public async Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)
         {
@@ -199,11 +199,12 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         request.Content.Headers.ContentType = new MediaTypeHeaderValue(ActivityJson.ActivityJsonContentType);
 
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-        return (int)response.StatusCode;
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
     }
 
     /// <inheritdoc/>
-    public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // The follow is published to the follower's OWN outbox (the write surface for the activities an
         // actor authors — the client never addresses a recipient's inbox for an activity it authors) and
@@ -223,7 +224,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // An un-follow is the ActivityStreams inverse of a Follow: an Undo whose object references the
         // original Follow by IRI. Per the delivery model, the Undo is published to the follower's OWN
@@ -245,7 +246,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
         // A like is published to the liker's OWN outbox (the write surface for the activities an actor
         // authors): the instance records the like edge (liker → object) in the liker's `liked` collection
@@ -265,7 +266,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // A block is published to the blocker's OWN outbox (the write surface for the activities an actor
         // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
@@ -297,7 +298,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // An un-block is the ActivityStreams inverse of a Block: an Undo whose object references the
         // original Block by IRI. Per the delivery model the Undo is published to the blocker's OWN outbox
@@ -319,7 +320,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // A flag is published to the flagger's OWN outbox (the write surface for the activities an actor
         // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
@@ -339,7 +340,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // An un-flag is the inverse of FlagAsync: the Undo references the deterministic Flag IRI
         // {actorId}/flags/{targetId} (the same IRI FlagAsync used), so the receiving instance resolves
@@ -371,19 +372,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
         => LocalModerateAsync(actorId, targetId, remove: false, credentials: null, ct);
 
     /// <inheritdoc/>
-    public Task<int> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalModerateAsync(actorId, targetId, remove: false, credentials, ct);
 
     /// <inheritdoc/>
-    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
         => LocalModerateAsync(actorId, targetId, remove: true, credentials: null, ct);
 
     /// <inheritdoc/>
-    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalModerateAsync(actorId, targetId, remove: true, credentials, ct);
 
     /// <inheritdoc/>
@@ -399,19 +400,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
         => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials: null, ct);
 
     /// <inheritdoc/>
-    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
+    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials, ct);
 
     /// <inheritdoc/>
-    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
         => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials: null, ct);
 
     /// <inheritdoc/>
-    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
+    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials, ct);
 
     /// <inheritdoc/>
@@ -427,7 +428,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return GetCollectionItemsAsync(actorId.RelaysOf(), query, ct);
     }
 
-    private async Task<int> LocalModerateAsync(
+    private async Task<DeliveryResult> LocalModerateAsync(
         Iri actorId,
         Iri targetId,
         bool remove,
@@ -437,7 +438,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             actorId, targetId, path: "mutes", remove, removeQuery: "unmute", credentials, ct)
             .ConfigureAwait(false);
 
-    private async Task<int> LocalLocalDecisionAsync(
+    private async Task<DeliveryResult> LocalLocalDecisionAsync(
         Iri actorId,
         Iri targetId,
         string path,
@@ -497,11 +498,12 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         };
         using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
         using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
-        return (int)response.StatusCode;
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
     }
 
     /// <inheritdoc/>
-    public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+    public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
     {
         // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:
         // the note id derives from the actor + a content hash, and the Create id from the note id.
@@ -541,7 +543,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<int> PostReplyAsync(
+    public Task<DeliveryResult> PostReplyAsync(
         Iri actorId,
         Iri parentIri,
         string content,

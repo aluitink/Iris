@@ -64,9 +64,9 @@ public interface IActivityPubClient : IDisposable
     /// <param name="activity">The activity to send (must be an <see cref="Activity"/>; serialized
     /// with <see cref="Iris.Core.ActivityJson"/>).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <exception cref="ArgumentException">When <paramref name="activity"/> is not an <see cref="Activity"/>.</exception>
-    public Task<int> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
+    public Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
 
     /// <summary>
     /// Sends a signed <see cref="Follow"/> activity to the target actor's inbox so that
@@ -79,13 +79,13 @@ public interface IActivityPubClient : IDisposable
     /// signing identity so the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor (or community) to follow.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="Follow"/> is delivered to <c>targetId.InboxOf()</c> and is signed by the
     /// pipeline. The target's <c>Accept</c> (outbound delivery) is the remote instance's
     /// responsibility; a <c>202</c> here means the target's inbox accepted the follow.
     /// </remarks>
-    public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Un-follows <paramref name="targetId"/> as <paramref name="actorId"/> (the inverse of
@@ -99,7 +99,7 @@ public interface IActivityPubClient : IDisposable
     /// the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor (or community) previously followed.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to <c>actorId.InboxOf()</c>
     /// (the follower's own inbox) and is signed by the pipeline. Its <c>object</c> references the original
@@ -108,7 +108,7 @@ public interface IActivityPubClient : IDisposable
     /// cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
     /// unique-per-(actor,target) IRI so a retried un-follow dedupes on the receiver.
     /// </remarks>
-    public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
@@ -124,7 +124,7 @@ public interface IActivityPubClient : IDisposable
     /// so the request is signed as that actor).</param>
     /// <param name="objectId">The IRI of the object being liked (a note, post, or other content object).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Like"/> is delivered to the liker's OWN inbox
     /// (<c>actorId.InboxOf()</c>, the local-write path — a content object has no inbox of its own, only
@@ -133,7 +133,7 @@ public interface IActivityPubClient : IDisposable
     /// cref="KristofferStrube.ActivityStreams.Like"/> gets a deterministic, unique-per-(actor,object) IRI so a
     /// retried like dedupes on the receiver.
     /// </remarks>
-    public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+    public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
 
     /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
@@ -148,7 +148,7 @@ public interface IActivityPubClient : IDisposable
     /// identity so the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor to block.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Block"/> is delivered to <c>targetId.InboxOf()</c>
     /// (the blocked actor's inbox, per ActivityPub §5.2.1.3) and is signed by the pipeline. The receiving
@@ -156,7 +156,7 @@ public interface IActivityPubClient : IDisposable
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> gets a deterministic, unique-per-(actor,target)
     /// IRI so a retried block dedupes on the receiver.
     /// </remarks>
-    public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Enumerates the actors that <paramref name="actorId"/> has blocked (F-07 moderation): reads the
@@ -190,7 +190,7 @@ public interface IActivityPubClient : IDisposable
     /// so the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor to un-block (the actor previously blocked).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the previously-blocked actor's
     /// inbox, so the receiving instance can remove the recorded edge) and is signed by the pipeline. Its
@@ -199,7 +199,7 @@ public interface IActivityPubClient : IDisposable
     /// itself gets a deterministic, unique-per-(actor,target) IRI so a retried un-block dedupes on the
     /// receiver.
     /// </remarks>
-    public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Flags an actor (F-07 moderation): builds a <see cref="Flag"/> activity (actor =
@@ -210,7 +210,7 @@ public interface IActivityPubClient : IDisposable
     /// the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor to flag.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="Flag"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and is
     /// signed by the pipeline. The receiving instance records the <c>actorId → targetId</c> flag edge in
@@ -218,7 +218,7 @@ public interface IActivityPubClient : IDisposable
     /// relationship the way a <see cref="BlockAsync"/> block does). The <see cref="Flag"/> gets a
     /// deterministic, unique-per-(actor,target) IRI so a retried flag dedupes on the receiver.
     /// </remarks>
-    public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Un-flags an actor (F-07 moderation): the inverse of <see cref="FlagAsync"/> — builds an
@@ -230,7 +230,7 @@ public interface IActivityPubClient : IDisposable
     /// so the request is signed as that actor).</param>
     /// <param name="targetId">The IRI of the actor to un-flag.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and
     /// is signed by the pipeline. It references the deterministic <see cref="Flag"/> IRI
@@ -238,7 +238,7 @@ public interface IActivityPubClient : IDisposable
     /// instance resolves the original flag's parties from the stored <see cref="Flag"/> and removes the
     /// exact recorded edge (a local flagger of anyone, or a flagger of a local actor).
     /// </remarks>
-    public Task<int> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Enumerates the actors that <paramref name="actorId"/> has flagged (F-07 moderation): reads the
@@ -274,14 +274,14 @@ public interface IActivityPubClient : IDisposable
     /// <param name="actorId">The IRI of the (local) actor performing the mute.</param>
     /// <param name="targetId">The IRI of the actor (a follow of the muter) to mute.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The request is authenticated by Basic auth (the acting actor's credentials, supplied via
     /// <see cref="ActivityPubClientOptions.LocalCredentials"/> or the explicit-credentials overload
     /// <c>MuteAsync(Iri, Iri, ProxyCredentials, CancellationToken)</c>), not by an ActivityPub HTTP
     /// signature: a mute is not a federated activity, so it is not signed or delivered to an inbox.
     /// </remarks>
-    public Task<int> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Mutes an actor (F-07 moderation) with explicit Basic-auth credentials.
@@ -290,8 +290,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="targetId">The IRI of the actor (a follow of the muter) to mute.</param>
     /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
     /// Un-mutes an actor (F-07 moderation): the inverse of <see cref="MuteAsync(Iri, Iri,
@@ -301,8 +301,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="actorId">The IRI of the (local) actor un-muting.</param>
     /// <param name="targetId">The IRI of the actor to un-mute (previously muted).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Un-mutes an actor (F-07 moderation) with explicit Basic-auth credentials.
@@ -311,8 +311,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="targetId">The IRI of the actor to un-mute.</param>
     /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
     /// Enumerates the actors that <paramref name="actorId"/> has muted (F-07 moderation): reads the
@@ -345,7 +345,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="actorId">The IRI of the (local) actor subscribing to the relay.</param>
     /// <param name="relayId">The IRI of the relay (fan-out server) to subscribe to.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// A relay subscription is an Iris-specific local decision (a local actor configures the relays it
     /// wants to fan out through), so — like a mute — it is a Basic-authenticated local request, not a
@@ -353,7 +353,7 @@ public interface IActivityPubClient : IDisposable
     /// <see cref="ActivityPubClientOptions.LocalCredentials"/> or the explicit-credentials overload
     /// <c>SubscribeRelayAsync(Iri, Iri, ProxyCredentials, CancellationToken)</c>).
     /// </remarks>
-    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
+    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
 
     /// <summary>
     /// Subscribes an actor to a relay (F-06) with explicit Basic-auth credentials.
@@ -362,8 +362,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="relayId">The IRI of the relay (fan-out server) to subscribe to.</param>
     /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
     /// Un-subscribes an actor from a relay (F-06): the inverse of <see cref="SubscribeRelayAsync(Iri,
@@ -374,8 +374,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="actorId">The IRI of the (local) actor un-subscribing.</param>
     /// <param name="relayId">The IRI of the relay to un-subscribe from (previously subscribed).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default);
 
     /// <summary>
     /// Un-subscribes an actor from a relay (F-06) with explicit Basic-auth credentials.
@@ -384,8 +384,8 @@ public interface IActivityPubClient : IDisposable
     /// <param name="relayId">The IRI of the relay to un-subscribe from.</param>
     /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the request (<c>204</c> on success).</returns>
-    public Task<int> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
     /// Enumerates the relays that <paramref name="actorId"/> subscribes to (F-06): reads the actor's
@@ -417,7 +417,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="to">Optional audience link(s) for the note (e.g. the public
     /// <c>as:Public</c> address). When null the note carries no explicit <c>to</c>.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// The <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox) —
     /// the "local post" path: the post reaches the author's instance, which records it and federates
@@ -426,7 +426,7 @@ public interface IActivityPubClient : IDisposable
     /// deterministic, unique IRI so a retried post dedupes on the receiver. The note's
     /// <c>attributedTo</c> is the author.
     /// </remarks>
-    public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
+    public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
 
     /// <summary>
     /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
@@ -449,7 +449,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="to">Optional audience link(s) for the reply (e.g. the public <c>as:Public</c>
     /// address). When null the reply carries no explicit <c>to</c>.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// Mirrors <see cref="PostNoteAsync"/> but sets <c>inReplyTo</c> (the parent) and, when
     /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
@@ -457,7 +457,7 @@ public interface IActivityPubClient : IDisposable
     /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The
     /// <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox).
     /// </remarks>
-    public Task<int> PostReplyAsync(
+    public Task<DeliveryResult> PostReplyAsync(
         Iri actorId,
         Iri parentIri,
         string content,

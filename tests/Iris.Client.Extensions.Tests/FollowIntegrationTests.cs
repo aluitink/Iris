@@ -91,9 +91,9 @@ public sealed class FollowIntegrationTests : IDisposable
         // Build a signed client routed to the in-process server and follow the target. The client
         // derives the target's inbox from the target IRI and signs the Follow as the follower.
         using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
-        var status = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
+        var result = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
 
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
 
         // The server's inbox recorded the follow edge: the follower now follows the target.
         var following = await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri));
@@ -125,7 +125,7 @@ public sealed class FollowIntegrationTests : IDisposable
         // Step 1: follow the target. The signed Follow is delivered to the target's inbox; the server
         // records the follow edge and stores the Follow (deduping on its deterministic IRI).
         var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
-        Assert.Equal(202, followStatus);
+        Assert.Equal(202, followStatus.StatusCode);
         Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri)),
             "the follow edge should be recorded after the signed Follow is accepted");
 
@@ -140,7 +140,7 @@ public sealed class FollowIntegrationTests : IDisposable
             Object = [new KristofferStrube.ActivityStreams.Link { Href = followIri.Uri }],
         };
         var undoStatus = await client.DeliverAsync(new Iri(FollowerIri).InboxOf(), undo);
-        Assert.Equal(202, undoStatus);
+        Assert.Equal(202, undoStatus.StatusCode);
 
         // The server's UndoActivityHandler removed the follow edge.
         Assert.False(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri)),
@@ -175,7 +175,7 @@ public sealed class FollowIntegrationTests : IDisposable
 
         // Step 1: alice follows herself (a local actor). The server records the follow edge.
         var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(FollowerIri));
-        Assert.Equal(202, followStatus);
+        Assert.Equal(202, followStatus.StatusCode);
         Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(FollowerIri)),
             "the follow edge should be recorded after the signed self-Follow is accepted");
 
@@ -191,7 +191,7 @@ public sealed class FollowIntegrationTests : IDisposable
             Object = [new KristofferStrube.ActivityStreams.Link { Href = followIri.Uri }],
         };
         var rejectStatus = await client.DeliverAsync(new Iri(FollowerIri).InboxOf(), reject);
-        Assert.Equal(202, rejectStatus);
+        Assert.Equal(202, rejectStatus.StatusCode);
 
         // The server's RejectActivityHandler removed the follow edge.
         Assert.False(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(FollowerIri)),

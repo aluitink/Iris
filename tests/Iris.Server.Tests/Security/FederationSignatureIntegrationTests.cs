@@ -95,7 +95,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(BobInboxIri, follow);
 
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B validated the signature (by fetching A's actor doc to resolve alice's key) and stored
         // the activity under its IRI.
@@ -118,7 +118,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // Deliver the signed Follow over the wire to B's inbox.
         using var client = BuildDeliveryClient(AliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(BobInboxIri, follow);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B's inbox processor dispatched the validated Follow to the FollowActivityHandler, which
         // recorded the directed edge alice → bob in B's follow store. This proves the full inbound
@@ -168,7 +168,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var follow = BuildFollow(aliceActorIri, bobActorIri);
         using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(bobInboxIri, follow);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
         Assert.True(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "B should record that alice follows bob");
@@ -246,7 +246,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         await aPersistence.Follows.RecordFollowAsync(aliceActorIri, bobActorIri);
         using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(bobActorIri.InboxOf(), follow);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
         Assert.True(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "Before the Reject, B should record that alice follows bob");
@@ -261,7 +261,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var reject = FollowIris.BuildReject(bobActorIri, follow);
         using var bClient = BuildDeliveryClient(bobActorIri, bSeeded.Key, a.CreateHandler());
         var rejectStatusCode = await bClient.DeliverAsync(aliceActorIri.InboxOf(), reject);
-        Assert.Equal(202, rejectStatusCode);
+        Assert.Equal(202, rejectStatusCode.StatusCode);
 
         var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
         Assert.True(
@@ -348,7 +348,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         await aPersistence.Follows.RecordFollowAsync(aliceActorIri, bobActorIri);
         using var client = BuildDeliveryClient(aliceActorIri, aSeeded.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(bobInboxIri, follow);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
         Assert.True(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "B should record the provisional follow edge (alice → bob) without auto-accepting");
@@ -452,7 +452,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var follow = BuildFollow(aSeeded.ActorIri, carolActorIri);
         using var client = BuildDeliveryClient(aSeeded.ActorIri, aSeeded.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(carolInboxIri, follow);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B recorded the follow edge (alice → carol).
         Assert.True(
@@ -549,7 +549,7 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         // Deliver carol's signed Announce to carol's inbox on B over the wire.
         using var client = BuildDeliveryClient(carolActorIri, bCarol.Key, bRef.CreateHandler());
         var statusCode = await client.DeliverAsync(carolInboxIri, announce);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B validated carol's signature (resolving carol's key from B's actor doc) and stored the
         // Announce under its deterministic IRI.

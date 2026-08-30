@@ -85,15 +85,62 @@ public class ActivityPubClientTests
             Object = [new Link { Href = actorUri }],
         };
 
-        var status = await client.DeliverAsync(new Iri(InboxIri), follow);
+        var result = await client.DeliverAsync(new Iri(InboxIri), follow);
 
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
+        Assert.True(result.IsSuccess);
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
         Assert.Equal(InboxIri, fake.LastUri!.ToString());
         var contentType = fake.LastRequest.Content!.Headers.ContentType!.MediaType;
         Assert.Equal(ActivityJson.ActivityJsonContentType, contentType);
         var body = Encoding.UTF8.GetString(fake.LastBody);
         Assert.Contains("\"Follow\"", body);
+    }
+
+    [Fact]
+    public async Task DeliverAsync_401_ReturnsUnsuccessfulResult()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Unauthorized)
+        {
+            Content = new StringContent("Unauthorized"),
+        });
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actorUri = new Uri(ActorIri);
+        var follow = new Follow
+        {
+            Actor = [new Link { Href = actorUri }],
+            Object = [new Link { Href = actorUri }],
+        };
+
+        var result = await client.DeliverAsync(new Iri(InboxIri), follow);
+
+        Assert.Equal(401, result.StatusCode);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Unauthorized", result.Body);
+    }
+
+    [Fact]
+    public async Task DeliverAsync_202WithBody_ReturnsSuccessResultWithBody()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = new StringContent("Accepted"),
+        });
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actorUri = new Uri(ActorIri);
+        var follow = new Follow
+        {
+            Actor = [new Link { Href = actorUri }],
+            Object = [new Link { Href = actorUri }],
+        };
+
+        var result = await client.DeliverAsync(new Iri(InboxIri), follow);
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.True(result.IsSuccess);
+        Assert.Equal("Accepted", result.Body);
     }
 
     [Fact]
@@ -114,9 +161,9 @@ public class ActivityPubClientTests
         var client = new ActivityPubClient(new HttpClient(fake));
 
         var follower = new Iri("https://a.domain.local/u/alice");
-        var status = await client.FollowAsync(follower, new Iri(ActorIri));
+        var result = await client.FollowAsync(follower, new Iri(ActorIri));
 
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
         // The follow is published to the *follower's own* outbox (the write surface for the activities an
         // actor authors — the client never addresses a recipient's inbox).
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
@@ -142,9 +189,9 @@ public class ActivityPubClientTests
         var client = new ActivityPubClient(new HttpClient(fake));
 
         var community = new Iri("https://b.domain.local/c/iris");
-        var status = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), community);
+        var result = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), community);
 
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
         // Following a community is still published to the *follower's own* outbox (the write surface for
         // the activities an actor authors); the object is the community (the server resolves the recipient).
         Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
@@ -158,10 +205,10 @@ public class ActivityPubClientTests
         var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.BadRequest));
         var client = new ActivityPubClient(new HttpClient(fake));
 
-        var status = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), new Iri(ActorIri));
+        var result = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), new Iri(ActorIri));
 
         // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed follow).
-        Assert.Equal(400, status);
+        Assert.Equal(400, result.StatusCode);
     }
 
     // --- PostNoteAsync (J-6): the client's one-call "post a note" ----------------------
@@ -175,9 +222,9 @@ public class ActivityPubClientTests
         var client = new ActivityPubClient(new HttpClient(fake));
 
         var author = new Iri("https://a.domain.local/u/alice");
-        var status = await client.PostNoteAsync(author, "hello world");
+        var result = await client.PostNoteAsync(author, "hello world");
 
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
         // The post is published to the *author's own* outbox (the "local post" path — the outbox is the
         // write surface for the activities an actor authors).
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
@@ -204,11 +251,11 @@ public class ActivityPubClientTests
         Assert.StartsWith($"{author.Value}/creates/", createId);
         // Same content → same ids (dedupe); different content → different ids.
         var again = await client.PostNoteAsync(author, "hello world");
-        Assert.Equal(202, again);
+        Assert.Equal(202, again.StatusCode);
         using var doc2 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
         Assert.Equal(noteId, doc2.RootElement.GetProperty("object").GetProperty("id").GetString());
         var different = await client.PostNoteAsync(author, "a different note");
-        Assert.Equal(202, different);
+        Assert.Equal(202, different.StatusCode);
         using var doc3 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
         Assert.NotEqual(noteId, doc3.RootElement.GetProperty("object").GetProperty("id").GetString());
     }
@@ -234,9 +281,9 @@ public class ActivityPubClientTests
         var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.BadRequest));
         var client = new ActivityPubClient(new HttpClient(fake));
 
-        var status = await client.PostNoteAsync(new Iri("https://a.domain.local/u/alice"), "hello");
+        var result = await client.PostNoteAsync(new Iri("https://a.domain.local/u/alice"), "hello");
 
         // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed post).
-        Assert.Equal(400, status);
+        Assert.Equal(400, result.StatusCode);
     }
 }

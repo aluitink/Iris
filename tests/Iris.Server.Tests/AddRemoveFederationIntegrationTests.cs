@@ -81,7 +81,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_aliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_communityInboxIri, add);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B validated the signature (by fetching alice's actor doc from A to resolve her key) and stored
         // the Add.
@@ -110,7 +110,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_aliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_communityInboxIri, remove);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // B stored the Remove and removed alice from the community's member set.
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(remove.Id!), out var stored));
@@ -129,7 +129,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(_aliceActorIri, _aliceKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_bobInboxIri, add);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The Add is stored (validated), but a person's followers are not modified by Add/Remove. The
         // recipient is a person, so no community membership is recorded (the seeded community iris is
@@ -158,7 +158,7 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
 
         using var client = BuildDeliveryClient(unknownActorIri, unknownKey, _b.CreateHandler());
         var statusCode = await client.DeliverAsync(_communityInboxIri, add);
-        Assert.Equal(401, statusCode);
+        Assert.Equal(401, statusCode.StatusCode);
 
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(add.Id!), out _));
         Assert.False(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));

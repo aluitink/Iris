@@ -81,10 +81,10 @@ public sealed class SampleServerFederationTests : IDisposable
             new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
             _server.CreateHandler());
 
-        var status = await client.FollowAsync(aliceIri, ActorIri(SampleServer.BobHandle));
+        var result = await client.FollowAsync(aliceIri, ActorIri(SampleServer.BobHandle));
 
         // 202 Accepted: the full inbound pipeline ran (signature verified, handler recorded the edge).
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
         Assert.True(
             await _persistence.Follows.IsFollowingAsync(aliceIri, ActorIri(SampleServer.BobHandle)));
     }
@@ -157,8 +157,8 @@ public sealed class SampleServerFederationTests : IDisposable
             new ActivityPubClientOptions { ActorId = bobIri, EnableRetry = false },
             _server.CreateHandler());
 
-        var status = await client.FollowAsync(bobIri, ActorIri("alice"));
-        Assert.Equal(202, status);
+        var result = await client.FollowAsync(bobIri, ActorIri("alice"));
+        Assert.Equal(202, result.StatusCode);
         Assert.True(await _persistence.Follows.IsFollowingAsync(bobIri, ActorIri("alice")));
     }
 

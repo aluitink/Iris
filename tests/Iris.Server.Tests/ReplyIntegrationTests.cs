@@ -169,14 +169,14 @@ public sealed class ReplyIntegrationTests : IDisposable
     {
         using var client = CreateClient();
 
-        var status = await client.PostReplyAsync(
+        var result = await client.PostReplyAsync(
             ActorIri,
             ParentIri,
             "a fresh reply to n1",
             mentions: [Mentioned]);
 
         // The signed Create reaches alice's inbox; the handler records the parent → child edge.
-        Assert.Equal(202, status);
+        Assert.Equal(202, result.StatusCode);
 
         // The new reply is now listed under the parent's replies collection (3 total: r1, r2, new).
         using var reader = CreateClient();

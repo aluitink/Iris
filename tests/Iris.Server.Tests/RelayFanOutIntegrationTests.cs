@@ -94,7 +94,7 @@ public sealed class RelayFanOutIntegrationTests : IDisposable
         // records it in alice's outbox (J-8) and fans it out to the relay (F-06), signed as alice. A's
         // host DeliveryWorker POSTs the Create to the relay's inbox over the wire.
         var status = await PostToInboxAsync(_a, aliceActorIri, create);
-        Assert.Equal(202, status);
+        Assert.Equal(202, status.StatusCode);
 
         // Wait on the EFFECT of the fan-out (R storing the Create), not on A's storage: A's inbox
         // processor stores the activity before dispatching it to the handler, so "stored on A" is not a
@@ -136,7 +136,7 @@ public sealed class RelayFanOutIntegrationTests : IDisposable
         // outbox and fans the boost out to the relay (F-06), signed as alice. A's host DeliveryWorker
         // POSTs the Announce to the relay's inbox over the wire.
         var status = await PostToInboxAsync(_a, aliceActorIri, announce);
-        Assert.Equal(202, status);
+        Assert.Equal(202, status.StatusCode);
 
         // Wait on the EFFECT of the fan-out (R storing the Announce).
         await WaitForAsync(async () =>
@@ -173,7 +173,7 @@ public sealed class RelayFanOutIntegrationTests : IDisposable
 
         var create = BuildCreate(bobActorIri);
         var status = await PostToInboxAsync(a, bobActorIri, create);
-        Assert.Equal(202, status);
+        Assert.Equal(202, status.StatusCode);
 
         // Wait for bob's outbox to surface the post (the handler ran).
         await WaitForAsync(async () =>
@@ -196,7 +196,7 @@ public sealed class RelayFanOutIntegrationTests : IDisposable
     /// "local post" path the client uses), routed to the in-process <paramref name="server"/>. Returns the
     /// HTTP status (202 Accepted when the full inbound pipeline — signature validation + handler — ran).
     /// </summary>
-    private static async Task<int> PostToInboxAsync(TestServer server, Iri actorIri, Activity activity)
+    private static async Task<DeliveryResult> PostToInboxAsync(TestServer server, Iri actorIri, Activity activity)
     {
         var keyStore = server.Services.GetRequiredService<IKeyStore>();
         var keyProvider = server.Services.GetRequiredService<IKeyProvider>();

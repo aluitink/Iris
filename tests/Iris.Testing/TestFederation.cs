@@ -107,7 +107,7 @@ public static class TestFederation
         var client = factory.Create(
             new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
             server.CreateHandler());
-        var status = await client.DeliverAsync(actorIri.InboxOf(), activity);
-        return (status, client);
+        var result = await client.DeliverAsync(actorIri.InboxOf(), activity);
+        return (result.StatusCode, client);
     }
 }

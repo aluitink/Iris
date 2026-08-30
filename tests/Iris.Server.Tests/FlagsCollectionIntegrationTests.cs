@@ -105,7 +105,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
     {
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
         var statusCode = await client.FlagAsync(_bobActorIri, _carolActorIri);
-        Assert.Equal(202, statusCode);
+        Assert.Equal(202, statusCode.StatusCode);
 
         // The instance validated the signature (bob's key is local) and recorded the flag edge: carol
         // is in bob's flags (the forward edge), and bob knows he flagged carol.
@@ -164,13 +164,13 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
 
         // bob flags carol (202), the edge is recorded, and carol appears in bob's flags.
-        Assert.Equal(202, await client.FlagAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(202, (await client.FlagAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.True(await _persistence.Moderation.HasFlaggedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(_carolActorIri, await _persistence.Moderation.GetFlagsAsync(_bobActorIri));
 
         // bob un-flags carol: the Undo of the Flag (actor = bob, object = the original Flag) is
         // delivered to carol's inbox; the instance removes the recorded edge.
-        Assert.Equal(202, await client.UnflagAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(202, (await client.UnflagAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.False(await _persistence.Moderation.HasFlaggedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetFlagsAsync(_bobActorIri));
     }
@@ -193,7 +193,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
         });
 
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
-        Assert.Equal(202, await client.FlagAsync(_bobActorIri, _carolActorIri));
+        Assert.Equal(202, (await client.FlagAsync(_bobActorIri, _carolActorIri)).StatusCode);
 
         // The flag edge is recorded, but carol's content is still in bob's followed feed (a flag does
         // not block).
