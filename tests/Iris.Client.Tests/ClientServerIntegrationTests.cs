@@ -92,7 +92,7 @@ public class ClientServerIntegrationTests : IDisposable
         var webFinger = new WebFingerClient(new HttpClient(_server.Handler));
 
         // WebFinger for bob@b.domain.local resolves to the actor document IRI.
-        var resolved = await webFinger.ResolveActorAsync($"acct:{ServerActor}@{ServerHost}");
+        var resolved = await webFinger.ResolveActorAsync($"acct:{ServerActor}@{ServerHost}", dialScheme: "https");
 
         Assert.Equal(_server.ActorIri, resolved);
         // The WebFinger request reached the server.

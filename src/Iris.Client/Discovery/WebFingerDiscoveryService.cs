@@ -19,6 +19,6 @@ public sealed class WebFingerDiscoveryService : IDiscoveryService
     }
 
     /// <inheritdoc/>
-    public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
-        => _webFinger.ResolveActorAsync(account, ct);
+    public Task<Iri?> ResolveActorAsync(string account, string dialScheme = "https", CancellationToken ct = default)
+        => _webFinger.ResolveActorAsync(account, dialScheme, ct);
 }

@@ -39,7 +39,7 @@ else
 {
     <div class="card">
         <h2>Logged on</h2>
-        <p>Actor: <code>@Session.ActorIri?.Value</code></p>
+        <p>Actor: <code>@Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value</code></p>
         <p class="muted">Dialing <code>@Session.DialBaseUri</code></p>
         <p class="muted">
             The explorer screens (instance overview, actors, actor detail, object view, community,
@@ -47,6 +47,38 @@ else
         </p>
         <button class="secondary" @onclick="LogOut">Log out</button>
     </div>
+
+    @if (Session.RecentInstances.Count > 0)
+    {
+        <div class="card">
+            <h2>Recent instances</h2>
+            <p class="muted">
+                Switch instance: re-enter the password and the session logs out of the current
+                identity and logs on to the selected instance by its WebFinger address.
+            </p>
+            <ul class="recents">
+                @foreach (var recent in Session.RecentInstances)
+                {
+                    <li>
+                        <code>@recent.Handle</code>@recent.Host
+                        @if (SwitchTarget is not null && SwitchTarget == recent)
+                        {
+                            <input class="inline" type="password" @bind="SwitchPassword" placeholder="password" />
+                            <button @onclick="() => SwitchAsync(recent)" disabled="Busy">Switch</button>
+                        }
+                        else
+                        {
+                            <button class="secondary" @onclick="() => SelectSwitchTarget(recent)">Use</button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (Busy)
+            {
+                <span class="muted">Switching…</span>
+            }
+        </div>
+    }
 
     @if (FeedCount >= 0)
     {
@@ -74,6 +106,8 @@ else
     private string? Error { get; set; }
     private bool Busy { get; set; }
     private int FeedCount { get; set; } = -1;
+    private RecentInstance? SwitchTarget { get; set; }
+    private string SwitchPassword { get; set; } = "iris-sample";
 
     protected override async Task OnInitializedAsync()
     {
@@ -120,7 +154,41 @@ else
     {
         Session.LogOut();
         FeedCount = -1;
+        SwitchTarget = null;
         StateHasChanged();
+    }
+
+    private void SelectSwitchTarget(RecentInstance recent)
+    {
+        SwitchTarget = recent;
+        Error = null;
+        StateHasChanged();
+    }
+
+    private async Task SwitchAsync(RecentInstance recent)
+    {
+        Busy = true;
+        Error = null;
+        try
+        {
+            var ok = await Session.SwitchInstanceAsync(recent, SwitchPassword);
+            if (!ok)
+            {
+                Error = "Switch failed (wrong password, or the instance is no longer running?).";
+                return;
+            }
+
+            SwitchTarget = null;
+            await LoadFeedAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
     }
 
     private async Task LoadFeedAsync()

@@ -50,19 +50,31 @@ public static partial class SampleBlazorClient
     /// Builds the innermost transport handler for both the authenticator and the client. When
     /// <see langword="null"/> a real <see cref="HttpClientHandler"/> is used (the wire).
     /// </param>
+    /// <param name="discoveryFactory">
+    /// Optionally builds the bundle's WebFinger <see cref="IDiscoveryService"/> over the given
+    /// (already-created) transport handler, so discovery rides the same handler as the authenticator.
+    /// When <see langword="null"/> the bundle builds its own default (a plain <c>https</c> client).
+    /// </param>
+    /// <param name="actorIriOverride">
+    /// The authoritative actor IRI to authenticate as (e.g. the WebFinger-resolved IRI, whose host may
+    /// differ from <paramref name="serverBaseUri"/> for local instances). When <see langword="null"/>
+    /// the IRI is derived as <c>{serverBaseUri}/ap/v1/u/{handle}</c>.
+    /// </param>
     /// <returns>The composed service (owns the bundle and any clients it builds).</returns>
     public static ClientService CreateClientService(
         Uri serverBaseUri,
         string handle,
         string password,
-        Func<HttpMessageHandler>? transportFactory = null)
+        Func<HttpMessageHandler>? transportFactory = null,
+        Func<HttpMessageHandler, IDiscoveryService>? discoveryFactory = null,
+        Iri? actorIriOverride = null)
     {
         ArgumentNullException.ThrowIfNull(serverBaseUri);
         ArgumentException.ThrowIfNullOrEmpty(handle);
         ArgumentException.ThrowIfNullOrEmpty(password);
 
         var baseString = serverBaseUri.ToString().TrimEnd('/');
-        var actorIri = new Iri($"{baseString}/ap/v1/u/{handle}");
+        var actorIri = actorIriOverride ?? new Iri($"{baseString}/ap/v1/u/{handle}");
 
         // The transport is shared by the authenticator (which fetches the owner-only actor document
         // to log in) and every client the service builds (which sign + fetch through the pipeline).
@@ -84,9 +96,17 @@ public static partial class SampleBlazorClient
             UseProxyFallback = true,
         };
 
-        var bundle = IrisClientBuilder.Create(options)
-            .WithAuthenticator(authenticator)
-            .Build();
+        var builder = IrisClientBuilder.Create(options).WithAuthenticator(authenticator);
+
+        // An optional discovery service (WebFinger) rides the same transport as the authenticator so
+        // the same in-process handler / wire reaches the instance's /.well-known/webfinger. When not
+        // supplied the bundle builds its own default (a plain https HttpClient).
+        if (discoveryFactory is not null)
+        {
+            builder.WithDiscovery(discoveryFactory(transport));
+        }
+
+        var bundle = builder.Build();
 
         return new ClientService(bundle, actorIri, transportFactory ?? (() => new HttpClientHandler()));
     }

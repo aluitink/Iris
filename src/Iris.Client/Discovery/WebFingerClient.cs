@@ -50,14 +50,24 @@ public sealed class WebFingerClient : IWebFingerResolver
     /// </summary>
     public const string WebFingerContentType = "application/jrd+json";
 
+    /// <inheritdoc/>
+    public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
+        => ResolveActorAsync(account, dialScheme: "https", ct);
+
     /// <summary>
     /// Resolves the actor IRI for the given account via WebFinger.
     /// </summary>
     /// <param name="account">The account handle (e.g. <c>@user@example.com</c>) or a full
     /// <c>acct:</c> URI. The <c>@</c> prefix is optional; a bare <c>user@host</c> is also accepted.</param>
+    /// <param name="dialScheme">
+    /// The scheme used to dial the account's instance for the <c>/.well-known/webfinger</c> query.
+    /// Defaults to <c>https</c> (the RFC 8410 default and the public-web norm). Pass <c>http</c> for a
+    /// local or self-signed instance whose well-known document is served over plain HTTP.
+    /// </param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The actor IRI, or null if discovery failed or no <c>self</c> link was found.</returns>
-    public async Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
+    public async Task<Iri?> ResolveActorAsync(
+        string account, string dialScheme = "https", CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(account);
         var subject = NormalizeSubject(account);
@@ -68,22 +78,24 @@ public sealed class WebFingerClient : IWebFingerResolver
             var (value, _) = await _cache.GetAsync(
                 subjectIri,
                 bypassCache: false,
-                async iri => await ResolveActorFromNetworkAsync(iri.Value, ct).ConfigureAwait(false),
+                async iri => await ResolveActorFromNetworkAsync(iri.Value, dialScheme, ct).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
             return value;
         }
 
-        return await ResolveActorFromNetworkAsync(subject, ct).ConfigureAwait(false);
+        return await ResolveActorFromNetworkAsync(subject, dialScheme, ct).ConfigureAwait(false);
     }
 
-    private async Task<Iri?> ResolveActorFromNetworkAsync(string subject, CancellationToken ct)
+    private async Task<Iri?> ResolveActorFromNetworkAsync(string subject, string dialScheme, CancellationToken ct)
     {
         // The WebFinger resource lives on the *account's own host*, so derive the base URL from
         // the host in the acct: URI rather than relying on the HttpClient's BaseAddress.
         var host = Uri.UnescapeDataString(subject["acct:".Length..]);
         var at = host.IndexOf('@');
         var hostPart = at >= 0 ? host[(at + 1)..] : host;
-        var wellKnown = $"https://{hostPart}/.well-known/webfinger?resource={Uri.EscapeDataString(subject)}";
+        // The scheme is a dial detail (local instances serve their well-known over http); the actor
+        // IRI returned in the `self` link is authoritative and carries the instance's real scheme.
+        var wellKnown = $"{dialScheme}://{hostPart}/.well-known/webfinger?resource={Uri.EscapeDataString(subject)}";
 
         HttpResponseMessage httpResponse;
         try

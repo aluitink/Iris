@@ -212,8 +212,8 @@ public class CacheWiringTests
         var cache = new WebFingerCache();
         var client = new WebFingerClient(new HttpClient(handler), cache);
 
-        var first = await client.ResolveActorAsync("@alice@a.domain.local");
-        var second = await client.ResolveActorAsync("@alice@a.domain.local");
+        var first = await client.ResolveActorAsync("@alice@a.domain.local", dialScheme: "https");
+        var second = await client.ResolveActorAsync("@alice@a.domain.local", dialScheme: "https");
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -237,8 +237,8 @@ public class CacheWiringTests
         var handler = new CountingHandler(json);
         var client = new WebFingerClient(new HttpClient(handler));
 
-        await client.ResolveActorAsync("@alice@a.domain.local");
-        await client.ResolveActorAsync("@alice@a.domain.local");
+        await client.ResolveActorAsync("@alice@a.domain.local", dialScheme: "https");
+        await client.ResolveActorAsync("@alice@a.domain.local", dialScheme: "https");
 
         Assert.Equal(2, handler.Hits);
     }

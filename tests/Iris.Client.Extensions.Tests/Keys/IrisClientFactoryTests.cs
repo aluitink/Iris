@@ -276,7 +276,7 @@ public sealed class IrisClientFactoryTests
 
         public string? LastAccount { get; private set; }
 
-        public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
+        public Task<Iri?> ResolveActorAsync(string account, string dialScheme = "https", CancellationToken ct = default)
         {
             LastAccount = account;
             return Task.FromResult(_result);

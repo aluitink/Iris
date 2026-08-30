@@ -1,5 +1,6 @@
 using System.Net.Http;
 using Iris.Client;
+using Iris.Client.Discovery;
 using Iris.Client.Extensions;
 using Iris.Core;
 using Iris.Samples.SampleBlazorClient.Explorer;
@@ -67,6 +68,7 @@ public sealed class ExplorerSession : IDisposable
     private ClientService? _service;
     private IActivityPubClient? _client;
     private Uri? _dialBaseUri;
+    private Iri? _resolvedActorIri;
     private readonly List<RecentInstance> _recent = [];
 
     /// <summary>
@@ -92,6 +94,13 @@ public sealed class ExplorerSession : IDisposable
     public Iri? ActorIri => _service?.ActorIri;
 
     /// <summary>
+    /// Gets the actor IRI the session resolved the logged-on address to (via WebFinger when
+    /// available, else the direct IRI built from the address's host), or <see langword="null"/> when
+    /// logged out. This is the authoritative advertised IRI a UI displays.
+    /// </summary>
+    public Iri? ResolvedActorIri => _resolvedActorIri;
+
+    /// <summary>
     /// Gets the dial base URI of the current instance, or <see langword="null"/> when logged out.
     /// </summary>
     public Uri? DialBaseUri => _dialBaseUri;
@@ -102,12 +111,15 @@ public sealed class ExplorerSession : IDisposable
     public IReadOnlyList<RecentInstance> RecentInstances => _recent;
 
     /// <summary>
-    /// Logs on to an instance by WebFinger address. The client dials <paramref name="dialBaseUri"/>
-    /// (what the browser reaches) while the actor's <em>advertised</em> IRI is built from the address's
-    /// host (which may differ for local instances). On success the session holds the actor's key and
-    /// the signed client is ready; the instance is recorded in <see cref="RecentInstances"/>.
+    /// Logs on to an instance by WebFinger address (the headline explorer capability). The address is
+    /// first resolved to an authoritative actor IRI via the instance's WebFinger
+    /// (<c>/.well-known/webfinger</c>); when resolution is unavailable the session falls back to the
+    /// direct actor IRI built from the address's host. The client dials <paramref name="dialBaseUri"/>
+    /// (what the browser reaches) while the actor's <em>advertised</em> IRI may differ for local
+    /// instances. On success the session holds the actor's key and the signed client is ready; the
+    /// instance is recorded in <see cref="RecentInstances"/>.
     /// </summary>
-    /// <param name="address">The WebFinger address (e.g. <c>alice@iris-a</c>).</param>
+    /// <param name="address">The WebFinger address (e.g. <c>alice@iris-a</c> or <c>@alice@iris-a</c>).</param>
     /// <param name="password">The actor's Basic-auth password.</param>
     /// <param name="dialBaseUri">The base URI the client dials (e.g. <c>http://localhost:8081</c>).</param>
     /// <param name="ct">A cancellation token.</param>
@@ -126,9 +138,37 @@ public sealed class ExplorerSession : IDisposable
         // the new one, so the session holds exactly one active identity at a time.
         DisposeCurrent();
 
-        var actorIri = parsed.ToActorIri(dialBaseUri);
+        // Step 1 (the headline feature): resolve the address to an authoritative actor IRI via the
+        // instance's WebFinger, over the same transport the session uses to reach the instance. The
+        // dial scheme (http for local instances) is the address's scheme. WebFinger is a public GET
+        // (no signature), so it can run before the Basic-auth login.
+        var discoveryTransport = _transportFactory();
+        var discovery = new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(discoveryTransport, disposeHandler: false)));
+        Iri? resolvedIri = null;
+        try
+        {
+            resolvedIri = await discovery.ResolveActorAsync(parsed.AcctResource, parsed.Scheme, ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException)
+        {
+            // Unreachable / not-a-webfinger endpoint: fall through to the direct IRI below.
+            resolvedIri = null;
+        }
+
+        // Step 2: the actor IRI to authenticate as — the WebFinger-resolved IRI when available
+        // (authoritative), else the direct IRI built from the address's host.
+        var actorIri = resolvedIri ?? parsed.ToActorIri(dialBaseUri);
+
+        // Build the client (the discovery rides the injected transport so the same handler reaches
+        // the instance's well-known document) and log in (Basic auth → owner-only actor document →
+        // PEM private key). The actor IRI to authenticate as is the WebFinger-resolved IRI when
+        // available (its host may differ from the dial base for local instances); the dial base URI is
+        // still what the transport reaches.
         var service = SampleBlazorClient.CreateClientService(
-            dialBaseUri, parsed.Handle, password, _transportFactory);
+            dialBaseUri, parsed.Handle, password,
+            _transportFactory,
+            transport => new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(transport, disposeHandler: false))),
+            actorIriOverride: actorIri);
 
         var logged = await service.LoginAsync(ct).ConfigureAwait(false);
         if (!logged)
@@ -140,8 +180,26 @@ public sealed class ExplorerSession : IDisposable
         _service = service;
         _bundle = service.Bundle;
         _dialBaseUri = dialBaseUri;
+        _resolvedActorIri = actorIri;
         RecordRecent(parsed, dialBaseUri, actorIri);
         return true;
+    }
+
+    /// <summary>
+    /// Switches to a recently logged-on instance (one-click instance switching, §4.2). Logs out the
+    /// current identity and logs on to <paramref name="instance"/> by its remembered address, dial
+    /// base URI, and password.
+    /// </summary>
+    /// <param name="instance">The recent instance to switch to. Must not be null.</param>
+    /// <param name="password">The actor's Basic-auth password (re-entered, since the session does not
+    /// store credentials).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns><see langword="true"/> when switched; <see langword="false"/> on rejection.</returns>
+    public async Task<bool> SwitchInstanceAsync(
+        RecentInstance instance, string password, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(instance);
+        return await LogOnAsync($"{instance.Handle}@{instance.Host}", password, instance.DialBaseUri, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -198,6 +256,7 @@ public sealed class ExplorerSession : IDisposable
             _service = null;
             _bundle = null;
             _dialBaseUri = null;
+            _resolvedActorIri = null;
         }
     }
 

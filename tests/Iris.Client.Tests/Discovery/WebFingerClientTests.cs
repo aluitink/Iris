@@ -29,7 +29,7 @@ public class WebFingerClientTests
     private static async Task<Iri?> ResolveAsync(string account, HttpResponseMessage response)
     {
         var client = new WebFingerClient(new HttpClient(new FakeHttpHandler(response)));
-        return await client.ResolveActorAsync(account);
+        return await client.ResolveActorAsync(account, dialScheme: "https");
     }
 
     [Fact]

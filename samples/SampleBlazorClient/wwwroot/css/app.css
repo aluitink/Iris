@@ -98,10 +98,25 @@ button.secondary {
 }
 
 /* Lists */
-ul.instances, ul.feed {
+ul.instances, ul.feed, ul.recents {
     list-style: none;
     padding: 0;
     margin: 0.5rem 0 0;
+}
+
+ul.recents li {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+ul.recents li button {
+    margin-top: 0;
+}
+
+input.inline {
+    width: auto;
+    margin: 0 0.25rem;
 }
 
 ul.instances li, ul.feed li {

@@ -186,13 +186,18 @@ public sealed class IrisClientBundle : IDisposable
 
     /// <summary>
     /// Resolves an account handle to an actor IRI (a convenience for
-    /// <see cref="Discovery"/>/<see cref="IDiscoveryService.ResolveActorAsync(string, CancellationToken)"/>).
+    /// <see cref="Discovery"/>/<see cref="IDiscoveryService.ResolveActorAsync(string, string, CancellationToken)"/>),
+    /// dialing the instance over <paramref name="dialScheme"/>.
     /// </summary>
     /// <param name="account">The account handle (e.g. <c>@user@example.com</c>) or an <c>acct:</c> URI.</param>
+    /// <param name="dialScheme">
+    /// The scheme used to dial the instance's WebFinger endpoint (<c>https</c> by default; <c>http</c>
+    /// for a local/self-signed instance).
+    /// </param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The actor IRI, or <see langword="null"/> if the account could not be resolved.</returns>
-    public Task<Iri?> ResolveActorAsync(string account, CancellationToken ct = default)
-        => Discovery.ResolveActorAsync(account, ct);
+    public Task<Iri?> ResolveActorAsync(string account, string dialScheme = "https", CancellationToken ct = default)
+        => Discovery.ResolveActorAsync(account, dialScheme, ct);
 
     /// <summary>
     /// Builds a pre-configured <see cref="IActivityPubClient"/> for the given actor.
