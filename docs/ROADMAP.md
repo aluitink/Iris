@@ -69,6 +69,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] F-15: outbox-publish `Announce` full fan-out to all remote followers (`OutboxPublishHandler` `Announce` branch + shared `GetRemoteNonBlockedFollowersAsync`, [change 087](changes/087-phase12-f15-outbox-announce-fanout.md)).
 - [x] F-19: typed `DeliveryResult` for all client write operations (`DeliverAsync` + convenience methods return `Task<DeliveryResult>` instead of `Task<int>`, [change 088](changes/088-phase12-f19-typed-delivery-result.md)).
 - [x] F-16: community membership primitives `Offer`/`Invite`/`Join`/`Leave` (`MembershipActivityHandler` + specificity-based `InboxProcessor` dispatch; `AddRemoveActivityHandler` split into exact-type `AddActivityHandler`/`RemoveActivityHandler`, [change 089](changes/089-phase12-f16-membership-primitives.md)).
+- [x] F-18: unordered `Collection` support in the client's collection enumeration (`FetchCollectionPageAsync` accepts a base `Collection`, guarded by `is not OrderedCollection`, [change 090](changes/090-phase12-f18-unordered-collection.md)).
 - [ ] Finish the remaining lower-priority conformance gaps.
 - [ ] Keep the regression suite green for signatures, pagination, WebFinger, NodeInfo, and object handling.
 - [ ] Confirm the outstanding compatibility edge cases against the current feature inventory.
