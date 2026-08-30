@@ -221,6 +221,47 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    {
+        // An un-follow is the ActivityStreams inverse of a Follow: an Undo whose object references the
+        // original Follow by IRI. Per the ActivityPub un-follow convention (the same one the server's
+        // UndoActivityHandler follows), the Undo is delivered to the follower's own inbox (actorId) — the
+        // party that made the follow undoes it — not the un-followed actor's inbox. The object IRI reuses
+        // FollowAsync's deterministic {actorId}/follows/{targetId} IRI so the receiver resolves exactly the
+        // follow that was recorded; the Undo gets its own deterministic unique-per-(actor,target) IRI so a
+        // retried un-follow dedupes.
+        var followIri = new Iri($"{actorId.Value}/follows/{targetId.Value}");
+        var undo = new Undo
+        {
+            Id = $"{actorId.Value}/unfollows/{targetId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = followIri.Uri }],
+        };
+
+        return DeliverAsync(actorId.InboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // A like is delivered to the liker's OWN inbox (the local-write path, exactly like PostNoteAsync):
+        // the instance records the like edge (liker → object) in the liker's `liked` collection and
+        // federates it to the object's owner. A content object (the liked note) has no inbox of its own —
+        // only actors do — so delivering to the object's "inbox" would not match the actor-inbox route. The
+        // `Id` is a deterministic, unique-per-(actor,object) IRI so a retried like dedupes on the receiver.
+        // The ActivityStreams Like type has no typed scalar beyond the library's, so the object-initializer
+        // form is used and the constructor sets `Type = "Like"`.
+        var like = new Like
+        {
+            Id = $"{actorId.Value}/likes/{objectId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = objectId.Uri }],
+        };
+
+        return DeliverAsync(actorId.InboxOf(), like, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // A block is delivered to the target's inbox (per ActivityPub §5.2.1.3) and is signed by the

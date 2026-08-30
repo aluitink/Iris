@@ -67,6 +67,25 @@ else
                     <tr><th>Flags</th><td>@mod.Flags</td></tr>
                 </table>
             </div>
+
+            <div class="card">
+                <h3>Follow / unfollow</h3>
+                <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
+                <button @onclick="FollowAsync" disabled="WriteBusy">Follow</button>
+                <button @onclick="UnfollowAsync" disabled="WriteBusy">Unfollow</button>
+                @if (WriteBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (WriteResult is not null)
+                {
+                    <p class="muted">Status: <code>@WriteResult</code></p>
+                }
+                @if (WriteError is not null)
+                {
+                    <div class="error">@WriteError</div>
+                }
+            </div>
         }
     }
 }
@@ -82,6 +101,9 @@ else
     private IObject? ActorDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
     private (int Mutes, int Blocks, int Flags)? Moderation { get; set; }
+    private bool WriteBusy { get; set; }
+    private int? WriteResult { get; set; }
+    private string? WriteError { get; set; }
 
     private async Task LoadAsync()
     {
@@ -136,5 +158,36 @@ else
         }
 
         return count;
+    }
+
+    private async Task FollowAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FollowAsync(actor, target));
+
+    private async Task UnfollowAsync()
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, target));
+
+    private async Task FollowUnfollowAsync(Func<Iri, Iri, Task<int>> write)
+    {
+        if (!Session.IsLoggedIn || ActorIri is null)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            WriteResult = await write(actorIri, ActorIri.Value);
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
+        }
     }
 }

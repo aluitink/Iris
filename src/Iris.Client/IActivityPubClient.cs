@@ -88,6 +88,54 @@ public interface IActivityPubClient : IDisposable
     public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Un-follows <paramref name="targetId"/> as <paramref name="actorId"/> (the inverse of
+    /// <see cref="FollowAsync"/>): builds an <see cref="KristofferStrube.ActivityStreams.Undo"/> of the
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> <paramref name="actorId"/> made of
+    /// <paramref name="targetId"/> and delivers it through the signed pipeline to the follower's own inbox
+    /// (per the ActivityPub un-follow convention — the party that made the follow undoes it, so the
+    /// <c>Undo</c> is addressed to the follower's inbox, not the un-followed actor's).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor un-following (must match the client's signing identity so
+    /// the request is signed as that actor).</param>
+    /// <param name="targetId">The IRI of the actor (or community) previously followed.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to <c>actorId.InboxOf()</c>
+    /// (the follower's own inbox) and is signed by the pipeline. Its <c>object</c> references the original
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> by IRI (the same deterministic
+    /// <c>{actorId}/follows/{targetId}</c> IRI <see cref="FollowAsync"/> mints), and the <see
+    /// cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
+    /// unique-per-(actor,target) IRI so a retried un-follow dedupes on the receiver.
+    /// </remarks>
+    public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
+    /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and delivers it through
+    /// the signed pipeline to the liker's own inbox (the local-write path, exactly like
+    /// <see cref="PostNoteAsync(Iri, string, IEnumerable{Iri}, CancellationToken)"/> — a content object has no
+    /// inbox of its own, only actors do). The instance records the like edge (liker → object) and federates it
+    /// to the object's owner. This is the client's one-call "like" (the caller supplies only the liked
+    /// object's IRI — the <see cref="KristofferStrube.ActivityStreams.Like"/> and the delivery target are
+    /// derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor issuing the like (must match the client's signing identity
+    /// so the request is signed as that actor).</param>
+    /// <param name="objectId">The IRI of the object being liked (a note, post, or other content object).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The HTTP status code of the delivery (e.g. <c>202</c>).</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Like"/> is delivered to the liker's OWN inbox
+    /// (<c>actorId.InboxOf()</c>, the local-write path — a content object has no inbox of its own, only
+    /// actors do) and is signed by the pipeline. The instance records the like edge (liker → object) in the
+    /// liker's <c>liked</c> collection and federates it to the object's owner. The <see
+    /// cref="KristofferStrube.ActivityStreams.Like"/> gets a deterministic, unique-per-(actor,object) IRI so a
+    /// retried like dedupes on the receiver.
+    /// </remarks>
+    public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity and delivers it through the signed
     /// pipeline to the target actor's inbox so that <paramref name="actorId"/> blocks

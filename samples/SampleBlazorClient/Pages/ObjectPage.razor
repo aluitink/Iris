@@ -33,6 +33,21 @@ else
         <div class="card">
             <h3>Object</h3>
             <ObjectView Item="ObjectDoc" />
+            <div class="card" style="margin-top: .75rem">
+                <button @onclick="LikeAsync" disabled="WriteBusy">Like</button>
+                @if (WriteBusy)
+                {
+                    <span class="muted">Liking…</span>
+                }
+                @if (WriteResult is not null)
+                {
+                    <p class="muted">Status: <code>@WriteResult</code></p>
+                }
+                @if (WriteError is not null)
+                {
+                    <div class="error">@WriteError</div>
+                }
+            </div>
         </div>
 
         @if (Replies is not null)
@@ -67,6 +82,10 @@ else
     private string? Error { get; set; }
     private IObject? ObjectDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Replies { get; set; }
+    private Iri? LoadedObjectIri { get; set; }
+    private bool WriteBusy { get; set; }
+    private int? WriteResult { get; set; }
+    private string? WriteError { get; set; }
 
     private async Task LoadAsync()
     {
@@ -89,6 +108,7 @@ else
         {
             var objectIri = new Iri(uri);
             var client = Session.GetClient();
+            LoadedObjectIri = objectIri;
             ObjectDoc = await client.GetObjectAsync(objectIri);
 
             var replies = new List<IObjectOrLink>();
@@ -106,6 +126,31 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    private async Task LikeAsync()
+    {
+        if (!Session.IsLoggedIn || LoadedObjectIri is null)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            WriteResult = await Session.GetClient().LikeAsync(actorIri, LoadedObjectIri.Value);
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
         }
     }
 }

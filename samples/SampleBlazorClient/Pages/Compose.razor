@@ -1,0 +1,98 @@
+@page "/compose"
+@using Iris.Client
+
+<PageTitle>Compose · Iris</PageTitle>
+
+<h2>Compose</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to compose.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <p class="muted">Posting as <code>@(Session.ActorIri?.Value ?? "…")</code></p>
+        <label for="content">Content</label>
+        <textarea id="content" rows="4" @bind="Content" placeholder="What's on your mind?"></textarea>
+
+        <details>
+            <summary>Reply to…</summary>
+            <label for="parent">Parent note IRI (leave empty for a new post)</label>
+            <input id="parent" type="url" @bind="ParentIri" placeholder="http://localhost/ap/v1/u/alice/notes/1" />
+            <label for="mentions">Mentions (comma-separated actor IRIs, optional)</label>
+            <input id="mentions" type="text" @bind="Mentions" placeholder="http://localhost/ap/v1/u/bob" />
+        </details>
+
+        <button @onclick="PostAsync" disabled="Busy">@(string.IsNullOrWhiteSpace(ParentIri) ? "Post note" : "Post reply")</button>
+        @if (Busy)
+        {
+            <span class="muted">Posting…</span>
+        }
+        @if (Result is not null)
+        {
+            <p class="muted">Status: <code>@Result</code></p>
+        }
+        @if (Error is not null)
+        {
+            <div class="error">@Error</div>
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string Content { get; set; } = string.Empty;
+    private string ParentIri { get; set; } = string.Empty;
+    private string Mentions { get; set; } = string.Empty;
+    private bool Busy { get; set; }
+    private int? Result { get; set; }
+    private string? Error { get; set; }
+
+    private async Task PostAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        Busy = true;
+        Result = null;
+        Error = null;
+        try
+        {
+            var client = Session.GetClient();
+            var status = string.IsNullOrWhiteSpace(ParentIri)
+                ? await client.PostNoteAsync(actorIri, Content)
+                : await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions());
+            Result = status;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private IReadOnlyList<Iri>? ParseMentions()
+    {
+        if (string.IsNullOrWhiteSpace(Mentions))
+        {
+            return null;
+        }
+
+        var list = Mentions
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(m => new Iri(m))
+            .ToList();
+        return list.Count > 0 ? list : null;
+    }
+}

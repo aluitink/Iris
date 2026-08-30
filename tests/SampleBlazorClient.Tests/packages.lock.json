@@ -147,6 +147,19 @@
           "Iris.Server": "[1.0.0, )"
         }
       },
+      "iris.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Iris.Core": "[1.0.0, )",
+          "Iris.Server": "[1.0.0, )",
+          "Iris.Server.InMemory": "[1.0.0, )",
+          "Microsoft.AspNetCore.TestHost": "[10.0.0, )",
+          "Microsoft.NET.Test.Sdk": "[17.14.1, )",
+          "coverlet.collector": "[6.0.4, )",
+          "xunit": "[2.9.3, )",
+          "xunit.runner.visualstudio": "[3.1.4, )"
+        }
+      },
       "sampleblazorclient": {
         "type": "Project",
         "dependencies": {

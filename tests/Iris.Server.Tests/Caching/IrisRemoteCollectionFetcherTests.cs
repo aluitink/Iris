@@ -208,6 +208,14 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(202);
 
         /// <inheritdoc/>
+        public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+            => Task.FromResult(202);
+
+        /// <inheritdoc/>
+        public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(202);
+
+        /// <inheritdoc/>
         public Task<int> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
             => Task.FromResult(202);
 
