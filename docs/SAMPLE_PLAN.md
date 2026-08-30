@@ -351,9 +351,14 @@ throughout.
    session log-on/switch/recents, DI); the Phase 7 pipeline facts stay green. (The session's log-on-by-
    address + recents — the S4 core minus WebFinger *resolve* and the UI — are included here; S4 adds the
    resolve step + screens.)
-- **S4 — Logon by WebFinger address + instance switching.** The headline feature (§4.2): address parse →
-  WebFinger resolve → `LoginAsync` → signed client; recent-instances list; log out/switch. In-process
-  tests: logon to two in-process instances by address, key loaded, client signs.
+ - [x] **S4 — Logon by WebFinger address + instance switching** (done, [change 073](changes/073-webfinger-resolve-instance-switching.md)).
+    The headline feature (§4.2): address parse → **WebFinger resolve** (scheme-aware `dialScheme`, default
+    `https` / `http` for local instances) → `LoginAsync` → signed client; recent-instances list;
+    log out/switch. The session resolves the address to the authoritative actor IRI over the injected
+    transport (falling back to the direct IRI when unreachable) and authenticates as that IRI (whose host
+    may differ from the dial base for local instances). In-process tests: WebFinger resolve, direct-IRI
+    fallback, instance switch, scheme-aware `WebFingerClient`; logon to two in-process instances by
+    address, key loaded, client signs.
 - **S5 — Base URL vs IRI host separation.** The transport-base vs advertised-IRI split (§4.4) + instance
   base-URL config surface. Tests: client dials one base URL, requests IRIs carrying another host.
 - **S6 — Explorer screens: read paths.** Instance overview, actors directory (search), actor detail
