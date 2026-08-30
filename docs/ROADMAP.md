@@ -65,6 +65,7 @@ substantial design calls: [decisions/](decisions/README.md).
 
 ### Phase 12 — Spec Conformance & Missing Features
 - [x] G-3: community outbox write surface for outbound community follow (`POST /ap/v1/c/{name}/outbox`, [change 085](changes/085-phase12-community-outbox-g3.md)).
+- [x] G-1 residual: outbox-publish `Create` full fan-out to all remote followers (`RecordCreateLocalAsync` → `IEnumerable<Iri>`, [change 086](changes/086-phase12-g1-residual-outbox-create-fanout.md)).
 - [ ] Finish the remaining lower-priority conformance gaps.
 - [ ] Keep the regression suite green for signatures, pagination, WebFinger, NodeInfo, and object handling.
 - [ ] Confirm the outstanding compatibility edge cases against the current feature inventory.
