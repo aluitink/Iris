@@ -37,6 +37,19 @@ public static class Program
         // index.html — so the WASM host page is served at the site root.
         app.UseDefaultFiles();
         app.UseStaticFiles();
+
+        // OAuth2 callback route (Phase 15.2): when the browser completes the OAuth2 authorization-code
+        // flow the server 302-redirects it here (/{callback}?code=…&state=…). This is a real server
+        // route (mapped before the SPA fallback) so the browser lands on it and the WASM app (which is
+        // served at /) can read the code + state from the address bar. The static host itself does not
+        // exchange the code (it has no ActivityPub client); the WASM app's Home screen does, via
+        // Explorer.OAuth2BrowserFlow.ExchangeCodeAsync. The endpoint returns the WASM index.html so the
+        // app boots on the callback URL (Blazor client-side routing then renders Home, which reads the
+        // ?code=…&state=… query string).
+        var indexHtmlPath = Path.Combine(app.Environment.WebRootPath, "index.html");
+        app.MapGet("/callback", () =>
+            Results.Text(System.IO.File.ReadAllText(indexHtmlPath), "text/html"));
+
         // A catch-all fallback: any path that is not a static file resolves to the WASM index.html, so
         // the app's client-side routing (e.g. /actors, /community) works on a hard reload. The
         // static-file middleware serves real files (index.html, _framework/*, css/*) before this

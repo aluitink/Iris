@@ -213,6 +213,78 @@ public sealed class ExplorerSession : IDisposable
     }
 
     /// <summary>
+    /// Logs on to an instance via the OAuth2 (Bearer-token) logon path (Phase 15.2). The
+    /// <paramref name="token"/> is the Bearer access token obtained via the OAuth2 authorization-code
+    /// browser flow (the browser is redirected to <c>/ap/v1/oauth2/authorize</c>, the server 302s back
+    /// with a <c>code</c>, and the app exchanges it for this token — see
+    /// <see cref="OAuth2BrowserFlow"/>). The session resolves the actor IRI via WebFinger (falling
+    /// back to the direct IRI), builds an OAuth2 (Bearer-token) client, and loads the private key.
+    /// </summary>
+    /// <param name="handle">The actor handle the token authenticates as (e.g. <c>alice</c>).</param>
+    /// <param name="token">The Bearer access token (from the OAuth2 code exchange).</param>
+    /// <param name="dialBaseUri">The base URI the client dials (e.g. <c>http://localhost:5000</c>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>
+    /// <see langword="true"/> when logged on; <see langword="false"/> when the token is invalid, the
+    /// server rejected it, or the actor document carried no loadable private key.
+    /// </returns>
+    public async Task<bool> LogOnWithOAuth2Async(
+        string handle, string token, Uri dialBaseUri, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(handle);
+        ArgumentException.ThrowIfNullOrEmpty(token);
+        ArgumentNullException.ThrowIfNull(dialBaseUri);
+
+        // Re-login is a fresh identity: tear down the previous instance (key + client) before building
+        // the new one, so the session holds exactly one active identity at a time.
+        DisposeCurrent();
+
+        // Step 1: resolve the actor IRI via WebFinger (the dial host), falling back to the direct IRI
+        // built from the dial base. The OAuth2 path has no separate client_id registration — the token
+        // identifies the actor — so the handle + dial base give the actor IRI.
+        var discoveryTransport = _transportFactory();
+        var discovery = new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(discoveryTransport, disposeHandler: false)));
+        Iri? resolvedIri = null;
+        try
+        {
+            resolvedIri = await discovery.ResolveActorAsync($"acct:{handle}", DialScheme(dialBaseUri), ct).ConfigureAwait(false);
+        }
+        catch (HttpRequestException)
+        {
+            resolvedIri = null;
+        }
+
+        var actorIri = resolvedIri ?? new Iri($"{dialBaseUri.ToString().TrimEnd('/')}/ap/v1/u/{handle}");
+
+        var service = SampleBlazorClient.CreateOAuth2ClientService(
+            dialBaseUri, handle, token,
+            _transportFactory,
+            transport => new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(transport, disposeHandler: false))),
+            actorIriOverride: actorIri);
+
+        var logged = await service.LoginAsync(ct).ConfigureAwait(false);
+        if (!logged)
+        {
+            service.Dispose();
+            return false;
+        }
+
+        _service = service;
+        _bundle = service.Bundle;
+        _dialBaseUri = dialBaseUri;
+        _resolvedActorIri = actorIri;
+        RecordRecent(
+            WebFingerAddress.Parse($"{handle}@{dialBaseUri.Host}"),
+            dialBaseUri, actorIri);
+        return true;
+    }
+
+    private static string DialScheme(Uri dialBaseUri)
+        => string.Equals(dialBaseUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            ? "http"
+            : "https";
+
+    /// <summary>
     /// Switches to a recently logged-on instance (one-click instance switching, §4.2). Logs out the
     /// current identity and logs on to <paramref name="instance"/> by its remembered address, dial
     /// base URI, and password.

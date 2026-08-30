@@ -1,5 +1,6 @@
 using System.Net.Http;
 using Iris.Client;
+using Iris.Client.Auth;
 using Iris.Client.Extensions;
 using Iris.Core;
 
@@ -101,6 +102,83 @@ public static partial class SampleBlazorClient
         // An optional discovery service (WebFinger) rides the same transport as the authenticator so
         // the same in-process handler / wire reaches the instance's /.well-known/webfinger. When not
         // supplied the bundle builds its own default (a plain https HttpClient).
+        if (discoveryFactory is not null)
+        {
+            builder.WithDiscovery(discoveryFactory(transport));
+        }
+
+        var bundle = builder.Build();
+
+        return new ClientService(bundle, actorIri, transportFactory ?? (() => new HttpClientHandler()));
+    }
+
+    /// <summary>
+    /// Creates the client composition for the OAuth2 (Bearer-token) logon path (Phase 15.2). Unlike
+    /// <see cref="CreateClientService"/> (Basic auth), this takes a Bearer <paramref name="token"/>
+    /// (obtained via the OAuth2 authorization-code browser flow — see
+    /// <see cref="Explorer.OAuth2BrowserFlow"/>) and wires an
+    /// <see cref="OAuth2ClientAuthenticator"/> (which fetches the owner-only actor document with
+    /// <c>Authorization: Bearer</c> and loads the private key).
+    /// </summary>
+    /// <param name="serverBaseUri">The root base URI of the home server (e.g.
+    /// <c>http://localhost:5000</c>).</param>
+    /// <param name="handle">The actor handle authenticated by the Bearer token (e.g. <c>alice</c>).</param>
+    /// <param name="token">
+    /// The Bearer access token (from the OAuth2 code exchange). Not null or empty.
+    /// </param>
+    /// <param name="transportFactory">
+    /// Builds the innermost transport handler. When <see langword="null"/> a real
+    /// <see cref="HttpClientHandler"/> is used (the wire).
+    /// </param>
+    /// <param name="discoveryFactory">
+    /// Optionally builds the bundle's WebFinger <see cref="IDiscoveryService"/> over the given
+    /// (already-created) transport handler. When <see langword="null"/> the bundle builds its own
+    /// default.
+    /// </param>
+    /// <param name="actorIriOverride">
+    /// The authoritative actor IRI to authenticate as (e.g. the WebFinger-resolved IRI, whose host may
+    /// differ from <paramref name="serverBaseUri"/> for local instances). When <see langword="null"/>
+    /// the IRI is derived as <c>{serverBaseUri}/ap/v1/u/{handle}</c>.
+    /// </param>
+    /// <returns>The composed service (owns the bundle and any clients it builds).</returns>
+    public static ClientService CreateOAuth2ClientService(
+        Uri serverBaseUri,
+        string handle,
+        string token,
+        Func<HttpMessageHandler>? transportFactory = null,
+        Func<HttpMessageHandler, IDiscoveryService>? discoveryFactory = null,
+        Iri? actorIriOverride = null)
+    {
+        ArgumentNullException.ThrowIfNull(serverBaseUri);
+        ArgumentException.ThrowIfNullOrEmpty(handle);
+        ArgumentException.ThrowIfNullOrEmpty(token);
+
+        var baseString = serverBaseUri.ToString().TrimEnd('/');
+        var actorIri = actorIriOverride ?? new Iri($"{baseString}/ap/v1/u/{handle}");
+
+        var transport = transportFactory?.Invoke() ?? new HttpClientHandler();
+        var authenticatorHttp = new HttpClient(transport, disposeHandler: false)
+        {
+            Timeout = System.Threading.Timeout.InfiniteTimeSpan,
+        };
+
+        // The OAuth2 authenticator fetches the owner-only actor document with the Bearer token and
+        // loads the private key. The token is fixed for the session lifetime (the v1 model has no
+        // refresh rotation in the sample), so the provider returns it verbatim.
+        var authenticator = new OAuth2ClientAuthenticator(
+            authenticatorHttp,
+            _ => new ValueTask<string?>(token));
+
+        var options = new IrisClientOptions(serverBaseUri)
+        {
+            // No Basic-auth proxy-fallback credentials in the OAuth2 path (the token authenticates
+            // directly); proxy fallback is disabled (it requires Basic-auth credentials).
+            UseProxyFallback = false,
+            LocalModeration = false,
+        };
+
+        var builder = IrisClientBuilder.Create(options).WithAuthenticator(authenticator);
+
         if (discoveryFactory is not null)
         {
             builder.WithDiscovery(discoveryFactory(transport));

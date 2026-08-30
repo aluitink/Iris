@@ -1,5 +1,7 @@
 @page "/"
 @using Iris.Client
+@using Iris.Samples.SampleBlazorClient.Explorer
+@using Microsoft.AspNetCore.Components
 
 <PageTitle>Iris · server explorer</PageTitle>
 
@@ -33,6 +35,16 @@
         {
             <div class="error">@Error</div>
         }
+
+        <hr />
+
+        <h2>Log on with OAuth2</h2>
+        <p class="muted">
+            Opens the instance's OAuth2 authorization endpoint in the browser. The server auto-approves
+            and redirects back to this app's <code>/callback</code> route with a one-time code, which the
+            app exchanges for a Bearer token and uses to log on (no password).
+        </p>
+        <button @onclick="LogOnWithOAuth2Async" disabled="Busy">Log on with OAuth2</button>
     </div>
 }
 else
@@ -100,6 +112,12 @@ else
     [Inject]
     private ExplorerSession Session { get; set; } = default!;
 
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
+    [Inject]
+    private IJSRuntime JS { get; set; } = default!;
+
     private string Address { get; set; } = "alice@localhost";
     private string Password { get; set; } = "iris-sample";
     private string BaseUrl { get; set; } = "http://localhost:5000";
@@ -109,8 +127,34 @@ else
     private RecentInstance? SwitchTarget { get; set; }
     private string SwitchPassword { get; set; } = "iris-sample";
 
+    /// <summary>
+    /// The OAuth2 <c>state</c> the app generated for the in-flight authorization request. Held in a
+    /// static so it survives the redirect (a full page load): the callback route compares the returned
+    /// <c>state</c> against this before exchanging the code (CSRF protection, RFC 6749 §10.12).
+    /// </summary>
+    private static string? PendingOAuthState;
+
+    /// <summary>The actor handle the in-flight OAuth2 request is for (echoed on the callback URL).</summary>
+    private static string? PendingOAuthHandle;
+
+    /// <summary>The dial base URI the in-flight OAuth2 request targets (echoed on the callback URL).</summary>
+    private static Uri? PendingOAuthDialBase;
+
     protected override async Task OnInitializedAsync()
     {
+        // When the browser lands on the app after the OAuth2 redirect (the /callback route is served by
+        // the static host's index.html, so the SPA boots on that URL), the address bar carries
+        // ?code=…&amp;state=… (from the server) plus ?dial=…&amp;handle=… (echoed by the app so a full
+        // page reload still knows which instance + actor to log on to). Exchange the code for a Bearer
+        // token and log on.
+        var current = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var (code, returnedState) = OAuth2BrowserFlow.ParseCallback(current);
+        if (code is not null)
+        {
+            await CompleteOAuthCallbackAsync(current, code, returnedState);
+            return;
+        }
+
         // When already logged on (e.g. after a re-login), surface the community feed so the shell
         // demonstrates a signed read through the session's client.
         if (Session.IsLoggedIn)
@@ -118,6 +162,160 @@ else
             await LoadFeedAsync();
         }
     }
+
+    /// <summary>
+    /// Completes the OAuth2 callback: verifies the <c>state</c>, exchanges the code for a Bearer token,
+    /// and logs on. Navigates to <c>/</c> when done (clearing the callback query string).
+    /// </summary>
+    private async Task CompleteOAuthCallbackAsync(Uri current, string code, string? returnedState)
+    {
+        Busy = true;
+        Error = null;
+        try
+        {
+            // The dial base + handle are echoed on the callback URL (so a full page reload still knows
+            // the target instance + actor). Fall back to the entered base URL when absent.
+            var dialBaseStr = CallbackParam(current, "dial");
+            Uri dialBase;
+            if (dialBaseStr is not null && Uri.TryCreate(dialBaseStr, UriKind.Absolute, out var parsed))
+            {
+                dialBase = parsed;
+            }
+            else
+            {
+                dialBase = Uri.TryCreate(BaseUrl, UriKind.Absolute, out var b) ? b : new Uri("http://localhost:5000");
+            }
+
+            var handle = CallbackParam(current, "handle")
+                ?? (Address.Contains('@') ? Address[..Address.IndexOf('@')].TrimStart('@') : "alice");
+
+            // Verify the state (CSRF). When the static state is present (same-tab flow), require a
+            // match; when absent (a hard reload after the state was cleared), accept and proceed.
+            if (PendingOAuthState is not null
+                && !string.Equals(returnedState, PendingOAuthState, StringComparison.Ordinal))
+            {
+                Error = "OAuth2 state mismatch (possible CSRF) — log on again.";
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            var token = await OAuth2BrowserFlow.ExchangeCodeAsync(
+                new HttpClient(), dialBase, code);
+            if (token is null)
+            {
+                Error = "OAuth2 code exchange failed (invalid or already-used code).";
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            var ok = await Session.LogOnWithOAuth2Async(handle, token, dialBase);
+            if (!ok)
+            {
+                Error = "OAuth2 logon failed (invalid token, or the instance is not running?).";
+                Navigation.NavigateTo("/");
+                return;
+            }
+
+            Navigation.NavigateTo("/");
+            await LoadFeedAsync();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            Navigation.NavigateTo("/");
+        }
+        finally
+        {
+            PendingOAuthState = null;
+            PendingOAuthHandle = null;
+            PendingOAuthDialBase = null;
+            Busy = false;
+        }
+    }
+
+    private async Task LogOnWithOAuth2Async()
+    {
+        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var dialBase))
+        {
+            Error = "The base URL is not a valid absolute URI.";
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        try
+        {
+            // The OAuth2 client_id is the actor handle (the v1 model has no separate client
+            // registration). Parse it from the WebFinger address the user entered (or default to
+            // "alice").
+            var host = Address.Contains('@') ? Address[(Address.LastIndexOf('@') + 1)..].Trim() : string.Empty;
+            var handle = Address.Contains('@') ? Address[..Address.IndexOf('@')].TrimStart('@') : "alice";
+            if (string.IsNullOrEmpty(handle))
+            {
+                handle = "alice";
+            }
+
+            // Dial base: when the address's host has a known browser base URL (the instance base-URL
+            // config surface), use it; otherwise use the entered base.
+            var instanceBase = dialBase;
+            if (!string.IsNullOrEmpty(host) && Session.BaseUrls.TryGet(host, out var knownBase))
+            {
+                instanceBase = knownBase;
+            }
+
+            // The redirect_uri is the WASM app's callback route. The app's base URI (the static host)
+            // is what the browser reaches; the callback path is /callback. The dial base + handle are
+            // appended so a full page reload on /callback still knows the target instance + actor.
+            var appBase = new Uri(Navigation.BaseUri);
+            var redirectUri = OAuth2BrowserFlow.BuildRedirectUri(appBase, "/callback");
+            var state = OAuth2BrowserFlow.NewState();
+            PendingOAuthState = state;
+            PendingOAuthHandle = handle;
+            PendingOAuthDialBase = instanceBase;
+
+            // Echo the dial base + handle on the redirect_uri so the callback (after the server's 302)
+            // can read them. The server appends ?code=…&state=…; the app's extra params come first.
+            var redirectWithParams =
+                $"{redirectUri}?dial={Uri.EscapeDataString(instanceBase.ToString())}" +
+                $"&handle={Uri.EscapeDataString(handle)}";
+
+            var authorizeUrl = OAuth2BrowserFlow.BuildAuthorizeUrl(
+                instanceBase, handle, new Uri(redirectWithParams), state);
+
+            // A full browser navigation to the authorize URL (the server 302s back to /callback).
+            await JS.InvokeVoidAsync("eval", $"window.location.href = {JsonEscape(authorizeUrl.ToString())}");
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+            Busy = false;
+        }
+    }
+
+    private static string? CallbackParam(Uri uri, string name)
+    {
+        var query = uri.Query.TrimStart('?');
+        if (query.Length == 0)
+        {
+            return null;
+        }
+
+        foreach (var pair in query.Split('&'))
+        {
+            var eq = pair.IndexOf('=', StringComparison.Ordinal);
+            if (eq < 0 || pair[..eq] != name)
+            {
+                continue;
+            }
+
+            return Uri.UnescapeDataString(pair[(eq + 1)..]);
+        }
+
+        return null;
+    }
+
+    private static string JsonEscape(string s)
+        => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
     private async Task LogOnAsync()
     {
