@@ -367,9 +367,15 @@ public static class ActivityPubServerExtensions
         // behavior).
         services.TryAddSingleton<DeliveryWorkerOptions>(_ => new DeliveryWorkerOptions());
         services.TryAddSingleton<IDeliveryDeadLetterStore, InMemoryDeliveryDeadLetterStore>();
+        // Phase 16.3: per-peer outbound-delivery rate limit. A host may rebind DeliveryRateLimitOptions
+        // (PerPeerMaxRequestsPerMinute > 0) to bound how fast the worker sends to a single peer; the
+        // default is 0 (disabled — the worker delivers as fast as the concurrency cap allows).
+        services.TryAddSingleton<DeliveryRateLimitOptions>(_ => new DeliveryRateLimitOptions());
         // The worker is constructed explicitly (not AddHostedService<DeliveryWorker>()) so the F-22 retry
-        // policy, dead-letter store, and concurrency cap are injected deterministically (the multiple
-        // constructor overloads would otherwise rely on DI's most-constructible overload selection).
+        // policy, dead-letter store, concurrency cap, and rate limiter are injected deterministically (the
+        // multiple constructor overloads would otherwise rely on DI's most-constructible overload
+        // selection). The rate limiter is a no-op when its options disable it (PerPeerMaxRequestsPerMinute
+        // == 0).
         services.AddHostedService(sp => new DeliveryWorker(
             sp.GetRequiredService<IDeliveryQueue>(),
             sp.GetRequiredService<IActivityPubClientFactory>(),
@@ -378,7 +384,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<ILogger<DeliveryWorker>>(),
             sp.GetRequiredService<IOptions<DeliveryRetryOptions>>().Value,
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
-            sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries));
+            sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
+            CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value)));
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
@@ -3198,6 +3205,14 @@ public static class ActivityPubServerExtensions
         ext[term] = System.Text.Json.JsonSerializer.SerializeToElement(value);
         document.ExtensionData = ext;
     }
+
+    /// <summary>
+    /// Builds the <see cref="IDeliveryRateLimiter"/> the <see cref="DeliveryWorker"/> uses for Phase 16.3
+    /// per-peer outbound-delivery rate limiting. When <see cref="DeliveryRateLimitOptions.PerPeerMaxRequestsPerMinute"/>
+    /// is 0 the returned limiter is a no-op (disabled) so the default behavior is unchanged.
+    /// </summary>
+    private static IDeliveryRateLimiter CreateDeliveryRateLimiter(DeliveryRateLimitOptions options)
+        => new SlidingWindowDeliveryRateLimiter(options.PerPeerMaxRequestsPerMinute, TimeSpan.FromMinutes(1));
 
     /// <summary>
     /// Replaces the default in-memory delivery queue and dead-letter store with the persistent,

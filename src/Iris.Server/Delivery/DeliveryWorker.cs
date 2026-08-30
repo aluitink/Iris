@@ -62,6 +62,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly IDeliveryDeadLetterStore? _deadLetter;
     private readonly ILogger<DeliveryWorker> _logger;
     private readonly int _maxConcurrentDeliveries;
+    private readonly IDeliveryRateLimiter? _rateLimiter;
 
     /// <summary>
     /// Initializes a new <see cref="DeliveryWorker"/>.
@@ -81,7 +82,7 @@ public sealed class DeliveryWorker : BackgroundService
         IOptions<ActivityPubServerOptions> options,
         ILogger<DeliveryWorker> logger)
         : this(queue, clientFactory, transportFactory, options, logger,
-            new DeliveryRetryOptions(), null, 1)
+            new DeliveryRetryOptions(), null, 1, null)
     {
     }
 
@@ -107,7 +108,7 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger,
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter)
-        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1)
+        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1, null)
     {
     }
 
@@ -128,6 +129,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// <param name="maxConcurrentDeliveries">The maximum number of deliveries in flight at once. Must be
     /// at least 1 (1 = serial delivery; a higher value delivers a burst in parallel). A value below 1 is
     /// clamped to 1.</param>
+    /// <param name="rateLimiter">The per-peer outbound-delivery rate limiter (Phase 16.3). Null disables
+    /// rate limiting (the worker delivers as fast as the concurrency cap allows).</param>
     /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
     public DeliveryWorker(
         IDeliveryQueue queue,
@@ -137,7 +140,8 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger,
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter,
-        int maxConcurrentDeliveries)
+        int maxConcurrentDeliveries,
+        IDeliveryRateLimiter? rateLimiter)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -153,6 +157,7 @@ public sealed class DeliveryWorker : BackgroundService
         _deadLetter = deadLetter;
         _logger = logger;
         _maxConcurrentDeliveries = Math.Max(1, maxConcurrentDeliveries);
+        _rateLimiter = rateLimiter;
     }
 
     /// <inheritdoc/>
@@ -252,6 +257,16 @@ public sealed class DeliveryWorker : BackgroundService
     {
         try
         {
+            // Phase 16.3: before sending, wait until the per-peer rate limiter permits a delivery to this
+            // job's inbox host. The wait happens while holding a concurrency slot (acquired by the caller
+            // before starting this task), so a rate-limited peer's blocking wait never stalls the single
+            // dequeuer — other peers' deliveries still flow in parallel. A disabled limiter (null or
+            // maxRequests == 0) returns immediately.
+            if (_rateLimiter is { } limiter)
+            {
+                await limiter.WaitUntilPermittedAsync(job.InboxIri, ct).ConfigureAwait(false);
+            }
+
             await DeliverOneAsync(client, job, ct).ConfigureAwait(false);
         }
         finally

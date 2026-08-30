@@ -165,7 +165,8 @@ public sealed class DeliveryWorkerConcurrencyTests
             NullLoggerFactory.Instance.CreateLogger<DeliveryWorker>(),
             new DeliveryRetryOptions { MaxAttempts = 1, BaseDelay = TimeSpan.Zero, MaxDelay = TimeSpan.Zero },
             new InMemoryDeliveryDeadLetterStore(),
-            maxConcurrentDeliveries);
+            maxConcurrentDeliveries,
+            null);
 
         return (worker, queue, handler);
     }
