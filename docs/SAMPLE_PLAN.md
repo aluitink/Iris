@@ -187,7 +187,7 @@ Every screen drives a real `IActivityPubClient` call against the logged-on (or a
 | **Community** | `GetCommunityFeedAsync`, members collection, community search | Explore the seeded community feed + members. |
 | **Compose** | `PostNoteAsync`, `PostReplyAsync(actor, parent, ...)` | Post a note; reply to an object. Proves the write path + federation. |
 | **Follow / unfollow** | `FollowAsync`, (undo via `UndoActivityHandler`) | Follow an actor on *another* instance → signed cross-instance delivery. |
-| **Like** | (no `LikeAsync` — build a `Like` + `DeliverAsync(target.InboxOf(), like)`) | Exercises the like edge + liked collection. |
+| **Like** | `LikeAsync(actor, object)` (added S7) | Exercises the like edge + liked collection; posts to the liker's own outbox (§4.3a). |
 | **Moderation** | `MuteAsync`/`UnmuteAsync` (local Basic auth), `BlockAsync`/`FlagAsync` (federated) | Exercise local + federated moderation. |
 | **Proxy fallback** | any call that 401/403s → `ProxyFallbackHandler` → home `/ap/v1/proxy/{target}` | Prove the WASM client can reach a target the browser can't, re-signed by the home server. |
 | **Raw JSON inspector** | `SendAsync` (raw) | Show the raw signed request/response for debugging interop. |
@@ -195,6 +195,72 @@ Every screen drives a real `IActivityPubClient` call against the logged-on (or a
 The **raw JSON inspector** is intentional: it is the primary tool for **finding interop bugs** (inspect the
 exact signed request, the `Signature` header, the content-type, and the raw response) against both local
 and external instances.
+
+### 4.3a Delivery model (the invariant to hold across every write)
+
+> **An actor's outbox is the write surface for the activities it authors. The client POSTs an authored
+> activity to the actor's *own* outbox — never to a recipient's inbox. The server records it in the
+> outbox and is the *only* thing that delivers the activity to a recipient's inbox (server→server).**
+
+This is a foundational ActivityPub fact, not a sample detail, and it is the lens the write screens, the
+client, and the server handlers must all satisfy:
+
+- **The outbox is the write surface.** When an actor intends to send an activity (a `Follow`, a
+  `Create`/note, a `Like`, a `Block`, a `Flag`, an `Undo`, …), the client **POSTs the activity to the
+  actor's own outbox** (`{actor}/outbox`) — the collection the actor controls ("here is an activity I am
+  publishing"). The client **never addresses a recipient's inbox** for an activity it authors.
+- **The server records it in the outbox.** On a POST to an outbox, the server stores the activity in that
+  actor's outbox (so the actor's feed / outbox collection surfaces it) **and** in the activity store (for
+  `Undo` resolution and for the remote side to look it up).
+- **The server is the only thing that delivers to an inbox.** After recording, the **server** resolves the
+  recipient (from the activity's `object`/`target` + its own follow/actor state) and **delivers the
+  activity to the recipient's inbox** (server→server, signed by the acting local actor). Recipient
+  resolution and fan-out (to whom, via shared-inbox or per-actor inbox, local vs remote) is **server-side
+  state and the server's job** — the client does not enumerate recipients.
+- **Inboxes receive what is *addressed to* the actor.** An actor's *inbox* receives activities a *remote*
+  peer sends *to it* — a remote `Follow` *of* it, an `Accept`/`Reject` of its follow, a remote `Block`/
+  `Flag` *of* it, a remote `Create` it follows. The inbox is never the target of an activity the local
+  actor is itself authoring.
+- **Why it matters.** It keeps the client dumb (one signed POST to its own outbox), keeps the outbox as
+  the single source of truth for "what this actor did," and makes every cross-instance edge a
+  server-to-server hop that the conformance + interop tests can reason about.
+
+**Scope of the fix (Phase 8 S7 — the active, top-priority work).** Every write the client authors must
+route to the **acting actor's own outbox**, and the server must gain a **POST-outbox write surface**
+("outbox publish") that records + server-delivers. The concrete work:
+
+1. **Server — add a POST-outbox write surface.** The outbox endpoint is currently GET-only; add
+   `POST /ap/v1/u/{handle}/outbox` (an "outbox publish") that: signature-validates the acting local actor,
+   records the activity in that actor's **outbox** + activity store, and **server-delivers** the activity to
+   the resolved recipient's inbox (the recipient = the activity's `object` for Follow/Block/Flag, the
+   author's remote followers for a `Create`, the object's owner for a `Like`). The server-side
+   `IDeliveryService.DeliverToActorAsync(recipientIri, activity, actorIri)` already resolves the recipient's
+   shared-inbox/inbox — that is the server→server hop.
+2. **Server — handlers key off the *acting actor*, not the delivery recipient.** `FollowActivityHandler` /
+   `BlockActivityHandler` / `FlagActivityHandler` / `LikeActivityHandler` currently key off
+   `delivery.RecipientIri` as the *target*; under the outbox-publish surface the **actor** (from the
+   outbox POST) is authoritative, and the handler resolves the *recipient* from the activity's
+   `object`/`target` and server-delivers to it. `UndoActivityHandler` already resolves the stored activity
+   from the activity store — it must work whether the stored `Follow`/`Block`/`Flag` landed via the
+   outbox publish or the inbox.
+3. **Client — route every authored write to the acting actor's own outbox.** `FollowAsync`, `BlockAsync`,
+   `UnblockAsync`, `FlagAsync`, `UnflagAsync`, `UndoFollowAsync`, `LikeAsync`, `PostNoteAsync`, and
+   `PostReplyAsync` all POST to `actorId.OutboxOf()` (the acting actor's outbox), **not** to any
+   recipient's inbox. (`MuteAsync`/`UnmuteAsync` stay local Basic-auth decisions — they are not
+   ActivityPub deliveries.)
+4. **Tests — update every assertion of the old delivery targets.** Client unit tests, the two-instance
+   federated tests, the server handler tests, and the `FakeActivityPubServer`/`FakeHttpHandler` fixtures
+   that hard-code `…/inbox` POST targets for authored activities must now expect `…/outbox` POSTs (for
+   authored writes) while still expecting `…/inbox` for *inbound* federation (a remote peer sending to
+   this actor). The `S7ScreenTests` two-instance follow/unfollow must assert the Follow lands in the
+   follower's **outbox** on A, is delivered to B, the `Accept` returns, and the Undo lands in the
+   follower's outbox.
+
+> **Note on the inbox endpoint.** The actor **inbox** POST remains for *inbound* federation (a remote
+> peer delivering an activity *to* this actor) and for the follow responses (`Accept`/`Reject`) that the
+> server itself sends back to the follower's inbox. It is no longer the write surface for an activity the
+> local actor authors. (A transitional note: until the outbox-publish surface is wired, the inbox still
+> accepts these writes; the fix removes that so the model is airtight.)
 
 ### 4.4 Base URL vs IRI host (the Docker-only routability rule)
 
@@ -375,8 +441,24 @@ throughout.
    the sample seed now also `PutObjectAsync`s each seeded note + reply (the object endpoint and global
    search read the object store, not the outbox, so the seeded content was previously unfetchable and
    unsearchable). 7 in-process tests (one per screen call), [change 075](docs/changes/075-explorer-read-screens.md).
-- **S7 — Explorer screens: write paths.** Compose (post/reply), follow/unfollow (cross-instance), like,
-  moderation (mute local / block+flag federated). In-process two-instance tests for the federated writes.
+ - **S7 — Explorer screens: write paths.** Compose (post/reply), follow/unfollow (cross-instance), like,
+   moderation (mute local / block+flag federated). In-process two-instance tests for the federated writes.
+   **Status: compose (post/reply), follow/unfollow (local + federated two-instance), and like are built and
+   tested; the moderation screen (mute/block/flag) is not yet wired — its client methods
+   (`MuteAsync`/`UnmuteAsync`/`BlockAsync`/`FlagAsync`, F-07) already exist, so it is a follow-up screen,
+   not new library work.** Built: `Compose` page (post a note / reply under a parent), `ActorDetail`
+   follow/unfollow card, `ObjectPage` like button, `MainLayout` Compose nav link; new `Iris.Client`
+   `UndoFollowAsync` (Undo to the follower's own inbox) + `LikeAsync` (Like to the liker's own inbox —
+   a content object has no inbox, only actors do). 6 in-process tests, incl. a genuine two-instance
+   federated follow/unfollow (A signed as alice → B's inbox, cross-instance key resolution via a
+   deferred actor-document fetcher). [change 076](docs/changes/076-explorer-write-screens.md).
+    **Next (the active, top-priority work — before the remaining write screens): fix the delivery model
+    against the invariant in §4.3a, everywhere.** The client's authored writes must route to the **acting
+    actor's own outbox** (not a recipient's inbox), and the server must gain a **POST-outbox write
+    surface** that records the activity in the outbox + activity store and **server-delivers** it to the
+    resolved recipient's inbox. Follow/Block/Flag/Undo/Like/Post/Reply are all in scope; every test that
+    asserts the old `…/inbox` delivery targets for authored activities is updated (inbound federation — a
+    remote peer sending to this actor — still uses `…/inbox`). See §4.3a "Scope of the fix."
 - **S8 — Raw JSON inspector + proxy-fallback screen.** Raw signed request/response view; a screen that
   forces the proxy path. Tests: proxy 401→relay over in-process two instances.
 - **S9 — WASM Dockerfile + `iris-ui` compose service.** Multi-stage build → static host; add `iris-ui` to

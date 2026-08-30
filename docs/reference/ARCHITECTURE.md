@@ -81,6 +81,34 @@ Caching is applied at **three layers** to minimize network chatter:
 - **General rule**: activities are signed by the **actor's identity** (the `actor` property on the activity matches the `keyId` in the signature). The system identity is the fallback for non-actor operations.
 - Stored in `IKeyStore`; generated on first run if not provided (in-memory: ephemeral; real persistence: persisted).
 
+### Delivery model (the outbox is the write surface)
+
+A foundational ActivityPub fact that the whole library is built on:
+
+- **An actor's outbox is the source of truth for the activities it sends.** When an actor intends to send
+  an activity (a `Follow`, a `Create`/note, a `Like`, a `Block`, a `Flag`, an `Undo`, …), the client
+  **POSTs the activity to the actor's own outbox** — the collection the actor controls ("here is an
+  activity I am publishing"). The client **never addresses a *recipient's* inbox** for an activity it
+  authors.
+- **The server is the only thing that delivers to an inbox.** On receiving an activity in an actor's
+  outbox, the server records it in that actor's outbox (so the actor's feed / outbox collection surfaces
+  it) and **then delivers the activity to the relevant recipient's inbox** (server→server, signed by the
+  instance / the acting actor). Recipient resolution and fan-out (to whom, via shared-inbox or per-actor
+  inbox, whether a local or remote actor) is **server-side state and the server's job** — the client does
+  not enumerate recipients.
+- **Inboxes are for server→server (and for responses the actor did not author).** An actor's *inbox*
+  receives activities *addressed to it* — a remote `Follow` *of* it, an `Accept`/`Reject` of its follow,
+  a remote `Block`/`Flag` *of* it, a remote `Create` it follows. The inbox is never the target of an
+  activity the local actor is itself authoring.
+
+> **Consequence (and a known defect, Phase 8 S7):** the client's `FollowAsync` / `BlockAsync` /
+> `FlagAsync` (and their `Undo` inverses) currently deliver **directly to the target's inbox**
+> (`targetId.InboxOf()`) — a client→recipient-inbox hop that violates the model above. They must instead
+> POST to the **acting actor's own outbox**, and the **server** must deliver the activity to the
+> target's inbox. The write surface must therefore accept a **POST to an outbox** (an "outbox publish"),
+> not only a POST to an inbox. See [SAMPLE_PLAN §4.3a](../SAMPLE_PLAN.md#43a-delivery-model-the-invariant-to-hold-across-every-write)
+> and the Phase 8 S7 status.
+
 ### Proxied Request Fallback (detailed flow)
 
 ```
