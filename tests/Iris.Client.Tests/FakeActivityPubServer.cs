@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using Iris.Core;
 using Microsoft.AspNetCore.Builder;
@@ -28,6 +29,9 @@ public sealed class FakeActivityPubServer : IDisposable
     private readonly TestServer _server;
     private readonly RequestRecorder _recorder;
     private readonly FlakyGate? _flakyGate;
+
+    /// <summary>The actor document's JSON (relayed verbatim by a proxy endpoint in fallback tests).</summary>
+    internal string ActorDocJson { get; private set; } = string.Empty;
 
     private FakeActivityPubServer(
         TestServer server,
@@ -131,7 +135,11 @@ public sealed class FakeActivityPubServer : IDisposable
             });
 
         var testServer = new TestServer(webHostBuilder);
-        return new FakeActivityPubServer(testServer, recorder, flakyGate, hostname, actorHandle);
+        var instance = new FakeActivityPubServer(testServer, recorder, flakyGate, hostname, actorHandle);
+        // Expose the actor doc JSON so a test that routes a proxy fallback can relay it from the home
+        // instance's proxy endpoint (the real proxy relays the remote doc verbatim).
+        instance.ActorDocJson = ActorDoc(hostname, actorHandle);
+        return instance;
     }
 
     /// <inheritdoc/>
@@ -271,6 +279,57 @@ internal sealed class FlakyGate
         {
             return _seen.Add(path);
         }
+    }
+}
+
+/// <summary>
+/// A transport <see cref="HttpMessageHandler"/> that routes a client's two proxy-fallback legs by host:
+/// a <c>GET</c> to the remote host returns 401 (the remote rejects the client's signature — it cannot
+/// validate cross-origin), and a <c>POST</c> to the home proxy endpoint (the <c>/ap/v1/proxy/…</c> path
+/// carrying Basic auth) returns 200 relaying the remote actor doc. It records both legs so a test can
+/// assert the fallback happened (one direct GET, one Basic-auth POST to the proxy).
+/// </summary>
+internal sealed class ProxyRoutingTransport : HttpMessageHandler
+{
+    private readonly string _remoteHost;
+    private readonly string _proxiedBody;
+    private readonly List<(string Scheme, string Path)> _proxyPosts = [];
+    private int _directGetCount;
+
+    public ProxyRoutingTransport(string remoteHost, string proxiedBody)
+    {
+        _remoteHost = remoteHost;
+        _proxiedBody = proxiedBody;
+    }
+
+    /// <summary>The number of direct (GET) attempts to the remote host.</summary>
+    public int DirectGetCount => _directGetCount;
+
+    /// <summary>The recorded proxy POSTs (Basic-auth, to the home instance).</summary>
+    public IReadOnlyList<(string Scheme, string Path)> ProxyPosts => _proxyPosts;
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        var host = request.RequestUri!.Host;
+        var path = request.RequestUri.PathAndQuery;
+
+        if (host == _remoteHost)
+        {
+            Interlocked.Increment(ref _directGetCount);
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Unauthorized));
+        }
+
+        // The home instance's proxy endpoint: record the Basic-auth POST and relay the remote doc.
+        var scheme = request.Headers.Authorization?.Scheme ?? string.Empty;
+        _proxyPosts.Add((scheme, path));
+        var relay = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(_proxiedBody),
+        };
+        relay.Content.Headers.ContentType =
+            new System.Net.Http.Headers.MediaTypeHeaderValue(Iris.Core.ActivityJson.ActivityJsonContentType);
+        return Task.FromResult(relay);
     }
 }
 

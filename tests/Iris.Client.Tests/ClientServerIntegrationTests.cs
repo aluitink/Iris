@@ -188,4 +188,98 @@ public class ClientServerIntegrationTests : IDisposable
         Assert.Equal($"https://c.domain.local/u/{ServerActor}", actor!.Id);
         Assert.Equal(2, flakyServer.HitsOnPath($"/u/{ServerActor}"));
     }
+
+    // --- 404: not-found is a final answer (no retry, null result) -----------------
+
+    [Fact]
+    public async Task GetObject_UnknownObject_404_ReturnsNull()
+    {
+        using var client = CreateClient(_server);
+
+        // An IRI the fake server does not serve → 404 (the terminal handler's fallback).
+        var objectIri = new Iri($"https://{ServerHost}/n/does-not-exist");
+        var result = await client.GetObjectAsync(objectIri);
+
+        // The client maps a 404 to null (a not-found is an expected condition, not an error).
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetActor_UnknownActor_404_ReturnsNull()
+    {
+        using var client = CreateClient(_server);
+
+        // A handle the instance does not host → 404.
+        var unknownActorIri = new Iri($"https://{ServerHost}/u/{ServerActor}-ghost");
+        var result = await client.GetActorAsync(unknownActorIri);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetObject_404_IsNotRetried()
+    {
+        using var client = CreateClient(_server);
+
+        var objectIri = new Iri($"https://{ServerHost}/n/does-not-exist");
+        await client.GetObjectAsync(objectIri);
+
+        // A 404 is not transient: the RetryHandler makes exactly one attempt (no retry storm on
+        // not-found).
+        Assert.Equal(1, _server.HitsOnPath("/n/does-not-exist"));
+    }
+
+    // --- Proxy fallback: a direct 401 is rerouted through the home instance's proxy -
+    //
+    // The browser has no signed outbound, so a direct GET to a remote that rejects its signature (401)
+    // is retried through the home instance's proxy endpoint. This proves the outermost pipeline stage
+    // (ProxyFallbackHandler, wired in by the real factory) end-to-end: the direct attempt 401s, the
+    // handler strips the signature and forwards a Basic-auth POST to the proxy, which relays the remote
+    // doc back to the caller.
+
+    [Fact]
+    public async Task GetActor_Direct401_FallsBackToProxy()
+    {
+        // B is the remote instance. The routing transport below returns 401 for a direct GET to it (the
+        // remote rejects the client's signature — it cannot validate cross-origin) and 200 (relaying the
+        // remote actor doc) for the proxy's Basic-auth POST to the home instance.
+        const string RemoteHost = "remote.domain.local";
+        using var remote = FakeActivityPubServer.Start(RemoteHost, ServerActor);
+
+        var keyStore = new InMemoryKeyStore();
+        var keyPair = KeyPairGenerator.GenerateRsa(new Iri($"https://{LocalHost}/u/{LocalActor}#key-1"));
+        keyStore.PutKey(keyPair);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        var signer = new HttpSignatureSigner(keyStore);
+        var localActorIri = new Iri($"https://{LocalHost}/u/{LocalActor}");
+        keyProvider.RegisterKey(localActorIri, keyPair.KeyId);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+
+        // One transport serves both legs: a GET to the remote host 401s (direct attempt rejected); a
+        // POST to the home proxy host with Basic auth relays the remote actor doc (the proxied leg).
+        var transport = new ProxyRoutingTransport(
+            remoteHost: RemoteHost,
+            proxiedBody: remote.ActorDocJson);
+
+        using var client = factory.Create(new ActivityPubClientOptions
+        {
+            ActorId = localActorIri,
+            ProxyBaseUrl = new Iri($"https://{LocalHost}"),
+            ProxyCredentials = new ProxyCredentials(LocalActor, "s3cret!"),
+        }, transport);
+
+        var actor = await client.GetActorAsync(remote.ActorIri);
+
+        // The proxied response (the remote actor doc) is returned to the caller.
+        Assert.NotNull(actor);
+        Assert.Equal(remote.ActorIri.Value, actor!.Id);
+
+        // The direct attempt was a GET to the remote (rejected 401); the fallback was a Basic-auth POST
+        // to the home proxy endpoint.
+        Assert.Equal(1, transport.DirectGetCount);
+        var proxied = Assert.Single(transport.ProxyPosts);
+        Assert.Equal("Basic", proxied.Scheme);
+        Assert.EndsWith($"/ap/v1/proxy/{remote.ActorIri.Value}", proxied.Path, StringComparison.Ordinal);
+    }
 }
