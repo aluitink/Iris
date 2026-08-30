@@ -111,7 +111,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [ ] 14.4: Re-run the live suite to confirm the fixes; iterate until all matrix scenarios are PASS or the gap is Accepted (v1 limitation).
 
 #### Phase 15 — Authentication Hardening
-- [ ] 15.1: Replace Basic auth with OAuth2/Bearer tokens for client authentication (the `IActorCredentialValidator` seam is the swap point).
+- [x] 15.1: Replace Basic auth with OAuth2/Bearer tokens for client authentication (the `IActorCredentialValidator` seam is the swap point).
 - [ ] 15.2: Implement the OAuth2 authorization code + PKCE flow for the Blazor WASM client (the `BasicAuthClientAuthenticator` is the current implementation to replace).
 - [ ] 15.3: Add token refresh + revocation support.
 - [ ] 15.4: Update the sample + deployment docs for the new auth flow.
