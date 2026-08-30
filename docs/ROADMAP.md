@@ -60,6 +60,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [ ] Extend end-to-end tests for realistic failure cases and user journeys.
 - [ ] Confirm the remaining implementation gaps are covered by regression tests.
 - [ ] Ensure failure modes such as bad signatures, unknown actors, 404s, rate limits, and proxy fallback are exercised in realistic paths.
+  - [x] Client failure modes end-to-end over the real signed pipeline: 404 not-found is a final answer (`GetObjectAsync`/`GetActorAsync` → `null`, no retry) and a direct 401 falls back through the home instance's proxy (`ProxyFallbackHandler` outermost, Basic-auth POST to `/ap/v1/proxy/{target}`); server-side bad-signature (401), unknown actor (401/404), proxy allowlist (403), and rate-limit (429) are already covered by the signature-middleware + proxy-fallback integration tests ([change 083](changes/083-phase11-5-client-failure-mode-e2e-tests.md)).
 
 ### Phase 12 — Spec Conformance & Missing Features
 - [ ] Finish the remaining lower-priority conformance gaps.
