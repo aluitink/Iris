@@ -359,8 +359,14 @@ throughout.
     may differ from the dial base for local instances). In-process tests: WebFinger resolve, direct-IRI
     fallback, instance switch, scheme-aware `WebFingerClient`; logon to two in-process instances by
     address, key loaded, client signs.
-- **S5 — Base URL vs IRI host separation.** The transport-base vs advertised-IRI split (§4.4) + instance
-  base-URL config surface. Tests: client dials one base URL, requests IRIs carrying another host.
+- [x] **S5 — Base URL vs IRI host separation** (done, [change 074](changes/074-base-url-vs-iri-host-config.md)).
+  The transport-base vs advertised-IRI split (§4.4) + the **instance base-URL config surface**
+  (`InstanceBaseUrls`: advertised host → browser base URL, case-insensitive, pre-fills the dial base so a
+  user only enters address + password). The session carries the map (`BaseUrls`) and `AddIrisExplorer`
+  wires it; `Home.razor` resolves the address's host against it before logon. The canonical fact is pinned
+  by `LogOn_DialsOneBaseUrl_RequestsIrisCarryingAnotherHost`: the client dials one base URL (localhost)
+  while the actor IRIs it requests carry another host (iris-a). 4 in-process tests (map read/overwrite,
+  two-host logon + signed feed read, DI wiring).
 - **S6 — Explorer screens: read paths.** Instance overview, actors directory (search), actor detail
   (outbox/feed/moderation), object view (+replies), community (feed/members/search). Each screen's call
   covered by an in-process test.

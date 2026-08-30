@@ -44,7 +44,7 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] Sample server: `samples/SampleServer/README.md` documenting implemented features with pointer information.
 - [x] Blazor WASM: convert `SampleBlazorClient` to a Blazor WASM app with a DI composition root (`ExplorerSession`/`ClientService`).
 - [x] Blazor WASM: log on to an instance by WebFinger address + instance switching (local + external) — address → WebFinger resolve (scheme-aware dial) → signed client; recent-instances switching ([change 073](changes/073-webfinger-resolve-instance-switching.md)).
-- [ ] Blazor WASM: base-URL-vs-IRI-host separation (browser dials host-published ports; IRIs carry service-name hosts).
+- [x] Blazor WASM: base-URL-vs-IRI-host separation (browser dials host-published ports; IRIs carry service-name hosts) — `InstanceBaseUrls` config surface (advertised host → browser base URL) + session pre-fill + two-host test ([change 074](changes/074-base-url-vs-iri-host-config.md)).
 - [ ] Blazor WASM: explorer read screens (instance overview, actors directory/search, actor detail, object+replies, community).
 - [ ] Blazor WASM: explorer write screens (post/reply, cross-instance follow, like, moderation) + raw JSON inspector + proxy-fallback screen.
 - [ ] Blazor WASM: Dockerfile (multi-stage → static host) + `iris-ui` compose service (host:8090, routable as `iris-ui`).
@@ -86,10 +86,12 @@ substantial design calls: [decisions/](decisions/README.md).
    rich seed, [change 070](changes/070-sample-federation-ready.md)), **S2 done** (server README),
    **S3 done** (Blazor WASM server-explorer scaffold + `ExplorerSession`/`AddIrisExplorer` DI + app
    shell + `WebFingerAddress` + 17 in-process tests, [change 072](changes/072-sample-blazor-wasm-explorer.md)),
-   **S4 done** (logon by WebFinger *resolve* + instance switching — scheme-aware dial + `actorIriOverride`
-   + 4 in-process tests, [change 073](changes/073-webfinger-resolve-instance-switching.md)) →
-   explorer read/write screens + base-URL-vs-IRI-host separation + external-instance → 3-service
-   compose + smoke path.
+    **S4 done** (logon by WebFinger *resolve* + instance switching — scheme-aware dial + `actorIriOverride`
+    + 4 in-process tests, [change 073](changes/073-webfinger-resolve-instance-switching.md)),
+    **S5 done** (base-URL-vs-IRI-host separation — `InstanceBaseUrls` config surface + session pre-fill
+    + two-host test, [change 074](changes/074-base-url-vs-iri-host-config.md)) →
+    explorer read/write screens + external-instance → 3-service
+    compose + smoke path.
 2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
 3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
 4. Use the sample (instance→instance + instance→external via dev FQDNs) to feed Phase 13 live-interop results
