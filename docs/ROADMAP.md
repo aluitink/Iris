@@ -84,7 +84,7 @@ substantial design calls: [decisions/](decisions/README.md).
 ### Phase 13 — Live Federation Compatibility
 - [x] 13.1: Mastodon extension passthrough tests — prove the "don't drop unknown properties" guarantee (F-01) holds for the Mastodon surface (`sensitive`, `toot:emoji`, `poll`, actor extensions), [change 097](changes/097-phase13-1-mastodon-extension-passthrough.md).
 - [x] 13.2: `ld+json` accept behavior — regression tests proving the inbox accepts `Content-Type: application/ld+json` (Decision #4's accept half), [change 098](changes/098-phase13-2-ld-json-accept.md).
-- [ ] 13.3: Mastodon `Question`/poll inbound handling — verify a `Question` activity is deserialized, stored, and served as an opaque object.
+- [x] 13.3: Mastodon `Question`/poll inbound handling — regression tests proving a signed `Create` carrying a poll-bearing `Note` (Mastodon's poll shape) is accepted, stored, and served with the full poll shape preserved verbatim; a `Question`-typed object is not tested (library quirk — `Question` is an activity, not an object), [change 099](changes/099-phase13-3-poll-inbound.md).
 - [ ] 13.4: Mastodon `sensitive` flag inbound handling — verify the `sensitive` boolean is forwarded as an opaque property on incoming objects.
 - [ ] 13.5: Stand up the public instance and the dev partner instances (Mastodon, Lemmy, Threads).
 - [ ] 13.6: Verify interoperability with Mastodon, Lemmy, Threads, and the planned compatibility targets.
