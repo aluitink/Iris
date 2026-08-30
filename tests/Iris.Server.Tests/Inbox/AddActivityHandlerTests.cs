@@ -6,15 +6,14 @@ using KristofferStrube.ActivityStreams;
 namespace Iris.Server.Tests.Inbox;
 
 /// <summary>
-/// Unit tests for the <see cref="AddRemoveActivityHandler"/> — the handler for the ActivityStreams
-/// collection-modification primitives <see cref="Add"/> and <see cref="Remove"/> (F-09). When the
-/// recipient (the inbox the activity was delivered to) is a local <see cref="Group"/> (community), the
-/// activity's <c>object</c> is added to / removed from the community's member set via the
-/// <see cref="ICommunityStore"/>. Covers: adding a member via <c>Add</c>, removing a member via
-/// <c>Remove</c>, the person-recipient no-op, the remote-recipient no-op, the malformed (missing object)
+/// Unit tests for the <see cref="AddActivityHandler"/> — the handler for the ActivityStreams
+/// <see cref="Add"/> collection-modification primitive (F-09). When the recipient (the inbox the
+/// activity was delivered to) is a local <see cref="Group"/> (community), the activity's <c>object</c> is
+/// added to the community's member set via the <see cref="ICommunityStore"/>. Covers: adding a member via
+/// <c>Add</c>, the person-recipient no-op, the remote-recipient no-op, the malformed (missing object)
 /// no-op, and the null-guard contract.
 /// </summary>
-public sealed class AddRemoveActivityHandlerTests
+public sealed class AddActivityHandlerTests
 {
     private static readonly Iri Community = new("https://b.domain.local/ap/v1/c/iris");
     private static readonly Iri LocalPerson = new("https://b.domain.local/ap/v1/u/bob");
@@ -32,7 +31,7 @@ public sealed class AddRemoveActivityHandlerTests
         var sut = BuildHandler(persistence);
 
         var add = BuildAdd(Community, Member);
-        await sut.DispatchAsync(new InboxDelivery(Community, add), add);
+        await sut.HandleAsync(new InboxDelivery(Community, add), add);
 
         Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
     }
@@ -44,8 +43,8 @@ public sealed class AddRemoveActivityHandlerTests
         await persistence.Communities.PutCommunityAsync(BuildCommunity());
         var sut = BuildHandler(persistence);
 
-        await sut.DispatchAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
-        await sut.DispatchAsync(new InboxDelivery(Community, BuildAdd(Community, OtherMember)), BuildAdd(Community, OtherMember));
+        await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
+        await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, OtherMember)), BuildAdd(Community, OtherMember));
 
         var members = await persistence.Communities.GetMembersAsync(Community);
         Assert.Contains(Member, members);
@@ -61,43 +60,11 @@ public sealed class AddRemoveActivityHandlerTests
         var sut = BuildHandler(persistence);
 
         // A re-delivered Add (at-least-once, C-07) must not fail or duplicate the membership.
-        await sut.DispatchAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
+        await sut.HandleAsync(new InboxDelivery(Community, BuildAdd(Community, Member)), BuildAdd(Community, Member));
 
         var members = await persistence.Communities.GetMembersAsync(Community);
         var matches = members.Count(m => m == Member);
         Assert.Equal(1, matches);
-    }
-
-    // --- Remove: a member is removed from a local community --------------------------------
-
-    [Fact]
-    public async Task HandleAsync_RemoveFromLocalCommunity_RemovesMember()
-    {
-        var persistence = new InMemoryPersistenceProvider();
-        await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
-        var sut = BuildHandler(persistence);
-
-        var remove = BuildRemove(Community, Member);
-        await sut.DispatchAsync(new InboxDelivery(Community, remove), remove);
-
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, Member));
-    }
-
-    [Fact]
-    public async Task HandleAsync_RemoveNonMember_IsNoOp()
-    {
-        var persistence = new InMemoryPersistenceProvider();
-        await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
-        var sut = BuildHandler(persistence);
-
-        // Removing an actor that is not a member is a no-op; the existing member is untouched.
-        var remove = BuildRemove(Community, OtherMember);
-        await sut.DispatchAsync(new InboxDelivery(Community, remove), remove);
-
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
-        Assert.False(await persistence.Communities.IsMemberAsync(Community, OtherMember));
     }
 
     // --- Recipient guards ------------------------------------------------------------------
@@ -109,10 +76,10 @@ public sealed class AddRemoveActivityHandlerTests
         await SeedLocalPersonAsync(persistence, LocalPerson);
         var sut = BuildHandler(persistence);
 
-        // A person's followers are maintained by the follow lifecycle, not Add/Remove: an Add to a
-        // person is a no-op (no community to add to).
+        // A person's followers are maintained by the follow lifecycle, not Add: an Add to a person is a
+        // no-op (no community to add to).
         var add = BuildAdd(LocalPerson, Member);
-        await sut.DispatchAsync(new InboxDelivery(LocalPerson, add), add);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, add), add);
 
         Assert.Empty(await persistence.Communities.GetAllCommunityIrisAsync());
     }
@@ -125,20 +92,7 @@ public sealed class AddRemoveActivityHandlerTests
 
         // A recipient that is neither a local community nor person is not this instance's concern.
         var add = BuildAdd(RemoteRecipient, Member);
-        await sut.DispatchAsync(new InboxDelivery(RemoteRecipient, add), add);
-
-        Assert.Empty(await persistence.Communities.GetAllCommunityIrisAsync());
-    }
-
-    [Fact]
-    public async Task HandleAsync_RemoveToPerson_IsNoOp()
-    {
-        var persistence = new InMemoryPersistenceProvider();
-        await SeedLocalPersonAsync(persistence, LocalPerson);
-        var sut = BuildHandler(persistence);
-
-        var remove = BuildRemove(LocalPerson, Member);
-        await sut.DispatchAsync(new InboxDelivery(LocalPerson, remove), remove);
+        await sut.HandleAsync(new InboxDelivery(RemoteRecipient, add), add);
 
         Assert.Empty(await persistence.Communities.GetAllCommunityIrisAsync());
     }
@@ -158,28 +112,9 @@ public sealed class AddRemoveActivityHandlerTests
             Id = $"{Community}/add-{Guid.NewGuid():N}",
             Actor = [new Link { Href = new Uri(Community.Value) }],
         };
-        await sut.DispatchAsync(new InboxDelivery(Community, add), add);
+        await sut.HandleAsync(new InboxDelivery(Community, add), add);
 
         Assert.Empty(await persistence.Communities.GetMembersAsync(Community));
-    }
-
-    [Fact]
-    public async Task HandleAsync_RemoveWithNoObject_IsNoOp()
-    {
-        var persistence = new InMemoryPersistenceProvider();
-        await persistence.Communities.PutCommunityAsync(BuildCommunity());
-        await persistence.Communities.AddMemberAsync(Community, Member);
-        var sut = BuildHandler(persistence);
-
-        var remove = new Remove
-        {
-            Id = $"{Community}/remove-{Guid.NewGuid():N}",
-            Actor = [new Link { Href = new Uri(Community.Value) }],
-        };
-        await sut.DispatchAsync(new InboxDelivery(Community, remove), remove);
-
-        // The existing member is untouched (the malformed Remove is ignored).
-        Assert.True(await persistence.Communities.IsMemberAsync(Community, Member));
     }
 
     // --- Guards ---------------------------------------------------------------------------
@@ -187,7 +122,7 @@ public sealed class AddRemoveActivityHandlerTests
     [Fact]
     public void Ctor_NullPersistence_Throws()
     {
-        Assert.Throws<ArgumentNullException>(() => new AddRemoveActivityHandler(null!));
+        Assert.Throws<ArgumentNullException>(() => new AddActivityHandler(null!));
     }
 
     [Fact]
@@ -201,19 +136,19 @@ public sealed class AddRemoveActivityHandlerTests
     }
 
     [Fact]
-    public void Dispatch_UnsupportedActivity_Throws()
+    public void Dispatch_NonAddActivity_Throws()
     {
         var sut = BuildHandler(new InMemoryPersistenceProvider());
-        var follow = new Follow
+        // A non-Add activity reaching this dispatch is a programming error (the processor only dispatches
+        // Add here by exact type match). The base's cast guard throws synchronously (before any await).
+        var remove = new Remove
         {
-            Id = $"{Community}/follow-{Guid.NewGuid():N}",
+            Id = $"{Community}/remove-{Guid.NewGuid():N}",
             Actor = [new Link { Href = new Uri(Member.Value) }],
             Object = [new Link { Href = new Uri(Community.Value) }],
         };
-        // A non-Add/Remove activity reaching this dispatch is a programming error (the processor only
-        // dispatches Add/Remove here). The guard throws synchronously (before any await).
         Assert.Throws<InvalidOperationException>(
-            () => RunSync(() => sut.DispatchAsync(new InboxDelivery(Community, follow), follow)));
+            () => RunSync(() => sut.DispatchAsync(new InboxDelivery(Community, remove), remove)));
     }
 
     // --- Helpers --------------------------------------------------------------------------
@@ -232,7 +167,7 @@ public sealed class AddRemoveActivityHandlerTests
         PreferredUsername = "iris",
     };
 
-    private static AddRemoveActivityHandler BuildHandler(IPersistenceProvider persistence)
+    private static AddActivityHandler BuildHandler(IPersistenceProvider persistence)
         => new(persistence);
 
     private static Task SeedLocalPersonAsync(IPersistenceProvider persistence, Iri actorIri)
@@ -250,13 +185,6 @@ public sealed class AddRemoveActivityHandlerTests
     private static Add BuildAdd(Iri communityIri, Iri memberIri) => new()
     {
         Id = $"{communityIri.Value}/add-{Guid.NewGuid():N}",
-        Actor = [new Link { Href = new Uri(communityIri.Value) }],
-        Object = [new Link { Href = new Uri(memberIri.Value) }],
-    };
-
-    private static Remove BuildRemove(Iri communityIri, Iri memberIri) => new()
-    {
-        Id = $"{communityIri.Value}/remove-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(communityIri.Value) }],
         Object = [new Link { Href = new Uri(memberIri.Value) }],
     };

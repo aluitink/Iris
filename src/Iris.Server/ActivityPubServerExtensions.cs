@@ -224,7 +224,20 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
         services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, FlagActivityHandler>();
-        services.AddSingleton<IActivityHandler, AddRemoveActivityHandler>();
+        // Collection-modification primitives (F-09): a server that manages a community's membership via
+        // Add/Remove (rather than a Follow or Offer/Invite/Join/Leave) updates the local community's
+        // member set. Each derives from ActivityHandlerBase{T} so the InboxProcessor dispatches by an
+        // exact type match (distance 0) — they do not contend with the MembershipActivityHandler
+        // (registered for the base Activity type) for the same activity.
+        services.AddSingleton<IActivityHandler, AddActivityHandler>();
+        services.AddSingleton<IActivityHandler, RemoveActivityHandler>();
+        // Membership primitives (F-16): a server that manages a community's membership via Offer/Invite/
+        // Join/Leave (rather than a Follow or Add/Remove) updates the local community's member set.
+        // Registered for the base Activity type (a single ActivityHandlerBase{T} cannot cover the four
+        // membership types); the InboxProcessor resolves each activity to the most specific registered
+        // handler, so an Add/Remove reaches its exact-type handler and an Offer/Invite/Join/Leave
+        // reaches this catch-all.
+        services.AddSingleton<IActivityHandler, MembershipActivityHandler>();
         services.AddSingleton<IActivityHandler, CommunityInboxActivityHandler>();
         // Move (F-08): re-points the local follow edges when an actor migrates to a new IRI. It needs the
         // local community IRIs and the outbound caches (to invalidate the moved actor's stale key/doc), so
