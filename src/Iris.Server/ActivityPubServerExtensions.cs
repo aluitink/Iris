@@ -1209,26 +1209,40 @@ public static class ActivityPubServerExtensions
             await persistence.Activities.AddToOutboxAsync(actorIri, activity, ct).ConfigureAwait(false);
             await persistence.Activities.PutActivityAsync(activity, ct).ConfigureAwait(false);
 
-            // 2. Record the local edge the activity implies + resolve the recipient for the server→server
-            //    delivery hop (the client never enumerates recipients — that is the server's job).
-            Iri? recipientIri = activity switch
+            // 2. Record the local edge the activity implies + resolve the recipient(s) for the
+            //    server→server delivery hop (the client never enumerates recipients — that is the
+            //    server's job).
+            if (activity is Create create)
             {
-                Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
-                Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
-                Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
-                Like like => await RecordLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
-                Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, ct).ConfigureAwait(false),
-                Create create => await RecordCreateLocalAsync(persistence, localActors, actorIri, create, ct).ConfigureAwait(false),
-                _ => null,
-            };
+                // A Create fans out to every remote, non-blocked follower (G-1 residual: the full
+                // fan-out, mirroring CreateActivityHandler's loop, not just the first follower).
+                var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, ct)
+                    .ConfigureAwait(false);
+                foreach (var recipient in recipients)
+                {
+                    await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+            }
+            else
+            {
+                Iri? recipientIri = activity switch
+                {
+                    Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
+                    Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
+                    Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
+                    Like like => await RecordLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
+                    Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, ct).ConfigureAwait(false),
+                    _ => null,
+                };
 
-            // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
-            //    recipient needs no cross-instance hop (the local edge is already recorded); only a
-            //    remote recipient is delivered to, signed as the acting local actor.
-            if (recipientIri is { } recipient
-                && !await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
-            {
-                await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
+                //    recipient needs no cross-instance hop (the local edge is already recorded); only a
+                //    remote recipient is delivered to, signed as the acting local actor.
+                if (recipientIri is { } recipient
+                    && !await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
+                {
+                    await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
             }
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1675,7 +1689,7 @@ public static class ActivityPubServerExtensions
     /// follower's inbox via the same mechanism <see cref="CreateActivityHandler"/> uses). Returns
     /// <see langword="null"/> when the author has no remote followers (no federation hop).
     /// </summary>
-    private static async Task<Iri?> RecordCreateLocalAsync(
+    private static async Task<IEnumerable<Iri>> RecordCreateLocalAsync(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         Iri authorIri,
@@ -1697,10 +1711,10 @@ public static class ActivityPubServerExtensions
             }
         }
 
-        // The federation target is the author's remote followers (a local follower sees the post in the
-        // author's outbox on this instance, so it needs no cross-instance delivery). Deliver to the first
-        // remote follower as the representative recipient; the full fan-out (each remote follower + relays)
-        // mirrors CreateActivityHandler's loops.
+        // The federation targets are the author's remote, non-blocked followers (a local follower sees
+        // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
+        // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
+        var recipients = new List<Iri>();
         var followers = await persistence.Follows.GetFollowersAsync(authorIri, ct).ConfigureAwait(false);
         foreach (var followerIri in followers)
         {
@@ -1714,10 +1728,10 @@ public static class ActivityPubServerExtensions
                 continue;
             }
 
-            return followerIri;
+            recipients.Add(followerIri);
         }
 
-        return null;
+        return recipients;
     }
 
     /// <summary>
