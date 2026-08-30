@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using Iris.Client;
@@ -18,6 +19,17 @@ namespace Iris.Server.Delivery;
 /// uses a <c>Channel</c> + hosted service, never <c>Task.Run</c>). It dequeues jobs until the queue is
 /// complete and empty (signaled by <see cref="IDeliveryQueue.CompleteAsync"/>, called on host shutdown),
 /// then stops.
+/// </remarks>
+/// <remarks>
+/// <strong>Concurrency (Phase 16.1):</strong> the worker delivers jobs with bounded concurrency — at most
+/// <see cref="DeliveryWorkerOptions.MaxConcurrentDeliveries"/> deliveries in flight at once (a semaphore
+/// admits one slot per delivery; a delivery releases its slot when it finishes). A value of 1 (the
+/// default) preserves the original serial behavior; a higher value delivers a burst in parallel,
+/// overlapping the per-delivery network round-trips, without opening more than that many concurrent
+/// outbound connections. The dequeuer pulls a job and starts its delivery task outside the in-flight
+/// bound, so a slow delivery can never stall the pump (which would serialize the worker and risk a
+/// semaphore deadlock). Each in-flight delivery still honors the per-job retry / dead-letter policy
+/// independently.
 /// </remarks>
 /// <remarks>
 /// <strong>Signing:</strong> each delivery is signed as the local actor named on its
@@ -49,6 +61,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly DeliveryRetryOptions _retryOptions;
     private readonly IDeliveryDeadLetterStore? _deadLetter;
     private readonly ILogger<DeliveryWorker> _logger;
+    private readonly int _maxConcurrentDeliveries;
 
     /// <summary>
     /// Initializes a new <see cref="DeliveryWorker"/>.
@@ -68,7 +81,7 @@ public sealed class DeliveryWorker : BackgroundService
         IOptions<ActivityPubServerOptions> options,
         ILogger<DeliveryWorker> logger)
         : this(queue, clientFactory, transportFactory, options, logger,
-            new DeliveryRetryOptions(), null)
+            new DeliveryRetryOptions(), null, 1)
     {
     }
 
@@ -94,6 +107,37 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger,
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter)
+        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="DeliveryWorker"/> with an explicit retry / dead-letter policy (F-22)
+    /// and outbound-delivery concurrency (Phase 16.1).
+    /// </summary>
+    /// <param name="queue">The delivery queue to pump. Must not be null.</param>
+    /// <param name="clientFactory">The factory that builds the signed delivery client. Must not be null.</param>
+    /// <param name="transportFactory">A factory for the outbound <see cref="HttpMessageHandler"/> transport.
+    /// Must not be null.</param>
+    /// <param name="options">The server options (provides <see cref="ActivityPubServerOptions.InstanceActorId"/>).</param>
+    /// <param name="logger">The logger. Must not be null.</param>
+    /// <param name="retryOptions">The retry / dead-letter policy. Null uses the defaults
+    /// (<see cref="DeliveryRetryOptions"/>: 5 attempts, 1s base, 60s cap).</param>
+    /// <param name="deadLetter">The dead-letter store for exhausted jobs. Null disables dead-lettering
+    /// (exhausted jobs are logged at <c>Error</c> and dropped).</param>
+    /// <param name="maxConcurrentDeliveries">The maximum number of deliveries in flight at once. Must be
+    /// at least 1 (1 = serial delivery; a higher value delivers a burst in parallel). A value below 1 is
+    /// clamped to 1.</param>
+    /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
+    public DeliveryWorker(
+        IDeliveryQueue queue,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        IOptions<ActivityPubServerOptions> options,
+        ILogger<DeliveryWorker> logger,
+        DeliveryRetryOptions? retryOptions,
+        IDeliveryDeadLetterStore? deadLetter,
+        int maxConcurrentDeliveries)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -108,6 +152,7 @@ public sealed class DeliveryWorker : BackgroundService
         _retryOptions = retryOptions ?? new DeliveryRetryOptions();
         _deadLetter = deadLetter;
         _logger = logger;
+        _maxConcurrentDeliveries = Math.Max(1, maxConcurrentDeliveries);
     }
 
     /// <inheritdoc/>
@@ -126,16 +171,114 @@ public sealed class DeliveryWorker : BackgroundService
             new ActivityPubClientOptions { ActorId = instanceActorIri, EnableRetry = true },
             _transportFactory());
 
-        _logger.LogDebug("DeliveryWorker started; delivering as {Actor}", instanceActorIri);
+        _logger.LogDebug(
+            "DeliveryWorker started; delivering as {Actor} (up to {Concurrency} in flight)",
+            instanceActorIri,
+            _maxConcurrentDeliveries);
 
-        while (await _queue
-            .TryDequeueAsync(stoppingToken)
-            .ConfigureAwait(false) is { } job)
+        // Phase 16.1: pump the queue with bounded concurrency. The single dequeuer pulls a job, acquires
+        // one of MaxConcurrentDeliveries semaphore slots, and starts a delivery task for it; the delivery
+        // task releases the slot when it finishes (delivered or dead-lettered). At most
+        // MaxConcurrentDeliveries deliveries are therefore in flight at once, so a burst is delivered in
+        // parallel (overlapping the per-delivery network round-trips) without the instance opening more
+        // than that many concurrent outbound connections. The dequeue is NOT inside the semaphore-wait,
+        // so a slow in-flight delivery can never stall the dequeuer (which would serialize the worker and
+        // risk a semaphore deadlock). The worker stops once the queue is complete and empty AND every
+        // in-flight delivery has finished (the drain loop).
+        using var semaphore = new SemaphoreSlim(_maxConcurrentDeliveries);
+        var inFlight = new ConcurrentDictionary<Task, byte>();
+
+        while (true)
         {
-            await DeliverOneAsync(client, job, stoppingToken).ConfigureAwait(false);
+            DeliveryJob? job;
+            try
+            {
+                job = await _queue
+                    .TryDequeueAsync(stoppingToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break; // shutting down — stop dequeuing (in-flight deliveries drain below)
+            }
+
+            if (job is null)
+            {
+                // Queue complete and empty. The worker may stop once the in-flight deliveries finish;
+                // any delivery admitted before completion is still running.
+                if (inFlight.IsEmpty)
+                {
+                    break;
+                }
+
+                // Wait for at least one in-flight delivery to finish, then re-check. A host shutdown
+                // cancels stoppingToken, which the in-flight deliveries observe on their next await.
+                await WaitForAnyInFlightAsync(inFlight).ConfigureAwait(false);
+                continue;
+            }
+
+            // Admit a delivery slot before starting the task so at most MaxConcurrentDeliveries are in
+            // flight. The job was already dequeued, so this wait only bounds concurrency.
+            await semaphore
+                .WaitAsync(stoppingToken)
+                .ConfigureAwait(false);
+
+            var deliveryTask = DeliverTrackedAsync(client, semaphore, job, stoppingToken);
+            inFlight[deliveryTask] = 0;
+        }
+
+        // Drain: wait for the in-flight deliveries admitted before the break to finish. A host shutdown
+        // cancels stoppingToken, so the remaining deliveries observe it and finish promptly.
+        while (!inFlight.IsEmpty && !stoppingToken.IsCancellationRequested)
+        {
+            await WaitForAnyInFlightAsync(inFlight).ConfigureAwait(false);
         }
 
         _logger.LogDebug("DeliveryWorker stopped (queue complete and drained).");
+    }
+
+    /// <summary>
+    /// Starts <see cref="DeliverOneAsync"/> for <paramref name="job"/> and — on completion — releases its
+    /// semaphore slot. A delivery failure never propagates (the F-22 retry / dead-letter policy inside
+    /// <see cref="DeliverOneAsync"/> swallows it); the <c>finally</c> guarantees the semaphore slot is
+    /// released even on an unexpected fault. The returned task is tracked by the caller in the in-flight
+    /// map and removed there when it completes (via <see cref="WaitForAnyInFlightAsync"/>).
+    /// </summary>
+    private async Task DeliverTrackedAsync(
+        IActivityPubClient client,
+        SemaphoreSlim semaphore,
+        DeliveryJob job,
+        CancellationToken ct)
+    {
+        try
+        {
+            await DeliverOneAsync(client, job, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// Waits until at least one in-flight delivery task has completed (removing it from
+    /// <paramref name="inFlight"/>), or the set is empty (returning immediately). Used by the pump to
+    /// wait for the drain without spinning. A host shutdown is handled by the caller, which stops
+    /// looping (and the in-flight deliveries themselves observe the cancellation on their next await);
+    /// this wait therefore has no cancellation of its own — it only completes when a delivery finishes.
+    /// </summary>
+    private static async Task WaitForAnyInFlightAsync(ConcurrentDictionary<Task, byte> inFlight)
+    {
+        if (inFlight.IsEmpty)
+        {
+            return;
+        }
+
+        // Task.WhenAny over a snapshot: a delivery completing removes itself from the map, so a later
+        // round re-snapshots the (possibly smaller) set.
+        var completed = await Task.WhenAny(inFlight.Keys.ToArray()).ConfigureAwait(false);
+        // Remove the completed task so the next round waits only on the remaining in-flight deliveries.
+        inFlight.TryRemove(completed, out _);
     }
 
     /// <summary>

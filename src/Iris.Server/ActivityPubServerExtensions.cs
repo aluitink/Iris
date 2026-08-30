@@ -362,10 +362,14 @@ public static class ActivityPubServerExtensions
         // retries a failed delivery with exponential backoff and dead-letters it when the budget is
         // exhausted, giving at-least-once delivery (a re-delivered activity is deduped by its Id, C-07).
         services.TryAddSingleton<DeliveryRetryOptions>(_ => new DeliveryRetryOptions());
+        // Phase 16.1: outbound-delivery concurrency. A host may rebind DeliveryWorkerOptions to deliver a
+        // burst in parallel (MaxConcurrentDeliveries > 1); the default is 1 (serial, the pre-Phase-16
+        // behavior).
+        services.TryAddSingleton<DeliveryWorkerOptions>(_ => new DeliveryWorkerOptions());
         services.TryAddSingleton<IDeliveryDeadLetterStore, InMemoryDeliveryDeadLetterStore>();
         // The worker is constructed explicitly (not AddHostedService<DeliveryWorker>()) so the F-22 retry
-        // policy and dead-letter store are injected deterministically (the two-constructor overload would
-        // otherwise rely on DI's most-constructible overload selection).
+        // policy, dead-letter store, and concurrency cap are injected deterministically (the multiple
+        // constructor overloads would otherwise rely on DI's most-constructible overload selection).
         services.AddHostedService(sp => new DeliveryWorker(
             sp.GetRequiredService<IDeliveryQueue>(),
             sp.GetRequiredService<IActivityPubClientFactory>(),
@@ -373,7 +377,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
             sp.GetRequiredService<ILogger<DeliveryWorker>>(),
             sp.GetRequiredService<IOptions<DeliveryRetryOptions>>().Value,
-            sp.GetRequiredService<IDeliveryDeadLetterStore>()));
+            sp.GetRequiredService<IDeliveryDeadLetterStore>(),
+            sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries));
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
