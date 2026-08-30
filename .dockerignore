@@ -1,5 +1,6 @@
 # Build context is the repository root; keep it lean so the Docker build is fast and does not pull in
-# unrelated projects or local scratch.
+# unrelated projects or local scratch. Both sample Dockerfiles (SampleServer, SampleBlazorClient) build
+# from this root context, so both sample projects' sources must be present.
 bin/
 obj/
 out/
@@ -22,7 +23,6 @@ coverage*.xml
 .probe/
 docs/
 tests/
-samples/SampleBlazorClient/
 PLAN.md
 .editorconfig
 packages.lock.json

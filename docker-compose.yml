@@ -1,15 +1,23 @@
-# Phase 8 sample Docker composition: two real Iris ActivityPub servers on an internal Docker network,
-# exercising cross-container federation over genuine network I/O (not in-process TestServer).
+# Phase 8 sample Docker composition: two real Iris ActivityPub servers + the Blazor WebAssembly
+# "server explorer" on an internal Docker network, exercising cross-container federation over genuine
+# network I/O (not in-process TestServer).
 #
 # Topology (see docs/DEPLOYMENT.md):
 #   iris-a  → iris-a:8080   actor alice / community iris   (the "home" instance)
 #   iris-b  → iris-b:8080   actor alice / community iris   (the "remote" instance)
+#   iris-ui → iris-ui:8090  the Blazor WebAssembly server-explorer (static site on nginx)
 #
-# Each container's Iris__HostName is its service name and Iris__Port is the real in-network port
-# (8080), so the server's advertised base URI (the actor/community IRIs) is routable from the other
-# container. The two instances resolve each other by hostname (iris-a / iris-b) via Docker's built-in
-# DNS. Port mappings (8081/8082 → 8080) expose the instances on the host for the smoke test / manual
-# inspection; the in-container federation uses the service names, not the host mappings.
+# Each server container's Iris__HostName is its service name and Iris__Port is the real in-network
+# port (8080), so the server's advertised base URI (the actor/community IRIs) is routable from the
+# other container. The two instances resolve each other by hostname (iris-a / iris-b) via Docker's
+# built-in DNS. Port mappings (8081/8082 → 8080, 8090 → 8090) expose the instances + the UI on the
+# host for the smoke test / manual inspection; the in-container federation uses the service names,
+# not the host mappings.
+#
+# The explorer (iris-ui) is a browser app: the browser (on the host) dials the servers on their
+# host-published ports (8081/8082) or the operator's own address — the InstanceBaseUrls surface
+# (SAMPLE_PLAN §4.4) pre-fills a known base URL. The iris-ui service itself only needs to serve the
+# static WASM site; it reaches nothing at runtime (all ActivityPub I/O is browser → server).
 #
 # Run:    docker compose -f docker-compose.yml up --build -d
 # Smoke:  ./scripts/docker-smoke-test.sh
@@ -59,6 +67,29 @@ services:
       timeout: 3s
       retries: 5
       start_period: 20s
+    networks:
+      - iris-net
+
+  iris-ui:
+    # The Blazor WebAssembly "server explorer" (Deliverable B) served as a static site by nginx.
+    # It dials the two servers from the browser (host-published ports 8081/8082), so the service
+    # itself needs no outbound network access — it only serves the WASM site. Routable as `iris-ui`
+    # on the internal network and published to the host on 8090 for the smoke test / manual use.
+    build:
+      context: .
+      dockerfile: samples/SampleBlazorClient/Dockerfile
+    container_name: iris-ui
+    hostname: iris-ui
+    ports:
+      - "8090:8090"
+    healthcheck:
+      # nginx:1.27-alpine ships a busybox wget (no curl); a GET of the WASM index asserts the static
+      # site is being served (a clean liveness probe).
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - iris-net
 
