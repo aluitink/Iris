@@ -57,4 +57,5 @@ OPENCODE.md
 
 ## Scratch (reflection probes / throwaway experiments)
 .probe_tmp/
+.probe_tmp2/
 probe_*.txt
