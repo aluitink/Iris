@@ -16,7 +16,7 @@ completed in a CI-only environment from those that require live partner instance
 | 13.1 | **Mastodon extension passthrough tests** — verify that Iris correctly forwards Mastodon-specific extension properties (`toot:emoji`, `sensitive`, `poll`, `options`, `votes`, `endsAt`, `closed`, `oneOfMany`) as opaque blobs when they appear in incoming activities/objects. This is the "don't drop unknown properties" guarantee (F-01, change 064) applied specifically to Mastodon extensions. | ✅ Done (change 097) |
 | 13.2 | **`ld+json` accept behavior documentation** — confirm and document that Iris accepts `application/ld+json` on inbound (Decision #4) and produces `application/activity+json` on outbound. Add a regression test proving the accept behavior. | ✅ Done (change 098) |
 | 13.3 | **Mastodon `Question`/poll inbound handling** — verify that a `Question` activity (Mastodon poll) is correctly deserialized, stored, and served by Iris (as an opaque object with the `Question` type). Add integration tests. | ✅ Done (change 099) |
-| 13.4 | **Mastodon `sensitive` flag inbound handling** — verify that the `sensitive` boolean (Mastodon extension) is correctly forwarded as an opaque property when it appears in incoming objects. Add integration tests. | Pending |
+| 13.4 | **Mastodon `sensitive` flag inbound handling** — verify that the `sensitive` boolean (Mastodon extension) is correctly forwarded as an opaque property when it appears in incoming objects. Add integration tests. | ✅ Done (change 100) |
 
 ### Live-interop (requires real partner instances)
 
@@ -38,4 +38,4 @@ TLS is in place and real partner instances are available.
 
 ## Test count
 
-971 tests, 0 failures, 0 warnings (13.1 + 13.2 + 13.3 done, +10 tests).
+974 tests, 0 failures, 0 warnings (13.1 + 13.2 + 13.3 + 13.4 done — all CI-testable sub-slices complete, +13 tests).
