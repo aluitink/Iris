@@ -18,16 +18,18 @@ This is the shortened working roadmap. The detailed phase notes and design evide
 | 8 — Sample Docker Composition | ✅ complete |
 | 9 — Real-World Deployment Preparation | ✅ complete |
 | 10 — Project & Test Review | ✅ complete |
-| 11 — Implementation Gaps & Usability Exploration | 🚧 in progress |
-| 12 — Spec Conformance & Missing Features | 🚧 in progress |
-| 13 — Live Federation Compatibility | 📋 planned |
+| 11 — Implementation Gaps & Usability Exploration | ✅ complete |
+| 12 — Spec Conformance & Missing Features | ✅ complete |
+| 13 — Live Federation Compatibility | 🚧 in progress (CI-testable 13.1–13.4 done; live-interop 13.5–13.10 blocked on Phase 9 FQDN + real partner instances) |
 | 14+ — Future | 📋 abstract |
 
 ## Completed work
 
-Phases -1, 0–9, and 10 are complete — core identity/keys/signatures, the signed client, the server
+Phases -1, 0–12 are complete — core identity/keys/signatures, the signed client, the server
 foundation + inbox/delivery, communities, proxy fallback, samples, sample Docker composition, deployment
-preparation, and the project & test review (suite consolidated 850 → 832). Per-slice build notes:
+preparation, the project & test review (suite consolidated 850 → 832), implementation gaps & usability
+exploration, and spec conformance & missing features (F-01…F-30 all closed; 961 tests, 0 failures, 0
+warnings). Per-slice build notes:
 [changes/](changes/README.md); test tallies: [phase-notes/TEST_COUNT_HISTORY.md](phase-notes/TEST_COUNT_HISTORY.md);
 substantial design calls: [decisions/](decisions/README.md).
 
@@ -55,12 +57,12 @@ substantial design calls: [decisions/](decisions/README.md).
 - [x] Docs: `samples/SampleBlazorClient/README.md` (explorer + external-instance mechanism, no real dev FQDN committed) + `DEPLOYMENT.md` 3-service topology. New `samples/SampleBlazorClient/README.md` documents the explorer (screens → `IActivityPubClient` calls, logon + the base-URL/IRI-host rule, the external-instance mechanism, testing, and a manual-exploration checklist); `DEPLOYMENT.md`'s smoke-test section + the "real follow/post federation" note updated to the post-S10 signed-federation story ([change 082](changes/082-s11-sample-blazor-readme-deployment-update.md)).
 
 ### Phase 11 — Implementation Gaps & Usability Exploration
-- [ ] Finalize the gap register and prioritize the remaining usability issues.
-- [ ] Walk the main user flows end-to-end and document the friction points for discovery, posting, moderation, and error handling.
-- [ ] Extend end-to-end tests for realistic failure cases and user journeys.
-- [ ] Confirm the remaining implementation gaps are covered by regression tests.
+- [x] Finalize the gap register and prioritize the remaining usability issues. The gap register (G-1…G-6 + H-4) was refreshed to its verified implementation status ([change 084](changes/084-phase11-operator-reject-gap-register.md)); the J-1…J-22 usability-friction register is in [PHASE_11_USER_JOURNEYS.md](reference/PHASE_11_USER_JOURNEYS.md).
+- [x] Walk the main user flows end-to-end and document the friction points for discovery, posting, moderation, and error handling. [PHASE_11_USER_JOURNEYS.md](reference/PHASE_11_USER_JOURNEYS.md) (J-1…J-22, research-only, 11.2).
+- [x] Extend end-to-end tests for realistic failure cases and user journeys. Client failure modes end-to-end over the real signed pipeline: 404 not-found is a final answer (`GetObjectAsync`/`GetActorAsync` → `null`, no retry) and a direct 401 falls back through the home instance's proxy (`ProxyFallbackHandler` outermost, Basic-auth POST to `/ap/v1/proxy/{target}`); server-side bad-signature (401), unknown actor (401/404), proxy allowlist (403), and rate-limit (429) are covered by the signature-middleware + proxy-fallback integration tests ([change 083](changes/083-phase11-5-client-failure-mode-e2e-tests.md)).
+- [x] Confirm the remaining implementation gaps are covered by regression tests.
   - [x] The **operator `Reject` path** for `manuallyApprovesFollowers` actors (the live outbound half of the gate — gap G-2's Reject / J-10) is implemented + covered: a Basic-authenticated `POST /ap/v1/u/{handle}/follows/{followId}` (the same credential seam as the mute/relay endpoints) builds `FollowIris.BuildReject`, records it in the activity store + the actor's outbox, removes the provisional follow edge, and server-delivers the `Reject` back to the follower's inbox (signed as the local actor) so the remote removes its edge. Regression tests: a single-instance endpoint suite (auth, status codes 401/404/400/409/403/410/202, idempotent re-reject, local-follower guard) + a two-instance federation loop proving the Reject is delivered back over the wire and the follower's edge is removed. The gap register (G-1/G-2/G-3/G-4/G-5/G-6 + H-4) was also refreshed to its verified implementation status ([change 084](changes/084-phase11-operator-reject-gap-register.md)).
-- [ ] Ensure failure modes such as bad signatures, unknown actors, 404s, rate limits, and proxy fallback are exercised in realistic paths.
+- [x] Ensure failure modes such as bad signatures, unknown actors, 404s, rate limits, and proxy fallback are exercised in realistic paths.
   - [x] Client failure modes end-to-end over the real signed pipeline: 404 not-found is a final answer (`GetObjectAsync`/`GetActorAsync` → `null`, no retry) and a direct 401 falls back through the home instance's proxy (`ProxyFallbackHandler` outermost, Basic-auth POST to `/ap/v1/proxy/{target}`); server-side bad-signature (401), unknown actor (401/404), proxy allowlist (403), and rate-limit (429) are already covered by the signature-middleware + proxy-fallback integration tests ([change 083](changes/083-phase11-5-client-failure-mode-e2e-tests.md)).
 
 ### Phase 12 — Spec Conformance & Missing Features
@@ -131,11 +133,10 @@ substantial design calls: [decisions/](decisions/README.md).
         actor's key; full client pipeline over two in-process instances,
         [change 079](changes/079-explorer-raw-inspector-and-proxy-fallback.md))
         → external-instance → 3-service compose + smoke path.
-2. Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).
-3. Close the remaining gaps in Phase 12 and keep the conformance suite passing.
-4. Use the sample (instance→instance + instance→external via dev FQDNs) to feed Phase 13 live-interop results
-   back into the gap register and roadmap priorities.
+2. ~~Finish the remaining Phase 10 doc-sync (ARCHITECTURE / PROJECTS / TESTING / CODING_STYLE).~~ (Phase 10 complete.)
+3. ~~Close the remaining gaps in Phase 12 and keep the conformance suite passing.~~ (Phase 12 complete — F-01…F-30 all closed, 961 tests, 0 failures, 0 warnings.)
+4. Phase 13 live-interop (13.5–13.10): stand up the public instance + dev partner instances (Mastodon, Lemmy, Threads) and verify interoperability — **blocked on Phase 9 FQDN/TLS + real partner instances**. The CI-testable sub-slices (13.1–13.4: Mastodon extension passthrough, `ld+json` accept, poll inbound, `sensitive` inbound) are done (961→974, changes 097–100).
 
 ## Summary
 
-The project already has a strong base: core identity, client/server federation, communities, proxying, and deployment planning are all in place. The next milestones are to finish the remaining specification and review work, then prove real-world interoperability against external ActivityPub implementations.
+The project already has a strong base: core identity, client/server federation, communities, proxying, deployment planning, implementation gaps, and spec conformance are all complete (Phases 0–12). The next milestone is Phase 13 live-interop: proving real-world interoperability against external ActivityPub implementations (Mastodon, Lemmy, Threads) — blocked on Phase 9 FQDN/TLS + real partner instances. The CI-testable Phase 13 sub-slices (13.1–13.4) are done (974 tests, 0 failures, 0 warnings).
