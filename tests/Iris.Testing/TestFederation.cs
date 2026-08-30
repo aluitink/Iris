@@ -45,11 +45,14 @@ public static class TestFederation
     /// <summary>
     /// Starts a single-instance <see cref="TestServer"/>, registering <paramref name="key"/> as the
     /// instance actor's signing key (so the host's outbound <c>DeliveryWorker</c> can sign) and
-    /// optionally overriding the <see cref="IActorDocumentFetcher"/> (for federation wiring).
+    /// optionally overriding the <see cref="IActorDocumentFetcher"/> (for federation wiring). The outbound
+    /// delivery transport defaults to the real <c>HttpClientHandler</c>; pass <paramref name="deliveryTransport"/>
+    /// to route the <c>DeliveryWorker</c> to another in-process <see cref="TestServer"/> (federation).
     /// </summary>
     public static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence, ISigningKey key,
-        IActorDocumentFetcher? fetcher = null)
+        IActorDocumentFetcher? fetcher = null,
+        Func<HttpMessageHandler>? deliveryTransport = null)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -64,6 +67,7 @@ public static class TestFederation
             Handle = handle,
             Persistence = persistence,
             Fetcher = fetcher,
+            DeliveryTransport = deliveryTransport,
             IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
         });
     }

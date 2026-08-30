@@ -205,11 +205,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <inheritdoc/>
     public Task<int> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
-        // The follow is delivered to the target's inbox (derived from the actor IRI) and is signed by
-        // the pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
-        // receiving store can dedupe a retried follow. The ActivityStreams Follow type has no typed
-        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
-        // the constructor sets `Type = "Follow"`.
+        // The follow is published to the follower's OWN outbox (the write surface for the activities an
+        // actor authors — the client never addresses a recipient's inbox for an activity it authors) and
+        // is signed by the pipeline as actorId. The server records it in the follower's outbox and then
+        // delivers it to the target's inbox (the server owns the recipient hop). The `Id` is a
+        // deterministic, unique-per-(actor,target) IRI so a retried follow dedupes. The ActivityStreams
+        // Follow type has no typed `id`/`actor`/`object` scalar beyond the library's, so the
+        // object-initializer form is used and the constructor sets `Type = "Follow"`.
         var follow = new Follow
         {
             Id = $"{actorId.Value}/follows/{targetId.Value}",
@@ -217,19 +219,20 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = targetId.Uri }],
         };
 
-        return DeliverAsync(targetId.InboxOf(), follow, ct);
+        return DeliverAsync(actorId.OutboxOf(), follow, ct);
     }
 
     /// <inheritdoc/>
     public Task<int> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // An un-follow is the ActivityStreams inverse of a Follow: an Undo whose object references the
-        // original Follow by IRI. Per the ActivityPub un-follow convention (the same one the server's
-        // UndoActivityHandler follows), the Undo is delivered to the follower's own inbox (actorId) — the
-        // party that made the follow undoes it — not the un-followed actor's inbox. The object IRI reuses
-        // FollowAsync's deterministic {actorId}/follows/{targetId} IRI so the receiver resolves exactly the
-        // follow that was recorded; the Undo gets its own deterministic unique-per-(actor,target) IRI so a
-        // retried un-follow dedupes.
+        // original Follow by IRI. Per the delivery model, the Undo is published to the follower's OWN
+        // outbox (actorId) — the party that made the follow undoes it, and an authored activity always
+        // flows through the acting actor's own outbox — not the un-followed actor's inbox. The server
+        // records it and delivers it to the target's inbox (the server owns the recipient hop). The
+        // object IRI reuses FollowAsync's deterministic {actorId}/follows/{targetId} IRI so the receiver
+        // resolves exactly the follow that was recorded; the Undo gets its own deterministic
+        // unique-per-(actor,target) IRI so a retried un-follow dedupes.
         var followIri = new Iri($"{actorId.Value}/follows/{targetId.Value}");
         var undo = new Undo
         {
@@ -238,19 +241,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = followIri.Uri }],
         };
 
-        return DeliverAsync(actorId.InboxOf(), undo, ct);
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
     }
 
     /// <inheritdoc/>
     public Task<int> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
-        // A like is delivered to the liker's OWN inbox (the local-write path, exactly like PostNoteAsync):
-        // the instance records the like edge (liker → object) in the liker's `liked` collection and
-        // federates it to the object's owner. A content object (the liked note) has no inbox of its own —
-        // only actors do — so delivering to the object's "inbox" would not match the actor-inbox route. The
-        // `Id` is a deterministic, unique-per-(actor,object) IRI so a retried like dedupes on the receiver.
-        // The ActivityStreams Like type has no typed scalar beyond the library's, so the object-initializer
-        // form is used and the constructor sets `Type = "Like"`.
+        // A like is published to the liker's OWN outbox (the write surface for the activities an actor
+        // authors): the instance records the like edge (liker → object) in the liker's `liked` collection
+        // and the outbox, and the server federates it to the object's owner. A content object (the liked
+        // note) has no inbox of its own — only actors do — so the recipient hop belongs to the server. The
+        // `Id` is a deterministic, unique-per-(actor,object) IRI so a retried like dedupes on the
+        // receiver. The ActivityStreams Like type has no typed scalar beyond the library's, so the
+        // object-initializer form is used and the constructor sets `Type = "Like"`.
         var like = new Like
         {
             Id = $"{actorId.Value}/likes/{objectId.Value}",
@@ -258,17 +261,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = objectId.Uri }],
         };
 
-        return DeliverAsync(actorId.InboxOf(), like, ct);
+        return DeliverAsync(actorId.OutboxOf(), like, ct);
     }
 
     /// <inheritdoc/>
     public Task<int> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
-        // A block is delivered to the target's inbox (per ActivityPub §5.2.1.3) and is signed by the
-        // pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
-        // receiving moderation store can dedupe a retried block. The ActivityStreams Block type
-        // (a subclass of Ignore) has no typed `id`/`actor`/`object` scalar beyond the library's, so the
-        // object-initializer form is used and the constructor sets `Type = "Block"`.
+        // A block is published to the blocker's OWN outbox (the write surface for the activities an actor
+        // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
+        // actorId. The server records the block edge and delivers it to the target's inbox (the server
+        // owns the recipient hop). The `Id` is a deterministic, unique-per-(actor,target) IRI so a
+        // retried block dedupes. The ActivityStreams Block type (a subclass of Ignore) has no typed
+        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
+        // the constructor sets `Type = "Block"`.
         var block = new Block
         {
             Id = $"{actorId.Value}/blocks/{targetId.Value}",
@@ -276,7 +281,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = targetId.Uri }],
         };
 
-        return DeliverAsync(targetId.InboxOf(), block, ct);
+        return DeliverAsync(actorId.OutboxOf(), block, ct);
     }
 
     /// <inheritdoc/>
@@ -295,11 +300,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     public Task<int> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // An un-block is the ActivityStreams inverse of a Block: an Undo whose object references the
-        // original Block by IRI. The Undo is delivered to targetId.InboxOf() (the previously-blocked
-        // actor's inbox, so the receiving instance removes the edge) and is signed by the pipeline as
-        // actorId. The object IRI reuses BlockAsync's deterministic {actor}/blocks/{target} IRI so it
-        // references exactly the block that was recorded; the Undo gets its own deterministic
-        // unique-per-(actor,target) IRI so a retried un-block dedupes on the receiver.
+        // original Block by IRI. Per the delivery model the Undo is published to the blocker's OWN outbox
+        // (an authored activity always flows through the acting actor's own outbox) and is signed by the
+        // pipeline as actorId; the server records it and delivers it to the target's inbox (the server
+        // owns the recipient hop, so the receiving instance removes the edge). The object IRI reuses
+        // BlockAsync's deterministic {actor}/blocks/{target} IRI so it references exactly the block that
+        // was recorded; the Undo gets its own deterministic unique-per-(actor,target) IRI so a retried
+        // un-block dedupes on the receiver.
         var blockIri = new Iri($"{actorId.Value}/blocks/{targetId.Value}");
         var undo = new Undo
         {
@@ -308,17 +315,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = blockIri.Uri }],
         };
 
-        return DeliverAsync(targetId.InboxOf(), undo, ct);
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
     }
 
     /// <inheritdoc/>
     public Task<int> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
-        // A flag is delivered to the target's inbox (the flagged actor's inbox) and is signed by the
-        // pipeline as actorId. The `Id` is a deterministic, unique-per-(actor,target) IRI so the
-        // receiving moderation store can dedupe a retried flag. The ActivityStreams Flag type
-        // (a subclass of Activity) has no typed `id`/`actor`/`object` scalar beyond the library's, so
-        // the object-initializer form is used and the constructor sets `Type = "Flag"`.
+        // A flag is published to the flagger's OWN outbox (the write surface for the activities an actor
+        // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
+        // actorId. The server records the flag edge and delivers it to the target's inbox (the server
+        // owns the recipient hop). The `Id` is a deterministic, unique-per-(actor,target) IRI so a
+        // retried flag dedupes. The ActivityStreams Flag type (a subclass of Activity) has no typed
+        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
+        // the constructor sets `Type = "Flag"`.
         var flag = new Flag
         {
             Id = $"{actorId.Value}/flags/{targetId.Value}",
@@ -326,7 +335,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = targetId.Uri }],
         };
 
-        return DeliverAsync(targetId.InboxOf(), flag, ct);
+        return DeliverAsync(actorId.OutboxOf(), flag, ct);
     }
 
     /// <inheritdoc/>
@@ -334,9 +343,10 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     {
         // An un-flag is the inverse of FlagAsync: the Undo references the deterministic Flag IRI
         // {actorId}/flags/{targetId} (the same IRI FlagAsync used), so the receiving instance resolves
-        // the original Flag's parties from the stored Flag and removes the recorded edge. The Undo is
-        // delivered to the flagged actor's inbox (the same inbox the Flag went to) and is signed by the
-        // pipeline as actorId.
+        // the original Flag's parties from the stored Flag and removes the recorded edge. Per the
+        // delivery model the Undo is published to the flagger's OWN outbox (an authored activity always
+        // flows through the acting actor's own outbox) and is signed by the pipeline as actorId; the
+        // server records it and delivers it to the target's inbox (the server owns the recipient hop).
         var flagIri = new Iri($"{actorId.Value}/flags/{targetId.Value}");
         var undo = new Undo
         {
@@ -345,7 +355,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [new Link { Href = flagIri.Uri }],
         };
 
-        return DeliverAsync(targetId.InboxOf(), undo, ct);
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
     }
 
     /// <inheritdoc/>
@@ -524,9 +534,10 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [note],
         };
 
-        // Delivered to the author's own inbox (the "local post" path): the author's instance records
-        // the note and federates it to followers.
-        return DeliverAsync(actorId.InboxOf(), create, ct);
+        // Published to the author's OWN outbox (the "local post" path — the outbox is the write surface
+        // for the activities an actor authors): the author's instance records the note in the outbox and
+        // federates it to followers.
+        return DeliverAsync(actorId.OutboxOf(), create, ct);
     }
 
     /// <inheritdoc/>
@@ -585,7 +596,9 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Object = [note],
         };
 
-        return DeliverAsync(actorId.InboxOf(), create, ct);
+        // Published to the author's OWN outbox (the outbox is the write surface for the activities an
+        // actor authors): the author's instance records the reply in the outbox and federates it.
+        return DeliverAsync(actorId.OutboxOf(), create, ct);
     }
 
     /// <summary>

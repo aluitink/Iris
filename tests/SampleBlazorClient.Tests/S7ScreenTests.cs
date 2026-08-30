@@ -313,10 +313,13 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ActorFollow_FederatedAcrossInstances_RecordsEdgeOnTarget()
     {
-        // A (host a.example, actor alice) follows B (host b.example, actor bob) over the wire: A's
-        // client is signed as alice and routed to B's inbox (b.example); B's inbound key resolver
-        // verifies the signature by fetching alice's actor document from A. The un-follow is an Undo
-        // delivered to alice's own inbox (A), where A resolves the stored Follow and removes the edge.
+        // A (host a.example, actor alice) follows B (host b.example, actor bob) over the wire. Per the
+        // delivery model, the client publishes the authored Follow to alice's OWN outbox — which lives on
+        // A (alice's home instance) — NOT to bob's inbox. A records the Follow in alice's outbox and then
+        // (the server's job) delivers it to bob's inbox on B; B's inbound key resolver verifies the
+        // signature by fetching alice's actor document from A. The un-follow is an Undo published to
+        // alice's own outbox (A) likewise; A resolves the stored Follow and removes the edge, and the
+        // server delivers the Undo to bob's inbox on B.
         const string AHost = "a.example";
         const string BHost = "b.example";
         var aPersistence = new Iris.Server.InMemory.InMemoryPersistenceProvider();
@@ -325,39 +328,50 @@ public sealed class S7ScreenTests
         var (bobKey, bobActorIri, _) = TestSeeder.SeedPersonWithKey(bPersistence, BHost, "bob");
 
         // Each instance's inbound key resolver resolves a signing actor's public key by fetching the
-        // actor's document. The follow is delivered to bob's inbox (B), so B resolves alice by fetching
-        // her document from A. The un-follow is an Undo delivered to alice's own inbox (A), so A likewise
-        // needs to resolve alice — both instances fetch actor documents from A (alice's home instance).
-        // A's TestServer does not yet exist while A is being constructed, so the fetcher's handler is
-        // deferred: it captures a reference to A that is filled in once A is built (the LazyHandler
-        // resolves it on first use, after construction completes).
+        // actor's document, and each instance's outbound DeliveryWorker delivers to the other instance's
+        // inbox. A's TestServer does not yet exist while A is being constructed, so both the fetcher and
+        // the delivery transport are deferred: they capture a reference to A that is filled in once A is
+        // built (the LazyHandler resolves it on first use, after construction completes).
         TestServer? aRef = null;
+        TestServer? bRef = null;
         Func<HttpMessageHandler> aHandler = () => new LazyHandler(() => aRef!.CreateHandler());
+        Func<HttpMessageHandler> bHandler = () => new LazyHandler(() => bRef!.CreateHandler());
         using var a = TestFederation.StartServer(AHost, "alice", aPersistence, aliceKey,
-            new RemoteDocumentFetcher(aHandler, AHost));
+            new RemoteDocumentFetcher(aHandler, AHost), bHandler);
         aRef = a;
         using var b = TestFederation.StartServer(BHost, "bob", bPersistence, bobKey,
-            new RemoteDocumentFetcher(aHandler, AHost));
+            new RemoteDocumentFetcher(aHandler, AHost), aHandler);
+        bRef = b;
 
-        // A client signed as alice (A's key), one routed to B (follows bob) and one to A (the un-follow).
+        // A client signed as alice (A's key), routed to A — alice's home instance — because her authored
+        // activities are published to her OWN outbox (which lives on A), never to a recipient's inbox.
         var keyStore = new Iris.Core.Identity.InMemoryKeyStore();
         keyStore.PutKey(aliceKey);
         var keyProvider = new Iris.Client.Auth.InMemoryKeyProvider(keyStore);
         keyProvider.RegisterKey(aliceActorIri, aliceKey.KeyId);
         var signer = new Iris.Core.Signing.HttpSignatureSigner(keyStore);
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
-        var toB = factory.Create(new ActivityPubClientOptions { ActorId = aliceActorIri, EnableRetry = false }, b.CreateHandler());
         var toA = factory.Create(new ActivityPubClientOptions { ActorId = aliceActorIri, EnableRetry = false }, a.CreateHandler());
-        using var disposeB = toB;
-        using var disposeA = toA;
+        using var _ = toA;
 
-        // alice follows bob: the Follow is signed as alice and delivered to bob's inbox (B).
-        Assert.Equal(202, await toB.FollowAsync(aliceActorIri, bobActorIri));
+        // alice follows bob: the Follow is published to alice's own outbox (A); A records it in its own
+        // follow store (the actor's `following` collection lists even a remote target) and the server
+        // delivers it to bob's inbox (B), where B records the follow edge.
+        Assert.Equal(202, await toA.FollowAsync(aliceActorIri, bobActorIri));
+        Assert.True(
+            await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            "after a federated Follow, alice must follow bob in A's follow store (her own outbox)");
+
+        // The server→server delivery of the Follow to bob's inbox (B) is asynchronous (the DeliveryWorker
+        // pumps the queue), so poll for B's recorded edge.
+        await TestFederation.WaitForAsync(
+            () => bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
+            TimeSpan.FromSeconds(5));
         Assert.True(
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
-            "after a federated Follow, alice must follow bob in B's follow store");
+            "after a federated Follow, B must record the follow edge (server delivered it to bob's inbox)");
 
-        // alice un-follows bob: the Undo is delivered to alice's own inbox (A); A resolves the stored
+        // alice un-follows bob: the Undo is published to alice's own outbox (A); A resolves the stored
         // Follow (the same deterministic IRI FollowAsync used) and removes the edge.
         Assert.Equal(202, await toA.UndoFollowAsync(aliceActorIri, bobActorIri));
         var aliceFollowing = await aPersistence.Follows.GetFollowingAsync(aliceActorIri);

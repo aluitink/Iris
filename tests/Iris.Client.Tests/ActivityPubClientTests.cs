@@ -117,9 +117,10 @@ public class ActivityPubClientTests
         var status = await client.FollowAsync(follower, new Iri(ActorIri));
 
         Assert.Equal(202, status);
-        // The follow is delivered to the *target's* inbox (derived from the target actor IRI).
+        // The follow is published to the *follower's own* outbox (the write surface for the activities an
+        // actor authors — the client never addresses a recipient's inbox).
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
-        Assert.Equal(InboxIri, fake.LastUri!.ToString());
+        Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
         Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest.Content!.Headers.ContentType!.MediaType);
 
         var body = Encoding.UTF8.GetString(fake.LastBody);
@@ -144,8 +145,9 @@ public class ActivityPubClientTests
         var status = await client.FollowAsync(new Iri("https://a.domain.local/u/alice"), community);
 
         Assert.Equal(202, status);
-        // Following a community posts to the community's inbox, not an actor's.
-        Assert.Equal("https://b.domain.local/c/iris/inbox", fake.LastUri!.ToString());
+        // Following a community is still published to the *follower's own* outbox (the write surface for
+        // the activities an actor authors); the object is the community (the server resolves the recipient).
+        Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
         using var doc = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
         Assert.Equal(community.Value, doc.RootElement.GetProperty("object").GetString());
     }
@@ -176,9 +178,10 @@ public class ActivityPubClientTests
         var status = await client.PostNoteAsync(author, "hello world");
 
         Assert.Equal(202, status);
-        // The post is delivered to the *author's own* inbox (the "local post" path).
+        // The post is published to the *author's own* outbox (the "local post" path — the outbox is the
+        // write surface for the activities an actor authors).
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
-        Assert.Equal("https://a.domain.local/u/alice/inbox", fake.LastUri!.ToString());
+        Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
         Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest.Content!.Headers.ContentType!.MediaType);
 
         var body = Encoding.UTF8.GetString(fake.LastBody);

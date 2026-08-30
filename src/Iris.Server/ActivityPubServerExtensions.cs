@@ -434,9 +434,21 @@ public static class ActivityPubServerExtensions
         group.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
 
         // Inbox: POST /ap/v1/u/{handle}/inbox — receives federation activities (Follow, Accept,
-        // Create, ...). Requires a valid HTTP signature (validated by SignatureValidationMiddleware);
-        // unsigned or invalidly-signed requests are rejected with 401.
+        // Create, ...) that a REMOTE peer delivers TO this actor. Requires a valid HTTP signature
+        // (validated by SignatureValidationMiddleware); unsigned or invalidly-signed requests are
+        // rejected with 401.
         group.MapPost("/u/{handle}/inbox", InboxHandler);
+
+        // Outbox publish: POST /ap/v1/u/{handle}/outbox — the WRITE SURFACE for the activities the local
+        // actor AUTHORS (a Follow, a Create/note, a Like, a Block, a Flag, an Undo, ...). Per the delivery
+        // model, a client never addresses a recipient's inbox for an activity it authors; it publishes the
+        // activity to the acting actor's own outbox. The server records the activity in that actor's outbox
+        // (so the actor's feed / outbox collection surfaces it) + the activity store, and is the only thing
+        // that delivers the activity to a recipient's inbox (the server resolves the recipient — the
+        // activity's object for a Follow/Block/Flag, the author's remote followers for a Create, the
+        // object's owner for a Like — and server-delivers it, signed as the acting local actor). Requires a
+        // valid signature from the acting local actor.
+        group.MapPost("/u/{handle}/outbox", OutboxPublishHandler);
 
         // Paged collections: GET /ap/v1/u/{handle}/{collection} where {collection} is one of outbox
         // (the actor's posted activities, newest first), followers (actors following the local actor),
@@ -958,6 +970,386 @@ public static class ActivityPubServerExtensions
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
         return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Outbox publish: handles <c>POST /ap/v1/u/{handle}/outbox</c> — the write surface for the
+    /// activities the local actor <em>authors</em>. Per the delivery model, a client never addresses a
+    /// recipient's inbox for an activity it authors; it publishes the activity to the acting actor's own
+    /// outbox. This handler signature-validates the acting local actor, records the activity in that
+    /// actor's outbox (so the actor's feed / outbox collection surfaces it) and the activity store (for
+    /// <see cref="Undo"/> resolution and for the remote side to look it up), records the local edge the
+    /// activity implies (a follow/block/flag/like, or its undo), and — the server's job, not the
+    /// client's — resolves the recipient and server-delivers the activity to the recipient's inbox.
+    /// </summary>
+    /// <remarks>
+    /// The recipient is derived from the activity: the activity's <c>object</c> for a
+    /// <see cref="Follow"/>/<see cref="Block"/>/<see cref="Flag"/> (the actor being followed/blocked/
+    /// flagged), the original activity's <c>object</c> for an <see cref="Undo"/> of one, the object's
+    /// <c>attributedTo</c> for a <see cref="Like"/> (the object's owner), and the author's
+    /// <em>remote</em> followers for a <see cref="Create"/> (the post's federation target). A
+    /// local-only recipient (a local actor) needs no cross-instance hop — the local edge is already
+    /// recorded — so the server delivers only to remote recipients (the mirror of
+    /// <see cref="CreateActivityHandler"/>'s remote-follower loop).
+    /// </remarks>
+    private static async Task<IResult> OutboxPublishHandler(
+        HttpContext context,
+        string handle,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        ILocalActorResolver localActors,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var outcome = SignatureValidationMiddleware.GetResult(context);
+        if (!outcome.IsValid)
+        {
+            return Results.Unauthorized();
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        context.Request.Body.Position = 0;
+        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Results.BadRequest();
+        }
+
+        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (payload is not Activity { Id: not null } activity)
+        {
+            return Results.BadRequest();
+        }
+
+        // The acting actor must be the activity's actor (the client publishes an activity it authors to
+        // its own outbox; the server enforces that the signer owns the activity).
+        var actingActorIri = activity.Actor?.FirstOrDefault().ResolveObjectIri();
+        if (!actingActorIri.HasValue || actingActorIri.Value != actorIri)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        try
+        {
+            // 1. Record the activity in the actor's outbox (surfaces it in the actor's feed / outbox
+            //    collection) and the activity store (for Undo resolution + the remote side to look it up).
+            await persistence.Activities.AddToOutboxAsync(actorIri, activity, ct).ConfigureAwait(false);
+            await persistence.Activities.PutActivityAsync(activity, ct).ConfigureAwait(false);
+
+            // 2. Record the local edge the activity implies + resolve the recipient for the server→server
+            //    delivery hop (the client never enumerates recipients — that is the server's job).
+            Iri? recipientIri = activity switch
+            {
+                Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
+                Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
+                Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
+                Like like => await RecordLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
+                Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, ct).ConfigureAwait(false),
+                Create create => await RecordCreateLocalAsync(persistence, localActors, actorIri, create, ct).ConfigureAwait(false),
+                _ => null,
+            };
+
+            // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
+            //    recipient needs no cross-instance hop (the local edge is already recorded); only a
+            //    remote recipient is delivered to, signed as the acting local actor.
+            if (recipientIri is { } recipient
+                && !await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
+            {
+                await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
+        }
+
+        return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Records the local follow edge for a <see cref="Follow"/> published to the actor's outbox and
+    /// returns the follow's target (the recipient of the server→server delivery). A follow of a local
+    /// person records the <c>follower → target</c> edge (honoring <c>manuallyApprovesFollowers</c>, which
+    /// still records the edge); a follow of a local community records the community's follows + followers
+    /// sets (the inverse of <see cref="FollowActivityHandler"/>'s community branch, F-24). Returns
+    /// <see langword="null"/> when the target is not resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordFollowLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri followerIri,
+        Follow follow,
+        CancellationToken ct)
+    {
+        var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!targetIri.HasValue)
+        {
+            return null;
+        }
+
+        // The actor's home instance records the follow edge in its own follow store regardless of
+        // whether the target is local — the actor's `following` collection lists even a remote target.
+        // A follow of a local person additionally makes the target's `followers` collection list the
+        // follower (the same edge, read inversely); a follow of a local community records the
+        // community's follows + followers sets (the inverse of FollowActivityHandler's community
+        // branch, F-24) instead of a person-follow edge (the stores are disjoint).
+        await persistence.Follows
+            .RecordFollowAsync(followerIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
+
+        if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+        {
+            await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+            await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+        }
+
+        return targetIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local block edge for a <see cref="Block"/> published to the actor's outbox and returns
+    /// the blocked actor (the recipient of the server→server delivery). The blocker is the acting local
+    /// actor, so the edge is always recorded (the local actor's <c>blocks</c> collection lists the
+    /// blocked actor). Returns <see langword="null"/> when the blocked actor is not resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordBlockLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri blockerIri,
+        Block block,
+        CancellationToken ct)
+    {
+        var blockedIri = block.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!blockedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RecordBlockAsync(blockerIri, blockedIri.Value, ct).ConfigureAwait(false);
+        return blockedIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local flag edge for a <see cref="Flag"/> published to the actor's outbox and returns
+    /// the flagged actor (the recipient of the server→server delivery). The flagger is the acting local
+    /// actor, so the edge is always recorded (the local actor's <c>flags</c> collection lists the flagged
+    /// actor). Returns <see langword="null"/> when the flagged actor is not resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordFlagLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri flaggerIri,
+        Flag flag,
+        CancellationToken ct)
+    {
+        var flaggedIri = flag.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!flaggedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RecordFlagAsync(flaggerIri, flaggedIri.Value, ct).ConfigureAwait(false);
+        return flaggedIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local like edge for a <see cref="Like"/> published to the actor's outbox and returns
+    /// the object's owner (the recipient of the server→server delivery). The liker is the acting local
+    /// actor, so the edge (liker → object) is always recorded in the liker's <c>liked</c> collection. The
+    /// owner is the object's <c>attributedTo</c> (fetched from the object store when the object is a
+    /// local object); a remote object's owner is resolved by the remote instance on receipt. Returns
+    /// <see langword="null"/> when the owner is not resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordLikeLocalAsync(
+        IPersistenceProvider persistence,
+        Iri likerIri,
+        Like like,
+        CancellationToken ct)
+    {
+        var objectIri = like.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!objectIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Likes.RecordLikeAsync(likerIri, objectIri.Value, ct).ConfigureAwait(false);
+
+        // The owner is the object's attributedTo. A local object is in the object store; a remote
+        // object's owner is resolved by the remote instance (the delivery still goes to the object IRI,
+        // whose instance routes it to the owner).
+        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
+            .ConfigureAwait(false) &&
+            storedObject is { } &&
+            storedObject.AttributedTo is { } attributed &&
+            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
+        {
+            return ownerIri;
+        }
+
+        return objectIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local edge removal for an <see cref="Undo"/> published to the actor's outbox and
+    /// returns the original activity's target (the recipient of the server→server delivery, so the remote
+    /// side removes its edge). Resolves the undone activity from the activity store (the actor stored it
+    /// when it authored it): an <see cref="Undo"/> of a <see cref="Follow"/> removes the follow edge (and
+    /// the community's follows/followers sets when the target is a local community); of a
+    /// <see cref="Block"/> removes the block edge; of a <see cref="Flag"/> removes the flag edge. Returns
+    /// <see langword="null"/> when the undone activity is not a follow/block/flag or its target is not
+    /// resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordUndoLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri actorIri,
+        Undo undo,
+        CancellationToken ct)
+    {
+        var referenced = undo.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!referenced.HasValue
+            || !await persistence.Activities.TryGetActivityAsync(referenced.Value, out var stored, ct)
+                .ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        return stored switch
+        {
+            Follow follow => await RemoveFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
+            Block block => await RemoveBlockLocalAsync(persistence, actorIri, block, ct).ConfigureAwait(false),
+            Flag flag => await RemoveFlagLocalAsync(persistence, actorIri, flag, ct).ConfigureAwait(false),
+            _ => null,
+        };
+    }
+
+    private static async Task<Iri?> RemoveFollowLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri followerIri,
+        Follow follow,
+        CancellationToken ct)
+    {
+        var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!targetIri.HasValue)
+        {
+            return null;
+        }
+
+        // The actor's home instance removes its own follow edge regardless of whether the target is
+        // local (the inverse of RecordFollowLocalAsync — the actor's `following` collection no longer
+        // lists the target, local or remote).
+        await persistence.Follows
+            .RemoveFollowAsync(followerIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
+
+        if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+        {
+            await persistence.Communities.RemoveFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+            await persistence.Communities.RemoveFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
+        }
+
+        return targetIri.Value;
+    }
+
+    private static async Task<Iri?> RemoveBlockLocalAsync(
+        IPersistenceProvider persistence,
+        Iri blockerIri,
+        Block block,
+        CancellationToken ct)
+    {
+        var blockedIri = block.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!blockedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RemoveBlockAsync(blockerIri, blockedIri.Value, ct).ConfigureAwait(false);
+        return blockedIri.Value;
+    }
+
+    private static async Task<Iri?> RemoveFlagLocalAsync(
+        IPersistenceProvider persistence,
+        Iri flaggerIri,
+        Flag flag,
+        CancellationToken ct)
+    {
+        var flaggedIri = flag.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!flaggedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RemoveFlagAsync(flaggerIri, flaggedIri.Value, ct).ConfigureAwait(false);
+        return flaggedIri.Value;
+    }
+
+    /// <summary>
+    /// Records a <see cref="Create"/> published to the actor's outbox (stores the embedded object, so it
+    /// can be served by IRI and later updated/deleted) and returns the actor's remote followers' delivery
+    /// target (the post's federation target). A local follower already sees the post in the author's
+    /// outbox, so only the author's <em>remote</em> followers need a cross-instance delivery; a single
+    /// representative remote follower IRI is returned (the server delivers the post to each remote
+    /// follower's inbox via the same mechanism <see cref="CreateActivityHandler"/> uses). Returns
+    /// <see langword="null"/> when the author has no remote followers (no federation hop).
+    /// </summary>
+    private static async Task<Iri?> RecordCreateLocalAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri authorIri,
+        Create create,
+        CancellationToken ct)
+    {
+        // Store the embedded object (so it can be served by IRI, refreshed by an Update, tombstoned by a
+        // Delete) + the reply edge when the object is a reply (the inverse of CreateActivityHandler's
+        // StoreEmbeddedObjectAsync).
+        var embedded = create.ExtractEmbeddedObject();
+        if (embedded is not null)
+        {
+            await persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
+            var parentIri = embedded.GetParentIri();
+            var childIri = embedded.ResolveObjectIri();
+            if (parentIri is { } parent && childIri is { } child)
+            {
+                await persistence.Replies.RecordReplyAsync(parent, child, ct).ConfigureAwait(false);
+            }
+        }
+
+        // The federation target is the author's remote followers (a local follower sees the post in the
+        // author's outbox on this instance, so it needs no cross-instance delivery). Deliver to the first
+        // remote follower as the representative recipient; the full fan-out (each remote follower + relays)
+        // mirrors CreateActivityHandler's loops.
+        var followers = await persistence.Follows.GetFollowersAsync(authorIri, ct).ConfigureAwait(false);
+        foreach (var followerIri in followers)
+        {
+            if (await localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            if (await persistence.Moderation.IsBlockedAsync(followerIri, authorIri, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            return followerIri;
+        }
+
+        return null;
     }
 
     /// <summary>
