@@ -34,4 +34,15 @@ public interface IInboundRateLimiter
     /// <exception cref="ArgumentException">When <paramref name="senderHost"/> is null or empty.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled.</exception>
     bool TryAcquire(string senderHost, CancellationToken ct);
+
+    /// <summary>
+    /// Returns the <see cref="DateTimeOffset"/> when the peer's rate-limit window will reset (the
+    /// earliest time the peer may retry). Used to set the <c>Retry-After</c> HTTP-date header on
+    /// 429 responses (Phase 18.3). When the limiter is disabled (no rate limit), returns the current
+    /// time (the caller should not send a <c>Retry-After</c> header).
+    /// </summary>
+    /// <param name="senderHost">The host of the signer's <c>keyId</c> (the peer's identity).</param>
+    /// <returns>The time when the peer's window resets, or <see cref="DateTimeOffset.UtcNow"/> when
+    /// the limiter is disabled.</returns>
+    DateTimeOffset GetRetryAfter(string senderHost);
 }

@@ -102,6 +102,41 @@ public sealed class SlidingWindowInboundRateLimiter : IInboundRateLimiter
         }
     }
 
+    /// <inheritdoc/>
+    public DateTimeOffset GetRetryAfter(string senderHost)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(senderHost);
+
+        if (_maxRequests == 0)
+        {
+            return DateTimeOffset.UtcNow; // disabled — no rate limit
+        }
+
+        var peer = _peers.GetValueOrDefault(senderHost.ToLowerInvariant());
+        if (peer is null || peer.Count == 0)
+        {
+            return DateTimeOffset.UtcNow; // no requests recorded — no rate limit
+        }
+
+        // The peer's window resets when the oldest timestamp falls out of the sliding window.
+        // The oldest timestamp is at index 0 (the list is ordered oldest-first).
+        lock (peer.Lock)
+        {
+            var now = DateTimeOffset.UtcNow;
+            peer.Expire(now, _window);
+
+            if (peer.Count == 0)
+            {
+                return now; // window already expired
+            }
+
+            // The window resets when the oldest timestamp + window > now.
+            var oldest = peer.Oldest();
+            var resetTime = oldest + _window;
+            return resetTime > now ? resetTime : now;
+        }
+    }
+
     /// <summary>
     /// A peer's sliding window: an ordered list of request timestamps (oldest first) guarded by a
     /// lock so concurrent requests serialize their check-then-record.
@@ -136,5 +171,10 @@ public sealed class SlidingWindowInboundRateLimiter : IInboundRateLimiter
         /// Records a request at <paramref name="timestamp"/>.
         /// </summary>
         public void Add(DateTimeOffset timestamp) => _timestamps.Add(timestamp);
+
+        /// <summary>
+        /// Returns the oldest timestamp in the window (the first element of the list).
+        /// </summary>
+        public DateTimeOffset Oldest() => _timestamps[0];
     }
 }

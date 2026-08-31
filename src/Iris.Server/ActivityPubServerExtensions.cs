@@ -1245,7 +1245,20 @@ public static class ActivityPubServerExtensions
             : outcome.KeyId.Value;
         if (!rateLimiter.TryAcquire(senderHost, ct))
         {
-            context.Response.Headers.Append("Retry-After", "60");
+            // Phase 18.3: send an HTTP-date Retry-After (RFC 9110 §10.2.1) so the client's
+            // RetryHandler can back off precisely (the date is when the peer's window resets).
+            var retryAfter = rateLimiter.GetRetryAfter(senderHost);
+            if (retryAfter > DateTimeOffset.UtcNow)
+            {
+                context.Response.Headers.Append(
+                    "Retry-After",
+                    retryAfter.ToUniversalTime().ToString("R"));
+            }
+            else
+            {
+                // Fallback: the window already expired (race) — send a 1-second delta.
+                context.Response.Headers.Append("Retry-After", "1");
+            }
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 

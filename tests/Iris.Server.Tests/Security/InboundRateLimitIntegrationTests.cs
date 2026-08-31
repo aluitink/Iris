@@ -83,8 +83,12 @@ public sealed class InboundRateLimitIntegrationTests : IDisposable
         var rejected = await SendSignedPostAsync();
         Assert.Equal(HttpStatusCode.TooManyRequests, rejected.StatusCode);
 
-        // The 429 carries a Retry-After header (60 seconds) so the client can back off.
+        // The 429 carries a Retry-After header (HTTP-date form, Phase 18.3) so the client can
+        // back off precisely.
         Assert.True(rejected.Headers.RetryAfter != null, "429 should carry a Retry-After header");
+        Assert.True(rejected.Headers.RetryAfter!.Date != null, "429 should carry an HTTP-date Retry-After");
+        Assert.True(rejected.Headers.RetryAfter.Date > DateTimeOffset.UtcNow,
+            "429 Retry-After date should be in the future");
     }
 
     // --- A 429'd request is not processed ---------------------------------------------------

@@ -141,4 +141,81 @@ public sealed class InboundRateLimiterUnitTests
         // Budget is now free: a new request is permitted.
         Assert.True(limiter.TryAcquire("remote.example.org", CancellationToken.None));
     }
+
+    // --- GetRetryAfter (Phase 18.3) ----------------------------------------------------------
+
+    [Fact]
+    public void DisabledLimiter_GetRetryAfter_ReturnsNow()
+    {
+        var limiter = new SlidingWindowInboundRateLimiter(maxRequests: 0);
+
+        var before = DateTimeOffset.UtcNow;
+        var retryAfter = limiter.GetRetryAfter("remote.example.org");
+        var after = DateTimeOffset.UtcNow;
+
+        // A disabled limiter returns the current time (no rate limit).
+        Assert.InRange(retryAfter, before, after);
+    }
+
+    [Fact]
+    public void EnabledLimiter_GetRetryAfter_BeforeAnyRequests_ReturnsNow()
+    {
+        var limiter = new SlidingWindowInboundRateLimiter(maxRequests: 5, window: TimeSpan.FromMinutes(1));
+
+        var before = DateTimeOffset.UtcNow;
+        var retryAfter = limiter.GetRetryAfter("remote.example.org");
+        var after = DateTimeOffset.UtcNow;
+
+        // No requests recorded: the window is not full, so the retry-after is now.
+        Assert.InRange(retryAfter, before, after);
+    }
+
+    [Fact]
+    public void EnabledLimiter_GetRetryAfter_AfterBudgetExhausted_ReturnsFutureTime()
+    {
+        var limiter = new SlidingWindowInboundRateLimiter(maxRequests: 2, window: TimeSpan.FromMinutes(1));
+
+        // 2 requests (budget exhausted).
+        Assert.True(limiter.TryAcquire("remote.example.org", CancellationToken.None));
+        Assert.True(limiter.TryAcquire("remote.example.org", CancellationToken.None));
+        Assert.False(limiter.TryAcquire("remote.example.org", CancellationToken.None));
+
+        // The retry-after should be in the future (the window hasn't expired yet).
+        var retryAfter = limiter.GetRetryAfter("remote.example.org");
+        Assert.True(retryAfter > DateTimeOffset.UtcNow);
+
+        // The retry-after should be at most 1 minute in the future (the window length).
+        Assert.True(retryAfter <= DateTimeOffset.UtcNow + TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task EnabledLimiter_GetRetryAfter_WindowExpired_ReturnsNow()
+    {
+        var limiter = new SlidingWindowInboundRateLimiter(maxRequests: 2, window: TimeSpan.FromMilliseconds(100));
+
+        // 2 requests (budget exhausted).
+        Assert.True(limiter.TryAcquire("remote.example.org", CancellationToken.None));
+        Assert.True(limiter.TryAcquire("remote.example.org", CancellationToken.None));
+
+        // Wait for the window to expire.
+        await Task.Delay(150);
+
+        // The window has expired: the retry-after is now (the peer can retry immediately).
+        var retryAfter = limiter.GetRetryAfter("remote.example.org");
+        Assert.True(retryAfter <= DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(50));
+    }
+
+    [Fact]
+    public void EnabledLimiter_GetRetryAfter_DifferentPeers_AreIndependent()
+    {
+        var limiter = new SlidingWindowInboundRateLimiter(maxRequests: 1, window: TimeSpan.FromMinutes(1));
+
+        // Peer A: budget exhausted.
+        Assert.True(limiter.TryAcquire("a.example.org", CancellationToken.None));
+        Assert.False(limiter.TryAcquire("a.example.org", CancellationToken.None));
+
+        // Peer B: no requests recorded.
+        var retryAfterB = limiter.GetRetryAfter("b.example.org");
+        Assert.True(retryAfterB <= DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(50));
+    }
 }
