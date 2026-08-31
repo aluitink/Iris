@@ -29,6 +29,7 @@ public sealed class FakeActivityPubServer : IDisposable
     private readonly TestServer _server;
     private readonly RequestRecorder _recorder;
     private readonly FlakyGate? _flakyGate;
+    private readonly RateLimitGate? _rateLimitGate;
 
     /// <summary>The actor document's JSON (relayed verbatim by a proxy endpoint in fallback tests).</summary>
     internal string ActorDocJson { get; private set; } = string.Empty;
@@ -37,12 +38,14 @@ public sealed class FakeActivityPubServer : IDisposable
         TestServer server,
         RequestRecorder recorder,
         FlakyGate? flakyGate,
+        RateLimitGate? rateLimitGate,
         string hostname,
         string actorHandle)
     {
         _server = server;
         _recorder = recorder;
         _flakyGate = flakyGate;
+        _rateLimitGate = rateLimitGate;
         Hostname = hostname;
         ActorHandle = actorHandle;
         BaseUri = new Uri($"https://{hostname}/");
@@ -91,12 +94,29 @@ public sealed class FakeActivityPubServer : IDisposable
     /// served normally — used to prove the client's <see cref="Iris.Client.Pipeline.RetryHandler"/> retries over a
     /// real HTTP stack.
     /// </param>
-    public static FakeActivityPubServer Start(string hostname, string actorHandle = "bob", bool flaky = false)
+    /// <param name="rateLimitAfter">
+    /// When greater than 0, the first N requests are served normally and subsequent requests return
+    /// 429 with a <c>Retry-After: 1</c> header — used to prove the client's
+    /// <see cref="Iris.Client.Pipeline.RetryHandler"/> honors the server's
+    /// <see cref="Iris.Server.Security.InboundRateLimitOptions"/> 429 responses.
+    /// </param>
+    /// <param name="rateLimitResumeAfter">
+    /// When greater than 0, the rate-limit gate resumes serving normally after that many 429
+    /// responses (simulating the rate-limit window expiring). When 0 (the default), the gate 429s
+    /// all requests after the first N (the rate-limit window never expires during the test).
+    /// </param>
+    public static FakeActivityPubServer Start(
+        string hostname,
+        string actorHandle = "bob",
+        bool flaky = false,
+        int rateLimitAfter = 0,
+        int rateLimitResumeAfter = 0)
     {
         ArgumentException.ThrowIfNullOrEmpty(hostname);
 
         var recorder = new RequestRecorder();
         var flakyGate = flaky ? new FlakyGate() : null;
+        var rateLimitGate = rateLimitAfter > 0 ? new RateLimitGate(rateLimitAfter, rateLimitResumeAfter) : null;
         var webHostBuilder = new WebHostBuilder()
             .UseTestServer()
             .ConfigureLogging(logging =>
@@ -125,6 +145,15 @@ public sealed class FakeActivityPubServer : IDisposable
                         return;
                     }
 
+                    // Rate-limit mode: the first N requests are served; later requests get 429 +
+                    // Retry-After: 1 (delta-seconds form, the client's RetryHandler honors it).
+                    if (rateLimitGate is not null && rateLimitGate.IsRateLimited())
+                    {
+                        context.Response.StatusCode = 429;
+                        context.Response.Headers.Append("Retry-After", "1");
+                        return;
+                    }
+
                     var (status, json) = Route(path, context, hostname, actorHandle);
                     context.Response.StatusCode = status;
                     if (status == 200)
@@ -135,7 +164,7 @@ public sealed class FakeActivityPubServer : IDisposable
             });
 
         var testServer = new TestServer(webHostBuilder);
-        var instance = new FakeActivityPubServer(testServer, recorder, flakyGate, hostname, actorHandle);
+        var instance = new FakeActivityPubServer(testServer, recorder, flakyGate, rateLimitGate, hostname, actorHandle);
         // Expose the actor doc JSON so a test that routes a proxy fallback can relay it from the home
         // instance's proxy endpoint (the real proxy relays the remote doc verbatim).
         instance.ActorDocJson = ActorDoc(hostname, actorHandle);
@@ -330,6 +359,39 @@ internal sealed class ProxyRoutingTransport : HttpMessageHandler
         relay.Content.Headers.ContentType =
             new System.Net.Http.Headers.MediaTypeHeaderValue(Iris.Core.ActivityJson.ActivityJsonContentType);
         return Task.FromResult(relay);
+    }
+}
+
+/// <summary>
+/// Tracks a request counter so a rate-limiting <see cref="FakeActivityPubServer"/> can return 429 on
+/// requests after the first N (the server's inbound rate-limit behavior, Phase 17.4). When
+/// <c>resumeAfter</c> is greater than 0, the gate resumes serving normally after that
+/// many 429 responses (simulating the rate-limit window expiring).
+/// </summary>
+internal sealed class RateLimitGate
+{
+    private readonly int _limit;
+    private readonly int _resumeAfter;
+    private int _count;
+    private int _rateLimitedCount;
+
+    public RateLimitGate(int limit, int resumeAfter = 0)
+    {
+        _limit = limit;
+        _resumeAfter = resumeAfter;
+    }
+
+    /// <summary>Returns true when the request should be 429'd.</summary>
+    public bool IsRateLimited()
+    {
+        var current = Interlocked.Increment(ref _count);
+        if (current <= _limit)
+        {
+            return false;
+        }
+
+        var rateLimited = Interlocked.Increment(ref _rateLimitedCount);
+        return _resumeAfter == 0 || rateLimited <= _resumeAfter;
     }
 }
 

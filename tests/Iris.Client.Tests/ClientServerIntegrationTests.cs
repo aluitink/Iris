@@ -229,6 +229,40 @@ public class ClientServerIntegrationTests : IDisposable
         Assert.Equal(1, _server.HitsOnPath("/n/does-not-exist"));
     }
 
+    // --- 429: server rate-limit → client honors Retry-After (Phase 17.4 + 18.1) ------------
+
+    [Fact]
+    public async Task GetActor_Server429WithRetryAfter_ClientHonorsHeader()
+    {
+        // A rate-limiting fake server: the first request is served, the second gets 429 +
+        // Retry-After: 1 (delta-seconds form), and the third is served (the rate-limit window
+        // expired). The client's RetryHandler (Phase 18.1) honors the Retry-After header and
+        // retries; the third request succeeds.
+        //
+        // To make the client's FIRST request hit the 429, we use a server that 429s the first
+        // request and serves the second (rateLimitAfter: 0 means "no requests are served before
+        // the rate-limit kicks in" — but that's not supported, so we use a different approach:
+        // we make a probe request first to consume the "served" slot, then the client's first
+        // request will be the 429).
+        using var rateLimitedServer = FakeActivityPubServer.Start(
+            "rate-limit.domain.local", ServerActor, rateLimitAfter: 1, rateLimitResumeAfter: 1);
+        
+        // Consume the "served" slot so the client's first request will be the 429.
+        var probe = new System.Net.Http.HttpClient(rateLimitedServer.Handler);
+        var probeResponse = await probe.GetAsync(rateLimitedServer.ActorIri.Value);
+        Assert.Equal(200, (int)probeResponse.StatusCode);
+        
+        using var client = CreateClient(rateLimitedServer);
+        var actor = await client.GetActorAsync(rateLimitedServer.ActorIri);
+
+        // The client's first request was 429 + Retry-After: 1; the RetryHandler honored the
+        // header and retried; the second request was served.
+        Assert.NotNull(actor);
+        Assert.Equal(rateLimitedServer.ActorIri.Value, actor!.Id);
+        // 1 probe + 2 client requests (first 429, second served) = 3 total.
+        Assert.Equal(3, rateLimitedServer.HitsOnPath($"/u/{ServerActor}"));
+    }
+
     // --- Proxy fallback: a direct 401 is rerouted through the home instance's proxy -
     //
     // The browser has no signed outbound, so a direct GET to a remote that rejects its signature (401)
