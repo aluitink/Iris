@@ -1,6 +1,8 @@
 # Sample Explorer Enhancement — Second-Round Build Plan
 
-> Status: planned · Part of the [Iris plan](../PLAN.md). Detailed plan for the **second round** of the
+> Status: **complete** (all slices S1–S8 done; all §6 acceptance criteria verified, change
+> [123](changes/123-sample-explorer-live-browser-acceptance.md)) · Part of the [Iris plan](../PLAN.md).
+> Detailed plan for the **second round** of the
 > Blazor WASM "server explorer" sample; the [Roadmap](ROADMAP.md) carries only the waypoint/checkbox and
 > the root [PLAN.md](../PLAN.md) carries only the status row. Per the
 > [doc-lean rules](reference/AUTONOMOUS_LOOP.md#keeping-the-docs-lean), heavy build notes for each slice
@@ -299,23 +301,35 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
 
 ---
 
-## 6. Acceptance criteria (definition of done for this round)
+## 6. Acceptance criteria (definition of done for this round) — **ALL VERIFIED (change [123](changes/123-sample-explorer-live-browser-acceptance.md))**
 
-- [ ] **Compose works end-to-end in the browser:** posting a note creates it (it appears in the outbox;
+- [x] **Compose works end-to-end in the browser:** posting a note creates it (it appears in the outbox;
       it is the note just posted). No 401 on the direct WebCrypto-signed path; no reliance on the proxy
-      fallback for writes.
-- [ ] **Navigation works:** clicking an object/actor IRI anywhere (search results, feeds, outbox,
-      replies) navigates to the right page and loads it.
-- [ ] **Home timeline:** the followed feed is viewable + paginated.
-- [ ] **Relays (F-06):** subscribe/unsubscribe/list relays from the UI.
-- [ ] **Home page** shows recent community items (not just a count).
-- [ ] **Actor detail** shows the logged-on actor's own moderation state.
-- [ ] **Compose** accepts an optional audience (`to`).
-- [ ] **No dead OAuth2-state statics** (or the state check is made to work).
-- [ ] `InstanceBaseUrls` is either wired with a default or removed.
-- [ ] Full solution `dotnet build` (0 warnings, `TreatWarningsAsErrors`) + `dotnet test` green; the
+      fallback for writes. — Live-verified: post → `202`; the note landed in the outbox (`totalItems` 2→3)
+      and the community feed with the exact content.
+- [x] **Navigation works:** clicking an object/actor IRI anywhere (search results, feeds, outbox,
+      replies) navigates to the right page and loads it. — Live-verified: a community note's deep link →
+      `/object?iri=…` loads the note + its reply.
+- [x] **Home timeline:** the followed feed is viewable + paginated. — Live-verified: the Feed page renders
+      the followed feed (newest-first, de-duplicated, deep-linked); `next`-link walking is covered by the
+      in-process S3 test.
+- [x] **Relays (F-06):** subscribe/unsubscribe/list relays from the UI. — Live-verified: subscribe →
+      relay appears (204); unsubscribe → gone (204).
+- [x] **Home page** shows recent community items (not just a count). — Live-verified: the community card
+      renders the actual recent items via deep-linked `<ObjectView>`.
+- [x] **Actor detail** shows the logged-on actor's own moderation state. — Live-verified: "My moderation
+      (you)" card; a Mute write refreshed it 0→1 (bypass-cache refresh in the browser).
+- [x] **Compose** accepts an optional audience (`to`). — Live-verified: a `Public` audience produced a note
+      with `to: as#Public`.
+- [x] **No dead OAuth2-state statics** (or the state check is made to work). — Confirmed by code (S8,
+      [121](changes/121-s8-cleanup-oauth2-state.md)): the statics were removed; the state is still generated
+      + sent; the limitation is documented.
+- [x] `InstanceBaseUrls` is either wired with a default or removed. — Confirmed by code: `Program.cs` wires
+      the public instance + `localhost`→`http://localhost:8081`; both logon paths pre-fill from it.
+- [x] Full solution `dotnet build` (0 warnings, `TreatWarningsAsErrors`) + `dotnet test` green; the
       Playwright manual-exploration checklist (log on → feed → navigate → post → relay) passes against
-      the live stack.
+      the live stack. — 870/870 green; the full checklist ran against the compose stack (the orphaned-8081
+      CORS blocker is gone — `iris-a`/`iris-b` answer CORS for origin 8090).
 
 ---
 
