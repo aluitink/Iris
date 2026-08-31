@@ -12,9 +12,11 @@ namespace Iris.Core.Signing;
 /// <remarks>
 /// The signature base is built by joining, for each component in the declared
 /// <c>headers</c> list, a <c>name: value</c> line (the <c>(request-target)</c> pseudo-header
-/// is special-cased), terminated by a newline. The result is SHA-256 hashed and signed with
-/// the key. The verifier reconstructs the same base from the raw request, so it accepts both
-/// signing profiles.
+/// is special-cased) with a newline separator and no trailing newline. This matches the
+/// de facto Fediverse convention (Mastodon, Pleroma, Misskey, GoToSocial all join without a
+/// trailing newline), even though draft-cavage-03's letter says each line is newline-terminated.
+/// The result is SHA-256 hashed and signed with the key. The verifier reconstructs the same
+/// base from the raw request, so it accepts both signing profiles.
 /// </remarks>
 public static class Signatures
 {
@@ -56,7 +58,7 @@ public static class Signatures
     /// <summary>
     /// The digest algorithm used for the <c>digest</c> header (per the ServerToServer profile).
     /// </summary>
-    public const string DigestAlgorithm = "SHA-512";
+    public const string DigestAlgorithm = "SHA-256";
 
     /// <summary>
     /// The signature header value component for <c>(request-target) host date</c>
@@ -99,15 +101,15 @@ public static class Signatures
         };
 
     /// <summary>
-    /// Computes the <c>digest</c> header value for a request body (SHA-512, base64).
+    /// Computes the <c>digest</c> header value for a request body (SHA-256, base64).
     /// </summary>
     /// <param name="body">The raw request body bytes. May be empty (an empty body has a defined digest).</param>
-    /// <returns>A string of the form <c>sha-512=base64</c>.</returns>
+    /// <returns>A string of the form <c>sha-256=base64</c>.</returns>
     public static string ComputeDigest(byte[] body)
     {
         ArgumentNullException.ThrowIfNull(body);
-        var hash = SHA512.HashData(body);
-        return $"sha-512={Convert.ToBase64String(hash)}";
+        var hash = SHA256.HashData(body);
+        return $"sha-256={Convert.ToBase64String(hash)}";
     }
 
     /// <summary>
@@ -150,7 +152,6 @@ public static class Signatures
             builder.Append(component).Append(": ").Append(value);
         }
 
-        builder.Append('\n');
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
 

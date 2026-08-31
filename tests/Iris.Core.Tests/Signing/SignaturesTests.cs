@@ -25,21 +25,21 @@ public class SignaturesTests
         => Assert.Equal("(request-target) host date digest content-type", Signatures.HeadersForProfile(SigningProfile.ServerToServer));
 
     [Fact]
-    public void ComputeDigest_EmptyBody_MatchesKnownSha512()
+    public void ComputeDigest_EmptyBody_MatchesKnownSha256()
     {
         var digest = Signatures.ComputeDigest([]);
 
-        // The exact base64 must match the SHA-512 of the empty byte array (a known constant).
-        var expected = Convert.ToBase64String(SHA512.HashData([]));
-        Assert.Equal($"sha-512={expected}", digest);
+        // The exact base64 must match the SHA-256 of the empty byte array (a known constant).
+        var expected = Convert.ToBase64String(SHA256.HashData([]));
+        Assert.Equal($"sha-256={expected}", digest);
     }
 
     [Fact]
-    public void ComputeDigest_ProducesSha512Prefix()
+    public void ComputeDigest_ProducesSha256Prefix()
     {
         var digest = Signatures.ComputeDigest(Encoding.UTF8.GetBytes("hello"));
 
-        Assert.StartsWith("sha-512=", digest);
+        Assert.StartsWith("sha-256=", digest);
     }
 
     [Fact]
@@ -56,11 +56,12 @@ public class SignaturesTests
 
         var baseBytes = Signatures.BuildSignatureBase(metadata, ["(request-target)", "host", "date"]);
 
-        // (request-target) is the lowercased "method path".
+        // (request-target) is the lowercased "method path". Lines are joined with a newline
+        // separator and there is NO trailing newline (matches Mastodon/Pleroma/Misskey).
         var expected =
             "(request-target): post /u/alice/inbox\n" +
             "host: a.domain.local\n" +
-            "date: Tue, 26 Aug 2026 12:00:00 GMT\n";
+            "date: Tue, 26 Aug 2026 12:00:00 GMT";
         Assert.Equal(Encoding.UTF8.GetBytes(expected), baseBytes);
     }
 
@@ -87,7 +88,7 @@ public class SignaturesTests
             "host: a.domain.local\n" +
             "date: Tue, 26 Aug 2026 12:00:00 GMT\n" +
             $"digest: {digest}\n" +
-            "content-type: application/activity+json\n";
+            "content-type: application/activity+json";
         Assert.Equal(Encoding.UTF8.GetBytes(expected), baseBytes);
     }
 
@@ -96,9 +97,9 @@ public class SignaturesTests
     {
         var metadata = new HttpRequestMetadata("GET", "/u/alice", "a.domain.local", "D", null, [], new Dictionary<string, string>());
 
-        // Declaring only (request-target) yields a single line.
+        // Declaring only (request-target) yields a single line (no trailing newline).
         var baseBytes = Signatures.BuildSignatureBase(metadata, ["(request-target)"]);
 
-        Assert.Equal(Encoding.UTF8.GetBytes("(request-target): get /u/alice\n"), baseBytes);
+        Assert.Equal(Encoding.UTF8.GetBytes("(request-target): get /u/alice"), baseBytes);
     }
 }
