@@ -29,6 +29,7 @@ public sealed class DeliveryService : IDeliveryService
     private readonly IActorDocumentFetcher? _actorDocuments;
     private readonly IModerationStore? _moderation;
     private readonly ILogger<DeliveryService> _logger;
+    private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
 
     /// <summary>
     /// Initializes a new <see cref="DeliveryService"/>.
@@ -37,7 +38,7 @@ public sealed class DeliveryService : IDeliveryService
     /// <param name="logger">The logger. Must not be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="queue"/> or <paramref name="logger"/> is null.</exception>
     public DeliveryService(IDeliveryQueue queue, ILogger<DeliveryService> logger)
-        : this(queue, null, null, logger)
+        : this(queue, null, null, logger, null)
     {
     }
 
@@ -52,7 +53,7 @@ public sealed class DeliveryService : IDeliveryService
     /// <param name="logger">The logger. Must not be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="queue"/> or <paramref name="logger"/> is null.</exception>
     public DeliveryService(IDeliveryQueue queue, IActorDocumentFetcher? actorDocuments, ILogger<DeliveryService> logger)
-        : this(queue, actorDocuments, null, logger)
+        : this(queue, actorDocuments, null, logger, null)
     {
     }
 
@@ -68,12 +69,15 @@ public sealed class DeliveryService : IDeliveryService
     /// actor-targeted delivery whose signing actor has been <em>blocked by</em> the recipient is
     /// suppressed (no job is enqueued). Null disables block suppression (every delivery is enqueued).</param>
     /// <param name="logger">The logger. Must not be null.</param>
+    /// <param name="metrics">The delivery metrics (Phase 17.2). Null disables metric recording (the
+    /// delivery behaves exactly as before).</param>
     /// <exception cref="ArgumentNullException">When <paramref name="queue"/> or <paramref name="logger"/> is null.</exception>
     public DeliveryService(
         IDeliveryQueue queue,
         IActorDocumentFetcher? actorDocuments,
         IModerationStore? moderation,
-        ILogger<DeliveryService> logger)
+        ILogger<DeliveryService> logger,
+        Iris.Server.Observability.IrisDeliveryMetrics? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(logger);
@@ -81,6 +85,7 @@ public sealed class DeliveryService : IDeliveryService
         _actorDocuments = actorDocuments;
         _moderation = moderation;
         _logger = logger;
+        _metrics = metrics;
     }
 
     /// <inheritdoc/>
@@ -99,6 +104,8 @@ public sealed class DeliveryService : IDeliveryService
         await _queue
             .EnqueueAsync(new DeliveryJob(inboxIri, activity, actorIri), ct)
             .ConfigureAwait(false);
+
+        _metrics?.RecordEnqueued(activity.GetType().Name);
 
         _logger.LogDebug(
             "Enqueued delivery of activity {ActivityId} to {Inbox} as {Actor}",

@@ -345,6 +345,11 @@ public static class ActivityPubServerExtensions
         // deliveries (e.g. to a TestServer in-process, or to an IHttpClientFactory-backed handler for
         // proxying/timeouts). DeliveryWorker is registered as a hosted service so it starts with the host.
         services.TryAddSingleton<IDeliveryQueue, InMemoryDeliveryQueue>();
+        // Phase 17.2: outbound-delivery metrics. A single shared IrisDeliveryMetrics (a Meter + its
+        // instruments) is handed to the DeliveryService and DeliveryWorker, which record at the same
+        // points they log. No OpenTelemetry dependency — a host that wants to export the metrics adds
+        // the OTel SDK and AddMeter(IrisDeliveryMetrics.MeterName) (plus an exporter).
+        services.TryAddSingleton<Iris.Server.Observability.IrisDeliveryMetrics>();
         services.TryAddSingleton<IDeliveryService>(sp =>
             new DeliveryService(
                 sp.GetRequiredService<IDeliveryQueue>(),
@@ -357,7 +362,8 @@ public static class ActivityPubServerExtensions
                 // F-07 (apply the block edge): suppress an actor-targeted delivery when the recipient
                 // has blocked the signing actor (a blocker does not want content from a blocked actor).
                 sp.GetRequiredService<IPersistenceProvider>().Moderation,
-                sp.GetRequiredService<ILogger<DeliveryService>>()));
+                sp.GetRequiredService<ILogger<DeliveryService>>(),
+                sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>()));
         services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
 
         // F-22 delivery retry / dead-letter: the retry policy (MaxAttempts=5, BaseDelay=1s, MaxDelay=60s;
@@ -395,7 +401,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IOptions<DeliveryRetryOptions>>().Value,
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
-            CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value)));
+            CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value),
+            sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>()));
 
         // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered
         // IHealthCheck (IEnumerable<IHealthCheck>) and reports the aggregate status, so a host that wants

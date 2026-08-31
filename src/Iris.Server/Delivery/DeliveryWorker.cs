@@ -63,6 +63,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly ILogger<DeliveryWorker> _logger;
     private readonly int _maxConcurrentDeliveries;
     private readonly IDeliveryRateLimiter? _rateLimiter;
+    private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
 
     /// <summary>
     /// Initializes a new <see cref="DeliveryWorker"/>.
@@ -82,7 +83,7 @@ public sealed class DeliveryWorker : BackgroundService
         IOptions<ActivityPubServerOptions> options,
         ILogger<DeliveryWorker> logger)
         : this(queue, clientFactory, transportFactory, options, logger,
-            new DeliveryRetryOptions(), null, 1, null)
+            new DeliveryRetryOptions(), null, 1, null, null)
     {
     }
 
@@ -108,7 +109,7 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger,
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter)
-        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1, null)
+        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1, null, null)
     {
     }
 
@@ -131,6 +132,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// clamped to 1.</param>
     /// <param name="rateLimiter">The per-peer outbound-delivery rate limiter (Phase 16.3). Null disables
     /// rate limiting (the worker delivers as fast as the concurrency cap allows).</param>
+    /// <param name="metrics">The delivery metrics (Phase 17.2). Null disables metric recording (the
+    /// worker delivers exactly as before).</param>
     /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
     public DeliveryWorker(
         IDeliveryQueue queue,
@@ -141,7 +144,8 @@ public sealed class DeliveryWorker : BackgroundService
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter,
         int maxConcurrentDeliveries,
-        IDeliveryRateLimiter? rateLimiter)
+        IDeliveryRateLimiter? rateLimiter,
+        Iris.Server.Observability.IrisDeliveryMetrics? metrics = null)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -158,6 +162,7 @@ public sealed class DeliveryWorker : BackgroundService
         _logger = logger;
         _maxConcurrentDeliveries = Math.Max(1, maxConcurrentDeliveries);
         _rateLimiter = rateLimiter;
+        _metrics = metrics;
     }
 
     /// <inheritdoc/>
@@ -312,11 +317,13 @@ public sealed class DeliveryWorker : BackgroundService
             DeadLetterFailureKind kind;
             string? detail;
 
+            var activityType = job.Activity.GetType().Name;
             try
             {
                 var statusCode = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
                 if (statusCode is >= 200 and < 300)
                 {
+                    _metrics?.RecordDelivered(activityType);
                     _logger.LogDebug(
                         "Delivered activity {ActivityId} to {Inbox} ({Status}) on attempt {Attempt}",
                         job.Activity.Id,
@@ -326,6 +333,7 @@ public sealed class DeliveryWorker : BackgroundService
                     return; // success — no retry
                 }
 
+                _metrics?.RecordAttemptFailed(activityType, DeadLetterFailureKind.NonSuccessStatus);
                 _logger.LogWarning(
                     "Delivery of activity {ActivityId} to {Inbox} returned non-2xx status {Status} on attempt {Attempt}/{MaxAttempts}",
                     job.Activity.Id,
@@ -342,6 +350,7 @@ public sealed class DeliveryWorker : BackgroundService
             }
             catch (Exception ex)
             {
+                _metrics?.RecordAttemptFailed(activityType, DeadLetterFailureKind.TransportError);
                 // Log, don't throw: a transport failure is retryable. Never crash the worker over one bad delivery.
                 _logger.LogWarning(
                     ex,
@@ -400,8 +409,10 @@ public sealed class DeliveryWorker : BackgroundService
     private async Task DeadLetterAsync(
         DeliveryJob job, DeadLetterFailureKind kind, string? detail, int attempts, CancellationToken ct)
     {
+        var activityType = job.Activity.GetType().Name;
         if (_deadLetter is not { } store)
         {
+            _metrics?.RecordDeadLettered(activityType, kind);
             _logger.LogError(
                 "Delivery of activity {ActivityId} to {Inbox} exhausted {Attempts} attempts ({Kind}: {Detail}); no dead-letter store configured, dropping.",
                 job.Activity.Id,
@@ -421,6 +432,7 @@ public sealed class DeliveryWorker : BackgroundService
             detail,
             DateTimeOffset.UtcNow);
         await store.AddAsync(entry, ct).ConfigureAwait(false);
+        _metrics?.RecordDeadLettered(activityType, kind);
         _logger.LogError(
             "Delivery of activity {ActivityId} to {Inbox} exhausted {Attempts} attempts ({Kind}: {Detail}); dead-lettered.",
             job.Activity.Id,
