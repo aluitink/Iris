@@ -70,13 +70,13 @@ Working roadmap: where we've been, where we are, what's left. Per-slice detail l
 
 Prepare the live stack so every later phase tests a durable, production-shaped environment.
 
-- [ ] **19.0.1 — Volumes for server state.** Add named Docker volumes (or bind mounts) for
+- [x] **19.0.1 — Volumes for server state.** Add named Docker volumes (or bind mounts) for
   `iris-a`/`iris-b` state in `docker-compose.yml`; switch the sample server to opt-in
   `UseFileBackedPersistence` (Phase 16.4) behind an env var (default stays in-memory), with the volume
   as the persistence directory; the delivery queue (Phase 16.2) uses the same volume. Verify:
   `docker compose down` (no `-v`) → `up` → actors, keys, follows, outbox content, and pending delivery
   all survive; a fresh `down -v` + `up` resets cleanly.
-- [ ] **19.0.2 — Seed determinism + idempotency.** Seeding must be safe to run against a non-empty
+- [x] **19.0.2 — Seed determinism + idempotency.** Seeding must be safe to run against a non-empty
   volume (idempotent by IRI, never duplicates actors/notes across recreations) and must not clobber
   state created during testing (e.g. a follow made in a prior turn survives a recreation).
 - [ ] **19.0.3 — FQDN + TLS + CORS audit.** Verify end-to-end over the public FQDNs: WebFinger on both

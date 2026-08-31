@@ -61,8 +61,16 @@ services:
       # private-key PEM to a local path so the helper can read it. Sample-only, opt-in, local — no
       # secret is committed, and a production instance never sets this.
       Iris__DumpKeyTo: /tmp/iris-alice-key.pem
+      # Phase 19.0.1: opt-in file-backed persistence (Phase 16.4) — every store (actors, keys,
+      # follows, outboxes, …) is persisted to a directory on the named iris-a-data volume, so actors,
+      # keys, follows, outbox content, and (via the delivery journal in the same directory, Phase
+      # 16.2) pending deliveries all survive `docker compose down` (no -v) + `up`. Unset (the
+      # default) and the server stays in-memory.
+      Iris__PersistenceDirectory: /data
     ports:
       - "8081:8080"
+    volumes:
+      - iris-a-data:/data
     healthcheck:
       # A public WebFinger GET (RFC 8410 root path) — skips signature validation, so it is a clean
       # liveness probe. (curl is not in the aspnet base image, so the probe uses a TCP connect.)
@@ -96,8 +104,13 @@ services:
       # The peer (iris-a) in-network base: lets iris-b resolve iris-a's actor key over the network
       # (S10 signed cross-container federation + proxy fallback).
       Iris__PeerBase: http://iris-a:8080
+      # Phase 19.0.1: opt-in file-backed persistence (Phase 16.4) on the named iris-b-data volume
+      # (mirrors iris-a; see its comment).
+      Iris__PersistenceDirectory: /data
     ports:
       - "8082:8080"
+    volumes:
+      - iris-b-data:/data
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' 2>/dev/null || exit 1"]
       interval: 10s
@@ -138,3 +151,10 @@ services:
 networks:
   iris-net:
     driver: bridge
+
+# Phase 19.0.1: named volumes for the two instances' file-backed state (Iris__PersistenceDirectory).
+# A `docker compose down` WITHOUT -v leaves these in place (state survives a recreation); a
+# `down -v` wipes them for a clean reset.
+volumes:
+  iris-a-data:
+  iris-b-data:

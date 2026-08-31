@@ -3,8 +3,10 @@ using System.Text;
 using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Identity;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -151,8 +153,39 @@ public static partial class SampleServer
         var baseUri = new Iri(baseString);
         var actorIri = new Iri($"{baseString}/ap/v1/u/{actorHandle}");
 
-        var persistence = new InMemoryPersistenceProvider();
-        var seed = SeedSampleData(persistence, baseString, actorHandle, actorIri);
+        // Persistence is opt-in file-backed (Phase 19.0.1): when Iris__PersistenceDirectory is set the
+        // server binds the Phase 16.4 file-backed provider (every store + the signing keys survive a
+        // container recreation on the compose volume), and the outbound delivery queue is journaled in
+        // the same directory (Phase 16.2) so pending deliveries survive too. When unset (the default —
+        // every local dev run and the whole existing test surface) the in-memory provider is used,
+        // exactly as before.
+        //
+        // The directory is read from the host's IConfiguration (not Environment.GetEnvironmentVariable)
+        // so an in-process host (the TestServer test surface) cannot leak the setting across tests via
+        // process-level environment state — the configuration is per-host. The container's env var
+        // (Iris__PersistenceDirectory) lands in the same configuration via the host's default
+        // environment source.
+        var persistenceDirectory = configuration["Iris:PersistenceDirectory"];
+        IPersistenceProvider persistence;
+        if (string.IsNullOrWhiteSpace(persistenceDirectory))
+        {
+            persistence = new InMemoryPersistenceProvider();
+        }
+        else
+        {
+            Directory.CreateDirectory(persistenceDirectory);
+            persistence = new FileBackedPersistenceProvider(persistenceDirectory);
+            services.UseFileBackedDelivery(
+                Path.Combine(persistenceDirectory, "delivery-queue.jsonl"),
+                Path.Combine(persistenceDirectory, "delivery-dead-letter.jsonl"));
+        }
+
+        // Seed the sample graph (actors, community, follows, outbox content). The seed is idempotent by
+        // IRI (Phase 19.0.2): it never re-mints a key or re-appends a seeded outbox item when the
+        // volume already holds it, and it never touches state created after seeding (a follow made in a
+        // prior evaluation turn survives a recreation). It returns the primary actor's key IRI whether
+        // the key was minted now or recovered from the volume, so key registration below is uniform.
+        var seed = SeedSampleData(persistence, baseString, actorHandle, actorIri, configuration);
 
         // The client-side signer (used by the proxy endpoint to sign as the authenticated actor and by
         // the outbound DeliveryWorker) is not registered by AddActivityPubServer (which wires only the
@@ -274,20 +307,39 @@ public static partial class SampleServer
     /// document, and every key is registered in the store so the proxy endpoint can sign as any of
     /// them.
     /// </summary>
-    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <remarks>
+    /// <para>
+    /// The seed is <em>idempotent by IRI</em> (Phase 19.0.2): it is safe to run against a non-empty
+    /// (file-backed) store. A key is minted only when the key store has no entry for its key IRI — a
+    /// recreated container reuses the persisted key, so a signature made before the recreation still
+    /// verifies after it and no actor is ever re-keyed. A seeded outbox item (each note, the reply, the
+    /// like) is appended only when its IRI is absent from the actor's outbox, so recreations never
+    /// duplicate seeded content. Everything else — actor/community documents, membership, follow/like/
+    /// reply edges — is keyed by IRI and put/recorded unconditionally, which is a no-op overwrite for an
+    /// existing entry. State created <em>after</em> seeding (a follow made during an evaluation turn, a
+    /// user post, a delivered inbound activity) is never touched: the seed writes only its own fixed
+    /// IRIs, and the outbox guard is per-IRI, so post-seed outbox items survive a recreation untouched.
+    /// </para>
+    /// </remarks>
+    /// <param name="persistence">The persistence provider to seed (in-memory or file-backed).</param>
     /// <param name="baseString">The instance base URI as a slash-free string (e.g.
     /// <c>http://localhost:5000</c>). A slash-free string is required because a host-only <see
     /// cref="Iri"/>/<see cref="Uri"/> canonicalizes to carry a trailing slash, which would double the
     /// slash when a path segment is appended.</param>
     /// <param name="actorHandle">The primary actor's handle.</param>
     /// <param name="actorIri">The primary actor's IRI.</param>
+    /// <param name="configuration">The host's <see cref="IConfiguration"/>; read only for the
+    /// opt-in <c>Iris:DumpKeyTo</c> switch (the key-dump mechanism for the S10 smoke test helper).
+    /// Passing <see langword="null"/> (direct library callers that don't host a server) simply
+    /// disables the key dump.</param>
     /// <returns>The seed metadata (handles and key IRIs) the host uses for credentials and key
     /// registration.</returns>
     public static SeedMetadata SeedSampleData(
-        InMemoryPersistenceProvider persistence,
+        IPersistenceProvider persistence,
         string baseString,
         string actorHandle,
-        Iri actorIri)
+        Iri actorIri,
+        IConfiguration? configuration = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(baseString);
@@ -295,9 +347,8 @@ public static partial class SampleServer
 
         var aliceIri = actorIri;
         var aliceKeyIri = new Iri($"{aliceIri}#key-1");
-        var aliceKey = KeyPairGenerator.GenerateRsa(aliceKeyIri);
-        persistence.Keys.PutKey(aliceKey);
-        var alice = BuildActor(persistence, actorHandle, aliceIri, aliceKeyIri, aliceKey);
+        var aliceKey = EnsureKey(persistence, aliceKeyIri, static _ => KeyPairGenerator.GenerateRsa(_));
+        var alice = EnsureActor(persistence, actorHandle, aliceIri, aliceKeyIri, aliceKey);
 
         // The Phase 8 S10 smoke test drives a signed cross-container Follow from this instance's alice,
         // which requires signing with alice's private key. curl (the smoke test's HTTP client) cannot
@@ -305,8 +356,11 @@ public static partial class SampleServer
         // signs with the key. To give the helper the key without hard-coding a secret in the repo, the
         // sample can dump the acting actor's private-key PEM to a local path (the Iris__DumpKeyTo env
         // var; in-container, world-readable) when set. This is a sample-only, opt-in, local mechanism —
-        // no secret is committed, and a production instance never sets it.
-        var dumpKeyTo = Environment.GetEnvironmentVariable("Iris__DumpKeyTo");
+        // no secret is committed, and a production instance never sets it. On a recreation the dumped
+        // PEM is the recovered (persisted) key — the same key, re-exported. Read from the host's
+        // IConfiguration (not the process environment) for the same per-host isolation reason as
+        // PersistenceDirectory.
+        var dumpKeyTo = configuration?["Iris:DumpKeyTo"];
         if (!string.IsNullOrWhiteSpace(dumpKeyTo))
         {
             File.WriteAllText(dumpKeyTo, aliceKey.ExportPrivateKeyPem());
@@ -314,15 +368,13 @@ public static partial class SampleServer
 
         var bobIri = new Iri($"{baseString}/ap/v1/u/{BobHandle}");
         var bobKeyIri = new Iri($"{bobIri}#key-1");
-        var bobKey = KeyPairGenerator.GenerateRsa(bobKeyIri);
-        persistence.Keys.PutKey(bobKey);
-        var bob = BuildActor(persistence, BobHandle, bobIri, bobKeyIri, bobKey);
+        var bobKey = EnsureKey(persistence, bobKeyIri, static _ => KeyPairGenerator.GenerateRsa(_));
+        var bob = EnsureActor(persistence, BobHandle, bobIri, bobKeyIri, bobKey);
 
         var carlaIri = new Iri($"http://{RemoteHostName}/ap/v1/u/{CarlaHandle}");
         var carlaKeyIri = new Iri($"{carlaIri}#key-1");
-        var carlaKey = Ed25519Key.Generate(carlaKeyIri);
-        persistence.Keys.PutKey(carlaKey);
-        var carla = BuildActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
+        var carlaKey = EnsureKey(persistence, carlaKeyIri, static id => Ed25519Key.Generate(id));
+        var carla = EnsureActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
 
         var communityIri = new Iri($"{baseString}/ap/v1/c/iris");
         var community = new Group
@@ -353,14 +405,17 @@ public static partial class SampleServer
 
         // Follow edges: alice ↔ bob (mutual, so the community feed federates their content) and
         // alice ↔ carla (a "cross-instance" pair; carla's content reaches the community via the
-        // community's follow of her).
+        // community's follow of her). All edge stores are keyed (source, target) — recording an
+        // existing edge is a no-op, so this is safe across recreations.
         persistence.Follows.RecordFollowAsync(aliceIri, bobIri).GetAwaiter().GetResult();
         persistence.Follows.RecordFollowAsync(bobIri, aliceIri).GetAwaiter().GetResult();
         persistence.Follows.RecordFollowAsync(aliceIri, carlaIri).GetAwaiter().GetResult();
         persistence.Follows.RecordFollowAsync(carlaIri, aliceIri).GetAwaiter().GetResult();
 
         // Outbox content: a note per actor, a reply from bob to alice's note, and a like from carla of
-        // alice's note (the like exercises the Like activity type and the remote-host actor).
+        // alice's note (the like exercises the Like activity type and the remote-host actor). Each
+        // seeded outbox item is appended only when its IRI is not already in the outbox (idempotent by
+        // IRI — see the remarks), so a recreation of a file-backed instance never duplicates them.
         var aliceNote = new Note
         {
             Id = $"{aliceIri.Value}/notes/1",
@@ -382,13 +437,14 @@ public static partial class SampleServer
             To = [PublicAudience],
             Content = ["<p>Carla here on the second host — federation is alive.</p>"],
         };
-        persistence.Activities.AddToOutboxAsync(aliceIri, aliceNote).GetAwaiter().GetResult();
-        persistence.Activities.AddToOutboxAsync(bobIri, bobNote).GetAwaiter().GetResult();
-        persistence.Activities.AddToOutboxAsync(carlaIri, carlaNote).GetAwaiter().GetResult();
+        AddSeededOutboxItem(persistence, aliceIri, aliceNote);
+        AddSeededOutboxItem(persistence, bobIri, bobNote);
+        AddSeededOutboxItem(persistence, carlaIri, carlaNote);
 
         // The outbox holds the activity, but the object document endpoint (GET /ap/v1/{**path}) and
         // global search read the *object store*, not the outbox. Storing each note makes it fetchable
-        // by IRI (the explorer's object view) and searchable (the directory / community search).
+        // by IRI (the explorer's object view) and searchable (the directory / community search). The
+        // object store is keyed by IRI, so re-storing a recreation's copy is a no-op overwrite.
         persistence.Objects.PutObjectAsync(aliceNote).GetAwaiter().GetResult();
         persistence.Objects.PutObjectAsync(bobNote).GetAwaiter().GetResult();
         persistence.Objects.PutObjectAsync(carlaNote).GetAwaiter().GetResult();
@@ -401,7 +457,7 @@ public static partial class SampleServer
             Content = ["<p>Bob replies: glad you are here, Alice!</p>"],
             InReplyTo = [new Link { Href = new Uri(aliceNote.Id!) }],
         };
-        persistence.Activities.AddToOutboxAsync(bobIri, reply).GetAwaiter().GetResult();
+        AddSeededOutboxItem(persistence, bobIri, reply);
         persistence.Objects.PutObjectAsync(reply).GetAwaiter().GetResult();
         persistence.Replies.RecordReplyAsync(new Iri(aliceNote.Id!), new Iri(reply.Id!)).GetAwaiter().GetResult();
 
@@ -411,7 +467,7 @@ public static partial class SampleServer
             Actor = [new Link { Href = carlaIri.Uri }],
             Object = [new Link { Href = new Uri(aliceNote.Id!) }],
         };
-        persistence.Activities.AddToOutboxAsync(carlaIri, like).GetAwaiter().GetResult();
+        AddSeededOutboxItem(persistence, carlaIri, like);
         persistence.Likes.RecordLikeAsync(carlaIri, new Iri(aliceNote.Id!)).GetAwaiter().GetResult();
 
         return new SeedMetadata(
@@ -421,6 +477,98 @@ public static partial class SampleServer
                 (BobHandle, bobKeyIri),
                 (CarlaHandle, carlaKeyIri),
             ]);
+    }
+
+    /// <summary>
+    /// Resolves (or mints) a seeded actor's signing key: when the key store already holds a key for
+    /// <paramref name="keyIri"/> (a recreation of a file-backed instance), that persisted key is
+    /// recovered; otherwise a fresh key is generated and stored. This is what makes the seed idempotent
+    /// across recreations — the actor keeps its key, so signatures made before the recreation still
+    /// verify after it.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (its key store is consulted).</param>
+    /// <param name="keyIri">The key's IRI (the actor IRI + <c>#key-1</c>).</param>
+    /// <param name="generate">Mints a fresh key when none is persisted.</param>
+    /// <returns>The key to use (recovered or freshly minted and stored).</returns>
+    private static ISigningKey EnsureKey(
+        IPersistenceProvider persistence,
+        Iri keyIri,
+        Func<Iri, ISigningKey> generate)
+    {
+        if (persistence.Keys.TryGetKey(keyIri, out var existing) && existing is not null)
+        {
+            return existing;
+        }
+
+        var fresh = generate(keyIri);
+        persistence.Keys.PutKey(fresh);
+        return fresh;
+    }
+
+    /// <summary>
+    /// Builds (or re-puts) a seeded <see cref="Person"/> actor document. The document is keyed by the
+    /// actor IRI, so re-putting it on a recreation is a no-op overwrite (same IRI, same key IRI, same
+    /// public key when the key was recovered from the volume).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to store the actor in.</param>
+    /// <param name="handle">The actor's preferred username (handle).</param>
+    /// <param name="actorIri">The actor's IRI.</param>
+    /// <param name="keyIri">The actor's key IRI (<c>actorIri#key-1</c>).</param>
+    /// <param name="key">The actor's key pair (already in the key store).</param>
+    /// <returns>The stored actor.</returns>
+    private static Person EnsureActor(
+        IPersistenceProvider persistence,
+        string handle,
+        Iri actorIri,
+        Iri keyIri,
+        ISigningKey key)
+    {
+        var actor = new Person
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyIri.Value,
+            owner = actorIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        actor.ExtensionData["capabilities"] = JsonSerializer.SerializeToElement(new[]
+        {
+            "activity:Create",
+            "activity:Follow",
+            "activity:Like",
+        });
+        persistence.Actors.PutActorAsync(actor).GetAwaiter().GetResult();
+        return actor;
+    }
+
+    /// <summary>
+    /// Appends a seeded outbox item only when its IRI is not already present in the actor's outbox —
+    /// the outbox's idempotency guard (a recreation never duplicates seeded notes/replies/likes). The
+    /// guard is per-IRI, so outbox items created after seeding (user posts, delivered inbound
+    /// activities) are never touched by the seed.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (its activity store is read and appended
+    /// to).</param>
+    /// <param name="actorIri">The actor whose outbox receives the item.</param>
+    /// <param name="item">The seeded outbox item (an <see cref="IObject"/> with a fixed <c>Id</c>).</param>
+    private static void AddSeededOutboxItem(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        IObject item)
+    {
+        var itemIri = new Iri(item.Id!);
+        var outbox = persistence.Activities.GetOutboxAsync(actorIri).GetAwaiter().GetResult();
+        var alreadyPresent = outbox.Any(entry =>
+            (entry is IObject obj ? new Iri(obj.Id!) : new Iri(((Link)entry).Href!)) == itemIri);
+        if (!alreadyPresent)
+        {
+            persistence.Activities.AddToOutboxAsync(actorIri, item).GetAwaiter().GetResult();
+        }
     }
 
     /// <summary>
