@@ -28,6 +28,7 @@ else
     {
         <div class="card">
             <h3>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "Directory")</h3>
+            <p class="muted">Searched <code>@SearchEndpoint</code></p>
             @if (Results.Count == 0)
             {
                 <p class="muted">No matching actors or content.</p>
@@ -53,6 +54,7 @@ else
     private string Query { get; set; } = string.Empty;
     private bool Busy { get; set; }
     private IReadOnlyList<IObjectOrLink>? Results { get; set; }
+    private string SearchEndpoint { get; set; } = string.Empty;
 
     private async Task SearchAsync()
     {
@@ -67,6 +69,7 @@ else
         {
             var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
             var instanceBase = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1");
+            SearchEndpoint = instanceBase.SearchOf().Value;
             var results = new List<IObjectOrLink>();
             await foreach (var item in Session.GetClient().SearchAsync(instanceBase, Query))
             {

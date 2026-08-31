@@ -768,9 +768,11 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         var limit = options?.Limit ?? 100;
         var offset = options?.Offset ?? 0;
 
-        // The q value is URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric.
+        // The search endpoint is the instance base's `SearchOf` derivation (`/ap/v1/search`) with the
+        // query appended — the single source of truth for where global search lives. The q value is
+        // URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric.
         var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
-        var searchIri = new Iri($"{instanceBase.Value}/search?q={encodedQuery}&limit={limit}&offset={offset}");
+        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
         var page = await GetObjectAsync(request, ct).ConfigureAwait(false);
