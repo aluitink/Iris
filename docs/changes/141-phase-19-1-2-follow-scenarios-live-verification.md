@@ -33,10 +33,15 @@ actor document) and receives **401 Unauthorized**.
 2. The signature base or headers are malformed
 3. The key IRI (`#key-1` fragment) is not recognized by Mastodon's key resolver
 
-**Next steps:**
-- Check if serving the key in JWK format (in addition to `publicKeyPem`) resolves the issue
-- Verify the signature base matches what Mastodon expects (RFC 9421 / draft-cavage-10)
-- Test with a different Mastodon instance to isolate the issue
+**Fix (commit 82afc67):** The actor document now includes both the `publicKeyPem` and JWK forms
+(`kty`/`n`/`e` for RSA) in the `publicKey` extension. The `BuildActorDocument` method enriches the
+public key with the JWK form when the key is found in the key store. This allows remote instances
+that expect JWK (e.g. Mastodon) to resolve the key.
+
+**Live test after fix:** Follow to RayvenMX@ mastodon.world accepted (202) on our outbox; the follow
+edge is recorded in `following`. Delivery to Mastodon pending verification (delivery worker logs not
+visible in the current container session — the container was recreated after the fix, and the
+delivery queue journal is empty).
 
 ### F-1911-3 (confirmed root cause): Community follow delivery fails — signing identity not registered
 
