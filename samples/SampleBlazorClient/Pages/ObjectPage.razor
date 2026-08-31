@@ -1,8 +1,11 @@
 @page "/object"
+@using Iris.Core
+@using Iris.Core.Identity
 @using Iris.Client
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <PageTitle>Object · Iris</PageTitle>
 
@@ -40,6 +43,11 @@ else
                 @if (HasLiked)
                 {
                     <span class="muted">You liked this.</span>
+                }
+                @if (IsAuthor)
+                {
+                    <button @onclick="DeleteAsync" disabled="@(WriteBusy)" class="danger">Delete</button>
+                    <span class="muted">You authored this.</span>
                 }
                 @if (WriteBusy)
                 {
@@ -93,6 +101,7 @@ else
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
     private bool HasLiked { get; set; }
+    private bool IsAuthor { get; set; }
 
     /// <summary>
     /// The object IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
@@ -133,6 +142,13 @@ else
             var client = Session.GetClient();
             LoadedObjectIri = objectIri;
             ObjectDoc = await client.GetObjectAsync(objectIri);
+
+            // Whether the logged-on actor is the object's author (drives the Delete button — only the
+            // author may delete their own content).
+            IsAuthor = ObjectDoc is ActivityObject obj
+                && obj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } authorIri
+                && Session.ActorIri is { } me
+                && authorIri == me;
 
             // Whether the logged-on actor has already liked this object: read the actor's `liked`
             // collection (actorId.LikedOf()) and check for the object's IRI. Drives the Like/Unlike
@@ -180,6 +196,43 @@ else
             {
                 WriteResult = await client.LikeAsync(actorIri, LoadedObjectIri.Value);
                 HasLiked = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the loaded object as the logged-on actor (the object's author): publishes an
+    /// <c>Undo(Create)</c> via <see cref="IActivityPubClient.DeleteAsync"/> (the inverse of a post). On
+    /// success the object is re-loaded, which now surfaces the server's tombstone ("deleted" marker) in
+    /// place of the original content. Only available when the logged-on actor is the author.
+    /// </summary>
+    private async Task DeleteAsync()
+    {
+        if (!Session.IsLoggedIn || LoadedObjectIri is null || !IsAuthor)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        var client = Session.GetClient();
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            WriteResult = await client.DeleteAsync(actorIri, LoadedObjectIri.Value);
+            if (WriteResult.IsSuccess)
+            {
+                // Re-load: the object now resolves to its tombstone (the "deleted" marker).
+                await LoadAsync();
             }
         }
         catch (Exception ex)

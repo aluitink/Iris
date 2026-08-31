@@ -302,6 +302,39 @@ public sealed class S7ScreenTests
         Assert.DoesNotContain(likedAfter, o => IriOf(o) is { } iri && iri == target);
     }
 
+    [Fact]
+    public async Task ObjectDelete_Delete_TombstonesTheObject()
+    {
+        var (server, client, actorIri) = await LogOnAsync();
+        using var _ = server;
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+
+        // Post a note (the object alice deletes) — it is stored and appears in the author's outbox.
+        var content = "<p>S7: a note to delete.</p>";
+        Assert.Equal(202, (await client.PostNoteAsync(actorIri, content)).StatusCode);
+        var objects = await persistence.Objects.ListObjectsAsync();
+        var posted = objects.First(o => o.Content?.FirstOrDefault() == content);
+        var noteIri = new Iri(posted.Id!);
+        var outboxBefore = await CollectAsync(client.GetCollectionItemsAsync(actorIri.OutboxOf()));
+        Assert.Contains(outboxBefore, o => IriOf(o) is { } iri && iri.Value.StartsWith($"{actorIri.Value}/creates/"));
+
+        // The delete publishes a Delete to the author's outbox; the server routes it to the
+        // DeleteActivityHandler, which tombstones the object and removes its Create from the outbox.
+        Assert.Equal(202, (await client.DeleteAsync(actorIri, noteIri)).StatusCode);
+
+        // The object's IRI now resolves to a Tombstone (the "deleted" marker), not the original note.
+        var after = await client.GetObjectAsync(noteIri);
+        Assert.NotNull(after);
+        Assert.IsType<Tombstone>(after);
+        Assert.Equal(noteIri.Value, after!.Id);
+
+        // The deleted note's Create is no longer listed in the author's outbox (the outbox no longer
+        // surfaces the deleted content).
+        var outboxAfter = await CollectAsync(client.GetCollectionItemsAsync(
+            actorIri.OutboxOf(), new CollectionQuery { BypassCache = true }));
+        Assert.DoesNotContain(outboxAfter, o => IriOf(o) is { } iri && iri.Value.StartsWith($"{actorIri.Value}/creates/"));
+    }
+
     // --- Moderation (local single instance) --------------------------------------
 
     [Fact]

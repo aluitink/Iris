@@ -306,6 +306,41 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // A delete is published to the author's OWN outbox (the write surface for the activities an actor
+        // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
+        // actorId. The Delete references the object being deleted by IRI (a bare link — the common case,
+        // mirroring the server's DeleteActivityHandler). The server records the Delete in the outbox and
+        // activity store, then routes it to the DeleteActivityHandler, which tombstones the object, removes
+        // its reply edge, and propagates the tombstone to the author's remote followers (the federated half
+        // of F-03). The `Id` is a deterministic, unique-per-(actor,object) IRI so a retried delete dedupes.
+        var delete = new Delete
+        {
+            Id = $"{actorId.Value}/deletes/{ObjectIdSuffix(objectId.Value)}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = objectId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), delete, ct);
+    }
+
+    /// <summary>
+    /// Extracts the deterministic IRI suffix (the final path segment) from an object IRI so a stable,
+    /// unique-per-object activity IRI can be minted (a delete at
+    /// <c>{actor}/deletes/{suffix}</c> for an object at <c>{actor}/notes/{suffix}</c>).
+    /// </summary>
+    /// <param name="objectIri">The object's IRI value (e.g. <c>http://host/ap/v1/u/alice/notes/abc123</c>).</param>
+    /// <returns>The final path segment (e.g. <c>abc123</c>), or the whole value if there is no segment.</returns>
+    private static string ObjectIdSuffix(string objectIri)
+    {
+        var lastSlash = objectIri.LastIndexOf('/');
+        return lastSlash >= 0 && lastSlash < objectIri.Length - 1
+            ? objectIri[(lastSlash + 1)..]
+            : objectIri;
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // A block is published to the blocker's OWN outbox (the write surface for the activities an actor

@@ -1288,6 +1288,7 @@ public static class ActivityPubServerExtensions
         IDeliveryService delivery,
         ILocalActorResolver localActors,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        IEnumerable<IActivityHandler> handlers,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1360,6 +1361,19 @@ public static class ActivityPubServerExtensions
                 foreach (var recipient in recipients)
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+            }
+            else if (activity is Delete delete)
+            {
+                // A delete (a local actor deleting their own content) routes to the DeleteActivityHandler —
+                // the same handler that handles an inbound Delete — so the tombstone, reply-edge cleanup,
+                // and the federated propagation to remote followers all go through the one code path. The
+                // Delete was already recorded in the outbox + activity store (steps 1); the handler applies
+                // the local object-store change and the propagation. A non-author (or an object not stored
+                // here) is a no-op (the handler's owner guard), so the 202 (recorded) is still correct.
+                if (handlers.OfType<DeleteActivityHandler>().FirstOrDefault() is { } deleteHandler)
+                {
+                    await deleteHandler.HandleAsync(new InboxDelivery(actorIri, delete), delete, ct).ConfigureAwait(false);
                 }
             }
             else

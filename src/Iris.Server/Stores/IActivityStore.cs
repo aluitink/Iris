@@ -55,4 +55,18 @@ public interface IActivityStore
     /// idempotency.
     /// </remarks>
     public Task AddToOutboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes the outbox item with the given IRI from an actor's outbox, if present.
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor whose outbox is updated.</param>
+    /// <param name="itemIri">The IRI of the outbox item to remove (matched against the item's <c>Id</c>).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> if an item was removed; otherwise <see langword="false"/> (the item was not in the outbox).</returns>
+    /// <remarks>
+    /// The inverse of <see cref="AddToOutboxAsync"/>: a <c>Delete</c> (or <c>Undo(Create)</c>) removes the
+    /// deleted object's <see cref="Create"/> from the author's outbox so the outbox collection no longer
+    /// lists the deleted content. Removing a missing item is a no-op (returns <see langword="false"/>).
+    /// </remarks>
+    public Task<bool> RemoveFromOutboxAsync(Iri actorIri, Iri itemIri, CancellationToken ct = default);
 }

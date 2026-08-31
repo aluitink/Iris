@@ -115,6 +115,12 @@ button.secondary {
     color: #cdd6e1;
 }
 
+button.danger {
+    background: transparent;
+    border-color: #b23b3b;
+    color: #e07b7b;
+}
+
 /* Lists */
 ul.instances, ul.feed, ul.recents {
     list-style: none;

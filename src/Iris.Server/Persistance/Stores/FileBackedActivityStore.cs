@@ -120,6 +120,27 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
         }, true, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<bool> RemoveFromOutboxAsync(Iri actorIri, Iri itemIri, CancellationToken ct = default)
+    {
+        return _file.WithStateAsync(s =>
+        {
+            var outboxes = OutboxMap(s);
+            if (outboxes.TryGetValue(actorIri.Value, out var list))
+            {
+                var removed = list.RemoveAll(itemJson =>
+                {
+                    var item = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
+                    var iri = item is IObject obj ? obj.Id : (item as Link)?.Href?.AbsoluteUri;
+                    return iri == itemIri.Value;
+                }) > 0;
+                return removed;
+            }
+
+            return false;
+        }, true, ct);
+    }
+
     /// <summary>
     /// The activity document map for the current state (activity IRI value → entry), created on demand.
     /// </summary>

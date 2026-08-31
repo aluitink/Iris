@@ -147,6 +147,17 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
                 .ConfigureAwait(false);
         }
 
+        // Remove the deleted object's Create from the author's outbox so the outbox collection no longer
+        // lists the deleted content (the inverse of the AddToOutboxAsync the Create handler recorded).
+        // The Create IRI is the deterministic sibling of the object IRI (a note at {actor}/notes/{suffix}
+        // was created by {actor}/creates/{suffix}); a missing entry is a no-op.
+        var objectValue = objectIri.Value.ToString();
+        var slash = objectValue.LastIndexOf('/');
+        var suffix = slash >= 0 ? objectValue.Substring(slash + 1) : objectValue;
+        await _persistence.Activities
+            .RemoveFromOutboxAsync(actorIri.Value, new Iri($"{actorIri.Value}/creates/{suffix}"), ct)
+            .ConfigureAwait(false);
+
         // F-03 (federated half): propagate the Delete to the remote actors that hold a copy of the
         // object (the author's remote followers, the remote attributedTo, and the remote parent's
         // owner when the object is a reply) so their copies are tombstoned too. Only the author's

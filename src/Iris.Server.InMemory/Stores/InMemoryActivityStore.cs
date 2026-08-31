@@ -64,4 +64,27 @@ public sealed class InMemoryActivityStore : IActivityStore
 
         return Task.CompletedTask;
     }
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFromOutboxAsync(Iri actorIri, Iri itemIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        bool removed = false;
+        lock (_outboxes)
+        {
+            if (_outboxes.TryGetValue(actorIri, out var list))
+            {
+                removed = list.RemoveAll(item => ItemIri(item) == itemIri.Value) > 0;
+            }
+        }
+
+        return Task.FromResult(removed);
+    }
+
+    /// <summary>
+    /// Resolves the IRI of an outbox item (its <c>Id</c> when it is an object, otherwise the link's
+    /// <c>href</c>) so a removal can match by IRI.
+    /// </summary>
+    private static string? ItemIri(IObjectOrLink item)
+        => item is IObject obj ? obj.Id : (item as Link)?.Href?.AbsoluteUri;
 }
