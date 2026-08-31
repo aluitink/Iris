@@ -62,7 +62,7 @@ for an existing outbox entry with the same IRI before inserting. A re-recorded a
 
 **Tests:** `ActivityStore_Outbox_AddToOutbox_IsIdempotentByIri`.
 
-### F-1911-3: Community follow delivery not completing
+### F-1911-3: Community follow delivery not completing — OPEN (needs live debugging)
 
 **Repro:** iris-dev1 community follows iris-dev2 community (signed POST → 202). Local `following` edge
 recorded on dev1. After 30+ seconds, dev2's community `followers` is still empty.
@@ -73,9 +73,23 @@ recorded on dev1. After 30+ seconds, dev2's community `followers` is still empty
 - Delivery queue journal shows the Follow was enqueued (iris-a → iris-dev2 community inbox) but the
   in-memory channel drained without the edge appearing on the peer.
 
-**Likely cause:** The delivery worker may be failing to deliver to the community inbox (signature
-validation on the community inbox endpoint, or the community inbox handler not recording the edge).
-Needs wire-level debugging (peer logs, signature verification trace).
+**Investigation:** The code path looks correct:
+- `CommunityOutboxPublishHandler` records the local follows edge + schedules delivery to the target's inbox.
+- `DeliveryWorker` POSTs the Follow to the target's community inbox, signed as the community.
+- `CommunityInboxHandler` validates the signature + dispatches to `FollowActivityHandler`.
+- `FollowActivityHandler` records the community's follows + followers edges (community branch).
+- The community document includes the `publicKey` in `ExtensionData` (seeded by the host).
+
+The unit and integration tests for community-follows-community pass (`CommunityFollowsCommunityIntegrationTests`,
+4/4). The issue is specific to the live Docker environment (public FQDNs, real HTTP, separate containers).
+
+**Likely cause:** A live-environment-specific issue — possibly signature validation failure (key
+resolution over real HTTP), rate limiting, or a network/DNS issue. Needs wire-level debugging:
+- Check dev2's server logs for the inbound POST to `/ap/v1/c/iris/inbox` (status code, signature validation result).
+- Check dev1's delivery worker logs for the outbound delivery (response status code).
+- Verify the community document is served correctly on dev2 (`GET https://iris-dev2.luit.ink/ap/v1/c/iris`
+  includes `publicKey` in the response).
+- Check if the rate limiter is rejecting the delivery (429 responses).
 
 ## Environment notes
 
