@@ -22,7 +22,8 @@ This is the short working roadmap. Detailed phase notes, change docs, and design
 | 12 — Spec Conformance | ✅ complete |
 | 13 — Live Federation Compatibility | 🚧 in progress |
 | 14+ — Future Work | 📋 planned |
-| Sample Explorer — 2nd round | 📋 planned |
+| Sample Explorer — 2nd round | ✅ complete |
+| Sample Explorer — 3rd round (S9+) | 🚧 in progress |
 
 ## Completed work
 
@@ -30,7 +31,8 @@ Phases -1 through 12 are complete, including the core federation layer, client/s
 
 ## Remaining work
 
-- [ ] **Sample Explorer — second-round enhancement** (top priority) — close the library-coverage gap in the Blazor WASM explorer + fix the broken compose write path. Driven by an API-coverage audit (library surface vs. what the UI calls): **S1 fix Compose** (the direct WebCrypto-signed `Create` 401s on the server — a signature-base mismatch between `SigningHandler.ToMetadata` and `HttpSignatureValidator.ToMetadata`; the proxy fallback returns 200 but only as a GET so the note is never created), **S2 deep-linking** (dead `<a href="#">` anchors → navigate), **S3 home timeline** (`GetFollowFeedAsync` + paged `GetCollectionAsync`), **S4 relays** (`GetRelaysAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync`, F-06 — no UI today), **S5** home shows community items (not just the count), **S6** actor-detail shows the logged-on actor's own moderation, **S7** compose audience (`to`), **S8** cleanup dead OAuth2-state statics + wire `InstanceBaseUrls`. Full plan: [SAMPLE_EXPLORER_PLAN.md](SAMPLE_EXPLORER_PLAN.md).
+- [x] **Sample Explorer — second-round enhancement** — closed the library-coverage gap in the Blazor WASM explorer + fixed the broken compose write path. S1–S8 done (changes 114–122); all §6 acceptance criteria verified live (change [123](changes/123-sample-explorer-live-browser-acceptance.md)). Full plan: [SAMPLE_EXPLORER_PLAN.md](SAMPLE_EXPLORER_PLAN.md).
+- [ ] **Sample Explorer — 3rd round (S9+)** — continue closing the §3.1 client-method gaps that have a clean UI home. **S9 done (change [124](changes/124-s9-typed-actor-fetch.md))**: `ActorDetail` now uses the **typed** `GetActorAsync` (last §3.1 method with a non-paginated UI home); surfaces its null contract (non-actor IRI → "not an actor"). Remaining §3.1 gaps are intentional: `GetFollowFeedAsync` (typed) can't carry the `next`-link the paginated Feed page needs — the page keeps the paged `GetCollectionAsync` (S3); `DeliverAsync` (raw inbox escape hatch) is a follow-up screen.
 - [x] **Priority: troubleshoot & fix the docker-compose sample UI** (`iris-ui` / `SampleBlazorClient` Blazor WASM server-explorer) — verified end-to-end against the compose stack with Playwright (2026-08-30): logon, actor directory/detail, note view, compose/post, follow/unfollow, community, like, and instance switching all work; `IrisStaticHost` SPA fallback fixed. (Note: the compose *post* was confirmed to return 200 via the proxy fallback but the note was not actually created — that is now the S1 item above.)
 - [ ] Phase 13.5–13.10: stand up real partner instances and verify interop with Mastodon, Lemmy, and Threads.
 - [ ] Phase 14: live-interop remediation and gap fixes.
