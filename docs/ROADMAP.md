@@ -115,9 +115,11 @@ handling exist now — so expectations must be re-derived from source before eac
   `Accept` (wire: their inbox; UI: our followers collection); we follow them (UI) → their `Accept`
   arrives and is recorded; `Reject` behavior (our local-follow-reject endpoint → does the peer see a
   `Reject`?); unfollow via `Undo` (does Mastodon remove the relationship? check their profile UI).
-  `remaining:` F2 (we follow them) **FAIL** — delivery to Mastodon rejected 401 (signature validation
-  failure, F-1912-1). F1/F3/F4 not tested (require RayvenMX's action). F-1911-3 root cause confirmed
-  (community signing identity not registered). → 19.4.
+   `remaining:` F2 (we follow them) **PASS (signature)** — the F-1912-1 signature fix (SHA-256 digest,
+   no trailing newline) made Mastodon accept our Follow (202); F-1911-3 (community signing identity not
+   registered) **fixed** (server + client) and verified (in-process regression test + community-signed
+   follow to Mastodon 202 via IrisSigner). RayvenMX's `Accept` still pending (their side to process).
+   F1/F3/F4 not tested (require RayvenMX's action). → 19.4.
 - [ ] **19.1.3 — Post/receive scenarios (C1–C4).** We post a Note (UI compose) → signed `Create`
   delivered to RayvenMX's inbox → **Mastodon renders it** (check the public post URL on
   mastodon.world — this is the core "post and have it federate" proof). RayvenMX posts → our inbox

@@ -91,14 +91,38 @@ the community's `ExtensionData["publicKey"]` but is **not registered** in the `I
 `SigningHandler` uses to resolve signing identities. The `SigningHandler.ResolveIdentity` method looks
 up the actor IRI in the key provider, but the community's key was never added there.
 
-**Fix:** The `IKeyProvider` must register the community's key when the community is seeded. The
-`SampleServer/Program.cs` seeds the community with a key in `ExtensionData` but does not register it
-in the key store/provider. The key store (`persistence.Keys`) has the key (seeded at line 375-377),
-but the `IKeyProvider` (which wraps the key store for the signing pipeline) does not know about it.
+ **Fix (committed):** Two sides, both required.
+ 1. **Server** (`SampleServer/Program.cs`): the seeded community's key is now registered with the
+    `IKeyProvider` so the server's outbound `DeliveryWorker` can sign community-sourced deliveries
+    (the original dead-letter source). The seeded community reuses the primary actor's key (its
+    `publicKey` extension points at it).
+ 2. **Client** (`SampleBlazorClient/Explorer/ExplorerSession.cs`): after a successful logon,
+    `RegisterCommunityIdentity` registers the seeded community's signing identity in the *client's*
+    `IKeyProvider` (derived from the resolved actor IRI's host, under the actor's own `#key-1` key).
+    This is what lets the Raw delivery screen's "act as" override (and any community follow driven from
+    the browser) sign as the community. **Root cause of the live failure:** the method originally read
+    the session's `_service` field, but `LogOnAsync` called it *before* assigning `_service`, so it
+    always bailed at the "no bundle" guard and never registered. It now takes the freshly-built
+    `ClientService` directly.
 
-**Next steps:**
-- Register the community's key in the `IKeyProvider` when the community is seeded
-- Verify the community follow delivery succeeds after the fix
+ **Verification:**
+ - **In-process (regression test, `S10RawDeliveryTests.Deliver_ActAsCommunity_SignsAndIsAccepted`):**
+   log on as alice through `ExplorerSession`, then `DeliverAsync` a `Follow` to bob's inbox with the
+   community IRI as the `X-Iris-Actor` override. Before the fix this threw `KeyNotFoundException`
+   ("No signing identity registered for actor"); after the fix it is `202 Accepted` and the follow edge
+   is recorded from the community.
+ - **Live over genuine sockets (IrisSigner):** signed a `Follow` (actor =
+   `https://iris-dev1.luit.ink/ap/v1/c/iris`, object =
+   `https://mastodon.world/users/RayvenMX`) with alice's key and POSTed it to
+   `https://mastodon.world/users/RayvenMX/inbox` → **202 Accepted**. The community's outbound follow to
+   Mastodon is now accepted.
+ - **Live UI (Playwright MCP):** on the Raw delivery screen, "act as" the community. A temporary
+   on-page diagnostic confirmed the client session now resolves the community identity
+   (`keyInStore=True; communityResolves=True`) — the F-1911-3 signing-identity fix is confirmed in the
+   running WASM app. (A direct browser POST to a *remote* inbox such as `mastodon.world` still fails with
+   `TypeError: Failed to fetch`: the browser cannot make a cross-origin write to a host that does not
+   send CORS headers — an environmental limit of driving a remote inbox from the browser, not a signing
+   bug. The IrisSigner over genuine sockets above is the authoritative live check.)
 
 ## UI verification (Sample Explorer, Playwright MCP)
 
@@ -142,5 +166,7 @@ image eliminated it — confirming the signer and verifier must move together (t
 
 ## Test counts
 
-Existing suite: 1186 passing (195 `Iris.Core.Tests` + 707 `Iris.Server.Tests` + the rest). Signature
-fix verified live (Mastodon 202 + cross-instance 202 via the UI).
+Existing suite: 1191 passing (195 `Iris.Core.Tests` + 707 `Iris.Server.Tests` + 121 `Iris.Client.Tests`
++ 84 `SampleBlazorClient.Tests` + the rest; the +5 over the previous count includes the new
+`Deliver_ActAsCommunity_SignsAndIsAccepted` regression test). Signature fix and the F-1911-3
+community-signing fix verified live (Mastodon 202 via IrisSigner + cross-instance 202 via the UI).
