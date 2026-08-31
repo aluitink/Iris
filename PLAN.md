@@ -11,7 +11,7 @@ This file is the **index** — it must stay small. [docs/ROADMAP.md](docs/ROADMA
 | [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) | Design principles, solution layout, cross-cutting concerns (caching, HTTP signatures, key model, proxy fallback), spec research |
 | [docs/reference/PROJECTS.md](docs/reference/PROJECTS.md) | Per-project details: `Iris.Core`, `Iris.Client`, `Iris.Server`, `Iris.Server.InMemory`, `Iris.Client.Extensions`, `Iris.WebCrypto` |
 | [docs/reference/TESTING.md](docs/reference/TESTING.md) | Integration-first testing strategy, multi-instance `TestServer` harness, deferred Mastodon live test |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Working roadmap — where we've been, where we are, what's left |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Working roadmap — where we've been, where we are, what's left (Phase 19 = live manual integration-testing program) |
 | [docs/changes/](docs/changes/README.md) | **Per-change docs**: one file per slice/change (build notes, key types, test counts, lightweight decisions) |
 | [docs/decisions/](docs/decisions/README.md) | Design-decision documents (one file per substantial decision) |
 | [docs/phase-notes/](docs/phase-notes/README.md) | Per-phase rationale + test-count history |
@@ -65,9 +65,10 @@ Iris.slnx
 
 ## Current Status
 
-Phases -1 through 12, 15, 16, 17, and 18 are complete, as are the Sample Explorer enhancement rounds (all rounds live-browser-verified). The only remaining work is external:
+Phases -1 through 12, 15, 16, 17, and 18 are complete, as are the Sample Explorer enhancement rounds (all rounds live-browser-verified). The current work is the **Phase 19 production-style manual integration-testing program** (phases 19.0–19.8 in [docs/ROADMAP.md](docs/ROADMAP.md)): the evaluation environment (durable volumes + public FQDNs), then live manual Playwright-driven testing of the sample server/UI against the real network — the two-instance loop/echo network, every user collection, the architectural client→server expectations, community management, UI navigability, object-shape conformance against Mastodon as the reference, the @RayvenMX@mastodon.world account, and a Threads (@mosseri@threads.net) probe.
 
-- **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation need real partner instances (Mastodon, Lemmy, Threads) behind the Phase 9 public FQDN/TLS; the CI-testable sub-slices and the CI-gating model are already done.
+- **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
+- **Tabled** — external/remote community-style interaction testing (per operator decision).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build notes in [docs/changes/](docs/changes/README.md); substantial design calls in [docs/decisions/](docs/decisions/README.md).
 
