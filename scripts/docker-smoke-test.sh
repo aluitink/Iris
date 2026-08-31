@@ -95,10 +95,19 @@ check_webfinger() {
   if [ "$code" != "200" ]; then
     fail "${instance} WebFinger for ${handle} returned HTTP ${code} (expected 200)"
   fi
-  if ! grep -q "http://${instance}:8080/ap/v1/u/${handle}" <<<"$json"; then
-    fail "${instance} WebFinger for ${handle} did not return its own actor IRI"
+  # The advertised IRI is either the in-network address (http://<instance>:8080/...) or the public
+  # FQDN (https://<IRIS_N_HOST>/...) when .env sets IRIS_N_HOST. Accept either: the check is that
+  # the WebFinger response returns the actor's own IRI (the advertised base + /ap/v1/u/<handle>),
+  # not that it is a specific URL.
+  local advertised
+  advertised="$(grep -oE 'https?://[^"]+/ap/v1/u/'"${handle}" <<<"$json" | head -n1)"
+  if [ -z "$advertised" ]; then
+    # Fallback: the in-network IRI (no .env / default configuration).
+    if ! grep -q "http://${instance}:8080/ap/v1/u/${handle}" <<<"$json"; then
+      fail "${instance} WebFinger for ${handle} did not return its own actor IRI (response: ${json})"
+    fi
   fi
-  log "OK: ${instance} WebFinger resolves ${handle}@${instance} (HTTP 200, actor IRI present)."
+  log "OK: ${instance} WebFinger resolves ${handle}@${instance} (HTTP 200, actor IRI present: ${advertised:-http://${instance}:8080/ap/v1/u/${handle}})."
 }
 check_webfinger iris-a alice
 check_webfinger iris-b alice
@@ -119,10 +128,13 @@ cross_json="${cross_body%$'\n'*}"
 if [ "$cross_code" != "200" ]; then
   fail "iris-a→iris-b WebFinger over the network returned HTTP ${cross_code} (expected 200)"
 fi
-if ! grep -q "http://iris-b:8080/ap/v1/u/alice" <<<"$cross_json"; then
+# The advertised IRI may be the in-network address or the public FQDN (when .env sets IRIS_B_HOST).
+# Accept either: the check is that iris-a can reach iris-b's WebFinger endpoint over the network.
+cross_advertised="$(grep -oE 'https?://[^"]+/ap/v1/u/alice' <<<"$cross_json" | head -n1)"
+if [ -z "$cross_advertised" ] && ! grep -q "http://iris-b:8080/ap/v1/u/alice" <<<"$cross_json"; then
   fail "iris-a→iris-b WebFinger did not return iris-b's actor IRI (cross-container reachability failed)"
 fi
-log "OK: iris-a reached iris-b over the Docker network and resolved alice@iris-b (HTTP 200)."
+log "OK: iris-a reached iris-b over the Docker network and resolved alice@iris-b (HTTP 200, IRI: ${cross_advertised:-http://iris-b:8080/ap/v1/u/alice})."
 
 # --- 3. UI: iris-ui serves the Blazor WASM app's index page over iris-net -------------------
 # The Blazor WebAssembly "server explorer" (Deliverable B) is a static site; iris-ui serves its index
@@ -211,22 +223,38 @@ if ! docker cp "$key_host_copy" iris-a:/opt/signer/alice-key.pem >/dev/null 2>&1
   rm -rf "$signer_build_dir"
   fail "could not copy alice's private key into iris-a for signing (docker cp)"
 fi
+# The actor and target IRIs must be the advertised IRIs (public FQDNs when .env sets them, in-network
+# addresses otherwise) — the signature's keyId must match the actor's publicKey.id, which is the
+# advertised IRI + #key-1. Resolve them from each instance's own WebFinger response (the same check
+# that ran in step 1).
+resolve_actor_iri() {
+  local instance="$1"
+  local wf
+  wf="$(docker run --rm --network "$NET_NAME" curlimages/curl:latest \
+    -s "http://${instance}:8080/.well-known/webfinger?resource=acct:alice@${instance}" 2>/dev/null)"
+  grep -oE 'https?://[^"]+/ap/v1/u/alice' <<<"$wf" | head -n1
+}
+follow_actor="$(resolve_actor_iri iris-a)"
+follow_target="$(resolve_actor_iri iris-b)"
+if [ -z "$follow_actor" ] || [ -z "$follow_target" ]; then
+  fail "could not resolve the advertised actor IRIs from WebFinger (iris-a=${follow_actor:-?} iris-b=${follow_target:-?})"
+fi
 # A unique Follow id (so a re-run does not collide with a prior Follow's id; the follow edge is
 # idempotent, but a unique id keeps the outbox clean).
-follow_id="http://iris-a:8080/ap/v1/u/alice/follows/s10-$(date +%s)"
-follow_actor="http://iris-a:8080/ap/v1/u/alice"
-follow_target="http://iris-b:8080/ap/v1/u/alice"
+follow_id="${follow_actor}/follows/s10-$(date +%s)"
 follow_json="{\"@context\":[\"https://www.w3.org/ns/activitystreams\"],\"id\":\"${follow_id}\",\"type\":\"Follow\",\"actor\":\"${follow_actor}\",\"object\":\"${follow_target}\"}"
 echo "$follow_json" > "$signer_build_dir/follow.json"
 docker cp "$signer_build_dir/follow.json" iris-a:/opt/signer/follow.json >/dev/null 2>&1
 # Run the signer inside iris-a: it signs the Follow with alice's key (the ServerToServer profile,
 # since a Follow has a body → digest + content-type are signed) and POSTs it to iris-a's outbox.
-# The signer prints the response body then the status code on its own line; a 202 = accepted.
+# The signing identity (actorIri + keyIdIri) uses the advertised IRIs — the keyId must match the
+# actor's publicKey.id, which is the advertised IRI + #key-1. The POST URL is the in-network address
+# (the signer runs inside iris-a; the outbox endpoint is local).
 signer_out="$(docker exec iris-a /opt/signer/IrisSigner \
   POST "http://iris-a:8080/ap/v1/u/alice/outbox" \
   /opt/signer/alice-key.pem \
   "$follow_actor" \
-  "$follow_actor#key-1" \
+  "${follow_actor}#key-1" \
   application/activity+json \
   /opt/signer/follow.json 2>&1)"
 follow_code="$(printf '%s' "$signer_out" | tail -n1)"
@@ -271,6 +299,8 @@ log "OK: iris-b recorded the federated follow edge — alice@iris-a now follows 
 # and relays to the target, returning the remote response. A 200 from iris-a's proxy for a target on
 # iris-b proves the proxy path works over genuine sockets (the browser's remote-reachability escape).
 log "Checking proxy fallback over the network: iris-a's proxy relaying a GET to iris-b…"
+# The proxy target is the in-network address (the proxy runs inside iris-a and dials iris-b in-network),
+# but the response contains the advertised IRI (the actor document's id field).
 proxy_target="http://iris-b:8080/ap/v1/u/alice"
 proxy_body="$(docker run --rm --network "$NET_NAME" curlimages/curl:latest \
   -s -w '\n%{http_code}' \
@@ -283,7 +313,8 @@ proxy_json="${proxy_body%$'\n'*}"
 if [ "$proxy_code" != "200" ]; then
   fail "iris-a's proxy relaying a GET to iris-b returned HTTP ${proxy_code} (expected 200)"
 fi
-if ! grep -q "${follow_target}" <<<"$proxy_json"; then
+# Grep for the advertised IRI (the actor document's id) — the in-network IRI also works as a fallback.
+if ! grep -q "${follow_target}" <<<"$proxy_json" && ! grep -q "${proxy_target}" <<<"$proxy_json"; then
   fail "iris-a's proxy response did not return iris-b's actor document (proxy relay failed)"
 fi
 log "OK: iris-a's proxy relayed a GET to iris-b and returned the actor document (HTTP 200) — proxy fallback over the network confirmed."

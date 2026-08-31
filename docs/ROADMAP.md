@@ -79,7 +79,7 @@ Prepare the live stack so every later phase tests a durable, production-shaped e
 - [x] **19.0.2 — Seed determinism + idempotency.** Seeding must be safe to run against a non-empty
   volume (idempotent by IRI, never duplicates actors/notes across recreations) and must not clobber
   state created during testing (e.g. a follow made in a prior turn survives a recreation).
-- [ ] **19.0.3 — FQDN + TLS + CORS audit.** Verify end-to-end over the public FQDNs: WebFinger on both
+- [x] **19.0.3 — FQDN + TLS + CORS audit.** Verify end-to-end over the public FQDNs: WebFinger on both
   instances, the UI origin in `IRIS_CORS_ORIGINS` matches the UI's actual origin, advertised IRIs are
   clean `https://iris-devN.luit.ink/...` (no port), and the peer instances' `Iris__PeerBase` resolves
   each other's *public* IRIs (not just the in-network names) so federation works after a volume-backed
