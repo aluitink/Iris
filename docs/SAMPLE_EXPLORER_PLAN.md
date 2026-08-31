@@ -265,9 +265,10 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
   `/object?iri=` + `/actor?iri=` links (author, parent, mentions, attachments); object/actor pages read the
   query param and auto-load. In-process bUnit tests assert the emitted `<a href>` values; browser-verified
   (click an actor/note → the right page loads).
-- [ ] **S3 — Home timeline (followed feed) + pagination.** New `Feed` page via `GetFollowFeedAsync`;
-  "Load more" via `GetCollectionAsync` (surfaces paged enumeration). In-process test on the followed
-  timeline.
+- [x] **S3 — Home timeline (followed feed) + pagination.** **DONE (change [116](changes/116-s3-home-timeline-followed-feed.md)).**
+  New `Feed` page enumerates `{actor}/feed` via paged `GetCollectionAsync`; "Load more" walks the page's
+  `NextPage` IRI (surfaces `next`-link walking). In-process test: a follower sees the followed actor's outbox
+  items, and the paged collection carries a `next` link (`page=2` of 3).
 - [ ] **S4 — Relay page (F-06).** `GetRelaysAsync` + `SubscribeRelayAsync` / `UnsubscribeRelayAsync` on
   the actor-detail (or a relays page). In-process test on subscribe/unsubscribe.
 - [ ] **S5 — Home page shows the community feed items** (not just the count).

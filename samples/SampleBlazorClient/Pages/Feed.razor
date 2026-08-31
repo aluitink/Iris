@@ -1,0 +1,158 @@
+@page "/feed"
+@using Iris.Client
+@using Iris.Client.Collections
+@using Iris.Core.Collections
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Feed · Iris</PageTitle>
+
+<h2>Home timeline (followed feed)</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to view your followed feed.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <p class="muted">
+            Following <code>@(Session.ResolvedActorIri?.Value ?? "…")</code> — the union of the followed
+            actors' outboxes, newest first, de-duplicated.
+        </p>
+        @if (LoadError is not null)
+        {
+            <div class="error">@LoadError</div>
+        }
+        @if (FeedItems is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else if (FeedItems.Count == 0 && !HasMore)
+        {
+            <p class="muted">
+                No followed items yet. Follow an actor (Actor detail → Follow) to populate your timeline.
+            </p>
+        }
+        else
+        {
+            <ul class="object-list">
+                @foreach (var item in FeedItems)
+                {
+                    <li><ObjectView Item="item" /></li>
+                }
+            </ul>
+            @if (HasMore)
+            {
+                <button @onclick="LoadMoreAsync" disabled="@(LoadingMore)">Load more</button>
+                @if (LoadingMore)
+                {
+                    <span class="muted">Loading…</span>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    /// <summary>
+    /// The number of items fetched per page (the paged-collection page size the "Load more" button
+    /// walks). Kept small so the user can see <c>next</c>-link walking (S3).
+    /// </summary>
+    private const int PageSize = 5;
+
+    private List<IObjectOrLink>? FeedItems { get; set; }
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
+    private string? LoadError { get; set; }
+
+    /// <summary>
+    /// The current enumeration position: the page IRI to resume from (<c>null</c> = start at the feed's
+    /// first page) and the items loaded so far.
+    /// </summary>
+    private Iri? _resumeFrom;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsLoggedIn)
+        {
+            await LoadInitialAsync();
+        }
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        FeedItems = [];
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        await EnumerateOnePageAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        LoadError = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches the next page of the followed feed (resuming from <see cref="_resumeFrom"/> when set, else
+    /// from the feed's first page) and appends its items. Uses the paged
+    /// <see cref="IActivityPubClient.GetCollectionAsync(Iri, CollectionQuery, CancellationToken)"/>
+    /// (surfaces <c>next</c>-link walking, S3) against the actor's <c>{actor}/feed</c> collection.
+    /// </summary>
+    private async Task EnumerateOnePageAsync()
+    {
+        var actorIri = Session.ResolvedActorIri ?? Session.ActorIri
+            ?? throw new InvalidOperationException("No actor identity.");
+        var feedIri = new Iri($"{actorIri.Value.TrimEnd('/')}/feed");
+        var client = Session.GetClient();
+
+        if (_resumeFrom is { } resume)
+        {
+            // Resume from the next page (the "Load more" continuation).
+            await foreach (var page in client.GetCollectionAsync(resume, new CollectionQuery(Limit: PageSize), CancellationToken.None))
+            {
+                if (FeedItems is null)
+                {
+                    FeedItems = [];
+                }
+
+                FeedItems.AddRange(page.Items);
+                // Stop after the first page (one page per "Load more" click).
+                HasMore = !page.IsLastPage;
+                _resumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        // First load: start at the feed's first page.
+        await foreach (var page in client.GetCollectionAsync(feedIri, new CollectionQuery(Limit: PageSize), CancellationToken.None))
+        {
+            FeedItems ??= [];
+            FeedItems.AddRange(page.Items);
+            HasMore = !page.IsLastPage;
+            _resumeFrom = page.NextPage;
+            break;
+        }
+    }
+}

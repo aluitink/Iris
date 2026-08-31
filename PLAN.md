@@ -13,6 +13,7 @@ This document is the **index**. The full plan is split across the files below �
 | [docs/reference/TESTING.md](docs/reference/TESTING.md) | Integration-first testing strategy, multi-instance `TestServer` harness, test project layout, deferred Mastodon live test |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased plan (Phase 0–17) — brief waypoints only |
 | [docs/SAMPLE_PLAN.md](docs/SAMPLE_PLAN.md) | **Phase 8 enhancement build plan** — full sample server + Blazor WASM server-explorer + 3-service compose (the real-world interop test platform) |
+| [docs/SAMPLE_EXPLORER_PLAN.md](docs/SAMPLE_EXPLORER_PLAN.md) | **Sample explorer 2nd-round build plan** — close the library-coverage gap in the Blazor WASM explorer (relays, home timeline, deep-linking, paged collections) + fix the broken compose write path (WebCrypto signature-base mismatch) |
 | [docs/changes/](docs/changes/) | **Per-change docs**: one file per slice/change — build notes, key types, test counts, lightweight decisions (replaces the retired CHANGELOG.md) |
 | [docs/reference/CODING_STYLE.md](docs/reference/CODING_STYLE.md) | **Binding** coding conventions — C# style, naming, error handling, async, and the rules for working with 3rd-party `KristofferStrube.ActivityStreams` types |
 | [docs/reference/AUTONOMOUS_LOOP.md](docs/reference/AUTONOMOUS_LOOP.md) | Operating instructions for the autonomous dev loop (one turn at a time), incl. the doc-maintenance rules |

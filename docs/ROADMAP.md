@@ -22,6 +22,7 @@ This is the short working roadmap. Detailed phase notes, change docs, and design
 | 12 — Spec Conformance | ✅ complete |
 | 13 — Live Federation Compatibility | 🚧 in progress |
 | 14+ — Future Work | 📋 planned |
+| Sample Explorer — 2nd round | 📋 planned |
 
 ## Completed work
 
@@ -29,7 +30,8 @@ Phases -1 through 12 are complete, including the core federation layer, client/s
 
 ## Remaining work
 
-- [x] **Priority: troubleshoot & fix the docker-compose sample UI** (`iris-ui` / `SampleBlazorClient` Blazor WASM server-explorer) — verified end-to-end against the compose stack with Playwright (2026-08-30): logon, actor directory/detail, note view, compose/post, follow/unfollow, community, like, and instance switching all work; `IrisStaticHost` SPA fallback fixed.
+- [ ] **Sample Explorer — second-round enhancement** (top priority) — close the library-coverage gap in the Blazor WASM explorer + fix the broken compose write path. Driven by an API-coverage audit (library surface vs. what the UI calls): **S1 fix Compose** (the direct WebCrypto-signed `Create` 401s on the server — a signature-base mismatch between `SigningHandler.ToMetadata` and `HttpSignatureValidator.ToMetadata`; the proxy fallback returns 200 but only as a GET so the note is never created), **S2 deep-linking** (dead `<a href="#">` anchors → navigate), **S3 home timeline** (`GetFollowFeedAsync` + paged `GetCollectionAsync`), **S4 relays** (`GetRelaysAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync`, F-06 — no UI today), **S5** home shows community items (not just the count), **S6** actor-detail shows the logged-on actor's own moderation, **S7** compose audience (`to`), **S8** cleanup dead OAuth2-state statics + wire `InstanceBaseUrls`. Full plan: [SAMPLE_EXPLORER_PLAN.md](SAMPLE_EXPLORER_PLAN.md).
+- [x] **Priority: troubleshoot & fix the docker-compose sample UI** (`iris-ui` / `SampleBlazorClient` Blazor WASM server-explorer) — verified end-to-end against the compose stack with Playwright (2026-08-30): logon, actor directory/detail, note view, compose/post, follow/unfollow, community, like, and instance switching all work; `IrisStaticHost` SPA fallback fixed. (Note: the compose *post* was confirmed to return 200 via the proxy fallback but the note was not actually created — that is now the S1 item above.)
 - [ ] Phase 13.5–13.10: stand up real partner instances and verify interop with Mastodon, Lemmy, and Threads.
 - [ ] Phase 14: live-interop remediation and gap fixes.
 - [x] **Phase 15.2 (remaining): OAuth2 `/oauth2/authorize` + Blazor WASM integration** (2026-08-30) — the server `GET /ap/v1/oauth2/authorize` browser-redirect endpoint (auto-approve + one-time code + 302) and the `SampleBlazorClient` browser flow (`OAuth2BrowserFlow` + `LogOnWithOAuth2Async` + `Home.razor` OAuth2 logon + `IrisStaticHost` `/callback`); Phase 15 (auth upgrade) now fully done (15.1, 15.2a, 15.2b, 15.2, 15.3, 15.4).
