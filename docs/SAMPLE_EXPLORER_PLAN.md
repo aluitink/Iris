@@ -207,9 +207,11 @@ outboxes, newest-first, de-duplicated. Currently there is no way to see the foll
 > In-process test: seed a follow edge + outbox content on two actors, log on as the follower, assert the
 > feed yields the followed actor's outbox items (newest-first, de-duplicated).
 
-### S4 — Relay page (F-06)
+### S4 — Relay page (F-06) — **DONE (change [117](changes/117-s4-relay-page.md))**
 
-The **entire relay feature** (subscribe/unsubscribe/list) has no UI. Add a **Relays** section.
+The **entire relay feature** (subscribe/unsubscribe/list) had no UI. Added a **Relays** section on the
+actor-detail page (and threaded `BypassCache` → `?refresh=true` through the client GET so a post-write
+re-read observes the updated page).
 
 1. **`ActorDetail.razor`** (or a new `Pages/Relays.razor`): a relays card showing `GetRelaysAsync(actor)`
    (the actor's current relays), a relay-IRI input, and **Subscribe** (`SubscribeRelayAsync`) /
@@ -269,8 +271,11 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
   New `Feed` page enumerates `{actor}/feed` via paged `GetCollectionAsync`; "Load more" walks the page's
   `NextPage` IRI (surfaces `next`-link walking). In-process test: a follower sees the followed actor's outbox
   items, and the paged collection carries a `next` link (`page=2` of 3).
-- [ ] **S4 — Relay page (F-06).** `GetRelaysAsync` + `SubscribeRelayAsync` / `UnsubscribeRelayAsync` on
-  the actor-detail (or a relays page). In-process test on subscribe/unsubscribe.
+- [x] **S4 — Relay page (F-06).** **DONE (change [117](changes/117-s4-relay-page.md)).** `ActorDetail`
+  Relays card: `GetRelaysAsync` list + `SubscribeRelayAsync` / `UnsubscribeRelayAsync` (local Basic-auth).
+  Fixed the client to thread `BypassCache` into the GET as `?refresh=true` (the server re-renders the cached
+  collection page only on `?refresh=true`, so a post-write re-read observed a stale page). In-process tests
+  on subscribe/unsubscribe.
 - [ ] **S5 — Home page shows the community feed items** (not just the count).
 - [ ] **S6 — Actor detail shows the logged-on actor's own moderation** (`MutesOf`/`BlocksOf`/`FlagsOf`).
 - [ ] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter).

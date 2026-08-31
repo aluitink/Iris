@@ -1,5 +1,6 @@
 @page "/actor"
 @using Iris.Client
+@using CollectionQuery = Iris.Client.Collections.CollectionQuery
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
@@ -116,6 +117,48 @@ else
                     <div class="error">@WriteError</div>
                 }
             </div>
+
+            <div class="card">
+                <h3>Relays</h3>
+                <p class="muted">
+                    The relays (fan-out servers, ActivityPub §5.1.3) this actor's content is fanned out
+                    through. Subscribe / unsubscribe are local, Basic-authenticated decisions on this
+                    actor's own instance.
+                </p>
+                @if (Relays is not null)
+                {
+                    @if (Relays.Count == 0)
+                    {
+                        <p class="muted">No relays subscribed.</p>
+                    }
+                    else
+                    {
+                        <ul class="object-list">
+                            @foreach (var relay in Relays)
+                            {
+                                <li><code>@relay</code></li>
+                            }
+                        </ul>
+                    }
+                }
+                <label for="relay-iri">Relay IRI</label>
+                <input id="relay-iri" type="text" @bind="RelayIriInput"
+                       placeholder="https://relay.example/" />
+                <button @onclick="SubscribeRelayAsync" disabled="@(RelayBusy)">Subscribe</button>
+                <button @onclick="UnsubscribeRelayAsync" disabled="@(RelayBusy)">Unsubscribe</button>
+                @if (RelayBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (RelayResult is not null)
+                {
+                    <p class="muted">Status: <code>@RelayResult</code></p>
+                }
+                @if (RelayError is not null)
+                {
+                    <div class="error">@RelayError</div>
+                }
+            </div>
         }
     }
 }
@@ -134,6 +177,12 @@ else
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
+
+    private IReadOnlyList<string>? Relays { get; set; }
+    private string RelayIriInput { get; set; } = "";
+    private bool RelayBusy { get; set; }
+    private DeliveryResult? RelayResult { get; set; }
+    private string? RelayError { get; set; }
 
     /// <summary>
     /// The actor IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
@@ -180,6 +229,9 @@ else
         ActorDoc = null;
         Feed = null;
         Moderation = null;
+        Relays = null;
+        RelayResult = null;
+        RelayError = null;
         try
         {
             ActorIri = actorIri;
@@ -198,6 +250,18 @@ else
                 await CountAsync(client.GetMutesAsync(actorIri)),
                 await CountAsync(client.GetBlocksAsync(actorIri)),
                 await CountAsync(client.GetFlagsAsync(actorIri)));
+
+            var relays = new List<string>();
+            await foreach (var relay in client.GetRelaysAsync(actorIri))
+            {
+                var iri = RelayIriOf(relay);
+                if (iri is not null)
+                {
+                    relays.Add(iri);
+                }
+            }
+
+            Relays = relays;
         }
         catch (Exception ex)
         {
@@ -279,5 +343,88 @@ else
         {
             WriteBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Resolves a relay collection item to its IRI string (a relay is a link, or an object carrying an
+    /// <c>id</c>). Null when the item carries no usable IRI.
+    /// </summary>
+    private static string? RelayIriOf(IObjectOrLink item)
+    {
+        if (item is IObject { Id: { } id })
+        {
+            return id;
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            return href.ToString();
+        }
+
+        return null;
+    }
+
+    private async Task SubscribeRelayAsync()
+        => await RelayWriteAsync((actor, relay) => Session.GetClient().SubscribeRelayAsync(actor, relay));
+
+    private async Task UnsubscribeRelayAsync()
+        => await RelayWriteAsync((actor, relay) => Session.GetClient().UnsubscribeRelayAsync(actor, relay));
+
+    private async Task RelayWriteAsync(Func<Iri, Iri, Task<DeliveryResult>> write)
+    {
+        if (!Session.IsLoggedIn || ActorIri is null)
+        {
+            return;
+        }
+
+        if (!Iri.TryParse(RelayIriInput.Trim(), out var relay))
+        {
+            RelayError = "The relay IRI is not a valid absolute URI.";
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        RelayBusy = true;
+        RelayResult = null;
+        RelayError = null;
+        try
+        {
+            RelayResult = await write(actorIri, relay);
+            // Refresh the relays list (bypassing the page cache) so the new (or removed) subscription is
+            // visible immediately rather than after the cache's 60s fresh window lapses.
+            await RefreshRelaysAsync(bypassCache: true);
+        }
+        catch (Exception ex)
+        {
+            RelayError = ex.Message;
+        }
+        finally
+        {
+            RelayBusy = false;
+        }
+    }
+
+    private async Task RefreshRelaysAsync(bool bypassCache = false)
+    {
+        if (ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        var relays = new List<string>();
+        // After a subscribe/unsubscribe write the relays collection is served through the local
+        // collection-page response cache, so a follow-up read bypasses the cache (refresh) to observe
+        // the update instead of a stale page.
+        var query = bypassCache ? new CollectionQuery(BypassCache: true) : null;
+        await foreach (var relay in Session.GetClient().GetRelaysAsync(actorIri, query))
+        {
+            var iri = RelayIriOf(relay);
+            if (iri is not null)
+            {
+                relays.Add(iri);
+            }
+        }
+
+        Relays = relays;
     }
 }

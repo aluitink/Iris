@@ -162,6 +162,26 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return GetObjectAsync(request, ct);
     }
 
+    /// <summary>
+    /// Fetches a collection page from the network, appending <c>?refresh=true</c> (or
+    /// <c>&amp;refresh=true</c>) when <paramref name="refresh"/> is set. The Iris server caches the
+    /// rendered local collection page (outbox, followers, following, liked, blocks, flags, mutes,
+    /// relays) and re-renders it only on <c>?refresh=true</c>; without this, a client read that follows
+    /// a write (e.g. relays after a subscribe/unsubscribe) would observe the stale cached page until the
+    /// 60s fresh window lapses. The query parameter is only meaningful to Iris servers and is ignored by
+    /// non-Iris ActivityPub implementations.
+    /// </summary>
+    private Task<IObject?> GetCollectionPageFromNetworkAsync(Iri pageIri, bool refresh, CancellationToken ct)
+    {
+        var uri = refresh
+            ? (pageIri.Value.Contains('?', StringComparison.Ordinal)
+                ? $"{pageIri.Value}&refresh=true"
+                : $"{pageIri.Value}?refresh=true")
+            : pageIri.Value;
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        return GetObjectAsync(request, ct);
+    }
+
     /// <inheritdoc/>
     public async Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
         => (await GetObjectAsync(actorId, ct).ConfigureAwait(false)) as Actor;
@@ -800,14 +820,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         IObject? obj;
         if (_collectionPageCache is null)
         {
-            obj = await GetObjectFromNetworkAsync(pageIri, ct).ConfigureAwait(false);
+            obj = await GetCollectionPageFromNetworkAsync(pageIri, bypassCache, ct).ConfigureAwait(false);
         }
         else
         {
             var (value, _) = await _collectionPageCache.GetAsync(
                 pageIri,
                 bypassCache,
-                async iri => await GetObjectFromNetworkAsync(iri, ct).ConfigureAwait(false),
+                async iri => await GetCollectionPageFromNetworkAsync(iri, bypassCache, ct).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
             obj = value;
         }
