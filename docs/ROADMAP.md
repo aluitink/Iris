@@ -84,7 +84,7 @@ Prepare the live stack so every later phase tests a durable, production-shaped e
   clean `https://iris-devN.luit.ink/...` (no port), and the peer instances' `Iris__PeerBase` resolves
   each other's *public* IRIs (not just the in-network names) so federation works after a volume-backed
   recreation. Fix whatever is miswired; smoke via `scripts/docker-smoke-test.sh`.
-- [ ] **19.0.4 — Test-account readiness.** Confirm `@RayvenMX@mastodon.world` is resolvable via
+- [x] **19.0.4 — Test-account readiness.** Confirm `@RayvenMX@mastodon.world` is resolvable via
   WebFinger from our instances, its actor document fetches + key validates, and our sample actors'
   Basic-auth logon works from the public UI origin. Record the account's capabilities (posting,
   follows) as the known-good external reference.
