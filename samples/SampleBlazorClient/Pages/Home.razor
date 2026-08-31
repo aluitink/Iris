@@ -155,19 +155,6 @@ else
     /// </summary>
     private const int FeedPageSize = 5;
 
-    /// <summary>
-    /// The OAuth2 <c>state</c> the app generated for the in-flight authorization request. Held in a
-    /// static so it survives the redirect (a full page load): the callback route compares the returned
-    /// <c>state</c> against this before exchanging the code (CSRF protection, RFC 6749 §10.12).
-    /// </summary>
-    private static string? PendingOAuthState;
-
-    /// <summary>The actor handle the in-flight OAuth2 request is for (echoed on the callback URL).</summary>
-    private static string? PendingOAuthHandle;
-
-    /// <summary>The dial base URI the in-flight OAuth2 request targets (echoed on the callback URL).</summary>
-    private static Uri? PendingOAuthDialBase;
-
     protected override async Task OnInitializedAsync()
     {
         // When the browser lands on the app after the OAuth2 redirect (the /callback route is served by
@@ -192,9 +179,25 @@ else
     }
 
     /// <summary>
-    /// Completes the OAuth2 callback: verifies the <c>state</c>, exchanges the code for a Bearer token,
-    /// and logs on. Navigates to <c>/</c> when done (clearing the callback query string).
+    /// Completes the OAuth2 callback: exchanges the code for a Bearer token and logs on. Navigates to
+    /// <c>/</c> when done (clearing the callback query string).
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The dial base + handle are echoed on the callback URL (<c>?dial=…&amp;handle=…</c>, appended by
+    /// <see cref="LogOnWithOAuth2Async"/> to the <c>redirect_uri</c>) so a full page reload on
+    /// <c>/callback</c> still knows the target instance + actor.
+    /// </para>
+    /// <para>
+    /// <c>state</c> (CSRF, RFC 6749 §10.12) limitation: the authorization redirect is a full page load
+    /// (the static host serves <c>index.html</c>, so the SPA's in-memory statics are wiped), so the
+    /// state generated before the redirect is not available to compare against the callback's
+    /// <paramref name="returnedState"/>. The state is still generated and sent (the server echoes it),
+    /// so the parameter is present and the server's single-use code exchange is the effective
+    /// protection; a same-tab state check would require persisting the state (e.g.
+    /// <c>localStorage</c> via JS interop), which is a follow-up.
+    /// </para>
+    /// </remarks>
     private async Task CompleteOAuthCallbackAsync(Uri current, string code, string? returnedState)
     {
         Busy = true;
@@ -216,16 +219,6 @@ else
 
             var handle = CallbackParam(current, "handle")
                 ?? (Address.Contains('@') ? Address[..Address.IndexOf('@')].TrimStart('@') : "alice");
-
-            // Verify the state (CSRF). When the static state is present (same-tab flow), require a
-            // match; when absent (a hard reload after the state was cleared), accept and proceed.
-            if (PendingOAuthState is not null
-                && !string.Equals(returnedState, PendingOAuthState, StringComparison.Ordinal))
-            {
-                Error = "OAuth2 state mismatch (possible CSRF) — log on again.";
-                Navigation.NavigateTo("/");
-                return;
-            }
 
             var token = await OAuth2BrowserFlow.ExchangeCodeAsync(
                 new HttpClient(), dialBase, code);
@@ -254,9 +247,6 @@ else
         }
         finally
         {
-            PendingOAuthState = null;
-            PendingOAuthHandle = null;
-            PendingOAuthDialBase = null;
             Busy = false;
         }
     }
@@ -296,10 +286,12 @@ else
             // appended so a full page reload on /callback still knows the target instance + actor.
             var appBase = new Uri(Navigation.BaseUri);
             var redirectUri = OAuth2BrowserFlow.BuildRedirectUri(appBase, "/callback");
+
+            // The state (CSRF, RFC 6749 §10.12) is generated and sent with the authorize request; the
+            // server echoes it back on the callback. (A same-tab compare against it is not possible here
+            // — the authorization redirect is a full page load that wipes the SPA's in-memory state — see
+            // CompleteOAuthCallbackAsync.)
             var state = OAuth2BrowserFlow.NewState();
-            PendingOAuthState = state;
-            PendingOAuthHandle = handle;
-            PendingOAuthDialBase = instanceBase;
 
             // Echo the dial base + handle on the redirect_uri so the callback (after the server's 302)
             // can read them. The server appends ?code=…&state=…; the app's extra params come first.

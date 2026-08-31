@@ -241,16 +241,16 @@ user sees what *they* have muted/blocked/flagged, and the buttons' effect is vis
 input (comma-separated actor IRIs, or `Public`) and pass it through. (Media/attachment upload is a
 larger lift — note it as a follow-up, not this round.)
 
-### S8 — Cleanup dead code + wire the base-URL config
+### S8 — Cleanup dead code + wire the base-URL config — **DONE (change [121](changes/121-s8-cleanup-oauth2-state.md))**
 
-1. **`Home.razor` OAuth2 state:** `PendingOAuthState` / `PendingOAuthHandle` / `PendingOAuthDialBase`
-   statics are effectively non-operational (the state CSRF check is always null on the real first
-   callback pass because the full-page redirect wipes statics). Either make the state check work (persist
-   the state to a URL-fragment / `localStorage` via JS interop) or remove the dead fields and document
-   the limitation.
-2. **`InstanceBaseUrls`** (`IrisClientOptions` / `AddIrisExplorer`) is never populated in the shipped
-   app — wire a default (the two local instances' advertised host → FQDN base URL) so the dial-base
-   pre-fill actually works, or remove the surface.
+1. **`Home.razor` OAuth2 state:** the `PendingOAuthState` / `PendingOAuthHandle` / `PendingOAuthDialBase`
+   statics were effectively non-operational (the state CSRF check was always null on the real first
+   callback pass because the full-page redirect wipes statics). **Resolved by removing the dead fields and
+   documenting the limitation** (the state is still generated + sent; a same-tab check would need to
+   persist it, e.g. `localStorage` via JS interop — a follow-up).
+2. **`InstanceBaseUrls`** was **already wired** in `Program.cs` (committed in S1/S2): the public instance
+   (`iris.luit.ink`) + the local Docker instance (`localhost` → `http://localhost:8081`). Both logon paths
+   pre-fill the dial base from this map, so the pre-fill works. No further change needed.
 
 ---
 
@@ -287,7 +287,11 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
 - [x] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter). **DONE (change [120](changes/120-s7-compose-audience.md)).**
   Compose exposes an audience input (Public or comma-separated actor IRIs) and passes it through to
   `PostNoteAsync` / `PostReplyAsync`'s `to`.
-- [ ] **S8 — Cleanup** dead OAuth2-state statics + wire the `InstanceBaseUrls` default.
+- [x] **S8 — Cleanup** dead OAuth2-state statics + wire the `InstanceBaseUrls` default. **DONE (change
+  [121](changes/121-s8-cleanup-oauth2-state.md)).** Removed the dead `PendingOAuth*` statics (the state CSRF
+  check never fired — the full-page redirect wipes the SPA's statics) and documented the limitation; the
+  `InstanceBaseUrls` default was already wired in `Program.cs` (public + `localhost`→8081), so the
+  dial-base pre-fill works.
 
 > S1 is the gate: it must land first (the broken write path undermines every write screen). S2–S4 are the
 > feature-coverage items (relays, home timeline, navigation). S5–S8 are polish + cleanup. Each slice
