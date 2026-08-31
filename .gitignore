@@ -45,6 +45,9 @@ bld/
 .DS_Store
 Thumbs.db
 
+## Secrets
+.env
+
 ## Scratch / local tooling
 .scratch/
 
