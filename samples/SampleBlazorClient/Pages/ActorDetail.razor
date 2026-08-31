@@ -272,7 +272,19 @@ else
             ActorIri = actorIri;
 
             var client = Session.GetClient();
-            ActorDoc = await client.GetObjectAsync(actorIri);
+
+            // S9: fetch the actor via the typed GetActorAsync (the dedicated typed-actor method, closing
+            // the API-coverage gap where it had no UI — the S2 page used the generic GetObjectAsync). It
+            // is GetObjectAsync cast to Actor, so a non-actor IRI (a note, an object) yields null and the
+            // page surfaces that rather than rendering a non-actor as an actor.
+            var actor = await client.GetActorAsync(actorIri);
+            if (actor is null)
+            {
+                Error = $"Not an actor: {actorIri.Value}";
+                return;
+            }
+
+            ActorDoc = actor;
 
             var feed = new List<IObjectOrLink>();
             await foreach (var item in client.GetCollectionItemsAsync(actorIri.OutboxOf()))
