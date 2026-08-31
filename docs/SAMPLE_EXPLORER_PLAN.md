@@ -235,9 +235,9 @@ community card renders the actual recent items (via the deep-linked `<ObjectView
 Add the logged-on actor's own moderation state (their `MutesOf`/`BlocksOf`/`FlagsOf` collections) so the
 user sees what *they* have muted/blocked/flagged, and the buttons' effect is visible.
 
-### S7 — Compose options (audience + visibility)
+### S7 — Compose options (audience + visibility) — **DONE (change [120](changes/120-s7-compose-audience.md))**
 
-`PostNoteAsync`'s optional `to` (audience) parameter is never populated. Expose an optional **audience**
+`PostNoteAsync`'s optional `to` (audience) parameter was never populated. Now exposed: an optional **audience**
 input (comma-separated actor IRIs, or `Public`) and pass it through. (Media/attachment upload is a
 larger lift — note it as a follow-up, not this round.)
 
@@ -284,7 +284,9 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
   **DONE (change [119](changes/119-s6-my-moderation.md)).** Actor detail now shows the logged-on actor's own
   mutes/blocks/flags counts ("My moderation") alongside the target's, and refreshes them (bypass-cache) after
   a mute/block/flag write.
-- [ ] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter).
+- [x] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter). **DONE (change [120](changes/120-s7-compose-audience.md)).**
+  Compose exposes an audience input (Public or comma-separated actor IRIs) and passes it through to
+  `PostNoteAsync` / `PostReplyAsync`'s `to`.
 - [ ] **S8 — Cleanup** dead OAuth2-state statics + wire the `InstanceBaseUrls` default.
 
 > S1 is the gate: it must land first (the broken write path undermines every write screen). S2–S4 are the

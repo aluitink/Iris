@@ -18,6 +18,13 @@ else
         <label for="content">Content</label>
         <textarea id="content" rows="4" @bind="Content" placeholder="What's on your mind?"></textarea>
 
+        <label for="audience">Audience (optional — <code>Public</code> or comma-separated actor IRIs)</label>
+        <input id="audience" type="text" @bind="Audience" placeholder="Public" />
+        <p class="muted">
+            Who the note is addressed to (<c>to</c>). <code>Public</code> addresses the public collection;
+            leave empty for the default (unaddressed) audience.
+        </p>
+
         <details>
             <summary>Reply to…</summary>
             <label for="parent">Parent note IRI (leave empty for a new post)</label>
@@ -26,7 +33,7 @@ else
             <input id="mentions" type="text" @bind="Mentions" placeholder="http://localhost/ap/v1/u/bob" />
         </details>
 
-        <button @onclick="PostAsync" disabled="Busy">@(string.IsNullOrWhiteSpace(ParentIri) ? "Post note" : "Post reply")</button>
+        <button @onclick="PostAsync" disabled="@(Busy)">@(string.IsNullOrWhiteSpace(ParentIri) ? "Post note" : "Post reply")</button>
         @if (Busy)
         {
             <span class="muted">Posting…</span>
@@ -49,6 +56,7 @@ else
     private string Content { get; set; } = string.Empty;
     private string ParentIri { get; set; } = string.Empty;
     private string Mentions { get; set; } = string.Empty;
+    private string Audience { get; set; } = string.Empty;
     private bool Busy { get; set; }
     private DeliveryResult? Result { get; set; }
     private string? Error { get; set; }
@@ -67,9 +75,10 @@ else
         try
         {
             var client = Session.GetClient();
+            var to = ParseAudience();
             Result = string.IsNullOrWhiteSpace(ParentIri)
-                ? await client.PostNoteAsync(actorIri, Content)
-                : await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions());
+                ? await client.PostNoteAsync(actorIri, Content, to)
+                : await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions(), to);
         }
         catch (Exception ex)
         {
@@ -91,6 +100,34 @@ else
         var list = Mentions
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(m => new Iri(m))
+            .ToList();
+        return list.Count > 0 ? list : null;
+    }
+
+    /// <summary>The ActivityStreams public collection address (the conventional <c>to</c> for public notes).</summary>
+    private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
+
+    /// <summary>
+    /// Parses the audience input into the note's <c>to</c> links: <c>Public</c> (case-insensitive) maps to
+    /// the <c>as:Public</c> address; otherwise each comma-separated entry is an actor IRI. Null when empty
+    /// (the note carries no explicit <c>to</c>).
+    /// </summary>
+    private IReadOnlyList<Iri>? ParseAudience()
+    {
+        if (string.IsNullOrWhiteSpace(Audience))
+        {
+            return null;
+        }
+
+        var trimmed = Audience.Trim();
+        if (trimmed.Equals("Public", StringComparison.OrdinalIgnoreCase))
+        {
+            return [AsPublic];
+        }
+
+        var list = trimmed
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(a => new Iri(a))
             .ToList();
         return list.Count > 0 ? list : null;
     }
