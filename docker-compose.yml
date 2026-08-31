@@ -104,6 +104,8 @@ services:
       # The peer (iris-a) in-network base: lets iris-b resolve iris-a's actor key over the network
       # (S10 signed cross-container federation + proxy fallback).
       Iris__PeerBase: http://iris-a:8080
+      # Phase 19.1.1: key dump for the live-eval signed requests (mirrors iris-a; sample-only, opt-in).
+      Iris__DumpKeyTo: /tmp/iris-alice-key.pem
       # Phase 19.0.1: opt-in file-backed persistence (Phase 16.4) on the named iris-b-data volume
       # (mirrors iris-a; see its comment).
       Iris__PersistenceDirectory: /data

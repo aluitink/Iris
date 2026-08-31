@@ -105,10 +105,11 @@ predicted gaps (§5 of the matrix) are re-checked against the *current* code (se
 by later phases — outbound `Create`, `Undo`, group-follow, global search, EdDSA, person-inbox `Create`
 handling exist now — so expectations must be re-derived from source before each scenario).
 
-- [ ] **19.1.1 — Iris↔Iris baseline.** alice@iris-dev1 ↔ alice@iris-dev2: follow (UI), Accept round-trip
+- [x] **19.1.1 — Iris↔Iris baseline.** alice@iris-dev1 ↔ alice@iris-dev2: follow (UI), Accept round-trip
   (wire: both outboxes), unfollow via `Undo` (edge removed on both sides), like, post+reply (peer's
   inbox received the `Create`), community follow, community post surfacing on the peer. This is the
-  "sanity check before external platforms" baseline.
+  "sanity check before external platforms" baseline. `remaining:` 3 findings (F-1911-1/2/3) → 19.4;
+  community post surfacing not tested (dependent on F-1911-3 fix).
 - [ ] **19.1.2 — Follow scenarios (F1–F4)** against `@RayvenMX@mastodon.world`: they follow us → we
   `Accept` (wire: their inbox; UI: our followers collection); we follow them (UI) → their `Accept`
   arrives and is recorded; `Reject` behavior (our local-follow-reject endpoint → does the peer see a
