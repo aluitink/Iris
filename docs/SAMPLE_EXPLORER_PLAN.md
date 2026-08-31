@@ -93,41 +93,56 @@ vs. how the server reconstructs the base, not in the base algorithm itself.
 Full inventory: `IActivityPubClient` has **33 public members** (32 methods + `Dispose`); `IriExtensions`
 has **23 public extensions**. The sample exercises a subset. The gaps:
 
-### 3.1 Client methods with no UI
+### 3.1 Client methods with no UI — **all closed (2nd + 3rd round)**
 
-| Method | What it does | Why it matters |
+| Method | What it does | Resolution |
 |---|---|---|
-| `GetRelaysAsync(actorId)` | Enumerate an actor's relays (F-06, the `star` set) | **The entire relay feature is untestable from the UI.** |
-| `SubscribeRelayAsync(actorId, relayId)` | Subscribe an actor to a relay (local Basic-auth) | No relay UI at all. |
-| `UnsubscribeRelayAsync(actorId, relayId)` | Unsubscribe from a relay (local Basic-auth) | No relay UI at all. |
-| `GetFollowFeedAsync(actorId, query?)` | The **home timeline** (union of followed actors' outboxes, newest-first, de-duplicated) | No way to see the followed timeline — a core user journey. |
-| `GetActorAsync(actorId)` | Fetch an actor as a typed `Actor?` (null if not an `Actor`) | Actor docs always come through `GetObjectAsync`; the typed path is unused. |
-| `GetCollectionAsync(collectionId, query?)` | **Paged** enumeration (yields `CollectionPage`, follows `next`) | Only the flattening `GetCollectionItemsAsync` is used, so **pagination / `next`-link walking is invisible** to the user. |
-| `DeliverAsync(inboxId, activity)` | Raw signed activity to an inbox (ServerToServer profile) | All writes go through high-level helpers; the escape hatch is unused. |
+| `GetRelaysAsync(actorId)` | Enumerate an actor's relays (F-06, the `star` set) | **S4** (change [117](changes/117-s4-relay-page.md)) — Relays card on ActorDetail. |
+| `SubscribeRelayAsync(actorId, relayId)` | Subscribe an actor to a relay (local Basic-auth) | **S4** — Subscribe button on the Relays card. |
+| `UnsubscribeRelayAsync(actorId, relayId)` | Unsubscribe from a relay (local Basic-auth) | **S4** — Unsubscribe button on the Relays card. |
+| `GetFollowFeedAsync(actorId, query?)` | The **home timeline** | **S3** (change [116](changes/116-s3-home-timeline-followed-feed.md)) — Feed page. *(Stays client-tested: the typed method can't carry the `next`-link the paginated Feed page needs.)* |
+| `GetActorAsync(actorId)` | Fetch an actor as a typed `Actor?` | **S9** (change [124](changes/124-s9-typed-actor-fetch.md)) — ActorDetail uses the typed path. |
+| `GetCollectionAsync(collectionId, query?)` | **Paged** enumeration | **S3** — the Feed page's "Load more" walks `NextPage` IRIs. |
+| `DeliverAsync(inboxId, activity)` | Raw signed activity to an inbox | **S10** (change [125](changes/125-s10-raw-delivery-screen.md)) — `/deliver` page. |
 | `SendAsync(request)` | Raw request through the signed pipeline | (Used by the raw-JSON inspector, S8 — keep.) |
-| `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync` **`ProxyCredentials` overloads** | Explicit-credential variants | Only the built-in local-moderation path is hit. |
+| `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync` **`ProxyCredentials` overloads** | Explicit-credential variants | *(Still unused — only the built-in local-moderation path is hit. Acceptable: the overloads are for explicit-credential federation, not the local sample.)* |
+| `UnlikeAsync(actorId, objectId)` | Undo a like (`Undo(Like)`) | **S12** (change [128](changes/128-s12-unlike-undo-like.md)) — Object page Like toggles to Unlike. |
+| `DeleteAsync(actorId, objectId)` | Delete a content object (`Delete`) | **S13** (change [129](changes/129-s13-delete-tombstone.md)) — Object page author-only Delete button. |
+| `SearchAsync(actorId, query)` | Search an actor's content | **S11** (change [127](changes/127-s11-search-of-derivation.md)) — Actors page surfaces the search endpoint (via `SearchOf`). |
 
-### 3.2 `IriExtensions` unused by the UI
+### 3.2 `IriExtensions` unused by the UI — **audit closed (S11)**
 
-Only `OutboxOf()` is used (in `ActorDetail.razor`). Unused:
+Originally only `OutboxOf()` was used. The 2nd + 3rd round exercised the rest *implicitly*:
 
-`InboxOf`, `FollowersOf`, `FollowingOf`, `LikedOf`, `BlocksOf`, `FlagsOf`, `MutesOf`, `RelaysOf`,
-`FeedOf`, `RepliesOf`, `SearchOf`, `ToIri` (string/Uri), `ToLibraryId`, `ToLinkHref`,
-`ResolveObjectIri`, `GetParentIri`, `GetMentionIris`, `GetAttachmentIris`, `ResolveCollectionIri`,
-`BuildTombstone`, `ExtractEmbeddedObject`.
+- `InboxOf`, `FollowersOf`, `FollowingOf`, `LikedOf`, `BlocksOf`, `FlagsOf`, `MutesOf`, `RelaysOf`,
+  `FeedOf`, `RepliesOf` — exercised by the ActorDetail page (S6, S4), the Feed page (S3), and the
+  moderation card.
+- `SearchOf` — **S11** (change [127](changes/127-s11-search-of-derivation.md)): `SearchAsync` now
+  derives its endpoint via the canonical `SearchOf` (single source of truth).
+- `ResolveObjectIri`, `GetParentIri`, `GetMentionIris`, `GetAttachmentIris` — exercised by the
+  deep-linking (S2) and threaded-reply rendering.
+- `ToIri` (string/Uri), `ToLibraryId`, `ToLinkHref` — exercised throughout the UI.
+- `ResolveCollectionIri` — exercised by the paged Feed page (S3).
+- `BuildTombstone` — exercised by the delete feature (S13): the server's `DeleteActivityHandler`
+  tombstones the object, and the Object page renders the `Tombstone`.
+- `ExtractEmbeddedObject` — exercised by the Object page's object resolution.
 
-> These are **utility** helpers (no HTTP). They will be exercised *implicitly* once the deep-linking and
-> feed screens are built (S2, S3) — e.g. `ResolveObjectIri`/`GetParentIri` to render threaded replies,
-> `LikedOf`/`RelaysOf` on the actor-detail page. No dedicated "IriExtensions screen" is warranted.
+> The §3.2 audit is closed. No dedicated "IriExtensions screen" is warranted (per the original plan).
 
-### 3.3 Not a gap — confirmations
+### 3.3 Library-surface decisions — **both resolved (3rd round)**
 
-- **No unlike / undo-like** exists in the client API (only `LikeAsync`). The `Like` type is from
-  `KristofferStrube.ActivityStreams`; Iris does not model an `Undo(Like)`. So the Object page's Like has
-  no inverse — **this is a library surface decision, not a sample bug.** (If an unlike is wanted it is a
-  *new* library slice, out of scope here.)
-- **No delete / tombstone client method** — `BuildTombstone` exists in `IriExtensions` but there is no
-  `DeleteAsync` on the client. Also a library surface decision, out of scope.
+- **Unlike / undo-like** — **done (S12, change [128](changes/128-s12-unlike-undo-like.md)).** The client
+  gained `UnlikeAsync` (an `Undo(Like)` activity), the server removes the like edge on the Undo (local
+  outbox + remote inbound paths), and the Object page's Like button toggles to Unlike.
+- **Delete / tombstone** — **done (S13, change [129](changes/129-s13-delete-tombstone.md)).** The client
+  gained `DeleteAsync` (a `Delete` activity referencing the object by IRI), the outbox handler routes a
+  local `Delete` to the existing `DeleteActivityHandler` (tombstone + reply-edge cleanup + F-03
+  propagation), the handler drops the deleted note's `Create` from the outbox, and the Object page gains
+  an author-only Delete button.
+
+> Both were originally flagged as "library surface decisions, out of scope" in the 2nd-round audit. The
+> 3rd round (S12, S13) resolved them: unlike reuses the `Undo` activity type (ActivityStreams has no
+> dedicated "unlike"); delete reuses the existing `DeleteActivityHandler` (no new handler needed).
 
 ---
 
