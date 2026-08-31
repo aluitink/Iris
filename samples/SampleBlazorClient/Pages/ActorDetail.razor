@@ -63,13 +63,34 @@ else
         @if (Moderation is { } mod)
         {
             <div class="card">
-                <h3>Moderation</h3>
+                <h3>Moderation (this actor)</h3>
+                <p class="muted">
+                    The counts below are <em>this actor's own</em> mutes / blocks / flags collections —
+                    not your moderation of them.
+                </p>
                 <table class="kv">
                     <tr><th>Mutes</th><td>@mod.Mutes</td></tr>
                     <tr><th>Blocks</th><td>@mod.Blocks</td></tr>
                     <tr><th>Flags</th><td>@mod.Flags</td></tr>
                 </table>
             </div>
+
+            @if (MyModeration is { } mine)
+            {
+                <div class="card">
+                    <h3>My moderation (you)</h3>
+                    <p class="muted">
+                        Your own mutes / blocks / flags (as <code>@(Session.ActorIri?.Value ?? "…")</code>) —
+                        what *you* have muted, blocked, or flagged. The Mute / Block / Flag buttons below
+                        change these.
+                    </p>
+                    <table class="kv">
+                        <tr><th>Mutes</th><td>@mine.Mutes</td></tr>
+                        <tr><th>Blocks</th><td>@mine.Blocks</td></tr>
+                        <tr><th>Flags</th><td>@mine.Flags</td></tr>
+                    </table>
+                </div>
+            }
 
             <div class="card">
                 <h3>Follow / unfollow</h3>
@@ -173,7 +194,20 @@ else
     private Iri? ActorIri { get; set; }
     private IObject? ActorDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
+
+    /// <summary>
+    /// The <em>target</em> actor's moderation counts (its <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections).
+    /// S6: shown alongside the logged-on actor's own moderation so the user can tell the two apart.
+    /// </summary>
     private (int Mutes, int Blocks, int Flags)? Moderation { get; set; }
+
+    /// <summary>
+    /// The <em>logged-on</em> actor's own moderation counts (its <c>mutes</c>/<c>blocks</c>/<c>flags</c>
+    /// collections — what *they* have muted/blocked/flagged). S6: the write buttons below act as the
+    /// logged-on actor, so surfacing their own state makes the buttons' effect visible.
+    /// </summary>
+    private (int Mutes, int Blocks, int Flags)? MyModeration { get; set; }
+
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
@@ -229,6 +263,7 @@ else
         ActorDoc = null;
         Feed = null;
         Moderation = null;
+        MyModeration = null;
         Relays = null;
         RelayResult = null;
         RelayError = null;
@@ -250,6 +285,18 @@ else
                 await CountAsync(client.GetMutesAsync(actorIri)),
                 await CountAsync(client.GetBlocksAsync(actorIri)),
                 await CountAsync(client.GetFlagsAsync(actorIri)));
+
+            // S6: the logged-on actor's OWN moderation state (what they have muted/blocked/flagged), so
+            // the write buttons' effect is visible. Only the logged-on actor's own identity is available
+            // to the session; the target actor's own state is the `Moderation` above.
+            var me = Session.ActorIri;
+            if (me is { } selfIri)
+            {
+                MyModeration = (
+                    await CountAsync(client.GetMutesAsync(selfIri)),
+                    await CountAsync(client.GetBlocksAsync(selfIri)),
+                    await CountAsync(client.GetFlagsAsync(selfIri)));
+            }
 
             var relays = new List<string>();
             await foreach (var relay in client.GetRelaysAsync(actorIri))
@@ -334,6 +381,9 @@ else
         try
         {
             WriteResult = await write(actorIri, ActorIri.Value);
+            // S6: refresh the logged-on actor's own moderation counts (bypassing the page cache) so a
+            // mute/block/flag's effect is visible immediately rather than after the 60s fresh window.
+            await RefreshMyModerationAsync(bypassCache: true);
         }
         catch (Exception ex)
         {
@@ -343,6 +393,26 @@ else
         {
             WriteBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Re-reads the logged-on actor's own mutes/blocks/flags counts. After a mute/block/flag write the
+    /// collections are served through the local collection-page cache, so a follow-up read bypasses the
+    /// cache (refresh) to observe the update.
+    /// </summary>
+    private async Task RefreshMyModerationAsync(bool bypassCache = false)
+    {
+        if (Session.ActorIri is not { } selfIri)
+        {
+            return;
+        }
+
+        var client = Session.GetClient();
+        var query = bypassCache ? new CollectionQuery(BypassCache: true) : null;
+        MyModeration = (
+            await CountAsync(client.GetMutesAsync(selfIri, query)),
+            await CountAsync(client.GetBlocksAsync(selfIri, query)),
+            await CountAsync(client.GetFlagsAsync(selfIri, query)));
     }
 
     /// <summary>

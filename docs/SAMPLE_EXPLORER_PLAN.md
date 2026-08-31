@@ -228,9 +228,9 @@ re-read observes the updated page).
 community card renders the actual recent items (via the deep-linked `<ObjectView>`, per S2; capped by
 `CollectionQuery.Limit` so the landing page stays light).
 
-### S6 — Actor detail: show the logged-on actor's own moderation
+### S6 — Actor detail: show the logged-on actor's own moderation — **DONE (change [119](changes/119-s6-my-moderation.md))**
 
-`ActorDetail.razor` currently shows the **target** actor's mutes/blocks/flags collections (via
+`ActorDetail.razor` showed the **target** actor's mutes/blocks/flags collections (via
 `GetMutesAsync`/`GetBlocksAsync`/`GetFlagsAsync`) while the write buttons act **as the logged-on actor**.
 Add the logged-on actor's own moderation state (their `MutesOf`/`BlocksOf`/`FlagsOf` collections) so the
 user sees what *they* have muted/blocked/flagged, and the buttons' effect is visible.
@@ -280,7 +280,10 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
 - [x] **S5 — Home page shows the community feed items** (not just the count). **DONE (change
   [118](changes/118-s5-home-community-feed.md)).** `Home`'s community card now renders the recent items via
   deep-linked `<ObjectView>` (capped by `CollectionQuery.Limit`), not just `FeedCount`.
-- [ ] **S6 — Actor detail shows the logged-on actor's own moderation** (`MutesOf`/`BlocksOf`/`FlagsOf`).
+- [x] **S6 — Actor detail shows the logged-on actor's own moderation** (`MutesOf`/`BlocksOf`/`FlagsOf`).
+  **DONE (change [119](changes/119-s6-my-moderation.md)).** Actor detail now shows the logged-on actor's own
+  mutes/blocks/flags counts ("My moderation") alongside the target's, and refreshes them (bypass-cache) after
+  a mute/block/flag write.
 - [ ] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter).
 - [ ] **S8 — Cleanup** dead OAuth2-state statics + wire the `InstanceBaseUrls` default.
 
