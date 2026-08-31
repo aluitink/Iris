@@ -7,8 +7,10 @@ namespace Iris.Server.Inbox;
 /// Handles inbound <see cref="Undo"/> activities: when the <em>local</em> actor (the recipient of the
 /// delivery, i.e. the follower) undoes a follow it made, the local follow edge is removed from the
 /// <see cref="IFollowStore"/> (an un-follow); when an actor undoes a <see cref="Block"/> it made, the
-/// local block edge is removed from the <see cref="IModerationStore"/> (an un-block, F-07); and when an
-/// actor undoes a <see cref="Flag"/> it made, the local flag edge is removed (an un-flag, F-07).
+/// local block edge is removed from the <see cref="IModerationStore"/> (an un-block, F-07); when an actor
+/// undoes a <see cref="Flag"/> it made, the local flag edge is removed (an un-flag, F-07); and when an
+/// actor undoes a <see cref="Like"/> it made, the local like edge is removed from the
+/// <see cref="ILikeStore"/> (an unlike — the inverse of the <see cref="LikeActivityHandler"/>).
 /// </summary>
 /// <remarks>
 /// An <c>Undo</c> is the ActivityStreams inverse primitive: it undoes the activity referenced by its
@@ -98,6 +100,18 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         {
             await _persistence.Moderation
                 .RemoveFlagAsync(flagEdge.Flagger, flagEdge.Flagged, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        // An unlike: when the Undo's object is a Like, remove the recorded like edge (the inverse of the
+        // LikeActivityHandler). Handled before the follow path like the block/flag branches — a Like has
+        // no follow target to resolve. A missing like (never recorded) is a no-op.
+        if (await ResolveLikeEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } likeEdge)
+        {
+            await _persistence.Likes
+                .RemoveLikeAsync(likeEdge.Liker, likeEdge.LikedObject, ct)
                 .ConfigureAwait(false);
             return;
         }
@@ -263,5 +277,41 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (flaggerIri.Value, flaggedIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original like's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Like"/>, by IRI) when the undone activity is a <see cref="Like"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="null"/> when the object is not a <see cref="Like"/> (the follow path
+    /// applies), when the referenced like was never stored, or when the stored like's parties cannot be
+    /// resolved (a malformed like) — in which case there is no recorded edge to remove.
+    /// </remarks>
+    private async Task<(Iri Liker, Iri LikedObject)?> ResolveLikeEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var likeIri = responseObject.ResolveObjectIri();
+        if (!likeIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(likeIri.Value, out var stored, ct)
+                .ConfigureAwait(false) ||
+            stored is not Like like)
+        {
+            return null;
+        }
+
+        var likerIri = like.Actor?.FirstOrDefault().ResolveObjectIri();
+        var likedObjectIri = like.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!likerIri.HasValue || !likedObjectIri.HasValue)
+        {
+            return null;
+        }
+
+        return (likerIri.Value, likedObjectIri.Value);
     }
 }

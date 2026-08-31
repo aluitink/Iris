@@ -36,10 +36,14 @@ else
             <h3>Object</h3>
             <ObjectView Item="ObjectDoc" />
             <div class="card" style="margin-top: .75rem">
-                <button @onclick="LikeAsync" disabled="@(WriteBusy)">Like</button>
+                <button @onclick="ToggleLikeAsync" disabled="@(WriteBusy)">@(HasLiked ? "Unlike" : "Like")</button>
+                @if (HasLiked)
+                {
+                    <span class="muted">You liked this.</span>
+                }
                 @if (WriteBusy)
                 {
-                    <span class="muted">Liking…</span>
+                    <span class="muted">Working…</span>
                 }
                 @if (WriteResult is not null)
                 {
@@ -88,6 +92,7 @@ else
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
+    private bool HasLiked { get; set; }
 
     /// <summary>
     /// The object IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
@@ -129,6 +134,11 @@ else
             LoadedObjectIri = objectIri;
             ObjectDoc = await client.GetObjectAsync(objectIri);
 
+            // Whether the logged-on actor has already liked this object: read the actor's `liked`
+            // collection (actorId.LikedOf()) and check for the object's IRI. Drives the Like/Unlike
+            // toggle so a re-loaded object shows the current like state.
+            HasLiked = await IsLikedByActorAsync(client, objectIri);
+
             var replies = new List<IObjectOrLink>();
             await foreach (var item in client.GetRepliesAsync(objectIri))
             {
@@ -147,7 +157,7 @@ else
         }
     }
 
-    private async Task LikeAsync()
+    private async Task ToggleLikeAsync()
     {
         if (!Session.IsLoggedIn || LoadedObjectIri is null)
         {
@@ -155,12 +165,22 @@ else
         }
 
         var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        var client = Session.GetClient();
         WriteBusy = true;
         WriteResult = null;
         WriteError = null;
         try
         {
-            WriteResult = await Session.GetClient().LikeAsync(actorIri, LoadedObjectIri.Value);
+            if (HasLiked)
+            {
+                WriteResult = await client.UnlikeAsync(actorIri, LoadedObjectIri.Value);
+                HasLiked = false;
+            }
+            else
+            {
+                WriteResult = await client.LikeAsync(actorIri, LoadedObjectIri.Value);
+                HasLiked = true;
+            }
         }
         catch (Exception ex)
         {
@@ -169,6 +189,41 @@ else
         finally
         {
             WriteBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Reads the logged-on actor's <c>liked</c> collection and reports whether it contains
+    /// <paramref name="objectIri"/> (the same check the <c>liked</c> screen shows on the actor-detail
+    /// page). A failed read is treated as "not liked" — the Like button stays available.
+    /// </summary>
+    private async Task<bool> IsLikedByActorAsync(IActivityPubClient client, Iri objectIri)
+    {
+        try
+        {
+            var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+            // Bypass the client's collection cache: the `liked` page may be cached from a prior load
+            // (e.g. a like on another object), and the like-state read must reflect the current store.
+            await foreach (var item in client.GetCollectionItemsAsync(
+                actorIri.LikedOf(), new CollectionQuery { BypassCache = true }))
+            {
+                string? iri = item switch
+                {
+                    IObject { Id: { } id } => id,
+                    ILink { Href: { } href } => href.ToString(),
+                    _ => null,
+                };
+                if (iri == objectIri.Value)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

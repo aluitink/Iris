@@ -1754,8 +1754,39 @@ public static class ActivityPubServerExtensions
             Follow follow => await RemoveFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
             Block block => await RemoveBlockLocalAsync(persistence, actorIri, block, ct).ConfigureAwait(false),
             Flag flag => await RemoveFlagLocalAsync(persistence, actorIri, flag, ct).ConfigureAwait(false),
+            Like like => await RemoveLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
             _ => null,
         };
+    }
+
+    private static async Task<Iri?> RemoveLikeLocalAsync(
+        IPersistenceProvider persistence,
+        Iri likerIri,
+        Like like,
+        CancellationToken ct)
+    {
+        var objectIri = like.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!objectIri.HasValue)
+        {
+            return null;
+        }
+
+        // The inverse of RecordLikeLocalAsync: the actor's home instance removes its own like edge
+        // (the actor's `liked` collection no longer lists the object). The return value is the object's
+        // owner (the remote side that must remove its like edge) when the object is local; otherwise the
+        // object IRI (whose instance routes the delivery to the owner) — mirroring RecordLikeLocalAsync.
+        await persistence.Likes.RemoveLikeAsync(likerIri, objectIri.Value, ct).ConfigureAwait(false);
+
+        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
+                .ConfigureAwait(false) &&
+            storedObject is { } &&
+            storedObject.AttributedTo is { } attributed &&
+            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
+        {
+            return ownerIri;
+        }
+
+        return objectIri.Value;
     }
 
     private static async Task<Iri?> RemoveFollowLocalAsync(

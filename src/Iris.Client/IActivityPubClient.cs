@@ -136,6 +136,29 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
 
     /// <summary>
+    /// Removes a like as <paramref name="actorId"/> (the inverse of <see cref="LikeAsync"/>): builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Undo"/> whose object references the original
+    /// <see cref="KristofferStrube.ActivityStreams.Like"/> by IRI (the same deterministic
+    /// <c>{actorId}/likes/{objectId}</c> IRI <see cref="LikeAsync"/> mints) and delivers it through the
+    /// signed pipeline to the actor's own outbox. The receiving instance removes the like edge (liker →
+    /// object) from the liker's <c>liked</c> collection. This is the client's one-call "unlike".
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor removing the like (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="objectId">The IRI of the object whose like is being removed (must match the object
+    /// <see cref="LikeAsync"/> was called with, so the Undo references the exact like that was recorded).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to the actor's OWN outbox
+    /// (<c>actorId.OutboxOf()</c>) and is signed by the pipeline — the party that made the like undoes it.
+    /// Its <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Like"/> by
+    /// IRI, and the <see cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
+    /// unique-per-(actor,object) IRI so a retried unlike dedupes on the receiver.
+    /// </remarks>
+    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity and delivers it through the signed
     /// pipeline to the target actor's inbox so that <paramref name="actorId"/> blocks

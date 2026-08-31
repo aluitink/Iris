@@ -286,6 +286,26 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // An unlike is the ActivityStreams inverse of a Like: an Undo whose object references the
+        // original Like by IRI. Per the delivery model, the Undo is published to the liker's OWN outbox
+        // (actorId) — the party that made the like undoes it — not the liked object (a content object has
+        // no inbox of its own). The object IRI reuses LikeAsync's deterministic {actorId}/likes/{objectId}
+        // IRI so the receiver resolves exactly the like that was recorded; the Undo gets its own
+        // deterministic unique-per-(actor,object) IRI so a retried unlike dedupes.
+        var likeIri = new Iri($"{actorId.Value}/likes/{objectId.Value}");
+        var undo = new Undo
+        {
+            Id = $"{actorId.Value}/unlikes/{objectId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = likeIri.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> BlockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
     {
         // A block is published to the blocker's OWN outbox (the write surface for the activities an actor

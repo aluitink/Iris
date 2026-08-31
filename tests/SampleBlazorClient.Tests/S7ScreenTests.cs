@@ -274,6 +274,34 @@ public sealed class S7ScreenTests
         Assert.Contains(liked, o => IriOf(o) is { } iri && iri == target);
     }
 
+    [Fact]
+    public async Task ObjectUnlike_Undo_LikeRemovesTheLikeEdge()
+    {
+        var (server, client, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        // Seed a target note and like it (records the like edge in the liker's `liked` collection).
+        var bob = new Iri("http://localhost/ap/v1/u/bob");
+        var target = new Iri($"{bob.Value}/notes/1");
+        await server.Services.GetRequiredService<IPersistenceProvider>().Objects.PutObjectAsync(new Note
+        {
+            Id = target.Value,
+            AttributedTo = [new Link { Href = bob.Uri }],
+            Content = ["<p>a note to unlike</p>"],
+        });
+        Assert.Equal(202, (await client.LikeAsync(actorIri, target)).StatusCode);
+        var likedBefore = await CollectAsync(client.GetCollectionItemsAsync(actorIri.LikedOf()));
+        Assert.Contains(likedBefore, o => IriOf(o) is { } iri && iri == target);
+
+        // The unlike is the inverse: it removes the like edge from the liker's `liked` collection.
+        Assert.Equal(202, (await client.UnlikeAsync(actorIri, target)).StatusCode);
+        // Bypass the client's collection cache — the like wrote a `liked` page the client cached, and a
+        // post-write re-read must observe the removal (the same refresh the S4 relay screen uses).
+        var likedAfter = await CollectAsync(client.GetCollectionItemsAsync(
+            actorIri.LikedOf(), new CollectionQuery { BypassCache = true }));
+        Assert.DoesNotContain(likedAfter, o => IriOf(o) is { } iri && iri == target);
+    }
+
     // --- Moderation (local single instance) --------------------------------------
 
     [Fact]
