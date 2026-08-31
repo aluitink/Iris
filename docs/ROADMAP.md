@@ -88,7 +88,7 @@ Prepare the live stack so every later phase tests a durable, production-shaped e
   WebFinger from our instances, its actor document fetches + key validates, and our sample actors'
   Basic-auth logon works from the public UI origin. Record the account's capabilities (posting,
   follows) as the known-good external reference.
-- [ ] **19.0.5 — Evaluation checklist scaffold.** Create `docs/reference/LIVE_EVALUATION_CHECKLIST.md`
+- [x] **19.0.5 — Evaluation checklist scaffold.** Create `docs/reference/LIVE_EVALUATION_CHECKLIST.md`
   (or extend the INTEROP_TEST_HARNESS §4a checklist) as the standing manual checklist the Playwright
   sessions execute: the standing checklist (logon, explore, switch instance, cross-instance write,
   moderate, external instance) + every Phase 19 waypoint mapped to a UI path. This is the operator's
