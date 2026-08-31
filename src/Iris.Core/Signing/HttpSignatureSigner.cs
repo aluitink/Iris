@@ -31,4 +31,38 @@ public sealed class HttpSignatureSigner(IKeyStore keyStore) : ISignatureSigner
             Convert.ToBase64String(signature))
             .Format();
     }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Unlike the default interface implementation (which defers to the synchronous <c>Sign</c>
+    /// method), this awaits the key's <c>SignAsync</c>, so a WebCrypto-backed key in a Blazor Web
+    /// Assembly host signs through the browser's asynchronous <c>crypto.subtle</c>. For a
+    /// BCL/BouncyCastle key the key's <c>SignAsync</c> default completes synchronously, so behavior
+    /// is identical to <c>Sign</c>.
+    /// </remarks>
+    public async Task<string> SignAsync(
+        HttpRequestMetadata metadata,
+        IIdentity identity,
+        SigningProfile profile,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(metadata);
+        ArgumentNullException.ThrowIfNull(identity);
+
+        if (!keyStore.TryGetKey(identity.KeyId, out var key) || key is null)
+        {
+            throw new KeyNotFoundException($"No key found for id '{identity.KeyId}'.");
+        }
+
+        var components = Signatures.HeadersForProfile(profile).Split(' ');
+        var baseBytes = Signatures.BuildSignatureBase(metadata, components);
+        var signature = await key.SignAsync(baseBytes, ct).ConfigureAwait(false);
+
+        return new SignatureHeader(
+            identity.KeyId.Value,
+            Signatures.AlgorithmLabel(key.Algorithm),
+            Signatures.HeadersForProfile(profile),
+            Convert.ToBase64String(signature))
+            .Format();
+    }
 }

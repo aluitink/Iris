@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.StaticFiles;
 
 namespace Iris.Samples.IrisStaticHost;
 
@@ -36,7 +37,17 @@ public static class Program
         // directory request (e.g. "/") to the first of its default file names — which includes
         // index.html — so the WASM host page is served at the site root.
         app.UseDefaultFiles();
-        app.UseStaticFiles();
+
+        // The published Blazor WebAssembly site is a flat static tree (index.html + _framework). The
+        // default static-file middleware only serves file types it has a known MIME type for, and the
+        // WASM runtime's ICU data (icudt_*.dat) uses ".dat", which is not in the default map — so a
+        // bare UseStaticFiles() 404s it and the platform fails to start. ServeUnknownFileTypes is the
+        // standard published-site recipe: known types (.js/.css/.wasm) keep their correct content
+        // types, and any other extension (.dat, .br, …) is served as application/octet-stream.
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            ServeUnknownFileTypes = true,
+        });
 
         // OAuth2 callback route (Phase 15.2): when the browser completes the OAuth2 authorization-code
         // flow the server 302-redirects it here (/{callback}?code=…&state=…). This is a real server

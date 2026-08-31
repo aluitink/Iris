@@ -78,9 +78,13 @@ public static partial class SampleServer
         // Resolve the bind URL early (from environment variables) so the WebHostBuilder can UseUrls it.
         // The full Iris: configuration (including any command-line overrides) is read again inside
         // ConfigureServices, which is the authoritative source for the server's base URI.
-        var envHost = Environment.GetEnvironmentVariable("Iris__HostName") ?? "localhost";
+        // The listen address is intentionally decoupled from the *advertised* host: the container
+        // always binds http://+:8080 (so the compose port mapping 8081:8080 and the in-network peer
+        // base iris-?:8080 keep working), while the advertised actor/community IRIs may carry a
+        // public hostname (Iris__AdvertiseHost / Iris__AdvertiseHttps / Iris__AdvertisePort) that a
+        // reverse proxy in front of the container terminates TLS for. When the advertise vars are
+        // unset they default to the legacy behavior (advertise == listen host/scheme/port).
         var envPort = int.TryParse(Environment.GetEnvironmentVariable("Iris__Port"), out var p) ? p : 5000;
-        var envScheme = bool.TryParse(Environment.GetEnvironmentVariable("Iris__Https"), out var h) && h ? "https" : "http";
 
         return new WebHostBuilder()
             .ConfigureAppConfiguration(cfg =>
@@ -101,7 +105,7 @@ public static partial class SampleServer
             // A bare WebHostBuilder (the generic host's UseKestrel is not applied) does not register
             // IServer in .NET 10; UseKestrel registers the Kestrel web server so the host can start.
             .UseKestrel()
-            .UseUrls($"{envScheme}://{envHost}:{envPort}")
+            .UseUrls($"http://+:{envPort}")
             .ConfigureServices(services => ConfigureServices(services))
             .Configure(app => ConfigureApp(app));
     }
@@ -122,9 +126,18 @@ public static partial class SampleServer
             .AddEnvironmentVariables()
             .Build();
 
-        var hostName = configuration["Iris:HostName"] ?? "localhost";
-        var port = int.TryParse(configuration["Iris:Port"], out var parsedPort) ? parsedPort : 5000;
-        var useHttps = bool.TryParse(configuration["Iris:Https"], out var httpsFlag) && httpsFlag;
+        // Advertised host/scheme/port default to the legacy values (Iris:HostName / Iris:Https /
+        // Iris:Port) unless the operator overrides them with the Iris:Advertise* keys, which let the
+        // instance expose its IRIs under a public hostname while still listening on http://+:8080.
+        var legacyHost = configuration["Iris:HostName"] ?? "localhost";
+        var legacyPort = int.TryParse(configuration["Iris:Port"], out var parsedPort) ? parsedPort : 5000;
+        var legacyHttps = bool.TryParse(configuration["Iris:Https"], out var httpsFlag) && httpsFlag;
+
+        var hostName = configuration["Iris:AdvertiseHost"] ?? legacyHost;
+        var port = int.TryParse(configuration["Iris:AdvertisePort"], out var advertisedPort) ? advertisedPort : legacyPort;
+        var useHttps = configuration["Iris:AdvertiseHttps"] is string ah
+            ? bool.TryParse(ah, out var advertisedHttps) && advertisedHttps
+            : legacyHttps;
         var scheme = useHttps ? "https" : "http";
         var actorHandle = configuration["Iris:Actor"] ?? "alice";
         // The Uri (and therefore the Iri that wraps it) canonicalizes a host-only base (e.g.
@@ -148,6 +161,20 @@ public static partial class SampleServer
         services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(persistence.Keys));
 
         services.AddRouting();
+        // The Blazor WASM explorer dials the instance cross-origin (the browser base URL is the
+        // host-published port / public proxy, not the server's own origin), so the server must answer
+        // CORS preflights. The allowed origins come from Iris__CorsOrigins (comma-separated, e.g.
+        // "http://localhost:8090,https://explorer.example"); when unset, only the local sample UI
+        // origin is allowed. Credentials are enabled so Basic-auth / Bearer headers can be sent.
+        var corsOriginsCsv = configuration["Iris:CorsOrigins"] ?? "http://localhost:8090";
+        var corsOrigins = corsOriginsCsv
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        services.AddCors(options => options.AddDefaultPolicy(policy =>
+            policy
+                .WithOrigins(corsOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()));
         services.AddActivityPubServer(options =>
         {
             options.BaseUri = baseUri;
@@ -208,6 +235,8 @@ public static partial class SampleServer
         ArgumentNullException.ThrowIfNull(app);
 
         app.UseRouting();
+        // Answer CORS preflights for the cross-origin WASM explorer (see AddCors in ConfigureServices).
+        app.UseCors();
         // Inbound federation signature validation: a signed POST to a local inbox is verified
         // (unsigned inbox POSTs are rejected 401 by the inbox handler). This is what makes the sample
         // "federation-ready": a remote (or same-process) server can deliver to the sample's inbox and

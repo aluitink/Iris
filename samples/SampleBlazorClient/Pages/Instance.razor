@@ -36,7 +36,7 @@ else
                 <p class="muted">@desc</p>
             }
             <p class="muted">
-                Logged on as <code>@Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value</code>,
+                Logged on as <code>@(Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value)</code>,
                 dialing <code>@Session.DialBaseUri</code>.
             </p>
         }

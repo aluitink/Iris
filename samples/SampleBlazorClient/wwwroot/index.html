@@ -23,6 +23,12 @@
         <div class="startup-loading-text">Iris</div>
     </div>
 
+    <!-- WebCrypto signing bridge (RSA signing in the browser; the .NET WASM BCL has no usable RSA).
+          Source lives in the Iris.WebCrypto library (src/Iris.WebCrypto/WebCrypto.js); this copy is
+          what the site serves. It defines window.webcryptoSign (the crypto surface) and the named
+          webcryptoSignBootstrap.install entry point the C# side calls. -->
+    <script src="js/WebCrypto.js"></script>
+
     <!-- Blazor WebAssembly scripts (auto-injected by the SDK). -->
     <script src="_framework/blazor.webassembly.js"></script>
 </body>

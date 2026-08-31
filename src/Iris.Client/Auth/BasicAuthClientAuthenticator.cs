@@ -27,6 +27,7 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
     private readonly HttpClient _http;
     private readonly Iri _actorId;
     private readonly string _credentials;
+    private readonly Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? _keyFactory;
 
     /// <summary>
     /// Initializes a new <see cref="BasicAuthClientAuthenticator"/>.
@@ -36,10 +37,35 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
     /// <param name="user">The Basic-auth username.</param>
     /// <param name="password">The Basic-auth password.</param>
     public BasicAuthClientAuthenticator(HttpClient http, Iri actorId, string user, string password)
+        : this(http, actorId, user, password, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="BasicAuthClientAuthenticator"/> with a custom private-key loader.
+    /// </summary>
+    /// <param name="http">The HTTP client used to fetch the actor document. Not disposed by the authenticator.</param>
+    /// <param name="actorId">The IRI of the actor (the authenticated owner).</param>
+    /// <param name="user">The Basic-auth username.</param>
+    /// <param name="password">The Basic-auth password.</param>
+    /// <param name="keyFactory">
+    /// An optional asynchronous private-key loader (PEM + algorithm + key id → loaded
+    /// <see cref="ISigningKey"/>). When supplied it replaces the default
+    /// <see cref="Iris.Core.Identity.KeyPem.Load"/>; a Blazor WebAssembly host supplies a WebCrypto
+    /// loader because the .NET-on-WASM BCL cannot load an RSA private key. When
+    /// <see langword="null"/> the default BCL/BouncyCastle loader is used.
+    /// </param>
+    public BasicAuthClientAuthenticator(
+        HttpClient http,
+        Iri actorId,
+        string user,
+        string password,
+        Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _actorId = actorId;
         _credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{user}:{password}"));
+        _keyFactory = keyFactory;
     }
 
     /// <inheritdoc/>
@@ -77,7 +103,11 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
         ISigningKey key;
         try
         {
-            key = KeyPem.Load(pem, algorithm, keyId);
+            // A custom loader (e.g. WebCrypto in a Blazor WebAssembly host, where the BCL cannot load
+            // an RSA private key) takes precedence; otherwise the default BCL/BouncyCastle loader.
+            key = _keyFactory is not null
+                ? await _keyFactory(pem, algorithm, keyId, ct).ConfigureAwait(false)
+                : KeyPem.Load(pem, algorithm, keyId);
         }
         catch (CryptographicException)
         {
@@ -86,7 +116,8 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
         }
         catch (ArgumentException)
         {
-            // ImportFromPem throws ArgumentException for structurally invalid PEM.
+            // ImportFromPem throws ArgumentException for structurally invalid PEM (and the WASM BCL
+            // throws ArgumentException "Arg_PlatformNotSupported" for RSA — a load failure, not a crash).
             return null;
         }
         catch (FormatException)

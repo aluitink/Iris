@@ -17,7 +17,7 @@ else
     <div class="card">
         <label for="name">Community (name on this instance)</label>
         <input id="name" type="text" @bind="Name" placeholder="iris" />
-        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        <button @onclick="LoadAsync" disabled="@(Busy)">Load</button>
         @if (Busy)
         {
             <span class="muted">Loading…</span>
@@ -72,7 +72,7 @@ else
             <h3>Search</h3>
             <label for="q">Query</label>
             <input id="q" type="text" @bind="SearchQuery" placeholder="e.g. hello" />
-            <button @onclick="SearchAsync" disabled="SearchBusy">Search</button>
+            <button @onclick="SearchAsync" disabled="@(SearchBusy)">Search</button>
             @if (SearchBusy)
             {
                 <span class="muted">Searching…</span>

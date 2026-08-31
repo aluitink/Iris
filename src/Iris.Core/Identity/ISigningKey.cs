@@ -36,6 +36,25 @@ public interface ISigningKey
     public byte[] Sign(byte[] data);
 
     /// <summary>
+    /// Signs the given data with this key's private key, asynchronously.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation defers to the synchronous <see cref="Sign"/>, which is correct for
+    /// every BCL/BouncyCastle-backed key (they sign synchronously). A key whose signing backend is
+    /// inherently asynchronous — e.g. the browser's WebCrypto (<c>crypto.subtle</c>) in a Blazor
+    /// WebAssembly host, where the BCL has no usable RSA — overrides this to await its backend. The
+    /// the signature-signer pipeline prefers <c>SignAsync</c> so a WebCrypto key signs without
+    /// touching the synchronous path.
+    /// </remarks>
+    /// <param name="data">The bytes to sign. Must not be null.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The signature bytes.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="data"/> is null.</exception>
+    /// <exception cref="InvalidOperationException">When the key is public-only (cannot sign).</exception>
+    Task<byte[]> SignAsync(byte[] data, CancellationToken ct = default)
+        => Task.FromResult(Sign(data));
+
+    /// <summary>
     /// Verifies a signature over the given data using this key's public key.
     /// </summary>
     /// <param name="data">The bytes that were signed. Must not be null.</param>

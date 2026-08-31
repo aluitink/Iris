@@ -26,6 +26,7 @@ public sealed class OAuth2ClientAuthenticator : IClientAuthenticator
 
     private readonly HttpClient _http;
     private readonly Func<CancellationToken, ValueTask<string?>> _tokenProvider;
+    private readonly Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? _keyFactory;
 
     /// <summary>
     /// Initializes a new <see cref="OAuth2ClientAuthenticator"/>.
@@ -39,9 +40,32 @@ public sealed class OAuth2ClientAuthenticator : IClientAuthenticator
     public OAuth2ClientAuthenticator(
         HttpClient http,
         Func<CancellationToken, ValueTask<string?>> tokenProvider)
+        : this(http, tokenProvider, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="OAuth2ClientAuthenticator"/> with a custom private-key loader.
+    /// </summary>
+    /// <param name="http">The HTTP client used to fetch the actor document. Not disposed by the authenticator.</param>
+    /// <param name="tokenProvider">
+    /// A delegate that returns the current Bearer token (or null if no token is available).
+    /// </param>
+    /// <param name="keyFactory">
+    /// An optional asynchronous private-key loader (PEM + algorithm + key id → loaded
+    /// <see cref="ISigningKey"/>). When supplied it replaces the default
+    /// <see cref="Iris.Core.Identity.KeyPem.Load"/>; a Blazor WebAssembly host supplies a WebCrypto
+    /// loader because the .NET-on-WASM BCL cannot load an RSA private key. When
+    /// <see langword="null"/> the default BCL/BouncyCastle loader is used.
+    /// </param>
+    public OAuth2ClientAuthenticator(
+        HttpClient http,
+        Func<CancellationToken, ValueTask<string?>> tokenProvider,
+        Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         _tokenProvider = tokenProvider ?? throw new ArgumentNullException(nameof(tokenProvider));
+        _keyFactory = keyFactory;
     }
 
     /// <inheritdoc/>
@@ -85,7 +109,10 @@ public sealed class OAuth2ClientAuthenticator : IClientAuthenticator
         ISigningKey key;
         try
         {
-            key = KeyPem.Load(pem, algorithm, keyId);
+            // A custom loader (e.g. WebCrypto in a Blazor WebAssembly host) takes precedence.
+            key = _keyFactory is not null
+                ? await _keyFactory(pem, algorithm, keyId, ct).ConfigureAwait(false)
+                : KeyPem.Load(pem, algorithm, keyId);
         }
         catch (CryptographicException)
         {
@@ -93,6 +120,7 @@ public sealed class OAuth2ClientAuthenticator : IClientAuthenticator
         }
         catch (ArgumentException)
         {
+            // ImportFromPem / the WASM BCL RSA load throws ArgumentException: a load failure.
             return null;
         }
         catch (FormatException)

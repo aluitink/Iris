@@ -140,6 +140,27 @@ if ! grep -q "blazor.webassembly.js" <<<"$ui_json"; then
   fail "iris-ui index page did not reference the Blazor WebAssembly bootstrap (app root missing)"
 fi
 log "OK: iris-ui serves the Blazor WASM app (HTTP 200, app root present) over iris-net."
+# A 200 index page is not enough: the WASM platform only starts if the browser can also download its
+# _framework assets, and the static host must serve every file type the site ships. The icudt_*.dat
+# ICU data regressed silently when the host's UseStaticFiles() had no MIME type for ".dat" — the
+# index page still 200'd, but the platform failed to start in the browser. Fetch the bootstrap
+# script + an icudt .dat to prove the _framework assets are actually served (not 404).
+ui_fw_code="$(docker run --rm --network "$NET_NAME" curlimages/curl:latest \
+  -s -o /dev/null -w '%{http_code}' \
+  "http://iris-ui:8090/_framework/blazor.webassembly.js" 2>/dev/null)"
+if [ "$ui_fw_code" != "200" ]; then
+  fail "iris-ui _framework bootstrap (blazor.webassembly.js) returned HTTP ${ui_fw_code} (expected 200)"
+fi
+ui_icu_name="$(docker exec iris-ui sh -c 'ls /app/wwwroot/_framework/ 2>/dev/null | grep -E "^icudt_[A-Za-z0-9_]+\.dat$" | head -n1')"
+if [ -n "$ui_icu_name" ]; then
+  ui_icu_code="$(docker run --rm --network "$NET_NAME" curlimages/curl:latest \
+    -s -o /dev/null -w '%{http_code}' \
+    "http://iris-ui:8090/_framework/${ui_icu_name}" 2>/dev/null)"
+  if [ "$ui_icu_code" != "200" ]; then
+    fail "iris-ui icudt asset (${ui_icu_name}) returned HTTP ${ui_icu_code} (expected 200 — the static host must serve the WASM .dat ICU data)"
+  fi
+fi
+log "OK: iris-ui serves the Blazor WebAssembly app (index page + _framework bootstrap + icudt .dat) over iris-net."
 
 # --- 4. Signed cross-container federation: alice@iris-a follows alice@iris-b ---------------
 # The S10 upgrade: a real signed Follow over genuine sockets. Per the delivery model, the authored

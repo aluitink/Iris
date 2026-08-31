@@ -17,7 +17,7 @@ else
     <div class="card">
         <label for="query">Search (empty = whole directory)</label>
         <input id="query" type="text" @bind="Query" placeholder="e.g. alice" />
-        <button @onclick="SearchAsync" disabled="Busy">Search</button>
+        <button @onclick="SearchAsync" disabled="@(Busy)">Search</button>
         @if (Busy)
         {
             <span class="muted">Searching…</span>

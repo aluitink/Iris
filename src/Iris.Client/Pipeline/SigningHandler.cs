@@ -60,7 +60,9 @@ public sealed class SigningHandler : DelegatingHandler
         var identity = ResolveIdentity(request);
         var body = await ReadBodyAsync(request, ct).ConfigureAwait(false);
         var metadata = ToMetadata(request, body);
-        var signature = _signer.Sign(metadata, identity, ProfileFor(body.Length > 0));
+        // Sign asynchronously: the default signer completes synchronously (BCL/BouncyCastle), but a
+        // WebCrypto-backed key in a Blazor WebAssembly host awaits the browser's crypto.subtle here.
+        var signature = await _signer.SignAsync(metadata, identity, ProfileFor(body.Length > 0), ct).ConfigureAwait(false);
 
         request.Headers.TryAddWithoutValidation(Signatures.DateHeaderName, metadata.Date);
         request.Headers.TryAddWithoutValidation(Signatures.SignatureHeaderName, signature);
