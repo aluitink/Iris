@@ -1,0 +1,129 @@
+@page "/deliver"
+@using Iris.Client
+@using Iris.Core
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Raw delivery · Iris</PageTitle>
+
+<h2>Raw delivery (DeliverAsync)</h2>
+
+@if (!Session.IsLoggedIn)
+{
+    <div class="card">
+        <p class="muted">Log on to an instance to use raw delivery.</p>
+    </div>
+}
+else
+{
+    <div class="card">
+        <p class="muted">
+            The <c>DeliverAsync</c> escape hatch: a raw signed activity POSTed directly to an inbox. Every
+            high-level write (follow, like, moderation, compose) routes through this method internally —
+            this screen drives it directly, showing the exact activity JSON that is signed and sent.
+        </p>
+
+        <p>
+            <label for="target">Target actor IRI (the follow's recipient)</label>
+            <br />
+            <input id="target" @bind="TargetIri" placeholder="https://iris-dev1.luit.ink/ap/v1/u/alice"
+                   style="min-width: 320px" />
+        </p>
+
+        <p>
+            <button @onclick="DeliverAsync" disabled="@(Busy)">Deliver Follow to target's inbox</button>
+            @if (Busy)
+            {
+                <span class="muted">Delivering…</span>
+            }
+        </p>
+
+        @if (Error is not null)
+        {
+            <div class="error">@Error</div>
+        }
+
+        @if (Result is not null)
+        {
+            <p>
+                Status: <code>@Result.StatusCode</code>
+                @if (Result.IsSuccess)
+                {
+                    <span class="muted">(success)</span>
+                }
+            </p>
+        }
+
+        @if (ActivityBody is not null)
+        {
+            <details>
+                <summary>Activity JSON (signed + sent)</summary>
+                <pre class="raw-json">@ActivityBody</pre>
+            </details>
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    private string? TargetIri { get; set; }
+    private bool Busy { get; set; }
+    private string? Error { get; set; }
+    private DeliveryResult? Result { get; set; }
+    private string? ActivityBody { get; set; }
+
+    private Iri? SelfIri => Session.ActorIri;
+
+    private async Task DeliverAsync()
+    {
+        var self = SelfIri ?? throw new InvalidOperationException("No actor identity.");
+        var targetText = TargetIri?.Trim();
+        if (string.IsNullOrWhiteSpace(targetText))
+        {
+            Error = "Enter a target actor IRI.";
+            return;
+        }
+
+        Iri target;
+        try
+        {
+            target = new Iri(targetText);
+        }
+        catch (Exception ex)
+        {
+            Error = $"Invalid target IRI: {ex.Message}";
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        Result = null;
+        try
+        {
+            // Build the Follow activity exactly as the high-level FollowAsync does, but deliver it
+            // directly via the raw escape hatch (DeliverAsync) so the user sees the method exercised
+            // standalone. The activity is signed by the pipeline as the logged-on actor and POSTed to
+            // the target's inbox (target.InboxOf()).
+            var follow = new Follow
+            {
+                Id = $"{self.Value}/follows/{target.Value}",
+                Actor = [new Link { Href = self.Uri }],
+                Object = [new Link { Href = target.Uri }],
+            };
+
+            ActivityBody = ActivityJson.Serialize(follow);
+
+            var inbox = target.InboxOf();
+            Result = await Session.GetClient().DeliverAsync(inbox, follow);
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}
