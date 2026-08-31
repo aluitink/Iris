@@ -2106,6 +2106,37 @@ public static class ActivityPubServerExtensions
             doc.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = maf;
         }
 
+        // Enrich the publicKey extension with the JWK form (kty/n/e for RSA) so remote instances that
+        // expect JWK (e.g. Mastodon) can resolve the key. The publicKeyPem form is preserved for
+        // implementations that use it (e.g. Iris itself). (F-1912-1: Mastodon rejected our signature
+        // with 401 — likely because it could not resolve the key from publicKeyPem alone.)
+        if (doc.ExtensionData is { } existingExt &&
+            existingExt.TryGetValue("publicKey", out var pkEl) &&
+            pkEl.ValueKind == System.Text.Json.JsonValueKind.Object &&
+            pkEl.TryGetProperty("id", out var pkIdEl) &&
+            pkIdEl.ValueKind == System.Text.Json.JsonValueKind.String &&
+            pkIdEl.GetString() is { } pkIdStr &&
+            !string.IsNullOrWhiteSpace(pkIdStr) &&
+            Iri.TryParse(pkIdStr, out var keyIri) &&
+            persistence.Keys.TryGetKey(keyIri, out var pkKeyPair) &&
+            pkKeyPair is not null)
+        {
+            var jwk = pkKeyPair.GetPublicJwk();
+            var jwkEl = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(jwk);
+            if (jwkEl.ValueKind == System.Text.Json.JsonValueKind.Object)
+            {
+                // Merge the JWK fields into the publicKey object (kty, n, e for RSA; kty, crv, x, y for EC).
+                var pkObj = pkEl.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
+                foreach (var prop in jwkEl.EnumerateObject())
+                {
+                    pkObj[prop.Name] = prop.Value.Clone();
+                }
+                doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                doc.ExtensionData["publicKey"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                    pkObj.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal));
+            }
+        }
+
         // If authenticated as the owner, include the privateKey + keyAlgorithm extensions.
         if (authenticatedHandle is not null)
         {
