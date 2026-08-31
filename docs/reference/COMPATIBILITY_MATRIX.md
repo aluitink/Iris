@@ -58,9 +58,15 @@ Verified against the source. This is the basis for the "expected" column in §3�
   `GetCommunityFeedAsync` reads remote feeds read-only (`ActivityPubClient.cs:225-243`).
 
 **Signatures**:
-- Protocol: `draft-cavage-http-signatures-03` (`Signature` header, `Signatures.cs:27-29`). Two profiles
+- Protocol: `draft-cavage-http-signatures-03` (`Signature` header, `Signatures.cs:24`). Two profiles
   sent: `ClientToServer` = `(request-target) host date`; `ServerToServer` = adds `digest content-type`
-  (SHA-512) (`SigningProfile.cs:13-25`, `Signatures.cs:59,65-72,105-110`).
+  (`SigningProfile.cs:13-25`, `Signatures.cs:65-72`).
+- **Digest is SHA-256** (`sha-256=…`), not SHA-512 — Mastodon's `verify_body_digest!` only accepts
+  `sha-256` (`Signatures.cs:59,106-110`).
+- **The signature base is the `headers` lines joined with a newline separator and no trailing
+  newline** (`Signatures.BuildSignatureBase`, `Signatures.cs:126-154`). This matches the de facto
+  Fediverse convention (Mastodon's `signed_request.rb` uses `join("\n")`); draft-cavage-03's letter
+  says each line is newline-terminated, but the live servers omit the final newline, so we do too.
 - Validation accepts **either profile** (rebuilds the base from the `headers` present,
   `HttpSignatureVerifier.cs:57-73`). Algorithms: **RSA `rsa-sha256` and EC P-256 `ecdsa-p256-sha256`
   only — no EdDSA** (`Signatures.cs:79-85`, `KeyPairGenerator.cs:39,46`).
@@ -176,10 +182,10 @@ Each scenario is one checkable assertion in Phase 13. The **Iris expected** colu
 
 | # | Scenario | Direction | Iris expected (ground truth) |
 |---|---|---|---|
-| SIG1 | A platform sends a signed POST (HTTP Sig, `draft-cavage-http-signatures-10`, RSA-SHA256); we validate and accept it. | in | **PASS-expected.** Validation accepts the cavage signature base from the `headers` list present (`HttpSignatureVerifier.cs:57-73`); RSA `rsa-sha256` supported (`Signatures.cs:79-85`). Note: Iris implements **draft-03**; a strict draft-10 sender is compatible because the base-string format is the same for the headers Iris checks — live test confirms. |
+ | SIG1 | A platform sends a signed POST (HTTP Sig, `draft-cavage-http-signatures-10`, RSA-SHA256); we validate and accept it. | in | **PASS-expected.** Validation accepts the cavage signature base from the `headers` list present (`HttpSignatureVerifier.cs:57-73`); RSA `rsa-sha256` supported (`Signatures.cs:79-85`). Note: Iris implements **draft-03**; a strict draft-10 sender is compatible because the base-string format is the same for the headers Iris checks (no trailing newline, `sha-256` digest) — live test confirms. |
 | SIG2 | A platform sends a signed POST using **EdDSA** (Ed25519). | in | **[GAP]** Iris supports only RSA `rsa-sha256` and EC P-256 `ecdsa-p256-sha256` — **no EdDSA** (`KeyPairGenerator.cs:39,46`). An EdDSA-signed POST will fail validation → 401. |
 | SIG3 | A platform sends an **unsigned** POST to our inbox. | in | **PASS-expected (rejected).** Endpoints 401 unsigned POSTs (`SignatureValidationMiddleware.cs:41-57`, `ActivityPubServerExtensions.cs:584-590`). |
-| SIG4 | We send a signed POST (ServerToServer profile, with `digest`); the platform validates it. | out | **PASS-expected.** ServerToServer profile adds `digest content-type` (SHA-512) (`Signatures.cs:65-72`). A conformant platform validates it. |
+ | SIG4 | We send a signed POST (ServerToServer profile, with `digest`); the platform validates it. | out | **PASS-expected.** ServerToServer profile adds `digest content-type`; the digest is `sha-256=…` and the base has no trailing newline (`Signatures.cs:59,65-72,126-154`) — both match what Mastodon reconstructs. A conformant platform validates it. |
 | SIG5 | We fetch a remote actor doc / collection over **GET** (no signature). | out (GET) | **PASS-expected.** GETs are not signed by Iris and are not validated on receive (POST-only validation); remote public keys are resolved from actor docs when needed for POST validation (`RemoteInboundKeyResolver.cs:79-108`). |
 
 ## 5. Gap summary (predicted — feeds the risk & gap register)
