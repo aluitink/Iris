@@ -10,6 +10,7 @@
     <Project Path="src/Iris.Core/Iris.Core.csproj" />
     <Project Path="src/Iris.Server.InMemory/Iris.Server.InMemory.csproj" />
     <Project Path="src/Iris.Server/Iris.Server.csproj" />
+    <Project Path="src/Iris.WebCrypto/Iris.WebCrypto.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Iris.Client.Extensions.Tests/Iris.Client.Extensions.Tests.csproj" />

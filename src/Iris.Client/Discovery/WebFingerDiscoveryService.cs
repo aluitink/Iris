@@ -21,4 +21,8 @@ public sealed class WebFingerDiscoveryService : IDiscoveryService
     /// <inheritdoc/>
     public Task<Iri?> ResolveActorAsync(string account, string dialScheme = "https", CancellationToken ct = default)
         => _webFinger.ResolveActorAsync(account, dialScheme, ct);
+
+    /// <inheritdoc/>
+    public Task<Iri?> ResolveActorAsync(string account, Uri dialBaseUri, CancellationToken ct = default)
+        => _webFinger.ResolveActorAsync(account, dialBaseUri, ct);
 }

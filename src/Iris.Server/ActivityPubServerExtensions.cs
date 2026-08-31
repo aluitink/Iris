@@ -809,6 +809,11 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
+        // Buffer the request body so it is re-readable for the relay below (the SignatureValidation
+        // middleware or another component may have already consumed the stream). EnableBuffering makes
+        // the stream seekable and re-readable from position 0.
+        context.Request.EnableBuffering();
+
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
@@ -851,17 +856,44 @@ public static class ActivityPubServerExtensions
             return Results.Json(new { error = reason }, statusCode: (int)status);
         }
 
-        // 4. Build the forwarded GET. The proxy relays the client's Accept header (ActivityPub content
-        // negotiation) and signs as the authenticated actor (the X-Iris-Actor override — the
-        // SigningHandler resolves the actor's key from the IKeyProvider). The client's Authorization is
-        // deliberately not copied (the remote authenticates by signature).
-        using var request = new HttpRequestMessage(HttpMethod.Get, target.Value);
+        // 4. Build the forwarded request. The proxy transport is always a POST to
+        // /ap/v1/proxy/{target} (the target IRI rides in the path), so the client signals the REAL
+        // method of the request it wants made via the X-Iris-Proxy-Method header (defaulting to GET
+        // for legacy bodyless reads). The proxy relays that method, the body (the activity for a
+        // Create), and the Accept header (ActivityPub content negotiation), and signs as the
+        // authenticated actor (the X-Iris-Actor override — the SigningHandler resolves the actor's
+        // key from the IKeyProvider). The client's Authorization is deliberately not copied (the
+        // remote authenticates by signature). Relaying the method + body is what makes a proxied
+        // write (a browser Create POST to an outbox) actually create — without it the bodyless
+        // forward is a no-op GET-equivalent that only lists the outbox.
+        var method = HttpMethod.Parse(
+            context.Request.Headers["X-Iris-Proxy-Method"].FirstOrDefault() ?? "GET");
+        using var request = new HttpRequestMessage(method, target.Value);
         if (context.Request.Headers.Accept is { Count: > 0 } accept)
         {
             foreach (var value in accept)
             {
                 request.Headers.TryAddWithoutValidation("Accept", value);
             }
+        }
+
+        // Relay the request body (the ActivityPub activity for a Create) for a write (POST/PUT).
+        // The body was buffered at the top of the handler (EnableBuffering); reset the stream to
+        // position 0 and read it into a buffer for the relay. The content type defaults to the
+        // ActivityPub JSON-LD media type (the client always sends it).
+        if (method == HttpMethod.Post || method == HttpMethod.Put)
+        {
+            context.Request.Body.Position = 0;
+            using var bodyReader = new MemoryStream();
+            await context.Request.Body.CopyToAsync(bodyReader, ct).ConfigureAwait(false);
+            var bodyBytes = bodyReader.ToArray();
+            request.Content = new ByteArrayContent(bodyBytes);
+            // TryAddWithoutValidation (not the ContentType setter): the inbound content type may carry
+            // a charset parameter (e.g. "application/activity+json; charset=utf-8"), which the
+            // MediaTypeHeaderValue constructor rejects. The relayed content type is opaque to the
+            // target (it re-serializes the activity), so validation is unnecessary.
+            request.Content.Headers.TryAddWithoutValidation(
+                "Content-Type", context.Request.ContentType ?? ActivityJson.ActivityJsonContentType);
         }
 
         request.Headers.TryAddWithoutValidation("X-Iris-Actor", actorIri.Value);

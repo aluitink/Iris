@@ -1,5 +1,7 @@
 @page "/actor"
 @using Iris.Client
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>Actor detail · Iris</PageTitle>
@@ -17,7 +19,7 @@ else
     <div class="card">
         <label for="handle">Actor (preferredUsername on this instance)</label>
         <input id="handle" type="text" @bind="Handle" placeholder="alice" />
-        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        <button @onclick="LoadAsync" disabled="@(Busy)">Load</button>
         @if (Busy)
         {
             <span class="muted">Loading…</span>
@@ -71,8 +73,8 @@ else
             <div class="card">
                 <h3>Follow / unfollow</h3>
                 <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
-                <button @onclick="FollowAsync" disabled="WriteBusy">Follow</button>
-                <button @onclick="UnfollowAsync" disabled="WriteBusy">Unfollow</button>
+                <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
+                <button @onclick="UnfollowAsync" disabled="@(WriteBusy)">Unfollow</button>
                 @if (WriteBusy)
                 {
                     <span class="muted">Working…</span>
@@ -90,12 +92,12 @@ else
             <div class="card">
                 <h3>Moderation</h3>
                 <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code> → <code>@ActorIri.Value</code></p>
-                <button @onclick="MuteAsync" disabled="WriteBusy">Mute</button>
-                <button @onclick="UnmuteAsync" disabled="WriteBusy">Unmute</button>
-                <button @onclick="BlockAsync" disabled="WriteBusy">Block</button>
-                <button @onclick="UnblockAsync" disabled="WriteBusy">Unblock</button>
-                <button @onclick="FlagAsync" disabled="WriteBusy">Flag</button>
-                <button @onclick="UnflagAsync" disabled="WriteBusy">Unflag</button>
+                <button @onclick="MuteAsync" disabled="@(WriteBusy)">Mute</button>
+                <button @onclick="UnmuteAsync" disabled="@(WriteBusy)">Unmute</button>
+                <button @onclick="BlockAsync" disabled="@(WriteBusy)">Block</button>
+                <button @onclick="UnblockAsync" disabled="@(WriteBusy)">Unblock</button>
+                <button @onclick="FlagAsync" disabled="@(WriteBusy)">Flag</button>
+                <button @onclick="UnflagAsync" disabled="@(WriteBusy)">Unflag</button>
                 <p class="muted">
                     Block / flag are signed writes to this actor's own outbox (the instance records the edge
                     and federates to the target's inbox); mute is a local, Basic-authenticated decision
@@ -133,13 +135,45 @@ else
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
 
-    private async Task LoadAsync()
+    /// <summary>
+    /// The actor IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
+    /// directly (an actor link from anywhere — ObjectView, feed, replies — navigates here and loads).
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "iri")]
+    private string? IriParam { get; set; }
+
+    /// <summary>
+    /// The actor's preferred username deep-linked via the <c>?handle=</c> query param (S2). When present
+    /// (and no <c>?iri=</c>), the page resolves it to this instance's user IRI and loads.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "handle")]
+    private string? HandleParam { get; set; }
+
+    protected override async Task OnInitializedAsync()
     {
         if (!Session.IsLoggedIn)
         {
             return;
         }
 
+        if (IriParam is { Length: > 0 })
+        {
+            await LoadByIriAsync(new Iri(IriParam));
+        }
+        else if (HandleParam is { Length: > 0 })
+        {
+            Handle = HandleParam;
+            await LoadAsync();
+        }
+    }
+
+    /// <summary>
+    /// Loads an actor (and its feed + moderation state) from an explicit actor IRI — the deep-link path
+    /// (S2). Mirrors <see cref="LoadAsync"/> but takes the IRI directly rather than resolving a handle on
+    /// the dial base.
+    /// </summary>
+    private async Task LoadByIriAsync(Iri actorIri)
+    {
         Busy = true;
         Error = null;
         ActorIri = null;
@@ -148,8 +182,6 @@ else
         Moderation = null;
         try
         {
-            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
-            var actorIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/u/{Handle.Trim()}");
             ActorIri = actorIri;
 
             var client = Session.GetClient();
@@ -175,6 +207,18 @@ else
         {
             Busy = false;
         }
+    }
+
+    private async Task LoadAsync()
+    {
+        if (!Session.IsLoggedIn)
+        {
+            return;
+        }
+
+        var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+        var actorIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/u/{Handle.Trim()}");
+        await LoadByIriAsync(actorIri);
     }
 
     private static async Task<int> CountAsync(IAsyncEnumerable<IObjectOrLink> items)

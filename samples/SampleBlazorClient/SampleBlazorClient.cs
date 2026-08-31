@@ -61,6 +61,12 @@ public static partial class SampleBlazorClient
     /// differ from <paramref name="serverBaseUri"/> for local instances). When <see langword="null"/>
     /// the IRI is derived as <c>{serverBaseUri}/ap/v1/u/{handle}</c>.
     /// </param>
+    /// <param name="keyFactory">
+    /// An optional asynchronous private-key loader (PEM + algorithm + key id → loaded
+    /// <see cref="Iris.Core.Identity.ISigningKey"/>). A Blazor WebAssembly host supplies a WebCrypto
+    /// loader because the .NET-on-WASM BCL cannot load an RSA private key. When
+    /// <see langword="null"/> the default BCL/BouncyCastle loader is used (the console + test paths).
+    /// </param>
     /// <returns>The composed service (owns the bundle and any clients it builds).</returns>
     public static ClientService CreateClientService(
         Uri serverBaseUri,
@@ -68,7 +74,8 @@ public static partial class SampleBlazorClient
         string password,
         Func<HttpMessageHandler>? transportFactory = null,
         Func<HttpMessageHandler, IDiscoveryService>? discoveryFactory = null,
-        Iri? actorIriOverride = null)
+        Iri? actorIriOverride = null,
+        Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory = null)
     {
         ArgumentNullException.ThrowIfNull(serverBaseUri);
         ArgumentException.ThrowIfNullOrEmpty(handle);
@@ -87,7 +94,15 @@ public static partial class SampleBlazorClient
             Timeout = System.Threading.Timeout.InfiniteTimeSpan,
         };
 
-        var authenticator = new BasicAuthClientAuthenticator(authenticatorHttp, actorIri, handle, password);
+        var authenticator = new BasicAuthClientAuthenticator(authenticatorHttp, actorIri, handle, password, keyFactory);
+
+        // Always-proxy (the S1 browser write path): when the actor's *advertised* host (the host in
+        // its resolved IRI) differs from the *dial* host (what the browser reaches), the browser's
+        // WebCrypto signature cannot be validated against the advertised host, so a direct attempt
+        // would always 401. Route such writes straight through the home proxy (which re-signs with
+        // the actor's key) instead of wasting the guaranteed-401 direct attempt.
+        var alwaysProxy = !string.Equals(
+            actorIri.Uri?.Host, serverBaseUri.Host, StringComparison.OrdinalIgnoreCase);
 
         var options = new IrisClientOptions(serverBaseUri)
         {
@@ -95,6 +110,7 @@ public static partial class SampleBlazorClient
             // identifies the actor from them and signs the forwarded request with the actor's key).
             ProxyCredentials = new ProxyCredentials(handle, password),
             UseProxyFallback = true,
+            AlwaysProxy = alwaysProxy,
         };
 
         var builder = IrisClientBuilder.Create(options).WithAuthenticator(authenticator);
@@ -140,6 +156,11 @@ public static partial class SampleBlazorClient
     /// differ from <paramref name="serverBaseUri"/> for local instances). When <see langword="null"/>
     /// the IRI is derived as <c>{serverBaseUri}/ap/v1/u/{handle}</c>.
     /// </param>
+    /// <param name="keyFactory">
+    /// An optional asynchronous private-key loader (a Blazor WebAssembly host supplies a WebCrypto
+    /// loader because the .NET-on-WASM BCL cannot load an RSA private key). When
+    /// <see langword="null"/> the default BCL/BouncyCastle loader is used.
+    /// </param>
     /// <returns>The composed service (owns the bundle and any clients it builds).</returns>
     public static ClientService CreateOAuth2ClientService(
         Uri serverBaseUri,
@@ -147,7 +168,8 @@ public static partial class SampleBlazorClient
         string token,
         Func<HttpMessageHandler>? transportFactory = null,
         Func<HttpMessageHandler, IDiscoveryService>? discoveryFactory = null,
-        Iri? actorIriOverride = null)
+        Iri? actorIriOverride = null,
+        Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory = null)
     {
         ArgumentNullException.ThrowIfNull(serverBaseUri);
         ArgumentException.ThrowIfNullOrEmpty(handle);
@@ -167,7 +189,8 @@ public static partial class SampleBlazorClient
         // refresh rotation in the sample), so the provider returns it verbatim.
         var authenticator = new OAuth2ClientAuthenticator(
             authenticatorHttp,
-            _ => new ValueTask<string?>(token));
+            _ => new ValueTask<string?>(token),
+            keyFactory);
 
         var options = new IrisClientOptions(serverBaseUri)
         {

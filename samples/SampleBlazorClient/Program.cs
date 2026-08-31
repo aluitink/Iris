@@ -22,7 +22,15 @@ public static class Program
         var builder = WebAssemblyHostBuilder.CreateDefault(args);
         builder.RootComponents.Add<App>("#app");
 
-        builder.Services.AddIrisExplorer();
+        // The instance base-URL config surface (SAMPLE_PLAN §4.4): advertised host → browser base URL.
+        // The public instance (iris.luit.ink) serves the explorer over https on port 8088; the local
+        // Docker instance is reachable at the host-published port 8081. Pre-seeding both lets the UI
+        // pre-fill the base URL for a known host so a logon only needs the address + password.
+        builder.Services.AddIrisExplorer(new InstanceBaseUrls(new[]
+        {
+            new KeyValuePair<string, Uri>("iris.luit.ink", new Uri("https://iris.luit.ink")),
+            new KeyValuePair<string, Uri>("localhost", new Uri("http://localhost:8081")),
+        }));
 
         var host = builder.Build();
         await host.RunAsync();

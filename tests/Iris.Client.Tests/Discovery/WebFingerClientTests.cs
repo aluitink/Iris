@@ -93,4 +93,42 @@ public class WebFingerClientTests
         var response = new HttpResponseMessage(HttpStatusCode.NotFound);
         Assert.Null(await ResolveAsync("@bob@b.domain.local", response));
     }
+
+    [Fact]
+    public async Task Resolve_WithDialBaseUri_DialsExplicitAuthority_AndReturnsSelfLink()
+    {
+        // The S1 scenario: the address's host (localhost) is not browser-reachable, so the dial base
+        // (a host-published port) must form the well-known URL's authority. The query resource still
+        // carries the account's host; only the dialed authority changes.
+        var handler = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SelfDocument(ActorIri), Encoding.UTF8, WebFingerClient.WebFingerContentType),
+        });
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        var iri = await client.ResolveActorAsync("alice@localhost", new Uri("http://localhost:8081"));
+
+        // Dialed the explicit dial base authority (http://localhost:8081), not the address host (https://localhost).
+        Assert.Equal("http://localhost:8081", handler.LastUri!.GetLeftPart(UriPartial.Authority));
+        Assert.StartsWith("/.well-known/webfinger?", handler.LastUri.AbsolutePath + handler.LastUri.Query);
+        Assert.Contains("resource=acct%3Aalice%40localhost", handler.LastUri.Query);
+        Assert.Equal(ActorIri, iri!.Value.Value);
+    }
+
+    [Fact]
+    public async Task Resolve_WithoutDialBaseUri_DialsAddressHostOverScheme()
+    {
+        // The RFC 8410 norm (no explicit dial base): the well-known URL's authority is the address's
+        // own host, dialed over the given scheme.
+        var handler = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(SelfDocument(ActorIri), Encoding.UTF8, WebFingerClient.WebFingerContentType),
+        });
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        var iri = await client.ResolveActorAsync("@bob@b.domain.local", dialScheme: "http");
+
+        Assert.Equal("http://b.domain.local", handler.LastUri!.GetLeftPart(UriPartial.Authority));
+        Assert.Equal(ActorIri, iri!.Value.Value);
+    }
 }

@@ -3,8 +3,11 @@ using Iris.Client;
 using Iris.Client.Discovery;
 using Iris.Client.Extensions;
 using Iris.Core;
+using Iris.Core.Identity;
 using Iris.Samples.SampleBlazorClient.Explorer;
+using Iris.WebCrypto;
 using Microsoft.Extensions.Options;
+using Microsoft.JSInterop;
 
 namespace Iris.Samples.SampleBlazorClient.Explorer;
 
@@ -41,10 +44,27 @@ public static class ExplorerHostExtensions
             services.AddSingleton(baseUrls);
         }
 
+        // The private-key loader is the reusable Iris.WebCrypto factory only in a JS-interop host
+        // (a Blazor WebAssembly app, where IJSRuntime is registered by the WASM host) — the
+        // .NET-on-WASM BCL cannot load an RSA private key, so signing is delegated to the browser's
+        // WebCrypto (the factory auto-injects its JS bridge on first use). In a non-browser host
+        // (the integration tests / console, which have no IJSRuntime) the key factory is null and the
+        // authenticator falls back to the default BCL/BouncyCastle loader. This keeps the same
+        // AddIrisExplorer call working in both contexts.
         services.AddSingleton(sp =>
-            new ExplorerSession(
+        {
+            var js = sp.GetService<IJSRuntime>();
+            Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory = null;
+            if (js is not null)
+            {
+                keyFactory = new WebCryptoSigningKeyFactory(js).CreateAsync;
+            }
+
+            return new ExplorerSession(
                 sp.GetRequiredService<Func<HttpMessageHandler>>(),
-                baseUrls ?? sp.GetService<InstanceBaseUrls>() ?? new InstanceBaseUrls()));
+                baseUrls ?? sp.GetService<InstanceBaseUrls>() ?? new InstanceBaseUrls(),
+                keyFactory);
+        });
         return services;
     }
 }
@@ -76,6 +96,7 @@ public sealed class ExplorerSession : IDisposable
 {
     private readonly Func<HttpMessageHandler> _transportFactory;
     private readonly InstanceBaseUrls _baseUrls;
+    private readonly Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? _keyFactory;
     private readonly object _gate = new();
 
     private IrisClientBundle? _bundle;
@@ -97,10 +118,19 @@ public sealed class ExplorerSession : IDisposable
     /// for known local instances (SAMPLE_PLAN §4.4). When <see langword="null"/> an empty map is used
     /// (every logon takes an explicit base URL).
     /// </param>
-    public ExplorerSession(Func<HttpMessageHandler> transportFactory, InstanceBaseUrls? baseUrls = null)
+    /// <param name="keyFactory">
+    /// An optional asynchronous private-key loader. The Blazor WebAssembly host supplies a WebCrypto
+    /// loader (the .NET-on-WASM BCL cannot load an RSA private key); the integration tests + console
+    /// pass <see langword="null"/> to use the default BCL/BouncyCastle loader.
+    /// </param>
+    public ExplorerSession(
+        Func<HttpMessageHandler> transportFactory,
+        InstanceBaseUrls? baseUrls = null,
+        Func<string, KeyAlgorithm, Iri, CancellationToken, Task<ISigningKey>>? keyFactory = null)
     {
         _transportFactory = transportFactory ?? throw new ArgumentNullException(nameof(transportFactory));
         _baseUrls = baseUrls ?? new InstanceBaseUrls();
+        _keyFactory = keyFactory;
     }
 
     /// <summary>
@@ -167,14 +197,16 @@ public sealed class ExplorerSession : IDisposable
 
         // Step 1 (the headline feature): resolve the address to an authoritative actor IRI via the
         // instance's WebFinger, over the same transport the session uses to reach the instance. The
-        // dial scheme (http for local instances) is the address's scheme. WebFinger is a public GET
-        // (no signature), so it can run before the Basic-auth login.
+        // dial authority is the explicit <paramref name="dialBaseUri"/> (scheme + host + port the
+        // browser actually reaches) — NOT the address's own host, which for a local Docker instance
+        // is not browser-reachable (the address host `localhost` ≠ the host-published port `8081`).
+        // WebFinger is a public GET (no signature), so it can run before the Basic-auth login.
         var discoveryTransport = _transportFactory();
         var discovery = new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(discoveryTransport, disposeHandler: false)));
         Iri? resolvedIri = null;
         try
         {
-            resolvedIri = await discovery.ResolveActorAsync(parsed.AcctResource, parsed.Scheme, ct).ConfigureAwait(false);
+            resolvedIri = await discovery.ResolveActorAsync(parsed.AcctResource, dialBaseUri, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {
@@ -195,7 +227,8 @@ public sealed class ExplorerSession : IDisposable
             dialBaseUri, parsed.Handle, password,
             _transportFactory,
             transport => new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(transport, disposeHandler: false))),
-            actorIriOverride: actorIri);
+            actorIriOverride: actorIri,
+            keyFactory: _keyFactory);
 
         var logged = await service.LoginAsync(ct).ConfigureAwait(false);
         if (!logged)
@@ -241,13 +274,14 @@ public sealed class ExplorerSession : IDisposable
 
         // Step 1: resolve the actor IRI via WebFinger (the dial host), falling back to the direct IRI
         // built from the dial base. The OAuth2 path has no separate client_id registration — the token
-        // identifies the actor — so the handle + dial base give the actor IRI.
+        // identifies the actor — so the handle + dial base give the actor IRI. The dial authority is
+        // the explicit dial base URI (the browser-reachable scheme + host + port).
         var discoveryTransport = _transportFactory();
         var discovery = new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(discoveryTransport, disposeHandler: false)));
         Iri? resolvedIri = null;
         try
         {
-            resolvedIri = await discovery.ResolveActorAsync($"acct:{handle}", DialScheme(dialBaseUri), ct).ConfigureAwait(false);
+            resolvedIri = await discovery.ResolveActorAsync($"acct:{handle}@{dialBaseUri.Host}", dialBaseUri, ct).ConfigureAwait(false);
         }
         catch (HttpRequestException)
         {
@@ -260,7 +294,8 @@ public sealed class ExplorerSession : IDisposable
             dialBaseUri, handle, token,
             _transportFactory,
             transport => new WebFingerDiscoveryService(new WebFingerClient(new HttpClient(transport, disposeHandler: false))),
-            actorIriOverride: actorIri);
+            actorIriOverride: actorIri,
+            keyFactory: _keyFactory);
 
         var logged = await service.LoginAsync(ct).ConfigureAwait(false);
         if (!logged)
@@ -278,11 +313,6 @@ public sealed class ExplorerSession : IDisposable
             dialBaseUri, actorIri);
         return true;
     }
-
-    private static string DialScheme(Uri dialBaseUri)
-        => string.Equals(dialBaseUri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            ? "http"
-            : "https";
 
     /// <summary>
     /// Switches to a recently logged-on instance (one-click instance switching, §4.2). Logs out the

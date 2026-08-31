@@ -50,6 +50,17 @@ public sealed class IrisClientOptions
     public bool UseProxyFallback { get; init; } = true;
 
     /// <summary>
+    /// Gets or sets whether every request is routed through the home server's proxy <em>without</em>
+    /// a direct attempt (the <see cref="Iris.Client.Pipeline.ProxyFallbackHandler"/> always-proxy
+    /// mode). Defaults to false. Set true when the acting actor's <em>advertised</em> host differs
+    /// from the <em>dial</em> host (a browser whose WebCrypto signature cannot be validated against
+    /// the advertised host — a direct attempt would always 401, so the write goes straight through
+    /// the proxy, which re-signs with the actor's key). Requires <see cref="UseProxyFallback"/> and
+    /// <see cref="ProxyCredentials"/>.
+    /// </summary>
+    public bool AlwaysProxy { get; init; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether idempotent (GET) requests are retried on
     /// <c>429</c>/<c>5xx</c> and transient network failures.
     /// </summary>

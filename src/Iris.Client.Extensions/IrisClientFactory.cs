@@ -78,6 +78,7 @@ public sealed class IrisClientFactory
             Caches = _options.Caches,
             ProxyBaseUrl = _options.UseProxyFallback ? new Iri(_options.ServerBaseUri) : null,
             ProxyCredentials = _options.UseProxyFallback ? _options.ProxyCredentials : null,
+            AlwaysProxy = _options.AlwaysProxy,
             LocalCredentials = _options.LocalModeration ? _options.ProxyCredentials : null,
         };
 

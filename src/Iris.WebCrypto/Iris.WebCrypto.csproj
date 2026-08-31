@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.WebCrypto</RootNamespace>
+    <!-- Packable: this is the public "browser WebCrypto signing" library third-party UIs reference.
+         The sample + any Blazor WebAssembly (or other JS-interop) host adds a ProjectReference /
+         PackageReference and gets RSA HTTP-signing in the browser (the .NET-on-WASM BCL cannot load
+         an RSA private key, so it delegates to the browser's crypto.subtle). -->
+    <IsPackable>true</IsPackable>
+    <PackageId>Iris.WebCrypto</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Iris</Authors>
+    <Description>Browser WebCrypto (crypto.subtle) RSA signing for Iris clients. Provides a WebCryptoSigningKey (an ISigningKey backed by crypto.subtle RSASSA-PKCS1-v1_5 + SHA-256) and a WebCryptoSigningKeyFactory for Iris client authenticators, for Blazor WebAssembly / JS-interop hosts where the .NET BCL cannot load an RSA private key. Auto-injects its JS bridge into the page.</Description>
+    <PackageTags>iris;activitypub;webcrypto;blazor;wasm;http-signature;rsa</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.JSInterop" />
+    <ProjectReference Include="..\Iris.Core\Iris.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- The JS bridge is embedded in this assembly so the C# bootstrap can read its source and hand it
+       to the page's named webcryptoSignBootstrap.install entry point (for lazy-load /
+       post-navigation re-injection). It is ALSO packed as NuGet content under
+       content/WebAssembly/Shared/wwwroot/ so a Blazor WebAssembly host consuming the package copies
+       it into its own wwwroot and adds a single <script src="js/WebCrypto.js"></script> tag to
+       index.html (Blazor IJSRuntime can only call named globals, not inline expressions, so the host
+       must load the bridge once to define the named webcryptoSignBootstrap global the C# side calls).
+       Project-referencing hosts (like the sample) keep their own wwwroot/js/WebCrypto.js copy. -->
+  <ItemGroup>
+    <EmbeddedResource Include="WebCrypto.js" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="WebCrypto.js" Pack="true" PackagePath="content/WebAssembly/Shared/wwwroot/js/" />
+  </ItemGroup>
+
+</Project>

@@ -26,6 +26,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Iris.Client.Extensions\Iris.Client.Extensions.csproj" />
+    <!-- Browser WebCrypto signing (Deliverable B): the sample's key factory now comes from the
+         reusable Iris.WebCrypto library (auto-injects its JS bridge), so the sample no longer keeps a
+         local WebCryptoSigningKey / webcrypto-sign.js. -->
+    <ProjectReference Include="..\..\src\Iris.WebCrypto\Iris.WebCrypto.csproj" />
   </ItemGroup>
 
   <!-- Entry points are mutually exclusive by build tag so only one Main is ever in the assembly. The

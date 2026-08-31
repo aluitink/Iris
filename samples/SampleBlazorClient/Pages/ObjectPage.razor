@@ -1,5 +1,7 @@
 @page "/object"
 @using Iris.Client
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>Object · Iris</PageTitle>
@@ -17,7 +19,7 @@ else
     <div class="card">
         <label for="iri">Object IRI</label>
         <input id="iri" type="url" @bind="IriInput" placeholder="http://localhost/ap/v1/n/…" />
-        <button @onclick="LoadAsync" disabled="Busy">Load</button>
+        <button @onclick="LoadAsync" disabled="@(Busy)">Load</button>
         @if (Busy)
         {
             <span class="muted">Loading…</span>
@@ -34,7 +36,7 @@ else
             <h3>Object</h3>
             <ObjectView Item="ObjectDoc" />
             <div class="card" style="margin-top: .75rem">
-                <button @onclick="LikeAsync" disabled="WriteBusy">Like</button>
+                <button @onclick="LikeAsync" disabled="@(WriteBusy)">Like</button>
                 @if (WriteBusy)
                 {
                     <span class="muted">Liking…</span>
@@ -86,6 +88,22 @@ else
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
+
+    /// <summary>
+    /// The object IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
+    /// on initialize so a click from anywhere (ObjectView, search, feed, replies) navigates + loads.
+    /// </summary>
+    [SupplyParameterFromQuery(Name = "iri")]
+    private string? IriParam { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsLoggedIn && IriParam is { Length: > 0 })
+        {
+            IriInput = IriParam;
+            await LoadAsync();
+        }
+    }
 
     private async Task LoadAsync()
     {

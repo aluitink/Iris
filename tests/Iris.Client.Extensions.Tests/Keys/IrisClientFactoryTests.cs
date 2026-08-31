@@ -281,5 +281,11 @@ public sealed class IrisClientFactoryTests
             LastAccount = account;
             return Task.FromResult(_result);
         }
+
+        public Task<Iri?> ResolveActorAsync(string account, Uri dialBaseUri, CancellationToken ct = default)
+        {
+            LastAccount = account;
+            return Task.FromResult(_result);
+        }
     }
 }

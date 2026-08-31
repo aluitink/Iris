@@ -54,6 +54,16 @@ public sealed class ActivityPubClientOptions
     public ProxyCredentials? ProxyCredentials { get; set; }
 
     /// <summary>
+    /// Gets or sets whether every request is routed through the proxy <em>without</em> a direct
+    /// attempt (the <see cref="ProxyFallbackHandler"/> "always-proxy" mode). Defaults to false (a
+    /// direct attempt is made first; the proxy is used only on a 401/403). Set true when the acting
+    /// actor's <em>advertised</em> host differs from the <em>dial</em> host (a browser whose WebCrypto
+    /// signature cannot be validated against the advertised host — a direct attempt would always 401,
+    /// so it is skipped and the write goes straight through the proxy, which re-signs).
+    /// </summary>
+    public bool AlwaysProxy { get; set; }
+
+    /// <summary>
     /// Gets or sets the Basic-auth credentials (username:password) used for local, non-federated
     /// moderation requests (F-07 mute: <c>POST {actor}/mutes/{target}</c>). A mute is Iris-specific
     /// (no ActivityStreams type) and is a local decision, so it is authenticated by Basic auth to the

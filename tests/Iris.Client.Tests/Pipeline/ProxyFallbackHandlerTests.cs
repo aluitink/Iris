@@ -42,6 +42,9 @@ public sealed class ProxyFallbackHandlerTests
     private static ProxyFallbackHandler NewHandler(RecordingHandler inner)
         => new(new Iri(ProxyBase), new ProxyCredentials(Username, Password), inner);
 
+    private static ProxyFallbackHandler NewAlwaysProxyHandler(RecordingHandler inner)
+        => new(new Iri(ProxyBase), new ProxyCredentials(Username, Password), inner, alwaysProxy: true);
+
     // --- A 401 on the direct attempt is retried through the proxy -------------------------
 
     [Fact]
@@ -148,6 +151,62 @@ public sealed class ProxyFallbackHandlerTests
         var response = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://b.example/x"));
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    // --- Always-proxy mode: every request goes straight to the proxy (no direct attempt) --
+
+    [Fact]
+    public async Task AlwaysProxy_RoutesStraightToProxy_WithoutDirectAttempt()
+    {
+        // In always-proxy mode the browser's signature cannot be validated against the target host,
+        // so the handler must NOT make a direct attempt — it routes the first (and only) request
+        // through the proxy, even though the proxy would have returned 200.
+        var inner = new RecordingHandler(req =>
+        {
+            var isProxy = req.RequestUri!.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal);
+            return JsonResponse(isProxy ? HttpStatusCode.OK : HttpStatusCode.InternalServerError);
+        });
+
+        var handler = NewAlwaysProxyHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://b.example/ap/v1/u/alice/outbox");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
+        var response = await http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The single request made was the proxy POST (not the direct attempt).
+        var proxyReq = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Post, proxyReq.Method);
+        Assert.Equal(
+            $"{ProxyBase}/ap/v1/proxy/https://b.example/ap/v1/u/alice/outbox",
+            proxyReq.RequestUri!.ToString());
+        var expected = "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Username}:{Password}"));
+        Assert.Equal(expected, proxyReq.Headers.Authorization?.ToString());
+    }
+
+    [Fact]
+    public async Task AlwaysProxy_ReadsGotoDirect_NotThroughProxy()
+    {
+        // Always-proxy applies only to signed writes (POST/PUT); a GET read dials the target
+        // directly (the proxy is not a general-purpose GET relay and is not CORS-open to it).
+        var inner = new RecordingHandler(req =>
+        {
+            var isProxy = req.RequestUri!.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal);
+            return JsonResponse(isProxy ? HttpStatusCode.OK : HttpStatusCode.OK);
+        });
+
+        var handler = NewAlwaysProxyHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        var response = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://b.example/ap/v1/c/iris/feed"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // The single request was the direct GET (not the proxy).
+        var last = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Get, last.Method);
+        Assert.Equal("https://b.example/ap/v1/c/iris/feed", last.RequestUri!.ToString());
     }
 
     // --- The client's Accept header is relayed to the proxy ------------------------------

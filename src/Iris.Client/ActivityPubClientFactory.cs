@@ -72,7 +72,7 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
         // request), so it must bypass the SigningHandler — hence ProxyFallbackHandler is outermost.
         if (options.ProxyBaseUrl is { } proxyBase && options.ProxyCredentials is { } proxyCreds)
         {
-            pipeline = new ProxyFallbackHandler(proxyBase, proxyCreds, pipeline);
+            pipeline = new ProxyFallbackHandler(proxyBase, proxyCreds, pipeline, options.AlwaysProxy);
         }
 
         // The client owns this HttpClient (and disposes the pipeline on Dispose); the transport

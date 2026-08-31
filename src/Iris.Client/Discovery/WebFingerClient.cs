@@ -78,24 +78,70 @@ public sealed class WebFingerClient : IWebFingerResolver
             var (value, _) = await _cache.GetAsync(
                 subjectIri,
                 bypassCache: false,
-                async iri => await ResolveActorFromNetworkAsync(iri.Value, dialScheme, ct).ConfigureAwait(false),
+                async iri => await ResolveActorFromNetworkAsync(iri.Value, dialScheme, null, ct).ConfigureAwait(false),
                 ct).ConfigureAwait(false);
             return value;
         }
 
-        return await ResolveActorFromNetworkAsync(subject, dialScheme, ct).ConfigureAwait(false);
+        return await ResolveActorFromNetworkAsync(subject, dialScheme, null, ct).ConfigureAwait(false);
     }
 
-    private async Task<Iri?> ResolveActorFromNetworkAsync(string subject, string dialScheme, CancellationToken ct)
+    /// <summary>
+    /// Resolves the actor IRI for the given account, dialing the instance at the explicit
+    /// <paramref name="dialBaseUri"/> authority (scheme + host + port) rather than the address's own
+    /// host. The query resource still carries the account's host; only the well-known URL's authority
+    /// (what is dialed) changes.
+    /// </summary>
+    /// <param name="account">The account handle or <c>acct:</c> URI.</param>
+    /// <param name="dialBaseUri">The base URI to dial for the WebFinger query.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The actor IRI, or null if discovery failed or no <c>self</c> link was found.</returns>
+    public async Task<Iri?> ResolveActorAsync(
+        string account, Uri dialBaseUri, CancellationToken ct = default)
     {
-        // The WebFinger resource lives on the *account's own host*, so derive the base URL from
-        // the host in the acct: URI rather than relying on the HttpClient's BaseAddress.
-        var host = Uri.UnescapeDataString(subject["acct:".Length..]);
-        var at = host.IndexOf('@');
-        var hostPart = at >= 0 ? host[(at + 1)..] : host;
-        // The scheme is a dial detail (local instances serve their well-known over http); the actor
-        // IRI returned in the `self` link is authoritative and carries the instance's real scheme.
-        var wellKnown = $"{dialScheme}://{hostPart}/.well-known/webfinger?resource={Uri.EscapeDataString(subject)}";
+        ArgumentNullException.ThrowIfNull(account);
+        ArgumentNullException.ThrowIfNull(dialBaseUri);
+        var subject = NormalizeSubject(account);
+        var subjectIri = new Iri(subject);
+
+        if (_cache is not null)
+        {
+            var (value, _) = await _cache.GetAsync(
+                subjectIri,
+                bypassCache: false,
+                async iri => await ResolveActorFromNetworkAsync(iri.Value, null, dialBaseUri, ct).ConfigureAwait(false),
+                ct).ConfigureAwait(false);
+            return value;
+        }
+
+        return await ResolveActorFromNetworkAsync(subject, null, dialBaseUri, ct).ConfigureAwait(false);
+    }
+
+    private async Task<Iri?> ResolveActorFromNetworkAsync(
+        string subject, string? dialScheme, Uri? dialBaseUri, CancellationToken ct)
+    {
+        // The dial authority: when an explicit dial base URI is supplied (a browser reaching a local
+        // Docker instance on a host-published port, e.g. http://localhost:8081), its scheme + host +
+        // port form the well-known URL's authority — the address's own host may not be browser-
+        // reachable. Otherwise the authority is the address's own host (the RFC 8410 norm: a resource
+        // lives on its own host), dialed over dialScheme (https by default, http for local/self-
+        // signed instances).
+        string authority;
+        if (dialBaseUri is not null)
+        {
+            authority = dialBaseUri.GetLeftPart(UriPartial.Authority).TrimEnd('/');
+        }
+        else
+        {
+            var host = Uri.UnescapeDataString(subject["acct:".Length..]);
+            var at = host.IndexOf('@');
+            var hostPart = at >= 0 ? host[(at + 1)..] : host;
+            authority = $"{(dialScheme ?? "https")}://{hostPart}";
+        }
+
+        // The actor IRI returned in the `self` link is authoritative and carries the instance's real
+        // scheme/host; the dial authority above is only what the browser reaches.
+        var wellKnown = $"{authority}/.well-known/webfinger?resource={Uri.EscapeDataString(subject)}";
 
         HttpResponseMessage httpResponse;
         try

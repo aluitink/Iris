@@ -16,15 +16,23 @@
     <!-- In-process TestServer for integration tests (not part of the shared framework). -->
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.0" />
     <!-- Blazor WebAssembly (the SampleBlazorClient "server explorer" host, Phase 8 Deliverable B). The
-         DevServer package is build-time only (PrivateAssets=all) and provides the `dotnet run` static
-         host for the WASM app; it adds no runtime dependency. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.0" />
+          DevServer package is build-time only (PrivateAssets=all) and provides the `dotnet run` static
+          host for the WASM app; it adds no runtime dependency. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
+    <!-- JS interop surface (Microsoft.JSInterop) for Iris.WebCrypto. A plain abstraction package
+          (no dependencies) — the .NET side of the browser WebCrypto signing bridge. Referenced only by
+          the Iris.WebCrypto library (and transitively by WASM hosts that consume it). -->
+    <PackageVersion Include="Microsoft.JSInterop" Version="10.0.10" />
     <!-- xUnit test stack. -->
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!-- bUnit: in-process Blazor component rendering for the sample's UI tests (S2 deep-linking asserts
+          the emitted <a href> values). Pinned to the 2.x line (a clean net10.0 target + AngleSharp 1.7.0,
+          no known vulnerability). -->
+    <PackageVersion Include="bunit" Version="2.9.0" />
   </ItemGroup>
 
 </Project>

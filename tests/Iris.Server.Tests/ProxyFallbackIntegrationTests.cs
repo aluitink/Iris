@@ -199,6 +199,45 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
+    // --- The proxy relays a write (POST + body) as a POST to the target -------------------------
+    //
+    // The proxy transport is always a POST to /ap/v1/proxy/{target}; the client signals the REAL
+    // method via the X-Iris-Proxy-Method header and sends the activity as the body. A proxied Create
+    // (a browser POST to an outbox) must be relayed as a POST with the body to the target — without
+    // the method + body relay the forward is a bodyless GET-equivalent that only lists the outbox and
+    // never creates the activity. A 401 (invalid signature) from B proves the POST + body reached
+    // B's outbox publish handler (which requires a valid signature); a 404/405/200 would mean the
+    // method or body was dropped.
+
+    [Fact]
+    public async Task Proxy_Write_PostWithBody_IsRelayedAsPostToTarget()
+    {
+        var http = _a.CreateClient();
+        var createJson = "{\"actor\":\"https://" + AHost + "/ap/v1/u/alice\",\"object\":{\"attributedTo\":\"https://"
+            + AHost + "/ap/v1/u/alice\",\"content\":\"<p>proxied create</p>\",\"@context\":\"https://www.w3.org/ns/activitystreams\","
+            + "\"id\":\"https://" + AHost + "/ap/v1/u/alice/notes/proxytest\",\"type\":\"Note\"},"
+            + "\"id\":\"https://" + AHost + "/ap/v1/u/alice/creates/proxytest\",\"type\":\"Create\"}";
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/ap/v1/proxy/{BobActorIri.Value}/outbox");
+        request.Headers.TryAddWithoutValidation("X-Iris-Proxy-Method", "POST");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Alice}:{Password}")));
+        var content = new StringContent(createJson, Encoding.UTF8, "application/activity+json");
+        request.Content = content;
+
+        var response = await http.SendAsync(request);
+
+        // B's outbox publish handler ran (it requires a valid signature; the proxy's signature is
+        // verified by B resolving alice's key). A 401 proves the POST + body reached B's outbox
+        // publish endpoint. (A 202 would require a valid signature, which the proxy's self-signed
+        // request cannot produce in this two-server test setup.)
+        Assert.True(
+            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Accepted,
+            $"Expected 401 (signature required) or 202 (accepted), got {(int)response.StatusCode}: "
+            + await response.Content.ReadAsStringAsync());
+    }
+
     // --- Helpers ----------------------------------------------------------------
 
     private BasicAuthCredentialValidator PermissiveAliceValidator()

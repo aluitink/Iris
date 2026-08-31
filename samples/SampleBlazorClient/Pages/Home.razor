@@ -24,9 +24,15 @@
         <input id="password" type="password" @bind="Password" placeholder="iris-sample" />
 
         <label for="base">Base URL (what the browser dials)</label>
-        <input id="base" type="url" @bind="BaseUrl" placeholder="http://localhost:5000" />
+        <input id="base" type="url" @bind="BaseUrl" placeholder="https://iris.luit.ink" />
+        <p class="muted">
+            The WebFinger dial uses the address's host + scheme (default <code>https</code>); the Base
+            URL is the actor/community base for reads and writes. For the public instance use
+            <code>alice@iris.luit.ink</code> + <code>https://iris.luit.ink</code>; for the local
+            instance use <code>alice@localhost</code> + <code>http://localhost:8081</code>.
+        </p>
 
-        <button @onclick="LogOnAsync" disabled="Busy">Log on</button>
+        <button @onclick="LogOnAsync" disabled="@(Busy)">Log on</button>
         @if (Busy)
         {
             <span class="muted">Logging on…</span>
@@ -44,14 +50,14 @@
             and redirects back to this app's <code>/callback</code> route with a one-time code, which the
             app exchanges for a Bearer token and uses to log on (no password).
         </p>
-        <button @onclick="LogOnWithOAuth2Async" disabled="Busy">Log on with OAuth2</button>
+        <button @onclick="LogOnWithOAuth2Async" disabled="@(Busy)">Log on with OAuth2</button>
     </div>
 }
 else
 {
     <div class="card">
         <h2>Logged on</h2>
-        <p>Actor: <code>@Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value</code></p>
+        <p>Actor: <code>@(Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value)</code></p>
         <p class="muted">Dialing <code>@Session.DialBaseUri</code></p>
         <p class="muted">
             The explorer screens (instance overview, actors, actor detail, object view, community,
@@ -76,7 +82,7 @@ else
                         @if (SwitchTarget is not null && SwitchTarget == recent)
                         {
                             <input class="inline" type="password" @bind="SwitchPassword" placeholder="password" />
-                            <button @onclick="() => SwitchAsync(recent)" disabled="Busy">Switch</button>
+                            <button @onclick="() => SwitchAsync(recent)" disabled="@(Busy)">Switch</button>
                         }
                         else
                         {
@@ -118,9 +124,9 @@ else
     [Inject]
     private IJSRuntime JS { get; set; } = default!;
 
-    private string Address { get; set; } = "alice@localhost";
+    private string Address { get; set; } = "alice@iris.luit.ink";
     private string Password { get; set; } = "iris-sample";
-    private string BaseUrl { get; set; } = "http://localhost:5000";
+    private string BaseUrl { get; set; } = "https://iris.luit.ink";
     private string? Error { get; set; }
     private bool Busy { get; set; }
     private int FeedCount { get; set; } = -1;
@@ -401,7 +407,8 @@ else
     {
         try
         {
-            var communityIri = new Iri($"{Session.DialBaseUri}/ap/v1/c/iris");
+            var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+            var communityIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/c/iris");
             var count = 0;
             await foreach (var _ in Session.GetClient().GetCommunityFeedAsync(communityIri))
             {

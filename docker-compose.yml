@@ -37,9 +37,20 @@ services:
     container_name: iris-a
     hostname: iris-a
     environment:
+      # The instance always listens on http://+:8080 (Iris__HostName / Iris__Port / Iris__Https are
+      # the internal bind + legacy advertised defaults). The *advertised* actor/community IRIs come
+      # from .env via Iris__Advertise*: set IRIS_A_HOST/IRIS_A_HTTPS/IRIS_A_PORT to expose the
+      # instance under a public hostname (e.g. iris-dev1.luit.ink over https, port 443) so a browser
+      # outside the Docker network can reach the WebFinger-resolved IRIs through the reverse proxy.
       Iris__HostName: iris-a
       Iris__Port: "8080"
       Iris__Https: "false"
+      Iris__AdvertiseHost: ${IRIS_A_HOST:-iris-a}
+      Iris__AdvertisePort: "${IRIS_A_PORT:-8080}"
+      Iris__AdvertiseHttps: "${IRIS_A_HTTPS:-false}"
+      # The WASM explorer dials the instance cross-origin; allow its origins (local UI + any public
+      # proxy origins). Comma-separated.
+      Iris__CorsOrigins: ${IRIS_CORS_ORIGINS:-http://localhost:8090}
       Iris__Actor: alice
       # The peer (iris-b) in-network base: lets iris-a resolve iris-b's actor key over the network
       # (S10 signed cross-container federation + proxy fallback).
@@ -70,9 +81,17 @@ services:
     container_name: iris-b
     hostname: iris-b
     environment:
+      # The instance always listens on http://+:8080; the *advertised* IRIs come from .env via
+      # Iris__Advertise* (set IRIS_B_HOST/IRIS_B_HTTPS/IRIS_B_PORT for a public hostname).
       Iris__HostName: iris-b
       Iris__Port: "8080"
       Iris__Https: "false"
+      Iris__AdvertiseHost: ${IRIS_B_HOST:-iris-b}
+      Iris__AdvertisePort: "${IRIS_B_PORT:-8080}"
+      Iris__AdvertiseHttps: "${IRIS_B_HTTPS:-false}"
+      # The WASM explorer dials the instance cross-origin; allow its origins (local UI + any public
+      # proxy origins). Comma-separated.
+      Iris__CorsOrigins: ${IRIS_CORS_ORIGINS:-http://localhost:8090}
       Iris__Actor: alice
       # The peer (iris-a) in-network base: lets iris-b resolve iris-a's actor key over the network
       # (S10 signed cross-container federation + proxy fallback).
@@ -101,6 +120,10 @@ services:
     hostname: iris-ui
     ports:
       - "8090:8090"
+      # The public reverse proxy (iris.luit.ink) forwards https → this host-published port, so the
+      # explorer UI is reachable at https://iris.luit.ink for the browser to log on + compose over
+      # https (the local 8090 mapping stays for the in-network smoke test).
+      - "8088:8090"
     healthcheck:
       # A TCP connect to the static host's port (the aspnet base image has no curl/wget); a successful
       # connect means the Kestrel web server is listening (the same liveness probe as iris-a/iris-b).
