@@ -387,6 +387,14 @@ public static class ActivityPubServerExtensions
         // that peer are skipped (dead-lettered immediately, no network call) until the peer recovers.
         // The default is 0 (disabled — the worker delivers with per-job retry only).
         services.TryAddSingleton<DeliveryCircuitBreakerOptions>(_ => new DeliveryCircuitBreakerOptions());
+        // Phase 17.4: per-peer inbound-delivery rate limit. A host may rebind
+        // InboundRateLimitOptions (PerPeerMaxRequestsPerMinute > 0) to bound how many signed inbox
+        // POSTs the server accepts from a single peer (keyed by the host of the signer's keyId) per
+        // sliding minute; a peer that exceeds the limit receives 429 Too Many Requests (fail-fast).
+        // The default is 0 (disabled — the server accepts inbox POSTs as fast as the pipeline allows).
+        services.TryAddSingleton<InboundRateLimitOptions>(_ => new InboundRateLimitOptions());
+        services.TryAddSingleton<IInboundRateLimiter>(sp =>
+            CreateInboundRateLimiter(sp.GetRequiredService<IOptions<InboundRateLimitOptions>>().Value));
         // Phase 17.1: graceful shutdown. Registered BEFORE the DeliveryWorker so its StopAsync (which
         // completes the queue) runs before the worker's BackgroundService.StopAsync (which cancels the
         // worker's stopping token and awaits ExecuteAsync). Completing the queue first lets the worker's
@@ -1206,13 +1214,15 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
-    /// existence check, body read + deserialize + cast, and inbox-processor dispatch.
+    /// existence check, inbound rate-limit check (Phase 17.4), body read + deserialize + cast, and
+    /// inbox-processor dispatch.
     /// </summary>
     private static async Task<IResult> HandleInboxPostAsync(
         HttpContext context,
         Iri recipientIri,
         bool exists,
         IInboxProcessor inboxProcessor,
+        IInboundRateLimiter rateLimiter,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1224,6 +1234,19 @@ public static class ActivityPubServerExtensions
         if (!exists)
         {
             return Results.NotFound();
+        }
+
+        // Phase 17.4: per-peer inbound rate limit. The peer is keyed by the host of the signer's
+        // keyId (the sender host). A peer that exceeds its per-minute budget receives 429 Too Many
+        // Requests (fail-fast; the request is not queued or retried). A disabled limiter (0 = disabled)
+        // permits all requests.
+        var senderHost = outcome.KeyId.Uri.IsAbsoluteUri
+            ? outcome.KeyId.Uri.Host.ToLowerInvariant()
+            : outcome.KeyId.Value;
+        if (!rateLimiter.TryAcquire(senderHost, ct))
+        {
+            context.Response.Headers.Append("Retry-After", "60");
+            return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
         context.Request.Body.Position = 0;
@@ -1263,6 +1286,7 @@ public static class ActivityPubServerExtensions
         string handle,
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
+        IInboundRateLimiter rateLimiter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -1272,7 +1296,7 @@ public static class ActivityPubServerExtensions
         var actorIri = BuildActorIri(baseUrl, handle);
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3128,6 +3152,7 @@ public static class ActivityPubServerExtensions
         string name,
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
+        IInboundRateLimiter rateLimiter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -3137,7 +3162,7 @@ public static class ActivityPubServerExtensions
         var communityIri = BuildCommunityIri(baseUrl, name);
 
         var exists = await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -3414,6 +3439,14 @@ public static class ActivityPubServerExtensions
     /// </summary>
     private static IDeliveryCircuitBreaker CreateDeliveryCircuitBreaker(DeliveryCircuitBreakerOptions options)
         => new PerPeerDeliveryCircuitBreaker(options.FailureThreshold, options.OpenDuration);
+
+    /// <summary>
+    /// Creates the per-peer inbound rate limiter from its options (Phase 17.4). When <see
+    /// cref="InboundRateLimitOptions.PerPeerMaxRequestsPerMinute"/> is 0 the returned limiter is a
+    /// no-op (disabled) so the default behavior is unchanged.
+    /// </summary>
+    private static IInboundRateLimiter CreateInboundRateLimiter(InboundRateLimitOptions options)
+        => new SlidingWindowInboundRateLimiter(options.PerPeerMaxRequestsPerMinute, TimeSpan.FromMinutes(1));
 
     /// <summary>
     /// Replaces the default in-memory delivery queue and dead-letter store with the persistent,
