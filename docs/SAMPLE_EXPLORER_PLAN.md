@@ -222,10 +222,11 @@ re-read observes the updated page).
 > In-process test: subscribe an actor to a relay → assert the relay is in the actor's relays collection;
 > unsubscribe → assert it is gone.
 
-### S5 — Home page: show the community feed, not just the count
+### S5 — Home page: show the community feed, not just the count — **DONE (change [118](changes/118-s5-home-community-feed.md))**
 
-`Home.razor` calls `GetCommunityFeedAsync` but discards the items, showing only `FeedCount`. Render the
-actual recent items (via `<ObjectView>`, deep-linked per S2) so the landing page shows real content.
+`Home.razor` called `GetCommunityFeedAsync` but discarded the items, showing only `FeedCount`. Now the
+community card renders the actual recent items (via the deep-linked `<ObjectView>`, per S2; capped by
+`CollectionQuery.Limit` so the landing page stays light).
 
 ### S6 — Actor detail: show the logged-on actor's own moderation
 
@@ -276,7 +277,9 @@ lands a change doc in [changes/](changes/README.md). Ordered so the stack stays 
   Fixed the client to thread `BypassCache` into the GET as `?refresh=true` (the server re-renders the cached
   collection page only on `?refresh=true`, so a post-write re-read observed a stale page). In-process tests
   on subscribe/unsubscribe.
-- [ ] **S5 — Home page shows the community feed items** (not just the count).
+- [x] **S5 — Home page shows the community feed items** (not just the count). **DONE (change
+  [118](changes/118-s5-home-community-feed.md)).** `Home`'s community card now renders the recent items via
+  deep-linked `<ObjectView>` (capped by `CollectionQuery.Limit`), not just `FeedCount`.
 - [ ] **S6 — Actor detail shows the logged-on actor's own moderation** (`MutesOf`/`BlocksOf`/`FlagsOf`).
 - [ ] **S7 — Compose audience** (`PostNoteAsync`'s `to` parameter).
 - [ ] **S8 — Cleanup** dead OAuth2-state statics + wire the `InstanceBaseUrls` default.

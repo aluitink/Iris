@@ -1,6 +1,8 @@
 @page "/"
 @using Iris.Client
+@using Iris.Client.Collections
 @using Iris.Samples.SampleBlazorClient.Explorer
+@using KristofferStrube.ActivityStreams
 @using Microsoft.AspNetCore.Components
 
 <PageTitle>Iris · server explorer</PageTitle>
@@ -98,17 +100,25 @@ else
         </div>
     }
 
-    @if (FeedCount >= 0)
+    @if (FeedItems is not null)
     {
         <div class="card">
             <h2>Community feed</h2>
-            @if (FeedCount > 0)
+            @if (FeedItems.Count == 0)
             {
-                <p class="muted">Fetched @FeedCount item(s) from the seeded <code>iris</code> community.</p>
+                <p class="muted">No feed items (is the seeded <code>iris</code> community empty?).</p>
             }
             else
             {
-                <p class="muted">No feed items (is the community seeded?).</p>
+                <p class="muted">
+                    Recent items from the seeded <code>iris</code> community (newest first, deep-linked).
+                </p>
+                <ul class="object-list">
+                    @foreach (var item in FeedItems)
+                    {
+                        <li><ObjectView Item="item" /></li>
+                    }
+                </ul>
             }
         </div>
     }
@@ -129,9 +139,21 @@ else
     private string BaseUrl { get; set; } = "https://iris.luit.ink";
     private string? Error { get; set; }
     private bool Busy { get; set; }
-    private int FeedCount { get; set; } = -1;
+
+    /// <summary>
+    /// The recent community-feed items to render on the landing page (S5). Null = not yet loaded; an
+    /// empty list = the community is empty (or the feed could not be read).
+    /// </summary>
+    private List<IObjectOrLink>? FeedItems { get; set; }
+
     private RecentInstance? SwitchTarget { get; set; }
     private string SwitchPassword { get; set; } = "iris-sample";
+
+    /// <summary>
+    /// The number of community-feed items rendered on the landing page (a small cap so the landing page
+    /// stays light; the full feed is on the <c>Feed</c> page).
+    /// </summary>
+    private const int FeedPageSize = 5;
 
     /// <summary>
     /// The OAuth2 <c>state</c> the app generated for the in-flight authorization request. Held in a
@@ -365,7 +387,7 @@ else
     private void LogOut()
     {
         Session.LogOut();
-        FeedCount = -1;
+        FeedItems = null;
         SwitchTarget = null;
         StateHasChanged();
     }
@@ -409,17 +431,19 @@ else
         {
             var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
             var communityIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/c/iris");
-            var count = 0;
-            await foreach (var _ in Session.GetClient().GetCommunityFeedAsync(communityIri))
+            var items = new List<IObjectOrLink>();
+            // Cap the landing page at FeedPageSize items (the full feed is on the /feed page).
+            await foreach (var item in Session.GetClient().GetCommunityFeedAsync(
+                communityIri, new CollectionQuery(Limit: FeedPageSize)))
             {
-                count++;
+                items.Add(item);
             }
 
-            FeedCount = count;
+            FeedItems = items;
         }
         catch
         {
-            FeedCount = -1;
+            FeedItems = [];
         }
     }
 }
