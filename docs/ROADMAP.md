@@ -23,7 +23,7 @@ This is the short working roadmap. Detailed phase notes, change docs, and design
 | 13 — Live Federation Compatibility | 🚧 in progress |
 | 14+ — Future Work | 📋 planned |
 | Sample Explorer — 2nd round | ✅ complete |
-| Sample Explorer — 3rd round (S9+) | 🚧 in progress |
+| Sample Explorer — 3rd round (S9–S10) | ✅ complete |
 
 ## Completed work
 
@@ -32,7 +32,7 @@ Phases -1 through 12 are complete, including the core federation layer, client/s
 ## Remaining work
 
 - [x] **Sample Explorer — second-round enhancement** — closed the library-coverage gap in the Blazor WASM explorer + fixed the broken compose write path. S1–S8 done (changes 114–122); all §6 acceptance criteria verified live (change [123](changes/123-sample-explorer-live-browser-acceptance.md)). Full plan: [SAMPLE_EXPLORER_PLAN.md](SAMPLE_EXPLORER_PLAN.md).
-- [ ] **Sample Explorer — 3rd round (S9+)** — continue closing the §3.1 client-method gaps that have a clean UI home. **S9 done (change [124](changes/124-s9-typed-actor-fetch.md))**: `ActorDetail` now uses the **typed** `GetActorAsync` (last §3.1 method with a non-paginated UI home); surfaces its null contract (non-actor IRI → "not an actor"). Remaining §3.1 gaps are intentional: `GetFollowFeedAsync` (typed) can't carry the `next`-link the paginated Feed page needs — the page keeps the paged `GetCollectionAsync` (S3); `DeliverAsync` (raw inbox escape hatch) is a follow-up screen.
+- [x] **Sample Explorer — 3rd round (S9+)** — closed the §3.1 client-method gaps that have a clean UI home. **S9 (change [124](changes/124-s9-typed-actor-fetch.md))**: `ActorDetail` uses the **typed** `GetActorAsync` + surfaces its null contract. **S10 (change [125](changes/125-s10-raw-delivery-screen.md))**: new `/deliver` page drives the raw `DeliverAsync` escape hatch directly (build a `Follow`, show its signed JSON, POST to the target's inbox; 3 tests). §3.1 is now fully closed in the UI (`GetFollowFeedAsync` stays client-tested — the typed method can't carry the `next`-link the paginated Feed page needs).
 - [x] **Priority: troubleshoot & fix the docker-compose sample UI** (`iris-ui` / `SampleBlazorClient` Blazor WASM server-explorer) — verified end-to-end against the compose stack with Playwright (2026-08-30): logon, actor directory/detail, note view, compose/post, follow/unfollow, community, like, and instance switching all work; `IrisStaticHost` SPA fallback fixed. (Note: the compose *post* was confirmed to return 200 via the proxy fallback but the note was not actually created — that is now the S1 item above.)
 - [ ] Phase 13.5–13.10: stand up real partner instances and verify interop with Mastodon, Lemmy, and Threads.
 - [ ] Phase 14: live-interop remediation and gap fixes.
