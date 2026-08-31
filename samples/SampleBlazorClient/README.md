@@ -92,7 +92,7 @@ Log on (`Pages/Home.razor`) takes three fields:
 - **Password** — the Basic-auth password for that actor.
 - **Base URL (what the browser dials)** — the browser-reachable base the client connects to.
 
-The base URL and the IRI host are **separate** (SAMPLE_PLAN §4.4, [change 074](../../docs/changes/074-base-url-vs-iri-host-config.md)):
+The base URL and the IRI host are **separate** ([DEPLOYMENT — Routable addresses](../../docs/reference/DEPLOYMENT.md#routable-addresses-the-docker-only-routable-rule), [change 074](../../docs/changes/074-base-url-vs-iri-host-config.md)):
 
 - The **advertised IRI host** is the address's host — for a local instance that is its Docker service name
   (`iris-a`), which is only resolvable *inside* the `iris-net` network. A browser on the host cannot dial it
@@ -137,7 +137,7 @@ instance cannot validate — falls back through the home proxy, which re-signs w
 - `scripts/docker-smoke-test.sh` — the Docker smoke path boots the three-service stack and asserts, over
   genuine sockets, that the UI serves its index page and that a **signed cross-container Follow** lands on
   the remote instance (plus the proxy fallback). The browser behaviors above are the manual-exploration
-  checklist the smoke test cannot click (SAMPLE_PLAN §6.2). See
+  checklist the smoke test cannot click ([INTEROP_TEST_HARNESS §4a](../../docs/reference/INTEROP_TEST_HARNESS.md#4a-standing-manual-interop-checklist-the-browser-path-no-test-can-drive)). See
   [DEPLOYMENT](../../docs/reference/DEPLOYMENT.md).
 
 ## Manual exploration checklist (the browser path the smoke test cannot drive)

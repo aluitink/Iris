@@ -228,6 +228,29 @@ Phase 9 produces, **without contacting any live instance**:
   COMPATIBILITY_MATRIX.md §5's six gaps + the Threads/Lemmy unknowns into tracked items, and the
   harness's `Gap`-scenario assertions are how those gaps get confirmed live in Phase 13.
 
+## 4a. Standing manual interop checklist (the browser path no test can drive)
+
+A short, repeatable checklist a human (or a later automation) runs against the live compose stack —
+the interop bug-hunting routine between live-interop runs. With the stack up (`iris-a` → `:8081`,
+`iris-b` → `:8082`, `iris-ui` → `:8090`) and a browser at `http://localhost:8090`:
+
+1. **Log on** to `alice@iris-a` (base `http://localhost:8081`, password `iris-sample`); the app resolves
+   the address by WebFinger and logs on.
+2. **Explore:** open **Instance** (nodeinfo), **Actors** (directory), an **Actor** (outbox + moderation
+   counts), an **Object** (a note + its reply thread), and the **Community** (feed + members).
+3. **Switch instance** to `iris-b` (`alice@iris-b`, base `http://localhost:8082`) from the recent-instances
+   switcher; confirm the actor/community data is iris-b's.
+4. **Write cross-instance:** on `iris-a`'s alice, **follow** `iris-b`'s alice (the actor's IRI carries the
+   `iris-b` host); it is signed, delivered to iris-b, validated, and recorded — visible in iris-b's public
+   followers. **Like** and **post/reply** likewise.
+5. **Moderate:** **mute** (local), then **block** / **flag** (signed, federated) on an actor; confirm the
+   counts update and the edges are recorded.
+6. **External instance (optional):** log on to a non-local instance by its WebFinger address + password + a
+   browser-reachable base URL; confirm the read + follow + proxy-fallback paths work against it.
+
+`scripts/docker-smoke-test.sh` covers steps 1–4 at the **HTTP/network boundary** (it cannot click the
+browser); this checklist covers the browser behaviors.
+
 ## 5. Open decision recorded
 
 **Decision — the live suite is a separate, runtime-gated project, not a trait in `Iris.Server.Tests`.**

@@ -116,7 +116,7 @@ by the smoke test.
 
 ## Routable addresses (the "Docker-only routable" rule)
 
-The deployment keeps **advertised IRIs** and **browser dial addresses** separate (SAMPLE_PLAN §4.4):
+The deployment keeps **advertised IRIs** and **browser dial addresses** separate:
 
 - **Advertised IRI host** = the Docker service name (`iris-a` / `iris-b`). This is what appears in the
   actor/community IRIs inside documents (`http://iris-a:8080/ap/v1/u/alice`). It is only resolvable
@@ -124,8 +124,14 @@ The deployment keeps **advertised IRIs** and **browser dial addresses** separate
   directly.
 - **Browser dial address** = a host-published port (`http://localhost:8081` / `http://localhost:8082`).
   This is what the explorer (and any host-side tool) actually dials. The `InstanceBaseUrls` surface
-  (SAMPLE_PLAN §4.4) maps advertised host → browser base URL so the explorer pre-fills the dial base
-  for a known local instance; the user enters only the WebFinger address (`alice@iris-a`) + password.
+  maps advertised host → browser base URL so the explorer pre-fills the dial base for a known local
+  instance; the user enters only the WebFinger address (`alice@iris-a`) + password.
+- **Targets the browser can't reach** (an external instance behind no published port) fall back through
+  the home instance's **proxy**, which re-signs the request with the acting actor's key — this is the
+  instance→external path.
+
+> The base-URL/IRI-host separation is the key to keeping the sample **Docker-only routable** while still
+> letting a browser explore it, and is the place most likely to surface interop/config bugs.
 
 So the three services are reachable from the host at:
 

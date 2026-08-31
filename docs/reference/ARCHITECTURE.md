@@ -106,8 +106,8 @@ A foundational ActivityPub fact that the whole library is built on:
 > (`targetId.InboxOf()`) — a client→recipient-inbox hop that violates the model above. They must instead
 > POST to the **acting actor's own outbox**, and the **server** must deliver the activity to the
 > target's inbox. The write surface must therefore accept a **POST to an outbox** (an "outbox publish"),
-> not only a POST to an inbox. See [SAMPLE_PLAN §4.3a](../SAMPLE_PLAN.md#43a-delivery-model-the-invariant-to-hold-across-every-write)
-> and the Phase 8 S7 status.
+> not only a POST to an inbox. The full invariant is in [Delivery model](#delivery-model-the-outbox-is-the-write-surface)
+> above; the Phase 8 S7 slice that built the write surface is [change 077](../changes/077-delivery-model-outbox-write-surface.md).
 
 ### Proxied Request Fallback (detailed flow)
 

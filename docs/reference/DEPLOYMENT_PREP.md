@@ -24,6 +24,20 @@ operator must provide:
 | **A reverse proxy** | A TLS-terminating proxy in front of Iris (e.g. Caddy, nginx, or a cloud load balancer). | Iris itself (Kestrel) binds the internal HTTP port; the proxy handles the public `:443` → internal `:8080` mapping, TLS termination, and (optionally) rate limiting / WAF. |
 | **The Iris base URI** | `https://<FQDN>` (no trailing slash, no port — the port is stripped by the proxy). | Set as `ActivityPubServerOptions.BaseUri`; Iris uses it to build absolute IRIs for local actors and in WebFinger. |
 
+### 1.1a Dev FQDNs (local env only — never committed)
+
+For **instance→external-instance** testing, a developer may have private dev FQDNs. Per project policy
+these are **local environment only**:
+
+- They are **not** in the compose file, **not** in any README, and **not** in any committed config.
+- The sample explorer's **base-URL input** is the injection point: the operator supplies the external
+  instance's base URL + WebFinger address **at runtime** (in the browser), and the explorer's
+  WebFinger-discovery + proxy-fallback paths reach it. A local, **git-ignored** file (e.g.
+  `samples/SampleBlazorClient/.env.local`) may hold them for convenience; committed defaults point only
+  at the Docker service names / host-published ports.
+- Docs describe the **mechanism** with placeholders, never a real dev FQDN. A code-review note (plus the
+  `.gitignore`) guards against committing one.
+
 ### 1.2 The exact Iris config surface
 
 A production Iris host configures the instance through **`ActivityPubServerOptions`**
