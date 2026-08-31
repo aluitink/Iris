@@ -65,7 +65,7 @@ Iris.slnx
 
 ## Current Status
 
-Phases -1 through 12, 15, 16, 17, and 18 are complete, as are the Sample Explorer enhancement rounds (all rounds live-browser-verified). The current work is the **Phase 19 production-style manual integration-testing program** (phases 19.0–19.8 in [docs/ROADMAP.md](docs/ROADMAP.md)): the evaluation environment (durable volumes + public FQDNs), then live manual Playwright-driven testing of the sample server/UI against the real network — the two-instance loop/echo network, every user collection, the architectural client→server expectations, community management, UI navigability, object-shape conformance against Mastodon as the reference, the @RayvenMX@mastodon.world account, and a Threads (@mosseri@threads.net) probe.
+Phases -1 through 12, 15, 16, 17, and 18 are complete, as are the Sample Explorer enhancement rounds (all rounds live-browser-verified). **Phase 19.0 (evaluation environment) is complete**: durable volumes + idempotent seeding, FQDN/TLS/CORS audit, test-account readiness, and the [LIVE_EVALUATION_CHECKLIST.md](docs/reference/LIVE_EVALUATION_CHECKLIST.md) (the standing manual checklist for Playwright sessions). Next: **Phase 19.1** (live interop verification — the Iris↔Iris baseline, then follow/post/signature/pagination/community/discovery scenarios against `@RayvenMX@mastodon.world`).
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).
