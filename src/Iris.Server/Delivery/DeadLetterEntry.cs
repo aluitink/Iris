@@ -53,4 +53,8 @@ public enum DeadLetterFailureKind
     /// <summary>A network/transport error (connection failed, timeout, etc.; the exception message is recorded in
     /// <see cref="DeadLetterEntry.FailureDetail"/>).</summary>
     TransportError = 1,
+
+    /// <summary>The per-peer circuit breaker was open (Phase 17.3): the delivery was skipped without a network call
+    /// because the peer had too many consecutive failures (the detail records "Circuit breaker open").</summary>
+    CircuitOpen = 2,
 }

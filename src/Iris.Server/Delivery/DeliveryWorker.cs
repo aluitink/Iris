@@ -52,6 +52,23 @@ namespace Iris.Server.Delivery;
 /// re-delivered activity by its <c>Id</c> (C-07). This follows the error-handling convention (log, don't
 /// throw) — a delivery failure never crashes the worker.
 /// </remarks>
+/// <remarks>
+/// <strong>Retry hardening (Phase 17.3):</strong> a 4xx response (other than 429) is treated as
+/// <em>permanent</em> — the job is dead-lettered immediately without exhausting the retry budget (a
+/// bad inbox or auth failure will not succeed on retry). A <c>Retry-After</c> response header (429/503)
+/// is honored: when the server tells the worker how long to wait before retrying, the worker uses that
+/// delay (in place of the exponential backoff) when it is longer.
+/// </remarks>
+/// <remarks>
+/// <strong>Circuit breaker (Phase 17.3):</strong> when a per-peer <see cref="IDeliveryCircuitBreaker"/>
+/// is configured, the worker checks it before each delivery. If the circuit for the job's inbox host
+/// is open (the peer has accumulated too many consecutive failures), the delivery is skipped and the
+/// job is dead-lettered immediately (without a network call) — this stops the worker from hammering a
+/// downed peer with a stream of doomed requests. Successful deliveries reset the peer's failure count;
+/// failed deliveries increment it. When the count reaches the threshold the circuit opens for
+/// <see cref="DeliveryCircuitBreakerOptions.OpenDuration"/>; after that it transitions to half-open and
+/// allows a single probe (a success closes the circuit, a failure re-opens it).
+/// </remarks>
 public sealed class DeliveryWorker : BackgroundService
 {
     private readonly IDeliveryQueue _queue;
@@ -64,6 +81,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly int _maxConcurrentDeliveries;
     private readonly IDeliveryRateLimiter? _rateLimiter;
     private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
+    private readonly IDeliveryCircuitBreaker? _circuitBreaker;
 
     /// <summary>
     /// Initializes a new <see cref="DeliveryWorker"/>.
@@ -83,7 +101,7 @@ public sealed class DeliveryWorker : BackgroundService
         IOptions<ActivityPubServerOptions> options,
         ILogger<DeliveryWorker> logger)
         : this(queue, clientFactory, transportFactory, options, logger,
-            new DeliveryRetryOptions(), null, 1, null, null)
+            new DeliveryRetryOptions(), null, 1, null, null, null)
     {
     }
 
@@ -109,7 +127,7 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger,
         DeliveryRetryOptions? retryOptions,
         IDeliveryDeadLetterStore? deadLetter)
-        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1, null, null)
+        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter, 1, null, null, null)
     {
     }
 
@@ -134,6 +152,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// rate limiting (the worker delivers as fast as the concurrency cap allows).</param>
     /// <param name="metrics">The delivery metrics (Phase 17.2). Null disables metric recording (the
     /// worker delivers exactly as before).</param>
+    /// <param name="circuitBreaker">The per-peer outbound-delivery circuit breaker (Phase 17.3). Null
+    /// disables circuit breaking (the worker delivers with per-job retry only).</param>
     /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
     public DeliveryWorker(
         IDeliveryQueue queue,
@@ -145,7 +165,8 @@ public sealed class DeliveryWorker : BackgroundService
         IDeliveryDeadLetterStore? deadLetter,
         int maxConcurrentDeliveries,
         IDeliveryRateLimiter? rateLimiter,
-        Iris.Server.Observability.IrisDeliveryMetrics? metrics = null)
+        Iris.Server.Observability.IrisDeliveryMetrics? metrics = null,
+        IDeliveryCircuitBreaker? circuitBreaker = null)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -163,6 +184,7 @@ public sealed class DeliveryWorker : BackgroundService
         _maxConcurrentDeliveries = Math.Max(1, maxConcurrentDeliveries);
         _rateLimiter = rateLimiter;
         _metrics = metrics;
+        _circuitBreaker = circuitBreaker;
     }
 
     /// <inheritdoc/>
@@ -262,6 +284,26 @@ public sealed class DeliveryWorker : BackgroundService
     {
         try
         {
+            // Phase 17.3: before sending, check the per-peer circuit breaker. When the circuit for this
+            // job's inbox host is open, the delivery is skipped and the job is dead-lettered immediately
+            // (without a network call) — this stops the worker from hammering a downed peer with a
+            // stream of doomed requests. A disabled breaker (null or failureThreshold == 0) returns
+            // true immediately.
+            if (_circuitBreaker is { } breaker)
+            {
+                var permitted = await breaker.TryAcquireAsync(job.InboxIri, ct).ConfigureAwait(false);
+                if (!permitted)
+                {
+                    _logger.LogWarning(
+                        "Circuit breaker is open for {InboxHost}; dead-lettering activity {ActivityId} without a network call.",
+                        job.InboxIri,
+                        job.Activity.Id);
+                    await DeadLetterAsync(job, DeadLetterFailureKind.CircuitOpen, "Circuit breaker open", 0, ct)
+                        .ConfigureAwait(false);
+                    return;
+                }
+            }
+
             // Phase 16.3: before sending, wait until the per-peer rate limiter permits a delivery to this
             // job's inbox host. The wait happens while holding a concurrency slot (acquired by the caller
             // before starting this task), so a rate-limited peer's blocking wait never stalls the single
@@ -316,14 +358,19 @@ public sealed class DeliveryWorker : BackgroundService
         {
             DeadLetterFailureKind kind;
             string? detail;
+            bool isPermanent; // Phase 17.3: 4xx responses are permanent — dead-letter immediately, no retry.
 
             var activityType = job.Activity.GetType().Name;
             try
             {
-                var statusCode = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
+                var (statusCode, retryAfter) = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
                 if (statusCode is >= 200 and < 300)
                 {
                     _metrics?.RecordDelivered(activityType);
+                    if (_circuitBreaker is { } breakerOk)
+                    {
+                        await breakerOk.RecordSuccessAsync(job.InboxIri, ct).ConfigureAwait(false);
+                    }
                     _logger.LogDebug(
                         "Delivered activity {ActivityId} to {Inbox} ({Status}) on attempt {Attempt}",
                         job.Activity.Id,
@@ -333,7 +380,33 @@ public sealed class DeliveryWorker : BackgroundService
                     return; // success — no retry
                 }
 
+                // Phase 17.3: distinguish 4xx (permanent — bad inbox, auth failure, etc.) from 5xx/429
+                // (transient — server error, rate limit). A 4xx response will not succeed on retry, so
+                // dead-letter immediately without exhausting the retry budget.
+                isPermanent = statusCode >= 400 && statusCode < 500 && statusCode != 429;
+
+                if (isPermanent)
+                {
+                    _metrics?.RecordAttemptFailed(activityType, DeadLetterFailureKind.NonSuccessStatus);
+                    if (_circuitBreaker is { } breakerPerm)
+                    {
+                        await breakerPerm.RecordFailureAsync(job.InboxIri, ct).ConfigureAwait(false);
+                    }
+                    _logger.LogWarning(
+                        "Delivery of activity {ActivityId} to {Inbox} returned permanent status {Status}; dead-lettering immediately (no retry).",
+                        job.Activity.Id,
+                        job.InboxIri,
+                        statusCode);
+                    await DeadLetterAsync(job, DeadLetterFailureKind.NonSuccessStatus, statusCode.ToString(), attempt, ct)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
                 _metrics?.RecordAttemptFailed(activityType, DeadLetterFailureKind.NonSuccessStatus);
+                if (_circuitBreaker is { } breakerFail)
+                {
+                    await breakerFail.RecordFailureAsync(job.InboxIri, ct).ConfigureAwait(false);
+                }
                 _logger.LogWarning(
                     "Delivery of activity {ActivityId} to {Inbox} returned non-2xx status {Status} on attempt {Attempt}/{MaxAttempts}",
                     job.Activity.Id,
@@ -343,6 +416,14 @@ public sealed class DeliveryWorker : BackgroundService
                     maxAttempts);
                 kind = DeadLetterFailureKind.NonSuccessStatus;
                 detail = statusCode.ToString();
+
+                // Phase 17.3: honor Retry-After on 429/503 responses (the server tells us how long to
+                // wait before retrying). Use it in place of the exponential backoff when it is longer.
+                if (retryAfter is { } ra && ra > BackoffDelay(attempt))
+                {
+                    await Task.Delay(ra, ct).ConfigureAwait(false);
+                    continue;
+                }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -351,6 +432,10 @@ public sealed class DeliveryWorker : BackgroundService
             catch (Exception ex)
             {
                 _metrics?.RecordAttemptFailed(activityType, DeadLetterFailureKind.TransportError);
+                if (_circuitBreaker is { } breakerTransport)
+                {
+                    await breakerTransport.RecordFailureAsync(job.InboxIri, ct).ConfigureAwait(false);
+                }
                 // Log, don't throw: a transport failure is retryable. Never crash the worker over one bad delivery.
                 _logger.LogWarning(
                     ex,
@@ -448,7 +533,13 @@ public sealed class DeliveryWorker : BackgroundService
     /// to the actor's key (overriding the client's default instance-actor identity); when the job has
     /// no acting actor the header is omitted and the client signs as the instance actor.
     /// </summary>
-    private static async Task<int> DeliverAsAsync(IActivityPubClient client, DeliveryJob job, CancellationToken ct)
+    /// <returns>
+    /// A tuple of the response status code and, when the response carries a <c>Retry-After</c> header
+    /// (429/503), the parsed delay. The <c>Retry-After</c> value is <c>null</c> when the header is
+    /// absent or unparseable.
+    /// </returns>
+    private static async Task<(int StatusCode, TimeSpan? RetryAfter)> DeliverAsAsync(
+        IActivityPubClient client, DeliveryJob job, CancellationToken ct)
     {
         var json = ActivityJson.Serialize(job.Activity);
         var body = System.Text.Encoding.UTF8.GetBytes(json);
@@ -465,6 +556,40 @@ public sealed class DeliveryWorker : BackgroundService
         }
 
         using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
-        return (int)response.StatusCode;
+        return ((int)response.StatusCode, ParseRetryAfter(response));
+    }
+
+    /// <summary>
+    /// Parses the <c>Retry-After</c> response header (RFC 9110 §10.2.1): either a delay in seconds
+    /// (e.g. <c>120</c>) or an HTTP-date (e.g. <c>Wed, 21 Oct 2015 07:28:00 GMT</c>). Returns
+    /// <c>null</c> when the header is absent or unparseable.
+    /// </summary>
+    private static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("Retry-After", out var values))
+        {
+            return null;
+        }
+
+        var value = values.FirstOrDefault();
+        if (value is null)
+        {
+            return null;
+        }
+
+        // Form 1: a non-negative integer (delay-seconds).
+        if (int.TryParse(value, out var seconds) && seconds >= 0)
+        {
+            return TimeSpan.FromSeconds(seconds);
+        }
+
+        // Form 2: an HTTP-date (the server tells us when to retry).
+        if (DateTimeOffset.TryParse(value, out var date))
+        {
+            var delta = date - DateTimeOffset.UtcNow;
+            return delta > TimeSpan.Zero ? delta : TimeSpan.Zero;
+        }
+
+        return null; // unparseable — fall back to the exponential backoff
     }
 }

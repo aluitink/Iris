@@ -381,6 +381,12 @@ public static class ActivityPubServerExtensions
         // (PerPeerMaxRequestsPerMinute > 0) to bound how fast the worker sends to a single peer; the
         // default is 0 (disabled — the worker delivers as fast as the concurrency cap allows).
         services.TryAddSingleton<DeliveryRateLimitOptions>(_ => new DeliveryRateLimitOptions());
+        // Phase 17.3: per-peer outbound-delivery circuit breaker. A host may rebind
+        // DeliveryCircuitBreakerOptions (FailureThreshold > 0) to stop the worker from hammering a
+        // downed peer: once a peer accumulates FailureThreshold consecutive failures, deliveries to
+        // that peer are skipped (dead-lettered immediately, no network call) until the peer recovers.
+        // The default is 0 (disabled — the worker delivers with per-job retry only).
+        services.TryAddSingleton<DeliveryCircuitBreakerOptions>(_ => new DeliveryCircuitBreakerOptions());
         // Phase 17.1: graceful shutdown. Registered BEFORE the DeliveryWorker so its StopAsync (which
         // completes the queue) runs before the worker's BackgroundService.StopAsync (which cancels the
         // worker's stopping token and awaits ExecuteAsync). Completing the queue first lets the worker's
@@ -402,7 +408,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
             CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value),
-            sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>()));
+            sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>(),
+            CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value)));
 
         // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered
         // IHealthCheck (IEnumerable<IHealthCheck>) and reports the aggregate status, so a host that wants
@@ -3399,6 +3406,14 @@ public static class ActivityPubServerExtensions
     /// </summary>
     private static IDeliveryRateLimiter CreateDeliveryRateLimiter(DeliveryRateLimitOptions options)
         => new SlidingWindowDeliveryRateLimiter(options.PerPeerMaxRequestsPerMinute, TimeSpan.FromMinutes(1));
+
+    /// <summary>
+    /// Creates the per-peer circuit breaker from its options (Phase 17.3). When <see
+    /// cref="DeliveryCircuitBreakerOptions.FailureThreshold"/> is 0 the returned breaker is a no-op
+    /// (disabled) so the default behavior is unchanged.
+    /// </summary>
+    private static IDeliveryCircuitBreaker CreateDeliveryCircuitBreaker(DeliveryCircuitBreakerOptions options)
+        => new PerPeerDeliveryCircuitBreaker(options.FailureThreshold, options.OpenDuration);
 
     /// <summary>
     /// Replaces the default in-memory delivery queue and dead-letter store with the persistent,

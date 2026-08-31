@@ -53,7 +53,7 @@ public sealed class DeliveryRetryTests
         // 500, 500, then 200: the first two attempts fail, the third succeeds. With MaxAttempts=5 the
         // delivery is eventually delivered and NOT dead-lettered.
         var (worker, queue, deadLetter, handler) = BuildWorker(
-            responses: [HttpStatusCode.BadRequest, HttpStatusCode.BadRequest, HttpStatusCode.OK],
+            responses: [HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError, HttpStatusCode.OK],
             maxAttempts: 5);
 
         await EnqueueAndRunAsync(worker, queue, isDone: () => handler.CallCount == 3);
@@ -71,7 +71,7 @@ public sealed class DeliveryRetryTests
         // Always 500, MaxAttempts=3: all 3 attempts fail, the job is dead-lettered with the attempt
         // count (3) and the failure kind (NonSuccessStatus) + the last status (500).
         var (worker, queue, deadLetter, handler) = BuildWorker(
-            responses: [HttpStatusCode.BadRequest, HttpStatusCode.BadRequest, HttpStatusCode.BadRequest],
+            responses: [HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError],
             maxAttempts: 3);
 
         await EnqueueAndRunAsync(worker, queue, isDone: () => handler.CallCount == 3 && deadLetter!.Count == 1);
@@ -82,7 +82,7 @@ public sealed class DeliveryRetryTests
         var entry = (await deadLetter!.ListAsync()).Single();
         Assert.Equal(3, entry.Attempts);
         Assert.Equal(DeadLetterFailureKind.NonSuccessStatus, entry.FailureKind);
-        Assert.Equal("400", entry.FailureDetail);
+        Assert.Equal("500", entry.FailureDetail);
         Assert.Equal(InboxIri, entry.InboxIri.Value);
         Assert.Equal(0, queue.Count); // the job left the queue (dead-lettered, not re-queued forever)
     }
@@ -116,7 +116,7 @@ public sealed class DeliveryRetryTests
     {
         // Always 500, MaxAttempts=1: one attempt, then dead-lettered (no retry).
         var (worker, queue, deadLetter, handler) = BuildWorker(
-            responses: [HttpStatusCode.BadRequest],
+            responses: [HttpStatusCode.InternalServerError],
             maxAttempts: 1);
 
         await EnqueueAndRunAsync(worker, queue, isDone: () => handler.CallCount == 1 && deadLetter!.Count == 1);
@@ -135,7 +135,7 @@ public sealed class DeliveryRetryTests
         // constructor path). The job is dropped after the budget (logged at Error), the worker does not
         // crash, and the queue drains.
         var (worker, queue, deadLetter, handler) = BuildWorker(
-            responses: [HttpStatusCode.BadRequest, HttpStatusCode.BadRequest],
+            responses: [HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError],
             maxAttempts: 2,
             noDeadLetter: true);
 
