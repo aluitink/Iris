@@ -50,6 +50,13 @@ internal sealed class ScriptedHandler : HttpMessageHandler
         return _ => Task.FromResult(response);
     }
 
+    public static Func<HttpRequestMessage, Task<HttpResponseMessage>> StatusWithRetryAfterDate(HttpStatusCode code, DateTimeOffset date, string json = "{}")
+    {
+        var response = Response(code, json);
+        response.Headers.RetryAfter = new RetryConditionHeaderValue(date);
+        return _ => Task.FromResult(response);
+    }
+
     public static Func<HttpRequestMessage, Task<HttpResponseMessage>> NetworkFailure()
         => _ => Task.FromException<HttpResponseMessage>(new HttpRequestException("connection reset"));
 
@@ -152,6 +159,96 @@ public class RetryHandlerTests
 
         Assert.Equal(2, inner.CallCount);
         Assert.Equal(TimeSpan.FromSeconds(7), observedDelay);
+    }
+
+    // Phase 18.1: honor the Retry-After HTTP-date form (RFC 9110 §10.2.1), not just delta-seconds.
+    // The server (Phase 17.3) may send either form on 429/503 responses.
+
+    [Fact]
+    public async Task Get_RetriesOn429_HonorsRetryAfterHttpDate()
+    {
+        var date = DateTimeOffset.UtcNow.AddSeconds(5);
+        var inner = new ScriptedHandler(
+            ScriptedHandler.StatusWithRetryAfterDate(HttpStatusCode.TooManyRequests, date),
+            ScriptedHandler.Ok(ActorJson));
+        TimeSpan? observedDelay = null;
+        using var client = Client(new RetryHandler(3, inner, (delay, token) =>
+        {
+            observedDelay = delay;
+            return Task.CompletedTask;
+        }, new Random(1)));
+
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://remote.example/actors/alice")), Ct);
+
+        Assert.Equal(2, inner.CallCount);
+        // The delay should be approximately 5 seconds (the HTTP-date minus "now"). Allow a small
+        // tolerance for the time that elapses between computing "now" in the test and in the handler.
+        Assert.InRange(observedDelay!.Value, TimeSpan.FromSeconds(4.5), TimeSpan.FromSeconds(5.5));
+    }
+
+    [Fact]
+    public async Task Get_RetriesOn503_HonorsRetryAfterHttpDate()
+    {
+        var date = DateTimeOffset.UtcNow.AddSeconds(3);
+        var inner = new ScriptedHandler(
+            ScriptedHandler.StatusWithRetryAfterDate(HttpStatusCode.ServiceUnavailable, date),
+            ScriptedHandler.Ok(ActorJson));
+        TimeSpan? observedDelay = null;
+        using var client = Client(new RetryHandler(3, inner, (delay, token) =>
+        {
+            observedDelay = delay;
+            return Task.CompletedTask;
+        }, new Random(1)));
+
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://remote.example/actors/alice")), Ct);
+
+        Assert.Equal(2, inner.CallCount);
+        Assert.InRange(observedDelay!.Value, TimeSpan.FromSeconds(2.5), TimeSpan.FromSeconds(3.5));
+    }
+
+    [Fact]
+    public async Task Get_RetryAfterDateInPast_FallsBackToBackoff()
+    {
+        // A date in the past: the delay would be negative, so the handler falls back to the
+        // exponential backoff.
+        var pastDate = DateTimeOffset.UtcNow.AddSeconds(-10);
+        var inner = new ScriptedHandler(
+            ScriptedHandler.StatusWithRetryAfterDate(HttpStatusCode.TooManyRequests, pastDate),
+            ScriptedHandler.Ok(ActorJson));
+        var delays = new List<TimeSpan>();
+        using var client = Client(new RetryHandler(3, inner, (delay, token) =>
+        {
+            delays.Add(delay);
+            return Task.CompletedTask;
+        }, new Random(42)));
+
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://remote.example/actors/alice")), Ct);
+
+        Assert.Equal(2, inner.CallCount);
+        // base = 250ms; attempt 1 -> [250, 500) — the backoff, not the (negative) Retry-After.
+        Assert.InRange(delays[0], TimeSpan.FromMilliseconds(250), TimeSpan.FromMilliseconds(500));
+    }
+
+    [Fact]
+    public async Task Get_RetryAfterDeltaPreferredOverDate()
+    {
+        // When both Delta and Date are present (rare, but the header value is one or the other
+        // per RFC 9110 — RetryConditionHeaderValue carries both as nullable), Delta takes
+        // precedence.
+        var inner = new ScriptedHandler(
+            ScriptedHandler.StatusWithRetryAfter(HttpStatusCode.TooManyRequests, 2),
+            ScriptedHandler.Ok(ActorJson));
+        TimeSpan? observedDelay = null;
+        using var client = Client(new RetryHandler(3, inner, (delay, token) =>
+        {
+            observedDelay = delay;
+            return Task.CompletedTask;
+        }, new Random(1)));
+
+        await client.SendAsync(new HttpRequestMessage(HttpMethod.Get, new Uri("https://remote.example/actors/alice")), Ct);
+
+        Assert.Equal(2, inner.CallCount);
+        Assert.Equal(TimeSpan.FromSeconds(2), observedDelay);
     }
 
     [Fact]

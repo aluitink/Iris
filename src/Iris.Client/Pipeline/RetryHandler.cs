@@ -157,11 +157,25 @@ public sealed class RetryHandler : DelegatingHandler
 
     private TimeSpan GetDelay(HttpResponseMessage response, int attempt)
     {
-        // Honor Retry-After (delta-seconds form) when present and positive; otherwise fall back
-        // to the exponential backoff.
-        if (response.Headers.RetryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+        // Honor Retry-After (RFC 9110 §10.2.1) when present: either the delta-seconds form or the
+        // HTTP-date form. A date in the past (or zero/negative) falls back to the exponential
+        // backoff. Phase 17.3 made the server send Retry-After on 429/503 responses; the client now
+        // honors both forms so a peer that rate-limits with an HTTP-date is not under-throttled.
+        if (response.Headers.RetryAfter is { } retryAfter)
         {
-            return delta;
+            if (retryAfter.Delta is { } delta && delta > TimeSpan.Zero)
+            {
+                return delta;
+            }
+
+            if (retryAfter.Date is { } date)
+            {
+                var delay = date - DateTimeOffset.UtcNow;
+                if (delay > TimeSpan.Zero)
+                {
+                    return delay;
+                }
+            }
         }
 
         return ComputeBackoff(attempt);
