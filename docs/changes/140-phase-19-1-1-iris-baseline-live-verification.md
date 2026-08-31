@@ -21,7 +21,7 @@ instances. All checks are wire-level (no browser UI in this session).
 
 ## Findings (→ 19.4)
 
-### F-1911-1: Undo (unfollow) does not update the followed side's `followers` set
+### F-1911-1: Undo (unfollow) does not update the followed side's `followers` set — FIXED
 
 **Repro:** alice-dev2 follows alice-dev1 (edge on both sides). alice-dev2 publishes an `Undo` of the
 Follow. After delivery: alice-dev2's `following` no longer lists alice-dev1 (correct), but
@@ -31,12 +31,21 @@ alice-dev1's `followers` still lists alice-dev2 (stale).
 - `GET iris-dev1:8081/ap/v1/u/alice/followers` → still contains `https://iris-dev2.luit.ink/ap/v1/u/alice`
 - `GET iris-dev2:8082/ap/v1/u/alice/following` → no longer contains `https://iris-dev1.luit.ink/ap/v1/u/alice`
 
-**Likely cause:** The `UndoActivityHandler` on the unfollower's instance removes the local `following`
-edge, but the `Undo` delivery to the followed side's inbox either (a) is not handled by a handler that
-removes the `followers` edge, or (b) the `Undo` is delivered to the unfollower's own inbox (not the
-followed side's inbox) — the delivery target is wrong.
+**Root cause:** The outbox publish handler delivers an Undo of a Follow to the **target's** inbox
+(the followed side), so the recipient is the target — not the un-follower. The `UndoActivityHandler`
+assumed the recipient was always the un-follower and tried to remove the target's follow edge (wrong
+direction). The follower's own following edge was removed on the follower's home instance by
+`RemoveFollowLocalAsync`, but the inverse edge on the target's followers set was never removed.
 
-### F-1911-2: Create activities duplicated in the outbox (20x)
+**Fix:** `UndoActivityHandler` now checks whether the recipient is the target. When the recipient is
+the target (the normal case for an outbox-published Undo), the handler removes the follower from the
+target's followers set — the inverse edge. When the recipient is the un-follower (direct inbox
+delivery), the handler removes the un-follower's own following edge (existing behavior preserved).
+
+**Tests:** `HandleAsync_UndoDeliveredToTarget_RemovesFollowerFromTargetFollowers`,
+`HandleAsync_UndoDeliveredToTarget_OtherFollowersUntouched`.
+
+### F-1911-2: Create activities duplicated in the outbox (20x) — FIXED
 
 **Repro:** alice-dev2 publishes a single `Create` (Note) to her outbox. The outbox then shows 20 copies
 of the same `Create` activity (same IRI `https://iris-dev2.luit.ink/ap/v1/u/alice/creates/1911-1788205282`).
@@ -44,9 +53,14 @@ of the same `Create` activity (same IRI `https://iris-dev2.luit.ink/ap/v1/u/alic
 **Wire evidence:**
 - `GET iris-dev2:8082/ap/v1/u/alice/outbox` → 20 items, all `type=Create`, all with the same `id`
 
-**Likely cause:** The outbox append is not idempotent by activity IRI — the delivery worker's
-at-least-once retry (or the replay-on-restart of the file-backed delivery queue) re-appends the
-activity to the outbox each time it is processed. The outbox should dedupe by activity IRI.
+**Root cause:** `AddToOutboxAsync` was not idempotent by activity IRI. The delivery worker's
+at-least-once retry (or the replay-on-restart of the file-backed delivery queue) re-appended the
+activity to the outbox each time it was processed.
+
+**Fix:** `AddToOutboxAsync` in both `InMemoryActivityStore` and `FileBackedActivityStore` now checks
+for an existing outbox entry with the same IRI before inserting. A re-recorded activity is a no-op.
+
+**Tests:** `ActivityStore_Outbox_AddToOutbox_IsIdempotentByIri`.
 
 ### F-1911-3: Community follow delivery not completing
 
@@ -74,4 +88,4 @@ Needs wire-level debugging (peer logs, signature verification trace).
 
 ## Test counts
 
-No code changes; no new tests. Existing suite: 1183 passing.
+3 new integration tests (outbox dedup + Undo followers-edge). Existing suite: 1186 passing.
