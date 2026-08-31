@@ -264,6 +264,25 @@ public sealed class FileBackedPersistenceTests : IDisposable
         Assert.IsType<Create>(outbox[0]);
     }
 
+    [Fact]
+    public async Task ActivityStore_Outbox_AddToOutbox_IsIdempotentByIri()
+    {
+        // F-1911-2: a re-recorded activity (at-least-once delivery, restart replay) is not duplicated.
+        var dir = Dir("activities-outbox-dedup");
+        Directory.CreateDirectory(dir);
+        var alice = IriOf("https://iris.example/ap/u/alice");
+        var create = BuildCreate("https://iris.example/ap/act/create-dedup", alice.Value, "https://iris.example/ap/n/note-dedup");
+
+        using var p = new FileBackedPersistenceProvider(dir);
+        await p.Activities.AddToOutboxAsync(alice, (IObjectOrLink)create);
+        await p.Activities.AddToOutboxAsync(alice, (IObjectOrLink)create);
+        await p.Activities.AddToOutboxAsync(alice, (IObjectOrLink)create);
+
+        var outbox = await p.Activities.GetOutboxAsync(alice);
+        Assert.Single(outbox);
+        Assert.IsType<Create>(outbox[0]);
+    }
+
     // --- Community store: document + members survive a restart --------------------------------
 
     [Fact]

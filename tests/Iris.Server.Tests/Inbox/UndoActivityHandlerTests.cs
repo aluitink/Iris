@@ -399,6 +399,56 @@ public sealed class UndoActivityHandlerTests
             new InMemoryPersistenceProvider(), null!));
     }
 
+    // --- F-1911-1: Undo delivered to the target's inbox removes the follower from followers --
+
+    [Fact]
+    public async Task HandleAsync_UndoDeliveredToTarget_RemovesFollowerFromTargetFollowers()
+    {
+        // F-1911-1: the outbox publish handler delivers an Undo of a Follow to the TARGET's inbox
+        // (the followed side), so the recipient is the target — not the un-follower. The handler
+        // must remove the follower from the target's followers set (the inverse edge), not just the
+        // follower's own following set.
+        var persistence = new InMemoryPersistenceProvider();
+        // Both the follower (bob, local) and the target (alice, local on this instance) are local.
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await SeedLocalActorAsync(persistence, RemoteTarget);
+        var sut = BuildHandler(persistence);
+
+        // bob follows alice: the edge is recorded on both sides (bob's following + alice's followers).
+        await persistence.Follows.RecordFollowAsync(LocalPerson, RemoteTarget);
+        var follow = BuildFollow(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(follow);
+
+        // The Undo is delivered to ALICE's inbox (the target), not bob's.
+        var undo = BuildUndo(follow);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, undo), undo);
+
+        // The follower (bob) is removed from the target's (alice's) followers set.
+        Assert.False(await persistence.Follows.IsFollowingAsync(LocalPerson, RemoteTarget));
+    }
+
+    [Fact]
+    public async Task HandleAsync_UndoDeliveredToTarget_OtherFollowersUntouched()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await SeedLocalActorAsync(persistence, RemoteTarget);
+        var otherFollower = new Iri("https://b.domain.local/ap/v1/u/carol");
+        await SeedLocalActorAsync(persistence, otherFollower);
+        var sut = BuildHandler(persistence);
+
+        await persistence.Follows.RecordFollowAsync(LocalPerson, RemoteTarget);
+        await persistence.Follows.RecordFollowAsync(otherFollower, RemoteTarget);
+        var follow = BuildFollow(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(follow);
+
+        var undo = BuildUndo(follow);
+        await sut.HandleAsync(new InboxDelivery(RemoteTarget, undo), undo);
+
+        Assert.False(await persistence.Follows.IsFollowingAsync(LocalPerson, RemoteTarget));
+        Assert.True(await persistence.Follows.IsFollowingAsync(otherFollower, RemoteTarget));
+    }
+
     // --- Helpers --------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()

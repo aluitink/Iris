@@ -51,12 +51,20 @@ public sealed class InMemoryActivityStore : IActivityStore
     {
         ArgumentNullException.ThrowIfNull(item);
         ct.ThrowIfCancellationRequested();
+        var itemIri = ItemIri(item);
         lock (_outboxes)
         {
             if (!_outboxes.TryGetValue(actorIri, out var list))
             {
                 list = [];
                 _outboxes[actorIri] = list;
+            }
+
+            // Idempotent by IRI (F-1911-2): a re-recorded activity (at-least-once delivery, restart
+            // replay) is not duplicated in the outbox.
+            if (itemIri is not null && list.Any(existing => ItemIri(existing) == itemIri))
+            {
+                return Task.CompletedTask;
             }
 
             list.Insert(0, item); // newest first

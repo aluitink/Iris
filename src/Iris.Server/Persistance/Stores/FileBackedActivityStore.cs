@@ -106,6 +106,7 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
     {
         ArgumentNullException.ThrowIfNull(item);
         var json = ActivityJson.Serialize(item);
+        var itemIri = item is IObject obj ? obj.Id : (item as Link)?.Href?.AbsoluteUri;
         return _file.WithStateAsync(s =>
         {
             var outboxes = OutboxMap(s);
@@ -113,6 +114,22 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
             {
                 list = new List<string>();
                 outboxes[actorIri.Value] = list;
+            }
+
+            // Idempotent by IRI (F-1911-2): a re-recorded activity (at-least-once delivery, restart
+            // replay) is not duplicated in the outbox.
+            if (itemIri is not null)
+            {
+                var alreadyPresent = list.Any(existing =>
+                {
+                    var existingItem = ActivityJson.Deserialize<IObjectOrLink>(existing);
+                    var existingIri = existingItem is IObject eobj ? eobj.Id : (existingItem as Link)?.Href?.AbsoluteUri;
+                    return existingIri == itemIri;
+                });
+                if (alreadyPresent)
+                {
+                    return 0;
+                }
             }
 
             list.Insert(0, json); // newest first (mirrors the in-memory store)
