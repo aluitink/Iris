@@ -259,7 +259,8 @@ public static partial class SampleServer
                 actorIri,
                 factory,
                 options.InstanceActorId,
-                peerBase);
+                peerBase,
+                actorIri.Value[..actorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)]);
         });
     }
 
@@ -354,10 +355,16 @@ public static partial class SampleServer
         ArgumentNullException.ThrowIfNull(baseString);
         ArgumentNullException.ThrowIfNull(actorHandle);
 
+        // The actor IRIs (bob, the community) are derived from the PRIMARY ACTOR's advertised host,
+        // not the base string: the base string is what the sample LISTENS on (the container's
+        // in-network origin), while the primary actor's IRI carries the advertised host (the public
+        // proxy's hostname, e.g. iris-dev1.luit.ink). A client that logs on as the primary actor sees
+        // the advertised IRIs everywhere, so the seeded set it can sign as must use them too.
         var aliceIri = actorIri;
         var aliceKeyIri = new Iri($"{aliceIri}#key-1");
         var aliceKey = EnsureKey(persistence, aliceKeyIri, static _ => KeyPairGenerator.GenerateRsa(_));
         var alice = EnsureActor(persistence, actorHandle, aliceIri, aliceKeyIri, aliceKey);
+        var hostBase = actorIri.Value[..actorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
 
         // The Phase 8 S10 smoke test drives a signed cross-container Follow from this instance's alice,
         // which requires signing with alice's private key. curl (the smoke test's HTTP client) cannot
@@ -375,7 +382,7 @@ public static partial class SampleServer
             File.WriteAllText(dumpKeyTo, aliceKey.ExportPrivateKeyPem());
         }
 
-        var bobIri = new Iri($"{baseString}/ap/v1/u/{BobHandle}");
+        var bobIri = new Iri($"{hostBase}/ap/v1/u/{BobHandle}");
         var bobKeyIri = new Iri($"{bobIri}#key-1");
         var bobKey = EnsureKey(persistence, bobKeyIri, static _ => KeyPairGenerator.GenerateRsa(_));
         var bob = EnsureActor(persistence, BobHandle, bobIri, bobKeyIri, bobKey);
@@ -385,7 +392,7 @@ public static partial class SampleServer
         var carlaKey = EnsureKey(persistence, carlaKeyIri, static id => Ed25519Key.Generate(id));
         var carla = EnsureActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
 
-        var communityIri = new Iri($"{baseString}/ap/v1/c/{SampleCommunityName}");
+        var communityIri = new Iri($"{hostBase}/ap/v1/c/{SampleCommunityName}");
         var community = new Group
         {
             Id = communityIri.Value,
@@ -697,24 +704,37 @@ public sealed record SeedMetadata(
 /// host (carla, the remote-host stand-in) is not served — the sample has no knowledge of true remote
 /// actors, exactly as a real instance would for an unknown host.
 /// </summary>
-public sealed class LocalActorDocumentFetcher(IPersistenceProvider persistence, string baseString)
+public sealed class LocalActorDocumentFetcher(
+    IPersistenceProvider persistence,
+    string baseString,
+    string? advertisedBase = null)
     : IActorDocumentFetcher
 {
     private readonly IPersistenceProvider _persistence = persistence;
     private readonly string _baseString = baseString;
+    private readonly string? _advertisedBase = advertisedBase;
 
     /// <inheritdoc/>
     public async Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
     {
         // Only serve local-host actors; a remote-host IRI is not a local actor (the sample cannot
-        // resolve a true remote key, matching a real instance's behavior for an unknown host).
-        if (!actorIri.Value.StartsWith(_baseString, StringComparison.Ordinal))
+        // resolve a true remote key, matching a real instance's behavior for an unknown host). The
+        // actor's IRI may be on EITHER the listen base (the container's in-network origin — the peer's
+        // deliveries address IRIs it learned over the wire) or the advertised base (the public proxy's
+        // hostname — what a client sees and dials); both are local-host IRIs.
+        var localBase = actorIri.Value.StartsWith(_baseString, StringComparison.Ordinal)
+            ? _baseString
+            : _advertisedBase is { } advertised
+                && actorIri.Value.StartsWith(advertised, StringComparison.Ordinal)
+                    ? advertised
+                    : null;
+        if (localBase is null)
         {
             return null;
         }
 
         var handle = HandleFromIri(actorIri);
-        var localIri = new Iri($"{_baseString}/ap/v1/u/{handle}");
+        var localIri = new Iri($"{localBase}/ap/v1/u/{handle}");
         if (await _persistence.Actors.TryGetActorAsync(localIri, out var actor, ct).ConfigureAwait(false)
             && actor is not null)
         {
@@ -758,19 +778,25 @@ public sealed class FederatedActorDocumentFetcher(
     Iri ownActorIri,
     IActivityPubClientFactory clientFactory,
     Iri? instanceActorIri,
-    string? peerBase)
+    string? peerBase,
+    string advertisedBase)
     : IActorDocumentFetcher
 {
-    private readonly LocalActorDocumentFetcher _local = new(persistence, baseString);
+    private readonly LocalActorDocumentFetcher _local = new(persistence, baseString, advertisedBase);
     private readonly Iri _ownActorIri = ownActorIri;
     private readonly IActivityPubClientFactory _clientFactory = clientFactory;
     private readonly Iri? _instanceActorIri = instanceActorIri;
+    private readonly string _advertisedBase = advertisedBase;
 
     /// <inheritdoc/>
     public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
     {
         // Local-host actors (alice, bob, the community) are served from the store, no network I/O.
-        if (actorIri.Value.StartsWith(baseString, StringComparison.Ordinal))
+        // The actor's IRI may be on EITHER the listen base (the container's in-network origin — the
+        // peer's deliveries address IRIs it learned over the wire) or the advertised base (the public
+        // proxy's hostname — what a client sees and dials). Both are local-host IRIs.
+        if (actorIri.Value.StartsWith(baseString, StringComparison.Ordinal)
+            || actorIri.Value.StartsWith(_advertisedBase, StringComparison.Ordinal))
         {
             return _local.GetActorAsync(actorIri, ct);
         }

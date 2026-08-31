@@ -238,6 +238,8 @@ public sealed class ExplorerSession : IDisposable
         }
 
         _service = service;
+        RegisterCommunityIdentity(service);
+
         _bundle = service.Bundle;
         _dialBaseUri = dialBaseUri;
         _resolvedActorIri = actorIri;
@@ -305,6 +307,8 @@ public sealed class ExplorerSession : IDisposable
         }
 
         _service = service;
+        RegisterCommunityIdentity(service);
+
         _bundle = service.Bundle;
         _dialBaseUri = dialBaseUri;
         _resolvedActorIri = actorIri;
@@ -338,6 +342,35 @@ public sealed class ExplorerSession : IDisposable
     public void LogOut()
     {
         DisposeCurrent();
+    }
+
+    /// <summary>
+    /// Registers the instance's seeded community signing identity (F-1911-3): the sample server seeds
+    /// a community whose <c>publicKey</c> extension points at the primary actor's key (the community
+    /// signs its own outbound deliveries with it). The client session only registers the logged-on
+    /// actor's identity, so a delivery that signs as the community (the Raw delivery screen's
+    /// "act as" override, or a community follow) would dead-letter with "No signing identity
+    /// registered for actor '.../c/iris'". After a successful logon this registers the community IRI
+    /// (derived from the resolved actor IRI's host) under the actor's own key IRI (<c>#key-1</c>) —
+    /// the same key the actor authenticated with, so no extra key material is needed.
+    /// </summary>
+    /// <param name="service">The just-authenticated client service (its bundle's key store already
+    /// holds the actor's key from logon).</param>
+    private void RegisterCommunityIdentity(ClientService service)
+    {
+        var bundle = service.Bundle;
+        var actorIri = service.ActorIri;
+        var keyId = new Iri($"{actorIri}#key-1");
+        var hostBase = actorIri.Value[..actorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
+        var communityIri = new Iri($"{hostBase}/ap/v1/c/iris");
+
+        // The community signs with the primary actor's key (its publicKey extension points at it);
+        // the key must be in the session's key store for the signer to load it. It is the actor's
+        // own key (already stored at logon) when the IRI matches.
+        if (bundle.KeyStore.TryGetKey(keyId, out _))
+        {
+            bundle.KeyProvider.RegisterKey(communityIri, keyId);
+        }
     }
 
     /// <summary>

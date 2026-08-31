@@ -122,6 +122,48 @@ public sealed class S10RawDeliveryTests
     }
 
     /// <summary>
+    /// The F-1911-3 regression: the Raw delivery screen's "act as" override signs a delivery as the
+    /// instance's seeded community via the <c>X-Iris-Actor</c> header override. The client session
+    /// registers the community's signing identity at logon (the community reuses the actor's key), so
+    /// the override resolves — before the fix the session only registered the logged-on actor's
+    /// identity and the override dead-lettered with "No signing identity registered for actor". The
+    /// community signs the Follow with the actor's key (its publicKey extension points at it); the
+    /// server's signature validation accepts it (the key is the registered key) and records the edge
+    /// from the community (the <c>X-Iris-Actor</c> override is the activity's actor).
+    /// </summary>
+    [Fact]
+    public async Task Deliver_ActAsCommunity_SignsAndIsAccepted()
+    {
+        var (server, client, alice, bob) = await LogOnAsync();
+        using var _ = server;
+
+        // The Raw delivery screen's "act as" override: the community IRI (derived from the actor's
+        // host) is passed as the X-Iris-Actor header override so the pipeline signs as the community.
+        var community = new Iri("http://localhost/ap/v1/c/iris");
+        var follow = BuildFollow(community, bob);
+        var inbox = bob.InboxOf();
+        var request = new HttpRequestMessage(HttpMethod.Post, inbox.Uri)
+        {
+            Content = new StringContent(
+                Iris.Core.ActivityJson.Serialize(follow),
+                System.Text.Encoding.UTF8,
+                "application/activity+json"),
+        };
+        request.Headers.Add("X-Iris-Actor", community.Value);
+
+        // Before the fix this threw KeyNotFoundException ("No signing identity registered for actor").
+        var response = await client.SendAsync(request);
+        Assert.True(response.IsSuccessStatusCode,
+            $"act-as-community delivery must be accepted (got {response.StatusCode})");
+        Assert.Equal(202, (int)response.StatusCode);
+
+        // The follow edge is recorded from the community (the X-Iris-Actor override is the actor):
+        // bob's followers now include the community IRI.
+        var followers = await FollowerIrisAsync(client, bob);
+        Assert.Contains(community.Value, followers);
+    }
+
+    /// <summary>
     /// Builds the <c>Follow</c> activity the page builds (actor = the sender, object = the target, a
     /// deterministic unique-per-(actor,target) IRI) — the exact payload <c>DeliverAsync</c> signs + POSTs.
     /// </summary>

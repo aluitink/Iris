@@ -30,6 +30,15 @@ else
         </p>
 
         <p>
+            <label for="as-actor">Act as (optional — signs as this actor instead of the logged-on one;
+            e.g. a community IRI like <code>https://iris-dev1.luit.ink/ap/v1/c/iris</code>)</label>
+            <br />
+            <input id="as-actor" @bind="AsActorIri"
+                   placeholder="https://iris-dev1.luit.ink/ap/v1/c/iris"
+                   style="min-width: 320px" />
+        </p>
+
+        <p>
             <button @onclick="DeliverAsync" disabled="@(Busy)">Deliver Follow to target's inbox</button>
             @if (Busy)
             {
@@ -68,6 +77,7 @@ else
     private ExplorerSession Session { get; set; } = default!;
 
     private string? TargetIri { get; set; }
+    private string? AsActorIri { get; set; }
     private bool Busy { get; set; }
     private string? Error { get; set; }
     private DeliveryResult? Result { get; set; }
@@ -96,6 +106,26 @@ else
             return;
         }
 
+        // The 'act as' override: deliver as this actor (e.g. the seeded community) instead of the
+        // logged-on actor. The activity carries the 'act as' actor as its actor (the outbox endpoint
+        // requires the community as its own outbox's author); the X-Iris-Actor header makes the
+        // pipeline's SigningHandler sign with the community's registered key (the client registers it
+        // at logon from the instance's seeded key set).
+        Iri signer = self;
+        var asActorText = AsActorIri?.Trim();
+        if (!string.IsNullOrWhiteSpace(asActorText))
+        {
+            try
+            {
+                signer = new Iri(asActorText);
+            }
+            catch (Exception ex)
+            {
+                Error = $"Invalid 'act as' IRI: {ex.Message}";
+                return;
+            }
+        }
+
         Busy = true;
         Error = null;
         Result = null;
@@ -107,15 +137,29 @@ else
             // the target's inbox (target.InboxOf()).
             var follow = new Follow
             {
-                Id = $"{self.Value}/follows/{target.Value}",
-                Actor = [new Link { Href = self.Uri }],
+                Id = $"{signer.Value}/follows/{target.Value}",
+                Actor = [new Link { Href = signer.Uri }],
                 Object = [new Link { Href = target.Uri }],
             };
 
             ActivityBody = ActivityJson.Serialize(follow);
 
             var inbox = target.InboxOf();
-            Result = await Session.GetClient().DeliverAsync(inbox, follow);
+            var request = new HttpRequestMessage(HttpMethod.Post, inbox.Uri)
+            {
+                Content = new StringContent(ActivityBody, System.Text.Encoding.UTF8, "application/activity+json"),
+            };
+            // When acting as another actor (e.g. the community) the X-Iris-Actor override makes the
+            // pipeline sign with that actor's registered identity; for the logged-on actor it is the
+            // client's default, so the header is omitted (the default path is unchanged).
+            if (!signer.Equals(self))
+            {
+                request.Headers.Add("X-Iris-Actor", signer.Value);
+            }
+
+            var response = await Session.GetClient().SendAsync(request);
+            var responseBody = await response.Content.ReadAsStringAsync();
+            Result = new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, responseBody);
         }
         catch (Exception ex)
         {
