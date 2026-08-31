@@ -60,6 +60,11 @@ public static partial class SampleServer
     public const string RemoteHostName = "remote.example";
 
     /// <summary>
+    /// The name of the seeded community (its IRI is <c>{base}/ap/v1/c/{name}</c>).
+    /// </summary>
+    public const string SampleCommunityName = "iris";
+
+    /// <summary>
     /// The <c>iris:</c> namespace base IRI advertised on every seeded actor and community document.
     /// </summary>
     public static readonly Iri NamespaceIri = new("https://iris.example/ns#");
@@ -291,6 +296,10 @@ public static partial class SampleServer
             var keyProvider = app.ApplicationServices.GetRequiredService<IKeyProvider>();
             foreach (var (handle, keyIri) in GetSeededKeyIris(actorIri))
             {
+                // The seeded set includes the community (its key is the primary actor's key — the
+                // community signs its own outbound deliveries as the community, so without this
+                // registration the DeliveryWorker dead-letters them with "No signing identity
+                // registered for actor '.../c/iris'" — F-1911-3).
                 keyProvider.RegisterKey(ActorIriFor(actorIri, handle), keyIri);
             }
         }
@@ -376,7 +385,7 @@ public static partial class SampleServer
         var carlaKey = EnsureKey(persistence, carlaKeyIri, static id => Ed25519Key.Generate(id));
         var carla = EnsureActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
 
-        var communityIri = new Iri($"{baseString}/ap/v1/c/iris");
+        var communityIri = new Iri($"{baseString}/ap/v1/c/{SampleCommunityName}");
         var community = new Group
         {
             Id = communityIri.Value,
@@ -476,7 +485,9 @@ public static partial class SampleServer
                 (actorHandle, aliceKeyIri),
                 (BobHandle, bobKeyIri),
                 (CarlaHandle, carlaKeyIri),
-            ]);
+            ],
+            communityIri,
+            aliceKeyIri);
     }
 
     /// <summary>
@@ -578,27 +589,31 @@ public static partial class SampleServer
     /// <see cref="IKeyProvider"/>.
     /// </summary>
     /// <param name="primaryActorIri">The primary actor's IRI (its host and port are reused for bob).</param>
-    /// <returns>The (handle, key IRI) pairs, in seed order: primary, bob, carla.</returns>
+    /// <returns>The (handle, key IRI) pairs, in seed order: primary, bob, carla, and the community
+    /// (the community's key is the primary actor's key — its <c>publicKey</c> extension points at it).</returns>
     public static IReadOnlyList<(string Handle, Iri KeyIri)> GetSeededKeyIris(Iri primaryActorIri)
     {
         var primaryHandle = primaryActorIri.Value[(primaryActorIri.Value.LastIndexOf('/') + 1)..];
         var hostBase = primaryActorIri.Value[..primaryActorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
         var bobIri = new Iri($"{hostBase}/ap/v1/u/{BobHandle}");
         var carlaIri = new Iri($"http://{RemoteHostName}/ap/v1/u/{CarlaHandle}");
+        var communityIri = new Iri($"{hostBase}/ap/v1/c/{SampleCommunityName}");
         return
         [
             (primaryHandle, new Iri($"{primaryActorIri}#key-1")),
             (BobHandle, new Iri($"{bobIri}#key-1")),
             (CarlaHandle, new Iri($"{carlaIri}#key-1")),
+            (SampleCommunityName, new Iri($"{primaryActorIri}#key-1")),
         ];
     }
 
     /// <summary>
     /// Builds the actor IRI for a seeded handle, given the primary actor's IRI. The primary and bob
-    /// derive from the primary's host; carla derives from <see cref="RemoteHostName"/>.
+    /// derive from the primary's host under <c>/ap/v1/u/</c>; the community derives from the
+    /// primary's host under <c>/ap/v1/c/</c>; carla derives from <see cref="RemoteHostName"/>.
     /// </summary>
     /// <param name="primaryActorIri">The primary actor's IRI.</param>
-    /// <param name="handle">The actor's handle.</param>
+    /// <param name="handle">The actor's handle (or the community's name).</param>
     /// <returns>The actor's IRI.</returns>
     public static Iri ActorIriFor(Iri primaryActorIri, string handle)
     {
@@ -608,6 +623,11 @@ public static partial class SampleServer
         }
 
         var hostBase = primaryActorIri.Value[..primaryActorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
+        if (handle == SampleCommunityName)
+        {
+            return new Iri($"{hostBase}/ap/v1/c/{handle}");
+        }
+
         return new Iri($"{hostBase}/ap/v1/u/{handle}");
     }
 
@@ -655,14 +675,20 @@ public static partial class SampleServer
 
 /// <summary>
 /// The seed metadata returned by <see cref="SampleServer.SeedSampleData"/>: the seeded actor handles
-/// (for the credential validator) and the seeded (handle, key IRI) pairs (for key-provider
-/// registration).
+/// (for the credential validator), the seeded (handle, key IRI) pairs (for key-provider registration),
+/// and the seeded community's (IRI, key IRI) pair (for the community's key-provider registration —
+/// a community's outbound deliveries, e.g. a community Follow, sign as the community).
 /// </summary>
 /// <param name="Handles">The seeded actor handles.</param>
 /// <param name="Keys">The seeded (handle, key IRI) pairs, in seed order.</param>
+/// <param name="CommunityIri">The seeded community's IRI.</param>
+/// <param name="CommunityKeyIri">The seeded community's key IRI (the community signs with the
+/// primary actor's key — its <c>publicKey</c> extension points at it).</param>
 public sealed record SeedMetadata(
     IReadOnlyCollection<string> Handles,
-    IReadOnlyList<(string Handle, Iri KeyIri)> Keys);
+    IReadOnlyList<(string Handle, Iri KeyIri)> Keys,
+    Iri? CommunityIri = null,
+    Iri? CommunityKeyIri = null);
 
 /// <summary>
 /// An <see cref="IActorDocumentFetcher"/> that resolves a <em>local-host</em> actor document from the
