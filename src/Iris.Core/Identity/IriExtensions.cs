@@ -253,6 +253,73 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Resolves the audience IRIs of an object: the union of its <c>to</c> and <c>cc</c> entries,
+    /// de-duplicated, in first-seen order (19.8.2 rendered object view quality).
+    /// </summary>
+    /// <remarks>
+    /// The ActivityStreams convention for an object's audience: <c>to</c> holds the direct recipients
+    /// and <c>cc</c> the carbon-copy (public/follower) audience. Each entry is an
+    /// <see cref="IObjectOrLink"/> — a <see cref="Link"/> to an actor/community IRI, or an embedded
+    /// object carrying it in <c>Id</c>. The well-known public-audience IRI (<c>as:Public</c> /
+    /// <c>https://www.w3.org/ns/activitystreams#Public</c>) is excluded: it is a sentinel meaning
+    /// "public", not a resolvable recipient, so it is not rendered as an audience link. Returns an
+    /// empty list when the object has no <c>to</c>/<c>cc</c> (or only the public sentinel).
+    /// </remarks>
+    /// <param name="obj">The object whose <c>to</c>/<c>cc</c> is read. May be null.</param>
+    /// <returns>The audience IRIs (<c>to</c> then <c>cc</c>, de-duplicated, public excluded); possibly empty.</returns>
+    public static IReadOnlyList<Iri> GetAudienceIris(this IObject? obj)
+    {
+        var seen = new HashSet<Iri>(IriComparer.Instance);
+        var audiences = new List<Iri>();
+
+        void Add(IEnumerable<IObjectOrLink>? entries)
+        {
+            if (entries is null)
+            {
+                return;
+            }
+
+            foreach (var entry in entries)
+            {
+                var iri = entry.ResolveObjectIri();
+                if (iri is { } resolved && !IsPublicAudience(resolved) && seen.Add(resolved))
+                {
+                    audiences.Add(resolved);
+                }
+            }
+        }
+
+        Add(obj?.To);
+        Add(obj?.Cc);
+        return audiences;
+    }
+
+    /// <summary>
+    /// Reports whether an IRI is the well-known public-audience sentinel (<c>as:Public</c> /
+    /// <c>https://www.w3.org/ns/activitystreams#Public</c>).
+    /// </summary>
+    /// <param name="iri">The IRI to test. May be the default value.</param>
+    /// <returns><see langword="true"/> when <paramref name="iri"/> is the public-audience sentinel.</returns>
+    public static bool IsPublicAudience(this Iri iri)
+    {
+        var value = iri.Value;
+        return value is "as:Public"
+            or "https://www.w3.org/ns/activitystreams#Public"
+            or "http://www.w3.org/ns/activitystreams#Public";
+    }
+
+    /// <summary>
+    /// A case-insensitive, ordinal comparer for <see cref="Iri"/> (audience de-duplication in
+    /// <see cref="GetAudienceIris"/>).
+    /// </summary>
+    private sealed class IriComparer : IEqualityComparer<Iri>
+    {
+        public static readonly IriComparer Instance = new();
+        public bool Equals(Iri x, Iri y) => string.Equals(x.Value, y.Value, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode(Iri obj) => StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Value);
+    }
+
+    /// <summary>
     /// Resolves the IRI of an <see cref="IObjectOrLink"/>: a <see cref="Link"/> contributes its
     /// <c>Href</c>; an embedded collection contributes its <c>Id</c>.
     /// </summary>

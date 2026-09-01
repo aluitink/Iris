@@ -26,6 +26,17 @@
             {
                 <div class="object-content">@content</div>
             }
+            @foreach (var audience in AudienceIris)
+            {
+                <div class="object-audience">
+                    to
+                    <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                </div>
+            }
+            @if (Published is { } published)
+            {
+                <div class="object-published" title="@published.ToString("o")">@published.ToLocalTime().ToString("g")</div>
+            }
             @if (ParentIri is { } parent)
             {
                 <div class="object-parent">
@@ -89,6 +100,18 @@
     /// actors' pages (S2). Uses <see cref="IriExtensions.GetMentionIris"/>.
     /// </summary>
     private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
+
+    /// <summary>
+    /// The audience IRIs (the object's <c>to</c> + <c>cc</c>, de-duplicated, the public sentinel
+    /// excluded), when present — rendered as links to the recipients' pages (19.8.2). Uses
+    /// <see cref="IriExtensions.GetAudienceIris"/>.
+    /// </summary>
+    private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
+
+    /// <summary>
+    /// The object's <c>published</c> timestamp, when present — rendered as a local time (19.8.2).
+    /// </summary>
+    private DateTime? Published => Obj?.Published;
 
     /// <summary>
     /// The attachment IRIs, when present — rendered as links (S2).

@@ -359,4 +359,96 @@ public class IriExtensionsTests
 
         Assert.Empty(none.GetAttachmentIris());
     }
+
+    [Fact]
+    public void GetAudienceIris_ReadsToThenCc()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            To = [new Link { Href = new Uri("https://a.domain.local/ap/v1/u/bob") }],
+            Cc = [new Link { Href = new Uri("https://a.domain.local/ap/v1/c/iris") }],
+        };
+
+        Assert.Equal(
+            [new Iri("https://a.domain.local/ap/v1/u/bob"), new Iri("https://a.domain.local/ap/v1/c/iris")],
+            note.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_ExcludesThePublicSentinel()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            To = [new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
+            Cc = [new Link { Href = new Uri("https://a.domain.local/ap/v1/u/bob") }],
+        };
+
+        Assert.Equal([new Iri("https://a.domain.local/ap/v1/u/bob")], note.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_DeduplicatesRepeatedAudiences()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            // bob appears in both `to` and `cc` (a common real-world shape) — it must appear once.
+            To = [new Link { Href = new Uri("https://a.domain.local/ap/v1/u/bob") }],
+            Cc = [new Link { Href = new Uri("https://a.domain.local/ap/v1/u/bob") }],
+        };
+
+        Assert.Equal([new Iri("https://a.domain.local/ap/v1/u/bob")], note.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_FromEmbeddedAudienceObject_ReturnsId()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            To = [new Person { Id = "https://a.domain.local/ap/v1/u/bob" }],
+        };
+
+        Assert.Equal([new Iri("https://a.domain.local/ap/v1/u/bob")], note.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_NoAudience_ReturnsEmpty()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Empty(note.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_Null_ReturnsEmpty()
+    {
+        IObject? none = null;
+
+        Assert.Empty(none.GetAudienceIris());
+    }
+
+    [Fact]
+    public void GetAudienceIris_OnlyPublicSentinel_ReturnsEmpty()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            To = [new Link { Href = new Uri("as:Public") }],
+        };
+
+        Assert.Empty(note.GetAudienceIris());
+    }
+
+    [Theory]
+    [InlineData("as:Public", true)]
+    [InlineData("https://www.w3.org/ns/activitystreams#Public", true)]
+    [InlineData("http://www.w3.org/ns/activitystreams#Public", true)]
+    [InlineData("https://a.domain.local/ap/v1/u/bob", false)]
+    public void IsPublicAudience_DetectsTheWellKnownPublicIri(string value, bool expected)
+    {
+        Assert.Equal(expected, new Iri(value).IsPublicAudience());
+    }
 }
