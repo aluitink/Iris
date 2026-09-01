@@ -141,6 +141,26 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
             ? storedReject!
             : throw new InvalidOperationException("The Reject should be recorded.");
 
+        // 10. Flag bob (a moderation report; the instance records the flag edge locally).
+        var flag = BuildFlag(_alice, _bob);
+        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(flag));
+
+        // 11. Undo the flag (un-flag bob; the instance removes the flag edge).
+        var undoFlag = BuildUndo(_alice, flag);
+        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoFlag));
+
+        // 12. Undo the like (un-like the liked object; the instance removes the like edge).
+        var undoLike = BuildUndo(_alice, like);
+        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoLike));
+
+        // 13. Undo the announce (un-boost the announced object; the instance removes the announce edge).
+        var undoAnnounce = BuildUndo(_alice, announce);
+        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoAnnounce));
+
+        // 14. Undo the block (un-block bob; the instance removes the block edge).
+        var undoBlock = BuildUndo(_alice, block);
+        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoBlock));
+
         // --- The outbox is the single source of truth: exactly the authored set, each once, in order.
 
         var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
@@ -150,7 +170,7 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         var authored = new[]
         {
             follow.Id, create.Id, like.Id, announce.Id, block.Id, undo.Id, delete.Id,
-            accept!.Id, reject!.Id,
+            accept!.Id, reject!.Id, flag.Id, undoFlag.Id, undoLike.Id, undoAnnounce.Id, undoBlock.Id,
         };
 
         // The outbox lists activities newest-first (the store inserts at the front), so the expected
@@ -340,6 +360,13 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     private static Block BuildBlock(Iri actor, Iri target) => new()
     {
         Id = $"https://{AHost}/activities/block-{Guid.NewGuid():N}",
+        Actor = [new Link { Href = new Uri(actor.Value) }],
+        Object = [new Link { Href = new Uri(target.Value) }],
+    };
+
+    private static Flag BuildFlag(Iri actor, Iri target) => new()
+    {
+        Id = $"https://{AHost}/activities/flag-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri(target.Value) }],
     };
