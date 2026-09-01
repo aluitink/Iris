@@ -157,3 +157,29 @@ phase-specific waypoints.
 | 19.8.4 Community screen completeness | Community renders: name, description, member list, feed, follow/unfollow button, document link | |
 | 19.8.5 Error states | 404 (unknown actor/object), 401 (unsigned inbox POST), 403 (forbidden) render as error views, not blank pages or raw JSON | |
 | 19.8.6 Loading states | Collection pages show loading indicator while fetching; empty collections show "no items" message, not blank | |
+
+#### 19.8.1 audit result (161m — live, alice@iris-dev1.luit.ink, Playwright, local dial base `http://localhost:8081`)
+
+Every *local* collection→view transition renders a proper view; **no raw-JSON dead ends** on any
+local surface. Two open gaps keep 19.8.1 unchecked.
+
+| Surface | Transition | Result |
+|---|---|---|
+| Log on (Basic-auth) | `alice@localhost` + `iris-sample` + base `http://localhost:8081` | ✅ logged on as `https://iris-dev1.luit.ink/ap/v1/u/alice` |
+| Object (local, IRI box + Load) | object view | ✅ content + author; **Like / Boost** (non-author) or **Like / Boost / Delete** (author) |
+| Object (local, deep-link click) | community feed item → ObjectPage | ✅ renders content + Like/Boost, no error |
+| Object (remote, `mastodon.world`) | feed item → ObjectPage | ❌ **CORS**: browser dials the remote IRI directly, no same-origin proxy route → fetch blocked, nothing renders (19.1.x) |
+| Actor detail | handle `alice` + Load | ✅ Actor, Feed(outbox), Moderation (this actor) + My moderation, Follow/unfollow, Inbound follows (Accept/Reject), Moderation (Mute/Block/Flag), Relays (Subscribe/Unsubscribe) |
+| Home / followed feed | Feed nav | ✅ multi-host timeline (carla@remote.example, bob, alice@iris-dev2); each item links to ObjectPage |
+| Actor search | Actors nav, query `bob`, Search | ✅ "Results for bob" → Person `bob` (→ Object/Actor) + bob's Notes (→ ObjectPage) |
+| Community | `#name` = `iris` + Load | ✅ Feed + Members + Search sections; feed items link to ObjectPage |
+| Instance overview | Instance nav | ✅ software/protocols/NodeInfo; ⚠️ **no recent-instances list**; name renders with an `iris-` prefix quirk |
+| Compose | Compose nav | ✅ "Post note" button present |
+| Actor-detail `#handle` field | passing a full IRI | ⚠️ UX: rejects with a double-path "Not an actor: …/ap/v1/u/https://…/ap/v1/u/alice" error (field expects a handle) |
+
+**Harness note (not a code bug):** the browser aggressively caches the Blazor WebAssembly app
+bundle. After rebuilding `iris-ui`, the browser kept serving a *stale* cached
+`SampleBlazorClient.*.wasm` (predating 19.8.6), which made the **Boost button appear missing** from
+the ObjectPage. `Network.clearBrowserCache` + a fresh boot loaded the current bundle and the Boost
+button rendered in the correct position (Like / **Boost** / Delete). Live UI checks must clear the
+browser cache (or use a fresh context) after a rebuild.

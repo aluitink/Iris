@@ -610,6 +610,16 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   rendered view (ObjectPage/ActorDetail/Community) with the item's content, author, audiences, and
   relationships rendered — no raw-JSON dead ends. Record every collection→view transition that does
   not work.
+  - **Audited live (161m, alice@iris-dev1, Playwright):** every *local* collection→view transition
+    renders a proper view (no raw-JSON dead ends) — actor detail (outbox/moderation/follows/relays),
+    home+followed feed, actor search results, community feed/members, and a local object deep-link
+    (community→ObjectPage renders content + Like/Boost). Two gaps remain open (keep unchecked):
+    (a) **remote (cross-instance) object reads CORS-fail in the browser** — the client dials the
+    remote IRI directly (e.g. `mastodon.world/...`) with no same-origin proxy route, so a remote
+    item in a feed cannot be opened (19.1.x live-interop); (b) the Instance page shows **no
+    recent-instances** list. Minor UX: the Actor-detail `#handle` field rejects a full IRI with a
+    confusing double-path "Not an actor" error. See
+    `docs/changes/161m-19.8.1-click-through-audit.md`.
 - [ ] **19.8.2 — Rendered object view quality.** ObjectPage renders: author (clickable to their
   actor detail), content HTML (sanitized), audiences (to/cc as handles), timestamp, reply chain
   (conversations view per 19.2.4), like/boost counts where available, and a link to the canonical
