@@ -115,14 +115,15 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
             "alice should be a member after the community-signed Add (19.5.2 self-management)");
 
         // The community feed now reflects membership: alice's post appears (the feed is the union of the
-        // local members' outbox activities).
+        // local members' outbox activities). The post-mutation read uses ?refresh=true to bypass the
+        // collection-page cache (19.5.5) and observe the fresh (post-Add) feed.
         Assert.True(
-            (await FeedItemIdsAsync()).Contains($"{_aliceIri.Value}/activities/create-1"),
+            (await FeedItemIdsAsync(refresh: true)).Contains($"{_aliceIri.Value}/activities/create-1"),
             "alice's post should appear in the community feed after she is added as a member");
 
-        // The members collection lists alice.
+        // The members collection lists alice (post-mutation read bypasses the cache).
         Assert.True(
-            (await MemberIrisAsync()).Contains(_aliceIri.Value),
+            (await MemberIrisAsync(refresh: true)).Contains(_aliceIri.Value),
             "alice should be in the members collection after she is added as a member");
     }
 
@@ -153,14 +154,15 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
             await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
             "alice should no longer be a member after the community-signed Remove (19.5.2 self-management)");
 
-        // The community feed no longer reflects her: her post disappears.
+        // The community feed no longer reflects her: her post disappears (the post-mutation read uses
+        // ?refresh=true to bypass the collection-page cache, 19.5.5).
         Assert.True(
-            !(await FeedItemIdsAsync()).Contains($"{_aliceIri.Value}/activities/create-1"),
+            !(await FeedItemIdsAsync(refresh: true)).Contains($"{_aliceIri.Value}/activities/create-1"),
             "alice's post should disappear from the feed after she is removed as a member");
 
-        // The members collection no longer lists alice.
+        // The members collection no longer lists alice (post-mutation read bypasses the cache).
         Assert.True(
-            !(await MemberIrisAsync()).Contains(_aliceIri.Value),
+            !(await MemberIrisAsync(refresh: true)).Contains(_aliceIri.Value),
             "alice should not be in the members collection after the Remove");
     }
 
@@ -189,17 +191,21 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
 
     // --- Helpers ----------------------------------------------------------------------
 
-    private async Task<List<string>> FeedItemIdsAsync()
+    private async Task<List<string>> FeedItemIdsAsync(bool refresh = false)
     {
-        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=100");
+        var url = $"{_base}/ap/v1/c/{Community}/feed?limit=100"
+            + (refresh ? "&refresh=true" : string.Empty);
+        var response = await _http.GetAsync(url);
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();
     }
 
-    private async Task<List<string>> MemberIrisAsync()
+    private async Task<List<string>> MemberIrisAsync(bool refresh = false)
     {
-        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/members?limit=100");
+        var url = $"{_base}/ap/v1/c/{Community}/members?limit=100"
+            + (refresh ? "&refresh=true" : string.Empty);
+        var response = await _http.GetAsync(url);
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();

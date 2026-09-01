@@ -158,19 +158,21 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_ExcludesMemberContentFromCommunityFeed_WithoutSeveringMembership()
     {
-        // Before the mute: bob's post is in the community feed.
+        // Before the mute: bob's post is in the community feed (first read of the page — a cache miss).
         Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
 
         // Mute bob (204): the edge is recorded, the membership is intact, but bob's content is excluded.
+        // The post-mutation feed read uses ?refresh=true to bypass the collection-page cache (19.5.5) and
+        // observe the fresh (post-mute) feed.
         Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password"));
         Assert.Contains(_bobIri, await _persistence.Communities.GetMutesAsync(_irisIri));
         Assert.True(await _persistence.Communities.IsMemberAsync(_irisIri, _bobIri));
-        Assert.DoesNotContain($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.DoesNotContain($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
 
         // Un-mute bob (?unmute=true, 204): the edge is removed and bob's content returns.
         Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password", unmute: true));
         Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetMutesAsync(_irisIri));
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
     }
 
     // --- A community block excludes the member's content (hard exclusion) ---------------
@@ -179,18 +181,19 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     public async Task Block_ExcludesMemberContentFromCommunityFeed()
     {
         // A block is recorded in the community's blocks set (as a federated Block of a local member would
-        // be). The blocked member's content is excluded from the community feed.
+        // be). The blocked member's content is excluded from the community feed (the post-mutation read
+        // uses ?refresh=true to bypass the collection-page cache, 19.5.5).
         await _persistence.Communities.AddBlockAsync(_irisIri, _aliceIri);
 
         var blocks = await _persistence.Communities.GetBlocksAsync(_irisIri);
         Assert.Contains(_aliceIri, blocks);
-        Assert.DoesNotContain($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.DoesNotContain($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
         // bob's content is unaffected (the block is scoped to alice).
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
 
         // Un-blocking removes the edge and restores alice's content.
         await _persistence.Communities.RemoveBlockAsync(_irisIri, _aliceIri);
-        Assert.Contains($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.Contains($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
     }
 
     // --- A community flag does NOT exclude content (a report, not a filter) -------------
@@ -249,7 +252,58 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
 
         Assert.DoesNotContain(_bobIri, await _persistence.Moderation.GetMutesAsync(_aliceIri));
         Assert.DoesNotContain(_aliceIri, await _persistence.Moderation.GetBlocksAsync(_aliceIri));
-        Assert.DoesNotContain(_bobIri, await _persistence.Moderation.GetBlocksAsync(_irisIri));
+        Assert.DoesNotContain(_aliceIri, await _persistence.Moderation.GetBlocksAsync(_irisIri));
+    }
+
+    // --- The community feed is cached and ?refresh=true bypasses it (19.5.5) -------------
+
+    [Fact]
+    public async Task CommunityFeed_IsServedFromThePageCache_WithRefreshBypassAndCacheControl()
+    {
+        // Phase 19.5.5: the community's collections (members, feed, following/followers, and the
+        // moderation collections) are served through the local collection-page response cache, exactly
+        // as the actor collections are. A plain read of a page caches it; a second read within the TTL
+        // returns the cached page even after the underlying state changes; and ?refresh=true bypasses
+        // the cache (re-rendering from the store). The cache also advertises Cache-Control on every
+        // response: a plain read is cacheable (max-age=60, stale-while-revalidate=300) and a refresh
+        // read is not (no-cache).
+        var bobPost = $"{_bobIri.Value}/activities/create-1";
+
+        // A plain (uncached) first read of the feed is a cache miss: it renders from the store, caches
+        // page 1, and advertises the cacheable Cache-Control.
+        var first = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal("max-age=60, stale-while-revalidate=300", CacheControlOf(first));
+        Assert.Contains(bobPost, (await FeedActivityIrisAsync()).ToList());
+
+        // A second plain read of the same page is a cache hit (served from the cache, still cacheable).
+        var second = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.Equal("max-age=60, stale-while-revalidate=300", CacheControlOf(second));
+
+        // Now mute bob (the store changes), but the cache does NOT know about it.
+        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password"));
+
+        // A plain third read is still a cache hit within the TTL: it serves the STALE page-1 that was
+        // cached before the mute (bob's post is still there), because a plain read never re-renders.
+        // This is the documented cache behaviour: a change is invisible to a plain reader until the page
+        // expires or a refresh bypasses the cache.
+        var third = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
+        Assert.Equal(HttpStatusCode.OK, third.StatusCode);
+        Assert.Contains(bobPost, JsonDoc.ItemIdsOf(await third.Content.ReadAsStringAsync()));
+
+        // A ?refresh=true read bypasses the cache and re-renders from the store: bob is now muted, so his
+        // post is excluded — and the response advertises no-cache (it must not be reused by a client).
+        var refresh = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10&refresh=true");
+        Assert.Equal(HttpStatusCode.OK, refresh.StatusCode);
+        Assert.Equal("no-cache", CacheControlOf(refresh));
+        Assert.DoesNotContain(bobPost, JsonDoc.ItemIdsOf(await refresh.Content.ReadAsStringAsync()));
+
+        // The refresh write-back replaced the stale cache entry: a subsequent plain read now serves the
+        // fresh (post-mute) feed, not the stale pre-mute page.
+        var after = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
+        Assert.Equal(HttpStatusCode.OK, after.StatusCode);
+        Assert.DoesNotContain(bobPost, JsonDoc.ItemIdsOf(await after.Content.ReadAsStringAsync()));
     }
 
     // --- Helpers ------------------------------------------------------------------------
@@ -257,11 +311,16 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     /// <summary>
     /// Reads the community's unified feed over the wire and returns the IRIs of the activities it
     /// contains (the feed's items are the members' outbox <c>Create</c>s; each item's IRI is read from its
-    /// <c>id</c>).
+    /// <c>id</c>). The community feed is served through the local collection-page response cache (19.5.5),
+    /// so a read that must observe a just-made change (a mute/block/unmute) passes
+    /// <paramref name="refresh"/>=true to bypass the cache (<c>?refresh=true</c>); the first read of a
+    /// page is a cache miss and needs no bypass.
     /// </summary>
-    private async Task<IReadOnlyList<string>> FeedActivityIrisAsync()
+    private async Task<IReadOnlyList<string>> FeedActivityIrisAsync(bool refresh = false)
     {
-        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
+        var url = $"{_base}/ap/v1/c/{Community}/feed?limit=10"
+            + (refresh ? "&refresh=true" : string.Empty);
+        var response = await _http.GetAsync(url);
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToList();
@@ -286,4 +345,10 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         using var response = await _http.SendAsync(request);
         return response.StatusCode;
     }
+
+    /// <summary>
+    /// Reads the <c>Cache-Control</c> header value of a response (empty string when absent).
+    /// </summary>
+    private static string CacheControlOf(HttpResponseMessage response)
+        => string.Join(", ", response.Headers.GetValues("Cache-Control") ?? []);
 }

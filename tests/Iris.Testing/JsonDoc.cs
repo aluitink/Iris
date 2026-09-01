@@ -43,4 +43,17 @@ public static class JsonDoc
         => element.ValueKind == JsonValueKind.String
             ? element.GetString()!
             : element.GetProperty("id").GetString()!;
+
+    /// <summary>
+    /// Parses a paged collection JSON document and returns the IRIs of its items (each item's
+    /// <see cref="ItemId"/>). Convenience over <see cref="GetItems"/> + <see cref="ItemId"/> for a
+    /// raw response body.
+    /// </summary>
+    /// <param name="json">The collection document's raw JSON text.</param>
+    /// <returns>The item IRIs (empty when the document has no <c>items</c> property).</returns>
+    public static List<string> ItemIdsOf(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        return GetItems(doc.RootElement).Select(ItemId).ToList();
+    }
 }

@@ -596,12 +596,26 @@ public static class ActivityPubServerExtensions
         group.MapGet("/c/{name}", CommunityDocumentHandler);
 
         // Community members: GET /ap/v1/c/{name}/members — the community's member actor IRIs, served as
-        // a paged collection (page 1 is an OrderedCollection with `first`; page N>1 an OrderedCollectionPage).
-        group.MapGet("/c/{name}/members", CommunityMembersHandler);
+        // a paged collection (page 1 is an OrderedCollection with `first`; page N>1 an OrderedCollectionPage),
+        // through the local collection-page response cache (so ?refresh=true bypasses it).
+        group.MapGet(
+                "/c/{name}/members",
+                (string name, HttpContext context,
+                    IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CommunityMembersHandler(name, context, persistence, optionsAccessor, collectionCache, ct));
 
         // Community feed: GET /ap/v1/c/{name}/feed — the community's unified feed (the union of its
-        // local members' outbox activities, newest first), served as a paged collection.
-        group.MapGet("/c/{name}/feed", CommunityFeedHandler);
+        // local members' outbox activities, newest first), served as a paged collection through the
+        // local collection-page response cache (so ?refresh=true bypasses it and emits a no-cache
+        // Cache-Control — the 19.5.5 cache-bypass for the community feed).
+        group.MapGet(
+                "/c/{name}/feed",
+                (string name, HttpContext context,
+                    IPersistenceProvider persistence, ICommunityFeedService feedService,
+                    IOptions<ActivityPubServerOptions> optionsAccessor,
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CommunityFeedHandler(name, context, persistence, feedService, optionsAccessor, collectionCache, ct));
 
         // Community outbox: GET /ap/v1/c/{name}/outbox — the activities the local community (a Group
         // actor) AUTHORS and publishes to its own outbox (currently a Follow and the Undo of a Follow —
@@ -642,8 +656,8 @@ public static class ActivityPubServerExtensions
                 "/c/{name}/{collection:regex(following|followers)}",
                 (string name, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
-                    CancellationToken ct)
-                    => CommunityCollectionHandler(name, collection, context, persistence, optionsAccessor, ct))
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CommunityCollectionHandler(name, collection, context, persistence, optionsAccessor, collectionCache, ct))
             .WithName("community-collection-endpoint");
 
         // Community moderation collections (19.5.4): GET /ap/v1/c/{name}/{blocks|flags|mutes} — the
@@ -657,8 +671,8 @@ public static class ActivityPubServerExtensions
                 "/c/{name}/{collection:regex(blocks|flags|mutes)}",
                 (string name, string collection, HttpContext context,
                     IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
-                    CancellationToken ct)
-                    => CommunityModerationCollectionHandler(name, collection, context, persistence, optionsAccessor, ct))
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CommunityModerationCollectionHandler(name, collection, context, persistence, optionsAccessor, collectionCache, ct))
             .WithName("community-moderation-collection-endpoint");
 
         // Community mute (19.5.4): POST /ap/v1/c/{name}/mutes/{target} — a community's operator records a
@@ -3222,15 +3236,29 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Shared core for the community collection endpoints (members, feed, following/followers):
-    /// community existence check, page/limit parsing, collection-page document build, and response.
+    /// Shared core for the community collection endpoints (members, feed, following/followers, and the
+    /// moderation collections blocks/flags/mutes): community existence check, page/limit parsing,
+    /// collection-page document build, and response.
     /// </summary>
+    /// <remarks>
+    /// The response is served through the <see cref="LocalCollectionPageCache"/> (the server → client
+    /// response cache for the paged collection endpoints) and carries the collection
+    /// <c>Cache-Control</c> header; <c>?refresh=true</c> bypasses the cache for the read and emits a
+    /// <c>no-cache</c> header (the value was just re-rendered — intermediates must not serve a stale
+    /// copy). This mirrors the actor collection endpoint
+    /// (<see cref="CollectionEndpointHandler"/>, <c>GET /u/{handle}/{collection}</c>) and the community
+    /// outbox (<see cref="CommunityOutboxHandler"/>), so every Iris collection honors the same
+    /// <c>Cache-Control</c> + <c>?refresh=true</c> contract. A newly-recorded item (a member post in the
+    /// feed, a new member, a new follow, a new moderation edge) is therefore visible within the TTL
+    /// (<c>max-age=60</c>) and immediately with <c>?refresh=true</c>.
+    /// </remarks>
     private static async Task<IResult> CommunityCollectionEndpointAsync(
         string name,
         string collectionPath,
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         Func<Iri, Task<IReadOnlyList<IObjectOrLink>>> fetchItems,
         CancellationToken ct)
     {
@@ -3248,13 +3276,37 @@ public static class ActivityPubServerExtensions
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
+        var refresh = context.Request.Query["refresh"].ToString()
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
 
         var collectionIri = new Iri($"{communityIri.Value}/{collectionPath}");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
 
-        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        // The cache key is the page IRI, extended with the content filter (?q, the feed's F-23 filter)
+        // when present: a filtered read and an unfiltered read of the same collection+page are distinct
+        // entries (they render different items), so the filter must be part of the key or a ?q= read
+        // would return a stale unfiltered page (or vice versa).
+        var query = context.Request.Query["q"].ToString();
+        var keySuffix = query.Length > 0 ? $"?q={Uri.EscapeDataString(query)}" : string.Empty;
+        var pageIri = page == 1
+            ? (query.Length > 0 ? new Iri($"{collectionIri}{keySuffix}") : collectionIri)
+            : new Iri($"{collectionIri}/?page={page}{(query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty)}");
+
+        // Read (or render on a miss) through the local collection-page response cache. A ?refresh=true
+        // read bypasses the cache (re-rendering now) and still writes back a fresh entry.
+        var (document, _, _) = await collectionCache.GetAsync(
+            pageIri,
+            refresh,
+            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            ct).ConfigureAwait(false);
+
+        // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
+        // re-rendered). A fresh hit, a stale-while-revalidate hit, and a first render (a miss we now
+        // populate) are all cacheable.
+        var cacheControl = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
+        return Results.Text(document!, ActivityJson.ActivityJsonContentType);
     }
 
     /// <summary>
@@ -3267,6 +3319,7 @@ public static class ActivityPubServerExtensions
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         return CommunityCollectionEndpointAsync(
@@ -3275,6 +3328,7 @@ public static class ActivityPubServerExtensions
             context,
             persistence,
             optionsAccessor,
+            collectionCache,
             async communityIri => ActorIrisToLinks((await persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false)).ToList()),
             ct);
     }
@@ -3298,6 +3352,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         ICommunityFeedService feedService,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         var query = context.Request.Query["q"].ToString();
@@ -3307,6 +3362,7 @@ public static class ActivityPubServerExtensions
             context,
             persistence,
             optionsAccessor,
+            collectionCache,
             communityIri => feedService.GetFeedAsync(communityIri, query, ct),
             ct);
     }
@@ -3396,6 +3452,7 @@ public static class ActivityPubServerExtensions
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         return CommunityCollectionEndpointAsync(
@@ -3404,6 +3461,7 @@ public static class ActivityPubServerExtensions
             context,
             persistence,
             optionsAccessor,
+            collectionCache,
             async communityIri =>
             {
                 // `following` = the actors/communities the community follows (the follows set);
@@ -3432,6 +3490,7 @@ public static class ActivityPubServerExtensions
         HttpContext context,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         return CommunityCollectionEndpointAsync(
@@ -3440,6 +3499,7 @@ public static class ActivityPubServerExtensions
             context,
             persistence,
             optionsAccessor,
+            collectionCache,
             async communityIri =>
             {
                 var items = collection switch
