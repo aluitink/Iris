@@ -491,6 +491,47 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+    {
+        // A community manages its own membership (19.5.2 self-management): the Add's actor is the
+        // recipient community, so the server's AddActivityHandler gate (actor == recipient community)
+        // passes and the member is added. The request is signed as the community (the client's signing
+        // identity), so the actor and the signature agree.
+        //
+        // Direct-inbox target (a deviation from the outbox convention): the community outbox publish
+        // endpoint accepts only Follow/Undo/Accept/Reject, so a membership Add is posted directly to the
+        // community's inbox, where AddActivityHandler runs. The Id is unique per operation (a guid
+        // suffix) — not a deterministic dedupe IRI — because a member can be added/removed repeatedly and
+        // each operation is a distinct stored activity.
+        var add = new Add
+        {
+            Id = $"{communityId.Value}/add-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = communityId.Uri }],
+            Object = [new Link { Href = memberId.Uri }],
+        };
+
+        return DeliverAsync(communityId.InboxOf(), add, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+    {
+        // The inverse of AddMemberAsync: the community removes a member from its own member set. The
+        // Remove's actor is the recipient community (the 19.5.2 gate), the request is signed as the
+        // community, and it is delivered directly to the community's inbox (the community outbox publish
+        // endpoint accepts only Follow/Undo/Accept/Reject). The Id is unique per operation so a repeated
+        // add/remove is a distinct stored activity.
+        var remove = new Remove
+        {
+            Id = $"{communityId.Value}/remove-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = communityId.Uri }],
+            Object = [new Link { Href = memberId.Uri }],
+        };
+
+        return DeliverAsync(communityId.InboxOf(), remove, ct);
+    }
+
+    /// <inheritdoc/>
     public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
         Iri actorId,
         CollectionQuery? query = null,

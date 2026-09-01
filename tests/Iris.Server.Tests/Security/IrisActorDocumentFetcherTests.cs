@@ -174,6 +174,14 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

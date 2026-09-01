@@ -392,6 +392,58 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Adds <paramref name="memberId"/> to <paramref name="communityId"/> (F-16 community membership):
+    /// builds an <see cref="KristofferStrube.ActivityStreams.Add"/> activity (actor =
+    /// <paramref name="communityId"/>, object = <paramref name="memberId"/>) and delivers it to the
+    /// community's own inbox.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community whose membership is changed (the community is
+    /// the activity's <c>actor</c> — a community manages its own membership, see the remarks).</param>
+    /// <param name="memberId">The IRI of the actor to add as a member.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// <strong>Self-management.</strong> A community's membership is an act of the community's own
+    /// management surface (19.5.2): the <c>Add</c>'s <c>actor</c> is the recipient community, and the
+    /// server's <c>AddActivityHandler</c> applies a gate — only an <c>Add</c> whose actor is the recipient
+    /// community edits that community's member set. The client therefore sets <c>actor = communityId</c>
+    /// (not a calling person), and the request must be signed as the community (the client's signing
+    /// identity must be the community so the <c>actor</c> and the signature agree).
+    /// </remarks>
+    /// <remarks>
+    /// <strong>Direct-inbox target (a deviation from the outbox convention).</strong> Unlike every other
+    /// one-call method (which publishes to <c>actorId.OutboxOf()</c>), this delivers to
+    /// <c>communityId.InboxOf()</c>: the community outbox publish endpoint accepts only
+    /// <c>Follow</c>/<c>Undo</c>/<c>Accept</c>/<c>Reject</c>, so a membership <c>Add</c> is posted directly
+    /// to the community's inbox (where <c>AddActivityHandler</c> runs). The <c>Add</c> gets a unique IRI
+    /// (<c>{community}/add-&lt;guid&gt;</c>) — not a deterministic dedupe IRI — because a member can be
+    /// added/removed repeatedly and each operation is a distinct stored activity.
+    /// </remarks>
+    public Task<DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes <paramref name="memberId"/> from <paramref name="communityId"/> (F-16 community
+    /// membership): the inverse of <see cref="AddMemberAsync"/> — builds a
+    /// <see cref="KristofferStrube.ActivityStreams.Remove"/> activity (actor =
+    /// <paramref name="communityId"/>, object = <paramref name="memberId"/>) and delivers it to the
+    /// community's own inbox.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community whose membership is changed (the community is
+    /// the activity's <c>actor</c> — a community manages its own membership, see the remarks).</param>
+    /// <param name="memberId">The IRI of the actor to remove as a member.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// <strong>Self-management + direct-inbox target.</strong> Same model as <see cref="AddMemberAsync"/>:
+    /// the <c>Remove</c>'s <c>actor</c> is the recipient community (the 19.5.2 gate — only the community
+    /// edits its own member set), the request is signed as the community, and it is delivered to
+    /// <c>communityId.InboxOf()</c> (the community outbox publish endpoint accepts only
+    /// <c>Follow</c>/<c>Undo</c>/<c>Accept</c>/<c>Reject</c>). The <c>Remove</c> gets a unique IRI
+    /// (<c>{community}/remove-&lt;guid&gt;</c>) so a repeated add/remove is a distinct stored activity.
+    /// </remarks>
+    public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default);
+
+    /// <summary>
     /// Enumerates the actors that <paramref name="actorId"/> has flagged (F-07 moderation): reads the
     /// actor's <c>flags</c> collection (served at <c>actorId.FlagsOf()</c>, i.e.
     /// <c>{actor}/flags</c>) as a paged <see cref="OrderedCollection"/> of items, so the same
