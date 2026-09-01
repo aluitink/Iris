@@ -56,24 +56,26 @@ public interface IActivityPubClient : IDisposable
     public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default);
 
     /// <summary>
-    /// Sends an ActivityPub activity to the given inbox IRI, signed with the
+    /// Sends an ActivityPub activity to the given target IRI, signed with the
     /// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
-    /// <c>content-type</c>).
+    /// <c>content-type</c>). The target is typically the author's own outbox (the write surface for the
+    /// activities an actor authors); the server owns the recipient hop (delivering to the target
+    /// actor's inbox).
     /// </summary>
-    /// <param name="inboxId">The inbox IRI to deliver to.</param>
+    /// <param name="targetId">The target IRI to deliver to (typically <c>actorId.OutboxOf()</c>).</param>
     /// <param name="activity">The activity to send (must be an <see cref="Activity"/>; serialized
     /// with <see cref="Iris.Core.ActivityJson"/>).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <exception cref="ArgumentException">When <paramref name="activity"/> is not an <see cref="Activity"/>.</exception>
-    public Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default);
+    public Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default);
 
     /// <summary>
-    /// Sends a signed <see cref="Follow"/> activity to the target actor's inbox so that
-    /// <paramref name="actorId"/> follows <paramref name="targetId"/>. This is the client's
-    /// one-call "follow" (it derives the target's inbox from the actor IRI via
-    /// <see cref="IriExtensions.InboxOf(Iri)"/> and builds the <see cref="Follow"/> — the caller does
-    /// not need to know the inbox IRI or hand-build the activity).
+    /// Follows <paramref name="targetId"/> as <paramref name="actorId"/>: builds the
+    /// <see cref="Follow"/> (actor = <paramref name="actorId"/>, object = <paramref name="targetId"/>)
+    /// and publishes it to <paramref name="actorId"/>'s own outbox, signed by the pipeline. This is the
+    /// client's one-call "follow" (the caller supplies only the target's IRI — the
+    /// <see cref="Follow"/> and the delivery target are derived here).
     /// </summary>
     /// <param name="actorId">The IRI of the actor performing the follow (must match the client's
     /// signing identity so the request is signed as that actor).</param>
@@ -81,9 +83,11 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="Follow"/> is delivered to <c>targetId.InboxOf()</c> and is signed by the
-    /// pipeline. The target's <c>Accept</c> (outbound delivery) is the remote instance's
-    /// responsibility; a <c>202</c> here means the target's inbox accepted the follow.
+    /// The <see cref="Follow"/> is published to <c>actorId.OutboxOf()</c> (the write surface for the
+    /// activities an actor authors) and is signed by the pipeline. The server records the follow edge in
+    /// <paramref name="actorId"/>'s outbox and server-delivers the <see cref="Follow"/> to the target's
+    /// inbox (the server owns the recipient hop). The target's <c>Accept</c> is the remote instance's
+    /// responsibility; a <c>202</c> here means the actor's outbox accepted the follow.
     /// </remarks>
     public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
@@ -91,9 +95,9 @@ public interface IActivityPubClient : IDisposable
     /// Un-follows <paramref name="targetId"/> as <paramref name="actorId"/> (the inverse of
     /// <see cref="FollowAsync"/>): builds an <see cref="KristofferStrube.ActivityStreams.Undo"/> of the
     /// <see cref="KristofferStrube.ActivityStreams.Follow"/> <paramref name="actorId"/> made of
-    /// <paramref name="targetId"/> and delivers it through the signed pipeline to the follower's own inbox
-    /// (per the ActivityPub un-follow convention — the party that made the follow undoes it, so the
-    /// <c>Undo</c> is addressed to the follower's inbox, not the un-followed actor's).
+    /// <paramref name="targetId"/> and publishes it to <paramref name="actorId"/>'s own outbox (per the
+    /// ActivityPub un-follow convention — the party that made the follow undoes it, so the
+    /// <c>Undo</c> is authored by the follower, not the un-followed actor).
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-following (must match the client's signing identity so
     /// the request is signed as that actor).</param>
@@ -101,12 +105,14 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to <c>actorId.InboxOf()</c>
-    /// (the follower's own inbox) and is signed by the pipeline. Its <c>object</c> references the original
+    /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the follower's own outbox — the write surface for the activities an actor authors) and is signed by
+    /// the pipeline. Its <c>object</c> references the original
     /// <see cref="KristofferStrube.ActivityStreams.Follow"/> by IRI (the same deterministic
     /// <c>{actorId}/follows/{targetId}</c> IRI <see cref="FollowAsync"/> mints), and the <see
     /// cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
-    /// unique-per-(actor,target) IRI so a retried un-follow dedupes on the receiver.
+    /// unique-per-(actor,target) IRI so a retried un-follow dedupes on the receiver. The server removes the
+    /// local follow edge and server-delivers the <c>Undo</c> to the previously-followed actor's inbox.
     /// </remarks>
     public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
@@ -158,13 +164,13 @@ public interface IActivityPubClient : IDisposable
 
     /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
-    /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and delivers it through
-    /// the signed pipeline to the liker's own inbox (the local-write path, exactly like
+    /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and publishes it through
+    /// the signed pipeline to the liker's own outbox (exactly like
     /// <see cref="PostNoteAsync(Iri, string, IEnumerable{Iri}, CancellationToken)"/> — a content object has no
-    /// inbox of its own, only actors do). The instance records the like edge (liker → object) and federates it
-    /// to the object's owner. This is the client's one-call "like" (the caller supplies only the liked
-    /// object's IRI — the <see cref="KristofferStrube.ActivityStreams.Like"/> and the delivery target are
-    /// derived here).
+    /// outbox of its own, only actors do). The server records the like edge (liker → object) and
+    /// server-delivers it to the object's owner. This is the client's one-call "like" (the caller supplies only
+    /// the liked object's IRI — the <see cref="KristofferStrube.ActivityStreams.Like"/> and the delivery target
+    /// are derived here).
     /// </summary>
     /// <param name="actorId">The IRI of the actor issuing the like (must match the client's signing identity
     /// so the request is signed as that actor).</param>
@@ -172,12 +178,12 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="KristofferStrube.ActivityStreams.Like"/> is delivered to the liker's OWN inbox
-    /// (<c>actorId.InboxOf()</c>, the local-write path — a content object has no inbox of its own, only
-    /// actors do) and is signed by the pipeline. The instance records the like edge (liker → object) in the
-    /// liker's <c>liked</c> collection and federates it to the object's owner. The <see
-    /// cref="KristofferStrube.ActivityStreams.Like"/> gets a deterministic, unique-per-(actor,object) IRI so a
-    /// retried like dedupes on the receiver.
+    /// The <see cref="KristofferStrube.ActivityStreams.Like"/> is published to the liker's OWN outbox
+    /// (<c>actorId.OutboxOf()</c>, the write surface for the activities an actor authors — a content object
+    /// has no outbox of its own, only actors do) and is signed by the pipeline. The server records the like
+    /// edge (liker → object) in the liker's <c>liked</c> collection and server-delivers the like to the
+    /// object's owner. The <see cref="KristofferStrube.ActivityStreams.Like"/> gets a deterministic,
+    /// unique-per-(actor,object) IRI so a retried like dedupes on the receiver.
     /// </remarks>
     public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
 
@@ -230,12 +236,12 @@ public interface IActivityPubClient : IDisposable
 
     /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
-    /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity and delivers it through the signed
-    /// pipeline to the target actor's inbox so that <paramref name="actorId"/> blocks
-    /// <paramref name="targetId"/>. This is the client's one-call "block" (it derives the target's
-    /// inbox from the actor IRI via <see cref="IriExtensions.InboxOf(Iri)"/> and builds the
-    /// <see cref="KristofferStrube.ActivityStreams.Block"/> — the caller does not need to know the inbox
-    /// IRI or hand-build the activity).
+    /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity (actor = <paramref name="actorId"/>,
+    /// object = <paramref name="targetId"/>) and publishes it through the signed pipeline to
+    /// <paramref name="actorId"/>'s own outbox so that <paramref name="actorId"/> blocks
+    /// <paramref name="targetId"/>. This is the client's one-call "block" (the caller supplies only the
+    /// target's IRI — the <see cref="KristofferStrube.ActivityStreams.Block"/> and the delivery target are
+    /// derived here).
     /// </summary>
     /// <param name="actorId">The IRI of the actor performing the block (must match the client's signing
     /// identity so the request is signed as that actor).</param>
@@ -243,9 +249,10 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="KristofferStrube.ActivityStreams.Block"/> is delivered to <c>targetId.InboxOf()</c>
-    /// (the blocked actor's inbox, per ActivityPub §5.2.1.3) and is signed by the pipeline. The receiving
-    /// instance records the <c>actorId → targetId</c> block edge in its moderation store. The
+    /// The <see cref="KristofferStrube.ActivityStreams.Block"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the blocking actor's own outbox — the write surface for the activities an actor authors) and is
+    /// signed by the pipeline. The server records the <c>actorId → targetId</c> block edge in the
+    /// moderation store and server-delivers the block to the target's inbox (per ActivityPub §5.2.1.3). The
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> gets a deterministic, unique-per-(actor,target)
     /// IRI so a retried block dedupes on the receiver.
     /// </remarks>
@@ -276,8 +283,9 @@ public interface IActivityPubClient : IDisposable
 
     /// <summary>
     /// Un-blocks an actor (F-07 moderation): builds an <see cref="Undo"/> of the
-    /// <see cref="Block"/> <paramref name="actorId"/> made of <paramref name="targetId"/> and delivers
-    /// it to the target's inbox (the inverse of <see cref="BlockAsync"/>).
+    /// <see cref="Block"/> <paramref name="actorId"/> made of <paramref name="targetId"/> and publishes
+    /// it to <paramref name="actorId"/>'s own outbox (the inverse of <see cref="BlockAsync"/> — the party
+    /// that made the block undoes it).
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-blocking (must match the client's signing identity
     /// so the request is signed as that actor).</param>
@@ -285,19 +293,21 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the previously-blocked actor's
-    /// inbox, so the receiving instance can remove the recorded edge) and is signed by the pipeline. Its
+    /// The <see cref="Undo"/> is published to <c>actorId.OutboxOf()</c> (the blocking actor's own outbox —
+    /// the write surface for the activities an actor authors) and is signed by the pipeline. Its
     /// <c>object</c> references the original <see cref="Block"/> by IRI (the same deterministic
     /// <c>{actor}/blocks/{target}</c> IRI <see cref="BlockAsync"/> mints), and the <see cref="Undo"/>
     /// itself gets a deterministic, unique-per-(actor,target) IRI so a retried un-block dedupes on the
-    /// receiver.
+    /// receiver. The server removes the local block edge and server-delivers the <c>Undo</c> to the
+    /// previously-blocked actor's inbox.
     /// </remarks>
     public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
     /// Flags an actor (F-07 moderation): builds a <see cref="Flag"/> activity (actor =
-    /// <paramref name="actorId"/>, object = <paramref name="targetId"/>) and delivers it to the target's
-    /// inbox (a moderation report — the inverse is an <see cref="Undo"/> of the <see cref="Flag"/>).
+    /// <paramref name="actorId"/>, object = <paramref name="targetId"/>) and publishes it to
+    /// <paramref name="actorId"/>'s own outbox (a moderation report — the inverse is an
+    /// <see cref="Undo"/> of the <see cref="Flag"/>).
     /// </summary>
     /// <param name="actorId">The IRI of the actor flagging (must match the client's signing identity so
     /// the request is signed as that actor).</param>
@@ -305,10 +315,11 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="Flag"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and is
-    /// signed by the pipeline. The receiving instance records the <c>actorId → targetId</c> flag edge in
-    /// its moderation store when either party is local (the flag is a report; it does not sever the
-    /// relationship the way a <see cref="BlockAsync"/> block does). The <see cref="Flag"/> gets a
+    /// The <see cref="Flag"/> is published to <c>actorId.OutboxOf()</c> (the flagging actor's own outbox —
+    /// the write surface for the activities an actor authors) and is signed by the pipeline. The server
+    /// records the <c>actorId → targetId</c> flag edge in its moderation store when either party is local
+    /// (the flag is a report; it does not sever the relationship the way a <see cref="BlockAsync"/> block
+    /// does) and server-delivers the flag to the target's inbox. The <see cref="Flag"/> gets a
     /// deterministic, unique-per-(actor,target) IRI so a retried flag dedupes on the receiver.
     /// </remarks>
     public Task<DeliveryResult> FlagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
@@ -316,8 +327,8 @@ public interface IActivityPubClient : IDisposable
     /// <summary>
     /// Un-flags an actor (F-07 moderation): the inverse of <see cref="FlagAsync"/> — builds an
     /// <see cref="Undo"/> activity referencing the original <see cref="Flag"/> (actor =
-    /// <paramref name="actorId"/>, object = the <see cref="Flag"/> IRI for the pair) and delivers it to
-    /// the target's inbox, removing the recorded <c>actorId → targetId</c> flag edge.
+    /// <paramref name="actorId"/>, object = the <see cref="Flag"/> IRI for the pair) and publishes it to
+    /// <paramref name="actorId"/>'s own outbox, removing the recorded <c>actorId → targetId</c> flag edge.
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-flagging (must match the client's signing identity
     /// so the request is signed as that actor).</param>
@@ -325,11 +336,12 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="Undo"/> is delivered to <c>targetId.InboxOf()</c> (the flagged actor's inbox) and
-    /// is signed by the pipeline. It references the deterministic <see cref="Flag"/> IRI
-    /// <c>{actorId}/flags/{targetId}</c> (the same IRI <see cref="FlagAsync"/> used), so the receiving
-    /// instance resolves the original flag's parties from the stored <see cref="Flag"/> and removes the
-    /// exact recorded edge (a local flagger of anyone, or a flagger of a local actor).
+    /// The <see cref="Undo"/> is published to <c>actorId.OutboxOf()</c> (the flagging actor's own outbox —
+    /// the write surface for the activities an actor authors) and is signed by the pipeline. It references
+    /// the deterministic <see cref="Flag"/> IRI <c>{actorId}/flags/{targetId}</c> (the same IRI
+    /// <see cref="FlagAsync"/> used), so the server resolves the original flag's parties from the stored
+    /// <see cref="Flag"/> and removes the exact recorded edge (a local flagger of anyone, or a flagger of a
+    /// local actor), then server-delivers the <c>Undo</c> to the target's inbox.
     /// </remarks>
     public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
@@ -398,8 +410,8 @@ public interface IActivityPubClient : IDisposable
 
     /// <summary>
     /// Posts a note as <paramref name="actorId"/>: builds a <see cref="Create"/> activity carrying an
-    /// embedded <see cref="Note"/> with the given <paramref name="content"/> and delivers it through
-    /// the signed pipeline to the actor's own inbox. This is the client's one-call "post a note" (the
+    /// embedded <see cref="Note"/> with the given <paramref name="content"/> and publishes it through
+    /// the signed pipeline to the actor's own outbox. This is the client's one-call "post a note" (the
     /// caller supplies only the content — the <see cref="Create"/>, the embedded <see cref="Note"/>,
     /// and the delivery target are all derived here).
     /// </summary>
@@ -411,11 +423,11 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// The <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox) —
-    /// the "local post" path: the post reaches the author's instance, which records it and federates
-    /// it to followers (the outbound-to-followers leg is the server's responsibility, not the
-    /// client's). The <see cref="Create"/> and the embedded <see cref="Note"/> each get a
-    /// deterministic, unique IRI so a retried post dedupes on the receiver. The note's
+    /// The <see cref="Create"/> is published to <c>actorId.OutboxOf()</c> (the author's own outbox) —
+    /// the "local post" path: the post reaches the author's instance via the actor's own outbox, which
+    /// records it and federates it to followers (the outbound-to-followers leg is the server's
+    /// responsibility, not the client's). The <see cref="Create"/> and the embedded <see cref="Note"/>
+    /// each get a deterministic, unique IRI so a retried post dedupes on the receiver. The note's
     /// <c>attributedTo</c> is the author.
     /// </remarks>
     public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
@@ -424,8 +436,8 @@ public interface IActivityPubClient : IDisposable
     /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
     /// builds a <see cref="Create"/> carrying an embedded <see cref="Note"/> whose <c>inReplyTo</c> is
     /// the parent note and whose <c>tag</c> carries an <see cref="Mention"/> per <c>@mention</c> in
-    /// <paramref name="mentions"/>, then delivers it through the signed pipeline to the author's inbox
-    /// (F-12). This is the client's one-call "reply to a note" (the caller supplies the parent IRI, the
+    /// <paramref name="mentions"/>, then publishes it through the signed pipeline to the author's own
+    /// outbox (F-12). This is the client's one-call "reply to a note" (the caller supplies the parent IRI, the
     /// content, and any mentions — the <see cref="Create"/>/embedded <see cref="Note"/>, the
     /// <c>inReplyTo</c>, the <c>tag</c> mentions, and the delivery target are all derived here).
     /// </summary>
@@ -447,7 +459,7 @@ public interface IActivityPubClient : IDisposable
     /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
     /// receiving server's <c>Create</c> handler records the parent → child reply edge (via the note's
     /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The
-    /// <see cref="Create"/> is delivered to <c>actorId.InboxOf()</c> (the author's own inbox).
+    /// <see cref="Create"/> is published to <c>actorId.OutboxOf()</c> (the author's own outbox).
     /// </remarks>
     public Task<DeliveryResult> PostReplyAsync(
         Iri actorId,

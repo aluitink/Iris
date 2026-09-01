@@ -200,7 +200,7 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult<NodeInfo?>(null);
 
         /// <inheritdoc/>
-        public Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
+        public Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>

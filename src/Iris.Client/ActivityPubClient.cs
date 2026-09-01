@@ -175,7 +175,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public async Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
+    public async Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)
         {
@@ -185,7 +185,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         var json = ActivityJson.Serialize(activity);
         var body = System.Text.Encoding.UTF8.GetBytes(json);
 
-        using var request = new HttpRequestMessage(HttpMethod.Post, inboxId.Value)
+        using var request = new HttpRequestMessage(HttpMethod.Post, targetId.Value)
         {
             Content = new ByteArrayContent(body),
         };

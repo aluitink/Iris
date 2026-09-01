@@ -12,19 +12,20 @@ namespace Iris.Server.Tests;
 
 /// <summary>
 /// Integration test for the Phase 19.6.2 architectural expectation: <em>all activities flow through the
-/// outbox</em>. Every activity a local actor authors — whether it is published by the client through the
-/// outbox endpoint (<c>POST /ap/v1/u/{handle}/outbox</c>) or produced by the server on the actor's behalf
-/// (the follow-decision endpoint's <c>Accept</c>/<c>Reject</c>) — is recorded in the actor's outbox,
-/// exactly once, in a stable (recorded) order. The outbox is therefore the single source of truth for the
-/// actor's authored history: reading the outbox yields precisely the activities the actor did, nothing
-/// more and nothing less, with no duplicates.
+/// outbox</em>. Every activity a local actor authors — including the follow <c>Accept</c>/<c>Reject</c>
+/// the operator publishes to the followed actor's own outbox (Phase 19.0b, AP-native; the legacy
+/// Basic-auth follow-decision endpoint is removed) — is recorded in the actor's outbox, exactly once, in a
+/// stable (recorded) order. The outbox is therefore the single source of truth for the actor's authored
+/// history: reading the outbox yields precisely the activities the actor did, nothing more and nothing
+/// less, with no duplicates.
 /// </summary>
 /// <remarks>
 /// Topology: a single instance (a.domain.local) hosts alice (the instance actor, the one who authors the
 /// activities) plus bob (a second local actor, so alice's local <c>Follow</c>/<c>Block</c> have a local
 /// recipient and need no cross-instance hop). A remote actor (remote.domain.local, never hosted) follows
-/// alice twice so the follow-decision endpoint can produce an <c>Accept</c> and a <c>Reject</c> on
-/// alice's behalf. The test authors every supported activity type, then enumerates alice's outbox and
+/// alice twice so the operator can publish an <c>Accept</c> and a <c>Reject</c> (to alice's outbox,
+/// AP-native Phase 19.0b) on alice's behalf. The test authors every supported activity type, then
+/// enumerates alice's outbox and
 /// asserts it contains exactly the authored set, each once, in the store's stable order (newest-first,
 /// the order the outbox collection renders). The raw-inspector (UI) half of 19.6.2 is exercised live in
 /// the two-instance Docker environment.

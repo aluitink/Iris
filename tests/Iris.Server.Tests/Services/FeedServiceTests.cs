@@ -636,7 +636,7 @@ public sealed class FeedServiceTests
         public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)
             => Task.FromResult<NodeInfo?>(null);
 
-        public Task<DeliveryResult> DeliverAsync(Iri inboxId, IObject activity, CancellationToken ct = default)
+        public Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
