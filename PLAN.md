@@ -71,7 +71,9 @@ Iris.slnx
 
 **Phase 19.6.1 (change 161i): client boost/unboost** — added the client's one-call `AnnounceAsync`/`UnannounceAsync` (boost/unboost), both published to the acting actor's outbox through the signed pipeline (the server already handled `Announce` fan-out + `Undo` generically). Every management operation is now expressible as a one-call client method. Two new integration tests pin the outbox recording.
 
-**Phase 19.8.6 (change 161j): ObjectPage boost button** — wired the object view's **Boost/Unboost** toggle (next to Like/Unlike) into the client's `AnnounceAsync`/`UnannounceAsync`, reusing the page's `WriteBusy`/`WriteResult`/`WriteError` machinery. Two new in-process `S7ScreenTests` pin the boost + unboost round-trips. Suite 1,258, 0 failed.
+**Phase 19.8.6 (change 161j): ObjectPage boost button** — wired the object view's **Boost/Unboost** toggle (next to Like/Unlike) into the client's `AnnounceAsync`/`UnannounceAsync`, reusing the page's `WriteBusy`/`WriteResult`/`WriteError` machinery. Two new in-process `S7ScreenTests` pin the boost + unboost round-trips.
+
+**Phase 19.6.1 (change 161k): client community-maintenance one-call methods** — added `AddMemberAsync`/`RemoveMemberAsync` (an `Add`/`Remove` with `actor` = the community, delivered directly to the community's own inbox through the signed pipeline; create-community deferred — no federated activity type/route exists). Three new integration tests pin the round-trips. Suite 1,261, 0 failed.
 
 **Next: Phase 19.1 (live interop verification)** — 19.1.2 (F1) is unblocked: the follow Accept/Reject mechanism is now outbox-based (AP-native). Remaining 19.x items are live/UI-verification (Docker env + RayvenMX) or the deferred 19.6.5 audience-metadata.
 

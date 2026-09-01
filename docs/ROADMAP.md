@@ -470,7 +470,13 @@ Confirm the core architectural invariants of how clients talk to servers.
     actor's outbox through the signed pipeline) + two integration tests pinning the outbox recording — so
     every management operation is now expressible as a one-call client method (no side channel). Change
     161j wires the **Boost/Unboost button** into the object view (the UI half of the boost screen) + two
-    in-process `S7ScreenTests` pinning the round-trips. The local-moderation operations (Mute/Unmute,
+    in-process `S7ScreenTests` pinning the round-trips. Change 161k adds the client's one-call
+    **community-maintenance** methods (`AddMemberAsync`/`RemoveMemberAsync` — an `Add`/`Remove` with
+    `actor` = the community, delivered directly to the community's own inbox through the signed pipeline) +
+    three integration tests, so the membership management operations are also one-call client methods.
+    **Create-community is deferred** (decision recorded in the change doc): there is no federated
+    ActivityStream activity type or server route for it — communities are created server-side/admin-side —
+    so it is out of scope for the one-call client invariant. The local-moderation operations (Mute/Unmute,
     Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`, not the outbox, so they are out of scope for
     this test. Still open: the **raw-inspector (UI) half** — drive every write screen (including the new
     boost/unboost button) through the browser and confirm the rendered signed message in the raw inspector
