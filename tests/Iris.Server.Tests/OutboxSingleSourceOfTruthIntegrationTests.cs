@@ -1,7 +1,6 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
-using Iris.Client;
+ using System.Net;
+ using System.Net.Http.Headers;
+ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
@@ -121,7 +120,8 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         var delete = BuildDelete(_alice, noteIri);
         Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(delete));
 
-        // 8. Accept a remote follow of alice (server-delivered, via the follow-decision endpoint).
+        // 8. Accept a remote follow of alice (published to alice's outbox; the instance applies the edge
+        //    and server-delivers the Accept).
         var remoteFollow1 = BuildRemoteFollow(_remote, _alice);
         await RecordProvisionalFollowAsync(remoteFollow1);
         Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(remoteFollow1, accept: true));
@@ -130,7 +130,8 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
             ? storedAccept!
             : throw new InvalidOperationException("The Accept should be recorded.");
 
-        // 9. Reject a second remote follow of alice (server-delivered, via the follow-decision endpoint).
+        // 9. Reject a second remote follow of alice (published to alice's outbox; the instance removes the
+        //    provisional edge and server-delivers the Reject).
         var remoteFollow2 = BuildRemoteFollow(_remote, _alice);
         await RecordProvisionalFollowAsync(remoteFollow2);
         Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(remoteFollow2, accept: false));
@@ -266,18 +267,16 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     }
 
     /// <summary>
-    /// Issues a Basic-authenticated follow decision on <paramref name="follow"/> and returns the status
-    /// code. <paramref name="accept"/> selects the accept half (a trailing <c>/accept</c>).
+    /// Publishes the AP-native follow decision (the deterministic <see cref="Accept"/> or
+    /// <see cref="Reject"/>) for <paramref name="follow"/> to alice's outbox, signed as alice, and returns
+    /// the status code. <paramref name="accept"/> selects the accept half.
     /// </summary>
     private async Task<int> DecisionAsync(Follow follow, bool accept)
     {
-        var suffix = accept ? "/accept" : string.Empty;
-        var url = $"{_alice.Value.TrimEnd('/')}/follows/{follow.Id!}{suffix}";
-        using var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Alice}:{AlicePassword}")));
-        using var response = await _http.SendAsync(request);
-        return (int)response.StatusCode;
+        Activity decision = accept
+            ? FollowIris.BuildAccept(_alice, follow)
+            : FollowIris.BuildReject(_alice, follow);
+        return await PostOutboxAsync(decision);
     }
 
     /// <summary>

@@ -115,8 +115,9 @@ else
                 <h3>Inbound follows</h3>
                 <p class="muted">
                     Follows <em>of</em> <code>@ActorIri.Value</code> (actors that follow this actor). Accept /
-                    reject are local, Basic-authenticated decisions made <em>as this actor</em>: the instance
-                    records the edge and delivers a signed <c>Accept</c>/<c>Reject</c> to the follower's inbox.
+                    reject are AP-native: the client authors an <c>Accept</c>/<c>Reject</c> and publishes it to
+                    this actor's outbox; the instance records the edge and delivers the activity to the
+                    follower's inbox.
                 </p>
                 @if (PendingFollows is not null && PendingFollows.Count == 0)
                 {
@@ -401,22 +402,22 @@ else
 
     private async Task FollowDecisionAsync(Iri followIri, bool accept)
     {
-        if (!Session.IsLoggedIn || ActorIri is null)
+        if (!Session.IsLoggedIn || ActorIri is not { } followedIri)
         {
             return;
         }
 
-        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
         FollowDecisionBusy = true;
         FollowDecisionResult = null;
         FollowDecisionError = null;
         try
         {
-            // Accept/reject are local, Basic-authenticated decisions made AS the loaded actor (the followed
-            // side). The instance builds + delivers the signed Accept/Reject to the follower's inbox.
+            // Accept/reject are AP-native: the client authors the deterministic Accept/Reject and publishes
+            // it to the followed actor's own outbox (this actor — the operator IS the followed actor). The
+            // instance records the edge effect and server-delivers the activity to the follower's inbox.
             FollowDecisionResult = accept
-                ? await Session.GetClient().AcceptFollowAsync(actorIri, followIri)
-                : await Session.GetClient().RejectFollowAsync(actorIri, followIri);
+                ? await Session.GetClient().AcceptAsync(followedIri, followIri)
+                : await Session.GetClient().RejectAsync(followedIri, followIri);
 
             // Refresh the inbound-follows list (bypassing the page cache) so the accepted/rejected follow's
             // Accept/Reject activity is visible immediately.

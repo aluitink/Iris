@@ -20,13 +20,12 @@ namespace Iris.Server.Tests;
 /// <c>Accept</c>/<c>Reject</c> to the follower's inbox (signed as the followed actor).
 /// </summary>
 /// <remarks>
-/// Topology mirrors <see cref="OperatorFollowDecisionEndpointIntegrationTests"/>: a single instance
-/// (b.domain.local) hosts bob (manually-approving); a remote alice (a IRI on a.domain.local, never
-/// hosted) follows bob, recording the provisional edge. The difference from the endpoint test: the
-/// decision is a <em>signed outbox publish</em> (no Basic auth, no catch-all route value — the original
-/// <c>Follow</c> is referenced by IRI in the activity's <c>object</c>). The cross-instance delivery of
-/// the decision back to alice is covered by the federation-signature tests; here we assert the local-side
-/// effects (activity + outbox + edge) and the status codes.
+/// Topology: a single instance (b.domain.local) hosts bob (manually-approving); a remote alice (an IRI on
+/// a.domain.local, never hosted) follows bob, recording the provisional edge. The decision is a
+/// <em>signed outbox publish</em> (no Basic auth, no dedicated route — the original <c>Follow</c> is
+/// referenced by IRI in the activity's <c>object</c>). The cross-instance delivery of the decision back to
+/// alice is covered by the federation-signature tests; here we assert the local-side effects (activity +
+/// outbox + edge) and the status codes.
 /// </remarks>
 public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
 {

@@ -1,7 +1,6 @@
-using System.Net;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
+ using System.Net;
+ using System.Net.Http.Headers;
+ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server;
@@ -328,17 +327,16 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var bobInboxIri = bobActorIri.InboxOf();
         var aliceFollowingIri = new Iri($"{aliceActorIri}/following");
 
-        // bob's Basic-auth credentials (the operator acting as bob) for the reject endpoint.
-        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
-            ValueTask.FromResult(iri == bobActorIri && username == Bob && password == "bob-password"));
-
         TestServer? bRef = null;
         var a = StartServer(AHost, Alice, aPersistence,
             fetcher: BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => bRef!.CreateHandler())));
+        // B's fetcher routes by actor-IRI host (self → B, peer → A) so B can both validate alice's
+        // signature (fetch alice's doc from A) AND resolve its own local bob's key (fetch bob's doc from
+        // B) — the latter is required for the operator's signed outbox Reject to validate (the inbound
+        // key resolver always fetches the actor document, with no local shortcut).
         bRef = StartServer(BHost, Bob, bPersistence,
-            fetcher: BuildFetcherFor(BHost, Bob, bBob.Key, a.CreateHandler()),
-            deliveryTransport: () => a.CreateHandler(),
-            credentialValidator: credentialValidator);
+            fetcher: new RoutingFetcher(AHost, a.CreateHandler(), BHost, new LazyHandler(() => bRef!.CreateHandler()), bBob.Key, bobActorIri),
+            deliveryTransport: () => a.CreateHandler());
         using var scope = new DisposeBoth(bRef, a);
 
         // alice follows bob over the wire. B validates alice's signature and records the provisional
@@ -356,19 +354,12 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "A should record alice's own follow of bob");
 
-        // The operator rejects the follow: a Basic-authenticated POST as bob to bob's reject endpoint,
-        // with the original Follow as the body. B builds the deterministic Reject, records it in its
-        // activity store + bob's outbox, removes the provisional edge, and delivers the Reject back.
-        var rejectUrl = $"{bobActorIri.Value.TrimEnd('/')}/follows/{follow.Id!.TrimStart('/')}";
-        using var http = new HttpClient(bRef.CreateHandler(), disposeHandler: false);
-        using var rejectRequest = new HttpRequestMessage(HttpMethod.Post, rejectUrl);
-        rejectRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue(
-            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{Bob}:bob-password")));
-        rejectRequest.Content = new StringContent(ActivityJson.Serialize(follow));
-        rejectRequest.Content.Headers.ContentType =
-            new System.Net.Http.Headers.MediaTypeHeaderValue("application/activity+json");
-        var rejectResponse = await http.SendAsync(rejectRequest);
-        Assert.Equal(HttpStatusCode.Accepted, rejectResponse.StatusCode);
+        // The operator rejects the follow the AP-native way: a signed (as bob) Reject published to bob's
+        // own outbox. B records the deterministic Reject in its activity store + bob's outbox, removes
+        // the provisional edge, and server-delivers the Reject back to alice's inbox signed as bob.
+        using var bobClient = BuildDeliveryClient(bobActorIri, bBob.Key, bRef.CreateHandler());
+        var rejectResult = await bobClient.RejectAsync(bobActorIri, new Iri(follow.Id!));
+        Assert.Equal(HttpStatusCode.Accepted, (HttpStatusCode)rejectResult.StatusCode);
 
         // B recorded the Reject under its deterministic IRI, in both the activity store and bob's outbox.
         var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
@@ -861,6 +852,42 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         {
             one.Dispose();
             two.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents by
+    /// the actor IRI's host (self → self, peer → peer). An instance needs to reach both itself and the
+    /// peer to validate signatures: the inbound key resolver always fetches the actor document (there is
+    /// no local shortcut), so a local actor's own signed outbox publish is validated by fetching that
+    /// local actor's document from the same instance.
+    /// </summary>
+    private sealed class RoutingFetcher : IActorDocumentFetcher
+    {
+        private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
+
+        public RoutingFetcher(
+            string aHost, HttpMessageHandler aHandler,
+            string bHost, HttpMessageHandler bHandler,
+            KeyPair signingKey, Iri signingActor)
+        {
+            _ = signingActor;
+            _fetchers = new Dictionary<string, IActorDocumentFetcher>(StringComparer.OrdinalIgnoreCase)
+            {
+                [aHost] = BuildFetcherFor(aHost, "local", signingKey, aHandler),
+                [bHost] = BuildFetcherFor(bHost, "local", signingKey, bHandler),
+            };
+        }
+
+        public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+        {
+            var host = new Uri(actorIri.Value).Host;
+            if (_fetchers.TryGetValue(host, out var fetcher))
+            {
+                return fetcher.GetActorAsync(actorIri, ct);
+            }
+
+            return Task.FromResult<Actor?>(null);
         }
     }
 
