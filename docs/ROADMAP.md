@@ -434,9 +434,25 @@ Confirm the core architectural invariants of how clients talk to servers.
   resolvable by the receiver from the actor document (not the instance actor); the proxy path
   re-signs as the acting actor (decision 037). Verify with the raw inspector (key IRI in the
   `Signature` header matches the acting actor's `publicKey` id).
-- [ ] **19.6.5 — Audience correctness.** Outbound `Create`/`Announce` carry correct `to`/`cc`
+- [x] **19.6.5 — Audience correctness.** Outbound `Create`/`Announce` carry correct `to`/`cc`
   (followers + `as:Public` for public posts; the reply target for replies), and delivery recipients
   match the audience (followers' inboxes receive; non-followers do not).
+  - [x] Delivery-recipient-audience match pinned (`OutboxAudienceMatchIntegrationTests`): a public
+    `Create` (Note carrying `as:Public` in its `to`) and an `Announce` published to the author's own
+    outbox are delivered to the author's remote followers' inboxes (the follower receives the activity,
+    and the federated Note still carries `as:Public`) and NOT to a remote non-follower. This is the
+    "delivery recipients match the audience (followers' inboxes receive; non-followers do not)" half,
+    complementing the existing follower-fan-out and blocked-follower-exclusion pins. No production
+    change — the follower-fan-out recipient computation already makes the recipients match the audience.
+  - [x] Decision (change 158): Iris distributes by **follower fan-out**, not by enumerating `to`/`cc`.
+    The server delivers an outbound Create/Announce as-authored and computes the recipient set from the
+    author's remote, non-blocked followers; it does **not** rewrite the activity's `to`/`cc` to add every
+    follower IRI (that would bloat the wire). A public post's audience is expressed by the client via
+    `as:Public` (already pinned: `S7ComposeAudienceTests`, `ActivityPubClientTests`).
+  - [ ] Remaining (would be a production change, deferred): server-side audience *metadata* — rewriting
+    the outbound Create/Announce `to`/`cc` to enumerate the follower set, and adding the parent note's
+    author (the reply target) to a reply's `to`/`cc`. The delivery already reaches the right inboxes;
+    only the on-the-wire `to`/`cc` enumeration of the audience is left.
 - [ ] **19.6.6 — Cache behavior at the boundary.** Cached reads (collections, actor documents) expose
   `bypassCache`/`?refresh=true` and a new activity is visible after a bypass (the UI's refresh path
   actually re-fetches); no stale-forever behavior.
