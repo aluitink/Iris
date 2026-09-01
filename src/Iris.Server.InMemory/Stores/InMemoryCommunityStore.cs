@@ -17,6 +17,9 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _members = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _follows = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _followers = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _blocks = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _flags = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _mutes = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
@@ -160,6 +163,83 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     {
         ct.ThrowIfCancellationRequested();
         var result = new List<Iri>(_communities.Keys);
+        return Task.FromResult<IReadOnlyCollection<Iri>>(result);
+    }
+
+    // --- Community moderation (19.5.4) ---
+
+    /// <inheritdoc/>
+    public Task<bool> AddBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => AddToSetAsync(_blocks, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => RemoveFromSetAsync(_blocks, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetBlocksAsync(Iri communityIri, CancellationToken ct = default)
+        => GetSetAsync(_blocks, communityIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> AddFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => AddToSetAsync(_flags, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => RemoveFromSetAsync(_flags, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetFlagsAsync(Iri communityIri, CancellationToken ct = default)
+        => GetSetAsync(_flags, communityIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> AddMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => AddToSetAsync(_mutes, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => RemoveFromSetAsync(_mutes, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetMutesAsync(Iri communityIri, CancellationToken ct = default)
+        => GetSetAsync(_mutes, communityIri, ct);
+
+    private static Task<bool> AddToSetAsync(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> index,
+        Iri communityIri, Iri actorIri, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var added = index.GetOrAdd(communityIri, _ => new System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>()).TryAdd(actorIri, 0);
+        return Task.FromResult(added);
+    }
+
+    private static Task<bool> RemoveFromSetAsync(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> index,
+        Iri communityIri, Iri actorIri, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (!index.TryGetValue(communityIri, out var set))
+        {
+            return Task.FromResult(false);
+        }
+
+        return Task.FromResult(set.TryRemove(actorIri, out _));
+    }
+
+    private static Task<IReadOnlyCollection<Iri>> GetSetAsync(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> index,
+        Iri communityIri, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new List<Iri>();
+        if (index.TryGetValue(communityIri, out var set))
+        {
+            foreach (var actor in set.Keys)
+            {
+                result.Add(actor);
+            }
+        }
+
         return Task.FromResult<IReadOnlyCollection<Iri>>(result);
     }
 }

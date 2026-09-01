@@ -139,4 +139,98 @@ public interface ICommunityStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the community IRIs (possibly empty).</returns>
     public Task<IReadOnlyCollection<Iri>> GetAllCommunityIrisAsync(CancellationToken ct = default);
+
+    // --- Community moderation (19.5.4) ---
+    //
+    // A community moderates the actors whose content it surfaces in its unified feed: a community-level
+    // block/mute/flag edge is a <c>community → actor</c> edge (the community is the moderator, the actor
+    // is moderated) recorded in this community's own moderation sets, distinct from the person-level
+    // moderation edges (which are keyed by an actor IRI in the <see cref="IModerationStore"/>). The
+    // community's unified feed excludes the content of the members it has blocked or muted (and, for a
+    // flagged member, the flag is a soft moderation report that does not exclude content on its own — it
+    // is surfaced in the community's <c>flags</c> collection for the operator to act on). A community
+    // blocks/mutes/flags an actor the same way a person does, but the edge is recorded against the
+    // community, not a person, so a community operator's moderation is scoped to that community (another
+    // community's feed is unaffected).
+
+    /// <summary>
+    /// Records that <paramref name="communityIri"/> has blocked <paramref name="actorIri"/>. Idempotent:
+    /// recording an existing block is a no-op.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community issuing the block.</param>
+    /// <param name="actorIri">The IRI of the actor being blocked.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a new block was recorded; <see langword="false"/> when the community already blocked the actor.</returns>
+    public Task<bool> AddBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a block recorded for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community that issued the block.</param>
+    /// <param name="actorIri">The IRI of the actor that was blocked.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a block was removed; <see langword="false"/> when the community did not block the actor.</returns>
+    public Task<bool> RemoveBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors the community has blocked.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the blocked actor IRIs (empty when the community has blocked no one).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetBlocksAsync(Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records that <paramref name="communityIri"/> has flagged <paramref name="actorIri"/>. Idempotent:
+    /// recording an existing flag is a no-op.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community issuing the flag.</param>
+    /// <param name="actorIri">The IRI of the actor being flagged.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a new flag was recorded; <see langword="false"/> when the community already flagged the actor.</returns>
+    public Task<bool> AddFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a flag recorded for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community that issued the flag.</param>
+    /// <param name="actorIri">The IRI of the actor that was flagged.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a flag was removed; <see langword="false"/> when the community did not flag the actor.</returns>
+    public Task<bool> RemoveFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors the community has flagged.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the flagged actor IRIs (empty when the community has flagged no one).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetFlagsAsync(Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records that <paramref name="communityIri"/> has muted <paramref name="actorIri"/>. Idempotent:
+    /// recording an existing mute is a no-op.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community issuing the mute.</param>
+    /// <param name="actorIri">The IRI of the actor being muted.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a new mute was recorded; <see langword="false"/> when the community already muted the actor.</returns>
+    public Task<bool> AddMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a mute recorded for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community that issued the mute.</param>
+    /// <param name="actorIri">The IRI of the actor that was muted.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a mute was removed; <see langword="false"/> when the community did not mute the actor.</returns>
+    public Task<bool> RemoveMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors the community has muted.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the muted actor IRIs (empty when the community has muted no one).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetMutesAsync(Iri communityIri, CancellationToken ct = default);
 }

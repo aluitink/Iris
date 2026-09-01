@@ -16,9 +16,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using CollectionPageCache = Iris.Server.Caching.CollectionPageCache;
 using WebFingerCache = Iris.Server.Caching.WebFingerCache;
-using Microsoft.Extensions.Options;
 
 namespace Iris.Server;
 
@@ -291,7 +291,14 @@ public static class ActivityPubServerExtensions
         // Community feed (Phase 5): computes a community's unified feed (the union of its local
         // members' outbox activities, newest first) for the /c/{name}/feed endpoint and the client's
         // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.
-        services.TryAddSingleton<ICommunityFeedService, CommunityFeedService>();
+        // The community store is passed in (19.5.4, read via the persistence provider's Communities
+        // property) so the feed applies the community's own moderation edges (a blocked/muted member's
+        // content is excluded from the feed).
+        services.TryAddSingleton<ICommunityFeedService>(sp =>
+        {
+            var persistence = sp.GetRequiredService<IPersistenceProvider>();
+            return new CommunityFeedService(persistence, persistence.Communities);
+        });
 
         // Global search (F-13): searches the instance's local actors (the directory) and stored content
         // objects for the /ap/v1/search endpoint and the client's SearchAsync. A host may replace this to
@@ -638,6 +645,34 @@ public static class ActivityPubServerExtensions
                     CancellationToken ct)
                     => CommunityCollectionHandler(name, collection, context, persistence, optionsAccessor, ct))
             .WithName("community-collection-endpoint");
+
+        // Community moderation collections (19.5.4): GET /ap/v1/c/{name}/{blocks|flags|mutes} — the
+        // actors the community has blocked/flagged/muted, served as a paged collection (mirrors the
+        // person moderation collections GET /u/{handle}/{blocks|flags|mutes} for a Group). A community
+        // moderates the actors whose content it surfaces in its unified feed: the edges live in the
+        // community's own moderation sets (ICommunityStore's blocks/flags/mutes, scoped to the
+        // community), not the person IModerationStore. Paged via ?page/?limit (the shared page/limit
+        // shape); an unknown community 404s.
+        group.MapGet(
+                "/c/{name}/{collection:regex(blocks|flags|mutes)}",
+                (string name, string collection, HttpContext context,
+                    IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
+                    CancellationToken ct)
+                    => CommunityModerationCollectionHandler(name, collection, context, persistence, optionsAccessor, ct))
+            .WithName("community-moderation-collection-endpoint");
+
+        // Community mute (19.5.4): POST /ap/v1/c/{name}/mutes/{target} — a community's operator records a
+        // community-scoped mute (the community hides a member's content from its unified feed without
+        // severing the membership); the same route with ?unmute=true removes it. A mute is Iris-specific
+        // (no ActivityStreams type) and a local moderation decision, so it is not interpreted from a
+        // federated activity: the endpoint authenticates the requesting community by Basic auth (the
+        // community's IRI is the credential seam — IActorCredentialValidator, the same seam as the person
+        // mute endpoint and the community follow-decision endpoint) and records/removes the mute edge in
+        // the community's moderation sets. {target} is a catch-all of the absolute IRI of the actor being
+        // muted. (A community block/flag is not exposed as a local POST: those are the federated
+        // Block/Flag activities, recorded on the community when either party is local, the same way the
+        // person store records them — only the mute is a pure local decision.)
+        group.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
 
         // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
         // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
@@ -2729,10 +2764,10 @@ public static class ActivityPubServerExtensions
             try
             {
                 // The checks Iris registers (InstanceHealthCheck, DeliveryQueueHealthCheck) do not read the
-            // context's Registration; a default context is sufficient. A host that registers its own
-            // context-reading check via UseHealthChecks gets the full context from the framework's runner
-            // (this Iris endpoint is the lightweight, no-runner path).
-            result = await check.CheckHealthAsync(new HealthCheckContext(), ct).ConfigureAwait(false);
+                // context's Registration; a default context is sufficient. A host that registers its own
+                // context-reading check via UseHealthChecks gets the full context from the framework's runner
+                // (this Iris endpoint is the lightweight, no-runner path).
+                result = await check.CheckHealthAsync(new HealthCheckContext(), ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -3137,6 +3172,27 @@ public static class ActivityPubServerExtensions
             changed = true;
         }
 
+        // Advertise the community moderation collections (19.5.4) — blocks/flags/mutes (the actors the
+        // community has blocked/flagged/muted), mirroring the person actor document's moderation links so
+        // a client can discover the community's moderation surface.
+        if (!ext.ContainsKey("blocks"))
+        {
+            ext["blocks"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/blocks");
+            changed = true;
+        }
+
+        if (!ext.ContainsKey("flags"))
+        {
+            ext["flags"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/flags");
+            changed = true;
+        }
+
+        if (!ext.ContainsKey("mutes"))
+        {
+            ext["mutes"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/mutes");
+            changed = true;
+        }
+
         // The iris:capabilities extension (Resolved Decision #11) declares the community's available
         // specialized collections (feed/members/search) for client discovery. The full term is
         // {NamespaceIri}capabilities (configurable per-deployment, Resolved Decision #9; the canonical
@@ -3358,6 +3414,122 @@ public static class ActivityPubServerExtensions
                 return ActorIrisToLinks(items.ToList());
             },
             ct);
+    }
+
+    /// <summary>
+    /// Serves a community's <c>blocks</c>, <c>flags</c>, or <c>mutes</c> collection (19.5.4 community
+    /// moderation) as a paged <c>OrderedCollection</c> (page 1) / <c>OrderedCollectionPage</c> (page
+    /// N&gt;1) for <c>GET /ap/v1/c/{name}/{blocks|flags|mutes}</c>. Mirrors the person moderation
+    /// collections (<c>GET /u/{handle}/{blocks|flags|mutes}</c>) for a <see cref="Group"/>: a community
+    /// moderates the actors whose content it surfaces in its unified feed, and the edges live in the
+    /// community's own moderation sets (<see cref="ICommunityStore"/>), not the person
+    /// <see cref="IModerationStore"/>. An unknown community 404s; the response carries the collection
+    /// <c>Cache-Control</c>.
+    /// </summary>
+    private static Task<IResult> CommunityModerationCollectionHandler(
+        string name,
+        string collection,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        return CommunityCollectionEndpointAsync(
+            name,
+            collection,
+            context,
+            persistence,
+            optionsAccessor,
+            async communityIri =>
+            {
+                var items = collection switch
+                {
+                    "blocks" => await persistence.Communities.GetBlocksAsync(communityIri, ct).ConfigureAwait(false),
+                    "flags" => await persistence.Communities.GetFlagsAsync(communityIri, ct).ConfigureAwait(false),
+                    _ => await persistence.Communities.GetMutesAsync(communityIri, ct).ConfigureAwait(false),
+                };
+                return ActorIrisToLinks(items.ToList());
+            },
+            ct);
+    }
+
+    /// <summary>
+    /// The community mute endpoint (19.5.4): a community's operator records or removes a community-scoped
+    /// mute for an actor (the community hides the actor's content from its unified feed without severing
+    /// the membership). The request is authenticated by Basic auth (the community's IRI is the credential
+    /// seam, the same validator as the person mute endpoint and the community follow-decision endpoint).
+    /// <c>?unmute=true</c> removes the mute; otherwise it records it. Both are idempotent (re-muting /
+    /// un-muting a non-existent mute is a no-op) and return 204; an unknown community 404s, an
+    /// unparseable target 400s, and an unauthenticated request 401s.
+    /// </summary>
+    /// <param name="context">The HTTP context (provides the route values and the Authorization header).</param>
+    /// <param name="name">The community's name/handle (the community whose feed is being moderated).</param>
+    /// <param name="credentialValidator">Validates the community's Basic-auth credentials.</param>
+    /// <param name="persistence">Provides the community store (the moderation sets).</param>
+    /// <param name="optionsAccessor">The server options (the instance base URI).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// <c>401</c> (unauthenticated), <c>404</c> (unknown community), <c>400</c> (no resolvable target), or
+    /// <c>204</c> (muted/un-muted).
+    /// </returns>
+    private static async Task<IResult> CommunityMuteHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The community must exist (an unknown community 404s, mirroring the other community endpoints).
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 1. Authenticate the requesting community (Basic auth) for this community's IRI.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticated = await credentialValidator
+            .TryValidateAsync(communityIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticated is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Record or remove the mute edge (?unmute=true removes). The mute is idempotent (re-muting is a
+        // no-op); an un-mute of a non-existent mute is also a no-op (both return 204 — the mute's steady
+        // state is authoritative).
+        var remove = context.Request.Query.TryGetValue("unmute", out var unmuteValues)
+            && unmuteValues.Count > 0
+            && string.Equals(unmuteValues[0], "true", StringComparison.OrdinalIgnoreCase);
+        if (remove)
+        {
+            await persistence.Communities.RemoveMuteAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Communities.AddMuteAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
     }
 
     /// <summary>

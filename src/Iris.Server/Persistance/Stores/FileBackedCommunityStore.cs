@@ -24,6 +24,9 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
     private const string Members = "members";
     private const string Follows = "follows";
     private const string Followers = "followers";
+    private const string Blocks = "blocks";
+    private const string Flags = "flags";
+    private const string Mutes = "mutes";
 
     private readonly FilePersistence _file;
 
@@ -136,6 +139,44 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
             return result;
         }, ct);
 
+    // --- Community moderation (19.5.4) ---
+
+    /// <inheritdoc/>
+    public Task<bool> AddBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => AddUnique(SetMap(s, Blocks), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveBlockAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => RemoveValue(SetMap(s, Blocks), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetBlocksAsync(Iri communityIri, CancellationToken ct = default)
+        => _file.SnapshotAsync(s => ToIris(SetMap(s, Blocks), communityIri.Value), ct);
+
+    /// <inheritdoc/>
+    public Task<bool> AddFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => AddUnique(SetMap(s, Flags), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => RemoveValue(SetMap(s, Flags), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetFlagsAsync(Iri communityIri, CancellationToken ct = default)
+        => _file.SnapshotAsync(s => ToIris(SetMap(s, Flags), communityIri.Value), ct);
+
+    /// <inheritdoc/>
+    public Task<bool> AddMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => AddUnique(SetMap(s, Mutes), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => _file.WithStateAsync(s => RemoveValue(SetMap(s, Mutes), communityIri.Value, actorIri.Value), true, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetMutesAsync(Iri communityIri, CancellationToken ct = default)
+        => _file.SnapshotAsync(s => ToIris(SetMap(s, Mutes), communityIri.Value), ct);
+
     /// <summary>
     /// The community document map for the current state (community IRI value → entry), created on demand.
     /// </summary>
@@ -240,7 +281,10 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
         var membersJson = JsonSerializer.Serialize(members.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
         var followsJson = JsonSerializer.Serialize(follows.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
         var followersJson = JsonSerializer.Serialize(followers.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
-        return JsonDocument.Parse($"{{\"{Communities}\":{communitiesJson},\"{Members}\":{membersJson},\"{Follows}\":{followsJson},\"{Followers}\":{followersJson}}}");
+        var blocksJson = JsonSerializer.Serialize(SetMap(state, Blocks).ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
+        var flagsJson = JsonSerializer.Serialize(SetMap(state, Flags).ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
+        var mutesJson = JsonSerializer.Serialize(SetMap(state, Mutes).ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
+        return JsonDocument.Parse($"{{\"{Communities}\":{communitiesJson},\"{Members}\":{membersJson},\"{Follows}\":{followsJson},\"{Followers}\":{followersJson},\"{Blocks}\":{blocksJson},\"{Flags}\":{flagsJson},\"{Mutes}\":{mutesJson}}}");
     }
 
     /// <summary>
@@ -263,7 +307,7 @@ public sealed class FileBackedCommunityStore : ICommunityStore, IDisposable
 
         state[Communities] = communities;
 
-        foreach (var name in new[] { Members, Follows, Followers })
+        foreach (var name in new[] { Members, Follows, Followers, Blocks, Flags, Mutes })
         {
             var setMap = new ConcurrentDictionary<string, List<string>>();
             if (root.TryGetProperty(name, out var sEl) && sEl.ValueKind == JsonValueKind.Object)

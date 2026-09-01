@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Services;
@@ -17,17 +18,39 @@ namespace Iris.Server.Services;
 /// <see cref="SearchCommunityAsync"/> method runs a case-insensitive substring search over the feed's
 /// items' <c>content</c>/<c>name</c>.
 /// </remarks>
+/// <remarks>
+/// <strong>Community moderation (19.5.4, apply the community's moderation edges).</strong> When
+/// constructed with an <see cref="ICommunityStore"/> (the community's own moderation sets — the
+/// <see cref="ICommunityStore.GetBlocksAsync(Iri, CancellationToken)"/> and <see cref="ICommunityStore.
+/// GetMutesAsync(Iri, CancellationToken)"/> edges, scoped to the community being read), a member the
+/// community has <em>blocked</em> or <em>muted</em> is excluded from the feed: the moderation is applied
+/// on the community's side, so a blocked/muted member's content does not appear in the community's
+/// unified feed. A block is a hard exclusion; a mute is a soft one (the membership is kept, only the
+/// member's content is hidden). A member the community has only <em>flagged</em> is <em>not</em>
+/// excluded — a flag is a moderation report surfaced in the community's <c>flags</c> collection for the
+/// operator to act on, not a content exclusion (mirroring the person feed, where only blocks and mutes
+/// filter the timeline). When the service is constructed without a community store, no moderation
+/// filtering is applied (every member is merged).
+/// </remarks>
 public sealed class CommunityFeedService : ICommunityFeedService
 {
     private readonly IPersistenceProvider _persistence;
+    private readonly ICommunityStore? _communities;
 
     /// <summary>
     /// Initializes a new feed service over the given persistence provider.
     /// </summary>
     /// <param name="persistence">The persistence provider (the community + activity stores). Must not be null.</param>
-    public CommunityFeedService(IPersistenceProvider persistence)
+    /// <param name="communities">The community store (19.5.4): when present, a member the community has
+    /// <em>blocked</em> or <em>muted</em> is excluded from the feed. Null (the default) disables
+    /// community-moderation filtering (every member is merged). The community store is also read through
+    /// <paramref name="persistence"/>'s <see cref="IPersistenceProvider.Communities"/> for membership;
+    /// this parameter is the same store instance, injected so the moderation edges are resolvable without
+    /// the service depending on a concrete provider shape.</param>
+    public CommunityFeedService(IPersistenceProvider persistence, ICommunityStore? communities = null)
     {
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
+        _communities = communities;
     }
 
     /// <inheritdoc/>
@@ -46,10 +69,27 @@ public sealed class CommunityFeedService : ICommunityFeedService
             return [];
         }
 
+        // 19.5.4 (apply the community's moderation edges): a member the community has blocked or muted
+        // is excluded from the feed (the moderation is applied on the community's side — a blocked/muted
+        // member's content is hidden from the community's unified feed). A flag does NOT exclude a member
+        // (it is a moderation report, surfaced in the community's flags collection, not a content filter).
+        // When the service was constructed without a community store, both sets are empty and no member is
+        // filtered (the feed merges every member, as before).
+        var blocked = _communities is not null
+            ? (await _communities.GetBlocksAsync(communityIri, ct).ConfigureAwait(false)).ToHashSet()
+            : [];
+        var muted = _communities is not null
+            ? (await _communities.GetMutesAsync(communityIri, ct).ConfigureAwait(false)).ToHashSet()
+            : [];
+
         // The membership set has no inherent order (a set), so members are read in IRI order for a
         // deterministic, reproducible feed. Each member's outbox is already newest-first (the activity
-        // store keeps it so), so a member's own posts are in recency order.
-        var orderedMembers = memberIris.OrderBy(m => m.Value, StringComparer.Ordinal).ToList();
+        // store keeps it so), so a member's own posts are in recency order. Blocked/muted members are
+        // dropped before their outbox is read (their content is excluded from the feed).
+        var orderedMembers = memberIris
+            .Where(m => !blocked.Contains(m) && !muted.Contains(m))
+            .OrderBy(m => m.Value, StringComparer.Ordinal)
+            .ToList();
 
         // Merge the members' outboxes into a single **newest-first** feed. An outbox has no per-item
         // timestamp to compare across members, so recency is approximated by each member's outbox
