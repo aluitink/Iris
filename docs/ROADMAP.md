@@ -430,10 +430,22 @@ Confirm the core architectural invariants of how clients talk to servers.
   - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — drive compose/follow/like
     through the UI and confirm the peer's inbox received the activity with a valid acting-actor
     signature (also covers 19.6.4).
-- [ ] **19.6.4 — Signature identity.** Deliveries are signed as the *acting* actor (decision 029),
+- [x] **19.6.4 — Signature identity.** Deliveries are signed as the *acting* actor (decision 029),
   resolvable by the receiver from the actor document (not the instance actor); the proxy path
   re-signs as the acting actor (decision 037). Verify with the raw inspector (key IRI in the
   `Signature` header matches the acting actor's `publicKey` id).
+  - [x] Signature identity pinned (`OutboundSignatureIdentityIntegrationTests`), the acting actor
+    distinct from the instance actor in each case: (a) the outbound delivery's `Signature` `keyid` is
+    the acting actor's key IRI (`{actingActor}#key-1`, its `publicKey` id) — not the instance actor's —
+    when a `DeliveryJob` carries a distinct acting actor (decision 029); (b) the proxy's re-signed
+    request `keyid` is the authenticated (acting) actor's key IRI — not the instance actor's — when a
+    browser authenticated as a second local actor posts a proxied request (decision 037). No production
+    change — both per-actor signing paths (the `X-Iris-Actor` override resolved by the `SigningHandler`)
+    were already implemented end-to-end; the existing `OutboundSignatureConformanceTests` could not make
+    the assertion (its single actor is both the instance and the acting actor).
+  - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — drive a write through
+    the UI and confirm the rendered `keyid` in the `Signature` header matches the acting actor's
+    `publicKey` id; the server-side identity it exercises is already pinned in CI.
 - [x] **19.6.5 — Audience correctness.** Outbound `Create`/`Announce` carry correct `to`/`cc`
   (followers + `as:Public` for public posts; the reply target for replies), and delivery recipients
   match the audience (followers' inboxes receive; non-followers do not).
