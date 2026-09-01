@@ -271,11 +271,20 @@ loops, no echo amplification, and eventual consistency of edge state.
 
 How do we create and manage communities, and their peers (the communities/actors they follow)?
 
-- [ ] **19.5.1 — Community creation surface.** Establish (or build, if absent — note as a finding) a
-  UI path to create a community (Group) via the outbox-publish pattern (a signed `Create`/`Add` of a
-  Group to the community outbox, or the management-style ActivityStream message per the 19.6
-  architectural rule). Verify the new community: document endpoint, `members`, empty `feed`,
-  `following`/`followers`, and WebFinger/`iris:capabilities` discovery.
+ - [ ] **19.5.1 — Community creation surface.** Establish (or build, if absent — note as a finding) a
+   UI path to create a community (Group) via the outbox-publish pattern (a signed `Create`/`Add` of a
+   Group to the community outbox, or the management-style ActivityStream message per the 19.6
+   architectural rule). Verify the new community: document endpoint, `members`, empty `feed`,
+   `following`/`followers`, and WebFinger/`iris:capabilities` discovery.
+   `remaining:` the community READ surface is now complete and pinned (change 148): the community
+   document, `members`, `feed`, `following`/`followers`, and search collections were already served;
+   the missing piece was the advertised **`outbox` link** — `GET /ap/v1/c/{name}/outbox` (the READ
+   counterpart of `POST /ap/v1/c/{name}/outbox`) is now a paged collection served through the
+   local collection-page cache (page 1 `OrderedCollection`, page N>1 `OrderedCollectionPage`,
+   `?refresh=true` bypass), so a remote client resolving the community's outbox link finds the
+   community's authored activities instead of a 404. Still open for full 19.5.1: the UI creation
+   *write* path (a signed `Create`/`Add` of a `Group` via the outbox-publish pattern) and the
+   WebFinger/`iris:capabilities` discovery verification — both live-verification / UI items.
 - [ ] **19.5.2 — Membership management.** Add/remove members via management-style activity messages
   (not direct store writes): an actor joining (an `Add` to `members`, or a Follow-based join if that's
   the chosen model — record the decision in a decisions doc), leaving (inverse), and the community
