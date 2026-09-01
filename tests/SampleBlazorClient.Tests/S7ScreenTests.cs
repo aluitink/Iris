@@ -302,6 +302,76 @@ public sealed class S7ScreenTests
         Assert.DoesNotContain(likedAfter, o => IriOf(o) is { } iri && iri == target);
     }
 
+    // --- Boost / Unboost (the ObjectPage's Boost/Unboost button) -------------------
+    //
+    // The ObjectPage's Boost button calls the client's AnnounceAsync (boost) / UnannounceAsync
+    // (unboost), both published to the acting actor's own outbox through the signed pipeline. These
+    // exercise the same calls the button makes, in-process, and verify each lands in alice's outbox
+    // with the deterministic IRI the server mints.
+
+    [Fact]
+    public async Task ObjectBoost_Announce_SurfacesInAuthorOutbox()
+    {
+        var (server, client, local, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        // Seed a target note (the object alice boosts), authored by bob (local, dial-base).
+        var bob = new Iri("http://localhost/ap/v1/u/bob");
+        var target = new Iri($"{bob.Value}/notes/1");
+        await server.Services.GetRequiredService<IPersistenceProvider>().Objects.PutObjectAsync(new Note
+        {
+            Id = target.Value,
+            AttributedTo = [new Link { Href = bob.Uri }],
+            Content = ["<p>a note to boost</p>"],
+        });
+
+        var result = await client.AnnounceAsync(actorIri, target);
+        Assert.Equal(202, result.StatusCode);
+
+        // The Announce is stored with the deterministic {actor}/announces/{object} IRI.
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+        var activity = await persistence.Activities.TryGetActivityAsync(
+            new Iri($"{actorIri.Value}/announces/{target.Value}"), out var stored);
+        Assert.True(activity, "the announce activity must be stored on the receiving instance");
+        Assert.IsType<Announce>(stored);
+
+        // The announcer's outbox lists the Announce (the object view's boost indicator reads it).
+        var outbox = await CollectAsync(client.GetCollectionItemsAsync(actorIri.OutboxOf()));
+        Assert.Contains(outbox, o => IriOf(o) is { } iri && iri.Value == $"{actorIri.Value}/announces/{target.Value}");
+    }
+
+    [Fact]
+    public async Task ObjectUnboost_Undo_RemovesTheBoostEdge()
+    {
+        var (server, client, local, actorIri) = await LogOnAsync();
+        using var _ = server;
+
+        var bob = new Iri("http://localhost/ap/v1/u/bob");
+        var target = new Iri($"{bob.Value}/notes/1");
+        await server.Services.GetRequiredService<IPersistenceProvider>().Objects.PutObjectAsync(new Note
+        {
+            Id = target.Value,
+            AttributedTo = [new Link { Href = bob.Uri }],
+            Content = ["<p>a note to boost and unboost</p>"],
+        });
+
+        // Boost, then unboost (the ObjectPage's Boost → Unboost toggle).
+        Assert.Equal(202, (await client.AnnounceAsync(actorIri, target)).StatusCode);
+        var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
+        var announced = await persistence.Activities.TryGetActivityAsync(
+            new Iri($"{actorIri.Value}/announces/{target.Value}"), out var _);
+        Assert.True(announced, "the announce must be stored before the unboost");
+        Assert.Equal(202, (await client.UnannounceAsync(actorIri, target)).StatusCode);
+
+        // The unboost is an Undo referencing the exact Announce by its deterministic IRI.
+        var undo = await persistence.Activities.TryGetActivityAsync(
+            new Iri($"{actorIri.Value}/unannounces/{target.Value}"), out var storedUndo);
+        Assert.True(undo, "the undo-of-announce activity must be stored on the receiving instance");
+        Assert.IsType<Undo>(storedUndo);
+        var referenced = (storedUndo as Undo)!.Object?.FirstOrDefault()?.ResolveObjectIri();
+        Assert.Equal($"{actorIri.Value}/announces/{target.Value}", referenced?.Value);
+    }
+
     [Fact]
     public async Task ObjectDelete_Delete_TombstonesTheObject()
     {

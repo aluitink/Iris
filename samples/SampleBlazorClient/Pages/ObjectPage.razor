@@ -44,6 +44,11 @@ else
                 {
                     <span class="muted">You liked this.</span>
                 }
+                <button @onclick="ToggleBoostAsync" disabled="@(WriteBusy)">@(HasBoosted ? "Unboost" : "Boost")</button>
+                @if (HasBoosted)
+                {
+                    <span class="muted">You boosted this.</span>
+                }
                 @if (IsAuthor)
                 {
                     <button @onclick="DeleteAsync" disabled="@(WriteBusy)" class="danger">Delete</button>
@@ -101,6 +106,7 @@ else
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
     private bool HasLiked { get; set; }
+    private bool HasBoosted { get; set; }
     private bool IsAuthor { get; set; }
 
     /// <summary>
@@ -196,6 +202,47 @@ else
             {
                 WriteResult = await client.LikeAsync(actorIri, LoadedObjectIri.Value);
                 HasLiked = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Boosts (or un-boosts) the loaded object as the logged-on actor: toggles between
+    /// <see cref="IActivityPubClient.AnnounceAsync"/> (a boost — the actor re-shares the object, fanned out
+    /// to the actor's followers by the server) and <see cref="IActivityPubClient.UnannounceAsync"/> (an
+    /// un-boost — an <c>Undo</c> of the announce). Mirrors the Like/Unlike toggle.
+    /// </summary>
+    private async Task ToggleBoostAsync()
+    {
+        if (!Session.IsLoggedIn || LoadedObjectIri is null)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        var client = Session.GetClient();
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            if (HasBoosted)
+            {
+                WriteResult = await client.UnannounceAsync(actorIri, LoadedObjectIri.Value);
+                HasBoosted = false;
+            }
+            else
+            {
+                WriteResult = await client.AnnounceAsync(actorIri, LoadedObjectIri.Value);
+                HasBoosted = true;
             }
         }
         catch (Exception ex)
