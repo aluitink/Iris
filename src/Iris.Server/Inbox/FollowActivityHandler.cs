@@ -125,6 +125,15 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
                 .RecordFollowAsync(followerIri.Value, delivery.RecipientIri, ct)
                 .ConfigureAwait(false);
 
+            // Surface the inbound follow in the followed actor's own outbox (the activity store alone is
+            // not enumerable by the UI). The sample's "Inbound follows" list reads the followed actor's
+            // outbox for Follow activities so the operator can see — and Accept/Reject — the request.
+            // (An auto-accepted follow also lands here; the operator's Accept of an already-accepted
+            // follow is idempotent.)
+            await _persistence.Activities
+                .AddToOutboxAsync(delivery.RecipientIri, follow, ct)
+                .ConfigureAwait(false);
+
             if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
             {
                 return;

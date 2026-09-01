@@ -112,6 +112,42 @@ else
             </div>
 
             <div class="card">
+                <h3>Inbound follows</h3>
+                <p class="muted">
+                    Follows <em>of</em> <code>@ActorIri.Value</code> (actors that follow this actor). Accept /
+                    reject are local, Basic-authenticated decisions made <em>as this actor</em>: the instance
+                    records the edge and delivers a signed <c>Accept</c>/<c>Reject</c> to the follower's inbox.
+                </p>
+                @if (PendingFollows is not null && PendingFollows.Count == 0)
+                {
+                    <p class="muted">No inbound follows recorded.</p>
+                }
+                @if (PendingFollows is not null)
+                {
+                    @foreach (var follow in PendingFollows)
+                    {
+                        <div class="pending-follow">
+                            <code>@follow.FollowerIri</code>
+                            <button @onclick="() => AcceptFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Accept</button>
+                            <button @onclick="() => RejectFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Reject</button>
+                            @if (FollowDecisionResult is not null)
+                            {
+                                <span class="muted">Status: <code>@FollowDecisionResult</code></span>
+                            }
+                        </div>
+                    }
+                }
+                @if (FollowDecisionBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (FollowDecisionError is not null)
+                {
+                    <div class="error">@FollowDecisionError</div>
+                }
+            </div>
+
+            <div class="card">
                 <h3>Moderation</h3>
                 <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code> → <code>@ActorIri.Value</code></p>
                 <button @onclick="MuteAsync" disabled="@(WriteBusy)">Mute</button>
@@ -211,6 +247,15 @@ else
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
+
+    /// <summary>
+    /// Inbound follows of the loaded actor (actors that follow this actor), read from the actor's outbox —
+    /// the "pending follows" list the operator accepts/rejects (each is a (follower IRI, follow IRI) pair).
+    /// </summary>
+    private IReadOnlyList<(string FollowerIri, Iri FollowIri)>? PendingFollows { get; set; }
+    private bool FollowDecisionBusy { get; set; }
+    private DeliveryResult? FollowDecisionResult { get; set; }
+    private string? FollowDecisionError { get; set; }
 
     private IReadOnlyList<string>? Relays { get; set; }
     private string RelayIriInput { get; set; } = "";
@@ -321,6 +366,22 @@ else
             }
 
             Relays = relays;
+
+            // Inbound follows of this actor (actors that follow it), read from its outbox (each inbound
+            // follow is stored in the followed actor's outbox on receipt). Shown as the "Inbound follows"
+            // list the operator can accept/reject.
+            var inbound = new List<(string FollowerIri, Iri FollowIri)>();
+            await foreach (var item in client.GetCollectionItemsAsync(actorIri.OutboxOf()))
+            {
+                if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                    && types.Contains("Follow")
+                    && actors.FirstOrDefault()?.ResolveObjectIri() is { } follower)
+                {
+                    inbound.Add((follower.Value, new Iri(itemId)));
+                }
+            }
+
+            PendingFollows = inbound;
         }
         catch (Exception ex)
         {
@@ -330,6 +391,68 @@ else
         {
             Busy = false;
         }
+    }
+
+    private async Task AcceptFollowAsync(Iri followIri)
+        => await FollowDecisionAsync(followIri, accept: true);
+
+    private async Task RejectFollowAsync(Iri followIri)
+        => await FollowDecisionAsync(followIri, accept: false);
+
+    private async Task FollowDecisionAsync(Iri followIri, bool accept)
+    {
+        if (!Session.IsLoggedIn || ActorIri is null)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        FollowDecisionBusy = true;
+        FollowDecisionResult = null;
+        FollowDecisionError = null;
+        try
+        {
+            // Accept/reject are local, Basic-authenticated decisions made AS the loaded actor (the followed
+            // side). The instance builds + delivers the signed Accept/Reject to the follower's inbox.
+            FollowDecisionResult = accept
+                ? await Session.GetClient().AcceptFollowAsync(actorIri, followIri)
+                : await Session.GetClient().RejectFollowAsync(actorIri, followIri);
+
+            // Refresh the inbound-follows list (bypassing the page cache) so the accepted/rejected follow's
+            // Accept/Reject activity is visible immediately.
+            await RefreshPendingFollowsAsync(bypassCache: true);
+        }
+        catch (Exception ex)
+        {
+            FollowDecisionError = ex.Message;
+        }
+        finally
+        {
+            FollowDecisionBusy = false;
+        }
+    }
+
+    private async Task RefreshPendingFollowsAsync(bool bypassCache = false)
+    {
+        if (ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        var client = Session.GetClient();
+        var query = bypassCache ? new CollectionQuery(BypassCache: true) : null;
+        var inbound = new List<(string FollowerIri, Iri FollowIri)>();
+        await foreach (var item in client.GetCollectionItemsAsync(actorIri.OutboxOf(), query))
+        {
+            if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                && types.Contains("Follow")
+                && actors.FirstOrDefault()?.ResolveObjectIri() is { } follower)
+            {
+                inbound.Add((follower.Value, new Iri(itemId)));
+            }
+        }
+
+        PendingFollows = inbound;
     }
 
     private async Task LoadAsync()

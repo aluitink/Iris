@@ -52,6 +52,11 @@ services:
       # proxy origins). Comma-separated.
       Iris__CorsOrigins: ${IRIS_CORS_ORIGINS:-http://localhost:8090}
       Iris__Actor: alice
+      # Opt-in manually-approves-followers gate (Resolved Decision #46 / J-10): alice does NOT auto-accept
+      # an inbound follow — the operator decides via the follow-decision endpoint (Accept/Reject). This is
+      # what makes the Sample UI's "Inbound follows" accept/reject flow meaningful for the live manual test.
+      # Default false (auto-accept); set here true for the gate.
+      Iris__ManuallyApprovesFollowers: "true"
       # The peer (iris-b) in-network base: lets iris-a resolve iris-b's actor key over the network
       # (S10 signed cross-container federation + proxy fallback).
       Iris__PeerBase: http://iris-b:8080

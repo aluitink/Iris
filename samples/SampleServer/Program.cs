@@ -366,6 +366,21 @@ public static partial class SampleServer
         var alice = EnsureActor(persistence, actorHandle, aliceIri, aliceKeyIri, aliceKey);
         var hostBase = actorIri.Value[..actorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
 
+        // Opt-in manually-approves-followers gate (Resolved Decision #46 / J-10): when the host sets
+        // Iris__ManuallyApprovesFollowers=true, the primary actor (alice) is seeded with the
+        // manuallyApprovesFollowers extension, so an inbound follow of alice is NOT auto-accepted —
+        // the operator decides with the follow-decision endpoint (Accept/Reject). Set on the fresh
+        // EnsureActor object (the seed's PutActorAsync overwrites the stored actor on each boot), so the
+        // flag is idempotent across recreations. Default false keeps auto-accept (the usual sample path).
+        if (string.Equals(configuration?["Iris:ManuallyApprovesFollowers"], "true", StringComparison.OrdinalIgnoreCase))
+        {
+            alice.ExtensionData ??= new Dictionary<string, JsonElement>();
+            alice.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+                JsonDocument.Parse("true").RootElement.Clone();
+            // EnsureActor already stored alice (without the flag); re-persist now that the extension is set.
+            persistence.Actors.PutActorAsync(alice).GetAwaiter().GetResult();
+        }
+
         // The Phase 8 S10 smoke test drives a signed cross-container Follow from this instance's alice,
         // which requires signing with alice's private key. curl (the smoke test's HTTP client) cannot
         // produce an ActivityPub HTTP signature, so the smoke test runs a small IrisSigner helper that

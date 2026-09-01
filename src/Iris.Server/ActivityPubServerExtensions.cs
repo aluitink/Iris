@@ -725,7 +725,23 @@ public static class ActivityPubServerExtensions
         // this actor), and server-delivers the Reject to the follower's inbox (signed as the local actor),
         // so the remote follower's RejectActivityHandler removes its own edge. {followId} is a catch-all
         // of the absolute IRI of the original Follow activity.
-        group.MapPost("/u/{handle}/follows/{**followId}", LocalFollowRejectHandler).WithName("local-follow-reject-endpoint");
+        // Operator follow-accept/reject: POST /ap/v1/u/{handle}/follows/{**followId} — a local actor's
+        // operator (or the acting actor's own client) acts on a follow that a remote actor made of this
+        // local actor. {followId} is a catch-all of the absolute IRI of the original Follow activity; an
+        // optional trailing "/accept" segment selects acceptance (otherwise it is a reject). A single
+        // catch-all route (LocalFollowDecisionHandler) dispatches on that suffix — a catch-all can only
+        // appear as the last segment, so the accept/reject selection lives in the handler, not the route.
+        //
+        // Reject (no "/accept"): the live outbound side of the manually-approves-followers gate's Reject
+        // half (J-10 / Resolved Decision #46) — the operator rejects the follow; the deterministic Reject
+        // is built, the provisional edge removed, and the Reject delivered to the follower's inbox.
+        // Accept (with "/accept"): the gate's Accept half — the operator accepts the follow; the
+        // deterministic Accept is built, the edge ensured, and the Accept delivered to the follower's
+        // inbox (so the remote finalizes its edge). The default auto-accept path already schedules the
+        // Accept on receipt; this endpoint lets the operator act explicitly from the UI (idempotent for an
+        // already-auto-accepted follow). Both authenticate the requesting actor by Basic auth (the same
+        // credential seam as the mute/relay endpoints).
+        group.MapPost("/u/{handle}/follows/{**followId}", LocalFollowDecisionHandler).WithName("local-follow-decision-endpoint");
 
         // OAuth2 token exchange: POST /ap/v1/oauth2/token — exchanges an authorization code for a
         // Bearer token. The client sends grant_type=authorization_code + code; the server redeems the
@@ -1032,43 +1048,45 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// The operator follow-rejection endpoint: a local actor's operator rejects a follow that a remote
-    /// actor made of this local actor (the live outbound side of the manually-approves-followers gate,
-    /// J-10 / gap G-2's Reject half). The request is authenticated by Basic auth (the acting actor's
-    /// credentials, the same seam as the mute/relay endpoints); the body is the original
-    /// <see cref="Follow"/> activity (its <c>id</c> is the follow the operator is rejecting). The handler
-    /// builds the deterministic <see cref="Reject"/> (<see cref="FollowIris.BuildReject"/>, actor = the
-    /// local actor, object = the original follow by IRI), records it in the local activity store + the
-    /// local actor's outbox (so it is inspectable and a re-reject is idempotent), removes the provisional
-    /// local follow edge (follower → local actor), and server-delivers the Reject to the follower's inbox
-    /// (signed as the local actor) so the remote follower's <see cref="Inbox.RejectActivityHandler"/>
-    /// removes its own edge.
+    /// The operator follow-decision endpoint: a local actor's operator accepts or rejects a follow that a
+    /// remote actor made of this local actor (the live outbound side of the manually-approves-followers
+    /// gate, J-10 / Resolved Decision #46). The request is authenticated by Basic auth (the acting
+    /// actor's credentials, the same seam as the mute/relay endpoints). The follow being decided on is the
+    /// catch-all route value (the absolute IRI of the original <see cref="Follow"/> activity, fetched from
+    /// the local activity store); an optional trailing <c>/accept</c> selects acceptance, otherwise it is
+    /// a rejection. For an accept the handler builds the deterministic <see cref="Accept"/> (<see
+    /// cref="FollowIris.BuildAccept"/>), ensures the follow edge, and server-delivers it to the follower's
+    /// inbox (so the remote finalizes its edge). For a reject it builds the deterministic <see
+    /// cref="Reject"/> (<see cref="FollowIris.BuildReject"/>), removes the provisional edge, and
+    /// server-delivers it (so the remote's <see cref="Inbox.RejectActivityHandler"/> removes its edge).
+    /// Both record the activity in the local activity store + the local actor's outbox (inspectable +
+    /// idempotent).
     /// </summary>
-    /// <param name="context">The HTTP context (provides the route values, the Authorization header, and
-    /// the request body).</param>
+    /// <param name="context">The HTTP context (provides the route values and the Authorization header).</param>
     /// <param name="handle">The local actor's handle (the followed actor being managed).</param>
     /// <param name="credentialValidator">Validates the acting actor's Basic-auth credentials.</param>
     /// <param name="persistence">Provides the activity + follow stores.</param>
-    /// <param name="delivery">Schedules the signed <c>Reject</c> to the follower's inbox.</param>
+    /// <param name="delivery">Schedules the signed <c>Accept</c>/<c>Reject</c> to the follower's inbox.</param>
     /// <param name="localActors">Resolves whether an actor IRI is local.</param>
     /// <param name="optionsAccessor">The server options (the instance base URI).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
-    /// <c>401</c> (unauthenticated), <c>404</c> (unknown local actor), <c>400</c> (malformed / no-follow
-    /// body or a non-Follow), <c>409</c> (the follow's target is not this local actor), <c>410</c> (the
-    /// follow is unknown to this instance — neither recorded nor already rejected), <c>403</c> (the
-    /// follow is local, not a remote follow), or <c>202</c> (rejected + the <c>Reject</c> scheduled for
+    /// <c>401</c> (unauthenticated), <c>404</c> (unknown local actor), <c>400</c> (no resolvable follower),
+    /// <c>409</c> (the follow's target is not this local actor), <c>410</c> (the follow is unknown to this
+    /// instance, or — for a reject — neither recorded nor already rejected), <c>403</c> (the follow is
+    /// local, not a remote follow), or <c>202</c> (decided + the <c>Accept</c>/<c>Reject</c> scheduled for
     /// delivery).
     /// </returns>
     /// <remarks>
-    /// A reject is idempotent at the activity level: the <c>Reject</c> carries the deterministic IRI
-    /// <c>{localActor}/rejects/{followId}</c> (see <see cref="FollowIris.RejectIri(Iri, Follow)"/>), so a
-    /// re-reject of the same follow stores the same activity (a no-op) and re-schedules the delivery (the
-    /// remote dedupes on the IRI). The local edge removal is also a no-op once already removed. A re-reject
-    /// is therefore accepted (<c>202</c>) when the follow was already rejected (the Reject is recorded
-    /// under its deterministic IRI), whereas a follow that was never recorded is <c>410 Gone</c>.
+    /// Both decisions are idempotent at the activity level: the <c>Accept</c> (<c>{localActor}/accepts/
+    /// {followId}</c>) and <c>Reject</c> (<c>{localActor}/rejects/{followId}</c>) carry deterministic IRIs
+    /// (see <see cref="FollowIris.AcceptIri(Iri, Follow)"/> / <see cref="FollowIris.RejectIri(Iri,
+    /// Follow)"/>), so a repeat decision stores the same activity (a no-op) and re-schedules the delivery
+    /// (the remote dedupes on the IRI). An accept is also idempotent for an already-auto-accepted follow
+    /// (the edge is already present; <c>RecordFollowAsync</c> is a no-op). A reject of a follow that was
+    /// never recorded (and not already rejected) is <c>410 Gone</c>.
     /// </remarks>
-    private static async Task<IResult> LocalFollowRejectHandler(
+    private static async Task<IResult> LocalFollowDecisionHandler(
         HttpContext context,
         string handle,
         IActorCredentialValidator credentialValidator,
@@ -1098,35 +1116,34 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        // 2. Read the original Follow from the body. The operator posts the follow activity it is
-        // rejecting (its id is the follow IRI); the handler reconstructs the deterministic Reject from it.
-        // Read as a string (buffered) rather than seeking the request stream, which may not be seekable.
-        var json = await ReadAsBufferedStringAsync(context, ct).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(json))
+        // 2. Resolve the follow being decided on. The catch-all {followId} is the absolute IRI of the
+        // original Follow; an optional trailing "/accept" selects acceptance (otherwise it is a reject).
+        // The follow is fetched from the local activity store — an inbound follow is always stored (the
+        // inbox processor stores the activity before dispatching), so a recorded follow resolves here.
+        if (context.Request.RouteValues["followId"] is not string rawFollowId || rawFollowId.Length == 0)
         {
             return Results.BadRequest();
         }
 
-        IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
-        if (payload is not Follow { Id: not null } follow)
+        var accept = rawFollowId.EndsWith("/accept", StringComparison.Ordinal);
+        var followPath = accept ? rawFollowId[..^"/accept".Length] : rawFollowId;
+        var followIri = new Iri(followPath);
+        if (!await persistence.Activities.TryGetActivityAsync(followIri, out var stored, ct).ConfigureAwait(false)
+            || stored is not Follow { Id: not null } follow)
         {
-            return Results.BadRequest();
+            return Results.StatusCode(StatusCodes.Status410Gone);
         }
 
-        // 3. The follow's target must be this local actor (the actor being managed). A reject is always
-        // the followed side's decision about a follow made OF that actor.
+        // 3. The follow's target must be this local actor (the actor being managed). An accept/reject is
+        // always the followed side's decision about a follow made OF that actor.
         var followTargetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
         if (!followTargetIri.HasValue || followTargetIri.Value != actorIri)
         {
             return Results.Conflict();
         }
 
-        // 4. The follow must be a remote actor's follow of this local actor: the follower is a remote
-        // actor (a local follow is not rejected here — a local un-follow is an Undo, not a Reject). The
-        // follow must be a known follow of this actor — either the provisional follow edge (follower →
-        // this actor) is recorded, or this actor has already recorded the Reject for this exact follow
-        // (a re-reject, which is idempotent). A follow that is neither recorded nor already rejected is
-        // unknown to this instance → 410 Gone.
+        // 4. The follow must be a remote actor's follow of this local actor: a local follow is not
+        // accepted or rejected here (a local un-follow is an Undo, not an Accept/Reject).
         var followerIri = follow.Actor?.FirstOrDefault().ResolveObjectIri();
         if (!followerIri.HasValue)
         {
@@ -1138,6 +1155,28 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        if (accept)
+        {
+            // 5a. Accept: build + record the deterministic Accept (actor = this local actor, object = the
+            // original follow by IRI) in the activity store + the local actor's outbox (inspectable; a
+            // re-accept stores the same IRI — a no-op).
+            var acceptActivity = FollowIris.BuildAccept(actorIri, follow);
+            await persistence.Activities.PutActivityAsync(acceptActivity, ct).ConfigureAwait(false);
+            await persistence.Activities.AddToOutboxAsync(actorIri, acceptActivity, ct).ConfigureAwait(false);
+
+            // 6a. Ensure the follow edge (follower → this actor) is recorded (idempotent — an
+            // auto-accepted follow's edge is already present; a gated follow's provisional edge is
+            // confirmed) and server-deliver the Accept to the follower's inbox (signed as this local
+            // actor) so the remote finalizes its edge.
+            await persistence.Follows.RecordFollowAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
+            await delivery.DeliverToActorAsync(followerIri.Value, acceptActivity, actorIri, ct).ConfigureAwait(false);
+            return Results.Accepted();
+        }
+
+        // 5b. Reject: the follow must be a known follow of this actor — either the provisional follow edge
+        // (follower → this actor) is recorded, or this actor has already recorded the Reject for this exact
+        // follow (a re-reject, idempotent). A follow that is neither recorded nor already rejected is
+        // unknown to this instance → 410 Gone.
         var edgePresent =
             await persistence.Follows.IsFollowingAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
         var rejectIri = FollowIris.RejectIri(actorIri, follow);
@@ -1148,16 +1187,14 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status410Gone);
         }
 
-        // 5. Build + record the deterministic Reject (actor = this local actor, object = the original
+        // 6b. Build + record the deterministic Reject (actor = this local actor, object = the original
         // follow by IRI) in the activity store + the local actor's outbox (so it is inspectable and a
-        // re-reject stores the same IRI — a no-op).
+        // re-reject stores the same IRI — a no-op); remove the provisional local follow edge (a no-op if
+        // already removed); and server-deliver the Reject to the follower's inbox (signed as this local
+        // actor) so the remote removes its own edge.
         var reject = FollowIris.BuildReject(actorIri, follow);
         await persistence.Activities.PutActivityAsync(reject, ct).ConfigureAwait(false);
         await persistence.Activities.AddToOutboxAsync(actorIri, reject, ct).ConfigureAwait(false);
-
-        // 6. Remove the provisional local follow edge (follower → this actor; a no-op if already
-        // removed) and server-deliver the Reject to the follower's inbox (signed as this local actor)
-        // so the remote removes its own edge.
         await persistence.Follows.RemoveFollowAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
         await delivery.DeliverToActorAsync(followerIri.Value, reject, actorIri, ct).ConfigureAwait(false);
 

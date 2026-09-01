@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server;
@@ -13,15 +12,19 @@ using Microsoft.AspNetCore.TestHost;
 namespace Iris.Server.Tests;
 
 /// <summary>
-/// Integration test for the operator follow-rejection endpoint
-/// (POST <c>/ap/v1/u/{handle}/follows/{followId}</c>, the live outbound half of the
-/// manually-approves-followers gate — J-10 / gap G-2's Reject half). A local actor's operator (or the
-/// actor's own client) rejects a follow that a remote actor made of a <em>manually-approving</em> local
-/// actor. The endpoint is Basic-authenticated (the acting actor's credentials, the same seam as the
-/// mute/relay endpoints), takes the original <c>Follow</c> as its body, builds the deterministic
-/// <see cref="Reject"/> (<see cref="FollowIris.BuildReject"/>), records it in the local activity store +
-/// the local actor's outbox, removes the provisional follow edge (follower → local actor), and schedules
-/// delivery of the Reject to the follower's inbox (signed as the local actor).
+/// Integration test for the operator follow-decision endpoint (POST
+/// <c>/ap/v1/u/{handle}/follows/{followId}</c>, the live outbound half of the
+/// manually-approves-followers gate — J-10 / Resolved Decision #46). A local actor's operator (or the
+/// actor's own client) accepts or rejects a follow that a remote actor made of a local actor. The
+/// endpoint is Basic-authenticated (the acting actor's credentials, the same seam as the mute/relay
+/// endpoints); the follow being decided on is the catch-all route value (the absolute IRI of the
+/// original <c>Follow</c>, fetched from the local activity store), and an optional trailing
+/// <c>/accept</c> selects acceptance (otherwise it is a rejection). For an accept the endpoint builds
+/// the deterministic <see cref="Accept"/> (<see cref="FollowIris.BuildAccept"/>), ensures the follow edge,
+/// and schedules delivery to the follower's inbox (so the remote finalizes its edge); for a reject it
+/// builds the deterministic <see cref="Reject"/> (<see cref="FollowIris.BuildReject"/>), removes the
+/// provisional edge, and schedules delivery (so the remote removes its edge). Both record the activity
+/// in the local activity store + the local actor's outbox (inspectable + idempotent).
 /// </summary>
 /// <remarks>
 /// Topology: a single instance (b.domain.local) hosts bob (the manually-approving instance actor) plus
@@ -31,7 +34,7 @@ namespace Iris.Server.Tests;
 /// removal) — the cross-instance delivery of the Reject back to alice is covered by
 /// <see cref="Security.FederationSignatureIntegrationTests"/>.
 /// </remarks>
-public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
+public sealed class OperatorFollowDecisionEndpointIntegrationTests : IDisposable
 {
     private const string BHost = "b.domain.local";
     private const string AHost = "a.domain.local";
@@ -45,7 +48,7 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
     private readonly Iri _carolActorIri;
     private readonly Iri _aliceActorIri;
 
-    public OperatorRejectEndpointIntegrationTests()
+    public OperatorFollowDecisionEndpointIntegrationTests()
     {
         _persistence = new InMemoryPersistenceProvider();
         // bob is the manually-approving instance actor; carol is a second local actor.
@@ -129,6 +132,7 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
         // alice follows carol (a different local actor). Rejecting it on bob's endpoint is a conflict:
         // a reject is always the followed side's decision about a follow made OF that actor.
         var follow = BuildFollow(_aliceActorIri, _carolActorIri);
+        await _persistence.Activities.PutActivityAsync(follow);
         await _persistence.Follows.RecordFollowAsync(_aliceActorIri, _carolActorIri);
 
         var statusCode = await RejectAsync(follow, auth: $"{Bob}:bob-password");
@@ -144,6 +148,7 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
         // carol (a local actor) following bob is a local relationship, not a pending remote follow: a
         // local un-follow is an Undo, not a Reject — the endpoint forbids it.
         var follow = BuildFollow(_carolActorIri, _bobActorIri);
+        await _persistence.Activities.PutActivityAsync(follow);
         await _persistence.Follows.RecordFollowAsync(_carolActorIri, _bobActorIri);
 
         var statusCode = await RejectAsync(follow, auth: $"{Bob}:bob-password");
@@ -182,21 +187,106 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
         Assert.False(await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri));
     }
 
-    // --- A malformed body (not a Follow / no id) is a bad request (400) -------------------
+    // --- Accepts: the /accept half of the same endpoint ------------------------------------
+
+    // --- A Basic-authenticated operator accept is accepted, records the Accept + edge -------
 
     [Fact]
-    public async Task Reject_NotAFollow_Is400()
+    public async Task Accept_Authenticated_RemoteFollow_IsAcceptedAndRecordsEdgeAndAccept()
     {
         var follow = BuildFollow(_aliceActorIri, _bobActorIri);
         await RecordProvisionalFollowAsync(follow);
 
-        // A body that deserializes to a non-Follow (a Note) is a bad request.
-        var statusCode = await RawRejectAsync(_bobActorIri, ActivityJson.Serialize(new Note
-        {
-            Id = "https://b.domain.local/ap/v1/u/bob/notes/1",
-            Content = ["not a follow"],
-        }), auth: $"{Bob}:bob-password");
-        Assert.Equal((int)HttpStatusCode.BadRequest, statusCode);
+        var statusCode = await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password");
+        Assert.Equal((int)HttpStatusCode.Accepted, statusCode);
+
+        // The Accept is recorded under its deterministic IRI in the activity store AND bob's outbox.
+        var acceptIri = FollowIris.AcceptIri(_bobActorIri, follow);
+        Assert.True(
+            await _persistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
+            "The Accept should be recorded in the activity store under its deterministic IRI");
+        Assert.IsType<Accept>(stored!);
+        var outbox = await _persistence.Activities.GetOutboxAsync(_bobActorIri);
+        Assert.Contains(outbox, a => a.Id == acceptIri.Value);
+
+        // The follow edge (alice → bob) is recorded (ensured).
+        Assert.True(
+            await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
+            "After the accept, the follow edge (alice → bob) should be recorded");
+    }
+
+    // --- A re-accept of an already-accepted follow is idempotent (202, same Accept IRI) ----
+
+    [Fact]
+    public async Task Accept_AlreadyAccepted_IsIdempotent()
+    {
+        var follow = BuildFollow(_aliceActorIri, _bobActorIri);
+        await RecordProvisionalFollowAsync(follow);
+
+        Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password"));
+
+        // The edge is already present, so a re-accept is a no-op on the edge (the activity is stored
+        // under the same deterministic IRI). The endpoint still reports success.
+        Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password"));
+        Assert.True(await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri));
+    }
+
+    // --- An unauthenticated accept is rejected (401) ----------------------------------------
+
+    [Fact]
+    public async Task Accept_Unauthenticated_Is401()
+    {
+        var follow = BuildFollow(_aliceActorIri, _bobActorIri);
+        await RecordProvisionalFollowAsync(follow);
+
+        var statusCode = await DecisionAsync(follow, accept: true, auth: null);
+        Assert.Equal((int)HttpStatusCode.Unauthorized, statusCode);
+        Assert.False(await _persistence.Activities.TryGetActivityAsync(FollowIris.AcceptIri(_bobActorIri, follow), out _));
+    }
+
+    // --- Accepting a follow whose target is not this actor is a conflict (409) -------------
+
+    [Fact]
+    public async Task Accept_FollowTargetIsNotThisActor_Is409()
+    {
+        // alice follows carol (a different local actor). Accepting it on bob's endpoint is a conflict:
+        // an accept is always the followed side's decision about a follow made OF that actor.
+        var follow = BuildFollow(_aliceActorIri, _carolActorIri);
+        await _persistence.Follows.RecordFollowAsync(_aliceActorIri, _carolActorIri);
+        await _persistence.Activities.PutActivityAsync(follow);
+
+        var statusCode = await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password");
+        Assert.Equal((int)HttpStatusCode.Conflict, statusCode);
+        Assert.False(await _persistence.Activities.TryGetActivityAsync(FollowIris.AcceptIri(_bobActorIri, follow), out _));
+    }
+
+    // --- Accepting a local follow (not a pending remote follow) is forbidden (403) ---------
+
+    [Fact]
+    public async Task Accept_LocalFollower_Is403()
+    {
+        // carol (a local actor) following bob is a local relationship, not a pending remote follow: a
+        // local un-follow is an Undo, not an Accept — the endpoint forbids it.
+        var follow = BuildFollow(_carolActorIri, _bobActorIri);
+        await _persistence.Follows.RecordFollowAsync(_carolActorIri, _bobActorIri);
+        await _persistence.Activities.PutActivityAsync(follow);
+
+        var statusCode = await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password");
+        Assert.Equal((int)HttpStatusCode.Forbidden, statusCode);
+    }
+
+    // --- Accepting a follow that is not recorded locally is gone (410) ----------------------
+
+    [Fact]
+    public async Task Accept_NotRecordedLocally_Is410()
+    {
+        // The follow was never recorded locally (no activity in the store) → 410 Gone, nothing recorded.
+        var follow = BuildFollow(_aliceActorIri, _bobActorIri);
+        // (Intentionally no RecordProvisionalFollowAsync — the activity is absent from the store.)
+
+        var statusCode = await DecisionAsync(follow, accept: true, auth: $"{Bob}:bob-password");
+        Assert.Equal(410, statusCode);
+        Assert.False(await _persistence.Activities.TryGetActivityAsync(FollowIris.AcceptIri(_bobActorIri, follow), out _));
     }
 
     // --- Helpers --------------------------------------------------------------------------
@@ -218,21 +308,15 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
     }
 
     /// <summary>
-    /// Issues a Basic-authenticated POST of the original <paramref name="follow"/> to bob's reject
-    /// endpoint and returns the status code. <paramref name="auth"/> is "user:pass" or null (no auth).
+    /// Issues a Basic-authenticated operator follow decision on the original <paramref name="follow"/> and
+    /// returns the status code. <paramref name="accept"/> selects the accept half (a trailing
+    /// <c>/accept</c> on the route); <paramref name="auth"/> is "user:pass" or null (no auth). The follow
+    /// is identified by its IRI in the route (the handler fetches it from the local activity store).
     /// </summary>
-    private async Task<int> RejectAsync(Follow follow, string? auth)
-        => await RawRejectAsync(_bobActorIri, ActivityJson.Serialize(follow), auth, followId: follow.Id!);
-
-    /// <summary>
-    /// Issues a Basic-authenticated POST of the given JSON body to the given actor's reject endpoint and
-    /// returns the status code. <paramref name="auth"/> is "user:pass" or null. The route's <c>{followId}</c>
-    /// catch-all carries the follow's IRI (for a real follow); a non-follow body (the 400 path) uses a
-    /// placeholder — the handler reads the follow from the body, not the route.
-    /// </summary>
-    private async Task<int> RawRejectAsync(Iri actorIri, string json, string? auth, string followId = "0")
+    private async Task<int> DecisionAsync(Follow follow, bool accept, string? auth)
     {
-        var url = $"{actorIri.Value.TrimEnd('/')}/follows/{followId}";
+        var suffix = accept ? "/accept" : string.Empty;
+        var url = $"{_bobActorIri.Value.TrimEnd('/')}/follows/{follow.Id!}{suffix}";
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         if (auth is not null)
         {
@@ -240,12 +324,17 @@ public sealed class OperatorRejectEndpointIntegrationTests : IDisposable
                 "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(auth)));
         }
 
-        request.Content = new StringContent(json);
-        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/activity+json");
-
         using var response = await _http.SendAsync(request);
         return (int)response.StatusCode;
     }
+
+    /// <summary>
+    /// Issues a Basic-authenticated operator follow-rejection of the original <paramref name="follow"/> and
+    /// returns the status code. <paramref name="auth"/> is "user:pass" or null (no auth). The follow is
+    /// identified by its IRI in the route (the handler fetches it from the local activity store).
+    /// </summary>
+    private Task<int> RejectAsync(Follow follow, string? auth)
+        => DecisionAsync(follow, accept: false, auth);
 
     private static Follow BuildFollow(Iri followerIri, Iri targetIri) => new()
     {

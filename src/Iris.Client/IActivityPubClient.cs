@@ -111,6 +111,73 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Accepts an inbound follow as <paramref name="actorId"/> (the <em>followed</em> side's decision):
+    /// sends a Basic-authenticated POST to the local follow-accept endpoint
+    /// (<c>{actorId}/follows/{followIri}/accept</c>) so the instance records the <c>follower →
+    /// actorId</c> edge and server-delivers the deterministic <see
+    /// cref="KristofferStrube.ActivityStreams.Accept"/> to the follower's inbox. The follow being accepted
+    /// is identified by <paramref name="followIri"/> (the absolute IRI of the original
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> activity, as seen in the actor's outbox).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one accepting the follow).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// activity being accepted.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// A local, Basic-authenticated decision (not a signed inbox delivery — the actor is accepting a follow
+    /// made OF it, so the instance, not the browser, builds and delivers the <see
+    /// cref="KristofferStrube.ActivityStreams.Accept"/>). It uses the client's default local credentials
+    /// (or an explicit <see cref="ProxyCredentials"/>); the request carries no body (the follow is in the
+    /// path).
+    /// </remarks>
+    public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// <see cref="AcceptFollowAsync(Iri, Iri, CancellationToken)"/> with explicit local credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one accepting the follow).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// activity being accepted.</param>
+    /// <param name="credentials">The Basic-auth credentials to send (handle + password).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects an inbound follow as <paramref name="actorId"/> (the <em>followed</em> side's decision):
+    /// sends a Basic-authenticated POST to the local follow-reject endpoint
+    /// (<c>{actorId}/follows/{followIri}</c>) with the original
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> activity in the body, so the instance records
+    /// the deterministic <see cref="KristofferStrube.ActivityStreams.Reject"/> and server-delivers it to the
+    /// follower's inbox (the follower removes its own edge).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one rejecting the follow).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// activity being rejected.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// A local, Basic-authenticated decision (not a signed inbox delivery). The original <see
+    /// cref="KristofferStrube.ActivityStreams.Follow"/> is fetched from the instance (its outbox / the
+    /// activity store) so the reject endpoint can reconstruct the deterministic <see
+    /// cref="KristofferStrube.ActivityStreams.Reject"/> (object = the follow by IRI); the body carries that
+    /// follow.
+    /// </remarks>
+    public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// <see cref="RejectFollowAsync(Iri, Iri, CancellationToken)"/> with explicit local credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one rejecting the follow).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// activity being rejected.</param>
+    /// <param name="credentials">The Basic-auth credentials to send (handle + password).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
     /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and delivers it through
     /// the signed pipeline to the liker's own inbox (the local-write path, exactly like

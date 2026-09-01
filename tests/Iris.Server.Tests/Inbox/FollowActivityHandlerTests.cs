@@ -64,6 +64,36 @@ public sealed class FollowActivityHandlerTests
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 
+    // --- The inbound follow is surfaced in the followed actor's outbox (the UI lists it) ---
+
+    [Fact]
+    public async Task HandleAsync_LocalPerson_InboundFollowLandsInFollowedActorsOutbox()
+    {
+        // Regardless of auto-approve vs. manual-approve, an inbound follow of a local person is recorded
+        // in the FOLLOWED actor's own outbox, so a UI (the sample's "Inbound follows" list) can enumerate
+        // it from the outbox and offer the operator an Accept/Reject. The activity store alone is not
+        // enumerable by the client, so the outbox is the surface.
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedManuallyApprovingPersonAsync(persistence, LocalManuallyApproving);
+        var (handler, _) = BuildHandler(persistence);
+        var follow = BuildFollow(RemoteFollower, LocalManuallyApproving);
+
+        await handler.HandleAsync(new InboxDelivery(LocalManuallyApproving, follow), follow);
+
+        // The follow is in the followed actor's (carol's) outbox under its own IRI.
+        var outbox = await persistence.Activities.GetOutboxAsync(LocalManuallyApproving);
+        Assert.Contains(outbox, a => a.Id == follow.Id);
+
+        // (Same for the auto-approve path — the follow is surfaced there too.)
+        var persistence2 = new InMemoryPersistenceProvider();
+        await SeedPersonAsync(persistence2, LocalPerson);
+        var (handler2, _) = BuildHandler(persistence2);
+        var follow2 = BuildFollow(RemoteFollower, LocalPerson);
+        await handler2.HandleAsync(new InboxDelivery(LocalPerson, follow2), follow2);
+        var outbox2 = await persistence2.Activities.GetOutboxAsync(LocalPerson);
+        Assert.Contains(outbox2, a => a.Id == follow2.Id);
+    }
+
     [Fact]
     public async Task HandleAsync_ManuallyApprovesSetToFalse_AutoApproves()
     {
