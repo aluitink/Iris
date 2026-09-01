@@ -95,6 +95,22 @@ public static class ActivityPubServerConstants
     public const string CapabilitySearch = "search";
 
     /// <summary>
+    /// The capability value advertised for local, non-federated moderation (a mute, F-07): the
+    /// Basic-authenticated <c>POST {LocalModerationConstants.LocalRoutePrefix}/u/{handle}/mutes/{target}</c>
+    /// write (and its <c>?unmute=true</c> removal). A mute is not an ActivityStreams activity, so it is
+    /// not on the <c>/ap/v1</c> AP tree; it is a specialized local capability discovered via this value.
+    /// </summary>
+    public const string CapabilityMute = "mute";
+
+    /// <summary>
+    /// The capability value advertised for a local relay subscription (F-06): the Basic-authenticated
+    /// <c>POST {LocalModerationConstants.LocalRoutePrefix}/u/{handle}/relays/{target}</c> write (and its
+    /// <c>?unsubscribe=true</c> removal). A relay subscription is not an ActivityStreams activity, so it
+    /// is not on the <c>/ap/v1</c> AP tree; it is a specialized local capability discovered via this value.
+    /// </summary>
+    public const string CapabilityRelay = "relay";
+
+    /// <summary>
     /// The name of the HTTP caching directive header emitted on cacheable responses.
     /// </summary>
     public const string CacheControlHeaderName = "Cache-Control";

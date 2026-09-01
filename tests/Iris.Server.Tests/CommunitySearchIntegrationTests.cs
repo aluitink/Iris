@@ -26,7 +26,9 @@ namespace Iris.Server.Tests;
 /// match returns an empty collection; paging via <c>?limit</c>/<c>?offset</c> works (page 1
 /// <c>OrderedCollection</c>, page 2 <c>OrderedCollectionPage</c> with <c>prev</c>/<c>next</c>, the last
 /// page has no <c>next</c>); an unknown community 404s; and the community document advertises
-/// <c>iris:capabilities</c> = <c>[feed, members, search]</c> under the default namespace.
+/// <c>iris:capabilities</c> = <c>[feed, members, search, mute]</c> under the default namespace (19.0b.2b
+/// adds the local-moderation <c>mute</c> capability — a community can mute a member via a non-AP
+/// <c>/local/v1</c> write).
 /// </remarks>
 public sealed class CommunitySearchIntegrationTests : IDisposable
 {
@@ -201,6 +203,8 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
                 ActivityPubServerConstants.CapabilityFeed,
                 ActivityPubServerConstants.CapabilityMembers,
                 ActivityPubServerConstants.CapabilitySearch,
+                // 19.0b.2b: a community can mute a member (a non-AP local write under /local/v1).
+                ActivityPubServerConstants.CapabilityMute,
             ],
             values);
     }

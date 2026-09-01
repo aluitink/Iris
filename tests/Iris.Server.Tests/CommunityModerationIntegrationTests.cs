@@ -17,8 +17,10 @@ namespace Iris.Server.Tests;
 /// <see cref="ICommunityStore"/> → <see cref="IModerationStore"/>): the community's <c>blocks</c>,
 /// <c>flags</c>, and <c>mutes</c> collections are served over the wire (mirroring the person moderation
 /// collections, for a <c>Group</c>), a community operator records a community-scoped mute via a
-/// Basic-authenticated <c>POST /ap/v1/c/{name}/mutes/{target}</c> (the community's IRI is the credential
-/// seam), and a blocked/muted member's content is excluded from the community feed.
+/// Basic-authenticated <c>POST /local/v1/c/{name}/mutes/{target}</c> on the non-AP local-moderation tree
+/// (19.0b.2b: a mute is a local, non-federated decision — not on the <c>/ap/v1</c> AP tree; the
+/// community's IRI is the credential seam), and a blocked/muted member's content is excluded from the
+/// community feed.
 /// </summary>
 /// <remarks>
 /// Topology: a single instance (a.domain.local) hosts the managed community <c>iris</c> (the operator's
@@ -329,11 +331,14 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     /// <summary>
     /// Issues a raw Basic-authenticated community-mute POST (a mute is not a signed inbox delivery — it
     /// is a Basic-authenticated POST to the community's own instance; the community's IRI is the
-    /// credential seam). <paramref name="auth"/> is "user:pass" or null (no auth).
+    /// credential seam). The write targets the non-AP local tree
+    /// (<c>/local/v1/c/{name}/mutes/{target}</c>), not the <c>/ap/v1</c> AP tree (19.0b.2b AP-native
+    /// rework: a mute is a local, non-federated moderation decision). <paramref name="auth"/> is
+    /// "user:pass" or null (no auth).
     /// </summary>
     private async Task<HttpStatusCode> MuteAsync(string name, Iri targetIri, string? auth, bool unmute = false)
     {
-        var url = $"{_base}/ap/v1/c/{name}/mutes/{targetIri.Value.TrimStart('/')}"
+        var url = $"{_base}/local/v1/c/{name}/mutes/{targetIri.Value.TrimStart('/')}"
             + (unmute ? "?unmute=true" : string.Empty);
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         if (auth is not null)

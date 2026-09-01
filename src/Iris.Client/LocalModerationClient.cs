@@ -133,7 +133,7 @@ public sealed class LocalModerationClient : ILocalModerationClient
         // no body (the target is in the path), so it is sent unsigned through the local-auth handler (not
         // the signed pipeline, which would throw — a local decision is not a federated activity).
         var removeQueryString = remove ? $"?{removeQuery}=true" : string.Empty;
-        var requestUri = new Uri($"{actorId.Value.TrimEnd('/')}/{path}/{targetId.Value.TrimStart('/')}{removeQueryString}");
+        var requestUri = BuildLocalRequestUri(actorId, path, targetId, removeQueryString);
         using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
         {
             Timeout = Timeout.InfiniteTimeSpan,
@@ -142,5 +142,43 @@ public sealed class LocalModerationClient : ILocalModerationClient
         using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
         var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Builds the absolute request URI for a local-moderation write: the acting actor's (or community's)
+    /// host, the <see cref="LocalModerationConstants.LocalRoutePrefix"/> tree, the actor's path segment
+    /// (<c>u/{handle}</c> or <c>c/{name}</c>), the collection segment (<c>mutes</c> or <c>relays</c>), and
+    /// the target IRI.
+    /// </summary>
+    /// <param name="actorId">The acting actor's IRI (e.g. <c>https://host/ap/v1/u/bob</c>).</param>
+    /// <param name="path">The collection segment (<c>mutes</c> or <c>relays</c>).</param>
+    /// <param name="targetId">The decision's target (the muted actor or the relay) as an absolute IRI.</param>
+    /// <param name="removeQueryString">The removal query string (<c>?unmute=true</c> /
+    /// <c>?unsubscribe=true</c>) or empty when recording.</param>
+    /// <returns>The absolute request URI.</returns>
+    /// <remarks>
+    /// The actor's path is the portion of its IRI from the <c>u/</c> or <c>c/</c> segment onward (the
+    /// segment that identifies the actor under its route prefix). That segment is reused under the local
+    /// tree so a local-moderation write addresses the same host + actor as the actor's document, but on
+    /// the non-AP <c>/local/v1</c> route (the <c>/ap/v1</c> prefix is not reused).
+    /// </remarks>
+    private static Uri BuildLocalRequestUri(Iri actorId, string path, Iri targetId, string removeQueryString)
+    {
+        var actor = actorId.Value;
+        // The actor's identifying segment is the path from "/u/" or "/c/" onward (e.g. "/u/bob" or
+        // "/c/iris"). Everything before it (the scheme, host, and the AP route prefix) is dropped and
+        // replaced by the local tree.
+        var actorSegmentStart = Math.Max(actor.IndexOf("/" + LocalModerationConstants.ActorSegment + "/", StringComparison.Ordinal),
+            actor.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal));
+        if (actorSegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for actor IRI '{actorId}' (expected a path containing /u/ or /c/).");
+        }
+
+        var actorSegment = actor[actorSegmentStart..];
+        var host = new Uri(actorId.Value).GetLeftPart(UriPartial.Authority);
+        return new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}/{path}/{targetId.Value.TrimStart('/')}{removeQueryString}");
     }
 }

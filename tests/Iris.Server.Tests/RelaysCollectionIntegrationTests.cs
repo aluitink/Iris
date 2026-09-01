@@ -23,8 +23,10 @@ namespace Iris.Server.Tests;
 /// <remarks>
 /// Topology: a single instance (b.domain.local) hosts a local actor — <c>bob</c> (the instance's Handle
 /// actor) — who subscribes to a remote relay (relay1.example.com). Bob subscribes via a Basic-authenticated
-/// <c>POST /ap/v1/u/bob/relays/{relay}</c>; the instance authenticates bob (the
-/// <c>IActorCredentialValidator</c>) and records the relay edge. Bob's <c>/relays</c> collection (a
+/// <c>POST /local/v1/u/bob/relays/{relay}</c> on the non-AP local-moderation tree (19.0b.2b: a relay
+/// subscription is a local, non-federated decision — not on the <c>/ap/v1</c> AP tree); the instance
+/// authenticates bob (the <c>IActorCredentialValidator</c>) and records the relay edge. Bob's
+/// <c>/relays</c> collection (a
 /// public read endpoint) serves the edge, and the actor document advertises the <c>star</c> set (pointing
 /// at <c>/relays</c>). Un-subscribing (<c>?unsubscribe=true</c>) removes the edge.
 /// </remarks>
@@ -212,10 +214,13 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     /// <summary>
     /// Issues a raw Basic-authenticated local-relay POST (used to exercise the unauthenticated 401 path,
     /// which the client's typed <c>SubscribeRelayAsync</c> cannot reach — it always sends credentials).
+    /// The write targets the non-AP local tree (<c>/local/v1/u/{handle}/relays/{target}</c>), not the
+    /// <c>/ap/v1</c> AP tree (19.0b.2b AP-native rework: a relay subscription is a local, non-federated
+    /// moderation decision).
     /// </summary>
     private async Task<int> LocalPostAsync(Iri actorIri, Iri relayIri, string? auth, bool unsubscribe)
     {
-        var url = $"{actorIri.Value.TrimEnd('/')}/relays/{relayIri.Value.TrimStart('/')}"
+        var url = $"{ToLocalActorBase(actorIri)}/relays/{relayIri.Value.TrimStart('/')}"
             + (unsubscribe ? "?unsubscribe=true" : string.Empty);
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         if (auth is not null)
@@ -290,4 +295,20 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
+    /// <summary>
+    /// Maps an actor IRI (e.g. <c>https://host/ap/v1/u/bob</c>) to its non-AP local-moderation base
+    /// (<c>https://host/local/v1/u/bob</c>): the host plus the <c>/local/v1</c> tree plus the actor's
+    /// <c>/u/{handle}</c> segment (reused under the local tree). Mirrors the client's local-path
+    /// derivation (19.0b.2b).
+    /// </summary>
+    private static string ToLocalActorBase(Iri actorIri)
+    {
+        var actor = actorIri.Value;
+        var start = Math.Max(
+            actor.IndexOf("/u/", StringComparison.Ordinal),
+            actor.IndexOf("/c/", StringComparison.Ordinal));
+        var actorSegment = actor[start..];
+        var authority = new Uri(actorIri.Value).GetLeftPart(UriPartial.Authority);
+        return $"{authority}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}";
+    }
 }

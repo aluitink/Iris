@@ -675,18 +675,13 @@ public static class ActivityPubServerExtensions
                     => CommunityModerationCollectionHandler(name, collection, context, persistence, optionsAccessor, collectionCache, ct))
             .WithName("community-moderation-collection-endpoint");
 
-        // Community mute (19.5.4): POST /ap/v1/c/{name}/mutes/{target} — a community's operator records a
-        // community-scoped mute (the community hides a member's content from its unified feed without
-        // severing the membership); the same route with ?unmute=true removes it. A mute is Iris-specific
-        // (no ActivityStreams type) and a local moderation decision, so it is not interpreted from a
-        // federated activity: the endpoint authenticates the requesting community by Basic auth (the
-        // community's IRI is the credential seam — IActorCredentialValidator, the same seam as the person
-        // mute endpoint and the community follow-decision endpoint) and records/removes the mute edge in
-        // the community's moderation sets. {target} is a catch-all of the absolute IRI of the actor being
-        // muted. (A community block/flag is not exposed as a local POST: those are the federated
-        // Block/Flag activities, recorded on the community when either party is local, the same way the
-        // person store records them — only the mute is a pure local decision.)
-        group.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
+        // NOTE (19.0b.2b AP-native rework): the community mute WRITE no longer has a /ap/v1/c/{name}/mutes
+        // route. A mute is Iris-specific (no ActivityStreams type) and a local moderation decision, so it
+        // is not part of the AP route tree: it is a Basic-authenticated POST on the dedicated local tree
+        // (POST /local/v1/c/{name}/mutes/{target}, CommunityMuteHandler, mapped in the local-moderation
+        // group below). The community mute READ (GET /c/{name}/mutes, an OrderedCollection) stays on the
+        // AP tree — it is an ordinary collection read. (A community block/flag is not a local POST: those
+        // are the federated Block/Flag activities, recorded on the community when either party is local.)
 
         // Community inbox: POST /ap/v1/c/{name}/inbox — receives federation activities addressed to the
         // community (e.g. a Follow from a remote actor, or a Create/Announce from a followed community).
@@ -743,23 +738,13 @@ public static class ActivityPubServerExtensions
         // signature's (request-target) component matches the forwarded request.
         group.MapPost("/proxy/{**target}", ProxyHandler).WithName("proxy-endpoint");
 
-        // Local moderation (mute): POST /ap/v1/u/{handle}/mutes/{target} — a local actor records a mute
-        // (F-07); the same route with ?unmute=true removes it. A mute is Iris-specific (no
-        // ActivityStreams type) and is a local moderation decision, so it is not interpreted from a
-        // federated activity: the endpoint authenticates the requesting actor by Basic auth
-        // (IActorCredentialValidator — the same credential seam as the actor document's owner-only
-        // extension and the proxy endpoint) and records/removes the mute edge in the moderation store.
-        // {target} is a catch-all of the absolute IRI of the actor being muted.
-        group.MapPost("/u/{handle}/mutes/{**target}", LocalMuteHandler).WithName("local-mute-endpoint");
-
-        // Local relay subscription: POST /ap/v1/u/{handle}/relays/{target} — a local actor subscribes to
-        // a relay (F-06); the same route with ?unsubscribe=true removes the subscription. A relay
-        // subscription is an Iris-specific local decision (a local actor configures the relays it wants
-        // to fan out through), so it is not interpreted from a federated activity: the endpoint
-        // authenticates the requesting actor by Basic auth (IActorCredentialValidator — the same
-        // credential seam as the mute endpoint) and records/removes the relay edge in the relay store.
-        // {target} is a catch-all of the absolute IRI of the relay being subscribed to.
-        group.MapPost("/u/{handle}/relays/{**target}", LocalRelayHandler).WithName("local-relay-endpoint");
+        // NOTE (19.0b.2b AP-native rework): the person mute + relay WRITE routes no longer live on the
+        // /ap/v1 tree. A mute (F-07) and a relay subscription (F-06) are Iris-specific local moderation
+        // decisions (no ActivityStreams type), so they are not part of the AP route tree: they are
+        // Basic-authenticated POSTs on the dedicated local tree, mapped in the local-moderation group
+        // below (POST /local/v1/u/{handle}/mutes/{target}, LocalMuteHandler; POST
+        // /local/v1/u/{handle}/relays/{target}, LocalRelayHandler). The mute/relay READS
+        // (GET /u/{handle}/mutes, GET /u/{handle}/relays) stay on the AP tree — ordinary collection reads.
 
         // NOTE (Phase 19.0b AP-native rework): the operator's follow Accept/Reject no longer has a
         // dedicated /follows/{**followId} endpoint. It is an ordinary ActivityStreams activity that the
@@ -784,6 +769,35 @@ public static class ActivityPubServerExtensions
         // handler auto-approves (the v1 model — no interactive consent screen), issues a one-time
         // authorization code, and 302-redirects to redirect_uri?code=...&state=....
         group.MapGet("/oauth2/authorize", OAuthAuthorizeHandler).WithName("oauth-authorize-endpoint");
+
+        // Local moderation (19.0b.2b AP-native rework): the mute (F-07) and relay-subscription (F-06)
+        // WRITE routes live on a dedicated, non-AP tree ({LocalRoutePrefix}), NOT the /ap/v1 AP tree. A
+        // mute and a relay subscription are Iris-specific local decisions (no ActivityStreams type), so
+        // they are not AP activities and are not part of the AP protocol surface: each is a
+        // Basic-authenticated POST to the acting actor's (or community's) own instance, which
+        // authenticates the requester by Basic auth (IActorCredentialValidator) and records/removes the
+        // edge. A removal is signalled by ?unmute=true / ?unsubscribe=true. The corresponding READS
+        // (GET /ap/v1/u/{handle}/mutes, /relays, /c/{name}/mutes) remain on the AP tree — they are
+        // ordinary ActivityStreams collection reads. This group is separate from the /ap/v1 group so it
+        // does not carry the Iris AP version header (it is not an AP endpoint).
+        var localGroup = endpoints.MapGroup(Iris.Client.LocalModerationConstants.LocalRoutePrefix);
+
+        // Local mute (person): POST /local/v1/u/{handle}/mutes/{target} — a local actor records a mute
+        // (F-07); the same route with ?unmute=true removes it. {target} is a catch-all of the absolute
+        // IRI of the actor being muted.
+        localGroup.MapPost("/u/{handle}/mutes/{**target}", LocalMuteHandler).WithName("local-mute-endpoint");
+
+        // Local relay subscription (person): POST /local/v1/u/{handle}/relays/{target} — a local actor
+        // subscribes to a relay (F-06); the same route with ?unsubscribe=true removes it. {target} is a
+        // catch-all of the absolute IRI of the relay being subscribed to.
+        localGroup.MapPost("/u/{handle}/relays/{**target}", LocalRelayHandler).WithName("local-relay-endpoint");
+
+        // Local mute (community): POST /local/v1/c/{name}/mutes/{target} — a community's operator records
+        // a community-scoped mute (the community hides a member's content from its unified feed without
+        // severing the membership); the same route with ?unmute=true removes it. The community's IRI is
+        // the credential seam (IActorCredentialValidator). {target} is a catch-all of the absolute IRI
+        // of the actor being muted.
+        localGroup.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
 
         return endpoints;
     }
@@ -2085,6 +2099,28 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        // Advertise the local-moderation capabilities (19.0b.2b): a person can mute (F-07) and can
+        // subscribe to relays (F-06) — both are Iris-specific local decisions, so they are NOT part of
+        // the /ap/v1 AP tree; they are Basic-authenticated writes under the /local/v1 tree (the
+        // actor's document's mutes/star collection reads stay on /ap/v1). The iris:capabilities
+        // extension (Resolved Decision #11) declares these specialized, non-AP capabilities for client
+        // discovery so a client can tell the actor supports mute/relay (and where to POST) without
+        // guessing. The full term is {NamespaceIri}capabilities (configurable per-deployment).
+        {
+            var capExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            var capabilitiesTerm =
+                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
+                ActivityPubServerConstants.CapabilitiesTerm;
+            if (!capExt.ContainsKey(capabilitiesTerm))
+            {
+                capExt[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(new[]
+                {
+                    ActivityPubServerConstants.CapabilityMute,
+                    ActivityPubServerConstants.CapabilityRelay,
+                });
+            }
+        }
+
         // Advertise the followed feed (F-14): a client (or another instance) reads it to get the actor's
         // home timeline (the union of the actor's local and remote follows' outbox items). The library's
         // Actor type does not model a `feed` property, so it rides in ExtensionData (the same wire shape
@@ -2971,9 +3007,10 @@ public static class ActivityPubServerExtensions
         }
 
         // The iris:capabilities extension (Resolved Decision #11) declares the community's available
-        // specialized collections (feed/members/search) for client discovery. The full term is
-        // {NamespaceIri}capabilities (configurable per-deployment, Resolved Decision #9; the canonical
-        // default when unset, Resolved Decision #1).
+        // specialized capabilities for client discovery: the specialized collections (feed/members/search)
+        // plus the local-moderation mute (19.0b.2b — a community can mute a member, a non-AP local write
+        // under /local/v1/c/{name}/mutes). The full term is {NamespaceIri}capabilities (configurable
+        // per-deployment, Resolved Decision #9; the canonical default when unset, Resolved Decision #1).
         var capabilitiesTerm =
             (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
             ActivityPubServerConstants.CapabilitiesTerm;
@@ -2984,6 +3021,7 @@ public static class ActivityPubServerExtensions
                 ActivityPubServerConstants.CapabilityFeed,
                 ActivityPubServerConstants.CapabilityMembers,
                 ActivityPubServerConstants.CapabilitySearch,
+                ActivityPubServerConstants.CapabilityMute,
             });
             changed = true;
         }
