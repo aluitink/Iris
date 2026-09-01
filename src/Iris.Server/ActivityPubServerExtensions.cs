@@ -596,6 +596,26 @@ public static class ActivityPubServerExtensions
         // local members' outbox activities, newest first), served as a paged collection.
         group.MapGet("/c/{name}/feed", CommunityFeedHandler);
 
+        // Community outbox: GET /ap/v1/c/{name}/outbox — the activities the local community (a Group
+        // actor) AUTHORS and publishes to its own outbox (currently a Follow and the Undo of a Follow —
+        // the only activity kinds the community outbox publish endpoint accepts). This is the READ
+        // counterpart of POST /ap/v1/c/{name}/outbox (CommunityOutboxPublishHandler), which stores each
+        // published activity in the community's outbox (Activities.GetOutboxAsync, keyed by the community
+        // IRI) and the activity store. The community document advertises this outbox IRI, so serving it
+        // keeps the document honest (a remote client resolving the community's outbox link finds the
+        // community's authored activities). Mirrors the actor outbox collection endpoint
+        // (GET /u/{handle}/outbox) for a Group: served as a paged collection (page 1 is an
+        // OrderedCollection with `first`; page N>1 an OrderedCollectionPage), paged via ?page/?limit,
+        // and served through the local collection-page response cache (so ?refresh=true bypasses it).
+        // An unknown community 404s.
+        group.MapGet(
+                "/c/{name}/outbox",
+                (string name, HttpContext context,
+                    IPersistenceProvider persistence, IOptions<ActivityPubServerOptions> optionsAccessor,
+                    LocalCollectionPageCache collectionCache, CancellationToken ct)
+                    => CommunityOutboxHandler(name, context, persistence, optionsAccessor, collectionCache, ct))
+            .WithName("community-outbox-endpoint");
+
         // Community search: GET /ap/v1/c/{name}/search — a specialized collection that searches the
         // community's content (the feed surface) case-insensitively via ?q, paged via ?limit/?offset
         // (the shared limit/offset pagination shape, Resolved Decision #6).
@@ -3050,6 +3070,63 @@ public static class ActivityPubServerExtensions
             optionsAccessor,
             communityIri => feedService.GetFeedAsync(communityIri, query, ct),
             ct);
+    }
+
+    /// <summary>
+    /// Serves the community's outbox — the activities the local community (a <see cref="Group"/>) authors
+    /// and publishes to its own outbox — as a paged collection for <c>GET /ap/v1/c/{name}/outbox</c>.
+    /// This is the READ counterpart of <c>POST /ap/v1/c/{name}/outbox</c>
+    /// (<see cref="CommunityOutboxPublishHandler"/>), which stores each published activity in the
+    /// community's outbox (<see cref="IActivityStore.GetOutboxAsync"/>, keyed by the community IRI). The
+    /// community document advertises this outbox IRI, so serving it keeps the document honest.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors the actor outbox collection endpoint (<c>GET /u/{handle}/outbox</c>) for a
+    /// <see cref="Group"/>: page 1 is an <c>OrderedCollection</c> (with <c>first</c>); page N &gt; 1 is an
+    /// <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>/<c>next</c>), paged via
+    /// <c>?page</c>/<c>?limit</c>, and served through the local collection-page response cache (so
+    /// <c>?refresh=true</c> bypasses it and emits a <c>no-cache</c> <c>Cache-Control</c>). An unknown
+    /// community 404s.
+    /// </remarks>
+    private static async Task<IResult> CommunityOutboxHandler(
+        string name,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var items = await persistence.Activities.GetOutboxAsync(communityIri, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+        var refresh = context.Request.Query["refresh"].ToString()
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
+
+        var collectionIri = new Iri($"{communityIri.Value}/outbox");
+        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
+
+        var (document, _, _) = await collectionCache.GetAsync(
+            pageIri,
+            refresh,
+            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            ct).ConfigureAwait(false);
+
+        var cacheControl = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
+        return Results.Text(document, ActivityJson.ActivityJsonContentType);
     }
 
     /// <summary>
