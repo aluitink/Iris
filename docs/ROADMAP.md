@@ -197,9 +197,15 @@ loops, no echo amplification, and eventual consistency of edge state.
   loops are the classic federation failure). **Resolved (19.3.2, commit 262616e):** the same
   inbox-Id dedup guard bounds the echo/amplification for both `Create` and the `Announce` propagation
   path (the propagated boost is re-stored under its deterministic IRI and is not re-announced).
-- [ ] **19.3.3 — Announce propagation.** Boost a note on A; the boost reaches B's followers once;
+- [x] **19.3.3 — Announce propagation.** Boost a note on A; the boost reaches B's followers once;
   boost a note *from* B on A (boosting remote content) — verify no infinite announce chain and the
-  correct `object` link (not an embedded copy that could double-attribute).
+  correct `object` link (not an embedded copy that could double-attribute). **Resolved (19.3.3, commit
+  a0c86ad):** the propagated boost's deterministic IRI was keyed off the receiving inbox instead of the
+  announcer, so the local-follower leg never matched; the `AnnounceActivityHandler` now scopes the IRI to
+  the announcer and records local followers in their outbox directly (remote followers are delivered to
+  their inbox signed by the announcer). `AnnouncePropagationIntegrationTests` proves a boost reaches the
+  peer's local follower exactly once (bounded, no re-announce) and a remote-note boost carries the correct
+  `object` link with no infinite chain.
 - [ ] **19.3.4 — Delete propagation, both directions.** Delete a local note → peer tombstones it;
   delete a note *originating* on the peer (if our instance can delete remote-originated content,
   e.g. a local reply to their note) → correct scope, no collateral deletion.
