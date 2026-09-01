@@ -125,12 +125,19 @@ smoke test green over the FQDNs; the checklist doc committed.
   new tree (still Basic-auth, non-AP). Add `mute`/`relay`/`proxy` `iris:capabilities` values for
   discovery. `remaining:` full (the follow-decision endpoints were already removed in 19.0b.2a; only
   mute/relay relocation is left).
-- [ ] **19.0b.3 — Split the client.** Move `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/
+- [x] **19.0b.3 — Split the client.** Move `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/
   `UnsubscribeRelayAsync` off the core `IActivityPubClient` into a new `LocalModerationClient` (the
   `AcceptFollowAsync`/`RejectFollowAsync` methods were already **removed** in step 1 — change 161c, they
-  targeted the deleted follow-decision endpoints); correct the stale "InboxOf" doc comments (the code
-  already posts to the outbox). `remaining:` create `LocalModerationClient` + move the 4 mute/relay
-  methods (8 with overloads) + update the sample UI's Moderation/relay cards + DI + tests.
+  targeted the deleted follow-decision endpoints). Done in two steps: **step 1** (change 161c) removed the
+  dead follow-decision client methods; **step 2** (change 161d) created `ILocalModerationClient` +
+  `LocalModerationClient` (local, Basic-auth, non-AP), added
+  `IActivityPubClientFactory.CreateLocalModerationClient` + the extension/DI chain
+  (`IrisClientFactory` → `IrisClientBundle` → `ClientService.GetLocalModerationClient()` →
+  `ExplorerSession.GetLocalModerationClient()`), flipped the sample UI's Moderation/relay cards to the new
+  client, dropped the 4 mute/relay methods (+ the `_localAuth` constructor overloads) from
+  `IActivityPubClient`/`ActivityPubClient`, repointed the collection-read tests + screen tests to the new
+  client, and added 7 unit tests. (change 161d: suite 1,252.) `remaining:` the stale "InboxOf" doc comments
+  (the code already posts to the outbox) — folded into 19.0b.4.
 - [ ] **19.0b.4 — Decisions + docs.** D1–D4 **resolved** (change to the plan §4: keep proxy/search/
   feeds as `iris:`-extension-discovered capabilities; mute/relay = D4a local, non-AP). `remaining:`
   sweep COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
