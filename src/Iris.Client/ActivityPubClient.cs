@@ -532,6 +532,45 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> CreateCommunityAsync(
+        Iri actorId,
+        string name,
+        string displayName,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        ArgumentNullException.ThrowIfNull(displayName);
+
+        // The new community lives on the creator's instance: its IRI is {instanceBase}/ap/v1/c/{name},
+        // where the instance base is the origin of the creator's actor IRI (scheme + authority). The
+        // server's outbox-publish handler, on seeing this Create's embedded Group, materializes the
+        // community in its community store (19.5.1 community-creation write path).
+        var origin = $"{actorId.Uri.Scheme}://{actorId.Uri.Authority}";
+        var communityIri = new Iri($"{origin}/ap/v1/c/{name}");
+
+        var group = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = name,
+            Name = [displayName],
+        };
+
+        // A deterministic Create IRI (community-{name}) so a repeated create of the same community is a
+        // no-op re-store (idempotent by IRI), mirroring the deterministic note/reply Create IRIs.
+        var create = new Create
+        {
+            Id = $"{actorId.Value}/creates/community-{name}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [group],
+        };
+
+        // Publish to the creator's OWN outbox (the AP-native outbox-publish pattern): the server records
+        // the Create in the creator's outbox and, because the embedded object is a local Group, stores
+        // the community (document endpoint, members, feed, collections now resolve).
+        return DeliverAsync(actorId.OutboxOf(), create, ct);
+    }
+
+    /// <inheritdoc/>
     public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(
         Iri actorId,
         CollectionQuery? query = null,

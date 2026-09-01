@@ -340,11 +340,20 @@ How do we create and manage communities, and their peers (the communities/actors
    document, `members`, `feed`, `following`/`followers`, and search collections were already served;
    the missing piece was the advertised **`outbox` link** — `GET /ap/v1/c/{name}/outbox` (the READ
    counterpart of `POST /ap/v1/c/{name}/outbox`) is now a paged collection served through the
-   local collection-page cache (page 1 `OrderedCollection`, page N>1 `OrderedCollectionPage`,
-   `?refresh=true` bypass), so a remote client resolving the community's outbox link finds the
-   community's authored activities instead of a 404. Still open for full 19.5.1: the UI creation
-   *write* path (a signed `Create`/`Add` of a `Group` via the outbox-publish pattern) and the
-   WebFinger/`iris:capabilities` discovery verification — both live-verification / UI items.
+    local collection-page cache (page 1 `OrderedCollection`, page N>1 `OrderedCollectionPage`,
+    `?refresh=true` bypass), so a remote client resolving the community's outbox link finds the
+    community's authored activities instead of a 404. The CI-testable **creation write path is now
+    complete** (change 161l): the client's one-call `CreateCommunityAsync(actorId, name, displayName)`
+    builds a `Create` of a `Group` (IRI `{base}/ap/v1/c/{name}`, derived from the creator's instance)
+    and publishes it to the creator's **own outbox** (the AP-native outbox-publish pattern — the
+    chicken-and-egg of a community publishing to its own not-yet-existent outbox is avoided by having
+    the creator's outbox carry the `Create`). The server's outbox-publish handler, on seeing a
+    `Create` whose embedded object is a local `Group`, materializes the community (stores it in the
+    community store, minting a signing key on first creation and reusing it on re-creation, stamping
+    the `publicKey` extension) so the new community's document endpoint, `members`, `feed`, and
+    collections resolve (`CommunityCreationIntegrationTests`). Still open for full 19.5.1: the UI
+    creation screen (the Blazor form that calls `CreateCommunityAsync`) and the
+    WebFinger/`iris:capabilities` discovery verification — both live-verification / UI items.
  - [ ] **19.5.2 — Membership management.** Add/remove members via management-style activity messages
    (not direct store writes): an actor joining (an `Add` to `members`, or a Follow-based join if that's
    the chosen model — record the decision in a decisions doc), leaving (inverse), and the community
@@ -473,10 +482,14 @@ Confirm the core architectural invariants of how clients talk to servers.
     in-process `S7ScreenTests` pinning the round-trips. Change 161k adds the client's one-call
     **community-maintenance** methods (`AddMemberAsync`/`RemoveMemberAsync` — an `Add`/`Remove` with
     `actor` = the community, delivered directly to the community's own inbox through the signed pipeline) +
-    three integration tests, so the membership management operations are also one-call client methods.
-    **Create-community is deferred** (decision recorded in the change doc): there is no federated
-    ActivityStream activity type or server route for it — communities are created server-side/admin-side —
-    so it is out of scope for the one-call client invariant. The local-moderation operations (Mute/Unmute,
+     three integration tests, so the membership management operations are also one-call client methods.
+     Change 161l adds the client's one-call **create-community** method (`CreateCommunityAsync` — a
+     `Create` of a `Group` authored by a person to their **own outbox**; the server materializes the
+     community in its community store on seeing the local `Group`) + three integration tests — resolving
+     the previously-recorded create-community deferral (the chicken-and-egg of a community publishing to
+     its own not-yet-existent outbox is avoided by having the creator's outbox carry the `Create`), so
+     **every** management operation is now a one-call client method (no side channel). The
+     local-moderation operations (Mute/Unmute,
     Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`, not the outbox, so they are out of scope for
     this test. Still open: the **raw-inspector (UI) half** — drive every write screen (including the new
     boost/unboost button) through the browser and confirm the rendered signed message in the raw inspector

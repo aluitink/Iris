@@ -444,6 +444,37 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default);
 
     /// <summary>
+    /// Creates a community (a <see cref="KristofferStrube.ActivityStreams.Group"/>) owned by the
+    /// instance of <paramref name="actorId"/> (19.5.1 community-creation write path): builds a
+    /// <see cref="KristofferStrube.ActivityStreams.Create"/> whose embedded <c>Group</c> has the IRI
+    /// <c>{instanceBase}/ap/v1/c/{name}</c> and publishes it to <paramref name="actorId"/>'s own outbox.
+    /// The server materializes the community (stores it in the community store with a minted signing key),
+    /// so the new community's document endpoint, <c>members</c>, <c>feed</c>, and collections resolve.
+    /// </summary>
+    /// <param name="actorId">The IRI of the local actor who authors the community (the activity's
+    /// <c>actor</c>; the instance base for the new community's IRI is derived from it).</param>
+    /// <param name="name">The community's handle (the final path segment of its IRI,
+    /// <c>{base}/ap/v1/c/{name}</c>; also its <c>preferredUsername</c>).</param>
+    /// <param name="displayName">The community's human-readable display name (its <c>name</c>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// <strong>Outbox-publish pattern (AP-native).</strong> Unlike the membership methods (which post
+    /// directly to the community's inbox), community creation is a <c>Create</c> authored by a <em>person</em>
+    /// to their <em>own outbox</em> — the chicken-and-egg of a community publishing to its own (not-yet
+    /// existent) outbox is avoided by having the creator's outbox carry the <c>Create</c>. The server's
+    /// outbox-publish handler, on seeing a <c>Create</c> whose embedded object is a local
+    /// <c>Group</c>, materializes the community (19.5.1). The <c>Create</c> carries a deterministic IRI
+    /// (<c>{actorId}/creates/community-{name}</c>) so a repeated create of the same community is a
+    /// no-op re-store (idempotent by IRI).
+    /// </remarks>
+    public Task<DeliveryResult> CreateCommunityAsync(
+        Iri actorId,
+        string name,
+        string displayName,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Enumerates the actors that <paramref name="actorId"/> has flagged (F-07 moderation): reads the
     /// actor's <c>flags</c> collection (served at <c>actorId.FlagsOf()</c>, i.e.
     /// <c>{actor}/flags</c>) as a paged <see cref="OrderedCollection"/> of items, so the same

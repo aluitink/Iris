@@ -1334,8 +1334,10 @@ public static class ActivityPubServerExtensions
             if (activity is Create create)
             {
                 // A Create fans out to every remote, non-blocked follower (G-1 residual: the full
-                // fan-out, mirroring CreateActivityHandler's loop, not just the first follower).
-                var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, ct)
+                // fan-out, mirroring CreateActivityHandler's loop, not just the first follower). When the
+                // embedded object is a community (a Group whose IRI is this instance's /ap/v1/c/{name}),
+                // the community is also stored in the community store (19.5.1 creation write path).
+                var recipients = await RecordCreateLocalAsync(persistence, localActors, actorIri, create, baseUrl, ct)
                     .ConfigureAwait(false);
                 foreach (var recipient in recipients)
                 {
@@ -1946,18 +1948,27 @@ public static class ActivityPubServerExtensions
 
     /// <summary>
     /// Records a <see cref="Create"/> published to the actor's outbox (stores the embedded object, so it
-    /// can be served by IRI and later updated/deleted) and returns the actor's remote followers' delivery
+    /// can be served by IRI and later updated/deleted) and returns the author's remote followers' delivery
     /// target (the post's federation target). A local follower already sees the post in the author's
     /// outbox, so only the author's <em>remote</em> followers need a cross-instance delivery; a single
     /// representative remote follower IRI is returned (the server delivers the post to each remote
-    /// follower's inbox via the same mechanism <see cref="CreateActivityHandler"/> uses). Returns
-    /// <see langword="null"/> when the author has no remote followers (no federation hop).
+    /// follower's inbox via the same mechanism <see cref="CreateActivityHandler"/> uses). Returns an
+    /// empty sequence when the author has no remote followers (no federation hop).
     /// </summary>
+    /// <remarks>
+    /// When the embedded object is a community (a <see cref="Group"/> whose IRI is this instance's
+    /// <c>{base}/ap/v1/c/{name}</c>), the community is additionally stored in the community store with a
+    /// freshly-minted (or reused) signing key — the 19.5.1 community-creation write path. A person
+    /// authors a <c>Create</c> of a <c>Group</c> to their own outbox; the server materializes the
+    /// community so its document endpoint, <c>members</c>, <c>feed</c>, and collections resolve. A
+    /// <c>Create</c> of any other object type (a Note, a reply, …) is unchanged.
+    /// </remarks>
     private static async Task<IEnumerable<Iri>> RecordCreateLocalAsync(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         Iri authorIri,
         Create create,
+        string baseUrl,
         CancellationToken ct)
     {
         // Store the embedded object (so it can be served by IRI, refreshed by an Update, tombstoned by a
@@ -1973,12 +1984,100 @@ public static class ActivityPubServerExtensions
             {
                 await persistence.Replies.RecordReplyAsync(parent, child, ct).ConfigureAwait(false);
             }
+
+            // 19.5.1 community-creation write path: a Create whose embedded object is a community (a
+            // Group whose IRI is this instance's /ap/v1/c/{name}) materializes the community in the
+            // community store (document endpoint, members, feed, collections). A Group with any other
+            // IRI (a remote group, a non-community group) is left as an object-store entry only.
+            if (embedded is Group group && TryParseLocalCommunityIri(baseUrl, group.Id, out var communityIri))
+            {
+                await StoreCreatedCommunityAsync(persistence, group, communityIri, ct).ConfigureAwait(false);
+            }
         }
 
         // The federation targets are the author's remote, non-blocked followers (a local follower sees
         // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
         // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
         return await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="groupIri"/> is a community IRI on this instance
+    /// (<c>{baseUrl}/ap/v1/c/{name}</c>), and if so returns it as an <see cref="Iri"/>. Only a
+    /// Group whose IRI is a <em>local</em> community IRI (same host as <paramref name="baseUrl"/>) is
+    /// materialized as a community — a Group on a foreign host is a remote object, not a local community
+    /// to create.
+    /// </summary>
+    private static bool TryParseLocalCommunityIri(string baseUrl, string? groupIri, out Iri communityIri)
+    {
+        communityIri = default;
+        if (string.IsNullOrWhiteSpace(groupIri))
+        {
+            return false;
+        }
+
+        var baseNoSlash = baseUrl.TrimEnd('/');
+        var prefix = $"{baseNoSlash}{ActivityPubServerConstants.RoutePrefix}/c/";
+        if (!groupIri.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var name = groupIri[prefix.Length..];
+        // The community name is a single path segment (no '/', no query/fragment).
+        if (name.Length == 0 ||
+            name.Contains('/', StringComparison.Ordinal) ||
+            name.Contains('#', StringComparison.Ordinal) ||
+            name.Contains('?', StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        communityIri = new Iri(groupIri);
+        return true;
+    }
+
+    /// <summary>
+    /// Materializes a community created by a <see cref="Create"/> of a <see cref="Group"/> (the 19.5.1
+    /// creation write path): ensures the community's signing key exists (minted on first creation, reused
+    /// on re-creation so an existing community is not re-keyed), stamps the <c>publicKey</c> extension on
+    /// the Group document, and stores the community in the community store (so its document endpoint,
+    /// <c>members</c>, <c>feed</c>, and collections resolve).
+    /// </summary>
+    private static async Task StoreCreatedCommunityAsync(
+        IPersistenceProvider persistence,
+        Group group,
+        Iri communityIri,
+        CancellationToken ct)
+    {
+        // The community's key is {communityIri}#key-1 — the same convention the seeder and the sample
+        // host use. Reuse an existing key (a re-creation must not re-key a live community); mint one on
+        // first creation.
+        var keyId = new Iri($"{communityIri.Value}#key-1");
+        ISigningKey key;
+        if (!persistence.Keys.TryGetKey(keyId, out var existing))
+        {
+            key = KeyPairGenerator.GenerateRsa(keyId);
+            persistence.Keys.PutKey(key);
+        }
+        else
+        {
+            ArgumentNullException.ThrowIfNull(existing);
+            key = existing;
+        }
+
+        // Stamp the publicKey extension (id, owner, publicKeyPem) — the form the inbound key resolver
+        // reads when verifying a community-signed request (the owner is the community IRI).
+        group.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        group.ExtensionData["publicKey"] = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = communityIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+
+        group.Id = communityIri.Value;
+        await persistence.Communities.PutCommunityAsync(group, ct).ConfigureAwait(false);
     }
 
     /// <summary>
