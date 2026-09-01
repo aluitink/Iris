@@ -97,6 +97,35 @@ Prepare the live stack so every later phase tests a durable, production-shaped e
 **Definition of done for 19.0:** stack recreated twice with `down`/`up` (no `-v`) with zero data loss;
 smoke test green over the FQDNs; the checklist doc committed.
 
+### Phase 19.0b — AP-native rework (architectural pivot, **gates 19.1+ execution**)
+
+> **Status: PROPOSAL (plan written, awaiting review).** Plan: `docs/changes/161-ap-native-rework-plan.md`.
+> **Directive:** keep everything as AP-native as possible — all actor/community activities (follow
+> Accept/Reject, mute, block, flag, …) flow through the actor's **outbox** (client authors → outbox
+> POST → server delivers). The AP client becomes a **pure protocol layer**; any convenience layer is
+> separate. **This changes the follow Accept/Reject mechanism that 19.1.2 (F1) exercises, so it must
+> land before live follow testing resumes.**
+
+- [ ] **19.0b.1 — Outbox Accept/Reject.** `OutboxPublishHandler` gains `Accept` + `Reject` branches
+  (Accept confirms the edge + delivers to the follower's inbox; Reject removes the provisional edge +
+  delivers). Deterministic IRIs `{actor}/accepts/{follow}` / `{actor}/rejects/{follow}` preserved.
+  New AP-core client `AcceptAsync`/`RejectAsync` post to the outbox. Sample UI "Inbound follows" card
+  switches to them.
+- [ ] **19.0b.2 — Remove Iris-only operator routes.** Delete the `follows/` (accept/reject), `mutes/`,
+  and `relays/` POST endpoints + handlers; fold their effect into the outbox handler / a
+  `LocalModerationClient` (Basic-auth, non-AP). The `/ap/v1` POST surface becomes outbox-only.
+- [ ] **19.0b.3 — Split the client.** Move `AcceptFollowAsync`/`RejectFollowAsync`/`MuteAsync`/
+  `UnmuteAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync` off the core `IActivityPubClient` into a
+  separate local-moderation client; correct the stale "InboxOf" doc comments (the code already posts to
+  the outbox).
+- [ ] **19.0b.4 — Decisions + docs.** Resolve D1–D4 (proxy relay, search, feeds, mute/relay modeling);
+  sweep COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
+  endpoints; full build + full test suite green (baseline 1,260).
+
+**Definition of done for 19.0b:** no non-AP POST routes under `/ap/v1` except the outbox (and any
+explicitly-kept borderline ones per D1–D3); the client is a pure AP protocol layer; the full suite is
+green; the plan's decisions are recorded.
+
 ### Phase 19.1 — Live interop verification (was Phase 13.5–13.10 + 14 execution)
 
 Execute the [compatibility matrix](reference/COMPATIBILITY_MATRIX.md) scenarios against the live
@@ -119,7 +148,12 @@ handling exist now — so expectations must be re-derived from source before eac
    no trailing newline) made Mastodon accept our Follow (202); F-1911-3 (community signing identity not
    registered) **fixed** (server + client) and verified (in-process regression test + community-signed
    follow to Mastodon 202 via IrisSigner). RayvenMX's `Accept` still pending (their side to process).
-   F1/F3/F4 not tested (require RayvenMX's action). → 19.4.
+   F1/F3/F4 not tested (require RayvenMX's action). **Live state (change 161-preface):** the named
+   volumes were reset (`down -v`) before this live pass, so the prior F2 `Accept` + any earlier F1
+   follow are not on the current volume — F1/F2 are re-driven on the fresh volume per
+   `docs/reference/LIVE_INTEROP_TEST_PLAN.md` (operator triggers F1: RayvenMX follows
+   `alice@iris-dev1.luit.ink`; agent records + Accepts + verifies delivery). Persistence across
+   `down`/`up` (no `-v`) was **confirmed working** (named volumes + file-backed stores round-trip). → 19.4.
 - [ ] **19.1.3 — Post/receive scenarios (C1–C4).** We post a Note (UI compose) → signed `Create`
   delivered to RayvenMX's inbox → **Mastodon renders it** (check the public post URL on
   mastodon.world — this is the core "post and have it federate" proof). RayvenMX posts → our inbox

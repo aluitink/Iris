@@ -68,6 +68,10 @@ phase-specific waypoints.
 
 ## Phase 19 waypoints (mapped to UI paths)
 
+> **Execution guide for the 19.1/19.2 RayvenMX-driven items:** see
+> `LIVE_INTEROP_TEST_PLAN.md` (the standing routine — operator action → agent wire/UI observation →
+> record, plus the findings tracker + current position for a fresh session).
+
 ### 19.1 — Live interop verification
 
 | Waypoint | UI path / wire check | Notes |
