@@ -462,14 +462,18 @@ Confirm the core architectural invariants of how clients talk to servers.
   flag/block/mute, relay add/remove) is expressible **and verified** as a signed ActivityStream/
   ActivityPub message through an outbox/inbox — no side channel. UI writes must show (raw inspector)
   that they are these messages; raw-HTTP direct-store writes are *not* a supported path.
-  `remaining:` the CI-testable half is done (change 161g): `OutboxSingleSourceOfTruthIntegrationTests`
-  now authors **every** supported ActivityStream management operation — Follow, Create, Like, Announce,
-  Block, Flag, Undo (of Follow), Delete, Accept, Reject, Undo of Flag, Undo of Like, Undo of Announce,
-  Undo of Block — and verifies the outbox contains exactly that set, each once, in stable order. The
-  local-moderation operations (Mute/Unmute, Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`,
-  not the outbox, so they are out of scope for this test. Still open: the **raw-inspector (UI) half** —
-  drive every write screen through the UI and confirm the rendered signed message in the raw inspector
-  matches the ActivityStream activity (a live/UI-verification item).
+   `remaining:` the CI-testable half is done (change 161g): `OutboxSingleSourceOfTruthIntegrationTests`
+   now authors **every** supported ActivityStream management operation — Follow, Create, Like, Announce,
+   Block, Flag, Undo (of Follow), Delete, Accept, Reject, Undo of Flag, Undo of Like, Undo of Announce,
+   Undo of Block — and verifies the outbox contains exactly that set, each once, in stable order. Change
+   161i adds the client's one-call **boost/unboost** (`AnnounceAsync`/`UnannounceAsync`, published to the
+   actor's outbox through the signed pipeline) + two integration tests pinning the outbox recording — so
+   every management operation is now expressible as a one-call client method (no side channel). The
+   local-moderation operations (Mute/Unmute, Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`,
+   not the outbox, so they are out of scope for this test. Still open: the **raw-inspector (UI) half** —
+   drive every write screen (including the new boost/unboost button) through the UI and confirm the
+   rendered signed message in the raw inspector matches the ActivityStream activity (a live/UI-verification
+   item).
 - [x] **19.6.2 — All activities flow through the outbox.** Every activity a local actor/community
   authors appears in that actor's/community's outbox collection (Follow, Accept, Create, Like,
   Announce, Undo, Delete, moderation) in a stable order; the outbox is the single source of truth for
