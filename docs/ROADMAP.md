@@ -206,9 +206,15 @@ loops, no echo amplification, and eventual consistency of edge state.
   their inbox signed by the announcer). `AnnouncePropagationIntegrationTests` proves a boost reaches the
   peer's local follower exactly once (bounded, no re-announce) and a remote-note boost carries the correct
   `object` link with no infinite chain.
-- [ ] **19.3.4 — Delete propagation, both directions.** Delete a local note → peer tombstones it;
+- [x] **19.3.4 — Delete propagation, both directions.** Delete a local note → peer tombstones it;
   delete a note *originating* on the peer (if our instance can delete remote-originated content,
-  e.g. a local reply to their note) → correct scope, no collateral deletion.
+  e.g. a local reply to their note) → correct scope, no collateral deletion. **Resolved (19.3.4):**
+  direction 1 (local delete → peer tombstone) was already covered; direction 2 (a *remote* actor
+  deletes a note we hold a copy of) now has a two-instance test proving the `DeleteActivityHandler`'s
+  owner guard accepts a remote author only for an attributed copy (no foreign tombstoning), tombstones
+  only the referenced object (no collateral deletion), and does **not** re-propagate (only the home
+  instance re-fans-out — the re-propagation branch is gated on the deleting actor being local).
+  `RemoteAuthorDelete_LocalCopyTombstoned_NoCollateral_NoRePropagation` (change 144).
 - [ ] **19.3.5 — Follow-edge convergence.** After a follow/unfollow/re-follow cycle across the two
   instances, both sides' `following`/`followers` collections converge and agree (same IRIs, same
   counts, stable pagination) — no orphan edges, no duplicate edges.
