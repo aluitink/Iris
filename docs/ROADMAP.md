@@ -239,9 +239,22 @@ loops, no echo amplification, and eventual consistency of edge state.
   **not** re-propagate (only the home instance re-fans-out — the re-propagation branch is gated on the
   updating actor being local). `RemoteAuthorUpdate_LocalCopyRefreshed_NoCollateral_NoRePropagation`
   (change 146).
-- [ ] **19.3.7 — Recreation stability.** Run the 19.3.1–19.3.5 sequence, `down` (no `-v`) + `up`, and
-  re-verify: no re-delivery storms on boot (queued deliveries replay at most once), no duplicated
-  edges, outboxes unchanged in length.
+- [x] **19.3.7 — Recreation stability.** A host that has delivered an outbound federation `Create` is
+  recreated (`down` (no `-v`) + `up`) and the re-created instance's delivery queue replays the
+  already-delivered activity from its on-disk journal. The replay is a harmless no-op, not a
+  re-delivery storm: the peer stores the activity exactly once, lists it in the recipient's outbox
+  exactly once (no duplicate edge), and does not re-fan-out the activity (bounded outbound
+  deliveries). **Resolved (19.3.7, change 147):** the guarantee rests on two independent guards,
+  pinned end-to-end by `Recreation_DeliveredCreateReplayed_StoredOnce_NoReFanOut_OutboxUnchanged`
+  with no production change. (1) The file-backed `FileBackedDeliveryQueue` journals every enqueued job
+  to disk and, on construction, replays every journaled job into its channel (at-least-once); the
+  default shutdown service completes the queue but does not truncate the journal, so the un-truncated
+  journal re-sends the already-delivered Create on `up` (the test asserts the replay is a genuine
+  re-transmission — A's worker sends it exactly twice over the wire, not a no-op that never left A).
+  (2) The peer's `InboxProcessor` stores an inbound activity add-if-absent by its `Id` (C-07) and, on
+  a re-delivery, does **not** re-dispatch it to a handler — so the replay is stored as a no-op and
+  never re-fan-out; the outbox stays unchanged in length (no duplicate edge) and `InMemoryActivityStore
+  .AddToOutboxAsync` is idempotent-by-IRI (F-1911-2).
 
 ### Phase 19.4 — Remediation
 
