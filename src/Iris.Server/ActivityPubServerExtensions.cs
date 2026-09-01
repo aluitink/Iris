@@ -743,6 +743,16 @@ public static class ActivityPubServerExtensions
         // credential seam as the mute/relay endpoints).
         group.MapPost("/u/{handle}/follows/{**followId}", LocalFollowDecisionHandler).WithName("local-follow-decision-endpoint");
 
+        // Operator follow-accept/reject for a local community (the community analogue of the person
+        // endpoint above): POST /ap/v1/c/{name}/follows/{**followId}. A community's operator acts on a
+        // follow that a remote actor made of this local community (the community's Reject half of the
+        // manually-approves-followers gate — the person path is change 151; this is the community variant
+        // for 19.5.3 "reject/undo flows for inbound follows of the community"). Same shape: {followId} is
+        // the catch-all absolute IRI of the original Follow; a trailing "/accept" selects acceptance.
+        // Basic-authenticated (the community's IRI is the credential seam); the provisional follower edge
+        // lives in the community's followers set (ICommunityStore), not the person IFollowStore.
+        group.MapPost("/c/{name}/follows/{**followId}", CommunityFollowDecisionHandler).WithName("community-follow-decision-endpoint");
+
         // OAuth2 token exchange: POST /ap/v1/oauth2/token — exchanges an authorization code for a
         // Bearer token. The client sends grant_type=authorization_code + code; the server redeems the
         // code (one-time), issues a random Bearer token, stores it in the IOAuthTokenStore, and returns
@@ -1116,6 +1126,64 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        return await HandleFollowDecisionCoreAsync(
+            context,
+            actorIri,
+            persistence,
+            delivery,
+            static (followerIri, p, c) => p.Actors.TryGetActorAsync(followerIri, out _, c),
+            static (followerIri, actorIri, p, c) => p.Follows.IsFollowingAsync(followerIri, actorIri, c),
+            static (followerIri, actorIri, p, c) => p.Follows.RecordFollowAsync(followerIri, actorIri, c),
+            static (followerIri, actorIri, p, c) => p.Follows.RemoveFollowAsync(followerIri, actorIri, c),
+            ct);
+    }
+
+    /// <summary>
+    /// Shared core of the operator follow-decision endpoints for a local <em>actor</em> (a person) and a
+    /// local <em>community</em> (a group): resolves the follow from the catch-all route value (the
+    /// absolute IRI of the original <see cref="Follow"/>; a trailing <c>/accept</c> selects acceptance),
+    /// validates it (target is the managed actor, the follower is remote), and for an accept builds +
+    /// records + ensures the edge + server-delivers the deterministic <see cref="Accept"/>, and for a
+    /// reject validates the follow is known, then builds + records + removes the edge + server-delivers
+    /// the deterministic <see cref="Reject"/>.
+    /// </summary>
+    /// <param name="context">The HTTP context (provides the catch-all <c>followId</c> route value).</param>
+    /// <param name="actorIri">The IRI of the local actor/community being managed (the followed side).</param>
+    /// <param name="persistence">Provides the activity store (the follow is fetched by IRI; the decision is
+    /// recorded here + in the outbox).</param>
+    /// <param name="delivery">Schedules the signed <c>Accept</c>/<c>Reject</c> to the follower's inbox.</param>
+    /// <param name="isLocalFollower">Reports whether a follower IRI is a local actor (a local follow is
+    /// forbidden here — 403); the person and community variants differ only in which store they consult.</param>
+    /// <param name="isEdgePresent">Reports whether the provisional follow edge (follower → managed actor)
+    /// is recorded (a reject requires it, or an already-recorded Reject).</param>
+    /// <param name="ensureEdge">Ensures the follow edge (follower → managed actor) — the accept half.</param>
+    /// <param name="removeEdge">Removes the follow edge (follower → managed actor) — the reject half.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// <c>400</c> (no resolvable follower or no follow IRI), <c>409</c> (the follow's target is not this
+    /// local actor), <c>410</c> (the follow is unknown, or — for a reject — neither recorded nor already
+    /// rejected), <c>403</c> (the follow is local, not a remote follow), or <c>202</c> (decided).
+    /// </returns>
+    /// <remarks>
+    /// The accept/reject logic is actor-type-agnostic: <see cref="FollowIris.BuildAccept(Iri, Follow)"/> /
+    /// <see cref="FollowIris.BuildReject(Iri, Follow)"/> build the deterministic activities from the
+    /// actor IRI + the follow (a community IRI works exactly like a person IRI). The only actor-specific
+    /// pieces are the follow-edge store (a person's edge lives in the <see cref="IFollowStore"/>; a
+    /// community's follower edge lives in the <see cref="ICommunityStore"/>) and the local-follower check
+    /// (a person is local per the actor store; a community per the community store), which are passed in
+    /// as delegates so this core stays shared.
+    /// </remarks>
+    private static async Task<IResult> HandleFollowDecisionCoreAsync(
+        HttpContext context,
+        Iri actorIri,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        Func<Iri, IPersistenceProvider, CancellationToken, Task<bool>> isLocalFollower,
+        Func<Iri, Iri, IPersistenceProvider, CancellationToken, Task<bool>> isEdgePresent,
+        Func<Iri, Iri, IPersistenceProvider, CancellationToken, Task> ensureEdge,
+        Func<Iri, Iri, IPersistenceProvider, CancellationToken, Task> removeEdge,
+        CancellationToken ct)
+    {
         // 2. Resolve the follow being decided on. The catch-all {followId} is the absolute IRI of the
         // original Follow; an optional trailing "/accept" selects acceptance (otherwise it is a reject).
         // The follow is fetched from the local activity store — an inbound follow is always stored (the
@@ -1150,7 +1218,7 @@ public static class ActivityPubServerExtensions
             return Results.BadRequest();
         }
 
-        if (await localActors.IsLocalActorAsync(followerIri.Value, ct).ConfigureAwait(false))
+        if (await isLocalFollower(followerIri.Value, persistence, ct).ConfigureAwait(false))
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
@@ -1168,7 +1236,7 @@ public static class ActivityPubServerExtensions
             // auto-accepted follow's edge is already present; a gated follow's provisional edge is
             // confirmed) and server-deliver the Accept to the follower's inbox (signed as this local
             // actor) so the remote finalizes its edge.
-            await persistence.Follows.RecordFollowAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
+            await ensureEdge(followerIri.Value, actorIri, persistence, ct).ConfigureAwait(false);
             await delivery.DeliverToActorAsync(followerIri.Value, acceptActivity, actorIri, ct).ConfigureAwait(false);
             return Results.Accepted();
         }
@@ -1177,12 +1245,11 @@ public static class ActivityPubServerExtensions
         // (follower → this actor) is recorded, or this actor has already recorded the Reject for this exact
         // follow (a re-reject, idempotent). A follow that is neither recorded nor already rejected is
         // unknown to this instance → 410 Gone.
-        var edgePresent =
-            await persistence.Follows.IsFollowingAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
+        var present = await isEdgePresent(followerIri.Value, actorIri, persistence, ct).ConfigureAwait(false);
         var rejectIri = FollowIris.RejectIri(actorIri, follow);
         var alreadyRejected =
             await persistence.Activities.TryGetActivityAsync(rejectIri, out _).ConfigureAwait(false);
-        if (!edgePresent && !alreadyRejected)
+        if (!present && !alreadyRejected)
         {
             return Results.StatusCode(StatusCodes.Status410Gone);
         }
@@ -1195,10 +1262,89 @@ public static class ActivityPubServerExtensions
         var reject = FollowIris.BuildReject(actorIri, follow);
         await persistence.Activities.PutActivityAsync(reject, ct).ConfigureAwait(false);
         await persistence.Activities.AddToOutboxAsync(actorIri, reject, ct).ConfigureAwait(false);
-        await persistence.Follows.RemoveFollowAsync(followerIri.Value, actorIri, ct).ConfigureAwait(false);
+        await removeEdge(followerIri.Value, actorIri, persistence, ct).ConfigureAwait(false);
         await delivery.DeliverToActorAsync(followerIri.Value, reject, actorIri, ct).ConfigureAwait(false);
 
         return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Operator follow-accept/reject for a local <em>community</em> (a group): the community analogue of
+    /// <see cref="LocalFollowDecisionHandler"/>. POST <c>/ap/v1/c/{name}/follows/{**followId}</c> — a
+    /// community's operator acts on a follow that a remote actor made of this local community. The
+    /// community is resolved by name (the owner-only seam is the same Basic-auth validator); the follow is
+    /// resolved by IRI from the activity store; a trailing <c>/accept</c> selects acceptance. For an
+    /// accept the deterministic <c>Accept</c> is built + recorded + the community's follower edge is
+    /// ensured + the <c>Accept</c> is delivered (so the remote finalizes its edge); for a reject the
+    /// deterministic <c>Reject</c> is built + recorded + the follower edge removed + the <c>Reject</c>
+    /// delivered (so the remote removes its edge). The edge lives in the <see cref="ICommunityStore"/>
+    /// (the community's followers set), not the person <see cref="IFollowStore"/>.
+    /// </summary>
+    /// <param name="context">The HTTP context (provides the route values and the Authorization header).</param>
+    /// <param name="name">The community's name/handle (the community being managed).</param>
+    /// <param name="credentialValidator">Validates the acting actor's Basic-auth credentials.</param>
+    /// <param name="persistence">Provides the activity + community stores.</param>
+    /// <param name="delivery">Schedules the signed <c>Accept</c>/<c>Reject</c> to the follower's inbox.</param>
+    /// <param name="optionsAccessor">The server options (the instance base URI).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// <c>401</c> (unauthenticated), <c>404</c> (unknown community), <c>400</c> (no resolvable follower),
+    /// <c>409</c> (the follow's target is not this community), <c>410</c> (the follow is unknown, or — for a
+    /// reject — neither recorded nor already rejected), <c>403</c> (the follow is local, not a remote
+    /// follow), or <c>202</c> (decided + the <c>Accept</c>/<c>Reject</c> scheduled for delivery).
+    /// </returns>
+    /// <remarks>
+    /// A local follower is one that is a local actor (person) or a local community (a community following
+    /// this community) — both are local relationships (an Undo, not an Accept/Reject), so both are
+    /// forbidden here. The provisional follower edge is read from the community's followers set
+    /// (<see cref="ICommunityStore.GetFollowersAsync"/>), which has no point query.
+    /// </remarks>
+    private static async Task<IResult> CommunityFollowDecisionHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // 1. Authenticate the acting actor (Basic auth) for this community's IRI (the owner-only seam).
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticated = await credentialValidator
+            .TryValidateAsync(communityIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticated is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        return await HandleFollowDecisionCoreAsync(
+            context,
+            communityIri,
+            persistence,
+            delivery,
+            // A local follower is a local actor OR a local community (both are local relationships here).
+            static async (followerIri, p, c) =>
+                await p.Actors.TryGetActorAsync(followerIri, out _, c).ConfigureAwait(false)
+                || await p.Communities.TryGetCommunityAsync(followerIri, out _, c).ConfigureAwait(false),
+            // The provisional follower edge lives in the community's followers set (no point query).
+            static async (followerIri, communityIri, p, c) =>
+                (await p.Communities.GetFollowersAsync(communityIri, c).ConfigureAwait(false)).Contains(followerIri),
+            // Ensure the follower edge (community's followers set — idempotent) on accept.
+            static (followerIri, communityIri, p, c) => p.Communities.AddFollowerAsync(communityIri, followerIri, c),
+            // Remove the follower edge (community's followers set) on reject.
+            static (followerIri, communityIri, p, c) => p.Communities.RemoveFollowerAsync(communityIri, followerIri, c),
+            ct);
     }
 
     /// <summary>

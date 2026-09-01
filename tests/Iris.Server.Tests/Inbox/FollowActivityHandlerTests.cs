@@ -165,6 +165,59 @@ public sealed class FollowActivityHandlerTests
         Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
     }
 
+    // --- Community manuallyApprovesFollowers: edges recorded, but NO Accept (19.5.3) --------
+
+    [Fact]
+    public async Task HandleAsync_LocalCommunityManuallyApproves_RecordsEdgesAndSchedulesNoAccept()
+    {
+        // A community with manuallyApprovesFollowers set suppresses the auto-accept on an inbound follow:
+        // both community edges are still recorded (the follower's content can reach members via the
+        // federation path), but NO Accept is scheduled — the operator responds with an explicit Accept or
+        // Reject via the community follow-decision endpoint (the community's Reject half of the gate, 19.5.3,
+        // the community variant of J-10 / Resolved Decision #46).
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedCommunityWithFlagAsync(persistence, Community, JsonDocument.Parse("true").RootElement.Clone());
+        var (handler, delivery) = BuildHandler(persistence);
+        var follow = BuildFollow(RemoteFollower, Community);
+
+        await handler.HandleAsync(new InboxDelivery(Community, follow), follow);
+
+        // Both community edges are still recorded (the community follows the follower; the follower
+        // follows the community) ...
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowsAsync(Community));
+        Assert.Contains(RemoteFollower, await persistence.Communities.GetFollowersAsync(Community));
+        // ... but NO Accept is scheduled: the operator must respond with an explicit Accept/Reject.
+        Assert.Empty(await DequeueAllAsync(delivery));
+    }
+
+    // --- The inbound follow of a community is surfaced in the community's outbox (19.5.3) --
+
+    [Fact]
+    public async Task HandleAsync_LocalCommunity_InboundFollowLandsInCommunityOutbox()
+    {
+        // Regardless of auto-approve vs. manual-approve, an inbound follow of a local community is recorded
+        // in the community's OWN outbox, so a UI can enumerate it from the outbox and offer the operator an
+        // Accept/Reject (the community analogue of the person's "Inbound follows" surface; change 152).
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedCommunityWithFlagAsync(persistence, Community, JsonDocument.Parse("true").RootElement.Clone());
+        var (handler, _) = BuildHandler(persistence);
+        var follow = BuildFollow(RemoteFollower, Community);
+
+        await handler.HandleAsync(new InboxDelivery(Community, follow), follow);
+
+        var outbox = await persistence.Activities.GetOutboxAsync(Community);
+        Assert.Contains(outbox, a => a.Id == follow.Id);
+
+        // (Same for the auto-approve path — the follow is surfaced there too.)
+        var persistence2 = new InMemoryPersistenceProvider();
+        await persistence2.Communities.PutCommunityAsync(new Group { Id = Community.Value, Name = ["Iris"] });
+        var (handler2, _) = BuildHandler(persistence2);
+        var follow2 = BuildFollow(RemoteFollower, Community);
+        await handler2.HandleAsync(new InboxDelivery(Community, follow2), follow2);
+        var outbox2 = await persistence2.Activities.GetOutboxAsync(Community);
+        Assert.Contains(outbox2, a => a.Id == follow2.Id);
+    }
+
     // --- Guards ---------------------------------------------------------------------------
 
     [Fact]
@@ -257,6 +310,20 @@ public sealed class FollowActivityHandlerTests
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
         actor.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = flag;
         return persistence.Actors.PutActorAsync(actor);
+    }
+
+    private static Task SeedCommunityWithFlagAsync(IPersistenceProvider persistence, Iri communityIri, JsonElement flag)
+    {
+        var name = new Uri(communityIri.Value).AbsolutePath.Trim('/').Split('/').Last();
+        var community = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = name,
+            Name = [name],
+        };
+        community.ExtensionData ??= new Dictionary<string, JsonElement>();
+        community.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = flag;
+        return persistence.Communities.PutCommunityAsync(community);
     }
 
     private static Follow BuildFollow(Iri followerIri, Iri targetIri) => new()

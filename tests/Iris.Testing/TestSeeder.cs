@@ -244,6 +244,50 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Group"/> community with <c>manuallyApprovesFollowers</c> set (in the community's
+    /// <c>ExtensionData</c>, the library-untyped property) together with a real RSA-2048 signing key, so the
+    /// community both suppresses auto-accept on an inbound follow (the community's Reject half of the
+    /// manually-approves-followers gate — 19.5.3, the community variant of J-10 / Resolved Decision #46) and
+    /// can sign outbound federation (an operator Accept/Reject is delivered back to the follower signed as
+    /// the community). The key is stored in the provider's <see cref="IPersistenceProvider.Keys"/> and served
+    /// as PEM (<c>publicKeyPem</c>) in the community's <c>publicKey</c> extension. Idempotent (re-seeding
+    /// replaces).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
+    /// <param name="name">The community's name/handle (e.g. <c>iris</c>).</param>
+    /// <param name="memberIri">The local actor IRI to record as a member (optional).</param>
+    /// <returns>The community's key (for outbound signing), the community's IRI, and the key's IRI.</returns>
+    public static (KeyPair Key, Iri CommunityIri, Iri KeyId) SeedManuallyApprovingCommunityWithKey(
+        InMemoryPersistenceProvider persistence, string host, string name, Iri? memberIri = null)
+    {
+        var (key, communityIri, keyId) = SeedCommunityWithKey(persistence, host, name, memberIri);
+        var community = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = name,
+            Name = [name],
+        };
+        community.ExtensionData ??= new Dictionary<string, JsonElement>();
+        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = communityIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        community.ExtensionData[Iris.Server.ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+            JsonDocument.Parse("true").RootElement.Clone();
+        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
+
+        if (memberIri is not null)
+        {
+            persistence.Communities.AddMemberAsync(communityIri, memberIri.Value).GetAwaiter().GetResult();
+        }
+
+        return (key, communityIri, keyId);
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Person"/> actor that advertises an <c>endpoints.sharedInbox</c> (F-01) — the
     /// shape a remote instance's actor document takes when it exposes a shared inbox for its actors. The
     /// actor carries no signing key; it is a delivery <em>target</em> (its inbox / shared inbox is where a

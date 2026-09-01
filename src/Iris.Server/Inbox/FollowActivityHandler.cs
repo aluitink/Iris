@@ -113,6 +113,22 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
             await _persistence.Communities
                 .AddFollowerAsync(delivery.RecipientIri, followerIri.Value, ct)
                 .ConfigureAwait(false);
+
+            // Surface the inbound follow in the community's own outbox (the activity store alone is not
+            // enumerable), so a community operator can list — and Accept/Reject — the request (the
+            // community analogue of the person's "Inbound follows" surface; change 152).
+            await _persistence.Activities
+                .AddToOutboxAsync(delivery.RecipientIri, follow, ct)
+                .ConfigureAwait(false);
+
+            // When the community manually approves followers, the follow is NOT auto-accepted: the
+            // operator responds with an explicit Accept or Reject via the community follow-decision
+            // endpoint (the community's Reject half of the manually-approves-followers gate — 19.5.3,
+            // the community variant of J-10 / Resolved Decision #46).
+            if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
+            {
+                return;
+            }
         }
         else
         {
@@ -153,25 +169,37 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     }
 
     /// <summary>
-    /// Reports whether the local actor has <c>manuallyApprovesFollowers</c> set (i.e. should not
-    /// auto-accept an inbound follow). The library's <c>Actor</c> type does not model the property, so
-    /// it is read from the actor's <c>ExtensionData</c> (seeded by the host and echoed onto the public
-    /// document — Resolved Decision #46). A missing actor or a missing/false value means auto-accept
-    /// (the default).
+    /// Reports whether the local actor <em>or community</em> has <c>manuallyApprovesFollowers</c> set (i.e.
+    /// should not auto-accept an inbound follow). The library's <c>Actor</c> type does not model the
+    /// property, so it is read from the actor's <c>ExtensionData</c> (seeded by the host and echoed onto
+    /// the public document — Resolved Decision #46). A missing actor/community or a missing/false value
+    /// means auto-accept (the default).
     /// </summary>
-    /// <param name="actorIri">The IRI of the local actor being followed.</param>
+    /// <param name="actorIri">The IRI of the local actor or community being followed.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns><see langword="true"/> when the actor manually approves followers; otherwise <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> when the actor or community manually approves followers; otherwise
+    /// <see langword="false"/>.</returns>
     private async Task<bool> IsManuallyApprovingAsync(Iri actorIri, CancellationToken ct)
     {
-        if (!await _persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
-            || actor is not { } localActor)
+        if (await _persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            && actor is { } localActor)
         {
-            return false;
+            return IsManuallyApproving(localActor.ExtensionData);
         }
 
-        return localActor.ExtensionData is { } ext
+        // A community (a Group in the community store, not the actor store) can also gate its inbound
+        // follows — the community variant of the manually-approves-followers gate (19.5.3).
+        if (await _persistence.Communities.TryGetCommunityAsync(actorIri, out var community, ct).ConfigureAwait(false)
+            && community is { } localCommunity)
+        {
+            return IsManuallyApproving(localCommunity.ExtensionData);
+        }
+
+        return false;
+    }
+
+    private static bool IsManuallyApproving(Dictionary<string, System.Text.Json.JsonElement>? extensionData)
+        => extensionData is { } ext
             && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value)
             && value.ValueKind == System.Text.Json.JsonValueKind.True;
-    }
 }
