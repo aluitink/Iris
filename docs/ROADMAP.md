@@ -106,11 +106,13 @@ smoke test green over the FQDNs; the checklist doc committed.
 > separate. **This changes the follow Accept/Reject mechanism that 19.1.2 (F1) exercises, so it must
 > land before live follow testing resumes.**
 
-- [ ] **19.0b.1 — Outbox Accept/Reject.** `OutboxPublishHandler` gains `Accept` + `Reject` branches
-  (Accept confirms the edge + delivers to the follower's inbox; Reject removes the provisional edge +
-  delivers). Deterministic IRIs `{actor}/accepts/{follow}` / `{actor}/rejects/{follow}` preserved.
-  New AP-core client `AcceptAsync`/`RejectAsync` post to the outbox. Sample UI "Inbound follows" card
-  switches to them.
+- [ ] **19.0b.1 — Outbox Accept/Reject.** `OutboxPublishHandler` + `CommunityOutboxPublishHandler` gain
+  `Accept` + `Reject` branches (Accept ensures the follower→actor edge + delivers to the follower's
+  inbox; Reject removes the provisional edge + delivers). Deterministic IRIs `{actor}/accepts/{follow}` /
+  `{actor}/rejects/{follow}` preserved. New AP-core client `AcceptAsync`/`RejectAsync` post to the
+  outbox. **In progress (change 161a):** server outbox branches + client `AcceptAsync`/`RejectAsync`
+  done, 6+3 tests, suite 1,269. `remaining:` sample UI "Inbound follows" card switch (deferred to the
+  Phase B endpoint-removal slice so the UI flips exactly when the legacy path goes).
 - [ ] **19.0b.2 — Remove Iris-only operator routes.** Delete the `follows/` (accept/reject), `mutes/`,
   and `relays/` POST endpoints + handlers; fold their effect into the outbox handler / a
   `LocalModerationClient` (Basic-auth, non-AP). The `/ap/v1` POST surface becomes outbox-only.
