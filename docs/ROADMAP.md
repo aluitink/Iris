@@ -466,14 +466,15 @@ Confirm the core architectural invariants of how clients talk to servers.
    now authors **every** supported ActivityStream management operation — Follow, Create, Like, Announce,
    Block, Flag, Undo (of Follow), Delete, Accept, Reject, Undo of Flag, Undo of Like, Undo of Announce,
    Undo of Block — and verifies the outbox contains exactly that set, each once, in stable order. Change
-   161i adds the client's one-call **boost/unboost** (`AnnounceAsync`/`UnannounceAsync`, published to the
-   actor's outbox through the signed pipeline) + two integration tests pinning the outbox recording — so
-   every management operation is now expressible as a one-call client method (no side channel). The
-   local-moderation operations (Mute/Unmute, Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`,
-   not the outbox, so they are out of scope for this test. Still open: the **raw-inspector (UI) half** —
-   drive every write screen (including the new boost/unboost button) through the UI and confirm the
-   rendered signed message in the raw inspector matches the ActivityStream activity (a live/UI-verification
-   item).
+    161i adds the client's one-call **boost/unboost** (`AnnounceAsync`/`UnannounceAsync`, published to the
+    actor's outbox through the signed pipeline) + two integration tests pinning the outbox recording — so
+    every management operation is now expressible as a one-call client method (no side channel). Change
+    161j wires the **Boost/Unboost button** into the object view (the UI half of the boost screen) + two
+    in-process `S7ScreenTests` pinning the round-trips. The local-moderation operations (Mute/Unmute,
+    Relay/Unrelay) are non-AP (D4a) and go through `/local/v1`, not the outbox, so they are out of scope for
+    this test. Still open: the **raw-inspector (UI) half** — drive every write screen (including the new
+    boost/unboost button) through the browser and confirm the rendered signed message in the raw inspector
+    matches the ActivityStream activity (a live/UI-verification item).
 - [x] **19.6.2 — All activities flow through the outbox.** Every activity a local actor/community
   authors appears in that actor's/community's outbox collection (Follow, Accept, Create, Like,
   Announce, Undo, Delete, moderation) in a stable order; the outbox is the single source of truth for
@@ -609,6 +610,12 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   reply, delete, unlike, unfollow, reject, moderation, relay) shows success state and the effect is
   visible on re-navigation without a full reload (collections update; the raw inspector shows the
   signed message sent).
+   `remaining:` the **Boost** button is now wired (change 161j): the object view's write card offers a
+   Boost/Unboost toggle next to Like/Unlike, calling the client's `AnnounceAsync`/`UnannounceAsync`
+   through the signed pipeline, with the page's `WriteBusy`/`WriteResult`/`WriteError` machinery; the
+   two new `S7ScreenTests` pin the boost + unboost round-trips in-process. Still open: the
+   **live/UI-verification half** — drive every write screen (including boost) through the browser and
+   confirm the success state + the raw-inspector signed message on re-navigation (a live/UI item).
 - [ ] **19.8.7 — Error & empty states.** 404/unknown object, empty collections, failed logon,
   unreachable instance, and proxy-fallback failure each show a clear message (not a blank page or a
   raw error dump).
