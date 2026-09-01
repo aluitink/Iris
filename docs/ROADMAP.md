@@ -99,30 +99,37 @@ smoke test green over the FQDNs; the checklist doc committed.
 
 ### Phase 19.0b — AP-native rework (architectural pivot, **gates 19.1+ execution**)
 
-> **Status: PROPOSAL (plan written, awaiting review).** Plan: `docs/changes/161-ap-native-rework-plan.md`.
-> **Directive:** keep everything as AP-native as possible — all actor/community activities (follow
-> Accept/Reject, mute, block, flag, …) flow through the actor's **outbox** (client authors → outbox
-> POST → server delivers). The AP client becomes a **pure protocol layer**; any convenience layer is
-> separate. **This changes the follow Accept/Reject mechanism that 19.1.2 (F1) exercises, so it must
-> land before live follow testing resumes.**
+> **Status: IN PROGRESS.** Plan: `docs/changes/161-ap-native-rework-plan.md`.
+> **Governing principle (operator directive):** the *general flow* is AP-native (everything flows
+> through the actor's **outbox**); *specialized* capabilities (proxy relay, search, feeds) are backed
+> by an `iris:`-namespaced JSON-LD extension (`iris:capabilities`) for discovery but keep their own
+> transport — never invented as AP activity types. Mute/relay are local, non-federated, **not** AP
+> activities (D4a). **This changes the follow Accept/Reject mechanism that 19.1.2 (F1) exercises, so it
+> must land before live follow testing resumes.**
 
-- [ ] **19.0b.1 — Outbox Accept/Reject.** `OutboxPublishHandler` + `CommunityOutboxPublishHandler` gain
+- [x] **19.0b.1 — Outbox Accept/Reject.** `OutboxPublishHandler` + `CommunityOutboxPublishHandler` gain
   `Accept` + `Reject` branches (Accept ensures the follower→actor edge + delivers to the follower's
   inbox; Reject removes the provisional edge + delivers). Deterministic IRIs `{actor}/accepts/{follow}` /
   `{actor}/rejects/{follow}` preserved. New AP-core client `AcceptAsync`/`RejectAsync` post to the
-  outbox. **In progress (change 161a):** server outbox branches + client `AcceptAsync`/`RejectAsync`
-  done, 6+3 tests, suite 1,269. `remaining:` sample UI "Inbound follows" card switch (deferred to the
-  Phase B endpoint-removal slice so the UI flips exactly when the legacy path goes).
-- [ ] **19.0b.2 — Remove Iris-only operator routes.** Delete the `follows/` (accept/reject), `mutes/`,
-  and `relays/` POST endpoints + handlers; fold their effect into the outbox handler / a
-  `LocalModerationClient` (Basic-auth, non-AP). The `/ap/v1` POST surface becomes outbox-only.
-- [ ] **19.0b.3 — Split the client.** Move `AcceptFollowAsync`/`RejectFollowAsync`/`MuteAsync`/
-  `UnmuteAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync` off the core `IActivityPubClient` into a
-  separate local-moderation client; correct the stale "InboxOf" doc comments (the code already posts to
-  the outbox).
-- [ ] **19.0b.4 — Decisions + docs.** Resolve D1–D4 (proxy relay, search, feeds, mute/relay modeling);
+  outbox. (change 161a: 6+3 tests, suite 1,269.)
+- [x] **19.0b.2a — Remove the follow-decision endpoints.** Delete the person + community
+  `follows/{**followId}` POST endpoints + `LocalFollowDecisionHandler` +
+  `CommunityFollowDecisionHandler` (+ the shared `HandleFollowDecisionCoreAsync`); the outbox path is the
+  sole accept/reject write. Sample UI "Inbound follows" card flipped to `AcceptAsync`/`RejectAsync`.
+  Retired the 24 endpoint tests; repointed `OutboxSingleSourceOfTruth` + `FederationSignature` to the
+  outbox. (change 161b: suite 1,245.) `remaining:` none for follow decisions.
+- [ ] **19.0b.2b — Remove the mute/relay endpoints (D4a).** Delete the `mutes/` + `relays/` POST
+  endpoints + `LocalMuteHandler` + `LocalRelayHandler`; move their effect to a `LocalModerationClient`
+  (Basic-auth, non-AP). The `/ap/v1` POST surface then becomes outbox-only (plus the specialized proxy
+  relay per D1). Add `proxy`/`mute`/`relay` `iris:capabilities` values for discovery.
+- [ ] **19.0b.3 — Split the client.** Move `AcceptFollowAsync`/`RejectFollowAsync` (now-obsolete) /
+  `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync` off the core
+  `IActivityPubClient` into the `LocalModerationClient`; correct the stale "InboxOf" doc comments (the
+  code already posts to the outbox).
+- [ ] **19.0b.4 — Decisions + docs.** D1–D4 **resolved** (change to the plan §4: keep proxy/search/
+  feeds as `iris:`-extension-discovered capabilities; mute/relay = D4a local, non-AP). `remaining:`
   sweep COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
-  endpoints; full build + full test suite green (baseline 1,260).
+  endpoints; full build + full test suite green.
 
 **Definition of done for 19.0b:** no non-AP POST routes under `/ap/v1` except the outbox (and any
 explicitly-kept borderline ones per D1–D3); the client is a pure AP protocol layer; the full suite is
