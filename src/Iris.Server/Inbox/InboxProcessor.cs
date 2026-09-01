@@ -45,9 +45,22 @@ public sealed class InboxProcessor : IInboxProcessor
     {
         ArgumentNullException.ThrowIfNull(delivery);
 
-        // The processor is the single owner of "receive an activity": store it first (so it can be
-        // re-read even if interpretation later fails or is unsupported), then interpret it.
-        await _persistence.Activities.PutActivityAsync(delivery.Activity, ct).ConfigureAwait(false);
+        // The processor is the single owner of "receive an activity". Idempotent, at-least-once delivery
+        // (C-07): store the activity add-if-absent so it can be re-read, and — when this is a re-delivery
+        // (the IRI is already stored) — do NOT re-dispatch it to a handler. Re-dispatching a received
+        // Create is what re-federates it to the author's remote followers, so this guard is the loop-safety
+        // mechanism for the two-instance network (19.3.1/19.3.2): with mutual follows, the peer's echo of
+        // our Create is delivered back to us; without the guard it would be re-fan-out forever (an
+        // unbounded delivery storm). The first delivery stores (true) and is handled; every re-delivery
+        // (false) is stored as a no-op and skipped.
+        var firstDelivery = await _persistence.Activities
+            .TryAddActivityAsync(delivery.Activity, ct)
+            .ConfigureAwait(false);
+
+        if (!firstDelivery)
+        {
+            return;
+        }
 
         var handler = FindHandler(delivery.Activity);
         if (handler is null)

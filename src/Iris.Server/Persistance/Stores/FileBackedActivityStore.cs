@@ -81,6 +81,34 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<bool> TryAddActivityAsync(IObject activity, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(activity);
+        if (string.IsNullOrWhiteSpace(activity.Id))
+        {
+            throw new ArgumentException("Activity must have a non-null Id.", nameof(activity));
+        }
+
+        var iri = new Iri(activity.Id);
+        var json = ActivityJson.Serialize(activity);
+        // The state function runs under the store lock, so the check-then-store is atomic: the add wins iff
+        // the activity IRI is not already present. The file is rewritten on every call (matching
+        // PutActivityAsync's persist:true); when the key already existed the state is unchanged, so the
+        // rewrite is a harmless no-op and a re-delivered activity durably reports false.
+        return _file.WithStateAsync(s =>
+        {
+            var map = ActivityMap(s);
+            if (map.ContainsKey(iri.Value))
+            {
+                return false;
+            }
+
+            map[iri.Value] = new FilePersistence.DocumentEntry(iri, json);
+            return true;
+        }, true, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<IObjectOrLink>> GetOutboxAsync(Iri actorIri, CancellationToken ct = default)
         => _file.SnapshotAsync<IReadOnlyList<IObjectOrLink>>(s =>
         {

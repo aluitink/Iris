@@ -53,10 +53,13 @@ namespace Iris.Server.Inbox;
 /// <c>relays</c> collection) is recorded by the Basic-authenticated relay endpoint (Slice 12.18).
 /// </para>
 /// <para>
-/// <strong>Idempotency.</strong> The <see cref="IActivityStore.AddToOutboxAsync"/> does not de-duplicate by
-/// IRI; a re-delivered <see cref="Create"/> with the same IRI is recorded again. The inbox pipeline is the
-/// authority for delivery (a given activity is delivered once), so re-recording is not expected in the
-/// normal path; a host that re-delivers should ensure idempotency at that layer.
+/// <strong>Idempotency / loop safety.</strong> The <see cref="IInboxProcessor"/> de-duplicates by the
+/// activity's IRI (C-07): a re-delivered <see cref="Create"/> (a retry, a restart replay, or — for mutual
+/// follows — a peer's re-fan-out echo) is stored as a no-op and is <em>not</em> re-dispatched to this
+/// handler. That guard is what stops the two-instance re-delivery loop (19.3.1/19.3.2): only the first
+/// delivery of a Create reaches this handler, so the post is federated to the author's remote followers
+/// exactly once, never re-fan-out. The outbox write itself (<see cref="IActivityStore.AddToOutboxAsync"/>)
+/// is also idempotent by IRI (F-1911-2), so a post appears in the outbox exactly once.
 /// </para>
 public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
 {

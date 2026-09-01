@@ -32,6 +32,25 @@ public interface IActivityStore
     public Task PutActivityAsync(IObject activity, CancellationToken ct = default);
 
     /// <summary>
+    /// Adds the activity under its IRI <em>only if</em> no activity with that IRI is stored yet. Unlike
+    /// <see cref="PutActivityAsync"/>, this never replaces an existing entry.
+    /// </summary>
+    /// <param name="activity">The activity to add. Must not be null and must have a non-null <c>Id</c>.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> if the activity was added; otherwise
+    /// <see langword="false"/> (an activity with the same IRI was already stored — the add was a no-op).</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="activity"/> is null.</exception>
+    /// <exception cref="ArgumentException">When the activity has no <c>Id</c>.</exception>
+    /// <remarks>
+    /// The inbox pipeline uses this for idempotent, at-least-once delivery (C-07): a re-delivered activity
+    /// (a retry, a restart replay, or — for mutual follows — a peer re-fan-out) is detected by the
+    /// <see langword="false"/> result so it is not re-dispatched to handlers. Re-dispatching a received
+    /// <c>Create</c> is what re-federates it back to the origin, so the check is the loop-safety guard for
+    /// the two-instance network (19.3.1/19.3.2).
+    /// </remarks>
+    public Task<bool> TryAddActivityAsync(IObject activity, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the outbox activities for an actor, newest first, as an <see cref="OrderedCollectionPage"/>-
     /// ready sequence of <see cref="IObjectOrLink"/> (the wire items of the outbox collection).
     /// </summary>

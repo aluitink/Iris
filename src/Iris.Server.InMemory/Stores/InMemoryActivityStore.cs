@@ -39,6 +39,21 @@ public sealed class InMemoryActivityStore : IActivityStore
     }
 
     /// <inheritdoc/>
+    public Task<bool> TryAddActivityAsync(IObject activity, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(activity);
+        if (string.IsNullOrWhiteSpace(activity.Id))
+        {
+            throw new ArgumentException("Activity must have a non-null Id.", nameof(activity));
+        }
+
+        ct.ThrowIfCancellationRequested();
+        // ConcurrentDictionary.TryAdd stores iff the key is absent and reports exactly that, so it is the
+        // atomic add-if-absent the inbox pipeline needs to detect a re-delivered (already-stored) activity.
+        return Task.FromResult(_activities.TryAdd(new Iri(activity.Id), activity));
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<IObjectOrLink>> GetOutboxAsync(Iri actorIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

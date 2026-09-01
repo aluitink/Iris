@@ -135,6 +135,17 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
             }
 
             var propagated = AnnounceIris.BuildAnnounce(delivery.RecipientIri, objectIri.Value, followerIri);
+
+            // Re-store the propagated form under the shared deterministic IRI. The inbox processor stores
+            // each inbound activity add-if-absent (the 19.3.1/19.3.2 re-delivery loop guard), so without
+            // this the propagated Announce (to=follower, cc=announcer) would not replace the original
+            // form already stored under the same IRI — the outbox and follower view must carry the
+            // propagated (addressed) form. PutActivityAsync is the overwrite path that pre-dates the
+            // add-if-absent guard and is used here precisely because the propagated form must win.
+            await _persistence.Activities
+                .PutActivityAsync(propagated, ct)
+                .ConfigureAwait(false);
+
             await _delivery
                 .DeliverToActorAsync(followerIri, propagated, delivery.RecipientIri, ct)
                 .ConfigureAwait(false);
