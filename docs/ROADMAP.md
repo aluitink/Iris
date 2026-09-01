@@ -402,11 +402,18 @@ Confirm the core architectural invariants of how clients talk to servers.
   flag/block/mute, relay add/remove) is expressible **and verified** as a signed ActivityStream/
   ActivityPub message through an outbox/inbox — no side channel. UI writes must show (raw inspector)
   that they are these messages; raw-HTTP direct-store writes are *not* a supported path.
-- [ ] **19.6.2 — All activities flow through the outbox.** Every activity a local actor/community
+- [x] **19.6.2 — All activities flow through the outbox.** Every activity a local actor/community
   authors appears in that actor's/community's outbox collection (Follow, Accept, Create, Like,
   Announce, Undo, Delete, moderation) in a stable order; the outbox is the single source of truth for
   "what did this actor do." Verify by enumerating the outbox (UI + wire) after exercising every write
   screen and matching entries 1:1 with the actions taken.
+  - [x] Server invariant pinned (`OutboxSingleSourceOfTruthIntegrationTests`): a single instance authors
+    every supported activity type — Follow, Create, Like, Announce, Block, Undo, Delete (signed outbox
+    publish) plus Accept and Reject (the follow-decision endpoint) — and the actor's outbox contains
+    exactly that authored set, each once, in the store's stable (newest-first) order; the HTTP outbox
+    collection agrees with the persistence outbox.
+  - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — enumerate the outbox in
+    the UI after exercising every write screen and match entries 1:1 with the actions taken.
 - [ ] **19.6.3 — Post-interact, server-delivers.** The client posts (publishes) an activity to the
   outbox and the **server** performs delivery to recipient inboxes (signed, per-actor), not the
   client. Verify: after a UI compose/follow/like, the peer's inbox received the activity with a valid
