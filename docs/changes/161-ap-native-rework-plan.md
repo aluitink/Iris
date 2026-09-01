@@ -103,7 +103,7 @@ can. Two options:
   activity type.
 
 D4a is the lower-risk, more honest choice: mute/relay are *not* federated, so they don't
-belong on the AP wire at all.
+belong on the AP wire at all. **(Resolved: D4a — see §4.)**
 
 ## 3. The rework path (phases)
 
@@ -140,17 +140,30 @@ test-green step (commit style: `feat(...)` impl+tests, `docs: ...` docs).
    LIVE_EVALUATION_CHECKLIST, LIVE_INTEROP_TEST_PLAN, ROADMAP, PLAN.
 3. Full build + full test suite green; record the delta.
 
-## 4. Open decisions (need your call)
+## 4. Decisions (RESOLVED — operator directive)
 
-- **D1 — Proxy relay (`/proxy/{**t}`):** keep as-is (it's a real browser CORS need, not AP),
-  or also move off the `/ap/v1` tree? Recommend: keep, but it's the only non-AP POST left on
-  the AP route tree.
-- **D2 — Search (`/search`, `/c/{n}/search`):** keep (Mastodon-standard) or remove? Recommend:
-  keep.
-- **D3 — Feeds (`/u/{h}/feed`, `/c/{n}/feed`):** these are the "home timeline." Keep (common
-  extension) — recommend keep.
-- **D4 — Mute/relay modeling:** D4a (local Basic-auth, non-AP, recommended) vs D4b (custom
-  `iris:Mute` activity via outbox).
+**Governing principle:** the *general flow* is AP-native (everything flows through the actor's
+outbox); *specialized* capabilities (proxy relay, search, feeds, and any other non-core-AP thing)
+are **backed by an `iris:`-namespaced JSON-LD extension** for discovery (the existing
+`iris:capabilities` term) but keep whatever transport they need. They are discovered via the
+extension namespace, never invented as AP activity types.
+
+- **D1 — Proxy relay (`/proxy/{**t}`): KEEP.** Specialized (a browser CORS need — the browser can't
+  sign), discovered via `iris:capabilities` (add a `proxy` capability value). Not on the AP wire as an
+  activity.
+- **D2 — Search (`/search`, `/c/{n}/search`): KEEP.** Specialized (Mastodon-standard), already
+  discovered via `iris:capabilities` (`search`). Not an AP activity.
+- **D3 — Feeds (`/u/{h}/feed`, `/c/{n}/feed`): KEEP.** Specialized (home timeline), already
+  discovered via `iris:capabilities` (`feed`). Not an AP activity.
+- **D4 — Mute/relay: D4a (local, non-federated, NOT an AP activity).** Mute and relay have no
+  ActivityStreams type and are local, non-federated decisions, so they are *not* outbox activities and
+  *not* JSON-LD activity types. They stay local Basic-auth capabilities (optionally discoverable via
+  `iris:capabilities` as `mute`/`relay`), off the core `IActivityPubClient` (moved to a
+  `LocalModerationClient`).
+
+**Consequence for the `/ap/v1` POST tree after the rework:** the only POST routes are the outbox
+(person + community), the inbox, the OAuth2 token/revoke, and the specialized proxy relay. All
+follow/block/flag/like/mute-decision activity flows go through the outbox.
 
 ## 5. Scope / churn estimate
 
