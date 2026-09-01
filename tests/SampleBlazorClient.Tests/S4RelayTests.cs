@@ -112,13 +112,13 @@ public sealed class S4RelayTests
             => await _persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct) ? actor : null;
     }
 
-    private static async Task<(TestServer Server, IActivityPubClient Client, Iri AliceIri)> LogOnAsync()
+    private static async Task<(TestServer Server, IActivityPubClient Client, ILocalModerationClient Local, Iri AliceIri)> LogOnAsync()
     {
         var server = StartHost();
         var session = new ExplorerSession(() => server.CreateHandler());
         var ok = await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase);
         Assert.True(ok, "logon to the in-process instance must succeed");
-        return (server, session.GetClient(), new Iri("http://localhost/ap/v1/u/alice"));
+        return (server, session.GetClient(), session.GetLocalModerationClient(), new Iri("http://localhost/ap/v1/u/alice"));
     }
 
     private static async Task<IReadOnlyList<string>> RelayIrisAsync(
@@ -143,14 +143,14 @@ public sealed class S4RelayTests
     [Fact]
     public async Task SubscribeRelay_RelayAppearsInRelaysCollection()
     {
-        var (server, client, alice) = await LogOnAsync();
+        var (server, client, local, alice) = await LogOnAsync();
         using var _ = server;
 
         // Initially alice subscribes to no relays.
         Assert.Empty(await RelayIrisAsync(client, alice));
 
         // Subscribe to relay-a (a local, Basic-authenticated decision on alice's own instance).
-        var subscribe = await client.SubscribeRelayAsync(alice, RelayA);
+        var subscribe = await local.SubscribeRelayAsync(alice, RelayA);
         Assert.True(subscribe.StatusCode == 204, $"subscribing to a relay must succeed (got {subscribe.StatusCode})");
 
         // relay-a is now in alice's relays collection (bypass the page cache to observe the write).
@@ -159,7 +159,7 @@ public sealed class S4RelayTests
             $"alice's relays must contain relay-a (got {string.Join(", ", relays)})");
 
         // Subscribing to a second relay adds it (both present).
-        Assert.Equal(204, (await client.SubscribeRelayAsync(alice, RelayB)).StatusCode);
+        Assert.Equal(204, (await local.SubscribeRelayAsync(alice, RelayB)).StatusCode);
         var relays2 = await RelayIrisAsync(client, alice, bypassCache: true);
         Assert.True(relays2.Contains(RelayA.Value, StringComparer.Ordinal), $"relays must contain relay-a (got {string.Join(", ", relays2)})");
         Assert.True(relays2.Contains(RelayB.Value, StringComparer.Ordinal), $"relays must contain relay-b (got {string.Join(", ", relays2)})");
@@ -168,16 +168,16 @@ public sealed class S4RelayTests
     [Fact]
     public async Task UnsubscribeRelay_RelayRemovedFromRelaysCollection()
     {
-        var (server, client, alice) = await LogOnAsync();
+        var (server, client, local, alice) = await LogOnAsync();
         using var _ = server;
 
         // Subscribe to both relays, then unsubscribe relay-a.
-        Assert.Equal(204, (await client.SubscribeRelayAsync(alice, RelayA)).StatusCode);
-        Assert.Equal(204, (await client.SubscribeRelayAsync(alice, RelayB)).StatusCode);
+        Assert.Equal(204, (await local.SubscribeRelayAsync(alice, RelayA)).StatusCode);
+        Assert.Equal(204, (await local.SubscribeRelayAsync(alice, RelayB)).StatusCode);
         var before = await RelayIrisAsync(client, alice, bypassCache: true);
         Assert.True(before.Contains(RelayA.Value, StringComparer.Ordinal), $"relays must contain relay-a before unsubscribe (got {string.Join(", ", before)})");
 
-        Assert.Equal(204, (await client.UnsubscribeRelayAsync(alice, RelayA)).StatusCode);
+        Assert.Equal(204, (await local.UnsubscribeRelayAsync(alice, RelayA)).StatusCode);
 
         // relay-a is gone; relay-b remains (bypass the page cache to observe the removal).
         var after = await RelayIrisAsync(client, alice, bypassCache: true);

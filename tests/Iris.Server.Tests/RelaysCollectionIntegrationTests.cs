@@ -40,6 +40,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     private readonly Iri _bobActorIri;
     private readonly Iri _relayIri;
     private readonly IActivityPubClient _client;
+    private readonly ILocalModerationClient _local;
 
     public RelaysCollectionIntegrationTests()
     {
@@ -67,6 +68,8 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
         });
         _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
         _client = BuildLocalClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+        _local = BuildLocalModerationClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
             new ProxyCredentials(Bob, "bob-password"));
     }
 
@@ -110,7 +113,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task SubscribeRelay_Authenticated_RecordsRelayEdge()
     {
-        var statusCode = await _client.SubscribeRelayAsync(_bobActorIri, _relayIri);
+        var statusCode = await _local.SubscribeRelayAsync(_bobActorIri, _relayIri);
         Assert.Equal(204, statusCode.StatusCode);
 
         // The instance authenticated bob (Basic auth) and recorded the relay edge (bob → relay).
@@ -123,7 +126,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task SubscribeRelay_AppearsInRelaysCollection()
     {
-        await _client.SubscribeRelayAsync(_bobActorIri, _relayIri);
+        await _local.SubscribeRelayAsync(_bobActorIri, _relayIri);
 
         // Bob's /relays collection (a public read endpoint) serves the recorded edge (as a link to the
         // relay).
@@ -142,7 +145,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Client_GetRelaysAsync_ReadsRelaysCollection()
     {
-        await _client.SubscribeRelayAsync(_bobActorIri, _relayIri);
+        await _local.SubscribeRelayAsync(_bobActorIri, _relayIri);
 
         // The client reads bob's relays collection (via the real collection endpoint) and sees the
         // relay's IRI (a plain link item deserializes to a Link with its Href).
@@ -176,12 +179,12 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task UnsubscribeRelay_RemovesEdge()
     {
-        await _client.SubscribeRelayAsync(_bobActorIri, _relayIri);
+        await _local.SubscribeRelayAsync(_bobActorIri, _relayIri);
         Assert.True(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
 
         // bob un-subscribes (?unsubscribe=true, 204): the edge is removed and the /relays collection is
         // empty again.
-        Assert.Equal(204, (await _client.UnsubscribeRelayAsync(_bobActorIri, _relayIri)).StatusCode);
+        Assert.Equal(204, (await _local.UnsubscribeRelayAsync(_bobActorIri, _relayIri)).StatusCode);
         Assert.False(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
         Assert.Empty(await _persistence.Relays.GetRelaysAsync(_bobActorIri));
 
@@ -198,7 +201,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
     {
         // Un-subscribing from a relay that was never subscribed to is a no-op (204 — the subscription's
         // steady state is authoritative; no edge is created).
-        var statusCode = await _client.UnsubscribeRelayAsync(_bobActorIri, _relayIri);
+        var statusCode = await _local.UnsubscribeRelayAsync(_bobActorIri, _relayIri);
         Assert.Equal(204, statusCode.StatusCode);
         Assert.False(await _persistence.Relays.IsRelayAsync(_bobActorIri, _relayIri));
         Assert.Empty(await _persistence.Relays.GetRelaysAsync(_bobActorIri));
@@ -239,6 +242,28 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
         // the transport is the in-process TestServer (deferred via the LazyHandler, so the fetcher and
         // the client can both reach the server once it is built).
         return factory.Create(
+            new ActivityPubClientOptions
+            {
+                ActorId = actorIri,
+                EnableRetry = false,
+                LocalCredentials = credentials,
+            },
+            new LazyHandler(handlerFactory));
+    }
+
+    private static ILocalModerationClient BuildLocalModerationClient(
+        Iri actorIri, KeyPair key, Func<HttpMessageHandler> handlerFactory, ProxyCredentials credentials)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        // A local-decision client: the default credentials supply the Basic auth for the relay
+        // endpoint, and the transport is the in-process TestServer (deferred via the LazyHandler).
+        return factory.CreateLocalModerationClient(
             new ActivityPubClientOptions
             {
                 ActorId = actorIri,

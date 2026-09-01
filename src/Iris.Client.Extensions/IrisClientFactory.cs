@@ -87,4 +87,29 @@ public sealed class IrisClientFactory
         // (ProxyFallback → Retry → JsonLd → Signing) wraps it.
         return _clientFactory.Create(options, transport ?? new HttpClientHandler());
     }
+
+    /// <summary>
+    /// Builds a pre-configured <see cref="ILocalModerationClient"/> for the given actor: the local,
+    /// Basic-authenticated moderation surface (a mute, F-07, and a relay subscription, F-06).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor the moderation decisions act for.</param>
+    /// <param name="transport">
+    /// The innermost transport handler (e.g. an <c>HttpClientHandler</c>). Not owned by the returned
+    /// client. May be <see langword="null"/> to use the platform default.
+    /// </param>
+    /// <returns>
+    /// A local-moderation client. When <see cref="IrisClientOptions.LocalModeration"/> is enabled (and
+    /// <see cref="IrisClientOptions.ProxyCredentials"/> is set) its no-credential overloads use those
+    /// credentials; otherwise only the explicit-credential overloads work.
+    /// </returns>
+    public ILocalModerationClient CreateLocalModerationClient(Iri actorId, HttpMessageHandler? transport = null)
+    {
+        var options = new ActivityPubClientOptions
+        {
+            ActorId = actorId,
+            LocalCredentials = _options.LocalModeration ? _options.ProxyCredentials : null,
+        };
+
+        return _clientFactory.CreateLocalModerationClient(options, transport ?? new HttpClientHandler());
+    }
 }

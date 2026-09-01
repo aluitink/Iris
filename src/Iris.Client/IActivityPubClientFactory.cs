@@ -22,4 +22,17 @@ public interface IActivityPubClientFactory
     /// Not owned by the returned client.</param>
     /// <returns>A configured <see cref="IActivityPubClient"/> that owns its <see cref="System.Net.Http.HttpClient"/>.</returns>
     public IActivityPubClient Create(ActivityPubClientOptions options, HttpMessageHandler httpHandler);
+
+    /// <summary>
+    /// Creates a new <see cref="ILocalModerationClient"/> — the client for local, non-federated
+    /// moderation decisions (a mute, F-07, and a relay subscription, F-06).
+    /// </summary>
+    /// <param name="options">Client options. When <see cref="ActivityPubClientOptions.LocalCredentials"/>
+    /// is set, the returned client's no-credential overloads use it (a
+    /// <see cref="Pipeline.LocalAuthHandler"/> wrapping the transport); otherwise only the
+    /// explicit-<see cref="Pipeline.ProxyCredentials"/> overloads work.</param>
+    /// <param name="httpHandler">The transport handler (e.g. <see cref="System.Net.Http.HttpClientHandler"/>).
+    /// Not owned by the returned client (a provided default handler is shared across calls).</param>
+    /// <returns>A configured <see cref="ILocalModerationClient"/>.</returns>
+    public ILocalModerationClient CreateLocalModerationClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler);
 }

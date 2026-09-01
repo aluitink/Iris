@@ -242,6 +242,14 @@ public sealed class IrisClientFactoryTests
             // integration test).
             return new ActivityPubClient(new HttpClient(httpHandler, disposeHandler: false), null, null);
         }
+
+        public ILocalModerationClient CreateLocalModerationClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+        {
+            Seen.Add(options);
+            // No default local-auth handler is needed for the factory-contract test (it only records
+            // the options it was asked to build with).
+            return new LocalModerationClient(null);
+        }
     }
 
     private sealed class FakeAuthenticator : IClientAuthenticator

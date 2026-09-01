@@ -395,6 +395,23 @@ public sealed class ExplorerSession : IDisposable
     }
 
     /// <summary>
+    /// Gets the local, Basic-authenticated moderation client for the currently logged-on actor (a mute,
+    /// F-07, and a relay subscription, F-06 — not AP activities). Created on first call and reused.
+    /// Throws when not logged on.
+    /// </summary>
+    /// <returns>A local-moderation client.</returns>
+    /// <exception cref="InvalidOperationException">When the session is not logged on.</exception>
+    public ILocalModerationClient GetLocalModerationClient()
+    {
+        if (_service is null)
+        {
+            throw new InvalidOperationException("Not logged on to an instance.");
+        }
+
+        return _service.GetLocalModerationClient();
+    }
+
+    /// <summary>
     /// Gets the current bundle's discovery service (for resolving an <c>@user@host</c> account to an
     /// actor IRI via WebFinger), or <see langword="null"/> when not logged on.
     /// </summary>

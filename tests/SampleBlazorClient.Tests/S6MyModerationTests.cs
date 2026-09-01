@@ -111,13 +111,13 @@ public sealed class S6MyModerationTests
             => await _persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct) ? actor : null;
     }
 
-    private static async Task<(TestServer Server, IActivityPubClient Client, Iri AliceIri, Iri BobIri)> LogOnAsync()
+    private static async Task<(TestServer Server, IActivityPubClient Client, ILocalModerationClient Local, Iri AliceIri, Iri BobIri)> LogOnAsync()
     {
         var server = StartHost();
         var session = new ExplorerSession(() => server.CreateHandler());
         var ok = await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase);
         Assert.True(ok, "logon to the in-process instance must succeed");
-        return (server, session.GetClient(),
+        return (server, session.GetClient(), session.GetLocalModerationClient(),
             new Iri("http://localhost/ap/v1/u/alice"),
             new Iri("http://localhost/ap/v1/u/bob"));
     }
@@ -166,7 +166,7 @@ public sealed class S6MyModerationTests
     [Fact]
     public async Task MyModeration_Mute_Block_Flag_AppearInOwnCollections()
     {
-        var (server, client, alice, bob) = await LogOnAsync();
+        var (server, client, local, alice, bob) = await LogOnAsync();
         using var _ = server;
 
         // Initially alice's own moderation collections are empty (the card starts at 0/0/0).
@@ -174,7 +174,7 @@ public sealed class S6MyModerationTests
         Assert.True(before == (0, 0, 0), $"alice's own moderation must start empty (got {before})");
 
         // Alice mutes bob (local, Basic-authenticated — 204). It appears in alice's OWN mutes collection.
-        Assert.True((await client.MuteAsync(alice, bob)).StatusCode == 204, "muting must succeed (204)");
+        Assert.True((await local.MuteAsync(alice, bob)).StatusCode == 204, "muting must succeed (204)");
         var afterMute = await MyModerationAsync(client, alice, bypassCache: true);
         Assert.True(afterMute.Mutes == 1, $"after muting bob, alice's own mutes count must be 1 (got {afterMute.Mutes})");
 
@@ -194,17 +194,17 @@ public sealed class S6MyModerationTests
     [Fact]
     public async Task MyModeration_Unmute_Unblock_Unflag_RemoveFromOwnCollections()
     {
-        var (server, client, alice, bob) = await LogOnAsync();
+        var (server, client, local, alice, bob) = await LogOnAsync();
         using var _ = server;
 
         // Seed all three edges as alice, then remove each and assert the counts return to 0.
-        Assert.True((await client.MuteAsync(alice, bob)).StatusCode == 204, "muting must succeed (204)");
+        Assert.True((await local.MuteAsync(alice, bob)).StatusCode == 204, "muting must succeed (204)");
         Assert.True((await client.BlockAsync(alice, bob)).StatusCode == 202, "blocking must succeed (202)");
         Assert.True((await client.FlagAsync(alice, bob)).StatusCode == 202, "flagging must succeed (202)");
         var seeded = await MyModerationAsync(client, alice, bypassCache: true);
         Assert.True(seeded == (1, 1, 1), $"after seeding all three edges, alice's own counts must all be 1 (got {seeded})");
 
-        Assert.True((await client.UnmuteAsync(alice, bob)).StatusCode == 204, "unmuting must succeed (204)");
+        Assert.True((await local.UnmuteAsync(alice, bob)).StatusCode == 204, "unmuting must succeed (204)");
         Assert.True((await client.UnblockAsync(alice, bob)).StatusCode == 202, "unblocking must succeed (202)");
         Assert.True((await client.UnflagAsync(alice, bob)).StatusCode == 202, "unflagging must succeed (202)");
 

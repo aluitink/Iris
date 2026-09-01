@@ -329,35 +329,11 @@ public sealed class IrisRemoteCollectionFetcherTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
-        public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
         public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
             Iri actorId,
             CollectionQuery? query = null,
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
-
-        public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
-
-        public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, Iris.Client.Pipeline.ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(0, false, ""));
 
         public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
             Iri actorId,

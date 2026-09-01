@@ -24,7 +24,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     private readonly bool _ownsHandler;
     private readonly ActorCache? _actorCache;
     private readonly CollectionPageCache? _collectionPageCache;
-    private readonly LocalAuthHandler? _localAuth;
 
     /// <summary>
     /// Initializes a new <see cref="ActivityPubClient"/>.
@@ -32,7 +31,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <param name="http">The HTTP client (its handler pipeline should include a
     /// <see cref="SigningHandler"/> for signed requests). The client does not dispose it.</param>
     public ActivityPubClient(HttpClient http)
-        : this(http, null, false, null, null, null)
+        : this(http, null, false, null, null)
     {
     }
 
@@ -43,7 +42,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <see cref="HttpClientHandler"/>). The signing handler's <see cref="SigningHandler.ActorId"/>
     /// must be set before sending signed requests.</param>
     public ActivityPubClient(HttpMessageHandler handler)
-        : this(null, handler, true, null, null, null)
+        : this(null, handler, true, null, null)
     {
     }
 
@@ -52,8 +51,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         HttpMessageHandler? handler,
         bool disposeHandler,
         ActorCache? actorCache,
-        CollectionPageCache? collectionPageCache,
-        LocalAuthHandler? localAuth)
+        CollectionPageCache? collectionPageCache)
     {
         if (http is null && handler is null)
         {
@@ -64,7 +62,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         _ownsHandler = disposeHandler;
         _actorCache = actorCache;
         _collectionPageCache = collectionPageCache;
-        _localAuth = localAuth;
     }
 
     /// <summary>
@@ -78,47 +75,23 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         HttpClient http,
         ActorCache? actorCache,
         CollectionPageCache? collectionPageCache)
-        : this(http, null, false, actorCache, collectionPageCache, null)
-    {
-    }
-
-    /// <summary>
-    /// Initializes a new <see cref="ActivityPubClient"/> with optional read-through caches and an
-    /// optional local-auth handler (for F-07 local moderation).
-    /// </summary>
-    /// <param name="http">The HTTP client (its handler pipeline should include a
-    /// <see cref="SigningHandler"/> for signed requests). The client does not dispose it.</param>
-    /// <param name="actorCache">Optional cache for <see cref="GetObjectAsync(Iri, CancellationToken)"/> reads. Null disables actor caching.</param>
-    /// <param name="collectionPageCache">Optional cache for <see cref="GetCollectionAsync"/> page reads. Null disables page caching.</param>
-    /// <param name="localAuth">Optional <see cref="LocalAuthHandler"/> for local, Basic-authenticated
-    /// moderation requests (F-07 mute). Null disables local moderation (the no-credential
-    /// <c>MuteAsync</c>/<c>UnmuteAsync</c> overloads throw).</param>
-    public ActivityPubClient(
-        HttpClient http,
-        ActorCache? actorCache,
-        CollectionPageCache? collectionPageCache,
-        LocalAuthHandler? localAuth)
-        : this(http, null, false, actorCache, collectionPageCache, localAuth)
+        : this(http, null, false, actorCache, collectionPageCache)
     {
     }
 
     /// <summary>
     /// Initializes a new <see cref="ActivityPubClient"/> that owns its <see cref="HttpClient"/>, with
-    /// optional read-through caches and an optional local-auth handler (for F-07 local moderation).
+    /// optional read-through caches.
     /// </summary>
     /// <param name="handler">The handler pipeline (typically a <see cref="SigningHandler"/> over a
     /// <see cref="HttpClientHandler"/>).</param>
     /// <param name="actorCache">Optional cache for <see cref="GetObjectAsync(Iri, CancellationToken)"/> reads. Null disables actor caching.</param>
     /// <param name="collectionPageCache">Optional cache for <see cref="GetCollectionAsync"/> page reads. Null disables page caching.</param>
-    /// <param name="localAuth">Optional <see cref="LocalAuthHandler"/> for local, Basic-authenticated
-    /// moderation requests (F-07 mute). Null disables local moderation (the no-credential
-    /// <c>MuteAsync</c>/<c>UnmuteAsync</c> overloads throw).</param>
     public ActivityPubClient(
         HttpMessageHandler handler,
         ActorCache? actorCache,
-        CollectionPageCache? collectionPageCache,
-        LocalAuthHandler? localAuth = null)
-        : this(null, handler, true, actorCache, collectionPageCache, localAuth)
+        CollectionPageCache? collectionPageCache)
+        : this(null, handler, true, actorCache, collectionPageCache)
     {
     }
 
@@ -487,22 +460,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-        => LocalModerateAsync(actorId, targetId, remove: false, credentials: null, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> MuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
-        => LocalModerateAsync(actorId, targetId, remove: false, credentials, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
-        => LocalModerateAsync(actorId, targetId, remove: true, credentials: null, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> UnmuteAsync(Iri actorId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
-        => LocalModerateAsync(actorId, targetId, remove: true, credentials, ct);
-
-    /// <inheritdoc/>
     public IAsyncEnumerable<IObjectOrLink> GetMutesAsync(
         Iri actorId,
         CollectionQuery? query = null,
@@ -515,22 +472,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials: null, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> SubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
-        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: false, removeQuery: "unsubscribe", credentials, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, CancellationToken ct = default)
-        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials: null, ct);
-
-    /// <inheritdoc/>
-    public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
-        => LocalLocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials, ct);
-
-    /// <inheritdoc/>
     public IAsyncEnumerable<IObjectOrLink> GetRelaysAsync(
         Iri actorId,
         CollectionQuery? query = null,
@@ -541,80 +482,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // (GetCollectionItemsAsync reads through the CollectionPageCache). The items are the relays'
         // IRIs (links).
         return GetCollectionItemsAsync(actorId.RelaysOf(), query, ct);
-    }
-
-    private async Task<DeliveryResult> LocalModerateAsync(
-        Iri actorId,
-        Iri targetId,
-        bool remove,
-        ProxyCredentials? credentials,
-        CancellationToken ct)
-        => await LocalLocalDecisionAsync(
-            actorId, targetId, path: "mutes", remove, removeQuery: "unmute", credentials, ct)
-            .ConfigureAwait(false);
-
-    private async Task<DeliveryResult> LocalLocalDecisionAsync(
-        Iri actorId,
-        Iri targetId,
-        string path,
-        bool remove,
-        string removeQuery,
-        ProxyCredentials? credentials,
-        CancellationToken ct)
-    {
-        // A local decision (a mute, F-07, or a relay subscription, F-06) is Iris-specific (no
-        // ActivityStreams type for either) and is a local decision, so it is not a signed inbox
-        // delivery: it is a Basic-authenticated POST to the acting actor's own instance. The local-auth
-        // handler is either the client's default (the configured LocalCredentials) or a one built for the
-        // request (explicit credentials). A missing handler/credentials is a programming error (the
-        // caller must configure LocalCredentials or pass credentials explicitly).
-        //
-        // When the client's default local-auth handler is used it is SHARED across calls (the transport
-        // is the factory's, and a test may route it through a deferred handler that is created once), so
-        // the HttpClient must NOT dispose it. When a handler is built for the request (explicit
-        // credentials over a fresh transport) it is request-scoped and IS disposed.
-        var configured = _localAuth;
-        LocalAuthHandler handler;
-        bool ownsHandler;
-        if (credentials is not null && configured is null)
-        {
-            // Explicit credentials with no configured default: build a request-scoped handler over a
-            // fresh transport (owned and disposed with the request).
-            handler = new LocalAuthHandler(credentials, new HttpClientHandler());
-            ownsHandler = true;
-        }
-        else if (credentials is not null)
-        {
-            // Explicit credentials with a configured default: wrap the shared transport (not disposed —
-            // it is the factory's / a deferred test handler, reused across calls).
-            handler = new LocalAuthHandler(credentials, configured!);
-            ownsHandler = false;
-        }
-        else if (configured is not null)
-        {
-            handler = configured;
-            ownsHandler = false;
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                "Local moderation requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
-        }
-
-        // The target is an absolute IRI; the catch-all route on the server preserves it. A removal is
-        // signalled by ?{removeQuery}=true (the same route records the edge otherwise). The request has
-        // no body (the target is in the path), so it is sent unsigned through the local-auth handler (not
-        // the signed pipeline, which would throw — a local decision is not a federated activity).
-        var removeQueryString = remove ? $"?{removeQuery}=true" : string.Empty;
-        var requestUri = new Uri($"{actorId.Value.TrimEnd('/')}/{path}/{targetId.Value.TrimStart('/')}{removeQueryString}");
-        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
-        {
-            Timeout = Timeout.InfiniteTimeSpan,
-        };
-        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
-        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
-        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
     }
 
     /// <inheritdoc/>

@@ -223,6 +223,7 @@ public sealed class ClientService : IDisposable
     private readonly IrisClientBundle _bundle;
     private readonly Func<HttpMessageHandler> _transportFactory;
     private IActivityPubClient? _client;
+    private ILocalModerationClient? _localModerationClient;
     private readonly Iri _actorIri;
 
     /// <summary>
@@ -283,6 +284,22 @@ public sealed class ClientService : IDisposable
         var client = _bundle.CreateClient(_actorIri, _transportFactory());
         _client = client;
         return client;
+    }
+
+    /// <summary>
+    /// Gets the local, Basic-authenticated moderation client for the configured actor (a mute, F-07,
+    /// and a relay subscription, F-06 — not AP activities). Created on first call and reused thereafter.
+    /// </summary>
+    /// <returns>A local-moderation client.</returns>
+    public ILocalModerationClient GetLocalModerationClient()
+    {
+        if (_localModerationClient is not null)
+        {
+            return _localModerationClient;
+        }
+
+        _localModerationClient = _bundle.CreateLocalModerationClient(_actorIri, _transportFactory());
+        return _localModerationClient;
     }
 
     /// <summary>

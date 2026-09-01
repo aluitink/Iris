@@ -486,10 +486,10 @@ else
         => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, target));
 
     private async Task MuteAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().MuteAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetLocalModerationClient().MuteAsync(actor, target));
 
     private async Task UnmuteAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnmuteAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetLocalModerationClient().UnmuteAsync(actor, target));
 
     private async Task BlockAsync()
         => await FollowUnfollowAsync((actor, target) => Session.GetClient().BlockAsync(actor, target));
@@ -571,10 +571,10 @@ else
     }
 
     private async Task SubscribeRelayAsync()
-        => await RelayWriteAsync((actor, relay) => Session.GetClient().SubscribeRelayAsync(actor, relay));
+        => await RelayWriteAsync((actor, relay) => Session.GetLocalModerationClient().SubscribeRelayAsync(actor, relay));
 
     private async Task UnsubscribeRelayAsync()
-        => await RelayWriteAsync((actor, relay) => Session.GetClient().UnsubscribeRelayAsync(actor, relay));
+        => await RelayWriteAsync((actor, relay) => Session.GetLocalModerationClient().UnsubscribeRelayAsync(actor, relay));
 
     private async Task RelayWriteAsync(Func<Iri, Iri, Task<DeliveryResult>> write)
     {

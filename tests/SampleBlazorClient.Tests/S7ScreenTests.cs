@@ -136,13 +136,13 @@ public sealed class S7ScreenTests
     /// IRI (the IRI every write is addressed to and signed as — the logon, signature, and body actor
     /// all agree on it).
     /// </summary>
-    private static async Task<(TestServer Server, IActivityPubClient Client, Iri ActorIri)> LogOnAsync()
+    private static async Task<(TestServer Server, IActivityPubClient Client, ILocalModerationClient Local, Iri ActorIri)> LogOnAsync()
     {
         var server = StartHost();
         var session = new ExplorerSession(() => server.CreateHandler());
         var ok = await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase);
         Assert.True(ok, "logon to the in-process instance must succeed");
-        return (server, session.GetClient(), new Iri("http://localhost/ap/v1/u/alice"));
+        return (server, session.GetClient(), session.GetLocalModerationClient(), new Iri("http://localhost/ap/v1/u/alice"));
     }
 
     private static async Task<IReadOnlyList<IObjectOrLink>> CollectAsync(IAsyncEnumerable<IObjectOrLink> items)
@@ -186,7 +186,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task Compose_PostNote_SurfacesInActorOutboxAndObjectView()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         var content = "<p>S7: a note from the compose screen.</p>";
@@ -212,7 +212,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task Compose_PostReply_SurfacesUnderParentReplies()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         // Seed a parent note so the reply threads under it (the object view's thread).
@@ -247,7 +247,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ObjectLike_Like_SurfacesInLikersLikedCollection()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         // Seed a target note (the object alice likes).
@@ -277,7 +277,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ObjectUnlike_Undo_LikeRemovesTheLikeEdge()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         // Seed a target note and like it (records the like edge in the liker's `liked` collection).
@@ -305,7 +305,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ObjectDelete_Delete_TombstonesTheObject()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
         var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
 
@@ -340,7 +340,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task Moderation_MuteUnmute_RecordsAndRemovesMuteEdge()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
@@ -348,7 +348,7 @@ public sealed class S7ScreenTests
 
         // A mute is a local, Basic-authenticated decision (204 No Content), recorded in the muter's
         // mutes collection — not a signed inbox delivery.
-        Assert.Equal(204, (await client.MuteAsync(actorIri, target)).StatusCode);
+        Assert.Equal(204, (await local.MuteAsync(actorIri, target)).StatusCode);
         Assert.True(
             await persistence.Moderation.IsMutedAsync(actorIri, target),
             "after a mute, the muter's mutes collection must list the target");
@@ -356,7 +356,7 @@ public sealed class S7ScreenTests
         Assert.Contains(mutes, o => IriOf(o) is { } iri && iri == target);
 
         // The inverse un-mute removes the edge.
-        Assert.Equal(204, (await client.UnmuteAsync(actorIri, target)).StatusCode);
+        Assert.Equal(204, (await local.UnmuteAsync(actorIri, target)).StatusCode);
         Assert.False(
             await persistence.Moderation.IsMutedAsync(actorIri, target),
             "after an un-mute, the mute edge must be gone");
@@ -365,7 +365,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task Moderation_BlockUnblock_RecordsAndRemovesBlockEdge()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
@@ -390,7 +390,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task Moderation_FlagUnflag_RecordsAndRemovesFlagEdge()
     {
-        var (server, client, actorIri) = await LogOnAsync();
+        var (server, client, local, actorIri) = await LogOnAsync();
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
@@ -417,7 +417,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ActorFollow_Follow_SurfacesInFollowersCollection()
     {
-        var (server, client, follower) = await LogOnAsync();
+        var (server, client, local, follower) = await LogOnAsync();
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
@@ -432,7 +432,7 @@ public sealed class S7ScreenTests
     [Fact]
     public async Task ActorUnfollow_AfterFollow_RemovesFollowEdge()
     {
-        var (server, client, follower) = await LogOnAsync();
+        var (server, client, local, follower) = await LogOnAsync();
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");

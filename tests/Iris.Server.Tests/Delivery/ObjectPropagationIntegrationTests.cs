@@ -527,6 +527,9 @@ public sealed class ObjectPropagationIntegrationTests : IDisposable
 
             return new ActivityPubClient(httpClient);
         }
+
+        public ILocalModerationClient CreateLocalModerationClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+            => new LocalModerationClient(null);
     }
 
     /// <summary>

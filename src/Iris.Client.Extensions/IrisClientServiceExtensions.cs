@@ -211,6 +211,18 @@ public sealed class IrisClientBundle : IDisposable
         => ClientFactory.Create(actorId, transport);
 
     /// <summary>
+    /// Builds a pre-configured <see cref="ILocalModerationClient"/> for the given actor (the local,
+    /// Basic-authenticated moderation surface: a mute, F-07, and a relay subscription, F-06).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor the moderation decisions act for.</param>
+    /// <param name="transport">
+    /// The innermost transport handler. <see langword="null"/> uses the platform default.
+    /// </param>
+    /// <returns>A local-moderation client (credentials per <see cref="IrisClientOptions.LocalModeration"/>).</returns>
+    public ILocalModerationClient CreateLocalModerationClient(Iri actorId, HttpMessageHandler? transport = null)
+        => ClientFactory.CreateLocalModerationClient(actorId, transport);
+
+    /// <summary>
     /// Disposes the bundle: logs out the session (removing the key) and disposes the key store.
     /// </summary>
     public void Dispose()

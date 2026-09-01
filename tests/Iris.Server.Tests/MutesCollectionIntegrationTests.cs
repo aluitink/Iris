@@ -40,6 +40,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
     private readonly IActivityPubClient _client;
+    private readonly ILocalModerationClient _local;
 
     public MutesCollectionIntegrationTests()
     {
@@ -69,6 +70,8 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
         });
         _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
         _client = BuildLocalClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+        _local = BuildLocalModerationClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
             new ProxyCredentials(Bob, "bob-password"));
     }
 
@@ -112,7 +115,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_Authenticated_RecordsMuteEdge()
     {
-        var statusCode = await _client.MuteAsync(_bobActorIri, _carolActorIri);
+        var statusCode = await _local.MuteAsync(_bobActorIri, _carolActorIri);
         Assert.Equal(204, statusCode.StatusCode);
 
         // The instance authenticated bob (Basic auth) and recorded the mute edge (bob → carol).
@@ -125,7 +128,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_AppearsInMutersMutesCollection()
     {
-        await _client.MuteAsync(_bobActorIri, _carolActorIri);
+        await _local.MuteAsync(_bobActorIri, _carolActorIri);
 
         // Bob's /mutes collection (a public read endpoint) serves the recorded edge (as a link to
         // carol).
@@ -144,7 +147,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Client_GetMutesAsync_ReadsMutesCollection()
     {
-        await _client.MuteAsync(_bobActorIri, _carolActorIri);
+        await _local.MuteAsync(_bobActorIri, _carolActorIri);
 
         // The client reads bob's mutes collection (via the real collection endpoint) and sees the
         // muted actor's IRI (a plain link item deserializes to a Link with its Href).
@@ -195,13 +198,13 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
 
         // bob mutes carol (204): the edge is recorded, the follow is intact, but carol's content is
         // excluded from bob's feed.
-        Assert.Equal(204, (await _client.MuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        Assert.Equal(204, (await _local.MuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.True(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(_carolActorIri, await _persistence.Follows.GetFollowingAsync(_bobActorIri));
         Assert.DoesNotContain(noteIri, await FeedNoteIrisAsync());
 
         // bob un-mutes carol (?unmute=true, 204): the edge is removed and carol's content returns.
-        Assert.Equal(204, (await _client.UnmuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        Assert.Equal(204, (await _local.UnmuteAsync(_bobActorIri, _carolActorIri)).StatusCode);
         Assert.False(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(noteIri, await FeedNoteIrisAsync());
     }
@@ -213,7 +216,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
     {
         // Un-muting an actor that was never muted is a no-op (204 — the mute's steady state is
         // authoritative; no edge is created).
-        var statusCode = await _client.UnmuteAsync(_bobActorIri, _carolActorIri);
+        var statusCode = await _local.UnmuteAsync(_bobActorIri, _carolActorIri);
         Assert.Equal(204, statusCode.StatusCode);
         Assert.False(await _persistence.Moderation.IsMutedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetMutesAsync(_bobActorIri));
@@ -273,6 +276,28 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
         // the transport is the in-process TestServer (deferred via the LazyHandler, so the fetcher and
         // the client can both reach the server once it is built).
         return factory.Create(
+            new ActivityPubClientOptions
+            {
+                ActorId = actorIri,
+                EnableRetry = false,
+                LocalCredentials = credentials,
+            },
+            new LazyHandler(handlerFactory));
+    }
+
+    private static ILocalModerationClient BuildLocalModerationClient(
+        Iri actorIri, KeyPair key, Func<HttpMessageHandler> handlerFactory, ProxyCredentials credentials)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        // A local-moderation client: the default credentials supply the Basic auth for the mute
+        // endpoint, and the transport is the in-process TestServer (deferred via the LazyHandler).
+        return factory.CreateLocalModerationClient(
             new ActivityPubClientOptions
             {
                 ActorId = actorIri,
