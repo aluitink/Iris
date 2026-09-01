@@ -9,21 +9,26 @@ using Microsoft.AspNetCore.TestHost;
 namespace Iris.Server.Tests;
 
 /// <summary>
-/// Phase 12 Slice 12.20 end-to-end test (F-09 — inbound <see cref="Add"/>/<see cref="Remove"/>
-/// collection-modification primitives): a community on instance B (<c>iris</c>,
-/// <c>https://b.domain.local/…</c>) is administered by a server that manages its membership via the
-/// ActivityStreams <c>Add</c>/<c>Remove</c> primitives rather than a <see cref="Follow"/>. A client
-/// signed as the remote actor <c>alice</c> (on instance A, <c>https://a.domain.local/…</c>) POSTs an
-/// <c>Add</c> to the community's inbox — B validates the signature (fetching alice's actor document from
-/// A to resolve her key), then B's <see cref="AddActivityHandler"/> adds alice to the community's member
-/// set. A subsequent signed <c>Remove</c> (interpreted by <see cref="RemoveActivityHandler"/>) removes
-/// her.
+/// Phase 12 Slice 12.20 / Phase 19.5.2 end-to-end test (F-09 — inbound <see cref="Add"/>/
+/// <see cref="Remove"/> collection-modification primitives, with the 19.5.2 self-management gate): a
+/// community on instance B (<c>iris</c>, <c>https://b.domain.local/…</c>) is managed via the
+/// ActivityStreams <c>Add</c>/<c>Remove</c> primitives. A client signed as the remote actor <c>alice</c>
+/// (on instance A, <c>https://a.domain.local/…</c>) POSTs an <c>Add</c> to the community's inbox — B
+/// validates the signature (fetching alice's actor document from A to resolve her key) and stores the
+/// activity, but B's <see cref="AddActivityHandler"/> now applies the 19.5.2 authorization: only the
+/// community manages its own membership, so an <c>Add</c> whose <em>actor is a different actor</em> does
+/// NOT add that actor as a member. The same holds for <see cref="RemoveActivityHandler"/> (a
+/// <c>Remove</c> posted by alice does not remove alice).
 /// </summary>
 /// <remarks>
 /// This proves the full inbound <c>Add</c>/<c>Remove</c> path end-to-end: signature validation (key
-/// resolution via the sender's actor document) → store → interpret (modify the local community's member
-/// set). A third test covers the no-op when the recipient is a local person (a person's followers are
-/// maintained by the follow lifecycle, not <c>Add</c>/<c>Remove</c>).
+/// resolution via the sender's actor document) → store → interpret (the 19.5.2 self-management gate
+/// rejects a membership edit whose actor is not the community). The community's own membership
+/// management (a community-signed <c>Add</c>/<c>Remove</c> that DOES modify the member set, with the
+/// community feed and <c>members</c> collection reflecting the change) is covered by
+/// <see cref="CommunityMembershipManagementIntegrationTests"/>. A third test covers the no-op when the
+/// recipient is a local person (a person's followers are maintained by the follow lifecycle, not
+/// <c>Add</c>/<c>Remove</c>).
 /// </remarks>
 public sealed class AddRemoveFederationIntegrationTests : IDisposable
 {
@@ -73,10 +78,10 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
         _b.Dispose();
     }
 
-    // --- A signed Add adds the actor to the local community's member set ---------------------
+    // --- A signed Add by a remote actor does NOT add that actor (19.5.2 self-management) -----
 
     [Fact]
-    public async Task Add_SignedByActor_DeliveredToCommunity_AddsMember()
+    public async Task Add_SignedByRemoteActor_DeliveredToCommunity_DoesNotAddMember()
     {
         var add = BuildAdd(_aliceActorIri, _communityIri);
 
@@ -92,18 +97,19 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
         Assert.NotNull(stored);
         Assert.IsType<Add>(stored);
 
-        // B's AddActivityHandler added alice to the community's member set.
-        Assert.True(
+        // The 19.5.2 gate: only the community manages its own membership. The Add's actor is alice (not
+        // the community), so B's AddActivityHandler does NOT add alice as a member.
+        Assert.False(
             await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
-            "alice should be a member of the community after the Add");
+            "an Add whose actor is not the community must not add a member (19.5.2 self-management gate)");
     }
 
-    // --- A signed Remove removes the actor from the local community's member set -------------
+    // --- A signed Remove by a remote actor does NOT remove that actor (19.5.2 self-management) -
 
     [Fact]
-    public async Task Remove_SignedByActor_DeliveredToCommunity_RemovesMember()
+    public async Task Remove_SignedByRemoteActor_DeliveredToCommunity_DoesNotRemoveMember()
     {
-        // Seed alice as an existing member (as a prior Add or a follow would have recorded her).
+        // Seed alice as an existing member (as a prior community-managed Add would have recorded her).
         await _bPersistence.Communities.AddMemberAsync(_communityIri, _aliceActorIri);
         Assert.True(await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri));
 
@@ -113,12 +119,15 @@ public sealed class AddRemoveFederationIntegrationTests : IDisposable
         var statusCode = await client.DeliverAsync(_communityInboxIri, remove);
         Assert.Equal(202, statusCode.StatusCode);
 
-        // B stored the Remove and removed alice from the community's member set.
+        // B stored the Remove.
         Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(remove.Id!), out var stored));
         Assert.IsType<Remove>(stored);
-        Assert.False(
+
+        // The 19.5.2 gate: the Remove's actor is alice (not the community), so B's RemoveActivityHandler
+        // does NOT remove alice from the member set.
+        Assert.True(
             await _bPersistence.Communities.IsMemberAsync(_communityIri, _aliceActorIri),
-            "alice should no longer be a member of the community after the Remove");
+            "a Remove whose actor is not the community must not remove a member (19.5.2 self-management gate)");
     }
 
     // --- A signed Add to a local person is a no-op (follow lifecycle owns person followers) ---
