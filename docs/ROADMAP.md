@@ -371,9 +371,18 @@ How do we create and manage communities, and their peers (the communities/actors
    newest-first merge — while keeping the IRI de-duplication and the `?q` content filter. New
    `CommunityFeedCorrectnessIntegrationTests` pin the merge order, de-dup, and pagination; the existing
    `CommunityFeedIntegrationTests`/`CommunitySearchIntegrationTests` order assertions were updated to
-   the new merge. Still open for full 19.5.5: the **remote-content** half of the feed (content delivered
-   to the community inbox and propagated into member outboxes) and `?refresh=true` cache bypass — both
-   live-verification / UI items.
+    the new merge. The **remote-content** half of the feed (content delivered to the community inbox and
+    propagated into member outboxes) is done + pinned by
+    `RemoteContent_ToCommunityInbox_PropagatesToMemberAndAppearsInFeed`
+    (`CommunityFollowingIntegrationTests`). The **`?refresh=true` cache bypass** is now done + pinned
+    (change 154): the community collections (feed, members, following/followers, blocks/flags/mutes) are
+    served through `LocalCollectionPageCache`, so a plain read caches the page
+    (`max-age=60, stale-while-revalidate=300`) and `?refresh=true` bypasses it + emits `no-cache`; the
+    feed's `?q` filter is part of the cache key. New
+    `CommunityFeed_IsServedFromThePageCache_WithRefreshBypassAndCacheControl` pins the stale-within-TTL
+    read, the refresh bypass, the write-back, and the `Cache-Control` values. Still open for full 19.5.5:
+    the **community UI** feed screen (a sample-client screen that issues `?refresh=true` on a manual
+    refresh) — a live/UI item.
 - [ ] **19.5.6 — Community lifecycle on recreation.** A community created in a prior turn (with
   members, follows, content) survives `down`/`up` (volume-backed) with all collections intact.
 
