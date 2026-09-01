@@ -453,9 +453,21 @@ Confirm the core architectural invariants of how clients talk to servers.
     the outbound Create/Announce `to`/`cc` to enumerate the follower set, and adding the parent note's
     author (the reply target) to a reply's `to`/`cc`. The delivery already reaches the right inboxes;
     only the on-the-wire `to`/`cc` enumeration of the audience is left.
-- [ ] **19.6.6 — Cache behavior at the boundary.** Cached reads (collections, actor documents) expose
+- [x] **19.6.6 — Cache behavior at the boundary.** Cached reads (collections, actor documents) expose
   `bypassCache`/`?refresh=true` and a new activity is visible after a bypass (the UI's refresh path
   actually re-fetches); no stale-forever behavior.
+  - [x] Boundary pinned (`OutboxCacheBypassIntegrationTests`): a plain read of a just-cached outbox page
+    serves the stale document (a brand-new activity added to the outbox is not yet visible), a
+    `?refresh=true` read bypasses the cache and makes the new activity visible (emitting `no-cache`), and
+    a subsequent plain read now sees it (the bypass wrote the fresh entry back — no stale-forever). The
+    actor-document boundary is pinned the same way (public read cached, `?refresh=true` refetches +
+    `no-cache`). No production change — the `?refresh=true` bypass (server) and
+    `CollectionQuery.BypassCache` (client) were already implemented end-to-end; the adjacent tests
+    covered the pieces (bypass mechanic, staleness on a community feed, cold-outbox visibility) but not
+    the combined stale→bypass→fresh scenario.
+  - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — drive a write through
+    the UI and confirm the refresh path actually re-fetches (a new activity is visible after the
+    bypass); the server-side boundary it exercises is already pinned in CI.
 
 ### Phase 19.7 — Threads compatibility probe (Threads.net — best-effort)
 
