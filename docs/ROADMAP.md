@@ -296,10 +296,20 @@ How do we create and manage communities, and their peers (the communities/actors
 - [ ] **19.5.4 — Community moderation surface.** Flag/block/mute at the community level where
   supported; verify the moderation collections and that moderated actors' content is excluded from
   the community feed (or record the gap).
-- [ ] **19.5.5 — Community feed correctness.** The unified feed (members' outboxes, newest first,
-  de-duplicated) yields exactly the right activities: local member posts, remote content delivered to
-  the community inbox (the catch-all recording into member outboxes), pagination, and `?refresh=true`
-  cache bypass. Compare against the raw member outboxes to confirm no missing/duplicate items.
+ - [ ] **19.5.5 — Community feed correctness.** The unified feed (members' outboxes, newest first,
+   de-duplicated) yields exactly the right activities: local member posts, remote content delivered to
+   the community inbox (the catch-all recording into member outboxes), pagination, and `?refresh=true`
+   cache bypass. Compare against the raw member outboxes to confirm no missing/duplicate items.
+   `remaining:` the feed's **newest-first merge** was wrong and is now fixed + pinned (change 149):
+   `ICommunityFeedService` documented "newest first" but actually concatenated the members' outboxes in
+   member-IRI order (grouped by member), so a member's newest post did **not** rank above another
+   member's older post. It now merges by (outbox position, then member IRI) — a stable, deterministic
+   newest-first merge — while keeping the IRI de-duplication and the `?q` content filter. New
+   `CommunityFeedCorrectnessIntegrationTests` pin the merge order, de-dup, and pagination; the existing
+   `CommunityFeedIntegrationTests`/`CommunitySearchIntegrationTests` order assertions were updated to
+   the new merge. Still open for full 19.5.5: the **remote-content** half of the feed (content delivered
+   to the community inbox and propagated into member outboxes) and `?refresh=true` cache bypass — both
+   live-verification / UI items.
 - [ ] **19.5.6 — Community lifecycle on recreation.** A community created in a prior turn (with
   members, follows, content) survives `down`/`up` (volume-backed) with all collections intact.
 
