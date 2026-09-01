@@ -227,9 +227,18 @@ loops, no echo amplification, and eventual consistency of edge state.
   wire and asserts both stores agree on the single edge, no orphan on either side after the un-follow,
   no duplicate on the re-follow, and the public `following`/`followers` endpoints are stable across
   re-reads (change 145).
-- [ ] **19.3.6 — Update propagation.** Update (re-publish with new content, same IRI) one of our
+- [x] **19.3.6 — Update propagation.** Update (re-publish with new content, same IRI) one of our
   notes → the peer's stored copy is updated (or correctly ignored if we don't implement Update
-  handling — record which, and whether the object endpoint serves the new content).
+  handling — record which, and whether the object endpoint serves the new content). **Resolved
+  (19.3.6):** Update handling is implemented and correct in both directions. Direction 1 (a local
+  author edits a note; the peer that received it via the outbound `Create` federation is refreshed)
+  was already covered by `LocalUpdate_IsFederatedToRemoteFollower_RemoteCopyRefreshed`. Direction 2
+  (the inverse — a *remote* author edits a note this instance holds a copy of) was the gap and is now
+  pinned: the `UpdateActivityHandler`'s owner guard accepts a remote author only for an *attributed*
+  copy (no foreign rewrite), refreshes only the referenced object (no collateral rewrite), and does
+  **not** re-propagate (only the home instance re-fans-out — the re-propagation branch is gated on the
+  updating actor being local). `RemoteAuthorUpdate_LocalCopyRefreshed_NoCollateral_NoRePropagation`
+  (change 146).
 - [ ] **19.3.7 — Recreation stability.** Run the 19.3.1–19.3.5 sequence, `down` (no `-v`) + `up`, and
   re-verify: no re-delivery storms on boot (queued deliveries replay at most once), no duplicated
   edges, outboxes unchanged in length.
