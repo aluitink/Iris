@@ -211,6 +211,83 @@ public class ActivityPubClientTests
         Assert.Equal(400, result.StatusCode);
     }
 
+    // --- AcceptAsync / RejectAsync (19.0b AP-native rework): the followed side's decision ---
+    //
+    // An Accept/Reject is the FOLLOWED actor's response to an inbound Follow. It is published to the
+    // followed actor's OWN outbox (the write surface for the activities an actor authors) and signed as
+    // that actor; the server records it, applies the local follow-edge effect, and delivers it to the
+    // follower's inbox (the server owns the recipient hop). The object references the original Follow by
+    // IRI, and the deterministic id ({actor}/accepts/{follow} or {actor}/rejects/{follow}) dedupes retries.
+
+    [Fact]
+    public async Task AcceptAsync_PostsAcceptToFollowedActorOutbox_WithFollowAsObject()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actor = new Iri(ActorIri);
+        var followIri = new Iri("https://a.domain.local/activities/follow-123");
+        var result = await client.AcceptAsync(actor, followIri);
+
+        Assert.Equal(202, result.StatusCode);
+        // The Accept is published to the *followed actor's own* outbox (the actorId is the one deciding).
+        Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
+        Assert.Equal($"{ActorIri}/outbox", fake.LastUri!.ToString());
+        Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest.Content!.Headers.ContentType!.MediaType);
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Accept", root.GetProperty("type").GetString());
+        Assert.Equal(ActorIri, root.GetProperty("actor").GetString());
+        // The object references the original Follow by IRI (a Link serializes as its bare IRI string).
+        Assert.Equal(followIri.Value, root.GetProperty("object").GetString());
+        // A deterministic, unique-per-(actor,follow) id so a retried accept dedupes.
+        Assert.Equal($"{ActorIri}/accepts/{followIri.Value}", root.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task RejectAsync_PostsRejectToFollowedActorOutbox_WithFollowAsObject()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actor = new Iri(ActorIri);
+        var followIri = new Iri("https://a.domain.local/activities/follow-123");
+        var result = await client.RejectAsync(actor, followIri);
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
+        Assert.Equal($"{ActorIri}/outbox", fake.LastUri!.ToString());
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Reject", root.GetProperty("type").GetString());
+        Assert.Equal(ActorIri, root.GetProperty("actor").GetString());
+        Assert.Equal(followIri.Value, root.GetProperty("object").GetString());
+        Assert.Equal($"{ActorIri}/rejects/{followIri.Value}", root.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task AcceptAsync_CommunityFollowedActor_PostsToCommunityOutbox()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        // A community (Group) being followed is decided on the same way: the Accept is published to the
+        // community's own outbox (the community is the actor deciding).
+        var community = new Iri("https://b.domain.local/c/iris");
+        var followIri = new Iri("https://a.domain.local/activities/follow-456");
+        var result = await client.AcceptAsync(community, followIri);
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.Equal($"{community.Value}/outbox", fake.LastUri!.ToString());
+        using var doc = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
+        Assert.Equal(community.Value, doc.RootElement.GetProperty("actor").GetString());
+        Assert.Equal(followIri.Value, doc.RootElement.GetProperty("object").GetString());
+    }
+
     // --- PostNoteAsync (J-6): the client's one-call "post a note" ----------------------
 
     [Fact]

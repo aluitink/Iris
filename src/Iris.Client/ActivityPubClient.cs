@@ -266,6 +266,46 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> AcceptAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+    {
+        // An Accept is the followed actor's response to an inbound Follow: it is published to the
+        // FOLLOWED actor's OWN outbox (actorId) — the party that decides the follow authors the Accept,
+        // and an authored activity always flows through the acting actor's own outbox — and signed by the
+        // pipeline as actorId. The object references the original Follow by IRI (the deterministic
+        // {follower}/follows/{target} IRI the follower recorded). The server records the Accept in the
+        // actor's outbox, ensures the follower→actor edge, and delivers the Accept to the follower's
+        // inbox (the server owns the recipient hop). The `Id` is deterministic per (actor,follow) so a
+        // retried accept dedupes; the constructor sets `Type = "Accept"`.
+        var accept = new Accept
+        {
+            Id = $"{actorId.Value}/accepts/{followIri.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = followIri.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), accept, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+    {
+        // A Reject is the followed actor's refusal of an inbound Follow: it is published to the
+        // FOLLOWED actor's OWN outbox (actorId) and signed by the pipeline as actorId. The object
+        // references the original Follow by IRI. The server records the Reject in the actor's outbox,
+        // removes the provisional follower→actor edge, and delivers the Reject to the follower's inbox
+        // (the server owns the recipient hop). The `Id` is deterministic per (actor,follow) so a retried
+        // reject dedupes; the constructor sets `Type = "Reject"`.
+        var reject = new Reject
+        {
+            Id = $"{actorId.Value}/rejects/{followIri.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = followIri.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), reject, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
         => LocalFollowDecisionAsync(actorId, followIri, accept: true, credentials: null, ct);
 

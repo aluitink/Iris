@@ -111,6 +111,52 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
+    /// Accepts an inbound <see cref="KristofferStrube.ActivityStreams.Follow"/> as <paramref name="actorId"/>
+    /// (the <em>followed</em> side's decision): builds the deterministic <see cref="KristofferStrube.ActivityStreams.Accept"/>
+    /// whose <c>object</c> references <paramref name="followIri"/> and publishes it to the followed actor's
+    /// own outbox, signed by the pipeline as <paramref name="actorId"/>.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one deciding — must match the client's
+    /// signing identity so the request is signed as that actor).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// being accepted (the deterministic <c>{follower}/follows/{target}</c> IRI the follower recorded).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Accept"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the write surface for the activities an actor authors) and is signed by the pipeline. The server
+    /// records the Accept in the actor's outbox, ensures the follower→actor follow edge, and delivers the
+    /// Accept to the follower's inbox (the server owns the recipient hop). A <c>202</c> means the actor's
+    /// outbox accepted the Accept. The <see cref="KristofferStrube.ActivityStreams.Accept"/> gets a
+    /// deterministic, unique-per-(actor,follow) IRI (<c>{actorId}/accepts/{followIri}</c>) so a retried
+    /// accept dedupes on the receiver.
+    /// </remarks>
+    public Task<DeliveryResult> AcceptAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects an inbound <see cref="KristofferStrube.ActivityStreams.Follow"/> as <paramref name="actorId"/>
+    /// (the <em>followed</em> side's decision): builds the deterministic <see cref="KristofferStrube.ActivityStreams.Reject"/>
+    /// whose <c>object</c> references <paramref name="followIri"/> and publishes it to the followed actor's
+    /// own outbox, signed by the pipeline as <paramref name="actorId"/>.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor being followed (the one deciding — must match the client's
+    /// signing identity so the request is signed as that actor).</param>
+    /// <param name="followIri">The absolute IRI of the inbound <see cref="KristofferStrube.ActivityStreams.Follow"/>
+    /// being rejected (the deterministic <c>{follower}/follows/{target}</c> IRI the follower recorded).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Reject"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the write surface for the activities an actor authors) and is signed by the pipeline. The server
+    /// records the Reject in the actor's outbox, removes the provisional follower→actor follow edge, and
+    /// delivers the Reject to the follower's inbox (the server owns the recipient hop). A <c>202</c> means
+    /// the actor's outbox accepted the Reject. The <see cref="KristofferStrube.ActivityStreams.Reject"/> gets
+    /// a deterministic, unique-per-(actor,follow) IRI (<c>{actorId}/rejects/{followIri}</c>) so a retried
+    /// reject dedupes on the receiver.
+    /// </remarks>
+    public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Accepts an inbound follow as <paramref name="actorId"/> (the <em>followed</em> side's decision):
     /// sends a Basic-authenticated POST to the local follow-accept endpoint
     /// (<c>{actorId}/follows/{followIri}/accept</c>) so the instance records the <c>follower →

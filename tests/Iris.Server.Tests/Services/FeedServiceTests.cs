@@ -645,6 +645,12 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> AcceptAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

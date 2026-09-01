@@ -1688,6 +1688,8 @@ public static class ActivityPubServerExtensions
                     Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
                     Like like => await RecordLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
                     Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, ct).ConfigureAwait(false),
+                    Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
+                    Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
                     _ => null,
                 };
 
@@ -1804,6 +1806,10 @@ public static class ActivityPubServerExtensions
                 Follow follow => await RecordCommunityFollowAsync(persistence, communityIri, follow, ct)
                     .ConfigureAwait(false),
                 Undo undo => await RecordCommunityUnfollowAsync(persistence, communityIri, undo, ct)
+                    .ConfigureAwait(false),
+                Accept accept => await RecordFollowDecisionLocalAsync(persistence, communityIri, accept, accept: true, ct)
+                    .ConfigureAwait(false),
+                Reject reject => await RecordFollowDecisionLocalAsync(persistence, communityIri, reject, accept: false, ct)
                     .ConfigureAwait(false),
                 _ => null,
             };
@@ -1956,6 +1962,88 @@ public static class ActivityPubServerExtensions
         }
 
         return targetIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local follow decision for an <see cref="Accept"/>/<see cref="Reject"/> published to the
+    /// followed actor's outbox and returns the follower (the recipient of the server→server delivery, so
+    /// the remote finalizes or removes its edge). The <c>object</c> of the decision references the
+    /// original <see cref="Follow"/> (by IRI); the acting local actor is the follow's target (the followed
+    /// side — the outbox owner, already validated by the handler). For an <see cref="Accept"/> the
+    /// follower→actor edge is ensured (idempotent — a gated follow's provisional edge is confirmed; the
+    /// edge lives in the person <see cref="IFollowStore"/> or, when the target is a local community, the
+    /// community's follows/followers sets); for a <see cref="Reject"/> the provisional edge is removed.
+    /// Returns <see langword="null"/> when the referenced follow is unknown, its target is not the acting
+    /// actor, or the follower is not resolvable.
+    /// </summary>
+    /// <remarks>
+    /// This is the outbox (AP-native) counterpart of the operator follow-decision endpoints
+    /// (<see cref="LocalFollowDecisionHandler"/>): the client authors the deterministic
+    /// <c>Accept</c>/<c>Reject</c> (via <see cref="FollowIris.BuildAccept(Iri, Follow)"/> /
+    /// <see cref="FollowIris.BuildReject(Iri, Follow)"/>) and publishes it to the followed actor's outbox;
+    /// this handler applies the local edge effect and returns the follower so the caller server-delivers
+    /// the activity to the follower's inbox (signed as the acting local actor).
+    /// </remarks>
+    private static async Task<Iri?> RecordFollowDecisionLocalAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        Activity decision,
+        bool accept,
+        CancellationToken ct)
+    {
+        var followIri = decision.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!followIri.HasValue
+            || !await persistence.Activities.TryGetActivityAsync(followIri.Value, out var stored, ct)
+                .ConfigureAwait(false)
+            || stored is not Follow { Id: not null } follow)
+        {
+            return null;
+        }
+
+        // The decision's target (the original follow's target) must be the acting local actor — an
+        // accept/reject is always the followed side's decision about a follow made OF that actor.
+        var targetIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!targetIri.HasValue || targetIri.Value != actorIri)
+        {
+            return null;
+        }
+
+        var followerIri = follow.Actor?.FirstOrDefault().ResolveObjectIri();
+        if (!followerIri.HasValue)
+        {
+            return null;
+        }
+
+        if (accept)
+        {
+            // Accept: ensure the follower → actor edge (idempotent). A local community target records the
+            // community's follows/followers sets (the inverse of the inbound FollowActivityHandler's
+            // community branch); a person target records the person follow edge.
+            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            {
+                await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await persistence.Follows.RecordFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            // Reject: remove the provisional follower → actor edge (a no-op when already removed). The
+            // edge is the inverse of a remote follow: the follower is the remote actor, the target (this
+            // actor) is local, so the edge lives in this actor's follow store (or the community's
+            // follows/followers sets when the target is a local community).
+            await persistence.Follows.RemoveFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
+            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            {
+                await persistence.Communities.RemoveFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.RemoveFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+            }
+        }
+
+        return followerIri.Value;
     }
 
     /// <summary>
