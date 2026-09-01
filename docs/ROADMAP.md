@@ -414,11 +414,22 @@ Confirm the core architectural invariants of how clients talk to servers.
     collection agrees with the persistence outbox.
   - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — enumerate the outbox in
     the UI after exercising every write screen and match entries 1:1 with the actions taken.
-- [ ] **19.6.3 — Post-interact, server-delivers.** The client posts (publishes) an activity to the
+- [x] **19.6.3 — Post-interact, server-delivers.** The client posts (publishes) an activity to the
   outbox and the **server** performs delivery to recipient inboxes (signed, per-actor), not the
   client. Verify: after a UI compose/follow/like, the peer's inbox received the activity with a valid
   signature from the acting actor; the client's own pipeline never made the cross-instance POST
   (inspect the delivery queue + peer logs/wire).
+  - [x] Server-delivery invariant pinned (`OutboxPublishServerDeliversIntegrationTests`): a two-instance
+    test drives the single-recipient `Block` path — the client makes a single signed POST to the
+    author's own outbox (never the recipient's inbox) and the server delivers the `Block` to the
+    blocked actor's inbox, signed as the acting actor; the peer validates the signature against the
+    acting actor's document and records the edge (which only happens if the signature validated as the
+    acting actor). Follow, Create, and Announce fan-out were already pinned (their own tests); the
+    client invariant (every write → own outbox, no cross-instance POST) was already pinned in
+    `ActivityPubClientTests`.
+  - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — drive compose/follow/like
+    through the UI and confirm the peer's inbox received the activity with a valid acting-actor
+    signature (also covers 19.6.4).
 - [ ] **19.6.4 — Signature identity.** Deliveries are signed as the *acting* actor (decision 029),
   resolvable by the receiver from the actor document (not the instance actor); the proxy path
   re-signs as the acting actor (decision 037). Verify with the raw inspector (key IRI in the
