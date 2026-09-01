@@ -47,6 +47,7 @@ public sealed class ObjectPropagationIntegrationTests : IDisposable
     private readonly Iri _aliceActorIri;
     private readonly Iri _aliceInboxIri;
     private readonly Iri _erinActorIri;
+    private readonly KeyPair _cSeedKey;
 
     public ObjectPropagationIntegrationTests()
     {
@@ -60,6 +61,7 @@ public sealed class ObjectPropagationIntegrationTests : IDisposable
 
         var cSeeded = TestSeeder.SeedPersonWithKey(_cPersistence, CHost, Erin);
         _erinActorIri = cSeeded.ActorIri;
+        _cSeedKey = cSeeded.Key;
 
         // The follow edge erin→alice is recorded on A (A is alice's home instance; it owns her follower
         // set — the propagation target set is read from A's follow store).
@@ -160,6 +162,105 @@ public sealed class ObjectPropagationIntegrationTests : IDisposable
         Assert.True(await _cPersistence.Objects.TryGetObjectAsync(noteIri, out var cTomb));
         Assert.IsType<Tombstone>(cTomb);
         Assert.Equal(noteIri.Value, cTomb!.Id);
+    }
+
+    // --- A remote actor deletes a note we hold a copy of: tombstoned, no collateral, no re-prop (19.3.4)
+
+    /// <summary>
+    /// 19.3.4 direction 2: a note *originating locally* (erin on B) is federated to a remote follower
+    /// (bob on A), who stores a copy; erin then deletes the note and A's <see cref="DeleteActivityHandler"/>
+    /// receives the federated <see cref="Delete"/> from erin — a <em>remote</em> actor on A. A must
+    /// tombstone its copy (the owner guard accepts a remote author when A holds an attributed copy) with
+    /// <strong>correct scope</strong> (A's own unrelated note is left untouched — no collateral deletion)
+    /// and <strong>without re-propagating</strong> (only erin's home instance, B, re-fans-out; a non-home
+    /// copy applies the delete locally and stops).
+    /// </summary>
+    /// <remarks>
+    /// Topology: instance A (prop-b.domain.local, local person <c>bob</c>) and instance B (prop-c,
+    /// <c>erin</c>, the author). bob follows erin (bob→erin, recorded on B — the author's home instance,
+    /// which owns the propagation target set). The test delivery worker (signed as erin, routing to A)
+    /// delivers the federated Create and Delete to bob's inbox on A; A's <see cref="CreateActivityHandler"/>
+    /// (bob is local on A) stores the embedded note — the "remote copy" on A — and A's
+    /// <see cref="DeleteActivityHandler"/> tombstones it. erin is <em>not</em> a local actor on A, so the
+    /// delete's owner guard accepts the federated (remote) delete and the re-propagation branch is skipped
+    /// (only the home instance re-fans-out).
+    /// </remarks>
+    [Fact]
+    public async Task RemoteAuthorDelete_LocalCopyTombstoned_NoCollateral_NoRePropagation()
+    {
+        // bob is a local person on instance A (prop-b) who follows erin (on B). B (prop-c) owns the bob→erin
+        // follow edge (the author's home instance owns her follower set / propagation target set).
+        const string BobHost = "prop-b.domain.local";
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bobSeeded = TestSeeder.SeedPersonWithKey(aPersistence, BobHost, "bob");
+        var bobActorIri = bobSeeded.ActorIri;
+
+        // bob→erin on B (so B's outbound Create/Delete federation targets bob's inbox on A).
+        await _cPersistence.Follows.RecordFollowAsync(bobActorIri, _erinActorIri);
+
+        // Start A (bob's home instance) with a fetcher that reaches B (so A validates inbound activities
+        // signed as erin by fetching B's actor doc for erin's key) — mirroring how B's fetcher reaches A.
+        // bob's key is registered so A can sign its own outbound deliveries (unused here: the
+        // re-propagation branch is the point of the assertion and is skipped for a remote author).
+        var bServer = _c;
+        var aServerRef = StartServer(
+            BobHost, "bob", aPersistence, bobSeeded.Key,
+            fetcher: BuildFetcherFor(BobHost, "bob", bobSeeded.Key, targetServer: bServer));
+
+        var noteIri = new Iri($"{_erinActorIri}/notes/r1");
+
+        // A's unrelated note (the collateral-deletion control on A's side): stored directly so the remote
+        // delete can be shown not to touch it.
+        var unrelatedIri = new Iri($"{_erinActorIri}/notes/u1");
+        await aPersistence.Objects.PutObjectAsync(
+            new Note
+            {
+                Id = unrelatedIri.Value,
+                Content = ["erin's other note"],
+                AttributedTo = [new Link { Href = new Uri(_erinActorIri.Value) }],
+            });
+
+        // 1. erin's note is federated to bob's inbox on A (signed as erin). A's CreateActivityHandler
+        // (bob is local on A) stores the embedded note (attributed to erin) — the "remote copy" on A.
+        var create = BuildCreate(_erinActorIri, noteIri, "erin's body");
+        using var erinWorker = BuildDeliveryWorker(_erinActorIri, _cSeedKey, aServerRef);
+        await erinWorker.StartAsync(CancellationToken.None);
+        await erinWorker.Service.DeliverAsync(bobActorIri.InboxOf(), create);
+        await WaitForAsync(
+            async () => await aPersistence.Objects.TryGetObjectAsync(noteIri, out _),
+            timeout: TimeSpan.FromSeconds(10));
+        Assert.True(await aPersistence.Objects.TryGetObjectAsync(noteIri, out var aStored));
+        Assert.Equal("erin's body", aStored!.Content?.FirstOrDefault());
+
+        // 2. erin deletes the note; the federated Delete reaches bob's inbox on A (signed as erin). A's
+        // DeleteActivityHandler receives a Delete from a REMOTE actor (erin, not local on A) for an object
+        // A holds attributed to erin → owner guard passes → A tombstones its copy. A does NOT re-propagate
+        // (erin is not local on A; the home instance, B, owns the re-fan-out).
+        var delete = BuildDelete(_erinActorIri, noteIri);
+        await erinWorker.Service.DeliverAsync(bobActorIri.InboxOf(), delete);
+        await WaitForAsync(
+            async () => await aPersistence.Objects.TryGetObjectAsync(noteIri, out var a) && a is Tombstone,
+            timeout: TimeSpan.FromSeconds(10));
+        await erinWorker.StopAsync(CancellationToken.None);
+
+        // A's copy of erin's note is tombstoned (the federated half of F-03, direction 2).
+        Assert.True(await aPersistence.Objects.TryGetObjectAsync(noteIri, out var aTomb));
+        Assert.IsType<Tombstone>(aTomb);
+        Assert.Equal(noteIri.Value, aTomb!.Id);
+
+        // Correct scope: A's unrelated note is untouched — no collateral deletion.
+        Assert.True(await aPersistence.Objects.TryGetObjectAsync(unrelatedIri, out var unrelated));
+        Assert.IsType<Note>(unrelated);
+        Assert.Equal("erin's other note", unrelated!.Content?.FirstOrDefault());
+
+        // No re-propagation: the handler's re-propagation branch (DeleteActivityHandler, F-03 federated
+        // half) runs only when the deleting actor is local on this instance (the home instance re-fans-out).
+        // erin is a remote actor on A (she lives on B/prop-c, not on A/prop-b), so A's local-actor store
+        // does not contain her and the branch is skipped — a non-home copy applies the delete locally and
+        // stops, rather than fanning the tombstone out again.
+        Assert.False(
+            await aPersistence.Actors.TryGetActorAsync(_erinActorIri, out _),
+            "erin must not be a local actor on A (only then would A re-propagate the delete)");
     }
 
     // --- A delete with no remote followers is local-only ----------------------------------
