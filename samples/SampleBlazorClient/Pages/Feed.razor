@@ -90,7 +90,14 @@ else
         HasMore = false;
         LoadError = null;
         _resumeFrom = null;
-        await EnumerateOnePageAsync();
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
     }
 
     private async Task LoadMoreAsync()
@@ -105,6 +112,10 @@ else
         try
         {
             await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
         }
         finally
         {

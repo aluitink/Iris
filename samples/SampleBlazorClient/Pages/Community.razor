@@ -24,7 +24,13 @@ else
         }
     </div>
 
-    @if (CommunityIri is not null)
+    @if (LoadError is not null)
+    {
+        <div class="card">
+            <div class="error">@LoadError</div>
+        </div>
+    }
+    else if (CommunityIri is not null)
     {
         <div class="card">
             <h3>Feed</h3>
@@ -77,15 +83,26 @@ else
             {
                 <span class="muted">Searching…</span>
             }
-            @if (SearchResults is not null)
+            @if (SearchError is not null)
             {
-                <p class="muted">@SearchResults.Count result(s).</p>
-                <ul class="object-list">
-                    @foreach (var item in SearchResults)
-                    {
-                        <li><ObjectView Item="item" /></li>
-                    }
-                </ul>
+                <div class="error">@SearchError</div>
+            }
+            else if (SearchResults is not null)
+            {
+                @if (SearchResults.Count == 0)
+                {
+                    <p class="muted">No matching actors or content.</p>
+                }
+                else
+                {
+                    <p class="muted">@SearchResults.Count result(s).</p>
+                    <ul class="object-list">
+                        @foreach (var item in SearchResults)
+                        {
+                            <li><ObjectView Item="item" /></li>
+                        }
+                    </ul>
+                }
             }
         </div>
     }
@@ -103,6 +120,8 @@ else
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
     private IReadOnlyList<IObjectOrLink>? Members { get; set; }
     private IReadOnlyList<IObjectOrLink>? SearchResults { get; set; }
+    private string? LoadError { get; set; }
+    private string? SearchError { get; set; }
 
     private async Task LoadAsync()
     {
@@ -115,6 +134,7 @@ else
         CommunityIri = null;
         Feed = null;
         Members = null;
+        LoadError = null;
         try
         {
             var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
@@ -141,6 +161,10 @@ else
 
             Members = members;
         }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
         finally
         {
             Busy = false;
@@ -156,6 +180,7 @@ else
 
         SearchBusy = true;
         SearchResults = null;
+        SearchError = null;
         try
         {
             var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
@@ -167,6 +192,10 @@ else
             }
 
             SearchResults = results;
+        }
+        catch (Exception ex)
+        {
+            SearchError = ex.Message;
         }
         finally
         {
