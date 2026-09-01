@@ -383,8 +383,15 @@ How do we create and manage communities, and their peers (the communities/actors
     read, the refresh bypass, the write-back, and the `Cache-Control` values. Still open for full 19.5.5:
     the **community UI** feed screen (a sample-client screen that issues `?refresh=true` on a manual
     refresh) — a live/UI item.
-- [ ] **19.5.6 — Community lifecycle on recreation.** A community created in a prior turn (with
+- [x] **19.5.6 — Community lifecycle on recreation.** A community created in a prior turn (with
   members, follows, content) survives `down`/`up` (volume-backed) with all collections intact.
+  **Resolved (19.5.6, change 155):** the file-backed stores round-trip the community's whole state —
+  the community document, the members/follows/followers sets, the community-scoped moderation (block/
+  flag/mute) sets (19.5.4), and the member outboxes the unified feed is derived from. Pinned by
+  `Community_FullState_MembersFollowsFollowersModerationAndContent_SurvivesRestart` (a fresh
+  `FileBackedPersistenceProvider` over the same directory, the `down`/`up` simulation, re-reads every
+  collection unchanged). Still open for full 19.5.6: the live Docker `down`/`up` drive of a seeded
+  community over the public FQDNs — a live-verification item.
 
 ### Phase 19.6 — Architectural expectations: client↔server interaction
 
