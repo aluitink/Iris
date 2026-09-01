@@ -285,10 +285,24 @@ How do we create and manage communities, and their peers (the communities/actors
    community's authored activities instead of a 404. Still open for full 19.5.1: the UI creation
    *write* path (a signed `Create`/`Add` of a `Group` via the outbox-publish pattern) and the
    WebFinger/`iris:capabilities` discovery verification — both live-verification / UI items.
-- [ ] **19.5.2 — Membership management.** Add/remove members via management-style activity messages
-  (not direct store writes): an actor joining (an `Add` to `members`, or a Follow-based join if that's
-  the chosen model — record the decision in a decisions doc), leaving (inverse), and the community
-  feed reflecting membership changes.
+ - [ ] **19.5.2 — Membership management.** Add/remove members via management-style activity messages
+   (not direct store writes): an actor joining (an `Add` to `members`, or a Follow-based join if that's
+   the chosen model — record the decision in a decisions doc), leaving (inverse), and the community
+   feed reflecting membership changes.
+   `remaining:` the `Add`/`Remove` membership mechanism already existed (F-09) but had **no
+   authorization** — any signature-validating actor could add/remove members of a local community. This
+   slice (change 150) adds the 19.5.2 **self-management gate** to `AddActivityHandler`/
+   `RemoveActivityHandler`: an `Add`/`Remove` to a community's inbox applies only when the activity's
+   **actor is that community itself** (the same gate the community outbox publish endpoint applies to
+   its `actor`). A community-signed `Add`/`Remove` posted through its own inbox now adds/removes the
+   member, and the community **feed + `members` collection reflect the change on the wire** (new
+   `CommunityMembershipManagementIntegrationTests`); a remote actor's signed `Add`/`Remove` is stored
+   (signature validated) but no longer modifies the membership (`AddRemoveFederationIntegrationTests`
+   updated). Decision recorded in the change doc: the community manages its own membership via
+   `Add`/`Remove` through its own inbox (self-management); a remote actor's *join request* is a
+   Follow/accept flow (19.5.x), not an `Add` it may post to the community inbox. Still open for full
+   19.5.2: the UI membership-management screens (add/remove member from the community page) and the
+   remote-actor **join request → accept** flow — both UI/live-verification items.
 - [ ] **19.5.3 — Community peers (following management).** The community follows a remote actor/
   community via `POST /ap/v1/c/{name}/outbox` (Follow) — verify the edge, the `following` collection,
   and delivery to the target; unfollow via `Undo` (edge removed, peer notified); reject/undo flows
