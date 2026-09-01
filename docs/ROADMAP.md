@@ -118,14 +118,19 @@ smoke test green over the FQDNs; the checklist doc committed.
   sole accept/reject write. Sample UI "Inbound follows" card flipped to `AcceptAsync`/`RejectAsync`.
   Retired the 24 endpoint tests; repointed `OutboxSingleSourceOfTruth` + `FederationSignature` to the
   outbox. (change 161b: suite 1,245.) `remaining:` none for follow decisions.
-- [ ] **19.0b.2b — Remove the mute/relay endpoints (D4a).** Delete the `mutes/` + `relays/` POST
-  endpoints + `LocalMuteHandler` + `LocalRelayHandler`; move their effect to a `LocalModerationClient`
-  (Basic-auth, non-AP). The `/ap/v1` POST surface then becomes outbox-only (plus the specialized proxy
-  relay per D1). Add `proxy`/`mute`/`relay` `iris:capabilities` values for discovery.
-- [ ] **19.0b.3 — Split the client.** Move `AcceptFollowAsync`/`RejectFollowAsync` (now-obsolete) /
-  `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/`UnsubscribeRelayAsync` off the core
-  `IActivityPubClient` into the `LocalModerationClient`; correct the stale "InboxOf" doc comments (the
-  code already posts to the outbox).
+- [ ] **19.0b.2b — Local-moderation transport (D4a).** Mute/relay are **specialized local
+  capabilities** (not general flow), so they are **kept** (not removed) — but relocated off the
+  `/ap/v1` AP tree onto a dedicated local-moderation route (e.g. `/local/v1/...`) so the `/ap/v1` POST
+  surface becomes outbox-only. `LocalMuteHandler`/`LocalRelayHandler`/`CommunityMuteHandler` move to the
+  new tree (still Basic-auth, non-AP). Add `mute`/`relay`/`proxy` `iris:capabilities` values for
+  discovery. `remaining:` full (the follow-decision endpoints were already removed in 19.0b.2a; only
+  mute/relay relocation is left).
+- [ ] **19.0b.3 — Split the client.** Move `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/
+  `UnsubscribeRelayAsync` off the core `IActivityPubClient` into a new `LocalModerationClient` (the
+  `AcceptFollowAsync`/`RejectFollowAsync` methods were already **removed** in step 1 — change 161c, they
+  targeted the deleted follow-decision endpoints); correct the stale "InboxOf" doc comments (the code
+  already posts to the outbox). `remaining:` create `LocalModerationClient` + move the 4 mute/relay
+  methods (8 with overloads) + update the sample UI's Moderation/relay cards + DI + tests.
 - [ ] **19.0b.4 — Decisions + docs.** D1–D4 **resolved** (change to the plan §4: keep proxy/search/
   feeds as `iris:`-extension-discovered capabilities; mute/relay = D4a local, non-AP). `remaining:`
   sweep COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
