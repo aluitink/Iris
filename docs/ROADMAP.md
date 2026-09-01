@@ -304,9 +304,22 @@ How do we create and manage communities, and their peers (the communities/actors
    19.5.2: the UI membership-management screens (add/remove member from the community page) and the
    remote-actor **join request → accept** flow — both UI/live-verification items.
 - [ ] **19.5.3 — Community peers (following management).** The community follows a remote actor/
-  community via `POST /ap/v1/c/{name}/outbox` (Follow) — verify the edge, the `following` collection,
-  and delivery to the target; unfollow via `Undo` (edge removed, peer notified); reject/undo flows
-  for inbound follows of the community (we reject a follow → the peer sees `Reject`).
+   community via `POST /ap/v1/c/{name}/outbox` (Follow) — verify the edge, the `following` collection,
+   and delivery to the target; unfollow via `Undo` (edge removed, peer notified); reject/undo flows
+   for inbound follows of the community (we reject a follow → the peer sees `Reject`).
+  - [x] **Person inbound-follow accept/reject (the `manuallyApprovesFollowers` live half, J-10 /
+    Resolved Decision #46) is complete** (change 151): a single operator follow-decision endpoint
+    (`POST /ap/v1/u/{handle}/follows/{**followId}`, Basic-auth, the follow resolved by IRI from the
+    activity store; a trailing `/accept` selects acceptance, otherwise reject) builds + records +
+    server-delivers the deterministic `Accept` (ensures the edge) or `Reject` (removes the edge), and
+    the remote side finalizes/removes its edge on receipt. The client (`AcceptFollowAsync`/
+    `RejectFollowAsync`), the sample UI "Inbound follows" card, and the opt-in
+    `Iris__ManuallyApprovesFollowers` sample flag are in; inbound follows are surfaced in the followed
+    actor's outbox so the UI can list them. Verified end-to-end over the two-instance Docker env (a
+    signed inbound follow of a gated alice → operator Accept finalizes the edge on both sides; operator
+    Reject removes it on both sides; unauthenticated → 401). Full suite 1,217 green. (The community
+    analogue — 19.5.3's "reject an inbound follow *of the community*" — still needs the community
+    variant of the gate + endpoint; this slice covers the **person** path.)
 - [ ] **19.5.4 — Community moderation surface.** Flag/block/mute at the community level where
   supported; verify the moderation collections and that moderated actors' content is excluded from
   the community feed (or record the gap).
