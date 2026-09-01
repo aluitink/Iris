@@ -182,15 +182,21 @@ objects *should* look like and where they *should* appear).
 The small iris-a/iris-b network must behave like a well-behaved federation: no activity-forward
 loops, no echo amplification, and eventual consistency of edge state.
 
-- [ ] **19.3.1 — Follow-loop safety.** Mutual follows (alice-a ↔ alice-b) must not re-deliver
+- [x] **19.3.1 — Follow-loop safety.** Mutual follows (alice-a ↔ alice-b) must not re-deliver
   activities back and forth: post on A → lands in B's inbox exactly once → appears in B's stores
   exactly once → B does **not** re-deliver A's post to A (no forwarding of already-local content).
   Verify by counting occurrences in outboxes/stores after each recreation and after repeated posts.
-- [ ] **19.3.2 — Echo/amplification check.** With both instances following each other (and the
+  **Resolved (19.3.1 fix, commit 262616e):** the `InboxProcessor` now stores each inbound activity
+  add-if-absent by IRI (C-07) and skips re-dispatch for a re-delivery, so a peer's echo of a Create is
+  not re-fan-out. `MutualFollowDeliveryLoopIntegrationTests` proves the post reaches the peer a bounded
+  number of times (pre-fix the loop produced thousands of deliveries).
+- [x] **19.3.2 — Echo/amplification check.** With both instances following each other (and the
   community following the peer), post once; enumerate every delivery event (delivery queue + peer
   inboxes) and assert the total is bounded (no quadratic growth, no re-announce of announces).
   Specifically: an `Announce` (boost) of a peer's post must not be re-announced by the peer (boost
-  loops are the classic federation failure).
+  loops are the classic federation failure). **Resolved (19.3.2, commit 262616e):** the same
+  inbox-Id dedup guard bounds the echo/amplification for both `Create` and the `Announce` propagation
+  path (the propagated boost is re-stored under its deterministic IRI and is not re-announced).
 - [ ] **19.3.3 — Announce propagation.** Boost a note on A; the boost reaches B's followers once;
   boost a note *from* B on A (boosting remote content) — verify no infinite announce chain and the
   correct `object` link (not an embedded copy that could double-attribute).
