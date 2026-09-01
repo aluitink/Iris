@@ -9,10 +9,13 @@ namespace Iris.Server.Services;
 /// </summary>
 /// <remarks>
 /// For each local member of the community, reads the member's outbox (the member's posted activities,
-/// newest first) and concatenates them in member order, then de-duplicates by activity IRI (keeping the
-/// first, i.e. newest, occurrence). A member with no outbox contributes nothing; an unknown community or
-/// a community with no members yields an empty feed. The <see cref="SearchCommunityAsync"/> method runs a
-/// case-insensitive substring search over the feed's items' <c>content</c>/<c>name</c>.
+/// newest first) and merges them into a single **newest-first** feed: items are ordered by (outbox
+/// position, then member IRI) — a stable, deterministic merge that ranks a member's newest post above
+/// its older posts and orders same-position posts by member IRI. The merged items are de-duplicated by
+/// activity IRI (keeping the first, i.e. newest, occurrence). A member with no outbox contributes
+/// nothing; an unknown community or a community with no members yields an empty feed. The
+/// <see cref="SearchCommunityAsync"/> method runs a case-insensitive substring search over the feed's
+/// items' <c>content</c>/<c>name</c>.
 /// </remarks>
 public sealed class CommunityFeedService : ICommunityFeedService
 {
@@ -43,29 +46,46 @@ public sealed class CommunityFeedService : ICommunityFeedService
             return [];
         }
 
-        // The membership set has no inherent order (a set), so sort by actor IRI for a deterministic,
-        // reproducible feed. Within a member, the outbox is already newest-first; across members the
-        // feed is grouped by member (in IRI order), each member's posts newest-first.
+        // The membership set has no inherent order (a set), so members are read in IRI order for a
+        // deterministic, reproducible feed. Each member's outbox is already newest-first (the activity
+        // store keeps it so), so a member's own posts are in recency order.
         var orderedMembers = memberIris.OrderBy(m => m.Value, StringComparer.Ordinal).ToList();
 
-        // Concatenate each member's outbox (newest first) in member order, then de-duplicate by activity
-        // IRI (keep the first, i.e. newest, occurrence). Members are local actors, so their outboxes are
-        // served by the local activity store.
+        // Merge the members' outboxes into a single **newest-first** feed. An outbox has no per-item
+        // timestamp to compare across members, so recency is approximated by each member's outbox
+        // position (position 0 is that member's newest post). Items are ordered by (outbox position,
+        // then member IRI) — a stable, deterministic merge: a member's newest post ranks above its older
+        // posts, and two posts at the same outbox position are ordered by member IRI (deterministic, so
+        // the feed is reproducible for a given set of outboxes). This is the "newest first" the feed
+        // advertises (the union of the members' outboxes, de-duplicated, newest first).
+        //
+        // De-duplicate by activity IRI (keep the first, i.e. newest, occurrence). Members are local
+        // actors, so their outboxes are served by the local activity store.
         var seen = new HashSet<Iri>();
-        var feed = new List<IObjectOrLink>();
+        var merged = new List<(int Position, Iri MemberIri, IObjectOrLink Item)>();
         foreach (var memberIri in orderedMembers)
         {
             var outbox = await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
-            foreach (var item in outbox)
+            for (var position = 0; position < outbox.Count; position++)
             {
-                if (item is IObject { Id: { Length: > 0 } id } && seen.Add(new Iri(id)))
+                var item = outbox[position];
+                if (item is IObject { Id: { Length: > 0 } id })
                 {
-                    feed.Add(item);
+                    // Keep the newest (first) occurrence of a repeated IRI; drop the rest.
+                    if (!seen.Add(new Iri(id)))
+                    {
+                        continue;
+                    }
                 }
+                merged.Add((position, memberIri, item));
             }
         }
 
-        return feed;
+        return merged
+            .OrderBy(m => m.Position)
+            .ThenBy(m => m.MemberIri.Value, StringComparer.Ordinal)
+            .Select(m => m.Item)
+            .ToList();
     }
 
     /// <inheritdoc/>

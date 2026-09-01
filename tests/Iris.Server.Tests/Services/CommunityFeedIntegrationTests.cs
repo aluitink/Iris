@@ -20,8 +20,9 @@ namespace Iris.Server.Tests.Services;
 /// <remarks>
 /// Topology: a single instance (a.domain.local) hosts a community <c>iris</c> with two local members
 /// (alice, bob). Each member has a small outbox (posted activities). The test asserts the feed is the
-/// union of the members' outboxes in member order (alice's newest posts, then bob's newest posts), that
-/// a member with no outbox contributes nothing, that an unknown community 404s, that an empty
+/// union of the members' outboxes merged <strong>newest first</strong> (ordered by outbox position, then
+/// member IRI — a member's newest post ranks above its older posts, same-position posts by member IRI),
+/// that a member with no outbox contributes nothing, that an unknown community 404s, that an empty
 /// community's feed is an empty collection, and that paging works (page 1 <c>OrderedCollection</c> +
 /// page 2 <c>OrderedCollectionPage</c> with <c>prev</c>/<c>next</c>). The "followed community content"
 /// half (remote content the community follows) is the separate community-following slice.
@@ -51,10 +52,10 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         _server.Dispose();
     }
 
-    // --- The feed is the union of the members' outboxes, in member order -----------
+    // --- The feed is the newest-first merge of the members' outboxes ---------------
 
     [Fact]
-    public async Task Feed_Page1_IsUnionOfMemberOutboxes_InMemberOrder()
+    public async Task Feed_Page1_IsUnionOfMemberOutboxes_NewestFirst()
     {
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
         response.EnsureSuccessStatusCode();
@@ -63,16 +64,19 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/feed", doc.RootElement.GetProperty("id").GetString());
 
-        // Members are grouped in actor-IRI order: alice (.../u/alice) sorts before bob (.../u/bob).
-        // alice has 3 posts (newest first: create-3, create-2, create-1); bob has 2 (create-2,
-        // create-1). The feed is alice's outbox then bob's outbox: 5 items total.
+        // The feed is merged newest-first (outbox position, then member IRI). alice's outbox is
+        // [create-3 (p0), create-2 (p1), create-1 (p2)]; bob's is [create-2 (p0), create-1 (p1)].
+        // Merged:
+        //   pos 0: alice create-3, bob create-2
+        //   pos 1: alice create-2, bob create-1
+        //   pos 2: alice create-1
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(5, items.Length);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-3", items[0]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[1]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[2]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[3]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[4]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[1]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[2]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[3]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[4]);
 
         // totalItems reflects the full feed size, not the page size.
         Assert.Equal(5, doc.RootElement.GetProperty("totalItems").GetInt32());
@@ -107,11 +111,11 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
             $"{_base}/ap/v1/c/{Community}/feed/?page=2",
             doc.RootElement.GetProperty("id").GetString());
 
-        // Page 2 holds items 3 and 4 of the feed (alice's oldest post, then bob's newest).
+        // Page 2 holds items 3 and 4 of the merged feed (pos 1: alice create-2, bob create-1).
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[0]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[1]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[1]);
 
         Assert.Equal($"{_base}/ap/v1/c/{Community}/feed", doc.RootElement.GetProperty("partOf").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/feed/?page=1", doc.RootElement.GetProperty("prev").GetString());
@@ -127,10 +131,10 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        // Page 3 holds the final (5th) item only: bob's oldest post (create-1).
+        // Page 3 holds the final (5th) item only: alice's oldest post (create-1, outbox position 2).
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[0]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[0]);
 
         Assert.Equal($"{_base}/ap/v1/c/{Community}/feed/?page=2", doc.RootElement.GetProperty("prev").GetString());
         Assert.False(doc.RootElement.TryGetProperty("next", out _));

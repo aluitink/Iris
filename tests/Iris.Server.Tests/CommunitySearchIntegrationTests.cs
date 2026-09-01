@@ -70,7 +70,8 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
-        // Feed order: alice's posts precede bob's; within a member, newest first.
+        // Feed order is newest-first (outbox position, then member IRI): alice's FEDERAL post is at
+        // outbox position 0, bob's federation post at position 1, so FEDERAL precedes federation.
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]); // FEDERAL
         Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[1]); // federation
 
@@ -118,8 +119,10 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
     [Fact]
     public async Task Search_Page2_IsOrderedCollectionPage_WithPrevAndNext()
     {
-        // Empty query → 4 items (feed order: alice create-2, alice create-1, bob create-2, bob create-1).
-        // limit=2, offset=2 → page 2 holds items 3 and 4 (bob create-2, bob create-1).
+        // Empty query → 4 items. The feed is merged newest-first (outbox position, then member IRI);
+        // each member's create-2 is at outbox position 0 and create-1 at position 1, so the order is
+        // alice create-2, bob create-2, alice create-1, bob create-1. limit=2, offset=2 → page 2 holds
+        // items 3 and 4 (alice create-1, bob create-1).
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?limit=2&offset=2");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -131,7 +134,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[0]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[0]);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-1", items[1]);
 
         Assert.Equal($"{_base}/ap/v1/c/{Community}/search", doc.RootElement.GetProperty("partOf").GetString());
@@ -143,7 +146,8 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
     [Fact]
     public async Task Search_Page1_HasNextLink()
     {
-        // 4 items, limit=2, offset=0 → page 1 holds items 1 and 2, with a `next` to offset=2.
+        // 4 items, limit=2, offset=0 → page 1 holds items 1 and 2 (the two newest: alice create-2,
+        // bob create-2 — both at outbox position 0), with a `next` to offset=2.
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?limit=2&offset=0");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
@@ -152,7 +156,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]);
-        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-1", items[1]);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[1]);
         Assert.Equal($"{_base}/ap/v1/c/{Community}/search/?offset=2&limit=2", doc.RootElement.GetProperty("next").GetString());
     }
 
