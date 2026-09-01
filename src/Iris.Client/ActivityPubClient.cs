@@ -319,6 +319,49 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // A boost (Announce) is published to the announcer's OWN outbox (the write surface for the
+        // activities an actor authors): the instance records the Announce in the announcer's outbox (so
+        // the boost surfaces in the announcer's feed) and the activity store, and fans it out to the
+        // announcer's remote, non-blocked followers (mirroring the Create fan-out). An Announce carries
+        // no embedded object — it is a reference to an existing object IRI — so no object-store write is
+        // needed. The `Id` is a deterministic, unique-per-(actor,object) IRI matching the server's
+        // AnnounceIris.AnnounceIri ({actorId}/announces/{objectId}) so a retried boost dedupes on the
+        // receiver. The ActivityStreams Announce type has no typed scalar beyond the library's, so the
+        // object-initializer form is used and the constructor sets `Type = "Announce"`.
+        var announce = new Announce
+        {
+            Id = $"{actorId.Value}/announces/{objectId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = objectId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), announce, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // An unboost is the ActivityStreams inverse of an Announce: an Undo whose object references the
+        // original Announce by IRI. Per the delivery model, the Undo is published to the announcer's OWN
+        // outbox (actorId) — the party that made the boost undoes it — not the boosted object (a content
+        // object has no inbox of its own). The object IRI reuses AnnounceAsync's deterministic
+        // {actorId}/announces/{objectId} IRI so the receiver resolves exactly the announce that was
+        // recorded; the Undo gets its own deterministic unique-per-(actor,object) IRI so a retried
+        // unboost dedupes.
+        var announceIri = new Iri($"{actorId.Value}/announces/{objectId.Value}");
+        var undo = new Undo
+        {
+            Id = $"{actorId.Value}/unannounces/{objectId.Value}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = announceIri.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
         // A delete is published to the author's OWN outbox (the write surface for the activities an actor

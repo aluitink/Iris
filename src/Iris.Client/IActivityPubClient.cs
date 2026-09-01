@@ -211,6 +211,52 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
 
     /// <summary>
+    /// Boosts (re-shares) an object as <paramref name="actorId"/>: builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Announce"/> (actor = <paramref name="actorId"/>, object =
+    /// <paramref name="objectId"/>) and publishes it through the signed pipeline to the announcer's own outbox.
+    /// The server records the Announce in the announcer's outbox (so the boost surfaces in the announcer's
+    /// feed) and fans it out to the announcer's remote, non-blocked followers (mirroring the Create fan-out).
+    /// This is the client's one-call "boost" / "repost" (the caller supplies only the boosted object's IRI —
+    /// the <see cref="KristofferStrube.ActivityStreams.Announce"/> and the delivery target are derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor boosting the object (must match the client's signing identity
+    /// so the request is signed as that actor).</param>
+    /// <param name="objectId">The IRI of the object being boosted (a note, post, or other content object).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Announce"/> is published to the announcer's OWN outbox
+    /// (<c>actorId.OutboxOf()</c>) and is signed by the pipeline. Unlike a <see cref="Like"/>, an
+    /// <see cref="Announce"/> carries no embedded object — it is a reference to an existing object IRI — so no
+    /// object-store write is needed. The <see cref="Announce"/> gets a deterministic, unique-per-(actor,object)
+    /// IRI (<c>{actorId}/announces/{objectId}</c>, matching the server's <c>AnnounceIris.AnnounceIri</c>) so a
+    /// retried boost dedupes on the receiver.
+    /// </remarks>
+    public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a boost as <paramref name="actorId"/> (the inverse of <see cref="AnnounceAsync"/>): builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Undo"/> whose object references the original
+    /// <see cref="KristofferStrube.ActivityStreams.Announce"/> by IRI (the same deterministic
+    /// <c>{actorId}/announces/{objectId}</c> IRI <see cref="AnnounceAsync"/> mints) and delivers it through the
+    /// signed pipeline to the announcer's own outbox. This is the client's one-call "unboost" / "unrepost".
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor removing the boost (must match the client's signing identity
+    /// so the request is signed as that actor, and must be the actor who made the boost).</param>
+    /// <param name="objectId">The IRI of the object whose boost is being removed (must match the object
+    /// <see cref="AnnounceAsync"/> was called with, so the Undo references the exact announce that was recorded).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to the announcer's OWN outbox
+    /// (<c>actorId.OutboxOf()</c>) and is signed by the pipeline — the party that made the boost undoes it. Its
+    /// <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Announce"/> by IRI, and
+    /// the <see cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic, unique-per-(actor,object)
+    /// IRI (<c>{actorId}/unannounces/{objectId}</c>) so a retried unboost dedupes on the receiver.
+    /// </remarks>
+    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
     /// Deletes a content object as <paramref name="actorId"/> (the inverse of a post): builds an
     /// <see cref="KristofferStrube.ActivityStreams.Delete"/> referencing the object by IRI and delivers it
     /// through the signed pipeline to the actor's own outbox. The receiving instance tombstones the object

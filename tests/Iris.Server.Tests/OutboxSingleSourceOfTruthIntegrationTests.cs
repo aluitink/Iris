@@ -40,6 +40,7 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
 
     private readonly TestServer _server;
     private readonly HttpClient _http;
+    private readonly IActivityPubClient _client;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _alice;
     private readonly Iri _bob;
@@ -72,6 +73,18 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
             Fetcher = BuildSelfFetcher(aliceKey, aliceIri, () => _server!.CreateHandler()),
         });
         _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+
+        // A signed client that routes to the TestServer (the client's one-call operations — Announce,
+        // Unannounce, etc. — exercise the full signed pipeline against the live outbox endpoint).
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(_aliceKey);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(_alice, new Iri($"{_alice.Value}#key-1"));
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        _client = factory.Create(
+            new ActivityPubClientOptions { ActorId = _alice, EnableRetry = false },
+            _server.CreateHandler());
     }
 
     public void Dispose()
@@ -215,6 +228,61 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         var persisted = (await _persistence.Activities.GetOutboxAsync(_alice)).Select(a => a.Id).ToList();
         Assert.Contains(follow.Id, persisted);
         Assert.Contains(create.Id, persisted);
+    }
+
+    // --- The client's Announce/Unannounce publish to the outbox (19.6.1 management) -------
+    //
+    // The client's one-call boost/unboost (AnnounceAsync/UnannounceAsync) builds the deterministic
+    // Announce / Undo-of-Announce and publishes them to the acting actor's own outbox through the signed
+    // pipeline. The server records each in the outbox + activity store. This pins that the client's
+    // boost is a first-class outbox-authored activity (no side channel) and that the Undo references the
+    // exact Announce by its deterministic IRI.
+
+    [Fact]
+    public async Task ClientAnnounce_PublishesAnnounceToOutbox()
+    {
+        var objectId = new Iri($"https://{AHost}/objects/boost-target-{Guid.NewGuid():N}");
+        var result = await _client.AnnounceAsync(_alice, objectId);
+
+        Assert.True(result.IsSuccess, "the announce must be accepted");
+        Assert.Equal((int)HttpStatusCode.Accepted, result.StatusCode);
+
+        // The Announce is recorded in alice's outbox + the activity store, with the deterministic IRI
+        // {actor}/announces/{object} (matching the server's AnnounceIris.AnnounceIri).
+        var expectedIri = $"{_alice.Value.TrimEnd('/')}/announces/{objectId.Value}";
+        var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
+        var announce = Assert.Single(outbox, a => a.Id == expectedIri);
+        Assert.IsType<Announce>(announce);
+
+        var stored = await _persistence.Activities.TryGetActivityAsync(new Iri(expectedIri), out var activity);
+        Assert.True(stored, "the Announce must be in the activity store.");
+        Assert.NotNull(activity);
+    }
+
+    [Fact]
+    public async Task ClientUnannounce_PublishesUndoOfAnnounceToOutbox()
+    {
+        var objectId = new Iri($"https://{AHost}/objects/boost-target-{Guid.NewGuid():N}");
+
+        // First boost, then unboost.
+        var announce = await _client.AnnounceAsync(_alice, objectId);
+        Assert.True(announce.IsSuccess);
+        var unannounce = await _client.UnannounceAsync(_alice, objectId);
+        Assert.True(unannounce.IsSuccess, "the unannounce must be accepted");
+        Assert.Equal((int)HttpStatusCode.Accepted, unannounce.StatusCode);
+
+        // Both the Announce and the Undo-of-Announce are in the outbox.
+        var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
+        var expectedAnnounceIri = $"{_alice.Value.TrimEnd('/')}/announces/{objectId.Value}";
+        var expectedUndoIri = $"{_alice.Value.TrimEnd('/')}/unannounces/{objectId.Value}";
+        Assert.Contains(outbox, a => a.Id == expectedAnnounceIri);
+        var undo = Assert.Single(outbox, a => a.Id == expectedUndoIri);
+        Assert.IsType<Undo>(undo);
+
+        // The Undo references the exact Announce by its deterministic IRI.
+        var undoActivity = (Undo)undo;
+        var referencedObjectIri = undoActivity.Object?.FirstOrDefault().ResolveObjectIri();
+        Assert.Equal(expectedAnnounceIri, referencedObjectIri?.Value);
     }
 
     // --- Helpers --------------------------------------------------------------------------

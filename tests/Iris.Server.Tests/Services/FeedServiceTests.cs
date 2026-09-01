@@ -657,6 +657,12 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
