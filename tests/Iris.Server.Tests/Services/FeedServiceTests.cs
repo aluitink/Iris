@@ -651,18 +651,6 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
-        public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
         public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

@@ -219,21 +219,6 @@ public sealed class IrisRemoteCollectionFetcherTests
         public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
-        /// <inheritdoc/>
-        public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        /// <inheritdoc/>
-        public Task<DeliveryResult> AcceptFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        /// <inheritdoc/>
-        public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
-
-        /// <inheritdoc/>
-        public Task<DeliveryResult> RejectFollowAsync(Iri actorId, Iri followIri, ProxyCredentials credentials, CancellationToken ct = default)
-            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
         public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
