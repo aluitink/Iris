@@ -310,6 +310,89 @@ public sealed class FileBackedPersistenceTests : IDisposable
         Assert.Contains(communityIri, await p2.Communities.GetAllCommunityIrisAsync());
     }
 
+    // --- 19.5.6: a community's FULL state (members, follows, followers, moderation, content) survives down/up ---
+
+    [Fact]
+    public async Task Community_FullState_MembersFollowsFollowersModerationAndContent_SurvivesRestart()
+    {
+        // Phase 19.5.6: a community created in a prior turn — with members, outbound follows, inbound
+        // followers, community-scoped moderation edges (19.5.4), and content (the members' outbox
+        // activities that feed the community's unified feed) — survives a `down`/`up` (the volume-backed
+        // recreation; here simulated by a fresh provider over the same directory) with every collection
+        // intact. The guarantee is that the file-backed stores round-trip the community's whole state:
+        // the community document, the members/follows/followers sets, the moderation (block/flag/mute)
+        // sets, and the member outboxes that the community feed is derived from.
+        var dir = Dir("community-fullstate-restart");
+        Directory.CreateDirectory(dir);
+        var community = BuildCommunity("general");
+        var communityIri = IriOf(community.Id!);
+        var alice = IriOf("https://iris.example/ap/u/alice");
+        var bob = IriOf("https://iris.example/ap/u/bob");
+        var rayven = IriOf("https://mastodon.world/users/RayvenMX"); // a remote follow target
+        var remoteFollower = IriOf("https://mastodon.world/users/remote-follower");
+        var mutedMember = IriOf("https://iris.example/ap/u/muted");
+        var aliceCreateId = "https://iris.example/ap/act/alice-create-1";
+        var bobCreateId = "https://iris.example/ap/act/bob-create-1";
+
+        using (var p1 = new FileBackedPersistenceProvider(dir))
+        {
+            // The community document + its member/follow/follower edges.
+            await p1.Communities.PutCommunityAsync(community);
+            await p1.Communities.AddMemberAsync(communityIri, alice);
+            await p1.Communities.AddMemberAsync(communityIri, bob);
+            await p1.Communities.AddFollowAsync(communityIri, rayven);
+            await p1.Communities.AddFollowerAsync(communityIri, remoteFollower);
+
+            // The community's community-scoped moderation edges (19.5.4): a block, a flag, and a mute.
+            await p1.Communities.AddBlockAsync(communityIri, bob);
+            await p1.Communities.AddFlagAsync(communityIri, bob);
+            await p1.Communities.AddMuteAsync(communityIri, mutedMember);
+
+            // The community's content: the members' outbox activities (the union the feed is derived
+            // from) + a note each activity references.
+            var aliceNote = BuildNote("https://iris.example/ap/n/alice-note-1", alice.Value);
+            var aliceCreate = BuildCreate(aliceCreateId, alice.Value, aliceNote.Id!);
+            var bobNote = BuildNote("https://iris.example/ap/n/bob-note-1", bob.Value);
+            var bobCreate = BuildCreate(bobCreateId, bob.Value, bobNote.Id!);
+            await p1.Activities.PutActivityAsync(aliceNote);
+            await p1.Activities.PutActivityAsync(aliceCreate);
+            await p1.Activities.PutActivityAsync(bobNote);
+            await p1.Activities.PutActivityAsync(bobCreate);
+            await p1.Activities.AddToOutboxAsync(alice, (IObjectOrLink)aliceCreate);
+            await p1.Activities.AddToOutboxAsync(bob, (IObjectOrLink)bobCreate);
+        }
+
+        // The re-created instance (up): a fresh provider over the same directory.
+        using var p2 = new FileBackedPersistenceProvider(dir);
+
+        // The community document + the member set are intact.
+        Assert.True(await p2.Communities.TryGetCommunityAsync(communityIri, out Group? c));
+        Assert.IsType<Group>(c);
+        var members = (await p2.Communities.GetMembersAsync(communityIri)).ToList();
+        Assert.Contains(alice, members);
+        Assert.Contains(bob, members);
+
+        // The outbound follows + inbound followers are intact.
+        Assert.Contains(rayven, await p2.Communities.GetFollowsAsync(communityIri));
+        Assert.Contains(remoteFollower, await p2.Communities.GetFollowersAsync(communityIri));
+
+        // The community-scoped moderation edges (block/flag/mute) are intact.
+        Assert.Contains(bob, await p2.Communities.GetBlocksAsync(communityIri));
+        Assert.Contains(bob, await p2.Communities.GetFlagsAsync(communityIri));
+        Assert.Contains(mutedMember, await p2.Communities.GetMutesAsync(communityIri));
+
+        // The content (the members' outbox activities) is intact — the feed the re-created instance
+        // serves is derived from these and is therefore unchanged by the recreation.
+        var aliceOutbox = await p2.Activities.GetOutboxAsync(alice);
+        Assert.Single(aliceOutbox);
+        Assert.IsType<Create>(aliceOutbox[0]);
+        var bobOutbox = await p2.Activities.GetOutboxAsync(bob);
+        Assert.Single(bobOutbox);
+        Assert.IsType<Create>(bobOutbox[0]);
+        Assert.True(await p2.Activities.TryGetActivityAsync(IriOf(aliceCreateId), out _));
+        Assert.True(await p2.Activities.TryGetActivityAsync(IriOf(bobCreateId), out _));
+    }
+
     // --- Key store: signing keys survive a restart (all three algorithms) ---------------------
 
     [Theory]
