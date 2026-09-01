@@ -118,13 +118,14 @@ smoke test green over the FQDNs; the checklist doc committed.
   sole accept/reject write. Sample UI "Inbound follows" card flipped to `AcceptAsync`/`RejectAsync`.
   Retired the 24 endpoint tests; repointed `OutboxSingleSourceOfTruth` + `FederationSignature` to the
   outbox. (change 161b: suite 1,245.) `remaining:` none for follow decisions.
-- [ ] **19.0b.2b — Local-moderation transport (D4a).** Mute/relay are **specialized local
-  capabilities** (not general flow), so they are **kept** (not removed) — but relocated off the
-  `/ap/v1` AP tree onto a dedicated local-moderation route (e.g. `/local/v1/...`) so the `/ap/v1` POST
-  surface becomes outbox-only. `LocalMuteHandler`/`LocalRelayHandler`/`CommunityMuteHandler` move to the
-  new tree (still Basic-auth, non-AP). Add `mute`/`relay`/`proxy` `iris:capabilities` values for
-  discovery. `remaining:` full (the follow-decision endpoints were already removed in 19.0b.2a; only
-  mute/relay relocation is left).
+- [x] **19.0b.2b — Local-moderation transport (D4a).** Mute/relay are **specialized local
+  capabilities** (not general flow), so they are **kept** (not removed) — relocated off the
+  `/ap/v1` AP tree onto a dedicated non-AP `/local/v1` tree so the `/ap/v1` POST surface becomes
+  outbox-only. `LocalMuteHandler`/`LocalRelayHandler`/`CommunityMuteHandler` move to a separate
+  `MapGroup('/local/v1')` (still Basic-auth, non-AP); the reads stay on `/ap/v1`. `mute`/`relay`
+  `iris:capabilities` values added (person: `mute`/`relay`; community: `mute`). Client's
+  `LocalModerationClient` now derives the local URL from the actor IRI (host + `/u/`/`/c/` segment)
+  under `/local/v1` (new `LocalModerationConstants`). (change 161e: suite 1,254.)
 - [x] **19.0b.3 — Split the client.** Move `MuteAsync`/`UnmuteAsync`/`SubscribeRelayAsync`/
   `UnsubscribeRelayAsync` off the core `IActivityPubClient` into a new `LocalModerationClient` (the
   `AcceptFollowAsync`/`RejectFollowAsync` methods were already **removed** in step 1 — change 161c, they
