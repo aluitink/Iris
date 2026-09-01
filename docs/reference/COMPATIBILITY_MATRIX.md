@@ -29,9 +29,16 @@ assertions.
 Verified against the source. This is the basis for the "expected" column in §3–4.
 
 **Outbound activities the server sends** (`src/Iris.Server`):
-- `Accept` — the follow-response, built in `FollowIris.cs:44-49`, scheduled at `FollowActivityHandler.cs:119-122`.
+- `Accept` — the follow-response, built in `FollowIris.cs:44-49`; scheduled at `FollowActivityHandler.cs:119-122`
+  for an *auto-accepted* inbound follow, and (Phase 19.0b, AP-native) delivered when the operator publishes an
+  `Accept` to the followed actor's outbox (`OutboxPublishHandler`'s `Accept` branch).
 - `Announce` — boost to local followers, `AnnounceIris.cs:50`, scheduled at `AnnounceActivityHandler.cs:127-130`.
-- **`Reject` is built but never sent** — `FollowIris.cs:58` has zero callers in `src/`; the server only *receives* `Reject` (`RejectActivityHandler.cs:41-69`).
+- `Reject` — **now sent** (Phase 19.0b, AP-native): the operator publishes a `Reject` (built by
+  `FollowIris.BuildReject`, `FollowIris.cs:58`) to the followed actor's outbox; `OutboxPublishHandler`'s
+  `Reject` branch records the decision + removes the provisional edge and server-delivers the `Reject` to the
+  follower. The server also *receives* `Reject` (`RejectActivityHandler.cs:41-69`). The legacy Basic-auth
+  follow-decision endpoints (`/ap/v1/u/{handle}/follows/{followId}[/accept]`) that once were the only
+  decision path were **removed** in Phase 19.0b — the outbox is the sole write path.
 - **The server never sends `Create`/`Like`/`Undo`.** Posts are written directly to local outbox
   collections (`samples/SampleServer/Program.cs:243-244`), not delivered as signed `Create` activities to
   followers' inboxes. Delivery is async via `DeliveryWorker`, signed as the acting actor
@@ -135,7 +142,7 @@ Each scenario is one checkable assertion in Phase 13. The **Iris expected** colu
 |---|---|---|---|
 | F1 | Platform actor follows our local actor; we respond `Accept`; the platform sees the `Accept` in its inbox and the follow shows as accepted. | in→out | **PASS-expected.** `FollowActivityHandler` records the edge and schedules `Accept` (`FollowActivityHandler.cs:96-122`, `FollowIris.cs:44-49`). |
 | F2 | We (via client `DeliverAsync`) follow a platform actor; the platform responds `Accept`; our `AcceptActivityHandler` records it. | out→in | **PASS-expected.** Client delivers signed `Follow`; inbound `Accept` handled (`AcceptActivityHandler.cs:44`). |
-| F3 | Platform actor follows our local actor; we respond `Reject`. | out | **[GAP]** Server never sends `Reject` (`FollowIris.cs:58` has no callers). A follow is always accepted. Live test will show the platform never receives a reject. |
+| F3 | Platform actor follows our local actor; we respond `Reject`. | out | **PASS-expected (Phase 19.0b, AP-native).** The operator publishes a `Reject` to the followed actor's outbox; `OutboxPublishHandler`'s `Reject` branch records the decision (removes the provisional edge) and server-delivers the `Reject` to the follower (`FollowIris.cs:58`). The legacy follow-decision endpoint is removed — the outbox is the sole write path. |
 | F4 | We `Undo` a follow (un-follow); platform removes the relationship. | out | **[GAP]** No outbound `Undo` is constructed. Un-follow is not delivered. |
 
 ### 4.2 Post / receive (Create)
@@ -195,7 +202,11 @@ findings Phase 13 will confirm and the follow-up phases will fix:
 
 1. **No outbound `Create` (C1)** — the largest gap. Remote followers never receive our posts as signed
    `Create` activities. This blocks "post and have it federate," the core use case.
-2. **No outbound `Reject` (F3) / `Undo` (F4)** — follows are always accepted; un-follow is not delivered.
+2. **Outbound `Reject` (F3) / `Undo` (F4) — now sent (Phase 19.0b, AP-native).** The operator publishes a
+   `Reject` (or an `Undo` of a follow) to the followed actor's outbox; `OutboxPublishHandler` records the
+   decision and server-delivers it to the follower. The legacy follow-decision endpoint is removed — the
+   outbox is the sole write path. (Re-check against live Mastodon in 19.1.2; a platform that ignores a
+   `Reject` is a MISMATCH, not an Iris gap.)
 3. **No outbound group-follow (G2)** — Iris communities cannot initiate following a remote community.
 4. **No global search / directory (S1)** — platforms cannot discover Iris communities via a global index.
 5. **No EdDSA validation (SIG2)** — Ed25519-signed inbound posts are rejected; platforms using EdDSA

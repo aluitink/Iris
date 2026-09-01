@@ -139,10 +139,12 @@ smoke test green over the FQDNs; the checklist doc committed.
   `IActivityPubClient`/`ActivityPubClient`, repointed the collection-read tests + screen tests to the new
   client, and added 7 unit tests. (change 161d: suite 1,252.) `remaining:` the stale "InboxOf" doc comments
   (the code already posts to the outbox) — folded into 19.0b.4.
-- [ ] **19.0b.4 — Decisions + docs.** D1–D4 **resolved** (change to the plan §4: keep proxy/search/
-  feeds as `iris:`-extension-discovered capabilities; mute/relay = D4a local, non-AP). `remaining:`
-  sweep COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
-  endpoints; full build + full test suite green.
+- [x] **19.0b.4 — Decisions + docs.** D1–D4 **resolved** (change to the plan §4: keep proxy/search/
+  feeds as `iris:`-extension-discovered capabilities; mute/relay = D4a local, non-AP). `done:`
+  swept COMPATIBILITY_MATRIX / LIVE_EVALUATION_CHECKLIST / LIVE_INTEROP_TEST_PLAN for the removed
+  endpoints; fixed stale `InboxOf` doc comments in `IActivityPubClient` (every typed method now
+  publishes to `actorId.OutboxOf()`); renamed `DeliverAsync` param `inboxId` → `targetId`;
+  full build + full test suite green (1,254 tests, 0 failed). (change 161f.)
 
 **Definition of done for 19.0b:** no non-AP POST routes under `/ap/v1` except the outbox (and any
 explicitly-kept borderline ones per D1–D3); the client is a pure AP protocol layer; the full suite is
@@ -163,9 +165,11 @@ handling exist now — so expectations must be re-derived from source before eac
   (outbox 20x duplication) **fixed** (change 140, commit 262fd09); F-1911-3 (community follow delivery
   loss) → 19.4. Community post surfacing not tested (dependent on F-1911-3 fix).
 - [ ] **19.1.2 — Follow scenarios (F1–F4)** against `@RayvenMX@mastodon.world`: they follow us → we
-  `Accept` (wire: their inbox; UI: our followers collection); we follow them (UI) → their `Accept`
-  arrives and is recorded; `Reject` behavior (our local-follow-reject endpoint → does the peer see a
-  `Reject`?); unfollow via `Undo` (does Mastodon remove the relationship? check their profile UI).
+  `Accept` (we publish a deterministic `Accept` to our outbox — AP-native, Phase 19.0b; wire: their inbox;
+  UI: our followers collection); we follow them (UI) → their `Accept` arrives and is recorded; `Reject`
+  behavior (we publish a deterministic `Reject` to our outbox → does the peer see a `Reject`? the legacy
+  follow-decision endpoint is removed); unfollow via `Undo` (does Mastodon remove the relationship? check
+  their profile UI).
    `remaining:` F2 (we follow them) **PASS (signature)** — the F-1912-1 signature fix (SHA-256 digest,
    no trailing newline) made Mastodon accept our Follow (202); F-1911-3 (community signing identity not
    registered) **fixed** (server + client) and verified (in-process regression test + community-signed
@@ -463,11 +467,12 @@ Confirm the core architectural invariants of how clients talk to servers.
   Announce, Undo, Delete, moderation) in a stable order; the outbox is the single source of truth for
   "what did this actor do." Verify by enumerating the outbox (UI + wire) after exercising every write
   screen and matching entries 1:1 with the actions taken.
-  - [x] Server invariant pinned (`OutboxSingleSourceOfTruthIntegrationTests`): a single instance authors
-    every supported activity type — Follow, Create, Like, Announce, Block, Undo, Delete (signed outbox
-    publish) plus Accept and Reject (the follow-decision endpoint) — and the actor's outbox contains
-    exactly that authored set, each once, in the store's stable (newest-first) order; the HTTP outbox
-    collection agrees with the persistence outbox.
+   - [x] Server invariant pinned (`OutboxSingleSourceOfTruthIntegrationTests`): a single instance authors
+     every supported activity type — Follow, Create, Like, Announce, Block, Undo, Delete (signed outbox
+     publish) plus Accept and Reject (published to the followed actor's outbox, AP-native Phase 19.0b;
+     the legacy follow-decision endpoint is removed) — and the actor's outbox contains exactly that
+     authored set, each once, in the store's stable (newest-first) order; the HTTP outbox collection
+     agrees with the persistence outbox.
   - [ ] Remaining (live, two-instance Docker env): the raw-inspector (UI) half — enumerate the outbox in
     the UI after exercising every write screen and match entries 1:1 with the actions taken.
 - [x] **19.6.3 — Post-interact, server-delivers.** The client posts (publishes) an activity to the

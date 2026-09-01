@@ -26,14 +26,21 @@
   `/tmp/iris-alice-key.pem` is **regenerated per boot** in the container's local fs — it is *not* on
   the volume, so it is not needed for persistence.)
 - **`Iris__ManuallyApprovesFollowers=true` on iris-a**: alice does **NOT** auto-accept an inbound
-  follow. An inbound follow from RayvenMX sits **pending** until the operator Accepts/Rejects it via
-  the follow-decision endpoint (see §1).
+  follow. An inbound follow from RayvenMX sits **pending** (a provisional edge) until the operator
+  Accepts/Rejects it by publishing an `Accept`/`Reject` to alice's outbox (see §1).
 - **RayvenMX IRI**: `https://mastodon.world/users/RayvenMX` (the actor doc IRI Mastodon serves).
-- **Follow-decision endpoint** (operator Accepts/Rejects an inbound follow of a local actor):
-  - Accept: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/follows/{followIri}/accept`
-  - Reject: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/follows/{followIri}`
-  - Auth: Basic `alice:iris-sample`. `{followIri}` = the absolute IRI of the original `Follow`
-    activity (read from `docker exec iris-a cat /data/activities.json` — the Follow's `id`).
+- **Follow decision — AP-native (Phase 19.0b)**: the operator Accepts/Rejects an inbound follow of a
+  local actor by publishing a deterministic `Accept`/`Reject` activity to the **followed actor's own
+  outbox** — NOT via the removed `/ap/v1/u/{handle}/follows/{followId}` Basic-auth endpoint (that
+  endpoint was removed; the outbox is the sole write path, and the server records + server-delivers the
+  decision).
+  - Accept: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/outbox` with an `Accept` whose `object` is
+    `{followIri}` (HTTP-signed as alice — the client's `AcceptAsync` does this; see F1).
+  - Reject: `POST https://iris-dev1.luit.ink/ap/v1/u/alice/outbox` with a `Reject` whose `object` is
+    `{followIri}`.
+  - `{followIri}` = the absolute IRI of the original `Follow` activity (read from
+    `docker exec iris-a cat /data/activities.json` — the Follow's `id`, i.e.
+    `https://mastodon.world/users/RayvenMX/follows/https://iris-dev1.luit.ink/ap/v1/u/alice`).
 - **Recording**: after each item, record the outcome in the **Findings tracker** (§6) with wire
   evidence (the relevant collection / outbox / inbox JSON + the Mastodon public URL if applicable).
   PASS / FAIL / GAP + a one-line note. Findings feed 19.4 (remediation).
@@ -60,9 +67,10 @@ Each item: operator action → agent observes wire + UI → record.
   - `docker exec iris-a cat /data/follows.json` → a **provisional** edge
     `RayvenMX → alice@dev1` (pending, since manually-approves is on).
   - UI: alice's followers (dev1) lists RayvenMX (pending or accepted — record which).
-- **Agent acts** (the operator's decision, mirrored to the wire): Accept via
-  `POST …/ap/v1/u/alice/follows/{followIri}/accept` (Basic auth).
-- **Verify on the wire**: alice's outbox gains a deterministic `Accept`
+- **Agent acts** (the operator's decision, mirrored to the wire): publish a deterministic `Accept`
+  (object = `{followIri}`) to alice's outbox — `POST …/ap/v1/u/alice/outbox` (HTTP-signed as alice; the
+  client's `AcceptAsync` does this). The server records it and server-delivers it to RayvenMX's inbox.
+- **Verify on the wire**: alice's outbox gains the deterministic `Accept`
   (`…/alice/accepts/{followIri}`); the `Accept` is **server-delivered** to RayvenMX's inbox (Mastodon
   finalizes the edge). Confirm the delivery was scheduled (delivery queue) and, if possible, that
   Mastodon's UI now shows the follow as accepted (not pending on their side).
@@ -82,9 +90,10 @@ Each item: operator action → agent observes wire + UI → record.
   previously PASS for the signature; re-confirm on the fresh volume.)
 
 ### F3 — Reject behavior
-- **Operator**: RayvenMX sends a *second* follow (or we use a fresh local test) that we **Reject** via
-  `POST …/ap/v1/u/alice/follows/{followIri}` (no `/accept`).
-- **Verify on the wire**: a deterministic `Reject` (`…/alice/rejects/{followIri}`) is published to
+- **Operator**: RayvenMX sends a *second* follow (or we use a fresh local test) that we **Reject** by
+  publishing a deterministic `Reject` (object = `{followIri}`) to alice's outbox —
+  `POST …/ap/v1/u/alice/outbox` (HTTP-signed as alice; the client's `RejectAsync` does this).
+- **Verify on the wire**: the deterministic `Reject` (`…/alice/rejects/{followIri}`) is recorded in
   alice's outbox and **server-delivered** to RayvenMX's inbox; the provisional edge is removed
   locally. Observe whether Mastodon honors the `Reject` (their UI should not show the follow).
 - **Pass criteria**: `Reject` published + delivered + local edge removed. Record whether Mastodon
@@ -132,9 +141,10 @@ Each item: operator action → agent observes wire + UI → record.
   unsigned GETs both ways.
 - **P1–P2 / T1–T3**: a Mastodon client pages our outbox (`?page`/`?limit`); we page their outbox;
   we serve `application/activity+json`; we accept `application/ld+json` + extended `@context`.
-- **G1/G3**: RayvenMX follows our `iris` community → we Accept (community follow-decision endpoint
-  `POST /ap/v1/c/iris/follows/{followIri}/accept`) → they appear in members/followers. G2/G4 tabled
-  (record current behavior).
+- **G1/G3**: RayvenMX follows our `iris` community → we Accept by publishing a deterministic `Accept`
+  (object = `{followIri}`) to the community's outbox (`POST /ap/v1/c/iris/outbox`, HTTP-signed as the
+  community; the community outbox's `Accept` branch records the decision) → they appear in
+  members/followers. G2/G4 tabled (record current behavior).
 - **S1–S2 / nodeinfo**: our nodeinfo + webfinger consumable by mastodon.world; our global search
   (`/ap/v1/search`) lists local actors + content; we fetch their profile via the explorer.
 

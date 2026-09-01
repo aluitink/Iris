@@ -77,7 +77,7 @@ phase-specific waypoints.
 | Waypoint | UI path / wire check | Notes |
 |---|---|---|
 | 19.1.1 Iris↔Iris baseline | Follow (UI) alice-a → alice-b; Accept round-trip (wire: both outboxes); unfollow via `Undo` (edge removed both sides); like; post+reply (peer's inbox received `Create`); community follow; community post surfacing | Sanity check before external platforms |
-| 19.1.2 Follow scenarios F1–F4 | RayvenMX follows us (UI: our followers collection shows them); we follow RayvenMX (UI) → their Accept arrives; Reject behavior (our local-follow-reject endpoint); unfollow via `Undo` (their profile UI) | |
+| 19.1.2 Follow scenarios F1–F4 | RayvenMX follows us (UI: our followers collection shows them); we follow RayvenMX (UI) → their Accept arrives; Reject behavior (we publish a deterministic `Reject` to our outbox — AP-native, Phase 19.0b; the removed follow-decision endpoint is gone); unfollow via `Undo` (their profile UI) | |
 | 19.1.3 Post/receive C1–C4 | We post (UI compose) → signed `Create` delivered to RayvenMX's inbox → **Mastodon renders it** (check public post URL on mastodon.world); RayvenMX posts → our inbox records it → visible in local feed; extended-type objects round-trip | Core "post and have it federate" proof |
 | 19.1.4 Signature SIG1–SIG5 | Inbound from Mastodon: RSA-SHA256 validates (no 401); Ed25519 inbound (if available); unsigned POST rejected 401; our ServerToServer profile accepted by Mastodon; unsigned GETs both ways | Wire-level checks (raw inspector / delivery queue) |
 | 19.1.5 Pagination + content types | Mastodon client pages our outbox via `?page`/`?limit`; we page their outbox to exhaustion; we serve `application/activity+json`; we accept `application/ld+json` inbound | |
