@@ -337,8 +337,29 @@ How do we create and manage communities, and their peers (the communities/actors
      community page wiring the new endpoint) and the two-instance wire drive of a gated community's
      inbound follow — both live/UI-verification items.
 - [ ] **19.5.4 — Community moderation surface.** Flag/block/mute at the community level where
-  supported; verify the moderation collections and that moderated actors' content is excluded from
-  the community feed (or record the gap).
+   supported; verify the moderation collections and that moderated actors' content is excluded from
+   the community feed (or record the gap).
+   - [x] **Community-scoped moderation edges (19.5.4).** The community's own block/flag/mute sets
+     (`ICommunityStore`, keyed by `communityIri` — distinct from the person `IModerationStore`): a
+     community blocks/mutes/flags an actor without affecting any other community's feed. In-memory +
+     file-backed (round-tripped through a `blocks`/`flags`/`mutes` section).
+     (change 153)
+   - [x] **The community feed excludes blocked/muted members' content (19.5.4).** A blocked member's
+     content is excluded (hard) and a muted member's is excluded while the membership is kept (soft); a
+     *flagged* member is **not** excluded (a flag is a report, not a filter — mirroring the person feed,
+     where only blocks and mutes filter the timeline).
+     (change 153)
+   - [x] **The community moderation collections + mute endpoint (19.5.4).**
+     `GET /ap/v1/c/{name}/{blocks|flags|mutes}` serves the community's moderation edges as a paged
+     collection (mirrors the person collections for a `Group`); the community document advertises the
+     three links; `POST /ap/v1/c/{name}/mutes/{target}` (Basic auth, the community's IRI is the
+     credential seam) records/removes a community-scoped mute (`?unmute=true`). Block/flag are the
+     federated `Block`/`Flag` activities (not a local POST).
+     (change 153)
+   - `remaining:` for full 19.5.4 — the **community UI** moderation screen (wiring the mute POST + the
+     block/flag collection reads) and the two-instance wire drive of a signed `Block`/`Flag` addressed to
+     a community (the federated half reuses the existing `Block`/`Flag` inbox-handler path, proven for the
+     person level) — both live/UI-verification items.
  - [ ] **19.5.5 — Community feed correctness.** The unified feed (members' outboxes, newest first,
    de-duplicated) yields exactly the right activities: local member posts, remote content delivered to
    the community inbox (the catch-all recording into member outboxes), pagination, and `?refresh=true`
