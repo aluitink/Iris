@@ -215,9 +215,18 @@ loops, no echo amplification, and eventual consistency of edge state.
   only the referenced object (no collateral deletion), and does **not** re-propagate (only the home
   instance re-fans-out — the re-propagation branch is gated on the deleting actor being local).
   `RemoteAuthorDelete_LocalCopyTombstoned_NoCollateral_NoRePropagation` (change 144).
-- [ ] **19.3.5 — Follow-edge convergence.** After a follow/unfollow/re-follow cycle across the two
+- [x] **19.3.5 — Follow-edge convergence.** After a follow/unfollow/re-follow cycle across the two
   instances, both sides' `following`/`followers` collections converge and agree (same IRIs, same
-  counts, stable pagination) — no orphan edges, no duplicate edges.
+  counts, stable pagination) — no orphan edges, no duplicate edges. **Resolved (19.3.5):** the
+  two-sided lifecycle already converged correctly — the `FollowActivityHandler` records the directed
+  edge on the target's side (and the follower's own `following` set on the home instance) and the
+  `UndoActivityHandler` removes the edge from *both* sides (the target's followers set when the
+  recipient is the target, the follower's own following set when the recipient is the un-follower), so
+  a re-follow simply re-records it (the stores are `HashSet`-backed — no duplicate IRI). No production
+  change. `FollowEdgeConvergenceIntegrationTests` drives a signed Follow / Undo / Follow cycle over the
+  wire and asserts both stores agree on the single edge, no orphan on either side after the un-follow,
+  no duplicate on the re-follow, and the public `following`/`followers` endpoints are stable across
+  re-reads (change 145).
 - [ ] **19.3.6 — Update propagation.** Update (re-publish with new content, same IRI) one of our
   notes → the peer's stored copy is updated (or correctly ignored if we don't implement Update
   handling — record which, and whether the object endpoint serves the new content).
