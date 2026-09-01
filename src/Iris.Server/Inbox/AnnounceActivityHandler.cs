@@ -16,24 +16,28 @@ namespace Iris.Server.Inbox;
 /// <item>Records the announce in the recipient's outbox via
 /// <see cref="IActivityStore.AddToOutboxAsync"/>, so the boost is discoverable from the actor's
 /// outbox collection (newest first).</item>
-/// <item>Propagates the announce to each of the recipient's local followers: for every local follower
-/// it schedules the propagated <c>Announce</c> (deterministic IRI
+/// <item>Propagates the announce to each of the recipient's followers (mirroring
+/// <see cref="CreateActivityHandler"/>): a <em>local</em> follower sees the boost via the follower's
+/// outbox on this instance (recorded directly — no cross-instance delivery); a <em>remote</em>
+/// follower needs a cross-instance delivery (the peer's handler records it in the follower's outbox
+/// on its instance). The propagated <c>Announce</c> (deterministic IRI
 /// <c>{recipient}/announces/{objectIri}</c>, <c>to</c> = the follower, <c>cc</c> = the announcer,
-/// <c>actor</c>/<c>attributedTo</c> = the announcer) for delivery to the follower's inbox via
-/// <see cref="IDeliveryService"/>. The delivery is signed as the announcer
-/// (<see cref="InboxDelivery.RecipientIri"/>), so the follower's instance verifies it against the
-/// announcer's key.</item>
+/// <c>actor</c>/<c>attributedTo</c> = the announcer) is stored under the shared IRI (the
+/// inbox processor's add-if-absent guard keeps the propagated form), and the remote delivery is
+/// signed as the announcer (<see cref="InboxDelivery.RecipientIri"/>).</item>
 /// </list>
 /// </remarks>
 /// <para>
-/// <strong>Local followers only.</strong> Only local followers are propagated to: a local follower
-/// is a local actor who follows the recipient, and its inbox is delivered by <em>this</em> instance's
-/// <see cref="DeliveryWorker"/>. Remote followers are skipped (they are the remote instance's concern —
-/// that instance receives the announce via its own federation path). When a local follower's delivery
-/// target is resolved by <see cref="IDeliveryService.DeliverToActorAsync(Iri, Activity, CancellationToken)"/>,
-/// it is the follower's own inbox (local actors advertise no <c>endpoints.sharedInbox</c> unless the
-/// instance configures one). Propagation is therefore limited to the recipient's <em>local</em>
-/// followers, which is the in-scope, verifiable behavior this feature targets.
+/// <strong>Follower fan-out (mirrors Create).</strong> The boost is propagated to the recipient's
+/// followers the same way a Create is (see <see cref="CreateActivityHandler"/>): a <em>local</em>
+/// follower sees the boost via the follower's outbox on this instance (recorded directly — no
+/// cross-instance delivery, the follower's followed-feed reads the outbox); a <em>remote</em>
+/// follower needs a cross-instance delivery (the peer's <c>AnnounceActivityHandler</c> records it in
+/// the follower's outbox on its instance). The deterministic IRI
+/// <c>{recipient}/announces/{objectIri}</c> (see <see cref="AnnounceIris.AnnounceIri(Iri, Iri)"/>)
+/// is scoped to the recipient, so the propagated form and the original form share the same IRI: the
+/// inbox processor's add-if-absent guard (the 19.3.1/19.3.2 re-delivery loop guard) stores the
+/// propagated (addressed) form under that IRI, which the outbox and follower view surface.
 /// </para>
 /// <para>
 /// The announce is recorded in the outbox and scheduled for delivery even when the recipient has no
@@ -118,37 +122,47 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
             .AddToOutboxAsync(delivery.RecipientIri, announce, ct)
             .ConfigureAwait(false);
 
-        // Propagate the announce to the recipient's local followers: for each local follower, schedule
-        // the propagated Announce (deterministic IRI, to=follower, cc=announcer) for delivery to the
-        // follower's inbox, signed as the announcer (the recipient). DeliverToActorAsync derives the
-        // follower's inbox from the follower's actor IRI.
+        // Propagate the announce to the recipient's followers (mirroring CreateActivityHandler's fan-out):
+        // a local follower sees the boost via the follower's outbox on this instance (recorded directly —
+        // no cross-instance delivery, the follower's followed-feed reads the outbox); a remote follower
+        // needs a cross-instance delivery (the peer's AnnounceActivityHandler records it in the
+        // follower's outbox on its instance).
+        //
+        // The deterministic IRI ({announcer}/announces/{objectIri}) is scoped to the actual announcer
+        // (the activity's Actor), so the propagated form and the original announce share the same IRI.
+        // The inbox processor's add-if-absent guard (the 19.3.1/19.3.2 re-delivery loop guard) stores the
+        // original form under that IRI; the propagated form (to=follower, cc=announcer) is recorded in
+        // the follower's outbox under the same IRI, so the activity store and follower outboxes reference
+        // the same activity.
         var followers = await _persistence.Follows
             .GetFollowersAsync(delivery.RecipientIri, ct)
             .ConfigureAwait(false);
         foreach (var followerIri in followers)
         {
-            // Only propagate to local followers (their inboxes are delivered by this instance's
-            // DeliveryWorker); a remote follower is the remote instance's concern.
-            if (!await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
+            // The deterministic IRI is scoped to the actual announcer (the activity's Actor), not the
+            // recipient (the inbox that received the announce). This keeps the propagated form's IRI
+            // identical to the original announce's IRI, so the activity store and follower outboxes
+            // reference the same activity.
+            var propagated = AnnounceIris.BuildAnnounce(announcerIri.Value, objectIri.Value, followerIri);
+
+            if (await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
             {
-                continue;
+                // A local follower sees the boost via the follower's outbox on this instance: record it
+                // directly (no cross-instance delivery — the follower's followed-feed reads the outbox).
+                await _persistence.Activities
+                    .AddToOutboxAsync(followerIri, propagated, ct)
+                    .ConfigureAwait(false);
             }
-
-            var propagated = AnnounceIris.BuildAnnounce(delivery.RecipientIri, objectIri.Value, followerIri);
-
-            // Re-store the propagated form under the shared deterministic IRI. The inbox processor stores
-            // each inbound activity add-if-absent (the 19.3.1/19.3.2 re-delivery loop guard), so without
-            // this the propagated Announce (to=follower, cc=announcer) would not replace the original
-            // form already stored under the same IRI — the outbox and follower view must carry the
-            // propagated (addressed) form. PutActivityAsync is the overwrite path that pre-dates the
-            // add-if-absent guard and is used here precisely because the propagated form must win.
-            await _persistence.Activities
-                .PutActivityAsync(propagated, ct)
-                .ConfigureAwait(false);
-
-            await _delivery
-                .DeliverToActorAsync(followerIri, propagated, delivery.RecipientIri, ct)
-                .ConfigureAwait(false);
+            else
+            {
+                // A remote follower needs a cross-instance delivery (the peer's handler records it in
+                // the follower's outbox on its instance). DeliverToActorAsync derives the follower's
+                // inbox from the follower's actor IRI; the delivery is signed as the recipient (the
+                // announcer on the peer's instance).
+                await _delivery
+                    .DeliverToActorAsync(followerIri, propagated, delivery.RecipientIri, ct)
+                    .ConfigureAwait(false);
+            }
         }
 
         // F-06 (relay fan-out): deliver the boost to each relay the announcer has subscribed to (a

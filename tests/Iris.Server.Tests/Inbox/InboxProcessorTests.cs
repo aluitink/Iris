@@ -111,8 +111,7 @@ public sealed class InboxProcessorTests
         var persistence = new InMemoryPersistenceProvider();
         SeedLocalActor(persistence, RecipientIri); // bob (local, the announcer)
         var (queue, processor) = BuildProcessorWithAnnounceHandler(persistence);
-        // bob has two local followers (carol, dave) and one remote follower (charlie) who is NOT
-        // propagated to (a remote follower is the remote instance's concern).
+        // bob has two local followers (carol, dave) and one remote follower (charlie).
         var carol = new Iri("https://b.domain.local/ap/v1/u/carol");
         var dave = new Iri("https://b.domain.local/ap/v1/u/dave");
         var charlie = new Iri("https://c.domain.local/ap/v1/u/charlie");
@@ -134,41 +133,34 @@ public sealed class InboxProcessorTests
         Assert.Single(outbox);
         Assert.IsType<Announce>(outbox[0]);
 
-        // The AnnounceActivityHandler propagated the announce to each LOCAL follower's inbox
-        // (carol and dave) — NOT the remote follower charlie. Two jobs, one per local follower.
-        Assert.Equal(2, queue.Count);
-        var jobA = await queue.TryDequeueAsync();
-        var jobB = await queue.TryDequeueAsync();
-        var deliveredInboxes = new[] { jobA!, jobB! }.Select(j => j.InboxIri).ToHashSet();
-        Assert.Contains(carol.InboxOf(), deliveredInboxes);
-        Assert.Contains(dave.InboxOf(), deliveredInboxes);
-        Assert.DoesNotContain(charlie.InboxOf(), deliveredInboxes);
+        // The AnnounceActivityHandler propagated the announce to each follower (mirroring Create):
+        // local followers (carol, dave) see the boost via their outbox on this instance (recorded
+        // directly — no cross-instance delivery); the remote follower (charlie) needs a cross-instance
+        // delivery (one job in the delivery queue).
+        var carolOutbox = await persistence.Activities.GetOutboxAsync(carol);
+        var daveOutbox = await persistence.Activities.GetOutboxAsync(dave);
+        Assert.Single(carolOutbox);
+        Assert.Single(daveOutbox);
+        var carolPropagated = Assert.IsType<Announce>(carolOutbox[0]);
+        var davePropagated = Assert.IsType<Announce>(daveOutbox[0]);
+        Assert.Equal(announce.Id, carolPropagated.Id); // deterministic IRI reused
+        Assert.Equal(announce.Id, davePropagated.Id);
+        // The propagated form is addressed (to) to its follower, cc'd to the announcer.
+        Assert.Equal(new Uri(carol.Value), ((Link)carolPropagated.To!.First()).Href);
+        Assert.Equal(new Uri(RecipientIri.Value), ((Link)carolPropagated.Cc!.First()).Href);
+        Assert.Equal(new Uri(dave.Value), ((Link)davePropagated.To!.First()).Href);
+        Assert.Equal(new Uri(RecipientIri.Value), ((Link)davePropagated.Cc!.First()).Href);
 
-        // Each propagated activity is the deterministic Announce (same IRI as the original),
-        // addressed (to) to its follower, cc'd to the announcer, and signed as the announcer (bob).
-        foreach (var job in new[] { jobA!, jobB! })
-        {
-            // The delivery is addressed to a local follower's inbox (derived from the follower IRI).
-            Assert.True(job.InboxIri.IsAbsolute);
-            var propagated = Assert.IsType<Announce>(job.Activity);
-            Assert.Equal(announce.Id, propagated.Id); // deterministic IRI reused
-            var actor = propagated.Actor!.First();
-            var cc = propagated.Cc!.First();
-            var to = propagated.To!.First();
-            Assert.IsType<Link>(actor);
-            Assert.IsType<Link>(cc);
-            Assert.IsType<Link>(to);
-            // The actor and cc are the announcer (bob).
-            Assert.Equal(new Uri(RecipientIri.Value), (actor as Link)!.Href);
-            Assert.Equal(new Uri(RecipientIri.Value), (cc as Link)!.Href);
-            // The `to` audience is a local follower (one of carol/dave).
-            var toHref = (to as Link)!.Href;
-            Assert.True(
-                toHref == new Uri(carol.Value) || toHref == new Uri(dave.Value),
-                $"Expected the announce to be addressed to carol or dave, got {toHref}");
-            // The delivery is signed as the announcer (bob) — the recipient whose inbox received it.
-            Assert.Equal(RecipientIri, job.ActorIri);
-        }
+        // The remote follower (charlie) receives a cross-instance delivery (one job).
+        Assert.Equal(1, queue.Count);
+        var job = (await queue.TryDequeueAsync())!;
+        Assert.Equal(charlie.InboxOf(), job.InboxIri);
+        var remotePropagated = Assert.IsType<Announce>(job.Activity);
+        Assert.Equal(announce.Id, remotePropagated.Id); // deterministic IRI reused
+        Assert.Equal(new Uri(charlie.Value), ((Link)remotePropagated.To!.First()).Href);
+        Assert.Equal(new Uri(RecipientIri.Value), ((Link)remotePropagated.Cc!.First()).Href);
+        // The delivery is signed as the announcer (bob).
+        Assert.Equal(RecipientIri, job.ActorIri);
     }
 
     // --- Handler: an Announce with no local followers is still recorded in the outbox --

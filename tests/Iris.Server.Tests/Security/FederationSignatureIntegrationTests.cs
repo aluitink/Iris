@@ -562,41 +562,32 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         Assert.Single(outbox);
         Assert.IsType<Announce>(outbox[0]);
 
-        // B's AnnounceActivityHandler propagated the Announce to bob's inbox (bob is carol's local
-        // follower). The DeliveryWorker POSTs the propagated copy (to=bob, cc=carol, same
-        // deterministic IRI) to bob's inbox over the wire, signed as carol (the announcer); B
-        // validates carol's signature (fetching B's actor doc for carol) and stores it under the
-        // deterministic IRI — the same IRI as the original announce. Because the propagated copy
-        // reuses the deterministic IRI, B's store ends up holding the propagated form (to=bob); wait
-        // until the stored activity is the propagated form, which only the worker's delivery produces.
+        // B's AnnounceActivityHandler propagated the Announce to bob (carol's local follower). A local
+        // follower sees the boost via the follower's outbox on this instance (recorded directly — no
+        // cross-instance delivery, mirroring CreateActivityHandler's local-follower skip). The
+        // propagated form (to=bob, cc=carol, same deterministic IRI) is recorded in bob's outbox; the
+        // original form (to=Public) remains in the activity store. Wait for bob's outbox to surface
+        // the propagated boost.
         await WaitForAsync(async () =>
-        {
-            if (!await bPersistence.Activities.TryGetActivityAsync(announceIri, out var propagated)
-                || propagated is not Announce a2)
-            {
-                return false;
-            }
+            (await bPersistence.Activities.GetOutboxAsync(bobActorIri))
+                .Any(o => o is Announce a2 && a2.Id == announceIri.Value),
+            timeout: TimeSpan.FromSeconds(10));
 
-            return (a2.To?.FirstOrDefault() as ILink) is { Href: { } href } && href == new Uri(bobActorIri.Value);
-        }, timeout: TimeSpan.FromSeconds(10));
-
-        // The propagated Announce (stored under the deterministic IRI) is addressed to bob, cc'd to
-        // carol, and references the announced object — proving the worker delivered it to bob's inbox
-        // and B validated carol's signature on the propagated copy.
-        Assert.True(
-            await bPersistence.Activities.TryGetActivityAsync(announceIri, out var stored),
-            "B should have stored the propagated Announce under the deterministic IRI");
-        var storedAnnounce = Assert.IsType<Announce>(stored!);
-        var toLink = storedAnnounce.To!.First() as ILink;
+        // The propagated Announce (in bob's outbox) is addressed to bob, cc'd to carol, and references
+        // the announced object — proving the handler propagated the boost to the local follower's outbox.
+        var bobOutbox = await bPersistence.Activities.GetOutboxAsync(bobActorIri);
+        var propagated = Assert.IsType<Announce>(
+            bobOutbox.First(o => o is Announce a && a.Id == announceIri.Value));
+        var toLink = propagated.To!.First() as ILink;
         Assert.NotNull(toLink);
         Assert.Equal(new Uri(bobActorIri.Value), toLink!.Href); // addressed to the local follower (bob)
-        var ccLink = storedAnnounce.Cc!.First() as ILink;
+        var ccLink = propagated.Cc!.First() as ILink;
         Assert.NotNull(ccLink);
         Assert.Equal(new Uri(carolActorIri.Value), ccLink!.Href); // cc'd to the announcer (carol)
-        Assert.NotNull(storedAnnounce.Object);
-        Assert.Contains(storedAnnounce.Object!, o => o is ILink { Href: { } href } && href == objectIri.Uri);
-        Assert.NotNull(storedAnnounce.Actor);
-        Assert.Contains(storedAnnounce.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
+        Assert.NotNull(propagated.Object);
+        Assert.Contains(propagated.Object!, o => o is ILink { Href: { } href } && href == objectIri.Uri);
+        Assert.NotNull(propagated.Actor);
+        Assert.Contains(propagated.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
     }
 
     // --- Key resolution: B resolves alice's key by fetching A's actor doc --------
