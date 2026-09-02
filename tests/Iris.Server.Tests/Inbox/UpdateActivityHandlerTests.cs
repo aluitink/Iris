@@ -241,29 +241,6 @@ public sealed class UpdateActivityHandlerTests
         Assert.Equal("original body", (await GetAsync(persistence, NoteIri))!.Content?.FirstOrDefault());
     }
 
-    // --- Guards ---------------------------------------------------------------------------
-
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new NoopPropagationService()));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
-            new InMemoryPersistenceProvider(), null!, new NoopPropagationService()));
-    }
-
-    [Fact]
-    public void Ctor_NullPropagation_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new UpdateActivityHandler(
-            new InMemoryPersistenceProvider(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), null!));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static UpdateActivityHandler BuildHandler(

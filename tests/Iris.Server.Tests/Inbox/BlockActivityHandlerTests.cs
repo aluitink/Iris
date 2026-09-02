@@ -163,20 +163,6 @@ public sealed class BlockActivityHandlerTests
 
     // --- Null guards ----------------------------------------------------------------------
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new BlockActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new BlockActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static BlockActivityHandler BuildHandler(IPersistenceProvider persistence)

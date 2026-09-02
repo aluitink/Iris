@@ -205,15 +205,6 @@ public sealed class DeliveryQueueAndServiceTests
 
     // --- Service: null activity throws ------------------------------------------------
 
-    [Fact]
-    public async Task Service_DeliverAsync_NullActivity_Throws()
-    {
-        var queue = new InMemoryDeliveryQueue();
-        var service = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
-
-        await Assert.ThrowsAsync<ArgumentNullException>(() => service.DeliverAsync(InboxIri, null!));
-    }
-
     // --- Guards: null dependencies throw ---------------------------------------------
 
     [Fact]

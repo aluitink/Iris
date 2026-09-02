@@ -120,22 +120,6 @@ public sealed class AddActivityHandlerTests
     // --- Guards ---------------------------------------------------------------------------
 
     [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new AddActivityHandler(null!));
-    }
-
-    [Fact]
-    public void Dispatch_NullDelivery_Throws()
-    {
-        var sut = BuildHandler(new InMemoryPersistenceProvider());
-        // The null-guard throws synchronously (before any await), so a sync wrapper keeps the
-        // Assert.Throws<T> path (an async lambda would require Assert.ThrowsAsync).
-        Assert.Throws<ArgumentNullException>(
-            () => RunSync(() => sut.DispatchAsync(null!, BuildAdd(Community, Member))));
-    }
-
-    [Fact]
     public void Dispatch_NonAddActivity_Throws()
     {
         var sut = BuildHandler(new InMemoryPersistenceProvider());

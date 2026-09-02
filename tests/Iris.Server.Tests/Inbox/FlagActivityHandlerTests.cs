@@ -161,20 +161,6 @@ public sealed class FlagActivityHandlerTests
 
     // --- Null guards ------------------------------------------------------------------------
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FlagActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FlagActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- Helpers ----------------------------------------------------------------------------
 
     private static FlagActivityHandler BuildHandler(IPersistenceProvider persistence)

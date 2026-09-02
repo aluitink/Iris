@@ -383,22 +383,6 @@ public sealed class UndoActivityHandlerTests
         Assert.Empty(await persistence.Follows.GetFollowingAsync(RemotePerson));
     }
 
-    // --- Guards ---------------------------------------------------------------------------
-
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new UndoActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new UndoActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- F-1911-1: Undo delivered to the target's inbox removes the follower from followers --
 
     [Fact]

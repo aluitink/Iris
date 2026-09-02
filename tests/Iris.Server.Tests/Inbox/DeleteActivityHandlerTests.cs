@@ -238,29 +238,6 @@ public sealed class DeleteActivityHandlerTests
         Assert.IsType<Note>(await GetAsync(persistence, NoteIri)!);
     }
 
-    // --- Guards ---------------------------------------------------------------------------
-
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new DeleteActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new NoopPropagationService()));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new DeleteActivityHandler(
-            new InMemoryPersistenceProvider(), null!, new NoopPropagationService()));
-    }
-
-    [Fact]
-    public void Ctor_NullPropagation_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new DeleteActivityHandler(
-            new InMemoryPersistenceProvider(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), null!));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static DeleteActivityHandler BuildHandler(

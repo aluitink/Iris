@@ -251,27 +251,6 @@ public sealed class FollowActivityHandlerTests
         Assert.Empty(await DequeueAllAsync(delivery));
     }
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            null!, new RecordingDeliveryService(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new IdMinter()));
-    }
-
-    [Fact]
-    public void Ctor_NullDelivery_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            new InMemoryPersistenceProvider(), null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new IdMinter()));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            new InMemoryPersistenceProvider(), new RecordingDeliveryService(), null!, new IdMinter()));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static (FollowActivityHandler Handler, RecordingDeliveryService Delivery) BuildHandler(

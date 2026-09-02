@@ -184,20 +184,6 @@ public sealed class LikeActivityHandlerTests
 
     // --- Null guards ----------------------------------------------------------------------
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new LikeActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new LikeActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()

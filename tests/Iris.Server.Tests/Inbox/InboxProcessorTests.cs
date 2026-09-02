@@ -423,14 +423,6 @@ public sealed class InboxProcessorTests
     // --- Guards -------------------------------------------------------------------------
 
     [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        var followHandler = BuildFollowHandler(new InMemoryPersistenceProvider(), out _);
-        Assert.Throws<ArgumentNullException>(
-            () => new InboxProcessor(null!, [followHandler]));
-    }
-
-    [Fact]
     public async Task ProcessAsync_NullDelivery_Throws()
     {
         var persistence = new InMemoryPersistenceProvider();

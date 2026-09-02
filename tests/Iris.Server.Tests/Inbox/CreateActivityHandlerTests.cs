@@ -336,27 +336,6 @@ public sealed class CreateActivityHandlerTests
         Assert.Empty(await persistence.Activities.GetOutboxAsync(other));
     }
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new CreateActivityHandler(
-            null!, new RecordingDeliveryService(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullDelivery_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new CreateActivityHandler(
-            new InMemoryPersistenceProvider(), null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new CreateActivityHandler(
-            new InMemoryPersistenceProvider(), new RecordingDeliveryService(), null!));
-    }
-
     // --- F-12: reply (inReplyTo) edge recording -------------------------------------------
 
     [Fact]

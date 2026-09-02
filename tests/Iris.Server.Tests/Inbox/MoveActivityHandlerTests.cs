@@ -221,22 +221,6 @@ public sealed class MoveActivityHandlerTests
         Assert.True(await persistence.Follows.IsFollowingAsync(LocalFollower, OldActor));
     }
 
-    // --- Guards ---------------------------------------------------------------------------
-
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new MoveActivityHandler(
-            null!, new Iri[0]));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalCommunities_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new MoveActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()

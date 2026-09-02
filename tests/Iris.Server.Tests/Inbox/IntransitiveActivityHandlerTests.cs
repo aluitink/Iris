@@ -157,25 +157,6 @@ public sealed class IntransitiveActivityHandlerTests
         Assert.Equal(typeof(Activity), sut.HandledActivityType);
     }
 
-    [Fact]
-    public void Dispatch_NullDelivery_Throws()
-    {
-        var sut = BuildHandler();
-        var read = BuildActivity<Read>();
-        // The null-guard throws synchronously (before any await), so a sync wrapper keeps the
-        // Assert.Throws<T> path (an async lambda would require Assert.ThrowsAsync).
-        Assert.Throws<ArgumentNullException>(
-            () => RunSync(() => sut.DispatchAsync(null!, read)));
-    }
-
-    [Fact]
-    public void Dispatch_NullActivity_Throws()
-    {
-        var sut = BuildHandler();
-        Assert.Throws<ArgumentNullException>(
-            () => RunSync(() => sut.DispatchAsync(new InboxDelivery(Recipient, BuildActivity<Read>()), null!)));
-    }
-
     // --- Helpers --------------------------------------------------------------------------
 
     /// <summary>

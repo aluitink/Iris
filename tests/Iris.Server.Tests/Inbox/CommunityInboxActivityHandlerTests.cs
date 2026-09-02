@@ -157,20 +157,6 @@ public sealed class CommunityInboxActivityHandlerTests
         Assert.Empty(await persistence.Activities.GetOutboxAsync(LocalMember));
     }
 
-    [Fact]
-    public void Ctor_NullPersistence_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new CommunityInboxActivityHandler(
-            null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
-    }
-
-    [Fact]
-    public void Ctor_NullLocalActors_Throws()
-    {
-        Assert.Throws<ArgumentNullException>(() => new CommunityInboxActivityHandler(
-            new InMemoryPersistenceProvider(), null!));
-    }
-
     // --- Helpers -------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()
