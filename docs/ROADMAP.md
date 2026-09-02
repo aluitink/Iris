@@ -911,14 +911,17 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
    sample UI; no contradictions, no stale pre-20.0 id computation, no overhaul lurking. One documented
    deferral (inbound/federated attachment URL-rewrite, scoped out by 161v) recorded as a known open item.
    See `docs/changes/161x-20.6-cohesion-pass.md`.**
-- [ ] **20.7 — Manual test plan (sample UI + wire) — the capstone, done last.** Develop and execute a
+- [x] **20.7 — Manual test plan (sample UI + wire) — the capstone, done last.** Develop and execute a
   **manual test plan** (Playwright-MCP-driven, as in Phase 19's method) that **confirms the recent major
   changes** using the sample UI + wire evidence: cover every 20.x capability from a user's seat (log on,
   compose with media + markdown, post → outbox returns the created object with its minted id, browse own +
   peer outboxes with paging, like/boost + see counts sync, receive in inbox → browser-accessible with
   local attachment serving, sensitive-object reveal, proxy fallback on a CORS-failing remote read). Record
   each as a PASS/FAIL/GAP/BLOCKED checkpoint in a change doc. This is the **last** item — it confirms the
-  finished architecture, not the reverse.
+  finished architecture, not the reverse. **Done** — all 8 checkpoints PASS on the `docker-compose.yml`
+  production-shape stack. Two defects found + fixed (announce-edge, `items`-always-array) with regression
+  tests. One deployment/UX sharp edge documented (default logon base GET-only). See
+  [162-20.7-manual-test-plan.md](changes/162-20.7-manual-test-plan.md).
 
 ## Remaining work (pre-Phase-19 carry-forward, now superseded)
 
