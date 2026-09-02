@@ -9,9 +9,34 @@
     {
         <div class="object-item">
             <span class="object-type">@obj.GetType().Name</span>
-            @if (obj is Actor { PreferredUsername: { Length: > 0 } username })
+            @if (obj is Actor actor)
             {
-                <span class="object-handle">@username</span>
+                @if (actor.PreferredUsername is { Length: > 0 } username)
+                {
+                    <span class="object-handle">@username</span>
+                }
+                @if (ActorName is { Length: > 0 } name)
+                {
+                    <span class="object-name">@name</span>
+                }
+                @if (ActorIconIri is { } iconIri)
+                {
+                    <span class="object-icon">
+                        <a href="@iconIri" title="@iconIri">
+                            <img src="@MediaProxyUrl(iconIri)" alt="avatar" class="object-avatar" loading="lazy" />
+                        </a>
+                    </span>
+                }
+                @if (ActorSummary is { Length: > 0 } summary)
+                {
+                    <div class="object-summary">@summary</div>
+                }
+                @if (ActorUrlIri is { } urlIri)
+                {
+                    <div class="object-url">
+                        <a href="@urlIri" title="@urlIri" class="object-url-link">@urlIri</a>
+                    </div>
+                }
             }
             @if (AuthorIri is { } author)
             {
@@ -186,6 +211,88 @@
     /// <see cref="IriExtensions.GetSummary"/>.
     /// </summary>
     private string? Summary => Obj?.GetSummary();
+
+    /// <summary>
+    /// The actor's <c>name</c> (the first entry), when present — rendered in the object view for
+    /// actor documents (19.8.3).
+    /// </summary>
+    private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
+
+    /// <summary>
+    /// The actor's <c>icon</c> IRI (the first icon's resolved IRI), when present — rendered as an
+    /// avatar image in the object view for actor documents (19.8.3).
+    /// </summary>
+    private string? ActorIconIri
+    {
+        get
+        {
+            var actor = Obj as Actor;
+            if (actor?.Icon is not { } icons)
+            {
+                return null;
+            }
+
+            foreach (var icon in icons)
+            {
+                var iri = icon is IObject { Id: { Length: > 0 } id } ? id
+                    : icon is ILink { Href: { } href } ? href.ToString()
+                    : null;
+                if (iri is not null)
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The actor's <c>summary</c> (the first entry), when present — rendered in the object view for
+    /// actor documents (19.8.3). Distinct from the sensitivity <see cref="Summary"/> (which is the
+    /// object's <c>summary</c> for the sensitive-content notice).
+    /// </summary>
+    private string? ActorSummary => (Obj as Actor)?.Summary?.FirstOrDefault();
+
+    /// <summary>
+    /// The actor's <c>url</c> IRI (the first URL's Href), when present — rendered as a link in the
+    /// object view for actor documents (19.8.3).
+    /// </summary>
+    private string? ActorUrlIri
+    {
+        get
+        {
+            var actor = Obj as Actor;
+            if (actor?.Url is not { } urls)
+            {
+                return null;
+            }
+
+            return urls.FirstOrDefault()?.Href?.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Rewrites a media IRI to the same-origin media-proxy URL (Decision 057), so cross-origin images
+    /// (e.g. an actor's avatar) load in the browser. Returns the raw IRI when the session is not
+    /// available (the component renders without the proxy rewrite).
+    /// </summary>
+    private string MediaProxyUrl(string iri)
+    {
+        var session = Session;
+        if (session is null || !Uri.TryCreate(iri, UriKind.Absolute, out var uri))
+        {
+            return iri;
+        }
+
+        var dialBase = session.DialBaseUri;
+        if (dialBase is null)
+        {
+            return iri;
+        }
+
+        return $"{dialBase.GetLeftPart(UriPartial.Authority)}/ap/v1/media/proxy?url={Uri.EscapeDataString(iri)}";
+    }
 
     /// <summary>
     /// The object's <c>content</c> rendered as HTML from Markdown (20.4c). The content is run through

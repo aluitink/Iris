@@ -203,6 +203,40 @@ ul.object-list li {
     font-weight: 600;
 }
 
+.object-name {
+    color: #e6e9ef;
+    font-weight: 500;
+}
+
+.object-icon {
+    display: inline-flex;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+}
+
+.object-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.25rem;
+    object-fit: cover;
+}
+
+.object-summary {
+    color: #9aa4b2;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+.object-url {
+    margin-top: 0.25rem;
+}
+
+.object-url-link {
+    color: #8fd3a7;
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
 .object-iri {
     color: #9aa4b2;
     font-size: 0.8rem;

@@ -170,4 +170,125 @@ public sealed class S19ObjectViewQualityTests
         var publishedEl = cut.Find(".object-published");
         Assert.Equal(published.ToString("o"), publishedEl.GetAttribute("title"));
     }
+
+    // --- 19.8.3: actor document fields (name, icon, summary, url) -------------------
+
+    [Fact]
+    public void ObjectView_ActorWithName_RendersName()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+            Name = ["Alice Example"],
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        var nameEl = cut.Find(".object-name");
+        Assert.Equal("Alice Example", nameEl.TextContent.Trim());
+    }
+
+    [Fact]
+    public void ObjectView_ActorWithoutName_RendersNoName()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        Assert.Empty(cut.FindAll(".object-name"));
+    }
+
+    [Fact]
+    public void ObjectView_ActorWithIcon_RendersAvatarImage()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+            Icon = [new Link { Href = new Uri("https://iris-dev1.luit.ink/ap/v1/media/avatar-alice.png") }],
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        var img = cut.Find(".object-avatar");
+        Assert.NotNull(img);
+        var src = img.GetAttribute("src");
+        Assert.NotNull(src);
+        Assert.Contains("avatar-alice", src);
+    }
+
+    [Fact]
+    public void ObjectView_ActorWithoutIcon_RendersNoAvatar()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        Assert.Empty(cut.FindAll(".object-avatar"));
+    }
+
+    [Fact]
+    public void ObjectView_ActorWithSummary_RendersSummary()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+            Summary = ["A test user for the Iris sample instance."],
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        var summaryEl = cut.Find(".object-summary");
+        Assert.Equal("A test user for the Iris sample instance.", summaryEl.TextContent.Trim());
+    }
+
+    [Fact]
+    public void ObjectView_ActorWithUrl_RendersUrlLink()
+    {
+        var actor = new Person
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice",
+            PreferredUsername = "alice",
+            Url = [new Link { Href = new Uri("https://alice.example.com") }],
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, actor);
+
+        var urlLink = cut.Find(".object-url-link");
+        Assert.Equal("https://alice.example.com/", urlLink.GetAttribute("href"));
+    }
+
+    [Fact]
+    public void ObjectView_NoteDoesNotRenderActorFields()
+    {
+        var note = new Note
+        {
+            Id = "https://iris-dev1.luit.ink/ap/v1/u/alice/notes/1",
+            Content = ["<p>a note</p>"],
+        };
+
+        using var ctx = new BunitContext();
+        var cut = RenderObjectView(ctx, note);
+
+        Assert.Empty(cut.FindAll(".object-name"));
+        Assert.Empty(cut.FindAll(".object-avatar"));
+        Assert.Empty(cut.FindAll(".object-summary"));
+        Assert.Empty(cut.FindAll(".object-url-link"));
+    }
 }
