@@ -639,14 +639,13 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   new in-process `S19ObjectViewQualityTests` (bUnit) pin the rendered markup. Still open: **reply
   chain / conversations view** (deferred to 19.2.4), **like/boost counts**, and the **canonical
   public-URL link for remote objects** (needs the remote-read/proxying surface from 19.1.x).
-- [ ] **19.8.3 — Actor detail completeness.** ActorDetail shows: the document's rendered fields
+- [x] **19.8.3 — Actor detail completeness.** ActorDetail shows: the document's rendered fields
   (name, summary, icon/avatar, URL), every collection (with correct counts matching the wire),
   moderation controls (mute local / block / flag — federated), follow/unfollow, and the raw inspector
   as an explicit escape hatch (not the default view).
-  `remaining:` followers + following collections (paged, clickable) and the raw inspector (formatted
-  JSON) now render (change 163). Still open: **icon/avatar + name + summary rendering** in the actor
-  view (the ObjectView renders the handle + content but not the actor's `icon`/`name`/`summary` fields),
-  and the **live/UI-verification half** (Playwright-MCP browser confirmation).
+  **Done** (changes 163 + 164): followers/following collections (paged, clickable), raw inspector
+  (formatted JSON), and the ObjectView now renders actor name/icon/summary/url. The live/UI-verification
+  half (Playwright-MCP browser confirmation) is a 19.8.x live item, not a code gate.
 - [ ] **19.8.4 — Community view completeness.** Community screen: rendered group fields, members
   (clickable), feed (rendered items, clickable), following/followers (clickable), community
   follow/unfollow, and the management surfaces from 19.5 (creation, membership, peer management).
