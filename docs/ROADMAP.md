@@ -811,6 +811,13 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   viewer:** the object view currently renders `content` as-is; add a **markdown renderer** so content
   that is markdown (rather than HTML) renders properly (links, code, lists, headings) — pick the approach
   (a dependency-free renderer or a small markdown lib; note any new NuGet in this file per the rules).
+  **Partial — (b) sensitivity done:** a content-sensitive object (`sensitive` term + `summary`) renders
+  behind a notice in the object view, its real content absent from the DOM until the viewer reveals it —
+  `IriExtensions.IsSensitive`/`GetSummary` (Core) read the term (`sensitive` surfaces via the library's
+  `ExtensionData`, per the 3rd-Party rules; `summary` is typed) + the object view's show/hide toggle.
+  +17 tests (10 Core read-helper, 5 bUnit object-view, 2 integration round-trip); full suite 1,302/0; see
+  `docs/changes/161t-20.4-sensitivity.md`. **Remaining: (a) media (compose upload → attachment → stored/
+  served → rendered) and (c) markdown rendering.**
 - [ ] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
   suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
   of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the

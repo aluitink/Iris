@@ -166,13 +166,23 @@ Iris.slnx
    **Suite green, 0 failed:** Core 210, Client 136, Ext 29, Server 770, LiveInterop 18,
    SampleBlazor 97 (+4), SampleServer 25 — **1,285 total**.
 
-   **Next: Phase 20.4 (Implementation feature work: media, sensitivity, markdown rendering).** With 20.3
-   closed, the next item is the self-contained feature work: **(a) media** (compose upload → Create object
-   with attachment → stored/served → rendered in the object view, building on 20.2's attachment-rewrite
-   decision — the local media storage + URL-rewrite staged from 20.2), **(b) sensitivity** (the
-   content-sensitivity / warning extensions, e.g. `sensitive`/`summary`, rendering behind a blur/notice),
-   and **(c) markdown** (a renderer so `content` that is markdown renders properly). Phase 20 then proceeds
-   20.5 test triage → 20.6 cohesion → 20.7 manual plan.
+    **Phase 20.4 (b) (change 161t) — PARTIAL: sensitivity done.** A **content-sensitive object**
+    (`sensitive` term + `summary`) now renders **behind a notice** in the object view, its real content
+    **absent from the DOM** until the viewer reveals it (a Show/Hide toggle). Core:
+    `IriExtensions.IsSensitive` (the `sensitive` term surfaces via the library's `ExtensionData` — the
+    v0.2.4 `Object` type does not model it as a property — read per the 3rd-Party Rule 6) +
+    `IriExtensions.GetSummary` (joins the typed `summary`). ObjectView branches on `IsSensitive` (notice +
+    reveal; content rendered only when revealed). +17 tests (10 Core read-helper, 5 bUnit object-view, 2
+    integration round-trip). `docs/changes/161t-20.4-sensitivity.md`.
+    **Suite green, 0 failed:** Core 220 (+10), Client 136, Ext 29, Server 770, LiveInterop 18,
+    SampleBlazor 104 (+7), SampleServer 25 — **1,302 total**.
+
+    **Next: Phase 20.4 (continued) — (a) media + (c) markdown remain.** With 20.3 and 20.4(b) closed, the
+    next self-contained slices are **(a) media** (compose upload → Create object with attachment →
+    stored/served → rendered in the object view, building on 20.2's attachment-rewrite decision — the local
+    media storage + URL-rewrite staged from 20.2) and **(c) markdown** (a renderer so `content` that is
+    markdown renders properly — pick a dependency-free renderer or a small lib; note any new NuGet in
+    ROADMAP.md). Phase 20 then proceeds 20.5 test triage → 20.6 cohesion → 20.7 manual plan.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).
