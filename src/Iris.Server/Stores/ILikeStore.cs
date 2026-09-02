@@ -6,10 +6,16 @@ namespace Iris.Server.Stores;
 /// Records and queries like (endorsement) relationships.
 /// </summary>
 /// <remarks>
-/// A like is the directed edge <c>liker → likedObject</c>. The store tracks which objects a local
-/// actor has liked so the actor's <c>liked</c> collection can be served (ActivityPub's
-/// <c>Liked</c> relationship). Unlike follows, only the <c>liker → object</c> direction is needed
-/// (the <c>liked</c> collection lists objects the actor liked, not the actors who liked an object).
+/// A like is the directed edge <c>liker → likedObject</c>. The store tracks both directions:
+/// <list type="bullet">
+/// <item>The <c>liker → [liked objects]</c> direction, so the actor's <c>liked</c> collection can be
+/// served (ActivityPub's <c>Liked</c> relationship).</item>
+/// <item>The <c>liked object → [likers]</c> reverse index, so an object's <c>likes</c> collection
+/// (and thus its like count) can be assembled without scanning every stored activity — the
+/// per-object interaction counter deferred by decision 056 (d).</item>
+/// </list>
+/// Both directions are maintained atomically on <see cref="RecordLikeAsync"/> /
+/// <see cref="RemoveLikeAsync"/>.
 /// </remarks>
 public interface ILikeStore
 {
@@ -46,4 +52,13 @@ public interface ILikeStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when the like edge exists.</returns>
     public Task<bool> HasLikedAsync(Iri likerIri, Iri likedObjectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of the actors that have liked <paramref name="likedObjectIri"/> (the
+    /// <c>likes</c> reverse index, the per-object like counter — decision 056 (d)).
+    /// </summary>
+    /// <param name="likedObjectIri">The IRI of the object whose likers are requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the liker IRIs (possibly empty).</returns>
+    public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default);
 }

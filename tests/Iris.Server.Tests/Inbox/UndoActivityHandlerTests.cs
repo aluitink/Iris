@@ -366,6 +366,54 @@ public sealed class UndoActivityHandlerTests
         Assert.True(await persistence.Moderation.IsBlockedAsync(LocalPerson, RemoteTarget));
     }
 
+    // --- Un-boost (20.4e): Undo of an Announce removes the announce edge + outbox entry ------
+
+    [Fact]
+    public async Task HandleAsync_LocalAnnouncerUndoesAnnounce_RemovesEdgeAndOutboxEntry()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // bob (local) boosts (Announce)s a remote note: as the AnnounceActivityHandler would, the boost
+        // is recorded in bob's outbox (AddToOutboxAsync), the announce edge is recorded (RecordAnnounceAsync),
+        // and the activity is stored (so the Undo can resolve the original announce by IRI).
+        var announce = BuildAnnounce(LocalPerson, RemoteTarget);
+        await persistence.Activities.AddToOutboxAsync(LocalPerson, announce);
+        await persistence.Announces.RecordAnnounceAsync(LocalPerson, RemoteTarget);
+        await persistence.Activities.PutActivityAsync(announce);
+        Assert.True(await persistence.Announces.HasAnnouncedAsync(LocalPerson, RemoteTarget));
+        Assert.Contains(announce.Id!, (await persistence.Activities.GetOutboxAsync(LocalPerson))
+            .Select(a => a.Id).ToArray());
+
+        // bob un-boosts: the Undo of the Announce is handled.
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, BuildUndo(announce)), BuildUndo(announce));
+
+        // The announce edge (the object's `shares` reverse index) is removed…
+        Assert.False(await persistence.Announces.HasAnnouncedAsync(LocalPerson, RemoteTarget));
+        Assert.DoesNotContain(LocalPerson, await persistence.Announces.GetAnnouncersAsync(RemoteTarget));
+        // …and the boost is removed from bob's outbox (an un-boost).
+        Assert.DoesNotContain(announce.Id!, (await persistence.Activities.GetOutboxAsync(LocalPerson))
+            .Select(a => a.Id).ToArray());
+    }
+
+    [Fact]
+    public async Task HandleAsync_AnnonceNotStored_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+        await persistence.Announces.RecordAnnounceAsync(LocalPerson, RemoteTarget);
+
+        // The Undo references an Announce that was never stored → the edge cannot be resolved → no-op.
+        var announce = BuildAnnounce(LocalPerson, RemoteTarget);
+        // (deliberately not PutActivityAsync)
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, BuildUndo(announce)), BuildUndo(announce));
+
+        // The edge is untouched.
+        Assert.True(await persistence.Announces.HasAnnouncedAsync(LocalPerson, RemoteTarget));
+    }
+
     // --- Remote recipient: not this instance's concern --------------------------------------
 
     [Fact]
@@ -473,9 +521,16 @@ public sealed class UndoActivityHandlerTests
 
     private static Flag BuildFlag(Iri flaggerIri, Iri flaggedIri) => new()
     {
-        Id = $"{flaggerIri}/flags/{flaggedIri.Value}",
+        Id = $"{flaggerIri}/flags/{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(flaggerIri.Value) }],
         Object = [new Link { Href = new Uri(flaggedIri.Value) }],
+    };
+
+    private static Announce BuildAnnounce(Iri announcerIri, Iri announcedObjectIri) => new()
+    {
+        Id = $"{announcerIri}/announces/{Guid.NewGuid():N}",
+        Actor = [new Link { Href = new Uri(announcerIri.Value) }],
+        Object = [new Link { Href = new Uri(announcedObjectIri.Value) }],
     };
 
     private static Undo BuildUndo(Activity activity)

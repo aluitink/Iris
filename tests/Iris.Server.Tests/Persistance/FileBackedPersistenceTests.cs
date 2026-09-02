@@ -150,6 +150,30 @@ public sealed class FileBackedPersistenceTests : IDisposable
         var p2 = new FileBackedPersistenceProvider(dir);
         Assert.True(await p2.Likes.HasLikedAsync(alice, note));
         Assert.Contains(note, await p2.Likes.GetLikedAsync(alice));
+        // The reverse index (the object's `likes` collection) survives too.
+        Assert.Contains(alice, await p2.Likes.GetLikersAsync(note));
+    }
+
+    // --- Announce store: edges survive a restart (the object's `shares` collection) ---------
+
+    [Fact]
+    public async Task AnnounceStore_Edges_SurviveRestart()
+    {
+        var dir = Dir("announces-restart");
+        Directory.CreateDirectory(dir);
+        var alice = IriOf("https://iris.example/ap/u/alice");
+        var note = IriOf("https://iris.example/ap/n/note-1");
+
+        using (var p1 = new FileBackedPersistenceProvider(dir))
+        {
+            await p1.Announces.RecordAnnounceAsync(alice, note);
+        }
+
+        var p2 = new FileBackedPersistenceProvider(dir);
+        Assert.True(await p2.Announces.HasAnnouncedAsync(alice, note));
+        Assert.Contains(note, await p2.Announces.GetAnnouncedAsync(alice));
+        // The reverse index (the object's `shares` collection) survives too.
+        Assert.Contains(alice, await p2.Announces.GetAnnouncersAsync(note));
     }
 
     // --- Reply store: edges survive a restart ----------------------------------------------

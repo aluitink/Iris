@@ -868,6 +868,32 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetLikesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The object's likers are a full, non-paged extension collection at {object}/likes (the bare,
+        // non-namespaced ecosystem term), so they are enumerated exactly like any other collection
+        // (GetCollectionItemsAsync reads through the CollectionPageCache). The items are the likers'
+        // IRIs (links); the count of yielded items is the object's like count.
+        return GetCollectionItemsAsync(objectIri.LikesOf(), query, ct);
+    }
+
+    /// <inheritdoc/>
+    public IAsyncEnumerable<IObjectOrLink> GetSharesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default)
+    {
+        // The object's announcers (boosters) are a full, non-paged extension collection at
+        // {object}/shares (the bare, non-namespaced ecosystem term), so they are enumerated exactly
+        // like any other collection. The items are the announcers' IRIs (links); the count of yielded
+        // items is the object's boost count.
+        return GetCollectionItemsAsync(objectIri.SharesOf(), query, ct);
+    }
+
+    /// <inheritdoc/>
     public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
         Iri actorId,
         ProxyCredentials credentials,

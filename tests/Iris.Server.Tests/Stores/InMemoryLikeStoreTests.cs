@@ -118,6 +118,54 @@ public sealed class InMemoryLikeStoreTests
         Assert.False(await sut.HasLikedAsync(Carol, Note1));
     }
 
+    // --- The liked object → [likers] reverse index (the object's `likes` collection) -----
+
+    [Fact]
+    public async Task RecordLike_ThenGetLikers_ReturnsTheLiker()
+    {
+        var sut = new InMemoryLikeStore();
+
+        await sut.RecordLikeAsync(Bob, Note1);
+
+        var likers = await sut.GetLikersAsync(Note1);
+        Assert.Equal([Bob], likers);
+    }
+
+    [Fact]
+    public async Task GetLikers_NoLikes_ReturnsEmpty()
+    {
+        var sut = new InMemoryLikeStore();
+
+        Assert.Empty(await sut.GetLikersAsync(Note1));
+    }
+
+    [Fact]
+    public async Task RecordLike_MultipleLikers_AllReturned()
+    {
+        var sut = new InMemoryLikeStore();
+        await sut.RecordLikeAsync(Bob, Note1);
+        await sut.RecordLikeAsync(Carol, Note1);
+
+        var likers = await sut.GetLikersAsync(Note1);
+        Assert.Equal(2, likers.Count);
+        Assert.Contains(Bob, likers);
+        Assert.Contains(Carol, likers);
+    }
+
+    [Fact]
+    public async Task RecordLike_ThenRemove_RemovesFromReverseIndex()
+    {
+        var sut = new InMemoryLikeStore();
+        await sut.RecordLikeAsync(Bob, Note1);
+        await sut.RecordLikeAsync(Carol, Note1);
+
+        await sut.RemoveLikeAsync(Bob, Note1);
+
+        // Bob is gone from the object's likes; Carol remains.
+        var likers = await sut.GetLikersAsync(Note1);
+        Assert.Equal([Carol], likers);
+    }
+
     [Fact]
     public async Task RecordLike_Concurrent_AddsAreThreadSafe()
     {

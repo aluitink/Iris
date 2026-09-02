@@ -44,10 +44,18 @@ else
                 {
                     <span class="muted">You liked this.</span>
                 }
+                @if (LikeCount is { } likes)
+                {
+                    <span class="muted">@likes like@(likes == 1 ? "" : "s")</span>
+                }
                 <button @onclick="ToggleBoostAsync" disabled="@(WriteBusy)">@(HasBoosted ? "Unboost" : "Boost")</button>
                 @if (HasBoosted)
                 {
                     <span class="muted">You boosted this.</span>
+                }
+                @if (ShareCount is { } shares)
+                {
+                    <span class="muted">@shares boost@(shares == 1 ? "" : "s")</span>
                 }
                 @if (IsAuthor)
                 {
@@ -102,6 +110,12 @@ else
     private IObject? ObjectDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Replies { get; set; }
     private Iri? LoadedObjectIri { get; set; }
+    // Per-object interaction counts (decision 056 (d)): read from the object's `likes` / `shares`
+    // extension collections (the bare, non-namespaced ecosystem terms). Nullable because the collection
+    // is an extension — an external object that does not expose it 404s, so the count is unavailable
+    // (shown as nothing) rather than a misleading 0.
+    private int? LikeCount { get; set; }
+    private int? ShareCount { get; set; }
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
@@ -148,10 +162,12 @@ else
 
         Busy = true;
         Error = null;
-        ObjectDoc = null;
-        Replies = null;
-        try
-        {
+            ObjectDoc = null;
+            Replies = null;
+            LikeCount = null;
+            ShareCount = null;
+            try
+            {
             var objectIri = new Iri(uri);
             var client = Session.GetClient();
             LoadedObjectIri = objectIri;
@@ -176,6 +192,12 @@ else
             }
 
             Replies = replies;
+
+            // Per-object interaction counts (decision 056 (d)): read from the object's `likes` /
+            // `shares` extension collections. A failed read (the object does not expose the extension,
+            // e.g. an external object) leaves the count null — shown as nothing, not a misleading 0.
+            LikeCount = await CountCollectionAsync(client, objectIri.LikesOf());
+            ShareCount = await CountCollectionAsync(client, objectIri.SharesOf());
         }
         catch (Exception ex)
         {
@@ -356,6 +378,32 @@ else
         catch
         {
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Counts the items of a collection (the object's <c>likes</c> / <c>shares</c> extension
+    /// collections). The read bypasses the client's collection cache so a re-load after a like/boost
+    /// reflects the current store (the same reason the like-state read does). A failed read — the object
+    /// does not expose the extension collection (e.g. an external object) — returns <see langword="null"/>
+    /// so the UI shows no count rather than a misleading 0.
+    /// </summary>
+    private static async Task<int?> CountCollectionAsync(IActivityPubClient client, Iri collectionIri)
+    {
+        try
+        {
+            var count = 0;
+            await foreach (var _ in client.GetCollectionItemsAsync(
+                collectionIri, new CollectionQuery { BypassCache = true }))
+            {
+                count++;
+            }
+
+            return count;
+        }
+        catch
+        {
+            return null;
         }
     }
 }

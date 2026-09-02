@@ -2820,6 +2820,30 @@ public static class ActivityPubServerExtensions
             return await ObjectRepliesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
         }
 
+        // Per-object interaction collections (decision 056 (d)): when the catch-all path ends in a
+        // /likes or /shares segment, the request is for the object's likers / announcers (the reverse
+        // indexes that back the like / boost counts), not the object itself. These are Iris-namespaced
+        // extension collections (NOT core ActivityStreams Object collections — the only core one is
+        // /replies): the compact terms `likes` / `shares` resolve to the Iris namespace in the
+        // collection document's @context, and they are discoverable via the iris:capabilities extension
+        // (the `likes` / `shares` capability values). Dispatched here (the same route) for the same
+        // reason as /replies — a catch-all cannot be followed by another segment.
+        const string likesSegment = "likes";
+        if (path.EndsWith($"/{likesSegment}", StringComparison.Ordinal)
+            && path.Length > likesSegment.Length + 1)
+        {
+            var parentPath = path.Substring(0, path.Length - (likesSegment.Length + 1));
+            return await ObjectLikesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
+        }
+
+        const string sharesSegment = "shares";
+        if (path.EndsWith($"/{sharesSegment}", StringComparison.Ordinal)
+            && path.Length > sharesSegment.Length + 1)
+        {
+            var parentPath = path.Substring(0, path.Length - (sharesSegment.Length + 1));
+            return await ObjectSharesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
+        }
+
         var objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
 
         if (!await persistence.Objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false) ||
@@ -2932,6 +2956,105 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         return Results.Text(document, ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Serves the actors that like a content object (the like reverse index) as the per-object
+    /// <c>likes</c> collection for <c>GET /ap/v1/{**path}/likes</c> (decision 056 (d), the per-object
+    /// like counter). The items are the IRIs of the actors that liked the object, read from
+    /// <see cref="ILikeStore.GetLikersAsync"/> and embedded as <see cref="Link"/>s (the same shape as the
+    /// followers/following/liked/replies collections — a client resolves a liker's full actor via the
+    /// actor endpoint). Unlike the paged collections, this is a <em>full, non-paged</em>
+    /// <c>OrderedCollection</c>: a like/boost set is small and bounded (unlike an outbox), so the whole
+    /// set is served at once and a client can read the exact count from <c>totalItems</c>.
+    /// </summary>
+    /// <remarks>
+    /// <c>likes</c> is an <em>extension collection</em>, not a core ActivityStreams <c>Object</c>
+    /// property (the only core object collection is <c>replies</c> — likes/shares are only core-AS
+    /// <c>Like</c>/<c>Announce</c> activities). It is exposed under the <em>bare, non-namespaced</em>
+    /// term <c>likes</c> — the same convention the wider ActivityPub ecosystem uses for object-side
+    /// interaction collections — so an ecosystem client that knows the term can read the count off the
+    /// object's <c>likes</c> collection uniformly for local and external objects. Per the ActivityStreams
+    /// extensibility rule a strict consumer that does not know the term MUST ignore it (not error), so the
+    /// bare term is safe. An object this instance does not store 404s (mirroring the object document).
+    /// The wire is verbatim — the object document itself is not rewritten; the count is derived from the
+    /// reverse index at read time (decision 057).
+    /// </remarks>
+    private static async Task<IResult> ObjectLikesAsync(
+        HttpContext context,
+        string parentPath,
+        IPersistenceProvider persistence,
+        string normalizedBase,
+        CancellationToken ct)
+    {
+        var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
+        if (!await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var likers = await persistence.Likes.GetLikersAsync(parentIri, ct).ConfigureAwait(false);
+        return BuildInteractionCollection(context, parentIri.LikesOf(), ActorIrisToLinks(likers));
+    }
+
+    /// <summary>
+    /// Serves the actors that announced (boosted) a content object (the announce reverse index) as the
+    /// per-object <c>shares</c> collection for <c>GET /ap/v1/{**path}/shares</c> (decision 056 (d), the
+    /// per-object boost counter). Same shape and full/non-paged semantics as the <c>likes</c> surface;
+    /// the items are the IRIs of the actors that announced the object, read from
+    /// <see cref="IAnnounceStore.GetAnnouncersAsync"/>. An object this instance does not store 404s.
+    /// </summary>
+    /// <remarks>
+    /// <c>shares</c> is an extension collection exposed under the <em>bare, non-namespaced</em> term
+    /// <c>shares</c> — exactly like <c>likes</c> (see <see cref="ObjectLikesAsync"/>): the ecosystem
+    /// convention for an object-side interaction collection, safe for strict consumers to ignore.
+    /// </remarks>
+    private static async Task<IResult> ObjectSharesAsync(
+        HttpContext context,
+        string parentPath,
+        IPersistenceProvider persistence,
+        string normalizedBase,
+        CancellationToken ct)
+    {
+        var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
+        if (!await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var announcers = await persistence.Announces.GetAnnouncersAsync(parentIri, ct).ConfigureAwait(false);
+        return BuildInteractionCollection(context, parentIri.SharesOf(), ActorIrisToLinks(announcers));
+    }
+
+    /// <summary>
+    /// Builds a full, non-paged <c>OrderedCollection</c> document (id + <c>first</c> +
+    /// <c>totalItems</c> + all items) for a per-object interaction collection (the per-object
+    /// <c>likes</c> / <c>shares</c> reverse indexes) and sets the collection <c>Cache-Control</c>. The
+    /// collection is served under the bare (non-namespaced) term — the ecosystem convention for
+    /// object-side interaction collections — with no <c>@context</c> ceremony.
+    /// </summary>
+    /// <param name="context">The request context (for the cache-control header).</param>
+    /// <param name="collectionIri">The collection's IRI (the object's <c>likes</c> / <c>shares</c> IRI).</param>
+    /// <param name="items">The items (the actor IRIs as <see cref="Link"/>s), already resolved.</param>
+    /// <returns>The collection as <c>application/activity+json</c>.</returns>
+    private static IResult BuildInteractionCollection(
+        HttpContext context,
+        Iri collectionIri,
+        IReadOnlyList<IObjectOrLink> items)
+    {
+        var collection = new OrderedCollection
+        {
+            Id = collectionIri.Value,
+            Items = [.. items],
+            First = new Link { Href = new Uri(collectionIri.Value) },
+            TotalItems = (uint)items.Count,
+        };
+
+        var refresh = HasRefreshBypass(context);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(ActivityJson.Serialize(collection), ActivityJson.ActivityJsonContentType);
     }
 
     /// <summary>

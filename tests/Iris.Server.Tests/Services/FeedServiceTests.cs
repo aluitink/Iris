@@ -766,6 +766,20 @@ public sealed class FeedServiceTests
             CancellationToken ct = default)
             => EmptyAsync<IObjectOrLink>(ct);
 
+        /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> GetLikesAsync(
+            Iri objectIri,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
+        /// <inheritdoc/>
+        public IAsyncEnumerable<IObjectOrLink> GetSharesAsync(
+            Iri objectIri,
+            CollectionQuery? query = null,
+            CancellationToken ct = default)
+            => EmptyAsync<IObjectOrLink>(ct);
+
         public IAsyncEnumerable<IObjectOrLink> SearchAsync(
             Iri instanceBase,
             string? query = null,

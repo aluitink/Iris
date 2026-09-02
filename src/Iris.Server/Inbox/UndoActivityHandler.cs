@@ -8,9 +8,12 @@ namespace Iris.Server.Inbox;
 /// delivery, i.e. the follower) undoes a follow it made, the local follow edge is removed from the
 /// <see cref="IFollowStore"/> (an un-follow); when an actor undoes a <see cref="Block"/> it made, the
 /// local block edge is removed from the <see cref="IModerationStore"/> (an un-block, F-07); when an actor
-/// undoes a <see cref="Flag"/> it made, the local flag edge is removed (an un-flag, F-07); and when an
-/// actor undoes a <see cref="Like"/> it made, the local like edge is removed from the
-/// <see cref="ILikeStore"/> (an unlike — the inverse of the <see cref="LikeActivityHandler"/>).
+/// undoes a <see cref="Flag"/> it made, the local flag edge is removed (an un-flag, F-07); when an actor
+/// undoes a <see cref="Like"/> it made, the local like edge is removed from the
+/// <see cref="ILikeStore"/> (an unlike — the inverse of the <see cref="LikeActivityHandler"/>); and when
+/// an actor undoes an <see cref="Announce"/> it made, the local announce edge is removed from the
+/// <see cref="IAnnounceStore"/> and the boost is removed from the announcer's outbox (an un-boost — the
+/// inverse of the <see cref="AnnounceActivityHandler"/>).
 /// </summary>
 /// <remarks>
 /// An <c>Undo</c> is the ActivityStreams inverse primitive: it undoes the activity referenced by its
@@ -113,6 +116,31 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
             await _persistence.Likes
                 .RemoveLikeAsync(likeEdge.Liker, likeEdge.LikedObject, ct)
                 .ConfigureAwait(false);
+            return;
+        }
+
+        // An un-boost: when the Undo's object is an Announce, remove the recorded announce edge (the
+        // inverse of the AnnounceActivityHandler) and remove the boost from the announcer's outbox.
+        // Handled before the follow path like the block/flag/like branches — an Announce has no follow
+        // target to resolve. A missing announce (never recorded) is a no-op. Before this branch existed,
+        // Undo(Announce) was unhandled (an un-boost left the outbox entry in place).
+        if (await ResolveAnnounceEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } announceEdge)
+        {
+            await _persistence.Announces
+                .RemoveAnnounceAsync(announceEdge.Announcer, announceEdge.AnnouncedObject, ct)
+                .ConfigureAwait(false);
+
+            // The boost's outbox entry (recorded by the AnnounceActivityHandler in the announcer's
+            // outbox) is removed so the un-boosted object no longer appears in the announcer's outbox.
+            var announceIri = activity.Object?.FirstOrDefault().ResolveObjectIri();
+            if (announceIri.HasValue)
+            {
+                await _persistence.Activities
+                    .RemoveFromOutboxAsync(announceEdge.Announcer, announceIri.Value, ct)
+                    .ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -348,5 +376,41 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (likerIri.Value, likedObjectIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original announce's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Announce"/>, by IRI) when the undone activity is an <see cref="Announce"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="null"/> when the object is not an <see cref="Announce"/> (the follow path
+    /// applies), when the referenced announce was never stored, or when the stored announce's parties
+    /// cannot be resolved (a malformed announce) — in which case there is no recorded edge to remove.
+    /// </remarks>
+    private async Task<(Iri Announcer, Iri AnnouncedObject)?> ResolveAnnounceEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var announceIri = responseObject.ResolveObjectIri();
+        if (!announceIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(announceIri.Value, out var stored, ct)
+                .ConfigureAwait(false) ||
+            stored is not Announce announce)
+        {
+            return null;
+        }
+
+        var announcerIri = announce.Actor?.FirstOrDefault().ResolveObjectIri();
+        var announcedObjectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!announcerIri.HasValue || !announcedObjectIri.HasValue)
+        {
+            return null;
+        }
+
+        return (announcerIri.Value, announcedObjectIri.Value);
     }
 }

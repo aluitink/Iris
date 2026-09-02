@@ -122,6 +122,15 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
             .AddToOutboxAsync(delivery.RecipientIri, announce, ct)
             .ConfigureAwait(false);
 
+        // Record the announcer → announced-object edge in the announce store (both directions): this is
+        // the durable boost record and the <c>announcedBy</c> reverse index (the per-object boost
+        // counter, decision 056 (d)). The outbox entry above makes the boost discoverable from the
+        // announcer's outbox; this edge makes it queryable against the object (and reversible via
+        // UndoActivityHandler's Undo(Announce)).
+        await _persistence.Announces
+            .RecordAnnounceAsync(announcerIri.Value, objectIri.Value, ct)
+            .ConfigureAwait(false);
+
         // Propagate the announce to the recipient's followers (mirroring CreateActivityHandler's fan-out):
         // a local follower sees the boost via the follower's outbox on this instance (recorded directly —
         // no cross-instance delivery, the follower's followed-feed reads the outbox); a remote follower

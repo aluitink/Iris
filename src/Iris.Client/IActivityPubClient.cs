@@ -645,6 +645,54 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Reads the actors that like a content object (the per-object <c>likes</c> collection — decision
+    /// 056 (d), the per-object like counter).
+    /// </summary>
+    /// <param name="objectIri">The IRI of the object (e.g. a <c>Note</c>) whose likers are read.</param>
+    /// <param name="query">Optional paging / limit query.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The likers (actor IRIs as links), in no particular order. The count of yielded items is the
+    /// object's like count. Yields nothing when the object has no likers or the object is unknown
+    /// (404).
+    /// </returns>
+    /// <remarks>
+    /// The <c>likes</c> collection is served at <c>{object}/likes</c> as a full, non-paged
+    /// <c>OrderedCollection</c> (a like/boost set is small and bounded, unlike an outbox), so it is
+    /// enumerated exactly like any other collection. It is an extension collection under the bare,
+    /// non-namespaced term the ecosystem uses, so this read works uniformly for local and external
+    /// objects that expose it.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetLikesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Reads the actors that announced (boosted) a content object (the per-object <c>shares</c>
+    /// collection — decision 056 (d), the per-object boost counter).
+    /// </summary>
+    /// <param name="objectIri">The IRI of the object (e.g. a <c>Note</c>) whose announcers are read.</param>
+    /// <param name="query">Optional paging / limit query.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The announcers (actor IRIs as links), in no particular order. The count of yielded items is the
+    /// object's boost count. Yields nothing when the object has no announcers or the object is unknown
+    /// (404).
+    /// </returns>
+    /// <remarks>
+    /// The <c>shares</c> collection is served at <c>{object}/shares</c> as a full, non-paged
+    /// <c>OrderedCollection</c> (a like/boost set is small and bounded, unlike an outbox), so it is
+    /// enumerated exactly like any other collection. It is an extension collection under the bare,
+    /// non-namespaced term the ecosystem uses, so this read works uniformly for local and external
+    /// objects that expose it.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetSharesAsync(
+        Iri objectIri,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Reads the activities delivered TO an actor (their inbox — what they received, as opposed to the
     /// outbox, what they authored). Decision 056: the inbox is a first-class, per-actor collection that is
     /// <em>private</em> — the server serves it only to the owner via Basic auth (the same seam that gates

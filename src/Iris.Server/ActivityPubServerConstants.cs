@@ -111,6 +111,25 @@ public static class ActivityPubServerConstants
     public const string CapabilityRelay = "relay";
 
     /// <summary>
+    /// The capability value advertised for the per-object <c>likes</c> collection
+    /// (<c>GET {object}/likes</c>, decision 056 (d)): the actors that like an object, read from the
+    /// like reverse index. Like/shares are <em>not</em> core ActivityStreams <c>Object</c> collections
+    /// (the only core one is <c>replies</c>), so this is an Iris-namespaced extension collection; a
+    /// client discovers it via this capability value and reads the count from the collection's
+    /// <c>totalItems</c>.
+    /// </summary>
+    public const string CapabilityLikes = "likes";
+
+    /// <summary>
+    /// The capability value advertised for the per-object <c>shares</c> collection
+    /// (<c>GET {object}/shares</c>, decision 056 (d)): the actors that announced (boosted) an object,
+    /// read from the announce reverse index. An Iris-namespaced extension collection, exactly like
+    /// <see cref="CapabilityLikes"/>; a client reads the boost count from the collection's
+    /// <c>totalItems</c>.
+    /// </summary>
+    public const string CapabilityShares = "shares";
+
+    /// <summary>
     /// The name of the HTTP caching directive header emitted on cacheable responses.
     /// </summary>
     public const string CacheControlHeaderName = "Cache-Control";

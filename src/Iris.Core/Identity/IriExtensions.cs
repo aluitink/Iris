@@ -100,6 +100,38 @@ public static class IriExtensions
     public static Iri RepliesOf(this Iri iri) => AppendSegment(iri, "replies");
 
     /// <summary>
+    /// Derives the per-object <c>likes</c>-collection IRI for a content object by appending
+    /// <c>/likes</c> (decision 056 (d), the per-object like counter).
+    /// </summary>
+    /// <remarks>
+    /// <c>likes</c> is an <em>extension</em> collection (not a core ActivityStreams <c>Object</c>
+    /// property — the only core object collection is <c>replies</c>), exposed under the bare,
+    /// non-namespaced term the wider ActivityPub ecosystem uses for object-side interaction collections,
+    /// so an ecosystem client can read the like count off an object's <c>likes</c> collection uniformly
+    /// for local and external objects.
+    /// </remarks>
+    /// <param name="iri">The object IRI (e.g. a <c>Note</c>). Must be absolute.</param>
+    /// <returns>The <c>likes</c>-collection IRI (e.g.
+    /// <c>https://a.domain.local/ap/v1/u/alice/notes/n1/likes</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri LikesOf(this Iri iri) => AppendSegment(iri, "likes");
+
+    /// <summary>
+    /// Derives the per-object <c>shares</c>-collection IRI for a content object by appending
+    /// <c>/shares</c> (decision 056 (d), the per-object boost counter).
+    /// </summary>
+    /// <remarks>
+    /// <c>shares</c> is an <em>extension</em> collection exposed under the bare, non-namespaced term,
+    /// exactly like <see cref="LikesOf(Iri)"/>: the ecosystem convention for an object-side
+    /// interaction collection, safe for strict consumers to ignore.
+    /// </remarks>
+    /// <param name="iri">The object IRI (e.g. a <c>Note</c>). Must be absolute.</param>
+    /// <returns>The <c>shares</c>-collection IRI (e.g.
+    /// <c>https://a.domain.local/ap/v1/u/alice/notes/n1/shares</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri SharesOf(this Iri iri) => AppendSegment(iri, "shares");
+
+    /// <summary>
     /// Derives the instance-wide search (global search / directory) IRI by appending <c>/search</c> to
     /// the instance's <c>/ap/v1</c> base (F-13).
     /// </summary>

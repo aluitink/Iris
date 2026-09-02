@@ -41,6 +41,13 @@ public interface IPersistenceProvider
     public IReplyStore Replies { get; }
 
     /// <summary>
+    /// The announce (boost) store: the <c>announcer → announcedObject</c> edges and the
+    /// <c>announcedObject → announcers</c> reverse index (the per-object boost counter — decision 056
+    /// (d)).
+    /// </summary>
+    public IAnnounceStore Announces { get; }
+
+    /// <summary>
     /// The moderation (block) store (F-07).
     /// </summary>
     public IModerationStore Moderation { get; }
