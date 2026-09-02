@@ -861,6 +861,35 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
     client-rewrite unit, 8 `MediaProxyIntegrationTests`: proxy fetch/serve, cache-hit no-refetch, 502
     fallback, 400 invalid url, public no-auth, eager-warm, eager-warm-disabled-lazy); see
      `docs/changes/161y-20.4d-external-media.md`.
+    - [x] **20.4(e) — Per-object interaction counters (like / boost counts), deferred from decision 056 §d.**
+     A content object's per-object **like** and **boost** counters. **The source of truth is the reverse
+     indexes** (object → set of actor IRIs), **not a wire rewrite** (the object document stays verbatim, per
+     055/057). The wire exposes the counts as **extension collections under the bare, non-namespaced terms
+     the ActivityPub ecosystem uses** for object-side interaction collections (Mastodon/Pleroma/Misskey all
+     use bare `likes`/`shares`, never namespaced): `GET {object-iri}/likes` and `GET {object-iri}/shares`,
+     each a **full, non-paged `OrderedCollection`** of actor `Link`s with `totalItems` = the count (a
+     like/boost set is small and bounded, unlike an outbox). These are **extension collections, not core AS
+     `Object` properties** (the only core object collection is `replies` — likes/shares exist only as
+     `Like`/`Announce` activities); per the ActivityStreams extensibility rule a strict consumer that does not
+     know the term **MUST ignore it**, so the bare terms are safe. Discoverability is via the
+     `iris:capabilities` extension (`CapabilityLikes`/`CapabilityShares`). **Changes:** `ILikeStore` gains
+     `GetLikersAsync` (both directions maintained on record/remove — in-memory + file-backed, the
+     file-backed store's `{"edges","likedBy"}` form is backward-compatible with the earlier bare-array form);
+     a new `IAnnounceStore` (`RecordAnnounceAsync`/`RemoveAnnounceAsync`/`GetAnnouncedAsync`/
+     `HasAnnouncedAsync`/`GetAnnouncersAsync`, the `shares` reverse index — in-memory + file-backed
+     `announces.json`); `IPersistenceProvider.Announces` (wired into both providers + DI);
+     `AnnounceActivityHandler` records the announce edge; `UndoActivityHandler` gains the previously-missing
+     `Undo(Announce)` branch (an un-boost removes the edge + the boost's outbox entry); the
+     `ObjectDocumentHandler` dispatches `/likes` + `/shares`; the client's `IriExtensions.LikesOf()`/
+     `SharesOf()` + `IActivityPubClient.GetLikesAsync`/`GetSharesAsync` read the count by enumerating the
+     collection; the object view shows the counts next to the Like/Boost buttons (null for external objects —
+     no count shown, not 0). **No new NuGet; wire stays verbatim (055/056 (c) unchanged).** Vertically
+     complete: stores + handlers + routes + client + UI + integration tests (the `/likes` + `/shares` routes,
+     the empty + 404 cases, and the client round-trip). +30 tests (`InMemoryAnnounceStoreTests` new,
+     `InMemoryLikeStoreTests` reverse-index, `FileBackedPersistenceTests` announce-store restart + reverse-
+     index survival, `UndoActivityHandlerTests` `Undo(Announce)`, `InteractionCollectionIntegrationTests`
+     new); suite 1,342 → 1,372 (0 failed); see
+      `docs/changes/161z-20.4e-interaction-counters.md`.
   - [x] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
    suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
    of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
