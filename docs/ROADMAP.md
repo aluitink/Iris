@@ -190,6 +190,14 @@ handling exist now — so expectations must be re-derived from source before eac
   validates (their `Create`/`Follow` land without 401); Ed25519 inbound (if a test target signs with
   EdDSA) validates; unsigned POST is rejected 401; our ServerToServer profile (with `digest`) is
   accepted by Mastodon (our `Follow`/`Create` reach them); unsigned GETs flow both ways.
+  > **Finding (live, ad-hoc interop):** the *browser* client's direct signed POST to its own outbox
+  > 401'd (the proxy fallback masked it). Root cause: a Blazor WASM host's `fetch` treats the standard
+  > `Date` request header as forbidden and overrides it on the wire, so the server verified the `date`
+  > signature component over a value different from the one signed. **Fixed** by carrying the signed
+  > date in a custom, non-forbidden `X-Signature-Date` header (the browser sends it faithfully); the
+  > verifier reads the date component from it (falling back to the wire `Date`), and `Date` is still
+  > sent for replay protection. Live-verified: direct outbox POST → 202, no proxy fallback. Change
+  > `161o-browser-signed-post-401-x-signature-date.md` (commit `fbbf041`).
 - [ ] **19.1.5 — Pagination (P1–P2) + content types (T1–T3).** A Mastodon client (their UI/REST API)
   pages our outbox via `?page`/`?limit`; we page through a Mastodon collection (their outbox) to
   exhaustion — note any cursor-paging mismatch. We serve `application/activity+json`; we accept
