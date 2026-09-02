@@ -7,9 +7,11 @@ namespace Iris.Testing;
 /// (the shape the <c>OrderedCollection</c>/<c>OrderedCollectionPage</c> endpoints emit).
 /// </summary>
 /// <remarks>
-/// The one-or-many JSON converter renders a single item as a bare scalar/object (not an array), so
-/// <see cref="GetItems"/> normalizes both the array and single-element cases. An item is either a bare
-/// IRI string (a single <c>Link</c>, e.g. a member or followed actor) or an object carrying an
+/// Iris always serializes <c>items</c> as a JSON array (see
+/// <c>ActivityPubServerExtensions.SerializeCollectionPage</c>), including the single-item and empty
+/// cases. <see cref="GetItems"/> still normalizes a bare scalar/object form defensively, because
+/// federated (remote) collections may legitimately use the one-or-many scalar form. An item is either a
+/// bare IRI string (a single <c>Link</c>, e.g. a member or followed actor) or an object carrying an
 /// <c>id</c> (a full activity/object, e.g. a feed or search result); <see cref="ItemId"/> handles both.
 /// </remarks>
 public static class JsonDoc

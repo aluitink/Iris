@@ -4339,45 +4339,120 @@ public static class ActivityPubServerExtensions
             // Page 1 is the collection document itself: it carries its own first page of items and a
             // self-referencing `first` link. When more pages remain, it also carries a `next` pointer
             // to page 2 — without it a client that treats the OrderedCollection as the first page
-            // (as the Iris client does) cannot walk past page 1. The ActivityStreams OrderedCollection
-            // type has no typed `next` property (only OrderedCollectionPage does), so the pointer is
-            // carried in ExtensionData, which serializes as raw JSON at the document root.
-            var collection = new OrderedCollection
-            {
-                Id = collectionIri.Value,
-                Items = [.. slice],
-                First = new Link { Href = new Uri(collectionIri.Value) },
-                TotalItems = (uint)total,
-            };
+            // (as the Iris client does) cannot walk past page 1. The `next` pointer is emitted as a
+            // bare IRI string, the same wire shape the typed `Link` (next/prev) properties produce on
+            // OrderedCollectionPage, so page 1 and page N>1 stay uniform.
+            return SerializeCollectionPage(
+                id: collectionIri.Value,
+                type: "OrderedCollection",
+                slice: slice,
+                total: total,
+                first: collectionIri.Value,
+                partOf: null,
+                startIndex: null,
+                next: pageCount > 1 ? $"{collectionIri.Value}/?page=2" : null,
+                prev: null);
+        }
 
-            if (pageCount > 1)
+        return SerializeCollectionPage(
+            id: $"{collectionIri.Value}/?page={page}",
+            type: "OrderedCollectionPage",
+            slice: slice,
+            total: total,
+            first: null,
+            partOf: collectionIri.Value,
+            startIndex: start,
+            next: page < pageCount ? $"{collectionIri.Value}/?page={page + 1}" : null,
+            prev: $"{collectionIri.Value}/?page={page - 1}");
+    }
+
+    /// <summary>
+    /// Serializes one page of a local collection to JSON-LD. The top-level document is written by hand
+    /// (rather than through the ActivityStreams library's <c>OrderedCollection</c>/<c>OrderedCollectionPage</c>
+    /// types) because the library serializes the <c>items</c> property with its one-or-multiple
+    /// converter, which collapses a single-element page into a bare JSON string. That is legal
+    /// one-or-many ActivityStreams but breaks clients that read <c>items</c> as an array — and the
+    /// ActivityStreams spec defines <c>OrderedCollection.items</c> as a list. Writing the envelope by
+    /// hand guarantees <c>items</c> is always a JSON array (empty included). Each item is still
+    /// serialized through <see cref="Iris.Core.ActivityJson"/>, so the item bytes are identical to the
+    /// library output.
+    /// </summary>
+    /// <param name="id">The document's <c>id</c> (the collection IRI for page 1, or <c>{iri}/?page=N</c>).</param>
+    /// <param name="type">The <c>type</c> term (<c>OrderedCollection</c> or <c>OrderedCollectionPage</c>).</param>
+    /// <param name="slice">This page's items, in order.</param>
+    /// <param name="total">The full collection size (for <c>totalItems</c>).</param>
+    /// <param name="first">The <c>first</c> IRI (page 1 only; null otherwise).</param>
+    /// <param name="partOf">The <c>partOf</c> IRI (page N&gt;1 only; null otherwise).</param>
+    /// <param name="startIndex">The 1-based <c>startIndex</c> (page N&gt;1 only; null otherwise).</param>
+    /// <param name="next">The <c>next</c> page IRI, or null when this is the last page.</param>
+    /// <param name="prev">The <c>prev</c> page IRI, or null when this is page 1.</param>
+    /// <returns>The serialized JSON-LD document for the page.</returns>
+    private static string SerializeCollectionPage(
+        string id,
+        string type,
+        IReadOnlyList<IObjectOrLink> slice,
+        int total,
+        string? first,
+        string? partOf,
+        int? startIndex,
+        string? next,
+        string? prev)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+
+            // `items` is always a JSON array — including the single-item and empty cases.
+            writer.WritePropertyName("items");
+            writer.WriteStartArray();
+            foreach (var item in slice)
             {
-                var ext = collection.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-                // Emitted as a bare IRI string — the same wire shape the typed `Link` (next/prev)
-                // properties produce on OrderedCollectionPage — so page 1 and page N>1 are uniform.
-                ext["next"] = System.Text.Json.JsonSerializer.SerializeToElement(
-                    $"{collectionIri.Value}/?page=2");
+                // Serialize through the polymorphic IObjectOrLink type (not the concrete runtime
+                // type) so a Link item renders as a bare IRI string and an object item renders as a
+                // full JSON object — the same wire shape the library's one-or-multiple items
+                // converter produces, just always inside an array.
+                System.Text.Json.JsonSerializer.Serialize(writer, item, typeof(IObjectOrLink), ActivityJson.Options);
+            }
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("totalItems");
+            writer.WriteNumberValue(total);
+
+            if (first is not null)
+            {
+                writer.WriteString("first", first);
             }
 
-            return ActivityJson.Serialize(collection);
+            if (partOf is not null)
+            {
+                writer.WriteString("partOf", partOf);
+            }
+
+            if (startIndex is not null)
+            {
+                writer.WritePropertyName("startIndex");
+                writer.WriteNumberValue(startIndex.Value);
+            }
+
+            if (next is not null)
+            {
+                writer.WriteString("next", next);
+            }
+
+            if (prev is not null)
+            {
+                writer.WriteString("prev", prev);
+            }
+
+            writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
+            writer.WriteString("id", id);
+            writer.WriteString("type", type);
+
+            writer.WriteEndObject();
         }
 
-        var pageDoc = new OrderedCollectionPage
-        {
-            Id = $"{collectionIri.Value}/?page={page}",
-            PartOf = new Link { Href = new Uri(collectionIri.Value) },
-            Items = [.. slice],
-            StartIndex = (uint)start,
-            TotalItems = (uint)total,
-        };
-
-        pageDoc.Prev = new Link { Href = new Uri($"{collectionIri.Value}/?page={page - 1}") };
-        if (page < pageCount)
-        {
-            pageDoc.Next = new Link { Href = new Uri($"{collectionIri.Value}/?page={page + 1}") };
-        }
-
-        return ActivityJson.Serialize(pageDoc);
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>

@@ -183,6 +183,27 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal($"https://{AHost}/ap/v1/u/dave", items[0]);
     }
 
+    // --- items is always a JSON array (never a bare one-or-many scalar) ------------
+
+    [Fact]
+    public async Task SingleItemCollection_ItemsIsAlwaysAJsonArray()
+    {
+        // Alice follows exactly one actor (dave), so this is the single-item case. The ActivityStreams
+        // one-or-many convention would allow a bare scalar here, but the spec defines
+        // OrderedCollection.items as a list and naive clients read it as an array — so Iris always
+        // emits `items` as a JSON array, even for a single element. (Regression: the library's
+        // one-or-multiple converter used to collapse a 1-item page to a bare string.)
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{Alice}/following?refresh=true");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var itemsElement = doc.RootElement.GetProperty("items");
+        Assert.Equal(JsonValueKind.Array, itemsElement.ValueKind);
+        var items = itemsElement.EnumerateArray().ToArray();
+        Assert.Single(items);
+        Assert.Equal($"https://{AHost}/ap/v1/u/dave", items[0].GetString());
+    }
+
     // --- ?refresh=true bypasses the read -----------------------------------------
 
     [Fact]
