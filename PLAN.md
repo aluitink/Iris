@@ -211,14 +211,31 @@ Iris.slnx
     correct Decision-055 contract — the client does not set ids / uses learned `MintedId`). Every "throws"
     test asserting a real invariant (blank Id, negative window, missing credential, wrong activity type)
     and every integration test is **kept**. `docs/changes/161w-20.5-test-triage.md`.
-    **Suite green, 0 failed:** Core 220, Client 142, Ext 29, Server 755 (−34), LiveInterop 18,
+     **Suite green, 0 failed:** Core 220, Client 142, Ext 29, Server 755 (−34), LiveInterop 18,
     SampleBlazor 136, SampleServer 25 — **1,337 total** (down 34 from the 1,371 baseline).
 
-    **Next: Phase 20.6 — architecture-cohesion pass.** Re-verify, end to end, that the intended operations
-    hold after 20.0–20.5: C2S via the outbox, digest auth, proxy fallback for CORS, external-collection
-    browsing + display, outbox-returns-Creates, the C2S inbox design (browser access + attachment rewrite +
-    id rewrite + reply/like/boost sync + pull-on-encounter), media + sensitivity + markdown. Confirm no layer
-    contradicts another (client ↔ server ↔ sample UI). Then 20.7 manual test plan (capstone, done last).
+     **Phase 20.6 (change 161x) — DONE: architecture-cohesion pass.** Re-verified, end to end against the
+    **actual code** (not just the docs), that all nine pillars hold after 20.0–20.5 and that no layer
+    (client ↔ server ↔ sample UI) contradicts another: **C2S via the outbox** (every authoring delivery →
+    `actorId.OutboxOf()`, zero inbox call sites), **auth** (HTTP-signature `digest` + owner-only Basic
+    auth), **proxy fallback for CORS**, **external-collection browsing + paging**, **outbox-returns-Creates**
+    (**zero** `.Id =` in `src/Iris.Client` on authored objects — the single authored-content `Id =` is the
+    community `Group`, the documented Decision-055 exception), the **C2S inbox design** (private/owner-only/
+    no-store, **no id rewrite**), **media** (upload → post → same-origin serve), **sensitivity**, and
+    **markdown**. **No "massive overhaul" lurking.** One **documented deferral** recorded as a known open
+    item (not a contradiction): the **inbound (federated) attachment URL-rewrite** is designed (056 (b)) but
+    not implemented — only the local-authoring path rewrites to the same origin; `161v` scoped it out.
+    `docs/changes/161x-20.6-cohesion-pass.md`.
+    **Suite green, 0 failed:** Core 220, Client 142, Ext 29, Server 755, LiveInterop 18,
+    SampleBlazor 136, SampleServer 25 — **1,337 total**.
+
+    **Next: Phase 20.7 — manual test plan (the capstone, done last).** Playwright-MCP-driven, from a user's
+    seat in the sample UI + wire evidence: confirm every 20.x capability (log on, compose with media +
+    markdown, post → outbox returns the created object with its minted id, browse own + peer outboxes with
+    paging, like/boost + see counts sync, receive in inbox → browser-accessible with local attachment
+    serving, sensitive-object reveal, proxy fallback on a CORS-failing remote read). Each recorded as a
+    PASS/FAIL/GAP/BLOCKED checkpoint in a change doc. (Optional follow-up surfaced by 20.6: the inbound
+    media-URL rewrite, if pursued, lands as its own slice before or after this.)
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).

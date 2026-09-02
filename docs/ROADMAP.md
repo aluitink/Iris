@@ -849,13 +849,16 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
    no pre-055 id pins existed (the suite is already Decision-055 compliant). Every "throws" test asserting a
    real invariant (blank Id, negative window, missing credential, wrong activity type) and every
    integration test kept. Suite: 1,371 → 1,337 (0 failed); see `docs/changes/161w-20.5-test-triage.md`.**
-- [ ] **20.6 — Architecture-cohesion pass (re-confirm the whole story after the changes).** Re-verify,
+ - [x] **20.6 — Architecture-cohesion pass (re-confirm the whole story after the changes).** Re-verify,
   end to end, that the intended operations hold **after** 20.0–20.5: C2S via the outbox, digest auth,
   proxy fallback for CORS, external-collection browsing + display, outbox-returns-Creates, the C2S inbox
   design (browser access + attachment rewrite + id rewrite + reply/like/boost sync + pull-on-encounter),
-  media + sensitivity + markdown. Confirm no layer contradicts another (client ↔ server ↔ sample UI) and
-  no "massive overhaul" is lurking. Output: a short coherence note (a change doc) listing each pillar →
-  confirmed/changed + any follow-up.
+   media + sensitivity + markdown. Confirm no layer contradicts another (client ↔ server ↔ sample UI) and
+   no "massive overhaul" is lurking. Output: a short coherence note (a change doc) listing each pillar →
+   confirmed/changed + any follow-up. **Done — all 9 pillars confirmed consistent across client/server/
+   sample UI; no contradictions, no stale pre-20.0 id computation, no overhaul lurking. One documented
+   deferral (inbound/federated attachment URL-rewrite, scoped out by 161v) recorded as a known open item.
+   See `docs/changes/161x-20.6-cohesion-pass.md`.**
 - [ ] **20.7 — Manual test plan (sample UI + wire) — the capstone, done last.** Develop and execute a
   **manual test plan** (Playwright-MCP-driven, as in Phase 19's method) that **confirms the recent major
   changes** using the sample UI + wire evidence: cover every 20.x capability from a user's seat (log on,
