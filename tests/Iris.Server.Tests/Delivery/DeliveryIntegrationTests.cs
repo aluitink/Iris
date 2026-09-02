@@ -189,8 +189,9 @@ public sealed class DeliveryIntegrationTests : IDisposable
         await worker.Service.DeliverAsync(nobodyInbox, note);
 
         await worker.StartAsync(CancellationToken.None);
-        // Give the worker a moment to process the (failing) delivery and drain the queue.
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        // Poll until the worker processes the (failing) delivery and drains the queue — a fixed sleep
+        // races the worker on a loaded machine (a flake); the probe makes the assertion deterministic.
+        await WaitForAsync(() => Task.FromResult(worker.Queue.Count == 0), TimeSpan.FromSeconds(10));
         Assert.Equal(0, worker.Queue.Count);
         await worker.StopAsync(CancellationToken.None);
 
