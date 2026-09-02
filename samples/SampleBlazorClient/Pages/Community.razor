@@ -175,6 +175,10 @@ else
 
         <div class="card">
             <h3>Feed</h3>
+            <p class="muted">
+                The community's unified feed (its <c>feed</c> collection). Each item renders via
+                <c>ObjectView</c>; selecting it (the object link) navigates to the full object detail.
+            </p>
             @if (Feed is not null)
             {
                 @if (Feed.Count == 0)
@@ -187,7 +191,18 @@ else
                     <ul class="object-list">
                         @foreach (var item in Feed)
                         {
-                            <li><ObjectView Item="item" /></li>
+                            <li>
+                                @if (FeedObjectIri(item) is { } feedIri)
+                                {
+                                    <a href="/object?iri=@Uri.EscapeDataString(feedIri)" class="object-feed-link" title="@feedIri">
+                                        <ObjectView Item="item" />
+                                    </a>
+                                }
+                                else
+                                {
+                                    <ObjectView Item="item" />
+                                }
+                            </li>
                         }
                     </ul>
                 }
@@ -196,6 +211,10 @@ else
 
         <div class="card">
             <h3>Members</h3>
+            <p class="muted">
+                The community's member actors (its <c>members</c> collection), each a clickable link to the
+                member's actor detail.
+            </p>
             @if (Members is not null)
             {
                 @if (Members.Count == 0)
@@ -208,7 +227,24 @@ else
                     <ul class="object-list">
                         @foreach (var item in Members)
                         {
-                            <li><ObjectView Item="item" /></li>
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <ObjectView Item="item" />
+                                }
+                            </li>
                         }
                     </ul>
                 }
@@ -595,6 +631,26 @@ else
     private static string? RelayIriOf(IObjectOrLink item)
     {
         if (item is IObject { Id: { } id })
+        {
+            return id;
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            return href.ToString();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The IRI of a feed item (the object the feed entry represents) — the target of the feed item's
+    /// clickable link to the object detail page. For an object with an <c>Id</c>, that id; for a link,
+    /// its <c>Href</c>; else null (the item is rendered without a deep link).
+    /// </summary>
+    private static string? FeedObjectIri(IObjectOrLink item)
+    {
+        if (item is IObject { Id: { Length: > 0 } id })
         {
             return id;
         }

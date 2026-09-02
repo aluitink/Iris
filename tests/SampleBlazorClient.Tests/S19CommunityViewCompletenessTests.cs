@@ -333,4 +333,69 @@ public sealed class S19CommunityViewCompletenessTests
         var followers = await PollFollowersUntilGoneAsync(client, AliceIri.Value);
         Assert.Empty(followers);
     }
+
+    /// <summary>
+    /// The community's members read: <c>GetCollectionItemsAsync(communityIri + "/members")</c> returns the
+    /// member actor IRIs as bare <see cref="ILink"/> items (ActorIrisToLinks) — the exact shape the page's
+    /// Members card renders as clickable links to each member's actor detail (19.8.4 — members clickable).
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_MembersCollection_ItemsAreClickableActorIris()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // The page's exact read: GetCollectionItemsAsync against {community}/members.
+        var membersIri = new Iri($"{CommunityIri.Value.TrimEnd('/')}/members");
+        var members = await CollectItemsAsync(client.GetCollectionItemsAsync(membersIri));
+
+        // The seeded community has alice + bob as members.
+        Assert.True(members.Count >= 2, $"the seeded community must have at least two members (got {members.Count})");
+
+        // Every member item is a bare actor IRI link (clickable to the actor detail) — never a null/empty IRI.
+        var iris = members.Select(IriOf).ToList();
+        Assert.True(iris.All(iri => iri is not null && iri.Length > 0),
+            $"every member item must carry a resolvable IRI (got {string.Join(", ", iris)})");
+        Assert.Contains(iris, iri => iri == AliceIri.Value);
+        Assert.Contains(iris, iri => iri == BobIri.Value);
+        // The items are ILink (the server's ActorIrisToLinks shape), so the page deep-links each.
+        Assert.All(members, item => Assert.IsAssignableFrom<ILink>(item));
+    }
+
+    /// <summary>
+    /// The community's feed items are clickable (19.8.4 — feed items clickable): after a member posts a
+    /// note, the community's <c>feed</c> collection carries that note as an item with a resolvable IRI
+    /// (the object id) — the target of the page's object deep-link (<c>/object?iri=…</c>).
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_FeedItems_CarryResolvableObjectIris()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // Seed a note in alice's outbox (a community member), so the community's unified feed surfaces it.
+        var postResult = await client.PostNoteAsync(AliceIri, "<p>hello from alice</p>");
+        Assert.True(postResult.IsSuccess, $"posting alice's note must succeed: {postResult.StatusCode}");
+
+        // The page's exact read: GetCommunityFeedAsync (the {community}/feed paged collection).
+        var feed = await CollectItemsAsync(client.GetCommunityFeedAsync(CommunityIri));
+
+        Assert.True(feed.Count >= 1, $"the community feed must surface the member's note (got {feed.Count})");
+
+        // Every feed item carries a resolvable IRI (the object the deep-link targets) — never null/empty.
+        var iris = feed.Select(IriOf).ToList();
+        Assert.True(iris.All(iri => iri is not null && iri.Length > 0),
+            $"every feed item must carry a resolvable IRI (got {string.Join(", ", iris)})");
+    }
+
+    private static async Task<IReadOnlyList<IObjectOrLink>> CollectItemsAsync(IAsyncEnumerable<IObjectOrLink> items)
+    {
+        var list = new List<IObjectOrLink>();
+        await foreach (var item in items)
+        {
+            list.Add(item);
+        }
+
+        return list;
+    }
 }

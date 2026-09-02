@@ -185,6 +185,18 @@ ul.object-list li {
     background: #12171f;
 }
 
+/* A feed item's object deep-link: fills its list item so the whole rendered item is the click target
+   (19.8.4 — feed items clickable). */
+a.object-feed-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+}
+
+a.object-feed-link:hover {
+    background: #1a212b;
+}
+
 .object-item {
     display: flex;
     flex-direction: column;
