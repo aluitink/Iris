@@ -65,6 +65,12 @@ public sealed class SigningHandler : DelegatingHandler
         var signature = await _signer.SignAsync(metadata, identity, ProfileFor(body.Length > 0), ct).ConfigureAwait(false);
 
         request.Headers.TryAddWithoutValidation(Signatures.DateHeaderName, metadata.Date);
+        // The standard Date header is a forbidden header in the browser: a Blazor WebAssembly host's
+        // fetch overrides it on the wire, so the server would verify the date component over a value
+        // different from the one signed. The custom X-Signature-Date header is not forbidden, so the
+        // browser sends it faithfully and the verifier reads the date component from it (see
+        // Signatures.SignatureDateHeaderName). Date is still sent for replay protection.
+        request.Headers.TryAddWithoutValidation(Signatures.SignatureDateHeaderName, metadata.Date);
         request.Headers.TryAddWithoutValidation(Signatures.SignatureHeaderName, signature);
 
         if (body.Length > 0)

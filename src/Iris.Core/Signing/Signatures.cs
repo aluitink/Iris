@@ -51,6 +51,17 @@ public static class Signatures
     public const string ContentTypeHeaderName = "content-type";
 
     /// <summary>
+    /// The <c>X-Signature-Date</c> header name. A client sets this to the exact value it signed over
+    /// for the <c>date</c> component, because the standard <c>Date</c> header is a forbidden header in
+    /// the browser (a Blazor WebAssembly host's <c>fetch</c> overrides it on the wire, so the server
+    /// would otherwise verify over a different value than the one signed). A verifier reads the
+    /// <c>date</c> component from this header when present, falling back to the wire <c>Date</c>. The
+    /// <c>Date</c> header itself is still sent for replay protection; it is simply not the source of
+    /// the signed <c>date</c> component when this header is present.
+    /// </summary>
+    public const string SignatureDateHeaderName = "X-Signature-Date";
+
+    /// <summary>
     /// The pseudo-header for the request target.
     /// </summary>
     public const string RequestTargetComponent = "(request-target)";
@@ -99,6 +110,38 @@ public static class Signatures
             SigningProfile.ServerToServer => ServerToServerHeaders,
             _ => throw new NotSupportedException($"Profile {profile} is not supported."),
         };
+
+    /// <summary>
+    /// Resolves the value a <c>date</c> signature component is checked against, given the raw header
+    /// values of an incoming request. The client signs over a <c>date</c> value it controls; the
+    /// standard <c>Date</c> header is a forbidden header in the browser, so a browser client carries
+    /// the signed value in <see cref="SignatureDateHeaderName"/> (<c>X-Signature-Date</c>). A verifier
+    /// reads the <c>date</c> component from that header when present (the value the client actually
+    /// signed over), falling back to the wire <c>Date</c> header (a non-browser client, or a sender
+    /// that did not set the custom header). Both the signer and the verifier use this so the
+    /// <c>date</c> component can never drift between the two.
+    /// </summary>
+    /// <param name="headers">The raw header values, keyed by name (case-insensitive).</param>
+    /// <returns>The <c>X-Signature-Date</c> value when present, else the <c>Date</c> value, else an
+    /// empty string.</returns>
+    public static string ResolveDateComponent(IReadOnlyDictionary<string, string> headers)
+    {
+        ArgumentNullException.ThrowIfNull(headers);
+
+        foreach (var name in new[] { SignatureDateHeaderName, DateHeaderName })
+        {
+            foreach (var pair in headers)
+            {
+                if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrEmpty(pair.Value))
+                {
+                    return pair.Value;
+                }
+            }
+        }
+
+        return "";
+    }
 
     /// <summary>
     /// Computes the <c>digest</c> header value for a request body (SHA-256, base64).

@@ -111,6 +111,65 @@ public class SigningHandlerTests
     }
 
     [Fact]
+    public async Task SigningHandler_SetsXSignatureDateMatchingSignedDate()
+    {
+        // The browser (a Blazor WASM host's fetch) overrides the standard Date header on the wire
+        // (it is a forbidden header), so the client must carry the signed date value in the custom
+        // X-Signature-Date header, which the verifier reads for the date component. X-Signature-Date
+        // must equal the Date value the client actually signed over.
+        var (_, _, handler, fake) = Build();
+        using var client = new HttpClient(handler);
+
+        await client.GetAsync("https://a.domain.local/u/alice");
+
+        var sent = fake.LastRequest!;
+        var date = sent.Headers.GetValues(Signatures.DateHeaderName).Single();
+        var xSignatureDate = sent.Headers.GetValues(Signatures.SignatureDateHeaderName).Single();
+
+        Assert.Equal(date, xSignatureDate);
+    }
+
+    [Fact]
+    public async Task Signature_StillVerifies_WhenWireDateIsOverriddenByBrowser()
+    {
+        // Simulates the browser overriding the wire Date after the client signed over its own Date.
+        // The client signed over date = X-Signature-Date; the wire Date is now different (the browser
+        // stamped its own). The verifier must read the date component from X-Signature-Date (not the
+        // wire Date), so the reconstructed base matches the signed base and verification succeeds.
+        var (store, _, handler, fake) = Build();
+        using var client = new HttpClient(handler);
+
+        await client.GetAsync("https://a.domain.local/u/alice");
+
+        var sent = fake.LastRequest!;
+        var signedDate = sent.Headers.GetValues(Signatures.SignatureDateHeaderName).Single();
+        var host = sent.RequestUri!.Authority;
+        var path = sent.RequestUri!.PathAndQuery;
+        var signatureValue = sent.Headers.GetValues(Signatures.SignatureHeaderName).Single();
+
+        // The browser overrides the wire Date with a DIFFERENT value. The X-Signature-Date header
+        // (non-forbidden) survives with the signed value. The verifier must use X-Signature-Date.
+        var browserOverrideDate = "Thu, 01 Jan 1970 00:00:00 GMT";
+        var metadata = new HttpRequestMetadata(
+            "GET", path, host, browserOverrideDate, null, [],
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [Signatures.HostHeaderName] = host,
+                [Signatures.DateHeaderName] = browserOverrideDate,
+                [Signatures.SignatureDateHeaderName] = signedDate,
+            });
+
+        // Build the base the same way the server's HttpSignatureValidator now does (resolve the date
+        // component from X-Signature-Date ?? Date) and verify against it.
+        var dateComponent = Signatures.ResolveDateComponent(metadata.Headers);
+        Assert.Equal(signedDate, dateComponent);
+        var verifyingMetadata = metadata.With(date: dateComponent);
+
+        var verifier = new HttpSignatureVerifier(store);
+        Assert.True(verifier.Verify(verifyingMetadata, signatureValue));
+    }
+
+    [Fact]
     public async Task UnknownActor_Throws_KeyNotFound()
     {
         var store = new InMemoryKeyStore();

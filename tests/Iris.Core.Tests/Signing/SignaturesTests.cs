@@ -102,4 +102,52 @@ public class SignaturesTests
 
         Assert.Equal(Encoding.UTF8.GetBytes("(request-target): get /u/alice"), baseBytes);
     }
+
+    // --- ResolveDateComponent: the date component must be the signed value, not the wire Date ---
+
+    [Fact]
+    public void ResolveDateComponent_PrefersXSignatureDateOverDate()
+    {
+        // The browser client signs over X-Signature-Date and the browser overrides the wire Date on
+        // the wire. The date component must come from X-Signature-Date (the signed value), not Date.
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Signatures.DateHeaderName] = "Wed, 02 Sep 2026 10:00:00 GMT",
+            [Signatures.SignatureDateHeaderName] = "Wed, 02 Sep 2026 09:59:59 GMT",
+        };
+
+        Assert.Equal("Wed, 02 Sep 2026 09:59:59 GMT", Signatures.ResolveDateComponent(headers));
+    }
+
+    [Fact]
+    public void ResolveDateComponent_FallsBackToDateWhenNoXSignatureDate()
+    {
+        // A non-browser client signs over its Date header and does not set X-Signature-Date; the
+        // date component must fall back to the wire Date.
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Signatures.DateHeaderName] = "Wed, 02 Sep 2026 10:00:00 GMT",
+        };
+
+        Assert.Equal("Wed, 02 Sep 2026 10:00:00 GMT", Signatures.ResolveDateComponent(headers));
+    }
+
+    [Fact]
+    public void ResolveDateComponent_EmptyWhenNeitherPresent()
+    {
+        Assert.Equal("", Signatures.ResolveDateComponent(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)));
+    }
+
+    [Fact]
+    public void ResolveDateComponent_IgnoresEmptyXSignatureDateAndUsesDate()
+    {
+        // An empty X-Signature-Date is treated as absent, so the value falls back to the wire Date.
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Signatures.DateHeaderName] = "Wed, 02 Sep 2026 10:00:00 GMT",
+            [Signatures.SignatureDateHeaderName] = "",
+        };
+
+        Assert.Equal("Wed, 02 Sep 2026 10:00:00 GMT", Signatures.ResolveDateComponent(headers));
+    }
 }

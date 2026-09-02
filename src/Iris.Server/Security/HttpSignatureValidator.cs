@@ -190,12 +190,13 @@ public sealed class HttpSignatureValidator(
         // not a re-formatted DateTimeOffset).
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var headerName in new[]
-                 {
-                     Signatures.HostHeaderName,
-                     Signatures.DateHeaderName,
-                     Signatures.ContentTypeHeaderName,
-                     Signatures.DigestHeaderName,
-                 })
+                  {
+                      Signatures.HostHeaderName,
+                      Signatures.DateHeaderName,
+                      Signatures.ContentTypeHeaderName,
+                      Signatures.DigestHeaderName,
+                      Signatures.SignatureDateHeaderName,
+                  })
         {
             if (request.Headers.TryGetValue(headerName, out var value))
             {
@@ -203,9 +204,12 @@ public sealed class HttpSignatureValidator(
             }
         }
 
-        // The Date field of the metadata must be the raw wire value (BuildSignatureBase uses it for
-        // the date component); fall back to an empty string when the header is absent.
-        var date = headers.TryGetValue(Signatures.DateHeaderName, out var rawDate) ? rawDate : "";
+        // The date component must be the value the client SIGNED over, not necessarily the wire Date.
+        // A browser (Blazor WASM) client cannot set the standard Date header (forbidden), so it
+        // carries the signed value in X-Signature-Date; a non-browser client signs over its Date
+        // header. ResolveDateComponent prefers X-Signature-Date, falling back to the wire Date —
+        // exactly what the client's SigningHandler signs over, so the two never drift.
+        var date = Signatures.ResolveDateComponent(headers);
 
         return new HttpRequestMetadata(
             request.Method,
