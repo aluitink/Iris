@@ -838,7 +838,7 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
     (emitted as a `MarkupString`); the sensitive-notice path renders the markdown only after reveal. +32
     tests (25 `MarkdownTests` unit, 7 bUnit object-view); see
      `docs/changes/161u-20.4-markdown.md`.
-  - [ ] **20.4(d) — Browser-loadable media for *external* attachments (the inbound/external-read half of
+   - [x] **20.4(d) — Browser-loadable media for *external* attachments (the inbound/external-read half of
     media, deferred by 20.2/056 (b) and scoped out by 161v).** **Decision 057.** When the client browses any
     **external** stream — a random user's outbox, a user's liked/featured, communities, the followed feed,
     synced peers, **and** the owner-only inbox — an object's attachment can carry a **cross-origin** `url`
@@ -857,7 +857,10 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
     NuGet; no id/document rewrite (055 + 056 (c) unchanged); no collection-serializer rewrite.** Vertically
     complete: fetcher + route + URL/hash store + client render boundary + eager-warm hook + integration
     tests (proxy fetch/serve + cache hit + 502 fallback + client rewrite unit + an end-to-end
-    "browse external outbox → attachment loads same-origin").
+    "browse external outbox → attachment loads same-origin"). +17 tests (9 `IriMediaProxyExtensionsTests`
+    client-rewrite unit, 8 `MediaProxyIntegrationTests`: proxy fetch/serve, cache-hit no-refetch, 502
+    fallback, 400 invalid url, public no-auth, eager-warm, eager-warm-disabled-lazy); see
+     `docs/changes/161y-20.4d-external-media.md`.
   - [x] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
    suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
    of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
