@@ -774,19 +774,25 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   Note is the object), the object is a first-class object addressable by its (originator-)minted id, and
   the 2xx body returns the Create. No divergence from current behavior. Change doc
   `docs/changes/161q-20.1-c2s-pillars-confirmed.md`; +1 proxy test (1,112 tests, 0 failed).
-- [ ] **20.2 — C2S inbox design (design decision first, code second).** How does a **local client user
+- [x] **20.2 — C2S inbox design (design decision first, code second).** How does a **local client user
   browse their own inbox** in a C2S scenario, and how is that content **accessible to the browser**?
-  Sub-questions to resolve and record as a decision doc: (a) **Browser access:** the inbox is the actor's
-  private collection — how does the browser read it (authenticated, signed, same-origin)? (b) **Content
-  + attachments:** when a user receives a note with an attachment, do we **store the content locally and
-  rewrite the attachment** to a local URL so the browser can serve it without CORS (vs. linking the
-  remote attachment, which CORS-fails)? (c) **Id rewrite:** are the ids yielded from the inbox **rewritten
-  to local ids** that, when requested, serve a **rewritten (local) copy** of the note? (d) **Reply +
-  like/boost sync:** how do we **sync replies** (the reply graph) and **accumulate like/boost counts**
-  for an object? (e) **Pull-on-encounter fidelity:** should we **pull + sync each object each time we
-  encounter it** (from a feed/inbox/collection) to keep a **high-fidelity local copy** with **accurate
-  interaction counts**, or rely on a TTL cache? This is the deepest open question — write the decision
-  doc before touching code, then implement to match it.
+  Decision 056 resolves all five sub-questions and the foundation is implemented: (a) **Browser access** —
+  the inbox is a private, **owner-only** `GET /ap/v1/u/{handle}/inbox` (Basic auth via the existing
+  `IActorCredentialValidator` seam; 403 for a non-owner; no-store); (b) **Content + attachments** — the
+  inbound object is **stored locally verbatim** (the object store already does this under the originator
+  id); remote attachments are **served verbatim (link-out)** for now, with local media storage + URL-rewrite
+  staged to **20.4 (media)**; (c) **Id rewrite** — **none**: inbound objects keep the **originator's id**
+  (decision 055); the inbox yields them by that id and a request for it serves the local copy; (d) **Reply +
+  like/boost sync** — **out of scope** for the foundation (surfaced as follow-up; the inbox surfaces the
+  delivered activities; thread-tree + per-object counters are separate, self-contained slices); (e)
+  **Pull-on-encounter fidelity** — **store-on-receive** (the current, higher-fidelity-than-TTL behavior);
+  fetch-on-encounter of *referenced-but-not-delivered* objects is a follow-up. **Implemented:** the inbox is
+  now a first-class, per-actor collection (`IActivityStore.GetInboxAsync`/`AddToInboxAsync` + both impls),
+  recorded on first delivery by the `InboxProcessor`, read via the owner-only route + `GetInboxItemsAsync`
+  client method. **Remaining (staged, self-contained):** local media rewrite (20.4), reply thread-tree,
+  per-object like/boost counters, fetch-on-encounter. `docs/decisions/056-c2s-inbox-model.md`;
+  `docs/changes/161r-20.2-c2s-inbox-design.md`; +4 inbox tests (1,116 tests, 0 failed in the suite that
+  runs; 2 pre-existing `FollowIntegrationTests` failures are unrelated to this change).
 - [ ] **20.3 — Sample-UI object browsing: outbox enumeration + paging (local or remote).** Enhance the
   explorer so a user can **enumerate a local or remote user's outbox and page through it** (the paged
   collection with `next`-link paging), rendering each item as a navigable object view (not raw JSON).

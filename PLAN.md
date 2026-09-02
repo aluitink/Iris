@@ -132,14 +132,30 @@ Iris.slnx
   the object, addressable by its originator-minted id); the 2xx body returns the Create — matches the
   operator's expectation, no divergence. 1,112 tests, 0 failed (+1 proxy test; Client now 136).
 
-  **Next: Phase 20.2 (C2S inbox design — design decision first, code second).** With 20.0–20.1 closed and
-  the suite green, the next item is the deepest open question: how a **local client user browses their own
-  inbox** in a C2S scenario and how that content is **accessible to the browser** — browser access,
-  content + attachment storage/rewrite (local URL vs. remote link), id rewrite, reply + like/boost sync,
-  and pull-on-encounter fidelity vs. TTL cache. **Write the decision doc before touching code**, then
-  implement to match it. Phase 20 then proceeds 20.3 UI outbox enumeration → 20.4 media/sensitivity/markdown
-  → 20.5 test triage → 20.6 cohesion → 20.7 manual plan. Phase 19.1 (live interop) remains available but is
-  not the active focus.
+   **Phase 20.2 (decision 056) — COMPLETE (C2S inbox: persisted, owner-only, per-actor collection).**
+   Resolved all five sub-questions (decision 056): **(a)** the inbox is a **private, owner-only**
+   `GET /ap/v1/u/{handle}/inbox` (Basic auth via the existing `IActorCredentialValidator` seam; 403 for a
+   non-owner; no-store); **(b)** the inbound object is **stored locally verbatim** (the object store already
+   does this under the originator id) and remote attachments are **served verbatim (link-out)** for now —
+   local media storage + URL-rewrite is staged to **20.4**; **(c)** **no id rewrite** (inbound keeps the
+   originator id per decision 055; the inbox yields by that id and a request serves the local copy);
+   **(d)** reply + like/boost sync is **out of scope** (follow-up: the inbox surfaces the delivered
+   activities; thread-tree + per-object counters are separate slices); **(e)** **store-on-receive**
+   (current, higher-fidelity-than-TTL behavior); fetch-on-encounter is a follow-up. **Implemented:** the
+   inbox is a first-class, per-actor collection (`IActivityStore.GetInboxAsync`/`AddToInboxAsync` + both
+   impls), recorded on first delivery by the `InboxProcessor`, read via the owner-only route +
+   `GetInboxItemsAsync` client method. **Remaining (staged, self-contained):** local media rewrite (20.4),
+   reply thread-tree, per-object like/boost counters, fetch-on-encounter. `docs/decisions/056-c2s-inbox-model.md`;
+   `docs/changes/161r-20.2-c2s-inbox-design.md`. Suite: Server 770/770 (+4 inbox tests), Client 136/136;
+   2 pre-existing `FollowIntegrationTests` failures are unrelated (fail at the baseline commit).
+
+   **Next: Phase 20.3 (Sample-UI object browsing: outbox enumeration + paging).** With 20.2 closed, the
+   next item is to make 20.1's "outbox = source of truth" and 20.2's inbox design **visible in the UI**:
+   enhance the explorer so a user can enumerate a local or remote user's outbox and page through it (the
+   paged collection with `next`-link paging), rendering each item as a navigable object view. Reuse the
+   existing paged-collection client + object view; add an "Outbox" surface to the actor detail page (local +
+   remote) with paging controls. Phase 20 then proceeds 20.4 media/sensitivity/markdown → 20.5 test triage →
+   20.6 cohesion → 20.7 manual plan.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).
