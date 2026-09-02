@@ -97,6 +97,12 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
         var follow = BuildFollow(_aliceActorIri, _bobActorIri);
         await PublishToOutboxAsync(_aliceActorIri, _aliceKey, follow, target: () => _a!);
 
+        // Decision 055: A minted the Follow's id (the client sent it id-less). Learn the minted id from
+        // A's outbox (the published Follow is recorded there under its minted id). The Undo references
+        // this learned id; inbound federation keeps the originator's id, so B records the edge under
+        // this same id.
+        var followId = await FindFollowIriInOutboxAsync(_aPersistence, _aliceActorIri, _bobActorIri);
+
         // B's edge is the cross-instance half: bob's follower set now contains alice (on B, where bob
         // lives). A's edge is alice's own following set.
         await WaitForAsync(
@@ -112,12 +118,12 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
             await _aPersistence.Follows.IsFollowingAsync(_bobActorIri, _aliceActorIri) is false,
             "bob must not follow alice (no reciprocal edge was ever created)");
 
-        // Phase 2 — alice un-follows bob. The Undo (object = the original Follow, by IRI) is published to
-        // alice's own outbox; A federates it to bob's inbox over the wire (signed as alice); B's
-        // UndoActivityHandler (recipient = bob, the target) removes the alice → bob edge from B's follow
-        // store. A's UndoActivityHandler (recipient = alice, the un-follower) removes alice's own
-        // following edge.
-        var undo = BuildUndo(_aliceActorIri, follow);
+        // Phase 2 — alice un-follows bob. The Undo (object = the original Follow's LEARNED id) is
+        // published to alice's own outbox; A federates it to bob's inbox over the wire (signed as
+        // alice); B's UndoActivityHandler (recipient = bob, the target) removes the alice → bob edge from
+        // B's follow store. A's UndoActivityHandler (recipient = alice, the un-follower) removes alice's
+        // own following edge.
+        var undo = BuildUndo(_aliceActorIri, followId);
         await PublishToOutboxAsync(_aliceActorIri, _aliceKey, undo, target: () => _a!);
 
         // Both sides must drop the edge (this is the convergence-critical step: an orphan on either side
@@ -215,20 +221,48 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
     /// </summary>
     private static Follow BuildFollow(Iri actorIri, Iri targetIri) => new()
     {
-        Id = $"{actorIri.Value}/follows/{Guid.NewGuid():N}",
+        // Decision 055: the client sends the Follow's shape (no id); the server mints the id and returns
+        // it in the 2xx body.
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
 
     /// <summary>
-    /// Builds an <see cref="Undo"/> of a follow (un-follow): actor = the un-follower, object = the
-    /// original <see cref="Follow"/> by IRI.
+    /// Finds the IRI of the most recent <see cref="Follow"/> in an actor's outbox whose object is the
+    /// given target. Decision 055 mints the Follow's id, so after publishing an id-less follow the
+    /// learner reads the outbox to learn the minted id (for a subsequent Undo's object reference).
     /// </summary>
-    private static Undo BuildUndo(Iri actorIri, Follow follow) => new()
+    private static async Task<Iri> FindFollowIriInOutboxAsync(
+        IPersistenceProvider persistence, Iri actorIri, Iri targetIri)
     {
-        Id = $"{actorIri.Value}/undoes/{follow.Id}",
+        var outbox = await persistence.Activities.GetOutboxAsync(actorIri);
+        foreach (var item in outbox)
+        {
+            if (item is not Follow follow)
+            {
+                continue;
+            }
+
+            var objectIri = follow.Object?.FirstOrDefault().ResolveObjectIri();
+            if (objectIri is { } iri && iri == targetIri && !string.IsNullOrWhiteSpace(follow.Id))
+            {
+                return new Iri(follow.Id);
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"No Follow of {targetIri.Value} found in {actorIri.Value}'s outbox to learn its minted id from.");
+    }
+
+    /// <summary>
+    /// Builds an <see cref="Undo"/> of a follow (un-follow): actor = the un-follower, object = the
+    /// original <see cref="Follow"/> by its LEARNED (server-minted) IRI. The Undo's own id is minted by
+    /// the server (decision 055).
+    /// </summary>
+    private static Undo BuildUndo(Iri actorIri, Iri originalFollowId) => new()
+    {
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
-        Object = [new Link { Href = new Uri(follow.Id!) }],
+        Object = [new Link { Href = new Uri(originalFollowId.Value) }],
     };
 
     /// <summary>

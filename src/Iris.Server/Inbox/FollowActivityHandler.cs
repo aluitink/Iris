@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Server.Identity;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Inbox;
@@ -42,6 +43,7 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     private readonly IPersistenceProvider _persistence;
     private readonly IDeliveryService _delivery;
     private readonly ILocalActorResolver _localActors;
+    private readonly IdMinter _idMinter;
 
     /// <summary>
     /// Initializes a new <see cref="FollowActivityHandler"/>.
@@ -50,18 +52,23 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     /// <param name="delivery">The delivery service (schedules the <c>Accept</c> response).</param>
     /// <param name="localActors">Resolves whether the recipient is a local actor (the follow is
     /// interpreted only when the recipient is local).</param>
+    /// <param name="idMinter">The server-side id authority (mints the id of the <c>Accept</c> the handler
+    /// authors in response to an inbound follow — decision 055).</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FollowActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
-        ILocalActorResolver localActors)
+        ILocalActorResolver localActors,
+        IdMinter idMinter)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(localActors);
+        ArgumentNullException.ThrowIfNull(idMinter);
         _persistence = persistence;
         _delivery = delivery;
         _localActors = localActors;
+        _idMinter = idMinter;
     }
 
     /// <inheritdoc/>
@@ -162,7 +169,7 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         // derives the follower's inbox from the follower's actor IRI; the delivery is signed as the
         // local actor being followed (the Accept's actor), so the remote verifies it against that
         // actor's key.
-        var accept = FollowIris.BuildAccept(delivery.RecipientIri, follow);
+        var accept = FollowIris.BuildAccept(_idMinter, delivery.RecipientIri, follow);
         await _delivery
             .DeliverToActorAsync(followerIri.Value, accept, delivery.RecipientIri, ct)
             .ConfigureAwait(false);

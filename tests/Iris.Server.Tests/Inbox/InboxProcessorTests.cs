@@ -1,5 +1,6 @@
 using Iris.Core;
 using Iris.Server;
+using Iris.Server.Identity;
 using Iris.Server.InMemory;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -326,8 +327,10 @@ public sealed class InboxProcessorTests
         // alice (local) followed bob: the follow is stored in A's activity store (as the follower).
         var follow = BuildFollow(FollowerIri, RecipientIri);
         await persistence.Activities.PutActivityAsync(follow);
-        // bob accepted alice's follow (the Accept is delivered back to alice's inbox).
-        var accept = FollowIris.BuildAccept(RecipientIri, follow);
+        // bob accepted alice's follow (the Accept is delivered back to alice's inbox). The Accept's
+        // own id is minted by the server (decision 055); the test does not predict it — the handler
+        // only needs the Accept to reference the original follow by IRI.
+        var accept = FollowIris.BuildAccept(new IdMinter(), RecipientIri, follow);
 
         await processor.ProcessAsync(new InboxDelivery(FollowerIri, accept));
 
@@ -350,7 +353,7 @@ public sealed class InboxProcessorTests
         // follow that is not in A's activity store (it belongs to the remote instance).
         var remoteFollower = new Iri("https://c.domain.local/ap/v1/u/charlie");
         var remoteFollow = BuildFollow(remoteFollower, RecipientIri);
-        var accept = FollowIris.BuildAccept(RecipientIri, remoteFollow);
+        var accept = FollowIris.BuildAccept(new IdMinter(), RecipientIri, remoteFollow);
 
         await processor.ProcessAsync(new InboxDelivery(FollowerIri, accept));
 
@@ -373,8 +376,8 @@ public sealed class InboxProcessorTests
         await persistence.Activities.PutActivityAsync(follow);
         await persistence.Follows.RecordFollowAsync(FollowerIri, RecipientIri);
         Assert.True(await persistence.Follows.IsFollowingAsync(FollowerIri, RecipientIri));
-        // bob rejected alice's follow.
-        var reject = FollowIris.BuildReject(RecipientIri, follow);
+        // bob rejected alice's follow (the Reject's own id is minted by the server — decision 055).
+        var reject = FollowIris.BuildReject(new IdMinter(), RecipientIri, follow);
 
         await processor.ProcessAsync(new InboxDelivery(FollowerIri, reject));
 
@@ -393,7 +396,7 @@ public sealed class InboxProcessorTests
         var processor = BuildProcessorWithRejectHandler(persistence);
         var remoteFollower = new Iri("https://c.domain.local/ap/v1/u/charlie");
         var remoteFollow = BuildFollow(remoteFollower, RecipientIri);
-        var reject = FollowIris.BuildReject(RecipientIri, remoteFollow);
+        var reject = FollowIris.BuildReject(new IdMinter(), RecipientIri, remoteFollow);
 
         await processor.ProcessAsync(new InboxDelivery(FollowerIri, reject));
 
@@ -448,7 +451,7 @@ public sealed class InboxProcessorTests
         queue = new InMemoryDeliveryQueue();
         var delivery = new DeliveryService(queue, NullLogger<DeliveryService>.Instance);
         var localActors = new DefaultLocalActorResolver(persistence);
-        return new FollowActivityHandler(persistence, delivery, localActors);
+        return new FollowActivityHandler(persistence, delivery, localActors, new IdMinter());
     }
 
     /// <summary>

@@ -479,11 +479,19 @@ else
         return count;
     }
 
+    // Decision 055 (learned-id references): the ids the server minted for the follow/block/flag this
+    // page made, learned from DeliveryResult.MintedId at creation time. The Undo methods reference the
+    // original activity by this learned id (the client never recomputes the server's ids), so a create
+    // must have happened (and been captured) before its undo can run.
+    private Iri? FollowLearnedId { get; set; }
+    private Iri? BlockLearnedId { get; set; }
+    private Iri? FlagLearnedId { get; set; }
+
     private async Task FollowAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FollowAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FollowAsync(actor, target), captureCreatedId: r => FollowLearnedId = r is { } id ? new Iri(id) : null, clearCreatedId: () => FollowLearnedId = null);
 
     private async Task UnfollowAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, FollowLearnedId!.Value), clearCreatedId: () => FollowLearnedId = null);
 
     private async Task MuteAsync()
         => await FollowUnfollowAsync((actor, target) => Session.GetLocalModerationClient().MuteAsync(actor, target));
@@ -492,24 +500,31 @@ else
         => await FollowUnfollowAsync((actor, target) => Session.GetLocalModerationClient().UnmuteAsync(actor, target));
 
     private async Task BlockAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().BlockAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().BlockAsync(actor, target), captureCreatedId: r => BlockLearnedId = r is { } id ? new Iri(id) : null, clearCreatedId: () => BlockLearnedId = null);
 
     private async Task UnblockAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnblockAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnblockAsync(actor, BlockLearnedId!.Value), clearCreatedId: () => BlockLearnedId = null);
 
     private async Task FlagAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FlagAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FlagAsync(actor, target), captureCreatedId: r => FlagLearnedId = r is { } id ? new Iri(id) : null, clearCreatedId: () => FlagLearnedId = null);
 
     private async Task UnflagAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnflagAsync(actor, target));
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UnflagAsync(actor, FlagLearnedId!.Value), clearCreatedId: () => FlagLearnedId = null);
 
-    private async Task FollowUnfollowAsync(Func<Iri, Iri, Task<DeliveryResult>> write)
+    private async Task FollowUnfollowAsync(
+        Func<Iri, Iri, Task<DeliveryResult>> write,
+        Action<string?>? captureCreatedId = null,
+        Action? clearCreatedId = null)
     {
         if (!Session.IsLoggedIn || ActorIri is null)
         {
             return;
         }
 
+        // Decision 055: an undo references the original activity by its learned id. The undo's write
+        // lambda closes over that learned id (e.g. `FollowLearnedId!.Value`); if it was never captured
+        // (the create happened elsewhere, or was never made), the null dereference throws and is reported
+        // in WriteError below — there is nothing to undo.
         var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
         WriteBusy = true;
         WriteResult = null;
@@ -517,6 +532,16 @@ else
         try
         {
             WriteResult = await write(actorIri, ActorIri.Value);
+            // Decision 055: learn the id the server minted for the created activity so a later undo can
+            // reference it. On a failed write (no minted id) leave the previous learned id untouched.
+            if (captureCreatedId is not null)
+            {
+                captureCreatedId(WriteResult.MintedId);
+            }
+            else if (clearCreatedId is not null)
+            {
+                clearCreatedId();
+            }
             // S6: refresh the logged-on actor's own moderation counts (bypassing the page cache) so a
             // mute/block/flag's effect is visible immediately rather than after the 60s fresh window.
             await RefreshMyModerationAsync(bypassCache: true);

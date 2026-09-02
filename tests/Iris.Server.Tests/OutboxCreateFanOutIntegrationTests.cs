@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -102,24 +103,28 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
+        // Decision 055: the server mints the Create's id (and the embedded Note's id) and returns the
+        // created Create in the 202 body; learn the minted id to reference it for the assertions below.
+        var createIri = await LearnMintedIdAsync(response);
+
         // A recorded the Create in alice's outbox (the local-surfacing half).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == create.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == createIri.Value);
 
         // Both B and C validated the federated Create (resolving alice's key from A's actor doc) and
         // stored it — the post reached BOTH remote followers' instances (the G-1 residual fix: full
         // fan-out, not just the first follower).
         await WaitForAsync(async () =>
-                await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _)
-                && await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _),
+                await _bPersistence.Activities.TryGetActivityAsync(createIri, out _)
+                && await _cPersistence.Activities.TryGetActivityAsync(createIri, out _),
             timeout: TimeSpan.FromSeconds(30));
 
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(createIri, out var storedB),
             "B should have stored the Create federated by A's server (signed as alice)");
         Assert.True(
-            await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out var storedC),
+            await _cPersistence.Activities.TryGetActivityAsync(createIri, out var storedC),
             "C should have stored the Create federated by A's server (signed as alice)");
         Assert.IsType<Create>(storedB);
         Assert.IsType<Create>(storedC);
@@ -140,14 +145,17 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
+        // Decision 055: learn the server-minted Create id from the 202 body.
+        var createIri = await LearnMintedIdAsync(response);
+
         // Surfaced in dave's outbox ...
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(daveActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == create.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == createIri.Value);
 
         // ... and nothing was federated (no followers) — B and C stored nothing.
-        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _));
-        Assert.False(await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _));
+        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(createIri, out _));
+        Assert.False(await _cPersistence.Activities.TryGetActivityAsync(createIri, out _));
     }
 
     // --- A blocked remote follower does not receive the federated Create ---------------------
@@ -164,14 +172,17 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
+        // Decision 055: learn the server-minted Create id from the 202 body.
+        var createIri = await LearnMintedIdAsync(response);
+
         // Carol (unblocked) received the federated Create.
         await WaitForAsync(async () =>
-            await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _),
+            await _cPersistence.Activities.TryGetActivityAsync(createIri, out _),
             timeout: TimeSpan.FromSeconds(10));
-        Assert.True(await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _));
+        Assert.True(await _cPersistence.Activities.TryGetActivityAsync(createIri, out _));
 
         // Bob (blocked) did NOT receive the federated Create.
-        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _));
+        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(createIri, out _));
     }
 
     // --- Helpers ---------------------------------------------------------------------------
@@ -435,15 +446,29 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
 
+    // Decision 055: the client authors the Create WITHOUT an id (and the embedded Note without an id);
+    // the server mints both (the Create's id is returned in the 202 body, learned via
+    // LearnMintedIdAsync).
     private static Create BuildCreate(Iri actorIri) => new()
     {
-        Id = $"https://{AHost}/activities/create-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object =
         [
-            new Note { Id = $"https://{AHost}/objects/note-{Guid.NewGuid():N}", Content = ["fan-out post"] },
+            new Note { Content = ["fan-out post"] },
         ],
     };
+
+    /// <summary>
+    /// Learns the server-minted id of the created activity from the 202 response body (decision 055:
+    /// the server mints the id and returns the created object in the 2xx body).
+    /// </summary>
+    private static async Task<Iri> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        var created = ActivityJson.Deserialize<Activity>(body);
+        Assert.NotNull(created?.Id);
+        return new Iri(created!.Id!);
+    }
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
     {

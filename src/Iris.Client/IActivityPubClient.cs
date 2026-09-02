@@ -92,29 +92,29 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> FollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
 
     /// <summary>
-    /// Un-follows <paramref name="targetId"/> as <paramref name="actorId"/> (the inverse of
-    /// <see cref="FollowAsync"/>): builds an <see cref="KristofferStrube.ActivityStreams.Undo"/> of the
-    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> <paramref name="actorId"/> made of
-    /// <paramref name="targetId"/> and publishes it to <paramref name="actorId"/>'s own outbox (per the
-    /// ActivityPub un-follow convention — the party that made the follow undoes it, so the
-    /// <c>Undo</c> is authored by the follower, not the un-followed actor).
+    /// Un-follows as <paramref name="actorId"/> (the inverse of <see cref="FollowAsync"/>): builds an
+    /// <see cref="KristofferStrube.ActivityStreams.Undo"/> of the original
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> and publishes it to <paramref
+    /// name="actorId"/>'s own outbox (per the ActivityPub un-follow convention — the party that made the
+    /// follow undoes it, so the <c>Undo</c> is authored by the follower, not the un-followed actor).
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-following (must match the client's signing identity so
     /// the request is signed as that actor).</param>
-    /// <param name="targetId">The IRI of the actor (or community) previously followed.</param>
+    /// <param name="originalFollowId">The id the server minted for the original follow — learned from
+    /// <see cref="DeliveryResult.MintedId"/> when the follow was made via <see cref="FollowAsync"/>.
+    /// (Decision 055: the client references the follow by its learned id, never a recomputed formula.)</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted id of the <c>Undo</c> (when present).</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is published to <c>actorId.OutboxOf()</c>
     /// (the follower's own outbox — the write surface for the activities an actor authors) and is signed by
     /// the pipeline. Its <c>object</c> references the original
-    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> by IRI (the same deterministic
-    /// <c>{actorId}/follows/{targetId}</c> IRI <see cref="FollowAsync"/> mints), and the <see
-    /// cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
-    /// unique-per-(actor,target) IRI so a retried un-follow dedupes on the receiver. The server removes the
-    /// local follow edge and server-delivers the <c>Undo</c> to the previously-followed actor's inbox.
+    /// <see cref="KristofferStrube.ActivityStreams.Follow"/> by its learned id. The server mints the
+    /// <c>Undo</c>'s own id (an unguessable ULID) and returns it in the 2xx body; it then removes the local
+    /// follow edge and server-delivers the <c>Undo</c> to the previously-followed actor's inbox.
     /// </remarks>
-    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default);
 
     /// <summary>
     /// Accepts an inbound <see cref="KristofferStrube.ActivityStreams.Follow"/> as <paramref name="actorId"/>
@@ -190,25 +190,26 @@ public interface IActivityPubClient : IDisposable
     /// <summary>
     /// Removes a like as <paramref name="actorId"/> (the inverse of <see cref="LikeAsync"/>): builds an
     /// <see cref="KristofferStrube.ActivityStreams.Undo"/> whose object references the original
-    /// <see cref="KristofferStrube.ActivityStreams.Like"/> by IRI (the same deterministic
-    /// <c>{actorId}/likes/{objectId}</c> IRI <see cref="LikeAsync"/> mints) and delivers it through the
+    /// <see cref="KristofferStrube.ActivityStreams.Like"/> by its learned id and delivers it through the
     /// signed pipeline to the actor's own outbox. The receiving instance removes the like edge (liker →
     /// object) from the liker's <c>liked</c> collection. This is the client's one-call "unlike".
     /// </summary>
     /// <param name="actorId">The IRI of the actor removing the like (must match the client's signing
     /// identity so the request is signed as that actor).</param>
-    /// <param name="objectId">The IRI of the object whose like is being removed (must match the object
-    /// <see cref="LikeAsync"/> was called with, so the Undo references the exact like that was recorded).</param>
+    /// <param name="originalLikeId">The id the server minted for the original like — learned from
+    /// <see cref="DeliveryResult.MintedId"/> when the like was made via <see cref="LikeAsync"/>.
+    /// (Decision 055: the client references the like by its learned id, never a recomputed formula.)</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted id of the <c>Undo</c> (when present).</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to the actor's OWN outbox
     /// (<c>actorId.OutboxOf()</c>) and is signed by the pipeline — the party that made the like undoes it.
-    /// Its <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Like"/> by
-    /// IRI, and the <see cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic,
-    /// unique-per-(actor,object) IRI so a retried unlike dedupes on the receiver.
+    /// Its <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Like"/> by its
+    /// learned id, and the server mints the <c>Undo</c>'s own id (an unguessable ULID) and returns it in
+    /// the 2xx body.
     /// </remarks>
-    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default);
 
     /// <summary>
     /// Boosts (re-shares) an object as <paramref name="actorId"/>: builds an
@@ -237,24 +238,24 @@ public interface IActivityPubClient : IDisposable
     /// <summary>
     /// Removes a boost as <paramref name="actorId"/> (the inverse of <see cref="AnnounceAsync"/>): builds an
     /// <see cref="KristofferStrube.ActivityStreams.Undo"/> whose object references the original
-    /// <see cref="KristofferStrube.ActivityStreams.Announce"/> by IRI (the same deterministic
-    /// <c>{actorId}/announces/{objectId}</c> IRI <see cref="AnnounceAsync"/> mints) and delivers it through the
+    /// <see cref="KristofferStrube.ActivityStreams.Announce"/> by its learned id and delivers it through the
     /// signed pipeline to the announcer's own outbox. This is the client's one-call "unboost" / "unrepost".
     /// </summary>
     /// <param name="actorId">The IRI of the actor removing the boost (must match the client's signing identity
     /// so the request is signed as that actor, and must be the actor who made the boost).</param>
-    /// <param name="objectId">The IRI of the object whose boost is being removed (must match the object
-    /// <see cref="AnnounceAsync"/> was called with, so the Undo references the exact announce that was recorded).</param>
+    /// <param name="originalAnnounceId">The id the server minted for the original announce — learned from
+    /// <see cref="DeliveryResult.MintedId"/> when the boost was made via <see cref="AnnounceAsync"/>.
+    /// (Decision 055: the client references the announce by its learned id, never a recomputed formula.)</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted id of the <c>Undo</c> (when present).</returns>
     /// <remarks>
     /// The <see cref="KristofferStrube.ActivityStreams.Undo"/> is delivered to the announcer's OWN outbox
     /// (<c>actorId.OutboxOf()</c>) and is signed by the pipeline — the party that made the boost undoes it. Its
-    /// <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Announce"/> by IRI, and
-    /// the <see cref="KristofferStrube.ActivityStreams.Undo"/> itself gets a deterministic, unique-per-(actor,object)
-    /// IRI (<c>{actorId}/unannounces/{objectId}</c>) so a retried unboost dedupes on the receiver.
+    /// <c>object</c> references the original <see cref="KristofferStrube.ActivityStreams.Announce"/> by its learned
+    /// id, and the server mints the <c>Undo</c>'s own id (an unguessable ULID) and returns it in the 2xx body.
     /// </remarks>
-    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri originalAnnounceId, CancellationToken ct = default);
 
     /// <summary>
     /// Deletes a content object as <paramref name="actorId"/> (the inverse of a post): builds an
@@ -328,26 +329,27 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
-    /// Un-blocks an actor (F-07 moderation): builds an <see cref="Undo"/> of the
-    /// <see cref="Block"/> <paramref name="actorId"/> made of <paramref name="targetId"/> and publishes
-    /// it to <paramref name="actorId"/>'s own outbox (the inverse of <see cref="BlockAsync"/> — the party
-    /// that made the block undoes it).
+    /// Un-blocks an actor (F-07 moderation): builds an <see cref="Undo"/> of the original
+    /// <see cref="Block"/> and publishes it to <paramref name="actorId"/>'s own outbox (the inverse of
+    /// <see cref="BlockAsync"/> — the party that made the block undoes it).
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-blocking (must match the client's signing identity
     /// so the request is signed as that actor).</param>
-    /// <param name="targetId">The IRI of the actor to un-block (the actor previously blocked).</param>
+    /// <param name="originalBlockId">The id the server minted for the original block — learned from
+    /// <see cref="DeliveryResult.MintedId"/> when the block was made via <see cref="BlockAsync"/>.
+    /// (Decision 055: the client references the block by its learned id, never a recomputed formula.)</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted id of the <c>Undo</c> (when present).</returns>
     /// <remarks>
     /// The <see cref="Undo"/> is published to <c>actorId.OutboxOf()</c> (the blocking actor's own outbox —
     /// the write surface for the activities an actor authors) and is signed by the pipeline. Its
-    /// <c>object</c> references the original <see cref="Block"/> by IRI (the same deterministic
-    /// <c>{actor}/blocks/{target}</c> IRI <see cref="BlockAsync"/> mints), and the <see cref="Undo"/>
-    /// itself gets a deterministic, unique-per-(actor,target) IRI so a retried un-block dedupes on the
-    /// receiver. The server removes the local block edge and server-delivers the <c>Undo</c> to the
-    /// previously-blocked actor's inbox.
+    /// <c>object</c> references the original <see cref="Block"/> by its learned id, and the server mints
+    /// the <see cref="Undo"/>'s own id (an unguessable ULID) and returns it in the 2xx body. The server
+    /// then removes the local block edge and server-delivers the <c>Undo</c> to the previously-blocked
+    /// actor's inbox.
     /// </remarks>
-    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri originalBlockId, CancellationToken ct = default);
 
     /// <summary>
     /// Flags an actor (F-07 moderation): builds a <see cref="Flag"/> activity (actor =
@@ -373,23 +375,26 @@ public interface IActivityPubClient : IDisposable
     /// <summary>
     /// Un-flags an actor (F-07 moderation): the inverse of <see cref="FlagAsync"/> — builds an
     /// <see cref="Undo"/> activity referencing the original <see cref="Flag"/> (actor =
-    /// <paramref name="actorId"/>, object = the <see cref="Flag"/> IRI for the pair) and publishes it to
-    /// <paramref name="actorId"/>'s own outbox, removing the recorded <c>actorId → targetId</c> flag edge.
+    /// <paramref name="actorId"/>, object = the <see cref="Flag"/>'s learned id) and publishes it to
+    /// <paramref name="actorId"/>'s own outbox, removing the recorded flag edge.
     /// </summary>
     /// <param name="actorId">The IRI of the actor un-flagging (must match the client's signing identity
     /// so the request is signed as that actor).</param>
-    /// <param name="targetId">The IRI of the actor to un-flag.</param>
+    /// <param name="originalFlagId">The id the server minted for the original flag — learned from
+    /// <see cref="DeliveryResult.MintedId"/> when the flag was made via <see cref="FlagAsync"/>.
+    /// (Decision 055: the client references the flag by its learned id, never a recomputed formula.)</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, the response
+    /// body, and the server-minted id of the <c>Undo</c> (when present).</returns>
     /// <remarks>
     /// The <see cref="Undo"/> is published to <c>actorId.OutboxOf()</c> (the flagging actor's own outbox —
     /// the write surface for the activities an actor authors) and is signed by the pipeline. It references
-    /// the deterministic <see cref="Flag"/> IRI <c>{actorId}/flags/{targetId}</c> (the same IRI
-    /// <see cref="FlagAsync"/> used), so the server resolves the original flag's parties from the stored
-    /// <see cref="Flag"/> and removes the exact recorded edge (a local flagger of anyone, or a flagger of a
-    /// local actor), then server-delivers the <c>Undo</c> to the target's inbox.
+    /// the original <see cref="Flag"/> by its learned id, so the server resolves the original flag's
+    /// parties from the stored <see cref="Flag"/> and removes the exact recorded edge (a local flagger of
+    /// anyone, or a flagger of a local actor), then server-delivers the <c>Undo</c> to the target's inbox.
+    /// The server mints the <c>Undo</c>'s own id (an unguessable ULID) and returns it in the 2xx body.
     /// </remarks>
-    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default);
+    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri originalFlagId, CancellationToken ct = default);
 
     /// <summary>
     /// Adds <paramref name="memberId"/> to <paramref name="communityId"/> (F-16 community membership):

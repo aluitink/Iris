@@ -187,13 +187,24 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         {
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
 
+            // Decision 055: record the object → Create link so a later Delete can resolve this object's
+            // originating Create by lookup (the object's ULID and its Create's ULID are independent — the
+            // Create IRI can no longer be derived from the object IRI). A Create with a bare-link object
+            // (no embedded object id) records no link.
+            var objectIri = embedded.ResolveObjectIri();
+            if (objectIri is { } obj && activity.Id is { } createId)
+            {
+                await _persistence.Creates
+                    .RecordAsync(obj, new Iri(createId), ct)
+                    .ConfigureAwait(false);
+            }
+
             // F-12 threading: when the stored object is a reply (its inReplyTo is set), record the
             // parent → child edge so the parent's replies collection ({object}/replies) lists this
             // reply. A top-level object (no inReplyTo) records no edge. The edge is recorded in both
             // the person and community branches (a reply to a community-posted note threads there too).
             var parentIri = embedded.GetParentIri();
-            var childIri = embedded.ResolveObjectIri();
-            if (parentIri is { } parent && childIri is { } child)
+            if (parentIri is { } parent && objectIri is { } child)
             {
                 await _persistence.Replies
                     .RecordReplyAsync(parent, child, ct)

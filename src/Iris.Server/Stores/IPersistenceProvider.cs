@@ -56,6 +56,12 @@ public interface IPersistenceProvider
     public IObjectStore Objects { get; }
 
     /// <summary>
+    /// The object → Create index (decision 055): lets a <c>Delete</c> resolve the <c>Create</c> that
+    /// produced an object without deriving the Create IRI from the object IRI.
+    /// </summary>
+    public ICreateIndex Creates { get; }
+
+    /// <summary>
     /// The community store.
     /// </summary>
     public ICommunityStore Communities { get; }

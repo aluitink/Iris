@@ -31,11 +31,13 @@ namespace Iris.Server.Tests;
 /// </item>
 /// </list>
 /// <remarks>
-/// The deterministic Announce IRI (<c>{announcer}/announces/{objectIri}</c>, see
-/// <see cref="AnnounceIris.AnnounceIri(Iri, Iri)"/>) is scoped to the <em>local announcer</em>, so A's and
-/// B's copies of the same boost have distinct IRIs and cannot collide. The 19.3.1/19.3.2 inbox-Id
-/// dedup guard (an activity is interpreted only on first delivery) is what bounds the propagation: the
-/// peer's handling of the boost records it once and does not re-fan-out the same activity.
+/// Decision 055: the boost's id is <em>server-minted</em> (an unguessable ULID under
+/// <c>{announcer}/announces/{ulid}</c>) — the local instance is the sole authority for the id of the
+/// activity it authors, and it is minted once at record-time and reused for every propagated copy, so
+/// A's and B's copies of the same boost share the one id (a follower that stores by IRI dedupes the
+/// boost rather than seeing one copy per delivery). The 19.3.1/19.3.2 inbox-Id dedup guard (an activity
+/// is interpreted only on first delivery) is what bounds the propagation: the peer's handling of the
+/// boost records it once and does not re-fan-out the same activity.
 /// </remarks>
 public sealed class AnnouncePropagationIntegrationTests : IDisposable
 {
@@ -105,28 +107,30 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
         var objectIri = new Iri($"https://{AHost}/objects/note-{Guid.NewGuid():N}");
         var announce = BuildLocalAnnounce(_aliceActorIri, objectIri);
 
-        // alice boosts her own local note (a signed Announce to her outbox). A records it and federates
-        // it to bob (alice's remote follower on B).
+        // alice boosts her own local note (a signed id-less Announce to her outbox). A mints the id,
+        // records it, and federates it to bob (alice's remote follower on B).
         using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // A recorded the boost in alice's outbox (local surfacing).
+        // A recorded the boost in alice's outbox under its server-minted id (local surfacing).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // B validated the federated boost and its AnnounceActivityHandler propagated it to carol (bob's
-        // local follower). Wait for carol's outbox to surface the boost.
+        // local follower) — reusing the same minted id for the propagated copy. Wait for carol's outbox
+        // to surface the boost.
         await WaitForAsync(async () =>
             (await _bPersistence.Activities.GetOutboxAsync(_carolActorIri))
-                .Any(o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id),
+                .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
             timeout: TimeSpan.FromSeconds(30));
         await Task.Delay(TimeSpan.FromSeconds(3)); // let any (absent) amplification settle
 
         // The boost reached carol (bob's local follower) — the propagation happened.
         var carolOutbox = await _bPersistence.Activities.GetOutboxAsync(_carolActorIri);
-        var carolCount = carolOutbox.Count(o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+        var carolCount = carolOutbox.Count(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
         Assert.True(
             carolCount == 1,
             $"carol (bob's local follower) should see the boost exactly once (no amplification); got {carolCount}");
@@ -142,7 +146,7 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
 
         // The stored boost on B references the object by link (correct object link, not an embedded copy).
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B should have stored the federated boost");
         var storedAnnounce = Assert.IsType<Announce>(storedB);
         SingleObjectLinkTo(storedAnnounce, objectIri);
@@ -160,18 +164,20 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
         using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // The boost federated to B (bob's instance) and was propagated to carol (bob's local follower).
+        // The boost federated to B (bob's instance) and was propagated to carol (bob's local follower),
+        // reusing the same minted id.
         await WaitForAsync(async () =>
             (await _bPersistence.Activities.GetOutboxAsync(_carolActorIri))
-                .Any(o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id),
+                .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
             timeout: TimeSpan.FromSeconds(30));
         await Task.Delay(TimeSpan.FromSeconds(3)); // let any (absent) re-announce settle
 
         // The stored boost references the REMOTE object (bob's note) by link — the correct object link,
         // not an embedded copy (which would double-attribute the boost to the wrong author).
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B should have stored the boost of the remote note");
         var storedAnnounce = Assert.IsType<Announce>(storedB);
         SingleObjectLinkTo(storedAnnounce, remoteNoteIri);
@@ -193,17 +199,34 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
     // --- Helpers ---------------------------------------------------------------------------
 
     /// <summary>
-    /// Builds a signed <see cref="Announce"/> from <paramref name="actorIri"/> that re-shares
-    /// <paramref name="objectIri"/> (a <c>Link</c>, never an embedded object), carrying the deterministic
-    /// <see cref="AnnounceIris.AnnounceIri(Iri, Iri)"/>.
+    /// Builds an id-less <see cref="Announce"/> from <paramref name="actorIri"/> that re-shares
+    /// <paramref name="objectIri"/> (a <c>Link</c>, never an embedded object). Decision 055: the client
+    /// sends the activity shape WITHOUT an id; the server mints the id (minted once at record-time and
+    /// reused for every propagated copy, so a follower that stores by IRI dedupes the boost) and returns
+    /// the created activity in the 202 body. The test learns the id via <see cref="LearnMintedIdAsync"/>.
     /// </summary>
     private static Announce BuildLocalAnnounce(Iri actorIri, Iri objectIri) => new()
     {
-        Id = AnnounceIris.AnnounceIri(actorIri, objectIri).Value,
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         AttributedTo = [new Link { Href = new Uri(actorIri.Value) }],
         Object = [new Link { Href = new Uri(objectIri.Value) }],
     };
+
+    /// <summary>
+    /// Learns the server-minted id of an activity from the 202 outbox-publish response body (decision
+    /// 055): the server is the sole id authority and returns the created activity (with its minted id) in
+    /// the 202 body. This mirrors the real client's <c>DeliveryResult.MintedId</c> flow. The boost's id
+    /// is minted once and reused for every propagated copy, so the same id is what A's outbox, B's
+    /// activity store, and carol's outbox all carry.
+    /// </summary>
+    private static async Task<Iri> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        var created = ActivityJson.Deserialize<Activity>(body);
+        Assert.NotNull(created);
+        Assert.NotNull(created!.Id);
+        return new Iri(created.Id);
+    }
 
     /// <summary>
     /// Asserts the activity's <c>object</c> is a single <see cref="Link"/> to <paramref name="objectIri"/>

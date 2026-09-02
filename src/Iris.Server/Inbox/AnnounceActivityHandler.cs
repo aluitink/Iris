@@ -33,10 +33,10 @@ namespace Iris.Server.Inbox;
 /// follower sees the boost via the follower's outbox on this instance (recorded directly — no
 /// cross-instance delivery, the follower's followed-feed reads the outbox); a <em>remote</em>
 /// follower needs a cross-instance delivery (the peer's <c>AnnounceActivityHandler</c> records it in
-/// the follower's outbox on its instance). The deterministic IRI
-/// <c>{recipient}/announces/{objectIri}</c> (see <see cref="AnnounceIris.AnnounceIri(Iri, Iri)"/>)
-/// is scoped to the recipient, so the propagated form and the original form share the same IRI: the
-/// inbox processor's add-if-absent guard (the 19.3.1/19.3.2 re-delivery loop guard) stores the
+ /// the follower's outbox on its instance). The boost's id (minted once at record-time — decision 055,
+ /// see <see cref="AnnounceIris.BuildAnnounce(Iri, Iri, Iri, Iri)"/> — and reused for every propagated
+ /// copy) is scoped to the actual announcer, so the propagated form and the original form share the same
+ /// id: the inbox processor's add-if-absent guard (the 19.3.1/19.3.2 re-delivery loop guard) stores the
 /// propagated (addressed) form under that IRI, which the outbox and follower view surface.
 /// </para>
 /// <para>
@@ -139,11 +139,13 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
             .ConfigureAwait(false);
         foreach (var followerIri in followers)
         {
-            // The deterministic IRI is scoped to the actual announcer (the activity's Actor), not the
-            // recipient (the inbox that received the announce). This keeps the propagated form's IRI
+            // Decision 055 ("mint once at record-time, reuse for all deliveries"): the propagated form
+            // reuses the ORIGINAL announce's id (minted once by the outbox write path, or the inbound
+            // announce's originator id), not a re-derived one. This keeps the propagated form's IRI
             // identical to the original announce's IRI, so the activity store and follower outboxes
-            // reference the same activity.
-            var propagated = AnnounceIris.BuildAnnounce(announcerIri.Value, objectIri.Value, followerIri);
+            // reference the same activity and a follower that stores by IRI dedupes the boost (one copy,
+            // not one per delivery).
+            var propagated = AnnounceIris.BuildAnnounce(new Iri(announce.Id!), announcerIri.Value, objectIri.Value, followerIri);
 
             if (await _localActors.IsLocalActorAsync(followerIri, ct).ConfigureAwait(false))
             {

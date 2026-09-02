@@ -101,22 +101,25 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
         var create = BuildPublicCreate(_aliceActorIri);
 
         // Sign the request as alice (the outbox-publish write surface requires a valid signature from
-        // the acting actor) and POST to A's /ap/v1/u/alice/outbox.
+        // the acting actor) and POST to A's /ap/v1/u/alice/outbox. Decision 055: the Create (and its
+        // embedded Note) is id-less; the server mints both ids and returns the created activity in the
+        // 202 body.
         using var request = SignedRequest(_aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // A recorded the Create in alice's outbox (the local-surfacing half).
+        // A recorded the Create in alice's outbox under its server-minted id (the local-surfacing half).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == create.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // The follower (bob, on B) received the federated Create (signed as alice).
         await WaitForAsync(async () =>
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(30));
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B (the follower) should have stored the Create federated by A's server");
         Assert.IsType<Create>(storedB);
 
@@ -131,7 +134,7 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
         // (a remote non-follower) did NOT receive the Create — the audience is the follower set.
         await Task.Delay(300);
         Assert.False(
-            await _cPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _),
+            await _cPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             "C (a remote non-follower) must NOT have stored alice's Create — delivery recipients are the audience (followers)");
     }
 
@@ -146,25 +149,26 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
         using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // A recorded the Announce in alice's outbox (the local-surfacing half).
+        // A recorded the Announce in alice's outbox under its server-minted id (the local-surfacing half).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // The follower (bob, on B) received the federated Announce (signed as alice).
         await WaitForAsync(async () =>
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(15));
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B (the follower) should have stored the Announce federated by A's server");
         Assert.IsType<Announce>(storedB);
 
         // The non-follower (carol, on C) did NOT receive the boost — the audience is the follower set.
         await Task.Delay(300);
         Assert.False(
-            await _cPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _),
+            await _cPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             "C (a remote non-follower) must NOT have stored alice's Announce — delivery recipients are the audience (followers)");
     }
 
@@ -429,19 +433,20 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
 
     /// <summary>
-    /// Builds a public <see cref="Create"/>: the embedded <see cref="Note"/> carries the
+    /// Builds an id-less public <see cref="Create"/>: the embedded <see cref="Note"/> carries the
     /// <c>as:Public</c> address in its <c>to</c> (the conventional public audience), exactly as the
-    /// client compose surface sets it for a public post.
+    /// client compose surface sets it for a public post. Decision 055: the client sends the activity
+    /// shape WITHOUT an id (the Create's own id <em>and</em> the embedded Note's id); the server mints
+    /// both and returns the created activity in the 202 body. The test learns the Create's id via
+    /// <see cref="LearnMintedIdAsync"/>.
     /// </summary>
     private static Create BuildPublicCreate(Iri actorIri) => new()
     {
-        Id = $"https://{AHost}/activities/create-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object =
         [
             new Note
             {
-                Id = $"https://{AHost}/objects/note-{Guid.NewGuid():N}",
                 Content = ["a public post addressed to everyone"],
                 AttributedTo = [new Link { Href = new Uri(actorIri.Value) }],
                 To = [new Link { Href = new Uri(AsPublic.Value) }],
@@ -451,13 +456,27 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
 
     private static Announce BuildAnnounce(Iri actorIri)
     {
+        // Decision 055: id-less — the server mints the id and returns it in the 202 body.
         var objectIri = new Iri($"https://{AHost}/objects/note-{Guid.NewGuid():N}");
         return new Announce
         {
-            Id = AnnounceIris.AnnounceIri(actorIri, objectIri).Value,
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
             Object = [new Link { Href = new Uri(objectIri.Value) }],
         };
+    }
+
+    /// <summary>
+    /// Learns the server-minted id of an activity from the 202 outbox-publish response body (decision
+    /// 055): the server is the sole id authority and returns the created activity (with its minted id) in
+    /// the 202 body. This mirrors the real client's <c>DeliveryResult.MintedId</c> flow.
+    /// </summary>
+    private static async Task<Iri> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        var created = ActivityJson.Deserialize<Activity>(body);
+        Assert.NotNull(created);
+        Assert.NotNull(created!.Id);
+        return new Iri(created.Id);
     }
 
     /// <summary>Reads the embedded Note's <c>to</c> hrefs from a stored (federated) <see cref="Create"/>.</summary>

@@ -83,7 +83,43 @@ Iris.slnx
 
  **Phase 19.1.4 (change 161o): browser signed-POST 401 — the signed date is carried in `X-Signature-Date`** — the *browser* client's direct signed POST to its own outbox 401'd (the proxy fallback masked it). Root cause: a Blazor WASM host's `fetch` treats the standard `Date` request header as **forbidden** and overrides it on the wire, so the server verified the `date` signature component over a value different from the one signed → the base mismatched → 401. The client now signs over its date and carries that value in a custom, non-forbidden `X-Signature-Date` header (the browser sends it faithfully); the server verifier reads the date component from it via a new shared `Signatures.ResolveDateComponent` (falling back to the wire `Date`), and `Date` is still sent for replay protection. Both signer and verifier use the same resolve helper, so the date component can never drift. New: 4 `ResolveDateComponent` unit tests + 2 `SigningHandler` tests (incl. verification-succeeds-when-the-wire-`Date`-is-overridden). **Live-verified** (Playwright, alice@iris-dev1 FQDN dial base): direct outbox POST → **202** (not 401), `X-Signature-Date` present, wire `Date` absent, **no `/proxy/` fallback**. Also fixed a deployment gap: added `https://iris.luit.ink` (the real public UI origin) to `IRIS_CORS_ORIGINS` (`.env`, gitignored) — the cross-origin WebFinger log-on was CORS-blocked without it. Suite 1,288, 0 failed.
 
-**Next: Phase 19.1 (live interop verification)** — 19.1.2 (F1) is unblocked: the follow Accept/Reject mechanism is now outbox-based (AP-native). The 161m audit surfaced the concrete remote-read CORS gap that 19.1.x must close (route remote reads through a same-origin server proxy, or render remote feed items as canonical-URL links). Remaining 19.x items are live/UI-verification (Docker env + RayvenMX) or the deferred 19.6.5 audience-metadata.
+ **Phase 20 (planning) — end-to-end usage-story alignment.** Operator directive (2026-09-02): tighten the
+ end-to-end architecture so we don't do massive overhauls later — think each topic through thoroughly, deal
+ with items **one by one**, align with the **end-to-end usage story** (the user drives the sample explorer as
+ a client of a local or remote instance). New [ROADMAP Phase 20](docs/ROADMAP.md#phase-20--end-to-end-usage-story-alignment-in-planning-work-item-by-item)
+  items (drafted from the directive, to be refined per change): **20.0** close the in-flight decision-055
+  work (ULID/learned-id — server mints object ids + returns the created object), **20.1** confirm
+  the four C2S load-bearing pillars (outbox = source of truth, digest auth, proxy fallback for CORS, browse
+  external collections) + decide **outbox-returns-Creates**, **20.2** the **C2S inbox design** (browser access,
+  attachment storage + CORS rewrite, local-id rewrite, reply/like/boost sync, pull-on-encounter fidelity —
+  design doc first), **20.3** sample-UI **outbox enumeration + paging** (local or remote), **20.4**
+  implementation features (**media**, **sensitivity**, **markdown viewer**), **20.5** **test-suite triage**
+  (remove the useless; keep the integration-first few — the suite is growing too fast), **20.6**
+  architecture-cohesion pass, **20.7** the **manual test plan** (sample UI + wire — the capstone, **last**).
+  Manual testing is deliberately saved for the end; testing discipline favors a few integration tests that
+  genuinely exercise the concepts over a stack of thin unit tests.
+
+  **Phase 20.0 (change 161p) — COMPLETE (decision 055 closed).** The in-flight decision-055 work (ULID/
+  learned-id — server is the sole object-id authority) is **done**: `Iris.Core/Identity/Ulid.cs`
+  (monotonic ULID) + `Iris.Server/Identity/IdMinter.cs` (DI singleton) mint every authored object's id
+  (`{actorBase}/{namespace}/{ulid}`); the outbox handler accepts an id-less `Activity`, mints it (and the
+  embedded object's id, preserving any client-set embedded id), and **returns the created object in the 2xx
+  body** (`Results.Text`, a JSON string — the first attempt serialized it quoted, so `MintedId` parsed null);
+  the inbound follow-response (Accept/Reject) is now minted under `{actor}/accepts|rejects/{ulid}` (the
+  handlers inject `IdMinter`); the client drops `Id` from every authoring method and the inverse methods
+  (Undo/Unlike/Unannounce/Remove/Delete) take the **learned** id (`DeliveryResult.MintedId`), never a
+  recomputed formula; `AddMemberAsync`/`RemoveMemberAsync` repointed to the community **outbox**; new
+  `IActivityStore.GetAllActivitiesAsync` + `ICreateIndex`. The ~10 `Iris.Server.Tests`/`Iris.Client.Tests`
+  files that predicted ids by the old formula now build id-less helpers and **learn** the minted id (2xx
+  body / stored outbox / enumerated activity store); the convergence + federation-signature tests locate
+  minted objects **by reference**, not a computed IRI. Two bring-up bugs fixed (quoted 202 body;
+  `MintActivityIds` not persisting the embedded-object mutation). `dotnet test` green: **1,111 tests, 0
+  failed** (Core 210 / Client 135 / Server 766; was 5 failing at 20.0 start).
+
+  **Next: Phase 20.1 (confirm the four C2S pillars + decide outbox-returns-Creates).** With 20.0 closed and
+  the suite green, Phase 20 proceeds item-by-item (20.1 pillars → 20.2 inbox design → 20.3 UI browsing →
+  20.4 features → 20.5 test triage → 20.6 cohesion → 20.7 manual plan). Phase 19.1 (live interop) remains
+  available but is not the active focus.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).

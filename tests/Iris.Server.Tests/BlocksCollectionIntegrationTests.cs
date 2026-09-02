@@ -223,13 +223,17 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
 
         // bob blocks carol (202), the edge is recorded, and carol's post drops out of bob's feed.
-        Assert.Equal(202, (await client.BlockAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        // Decision 055: the server mints the Block's id, returned in DeliveryResult.MintedId.
+        var blockResult = await client.BlockAsync(_bobActorIri, _carolActorIri);
+        Assert.Equal(202, blockResult.StatusCode);
+        Assert.True(blockResult.MintedId != null, "the server should have minted the Block's id.");
         Assert.True(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
         Assert.DoesNotContain(noteIri, await FeedNoteIrisAsync(_bobActorIri));
 
-        // bob un-blocks carol: the Undo of the Block (actor = bob, object = the original Block) is
-        // delivered to carol's inbox; the instance removes the recorded edge.
-        Assert.Equal(202, (await client.UnblockAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        // bob un-blocks carol: the Undo of the Block (actor = bob, object = the original Block's
+        // LEARNED id) is published to bob's outbox; the instance removes the recorded edge.
+        var unblockResult = await client.UnblockAsync(_bobActorIri, new Iri(blockResult.MintedId!));
+        Assert.Equal(202, unblockResult.StatusCode);
         Assert.False(await _persistence.Moderation.IsBlockedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetBlocksAsync(_bobActorIri));
 

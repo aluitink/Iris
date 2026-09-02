@@ -149,14 +149,21 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
 
         // Remove the deleted object's Create from the author's outbox so the outbox collection no longer
         // lists the deleted content (the inverse of the AddToOutboxAsync the Create handler recorded).
-        // The Create IRI is the deterministic sibling of the object IRI (a note at {actor}/notes/{suffix}
-        // was created by {actor}/creates/{suffix}); a missing entry is a no-op.
-        var objectValue = objectIri.Value.ToString();
-        var slash = objectValue.LastIndexOf('/');
-        var suffix = slash >= 0 ? objectValue.Substring(slash + 1) : objectValue;
-        await _persistence.Activities
-            .RemoveFromOutboxAsync(actorIri.Value, new Iri($"{actorIri.Value}/creates/{suffix}"), ct)
-            .ConfigureAwait(false);
+        // Decision 055: the Create IRI is resolved by lookup in the object → Create index (recorded at
+        // Create time), not derived from the object IRI — the note's ULID and its Create's ULID are
+        // independent, so the old "sibling by last segment" derivation no longer holds. A missing link
+        // (object not created through a Create this instance recorded) is a no-op.
+        if (await _persistence.Creates
+                .TryGetCreateIriAsync(objectIri.Value, ct)
+                .ConfigureAwait(false) is { } createIri)
+        {
+            await _persistence.Activities
+                .RemoveFromOutboxAsync(actorIri.Value, createIri, ct)
+                .ConfigureAwait(false);
+            await _persistence.Creates
+                .RemoveAsync(objectIri.Value, ct)
+                .ConfigureAwait(false);
+        }
 
         // F-03 (federated half): propagate the Delete to the remote actors that hold a copy of the
         // object (the author's remote followers, the remote attributedTo, and the remote parent's

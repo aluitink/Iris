@@ -3,6 +3,7 @@
  using Iris.Client;
 using Iris.Core;
 using Iris.Server;
+using Iris.Server.Identity;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
@@ -101,89 +102,119 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     [Fact]
     public async Task EveryAuthoredActivity_AppearsInTheOutbox_OnceInStableOrder()
     {
+        // Decision 055: the client authors each activity WITHOUT an id; the server mints the id (and, for
+        // a Create, the embedded Note's id) and returns the created activity in the 202 body. The test
+        // learns each minted id from the response and threads the learned id into any reference-carrying
+        // follow-up (an Undo/Delete references the LEARNED id of the target, never a recomputed formula).
+        // The "single source of truth" property — exactly the authored set, each once, in order — is
+        // unchanged; only the ids are now server-minted rather than client-chosen.
+
         // 1. Follow bob (a local recipient — no cross-instance hop).
         var follow = BuildFollow(_alice, _bob);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(follow));
+        var (followStatus, followId) = await PostOutboxAsync(follow);
+        Assert.Equal((int)HttpStatusCode.Accepted, followStatus);
+        Assert.NotNull(followId);
 
         // 2. Create a note (alice has no followers, so no fan-out).
         var create = BuildCreate(_alice);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(create));
+        var (createStatus, createId) = await PostOutboxAsync(create);
+        Assert.Equal((int)HttpStatusCode.Accepted, createStatus);
+        Assert.NotNull(createId);
 
         // 3. Like a note.
         var like = BuildLike(_alice);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(like));
+        var (likeStatus, likeId) = await PostOutboxAsync(like);
+        Assert.Equal((int)HttpStatusCode.Accepted, likeStatus);
+        Assert.NotNull(likeId);
 
         // 4. Announce a note.
         var announce = BuildAnnounce(_alice);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(announce));
+        var (announceStatus, announceId) = await PostOutboxAsync(announce);
+        Assert.Equal((int)HttpStatusCode.Accepted, announceStatus);
+        Assert.NotNull(announceId);
 
         // 5. Block bob (a local recipient).
         var block = BuildBlock(_alice, _bob);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(block));
+        var (blockStatus, blockId) = await PostOutboxAsync(block);
+        Assert.Equal((int)HttpStatusCode.Accepted, blockStatus);
+        Assert.NotNull(blockId);
 
-        // 6. Undo the follow (un-follow bob).
-        var undo = BuildUndo(_alice, follow);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undo));
+        // 6. Undo the follow (un-follow bob). The Undo references the LEARNED follow id.
+        var undo = BuildUndo(_alice, followId!.Value);
+        var (undoStatus, undoId) = await PostOutboxAsync(undo);
+        Assert.Equal((int)HttpStatusCode.Accepted, undoStatus);
+        Assert.NotNull(undoId);
 
-        // 7. Delete the created note. The note's Create stays in the outbox: this Create's IRI is not the
-        //    deterministic sibling of the note, so the Delete's inverse-removal is a no-op — the point
-        //    here is that the Delete itself is recorded as an authored activity.
-        var note = create.Object!.First();
-        var noteIri = note.ResolveObjectIri()
-            ?? throw new InvalidOperationException("The created note must carry an IRI.");
+        // 7. Delete the created note. The Delete references the LEARNED note id (the embedded Note's
+        //    server-minted id, read from the stored Create). The note's Create stays in the outbox: this
+        //    Create's IRI is not the deterministic sibling of the note, so the Delete's inverse-removal
+        //    is a no-op — the point here is that the Delete itself is recorded as an authored activity.
+        var noteIri = await LearnEmbeddedNoteIriAsync(createId!.Value);
         var delete = BuildDelete(_alice, noteIri);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(delete));
+        var (deleteStatus, deleteId) = await PostOutboxAsync(delete);
+        Assert.Equal((int)HttpStatusCode.Accepted, deleteStatus);
+        Assert.NotNull(deleteId);
 
         // 8. Accept a remote follow of alice (published to alice's outbox; the instance applies the edge
-        //    and server-delivers the Accept).
+        //    and server-delivers the Accept). The Accept's own id is server-minted.
         var remoteFollow1 = BuildRemoteFollow(_remote, _alice);
         await RecordProvisionalFollowAsync(remoteFollow1);
-        Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(remoteFollow1, accept: true));
-        var accept = await _persistence.Activities
-            .TryGetActivityAsync(FollowIris.AcceptIri(_alice, remoteFollow1), out var storedAccept)
-            ? storedAccept!
-            : throw new InvalidOperationException("The Accept should be recorded.");
+        var (acceptStatus, acceptId) = await DecisionAsync(remoteFollow1, accept: true);
+        Assert.Equal((int)HttpStatusCode.Accepted, acceptStatus);
+        Assert.NotNull(acceptId);
 
         // 9. Reject a second remote follow of alice (published to alice's outbox; the instance removes the
-        //    provisional edge and server-delivers the Reject).
+        //    provisional edge and server-delivers the Reject). The Reject's own id is server-minted.
         var remoteFollow2 = BuildRemoteFollow(_remote, _alice);
         await RecordProvisionalFollowAsync(remoteFollow2);
-        Assert.Equal((int)HttpStatusCode.Accepted, await DecisionAsync(remoteFollow2, accept: false));
-        var reject = await _persistence.Activities
-            .TryGetActivityAsync(FollowIris.RejectIri(_alice, remoteFollow2), out var storedReject)
-            ? storedReject!
-            : throw new InvalidOperationException("The Reject should be recorded.");
+        var (rejectStatus, rejectId) = await DecisionAsync(remoteFollow2, accept: false);
+        Assert.Equal((int)HttpStatusCode.Accepted, rejectStatus);
+        Assert.NotNull(rejectId);
 
         // 10. Flag bob (a moderation report; the instance records the flag edge locally).
         var flag = BuildFlag(_alice, _bob);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(flag));
+        var (flagStatus, flagId) = await PostOutboxAsync(flag);
+        Assert.Equal((int)HttpStatusCode.Accepted, flagStatus);
+        Assert.NotNull(flagId);
 
-        // 11. Undo the flag (un-flag bob; the instance removes the flag edge).
-        var undoFlag = BuildUndo(_alice, flag);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoFlag));
+        // 11. Undo the flag (un-flag bob; the instance removes the flag edge). References the learned flag id.
+        var undoFlag = BuildUndo(_alice, flagId!.Value);
+        var (undoFlagStatus, undoFlagId) = await PostOutboxAsync(undoFlag);
+        Assert.Equal((int)HttpStatusCode.Accepted, undoFlagStatus);
+        Assert.NotNull(undoFlagId);
 
-        // 12. Undo the like (un-like the liked object; the instance removes the like edge).
-        var undoLike = BuildUndo(_alice, like);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoLike));
+        // 12. Undo the like (un-like the liked object; the instance removes the like edge). References
+        //     the learned like id.
+        var undoLike = BuildUndo(_alice, likeId!.Value);
+        var (undoLikeStatus, undoLikeId) = await PostOutboxAsync(undoLike);
+        Assert.Equal((int)HttpStatusCode.Accepted, undoLikeStatus);
+        Assert.NotNull(undoLikeId);
 
         // 13. Undo the announce (un-boost the announced object; the instance removes the announce edge).
-        var undoAnnounce = BuildUndo(_alice, announce);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoAnnounce));
+        //     References the learned announce id.
+        var undoAnnounce = BuildUndo(_alice, announceId!.Value);
+        var (undoAnnounceStatus, undoAnnounceId) = await PostOutboxAsync(undoAnnounce);
+        Assert.Equal((int)HttpStatusCode.Accepted, undoAnnounceStatus);
+        Assert.NotNull(undoAnnounceId);
 
-        // 14. Undo the block (un-block bob; the instance removes the block edge).
-        var undoBlock = BuildUndo(_alice, block);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PostOutboxAsync(undoBlock));
+        // 14. Undo the block (un-block bob; the instance removes the block edge). References the learned
+        //     block id.
+        var undoBlock = BuildUndo(_alice, blockId!.Value);
+        var (undoBlockStatus, undoBlockId) = await PostOutboxAsync(undoBlock);
+        Assert.Equal((int)HttpStatusCode.Accepted, undoBlockStatus);
+        Assert.NotNull(undoBlockId);
 
         // --- The outbox is the single source of truth: exactly the authored set, each once, in order.
 
         var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
-        var ids = outbox.Select(a => a.Id).ToList();
+        var ids = outbox.Select(a => a.Id).Cast<string>().ToList();
 
-        // The authored set, in authoring order.
+        // The authored set (each its server-minted id, as a string), in authoring order.
         var authored = new[]
         {
-            follow.Id, create.Id, like.Id, announce.Id, block.Id, undo.Id, delete.Id,
-            accept!.Id, reject!.Id, flag.Id, undoFlag.Id, undoLike.Id, undoAnnounce.Id, undoBlock.Id,
+            followId!.Value.Value, createId!.Value.Value, likeId!.Value.Value, announceId!.Value.Value, blockId!.Value.Value,
+            undoId!.Value.Value, deleteId!.Value.Value, acceptId!.Value.Value, rejectId!.Value.Value, flagId!.Value.Value,
+            undoFlagId!.Value.Value, undoLikeId!.Value.Value, undoAnnounceId!.Value.Value, undoBlockId!.Value.Value,
         };
 
         // The outbox lists activities newest-first (the store inserts at the front), so the expected
@@ -201,6 +232,22 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads the server-minted id of the <see cref="Note"/> embedded in the stored <see cref="Create"/> at
+    /// <paramref name="createIri"/> (decision 055: the Create's embedded object gets its own minted id).
+    /// </summary>
+    private async Task<Iri> LearnEmbeddedNoteIriAsync(Iri createIri)
+    {
+        Assert.True(
+            await _persistence.Activities.TryGetActivityAsync(createIri, out var stored),
+            "The stored Create should be present to read its embedded note id.");
+        var create = Assert.IsType<Create>(stored!);
+        var note = create.Object?.FirstOrDefault();
+        var noteIri = note?.ResolveObjectIri();
+        Assert.NotNull(noteIri);
+        return noteIri!.Value;
+    }
+
     // --- The outbox collection (HTTP) agrees with the persistence-level outbox --------------
     //
     // The client reads the outbox over HTTP (GET /ap/v1/u/{handle}/outbox); the source of truth is the
@@ -211,23 +258,26 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     public async Task OutboxHttpCollection_MatchesTheAuthoredSet()
     {
         var follow = BuildFollow(_alice, _bob);
-        await PostOutboxAsync(follow);
+        var (_, followId) = await PostOutboxAsync(follow);
         var create = BuildCreate(_alice);
-        await PostOutboxAsync(create);
+        var (_, createId) = await PostOutboxAsync(create);
+        Assert.NotNull(followId);
+        Assert.NotNull(createId);
 
-        // The HTTP outbox collection (first page) lists both authored activities.
+        // The HTTP outbox collection (first page) lists both authored activities (under their
+        // server-minted ids — decision 055).
         var response = await _http.GetAsync($"{_alice.Value.TrimEnd('/')}/outbox");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var body = await response.Content.ReadAsStringAsync();
         var ids = JsonDoc.ItemIdsOf(body);
 
-        Assert.Contains(follow.Id, ids);
-        Assert.Contains(create.Id, ids);
+        Assert.Contains(followId!.Value.Value, ids);
+        Assert.Contains(createId!.Value.Value, ids);
 
         // And the persistence outbox agrees.
-        var persisted = (await _persistence.Activities.GetOutboxAsync(_alice)).Select(a => a.Id).ToList();
-        Assert.Contains(follow.Id, persisted);
-        Assert.Contains(create.Id, persisted);
+        var persisted = (await _persistence.Activities.GetOutboxAsync(_alice)).Select(a => a.Id).Cast<string>().ToList();
+        Assert.Contains(followId!.Value.Value, persisted);
+        Assert.Contains(createId!.Value.Value, persisted);
     }
 
     // --- The client's Announce/Unannounce publish to the outbox (19.6.1 management) -------
@@ -246,15 +296,17 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
 
         Assert.True(result.IsSuccess, "the announce must be accepted");
         Assert.Equal((int)HttpStatusCode.Accepted, result.StatusCode);
+        // Decision 055: the server mints the Announce's id ({actor}/announces/{ulid}) and returns it in
+        // the 202 body; the client learns it via DeliveryResult.MintedId.
+        Assert.True(result.MintedId != null, "the server should have minted the Announce's id and returned it.");
+        var mintedIri = new Iri(result.MintedId!);
 
-        // The Announce is recorded in alice's outbox + the activity store, with the deterministic IRI
-        // {actor}/announces/{object} (matching the server's AnnounceIris.AnnounceIri).
-        var expectedIri = $"{_alice.Value.TrimEnd('/')}/announces/{objectId.Value}";
+        // The Announce is recorded in alice's outbox + the activity store under its server-minted id.
         var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
-        var announce = Assert.Single(outbox, a => a.Id == expectedIri);
+        var announce = Assert.Single(outbox, a => a.Id == mintedIri.Value);
         Assert.IsType<Announce>(announce);
 
-        var stored = await _persistence.Activities.TryGetActivityAsync(new Iri(expectedIri), out var activity);
+        var stored = await _persistence.Activities.TryGetActivityAsync(mintedIri, out var activity);
         Assert.True(stored, "the Announce must be in the activity store.");
         Assert.NotNull(activity);
     }
@@ -264,38 +316,62 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     {
         var objectId = new Iri($"https://{AHost}/objects/boost-target-{Guid.NewGuid():N}");
 
-        // First boost, then unboost.
+        // First boost (the server mints the Announce's id, returned in DeliveryResult.MintedId) ...
         var announce = await _client.AnnounceAsync(_alice, objectId);
         Assert.True(announce.IsSuccess);
-        var unannounce = await _client.UnannounceAsync(_alice, objectId);
+        Assert.True(announce.MintedId != null, "the server should have minted the Announce's id.");
+        var announceIri = announce.MintedId!;
+
+        // ... then unboost. The client's UnannounceAsync builds the Undo of the LEARNED announce id
+        // (decision 055 learned-id references: the client passes the id it learned, never a recomputed
+        // formula).
+        var unannounce = await _client.UnannounceAsync(_alice, new Iri(announceIri));
         Assert.True(unannounce.IsSuccess, "the unannounce must be accepted");
         Assert.Equal((int)HttpStatusCode.Accepted, unannounce.StatusCode);
+        Assert.True(unannounce.MintedId != null, "the server should have minted the Undo's id.");
+        var undoIri = unannounce.MintedId!;
 
-        // Both the Announce and the Undo-of-Announce are in the outbox.
+        // Both the Announce and the Undo-of-Announce are in the outbox (each under its server-minted id).
         var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
-        var expectedAnnounceIri = $"{_alice.Value.TrimEnd('/')}/announces/{objectId.Value}";
-        var expectedUndoIri = $"{_alice.Value.TrimEnd('/')}/unannounces/{objectId.Value}";
-        Assert.Contains(outbox, a => a.Id == expectedAnnounceIri);
-        var undo = Assert.Single(outbox, a => a.Id == expectedUndoIri);
+        Assert.Contains(outbox, a => a.Id == announceIri);
+        var undo = Assert.Single(outbox, a => a.Id == undoIri);
         Assert.IsType<Undo>(undo);
 
-        // The Undo references the exact Announce by its deterministic IRI.
+        // The Undo references the exact Announce by its LEARNED (server-minted) id.
         var undoActivity = (Undo)undo;
         var referencedObjectIri = undoActivity.Object?.FirstOrDefault().ResolveObjectIri();
-        Assert.Equal(expectedAnnounceIri, referencedObjectIri?.Value);
+        Assert.Equal(announceIri, referencedObjectIri?.Value);
     }
 
     // --- Helpers --------------------------------------------------------------------------
 
     /// <summary>
     /// POSTs <paramref name="activity"/> to the outbox endpoint, signed as alice, and returns the status
-    /// code.
+    /// code plus the server-minted id of the created activity (decision 055: the server is the sole id
+    /// authority and returns the created activity — with its minted id — in the 202 body; this mirrors
+    /// the real client's <c>DeliveryResult.MintedId</c> flow). The minted id is <c>null</c> when the
+    /// response is not 2xx or carries no body.
     /// </summary>
-    private async Task<int> PostOutboxAsync(Activity activity)
+    private async Task<(int Status, Iri? MintedId)> PostOutboxAsync(Activity activity)
     {
         using var request = SignedRequest(activity, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _http.SendAsync(request);
-        return (int)response.StatusCode;
+        var status = (int)response.StatusCode;
+        Iri? mintedId = null;
+        if (response.IsSuccessStatusCode && response.Content is { } respContent)
+        {
+            var body = await respContent.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                var created = ActivityJson.Deserialize<Activity>(body);
+                if (created?.Id is { Length: > 0 } id)
+                {
+                    mintedId = new Iri(id);
+                }
+            }
+        }
+
+        return (status, mintedId);
     }
 
     /// <summary>
@@ -356,15 +432,17 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
     }
 
     /// <summary>
-    /// Publishes the AP-native follow decision (the deterministic <see cref="Accept"/> or
-    /// <see cref="Reject"/>) for <paramref name="follow"/> to alice's outbox, signed as alice, and returns
-    /// the status code. <paramref name="accept"/> selects the accept half.
+    /// Publishes the AP-native follow decision (the <see cref="Accept"/> or <see cref="Reject"/>) for
+    /// <paramref name="follow"/> to alice's outbox, signed as alice, and returns the status code plus the
+    /// server-minted id of the decision (decision 055: the decision's own id is minted by the server; the
+    /// object references the inbound follow by its originator's id). <paramref name="accept"/> selects the
+    /// accept half.
     /// </summary>
-    private async Task<int> DecisionAsync(Follow follow, bool accept)
+    private async Task<(int Status, Iri? MintedId)> DecisionAsync(Follow follow, bool accept)
     {
         Activity decision = accept
-            ? FollowIris.BuildAccept(_alice, follow)
-            : FollowIris.BuildReject(_alice, follow);
+            ? FollowIris.BuildAccept(new IdMinter(), _alice, follow)
+            : FollowIris.BuildReject(new IdMinter(), _alice, follow);
         return await PostOutboxAsync(decision);
     }
 
@@ -383,13 +461,20 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         }
     }
 
+    // Decision 055: every authoring build helper is id-less — the client sends the activity shape
+    // WITHOUT an id (the activity's own id AND, for a Create, the embedded object's id); the server mints
+    // both and returns the created activity in the 202 body. The test learns each minted id from the
+    // response and threads the learned id into any reference-carrying follow-up (an Undo/Delete).
+
     private static Follow BuildFollow(Iri actor, Iri target) => new()
     {
-        Id = $"https://{AHost}/activities/follow-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri(target.Value) }],
     };
 
+    // An inbound (remote-authored) follow keeps its originator's id verbatim — this is NOT posted to the
+    // outbox, it is stored directly (RecordProvisionalFollowAsync), so it keeps a deterministic id
+    // (representing the remote actor's choice) so the Accept/Reject can reference it.
     private static Follow BuildRemoteFollow(Iri remote, Iri alice) => new()
     {
         Id = $"https://{RemoteHost}/activities/follow-{Guid.NewGuid():N}",
@@ -399,56 +484,48 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
 
     private static Create BuildCreate(Iri actor)
     {
-        var noteIri = $"https://{AHost}/objects/note-{Guid.NewGuid():N}";
         return new Create
         {
-            Id = $"https://{AHost}/activities/create-{Guid.NewGuid():N}",
             Actor = [new Link { Href = new Uri(actor.Value) }],
             Object =
             [
-                new Note { Id = noteIri, Content = ["an outbox post"] },
+                new Note { Content = ["an outbox post"] },
             ],
         };
     }
 
     private static Like BuildLike(Iri actor) => new()
     {
-        Id = $"https://{AHost}/activities/like-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri($"https://{AHost}/objects/liked-{Guid.NewGuid():N}") }],
     };
 
     private static Announce BuildAnnounce(Iri actor) => new()
     {
-        Id = $"https://{AHost}/activities/announce-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri($"https://{AHost}/objects/announced-{Guid.NewGuid():N}") }],
     };
 
     private static Block BuildBlock(Iri actor, Iri target) => new()
     {
-        Id = $"https://{AHost}/activities/block-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri(target.Value) }],
     };
 
     private static Flag BuildFlag(Iri actor, Iri target) => new()
     {
-        Id = $"https://{AHost}/activities/flag-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri(target.Value) }],
     };
 
-    private static Undo BuildUndo(Iri actor, Activity target) => new()
+    private static Undo BuildUndo(Iri actor, Iri targetIri) => new()
     {
-        Id = $"https://{AHost}/activities/undo-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
-        Object = [new Link { Href = new Uri(target.Id!) }],
+        Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
 
     private static Delete BuildDelete(Iri actor, Iri objectIri) => new()
     {
-        Id = $"https://{AHost}/activities/delete-{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actor.Value) }],
         Object = [new Link { Href = new Uri(objectIri.Value) }],
     };

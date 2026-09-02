@@ -41,39 +41,57 @@ public class DeleteDeliveryTests
         var body = Encoding.UTF8.GetString(fake.LastBody);
         var doc = JsonNode.Parse(body)!.AsObject();
         Assert.Equal("Delete", (string?)doc["type"]);
-        // The Delete gets a deterministic, unique-per-(actor,object) IRI (deletes/{suffix}).
-        Assert.Equal($"{ActorIri}/deletes/abc123", (string?)doc["id"]);
 
         // The Delete's object is the object being deleted, by IRI (the server resolves it in its store).
         Assert.Equal(ObjectIri, (string?)doc["object"]);
+
+        // Decision 055: the client sends the Delete's shape only — no id (the server mints the Delete's
+        // id and returns it in the 2xx body).
+        Assert.False(doc.ContainsKey("id"), "the client must not set the Delete's id (server is the authority)");
     }
 
     [Fact]
     public async Task DeleteAsync_ReferenceIsThePostedNoteIri()
     {
-        // Delete must reference the SAME note IRI that PostNoteAsync created, so the server can find and
-        // tombstone the stored object. Post a note (capture the note's IRI from the Create), then delete
-        // by that IRI and assert the Delete's object reference matches.
-        var postFake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        // Decision 055: PostNoteAsync mints the Create's id AND the embedded note's id server-side and
+        // returns the created Create in the 2xx body. The caller learns the note's IRI from the returned
+        // body's `object` (the embedded note's minted id) and passes it to DeleteAsync. Simulate the
+        // round-trip: the post's fake returns a 202 body carrying the created Create (with the embedded
+        // note's minted id); the caller learns the note IRI and deletes by it.
+        var mintedNoteIri = $"{ActorIri}/notes/{Guid.NewGuid():N}";
+        var mintedCreateIri = $"{ActorIri}/creates/{Guid.NewGuid():N}";
+        var createdCreateJson = new JsonObject
+        {
+            ["id"] = mintedCreateIri,
+            ["type"] = "Create",
+            ["object"] = new JsonObject
+            {
+                ["id"] = mintedNoteIri,
+                ["type"] = "Note",
+                ["content"] = "to be deleted",
+            },
+        }.ToJsonString();
+        var postFake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = new StringContent(createdCreateJson, Encoding.UTF8, ActivityJson.ActivityJsonContentType),
+        });
         var deleteFake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
         var actor = new Iri(ActorIri);
 
         var postClient = new ActivityPubClient(new HttpClient(postFake));
         var deleteClient = new ActivityPubClient(new HttpClient(deleteFake));
 
-        // Post a note; the Create's embedded note has id {actor}/notes/{suffix} and the Create's id is
-        // {actor}/creates/{suffix} (the same suffix).
-        _ = await postClient.PostNoteAsync(actor, "to be deleted");
-        var createBody = JsonNode.Parse(Encoding.UTF8.GetString(postFake.LastBody)!)!.AsObject();
-        // The note's IRI is the Create's sibling under /notes/ (same suffix).
-        var createIri = (string?)createBody["id"];
-        var noteSuffix = createIri!.Substring(createIri.LastIndexOf('/') + 1);
-        var noteIri = new Iri($"{ActorIri}/notes/{noteSuffix}");
+        // Post a note; learn the note's IRI from the returned Create's embedded object (the 2xx body).
+        var postResult = await postClient.PostNoteAsync(actor, "to be deleted");
+        Assert.NotNull(postResult.MintedId);
+        using var createDoc = System.Text.Json.JsonDocument.Parse(postResult.Body);
+        var noteIri = new Iri(createDoc.RootElement.GetProperty("object").GetProperty("id").GetString()!);
 
         _ = await deleteClient.DeleteAsync(actor, noteIri);
         var deleteBody = JsonNode.Parse(Encoding.UTF8.GetString(deleteFake.LastBody)!)!.AsObject();
         var deleteObjectIri = (string?)deleteBody["object"];
 
-        Assert.Equal(noteIri.Value, deleteObjectIri);
+        // The Delete references the SAME (server-minted) note IRI the post created.
+        Assert.Equal(mintedNoteIri, deleteObjectIri);
     }
 }

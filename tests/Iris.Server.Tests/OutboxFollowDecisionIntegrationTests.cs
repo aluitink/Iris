@@ -81,17 +81,18 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         await RecordProvisionalFollowAsync(follow);
 
         var accept = BuildAccept(_bobActorIri, follow);
-        var statusCode = await PublishToOutboxAsync(accept);
+        var (statusCode, mintedId) = await PublishToOutboxAsync(accept);
         Assert.Equal((int)HttpStatusCode.Accepted, statusCode);
 
-        // The Accept is recorded under its deterministic IRI in the activity store AND bob's outbox.
-        var acceptIri = FollowIris.AcceptIri(_bobActorIri, follow);
+        // Decision 055: the Accept's id is server-minted (learned from the 202 body). The Accept is
+        // recorded under that minted id in the activity store AND bob's outbox.
+        Assert.NotNull(mintedId);
         Assert.True(
-            await _persistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
-            "The Accept should be recorded in the activity store under its deterministic IRI");
+            await _persistence.Activities.TryGetActivityAsync(mintedId!.Value, out var stored),
+            "The Accept should be recorded in the activity store under its server-minted IRI");
         Assert.IsType<Accept>(stored!);
         var outbox = await _persistence.Activities.GetOutboxAsync(_bobActorIri);
-        Assert.Contains(outbox, a => a.Id == acceptIri.Value);
+        Assert.Contains(outbox, a => a.Id == mintedId!.Value.Value);
 
         // The follow edge (alice → bob) is recorded (ensured).
         Assert.True(
@@ -108,11 +109,18 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         await RecordProvisionalFollowAsync(follow);
 
         var accept = BuildAccept(_bobActorIri, follow);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PublishToOutboxAsync(accept));
+        var (firstStatus, firstId) = await PublishToOutboxAsync(accept);
+        Assert.Equal((int)HttpStatusCode.Accepted, firstStatus);
+        Assert.NotNull(firstId);
 
-        // The edge is already present, so a re-accept is a no-op on the edge (the activity is stored
-        // under the same deterministic IRI). The outbox publish still reports success.
-        Assert.Equal((int)HttpStatusCode.Accepted, await PublishToOutboxAsync(accept));
+        // The edge is already present, so a re-accept is a no-op on the edge. The outbox publish still
+        // reports success. (Decision 055: each authored Accept is a distinct activity with its own
+        // server-minted id, so the re-accept mints a NEW id — the edge effect, not the id, is the
+        // idempotent thing; a follower that stores by IRI records the new Accept but the follow
+        // relationship is unchanged.)
+        var (secondStatus, secondId) = await PublishToOutboxAsync(accept);
+        Assert.Equal((int)HttpStatusCode.Accepted, secondStatus);
+        Assert.NotNull(secondId);
         Assert.True(await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri));
     }
 
@@ -135,8 +143,10 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         using var response = await _http.SendAsync(request);
         Assert.Equal((int)HttpStatusCode.Unauthorized, (int)response.StatusCode);
 
-        // No Accept recorded, and the provisional edge survives.
-        Assert.False(await _persistence.Activities.TryGetActivityAsync(FollowIris.AcceptIri(_bobActorIri, follow), out _));
+        // No Accept recorded (the unsigned POST is rejected before the server mints an id / records
+        // anything), and the provisional edge survives.
+        var outbox = await _persistence.Activities.GetOutboxAsync(_bobActorIri);
+        Assert.DoesNotContain(outbox, a => a is Accept);
         Assert.True(await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri));
     }
 
@@ -149,17 +159,18 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         await RecordProvisionalFollowAsync(follow);
 
         var reject = BuildReject(_bobActorIri, follow);
-        var statusCode = await PublishToOutboxAsync(reject);
+        var (statusCode, mintedId) = await PublishToOutboxAsync(reject);
         Assert.Equal((int)HttpStatusCode.Accepted, statusCode);
 
-        // The Reject is recorded under its deterministic IRI in the activity store AND bob's outbox.
-        var rejectIri = FollowIris.RejectIri(_bobActorIri, follow);
+        // Decision 055: the Reject's id is server-minted (learned from the 202 body). The Reject is
+        // recorded under that minted id in the activity store AND bob's outbox.
+        Assert.NotNull(mintedId);
         Assert.True(
-            await _persistence.Activities.TryGetActivityAsync(rejectIri, out var stored),
-            "The Reject should be recorded in the activity store under its deterministic IRI");
+            await _persistence.Activities.TryGetActivityAsync(mintedId!.Value, out var stored),
+            "The Reject should be recorded in the activity store under its server-minted IRI");
         Assert.IsType<Reject>(stored!);
         var outbox = await _persistence.Activities.GetOutboxAsync(_bobActorIri);
-        Assert.Contains(outbox, a => a.Id == rejectIri.Value);
+        Assert.Contains(outbox, a => a.Id == mintedId!.Value.Value);
 
         // The provisional follow edge (alice → bob) is removed.
         Assert.False(
@@ -176,11 +187,15 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         await RecordProvisionalFollowAsync(follow);
 
         var reject = BuildReject(_bobActorIri, follow);
-        Assert.Equal((int)HttpStatusCode.Accepted, await PublishToOutboxAsync(reject));
+        var (firstStatus, _) = await PublishToOutboxAsync(reject);
+        Assert.Equal((int)HttpStatusCode.Accepted, firstStatus);
 
-        // The edge is already gone, so a re-reject of the same follow is a no-op on the edge (the
-        // activity is stored under the same deterministic IRI). The outbox publish still reports success.
-        Assert.Equal((int)HttpStatusCode.Accepted, await PublishToOutboxAsync(reject));
+        // The edge is already gone, so a re-reject of the same follow is a no-op on the edge. The
+        // outbox publish still reports success. (Decision 055: each authored Reject is a distinct
+        // activity with its own server-minted id, so the re-reject mints a NEW id — the edge effect,
+        // not the id, is the idempotent thing.)
+        var (secondStatus, _) = await PublishToOutboxAsync(reject);
+        Assert.Equal((int)HttpStatusCode.Accepted, secondStatus);
         Assert.False(await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri));
     }
 
@@ -198,12 +213,14 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         // (Intentionally no RecordProvisionalFollowAsync — the activity + edge are absent.)
 
         var reject = BuildReject(_bobActorIri, follow);
-        var statusCode = await PublishToOutboxAsync(reject);
+        var (statusCode, mintedId) = await PublishToOutboxAsync(reject);
         Assert.Equal((int)HttpStatusCode.Accepted, statusCode);
 
-        // The authored Reject is recorded (the outbox records what it is published).
+        // The authored Reject is recorded under its server-minted id (decision 055) — the outbox records
+        // what it is published, even when the referenced follow is unknown.
+        Assert.NotNull(mintedId);
         Assert.True(
-            await _persistence.Activities.TryGetActivityAsync(FollowIris.RejectIri(_bobActorIri, follow), out _),
+            await _persistence.Activities.TryGetActivityAsync(mintedId!.Value, out _),
             "The authored Reject should be recorded in the outbox even when the referenced follow is unknown");
 
         // No edge effect: there was no provisional edge to remove, and none is created.
@@ -230,10 +247,14 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
 
     /// <summary>
     /// Publishes <paramref name="activity"/> to bob's outbox (<c>POST /ap/v1/u/{handle}/outbox</c>) signed
-    /// as bob (the followed actor) via the client pipeline, and returns the status code. The capture
-    /// handler produces a correctly-signed request, which is then replayed onto the TestServer.
+    /// as bob (the followed actor) via the client pipeline, and returns the status code plus the
+    /// server-minted id of the created activity (decision 055: the server is the sole id authority and
+    /// returns the created activity — with its minted id — in the 202 body; this mirrors the real
+    /// client's <c>DeliveryResult.MintedId</c> flow). The minted id is <c>null</c> when the response is
+    /// not 2xx or carries no body. The capture handler produces a correctly-signed request, which is
+    /// then replayed onto the TestServer.
     /// </summary>
-    private async Task<int> PublishToOutboxAsync(Activity activity)
+    private async Task<(int Status, Iri? MintedId)> PublishToOutboxAsync(Activity activity)
     {
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
@@ -282,7 +303,22 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
         }
 
         using var sent = await _http.SendAsync(request);
-        return (int)sent.StatusCode;
+        var status = (int)sent.StatusCode;
+        Iri? mintedId = null;
+        if (sent.IsSuccessStatusCode && sent.Content is { } respContent)
+        {
+            var body = await respContent.ReadAsStringAsync();
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                var created = ActivityJson.Deserialize<Activity>(body);
+                if (created?.Id is { Length: > 0 } id)
+                {
+                    mintedId = new Iri(id);
+                }
+            }
+        }
+
+        return (status, mintedId);
     }
 
     private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
@@ -334,14 +370,16 @@ public sealed class OutboxFollowDecisionIntegrationTests : IDisposable
 
     private static Accept BuildAccept(Iri actorIri, Follow follow) => new()
     {
-        Id = FollowIris.AcceptIri(actorIri, follow).Value,
+        // Decision 055: the Accept's own id is minted by the server (the client sends the shape
+        // without an id); the object references the original follow by its (originator's) id.
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object = [new Link { Href = new Uri(follow.Id!) }],
     };
 
     private static Reject BuildReject(Iri actorIri, Follow follow) => new()
     {
-        Id = FollowIris.RejectIri(actorIri, follow).Value,
+        // Decision 055: the Reject's own id is minted by the server (the client sends the shape
+        // without an id); the object references the original follow by its (originator's) id.
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object = [new Link { Href = new Uri(follow.Id!) }],
     };

@@ -109,10 +109,15 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // A recorded the Block in alice's outbox (the local-surfacing half).
+        // Decision 055: A minted the Block's id; learn it from the 2xx body.
+        var mintedIdNullable = await LearnMintedIdAsync(response);
+        Assert.True(mintedIdNullable != null, "A should have returned the minted Block id in the 2xx body.");
+        Iri mintedId = mintedIdNullable.Value;
+
+        // A recorded the Block in alice's outbox (the local-surfacing half), under the MINTED id.
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == block.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // B recorded the block edge (alice → bob): the cross-instance half. B only records it after
         // validating the Block's signature as alice (resolving alice's key from A's actor document) —
@@ -257,10 +262,28 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
 
     private static Block BuildBlock(Iri blockerIri, Iri blockedIri) => new()
     {
-        Id = $"https://{AHost}/activities/block-{Guid.NewGuid():N}",
+        // Decision 055: the client sends the Block's shape (no id); the server mints the id and returns
+        // it in the 2xx body.
         Actor = [new Link { Href = new Uri(blockerIri.Value) }],
         Object = [new Link { Href = new Uri(blockedIri.Value) }],
     };
+
+    /// <summary>
+    /// Learns the server-minted id from a 2xx response body (decision 055: the server returns the
+    /// created object in the 2xx body). Returns null when the body is empty or carries no id.
+    /// </summary>
+    private static async Task<Iri?> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        var activity = ActivityJson.Deserialize<IObjectOrLink>(body) as Activity;
+        var id = activity?.Id;
+        return string.IsNullOrWhiteSpace(id) ? null : new Iri(id);
+    }
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
     {

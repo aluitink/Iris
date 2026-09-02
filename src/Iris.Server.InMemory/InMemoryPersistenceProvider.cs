@@ -20,6 +20,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryModerationStore _moderation;
     private readonly InMemoryRelayStore _relays;
     private readonly InMemoryObjectStore _objects;
+    private readonly InMemoryCreateIndex _creates;
     private readonly InMemoryCommunityStore _communities;
     private readonly IKeyStore _keys;
 
@@ -29,8 +30,8 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     public InMemoryPersistenceProvider()
         : this(new InMemoryActorStore(), new InMemoryActivityStore(), new InMemoryFollowStore(),
             new InMemoryLikeStore(), new InMemoryReplyStore(), new InMemoryModerationStore(),
-            new InMemoryRelayStore(), new InMemoryObjectStore(), new InMemoryCommunityStore(),
-            new InMemoryKeyStore())
+            new InMemoryRelayStore(), new InMemoryObjectStore(), new InMemoryCreateIndex(),
+            new InMemoryCommunityStore(), new InMemoryKeyStore())
     {
     }
 
@@ -45,6 +46,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="moderation">The moderation (block) store (F-07).</param>
     /// <param name="relays">The relay-subscription store (F-06).</param>
     /// <param name="objects">The object store.</param>
+    /// <param name="creates">The object → Create index (decision 055).</param>
     /// <param name="communities">The community store.</param>
     /// <param name="keys">The key store. Must not be null.</param>
     public InMemoryPersistenceProvider(
@@ -56,6 +58,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryModerationStore moderation,
         InMemoryRelayStore relays,
         InMemoryObjectStore objects,
+        InMemoryCreateIndex creates,
         InMemoryCommunityStore communities,
         IKeyStore keys)
     {
@@ -67,6 +70,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
         _relays = relays ?? throw new ArgumentNullException(nameof(relays));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
+        _creates = creates ?? throw new ArgumentNullException(nameof(creates));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
     }
@@ -94,6 +98,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public IObjectStore Objects => _objects;
+
+    /// <inheritdoc/>
+    public ICreateIndex Creates => _creates;
 
     /// <inheritdoc/>
     public ICommunityStore Communities => _communities;

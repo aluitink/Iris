@@ -31,6 +31,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     private readonly IModerationStore _moderation;
     private readonly IRelayStore _relays;
     private readonly IObjectStore _objects;
+    private readonly ICreateIndex _creates;
     private readonly ICommunityStore _communities;
     private readonly IKeyStore _keys;
 
@@ -53,6 +54,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _moderation = new FileBackedModerationStore(Path.Combine(directory, "moderation.json"));
         _relays = new FileBackedRelayStore(Path.Combine(directory, "relays.json"));
         _objects = new FileBackedObjectStore(Path.Combine(directory, "objects.json"));
+        _creates = new FileBackedCreateIndex(Path.Combine(directory, "creates.json"));
         _communities = new FileBackedCommunityStore(Path.Combine(directory, "communities.json"));
         _keys = new FileBackedKeyStore(Path.Combine(directory, "keys.json"));
     }
@@ -69,6 +71,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     /// <param name="moderation">The moderation (block) store (F-07).</param>
     /// <param name="relays">The relay-subscription store (F-06).</param>
     /// <param name="objects">The object store.</param>
+    /// <param name="creates">The object → Create index (decision 055).</param>
     /// <param name="communities">The community store.</param>
     /// <param name="keys">The key store. Must not be null.</param>
     public FileBackedPersistenceProvider(
@@ -80,6 +83,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         IModerationStore moderation,
         IRelayStore relays,
         IObjectStore objects,
+        ICreateIndex creates,
         ICommunityStore communities,
         IKeyStore keys)
     {
@@ -91,6 +95,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
         _relays = relays ?? throw new ArgumentNullException(nameof(relays));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
+        _creates = creates ?? throw new ArgumentNullException(nameof(creates));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
     }
@@ -118,6 +123,9 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
 
     /// <inheritdoc/>
     public IObjectStore Objects => _objects;
+
+    /// <inheritdoc/>
+    public ICreateIndex Creates => _creates;
 
     /// <inheritdoc/>
     public ICommunityStore Communities => _communities;

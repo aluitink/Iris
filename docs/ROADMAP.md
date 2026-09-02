@@ -671,9 +671,151 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   dump); the 404-object and proxy-fallback states are already exercised in CI (S10, S8).
 
 **Definition of done for Phase 19 overall:** the full evaluation checklist (19.0.5) runs clean over
-the public FQDNs (PASS on every non-tabled waypoint, or a documented GAP/BLOCKED), the volume-backed
-stack recreates without data loss or delivery storms, and the findings register (19.4.1) is triaged
-with every FAIL fixed and re-verified.
+ the public FQDNs (PASS on every non-tabled waypoint, or a documented GAP/BLOCKED), the volume-backed
+ stack recreates without data loss or delivery storms, and the findings register (19.4.1) is triaged
+ with every FAIL fixed and re-verified.
+
+## Phase 20 — End-to-end usage-story alignment (in planning; work item-by-item)
+
+> Operator directive (this phase): **tighten the end-to-end architecture so we don't do massive
+> overhauls later** — think each topic through thoroughly, deal with items **one by one**, and align
+> each change with the **end-to-end usage story** (a user drives the sample explorer as a client of a
+> local or remote instance). Items are **prioritized** so the load-bearing architectural decisions
+> (C2S flow, auth, CORS/proxy, collections, the C2S inbox design) land before the UI/feature work that
+> depends on them. The **manual test plan** is deliberately **last** (20.7): it confirms the finished
+> architecture against the sample UI + wire, not the other way around. **Testing discipline:** the suite
+> is growing too fast — prefer **a few integration tests that genuinely exercise the concepts** (outbox
+> write → delivery → peer record; collection → paged items → object view; proxy fallback; inbox
+> attachment rewrite) over a stack of thin unit tests; and **20.5 audits the suite** to remove the
+> useless ones. Sub-items are drafted from the operator's message (2026-09-02) and will be refined into
+> their own change docs as each is executed.
+ >
+ > **Operator directive (verbatim, 2026-09-02 — preserved for context compaction):**
+ >
+ > "We made some fairly major changes recently, see the git history and design records for details. We
+ > need to develop a **manual test plan** that confirms our changes; I want to use the **sample UI** to test
+ > various aspects. I want to **identify useless automated tests and remove them**. I want to confirm
+ > **architectural cohesion** across the library: confirm the intended operations, like the way **C2S should
+ > work via the user's outbox**, confirm **authentication via digest signature** works, confirm **proxy
+ > fallback for CORS-related issues** works, confirm we can **browse external collections and
+ > access/display items** in the sample UI. We want to **enhance the sample UI** to support more object
+ > browsing — for example, I should be able to **enumerate a local or remote user's outbox and page through
+ > it**. We need to **enhance our implementation to support media and sensitivity extensions**. Our sample
+ > needs a **markdown viewer** so content that contains markdown can be rendered properly. We need to
+ > **confirm our collections yield the correct objects** — I think **outbox should return creates**. We need
+ > to review how we intend on handling **local-client user browsing their inbox in a C2S scenario**: how do
+ > we ensure the content in the user's inbox is accessible by the browser; if a user receives a note with an
+ > attachment, how will we yield that back when enumerated from the inbox; do we **store content and rewrite
+ > the attachments** so a local interface can serve them without worrying about CORS; are the ids yielded
+ > from the user's inbox **rewritten local ids** that, when requested, serve a rewritten version of the note;
+ > how do we **sync replies and accumulate likes or announcements/boosts** — should we **pull and sync an
+ > object each time we encounter it** to make sure we have a high-fidelity copy and accurate interaction
+ > counts? Let's develop some plans to address these, work them into **new roadmap/plan items** so we don't
+ > forget. We need to **tighten up the end-to-end architecture** around all of this so we don't find
+ > ourselves doing massive overhauls later. We need to think thoroughly about these topics and **deal with
+ > them one by one**. Once we have a plan of what to think about, we approach each item and make changes to
+ > align with the **end-to-end usage story**. We need to perform **real-world tests against our sample
+ > explorer** and ensure our client supports the intended use cases. The plan should be **prioritized in a
+ > way that makes sense**. We should **save our manual testing for the end**, but try to avoid adding a ton
+ > of tests — the test suite is growing fast and we should strive to generate **integration tests that really
+ > exercise all of these concepts without over-stacking the suite**."
+ >
+ > **Operating mode (verbatim, 2026-09-02, granted for the loop):** "Additionally we are allowed to perform
+ > **deeper investigations and increase the scope a bit if needed**. We want to **avoid asking questions of the
+ > user and go with what you recommend**. **Document as you go along** to keep track of what we did,
+ > **reorganize if needed**, and **skip any hard blockers or circle back** if you run out of work."
+ >
+ > **Ordering rationale:** 20.0 closes the in-flight decision-055 work (it gates a green build/suite, so
+> it must land first). 20.1 confirms the four load-bearing C2S pillars (outbox, digest auth, proxy
+> fallback, external-collection browsing) and decides the **outbox-returns-Creates** question — these
+> are the "how does C2S actually work" facts every later item builds on. 20.2 is the **C2S inbox
+> design** (the deepest open question: how inbox content is browser-accessible, attachment storage +
+> CORS rewrite, local-id rewrite, reply/like/boost sync, pull-on-encounter fidelity) — it is a design
+> decision first, code second. 20.3 is the **sample-UI browsing** enhancement (outbox enumeration +
+> paging, local or remote) that makes 20.1/20.2 visible. 20.4 is the **implementation feature work**
+> (media, sensitivity, markdown viewer). 20.5 is **test triage** (remove the useless, keep the
+> integration-first few). 20.6 is the **architecture-cohesion pass** (re-confirm the whole story holds
+> after the changes). 20.7 is the **manual test plan** (sample UI + wire) — the capstone, done last.
+
+- [x] **20.0 — Close decision-055 (in-flight, gates a green build/suite).** Server is the sole
+  object-id authority: server mints ULIDs for all authored objects (dependency-free
+  `Iris.Core/Identity/Ulid.cs` + `Iris.Server/Identity/IdMinter.cs`), the outbox handler accepts an
+  id-less `Activity`, mints the id, and **returns the created object in the 2xx body**; the client
+  drops `Id` from every authoring method and references the **learned** (server-minted) id it got back
+  (`DeliveryResult.MintedId`); reference-carrying methods (Undo/Accept/Reject) take the learned id,
+  never a recomputed formula. **Done (all):** ULID + IdMinter, outbox handler (mints + 2xx body via
+  `Results.Text`), `MintActivityIds` (preserves client-set embedded ids, reassigns `Create.Object`),
+  inbound helpers (`FollowIris`/`AnnounceIris`/`DeleteActivityHandler` + `FollowActivityHandler` now
+  inject `IdMinter`), the `ICreateIndex` (object→Create), `IActivityStore.GetAllActivitiesAsync`,
+  client rework (id-less authoring + learned-id inverses + Add/Remove repointed to outbox),
+  `IActivityPubClient`/`DeliveryResult`, and the sample callers (learned-id flow). **Test close-out:**
+  the ~10 `Iris.Server.Tests`/`Iris.Client.Tests` files that predicted ids by the old formula now build
+  id-less helpers and **learn** the minted id (from the 2xx body, the stored outbox, or by enumerating
+  the activity store) — the `FollowEdgeConvergence` and `FederationSignature` tests locate minted
+  objects by reference rather than a computed IRI. `dotnet test` green: **1,111 tests, 0 failed**
+  (Core 210 / Client 135 / Server 766; was 5 failing at 20.0 start). Change doc
+  `docs/changes/161p-055-server-is-object-id-authority.md`.
+- [ ] **20.1 — Confirm the four C2S load-bearing pillars + decide outbox-returns-Creates.**
+  (a) **C2S via the user's outbox:** a client-authored activity (post/reply/follow/like/boost/…) is a
+  signed POST to the actor's **outbox** and the server records it in that outbox — confirm the outbox is
+  the single source of truth for what the actor authored. (b) **Digest auth:** the browser's signed POST
+  (Basic log-on key, HTTP signature) verifies — re-confirm after the 161o `X-Signature-Date` fix. (c)
+  **Proxy fallback for CORS:** when a browser read of a remote IRI CORS-fails, the client falls back to
+  the same-origin server proxy route — confirm it engages (not just the direct dial). (d) **Browse
+  external collections:** the sample UI can open a remote (peer-instance or federated) collection and
+  display its items. **(e) Outbox-returns-Creates decision:** confirm what the outbox collection yields —
+  the operator's expectation is the outbox returns **`Create`** activities (the post itself is the
+  Create; the embedded Note is the object). Record the decision (outbox = `Create` of objects, with the
+  object addressable by its minted id) as a change doc / decision if it diverges from current behavior.
+- [ ] **20.2 — C2S inbox design (design decision first, code second).** How does a **local client user
+  browse their own inbox** in a C2S scenario, and how is that content **accessible to the browser**?
+  Sub-questions to resolve and record as a decision doc: (a) **Browser access:** the inbox is the actor's
+  private collection — how does the browser read it (authenticated, signed, same-origin)? (b) **Content
+  + attachments:** when a user receives a note with an attachment, do we **store the content locally and
+  rewrite the attachment** to a local URL so the browser can serve it without CORS (vs. linking the
+  remote attachment, which CORS-fails)? (c) **Id rewrite:** are the ids yielded from the inbox **rewritten
+  to local ids** that, when requested, serve a **rewritten (local) copy** of the note? (d) **Reply +
+  like/boost sync:** how do we **sync replies** (the reply graph) and **accumulate like/boost counts**
+  for an object? (e) **Pull-on-encounter fidelity:** should we **pull + sync each object each time we
+  encounter it** (from a feed/inbox/collection) to keep a **high-fidelity local copy** with **accurate
+  interaction counts**, or rely on a TTL cache? This is the deepest open question — write the decision
+  doc before touching code, then implement to match it.
+- [ ] **20.3 — Sample-UI object browsing: outbox enumeration + paging (local or remote).** Enhance the
+  explorer so a user can **enumerate a local or remote user's outbox and page through it** (the paged
+  collection with `next`-link paging), rendering each item as a navigable object view (not raw JSON).
+  This makes 20.1's "outbox = source of truth" and 20.2's inbox design visible in the UI. Reuse the
+  existing paged-collection client + object view; add an "Outbox" surface to the actor detail page (local
+  + remote) with paging controls.
+- [ ] **20.4 — Implementation feature work: media, sensitivity, markdown rendering.** (a) **Media:**
+  support media attachments end-to-end (compose upload → Create object with attachment → stored/served →
+  rendered in the object view), building on 20.2's attachment-rewrite decision. (b) **Sensitivity
+  extension:** support the content-sensitivity / warning extensions (e.g. `sensitive`/`summary`) so a
+  sensitive object renders behind a blur/notice with its summary until the user reveals it. (c) **Markdown
+  viewer:** the object view currently renders `content` as-is; add a **markdown renderer** so content
+  that is markdown (rather than HTML) renders properly (links, code, lists, headings) — pick the approach
+  (a dependency-free renderer or a small markdown lib; note any new NuGet in this file per the rules).
+- [ ] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
+  suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
+  of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
+  **integration tests that genuinely exercise the concepts** (outbox write→delivery→peer record;
+  collection→paged items→object view; proxy fallback; inbox attachment rewrite; digest auth). Record the
+  removed/added set + new count in a change doc; target a **smaller or stable** count with higher
+  per-test value, not growth.
+- [ ] **20.6 — Architecture-cohesion pass (re-confirm the whole story after the changes).** Re-verify,
+  end to end, that the intended operations hold **after** 20.0–20.5: C2S via the outbox, digest auth,
+  proxy fallback for CORS, external-collection browsing + display, outbox-returns-Creates, the C2S inbox
+  design (browser access + attachment rewrite + id rewrite + reply/like/boost sync + pull-on-encounter),
+  media + sensitivity + markdown. Confirm no layer contradicts another (client ↔ server ↔ sample UI) and
+  no "massive overhaul" is lurking. Output: a short coherence note (a change doc) listing each pillar →
+  confirmed/changed + any follow-up.
+- [ ] **20.7 — Manual test plan (sample UI + wire) — the capstone, done last.** Develop and execute a
+  **manual test plan** (Playwright-MCP-driven, as in Phase 19's method) that **confirms the recent major
+  changes** using the sample UI + wire evidence: cover every 20.x capability from a user's seat (log on,
+  compose with media + markdown, post → outbox returns the created object with its minted id, browse own +
+  peer outboxes with paging, like/boost + see counts sync, receive in inbox → browser-accessible with
+  local attachment serving, sensitive-object reveal, proxy fallback on a CORS-failing remote read). Record
+  each as a PASS/FAIL/GAP/BLOCKED checkpoint in a change doc. This is the **last** item — it confirms the
+  finished architecture, not the reverse.
 
 ## Remaining work (pre-Phase-19 carry-forward, now superseded)
 

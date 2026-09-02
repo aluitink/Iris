@@ -104,6 +104,13 @@ public sealed class InMemoryActivityStore : IActivityStore
         return Task.FromResult(removed);
     }
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> GetAllActivitiesAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult<IReadOnlyList<IObject>>(_activities.Values.ToList());
+    }
+
     /// <summary>
     /// Resolves the IRI of an outbox item (its <c>Id</c> when it is an object, otherwise the link's
     /// <c>href</c>) so a removal can match by IRI.

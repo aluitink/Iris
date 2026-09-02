@@ -107,6 +107,14 @@ else
     private string? WriteError { get; set; }
     private bool HasLiked { get; set; }
     private bool HasBoosted { get; set; }
+
+    // Decision 055 (learned-id references): the ids the server minted for the like/boost this page made,
+    // learned from DeliveryResult.MintedId at creation time. The Unlike/Unannounce reference the original
+    // activity by this learned id (the client never recomputes the server's ids). A like/boost that existed
+    // before this page session (HasLiked/HasBoosted true from the server) has no learned id here, so its
+    // undo is reported as "not undone in this session" rather than guessed.
+    private Iri? LikeLearnedId { get; set; }
+    private Iri? BoostLearnedId { get; set; }
     private bool IsAuthor { get; set; }
 
     /// <summary>
@@ -195,13 +203,25 @@ else
         {
             if (HasLiked)
             {
-                WriteResult = await client.UnlikeAsync(actorIri, LoadedObjectIri.Value);
-                HasLiked = false;
+                if (LikeLearnedId is not null)
+                {
+                    // Decision 055: undo the like by the id the server minted when this page created it.
+                    WriteResult = await client.UnlikeAsync(actorIri, LikeLearnedId.Value);
+                    HasLiked = false;
+                    LikeLearnedId = null;
+                }
+                else
+                {
+                    // The like predates this session (learned from the server, not created here) — no
+                    // learned id to reference, so it cannot be undone from this page.
+                    WriteError = "Unlike requires the like's learned id; this like was not created in this session.";
+                }
             }
             else
             {
                 WriteResult = await client.LikeAsync(actorIri, LoadedObjectIri.Value);
                 HasLiked = true;
+                LikeLearnedId = WriteResult.MintedId is { } id ? new Iri(id) : null;
             }
         }
         catch (Exception ex)
@@ -236,13 +256,25 @@ else
         {
             if (HasBoosted)
             {
-                WriteResult = await client.UnannounceAsync(actorIri, LoadedObjectIri.Value);
-                HasBoosted = false;
+                if (BoostLearnedId is not null)
+                {
+                    // Decision 055: undo the boost by the id the server minted when this page created it.
+                    WriteResult = await client.UnannounceAsync(actorIri, BoostLearnedId.Value);
+                    HasBoosted = false;
+                    BoostLearnedId = null;
+                }
+                else
+                {
+                    // The boost predates this session (learned from the server, not created here) — no
+                    // learned id to reference, so it cannot be undone from this page.
+                    WriteError = "Unboost requires the announce's learned id; this boost was not created in this session.";
+                }
             }
             else
             {
                 WriteResult = await client.AnnounceAsync(actorIri, LoadedObjectIri.Value);
                 HasBoosted = true;
+                BoostLearnedId = WriteResult.MintedId is { } id ? new Iri(id) : null;
             }
         }
         catch (Exception ex)

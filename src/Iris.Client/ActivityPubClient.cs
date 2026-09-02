@@ -193,7 +193,40 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 
         using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+
+        // Decision 055: when the server is the id authority it returns the created object (with its
+        // minted id) in the 2xx body. Parse it so the caller can learn the id to reference for any
+        // follow-up activity (an Undo, a reply, a delete). A non-2xx, empty, or non-Activity body yields
+        // a null MintedId (the caller already has IsSuccess/StatusCode to decide how to proceed).
+        var mintedId = response.IsSuccessStatusCode ? ExtractMintedId(bodyText) : null;
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText, mintedId);
+    }
+
+    /// <summary>
+    /// Parses a delivery response body (the created object the server returned, decision 055) and returns
+    /// its <c>id</c> when present, or null when the body is empty, not valid ActivityStreams JSON, or
+    /// carries no id. The id is read from the deserialized <see cref="IObjectOrLink"/> regardless of its
+    /// concrete type (an Activity such as a Create, or a bare object).
+    /// </summary>
+    /// <param name="body">The response body text.</param>
+    /// <returns>The activity's <c>id</c>, or null when it cannot be determined.</returns>
+    private static string? ExtractMintedId(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            var parsed = ActivityJson.Deserialize<IObjectOrLink>(body);
+            return parsed?.Id;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            // Not ActivityStreams JSON (or an unexpected shape); no minted id to surface.
+            return null;
+        }
     }
 
     /// <inheritdoc/>
@@ -202,13 +235,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // The follow is published to the follower's OWN outbox (the write surface for the activities an
         // actor authors — the client never addresses a recipient's inbox for an activity it authors) and
         // is signed by the pipeline as actorId. The server records it in the follower's outbox and then
-        // delivers it to the target's inbox (the server owns the recipient hop). The `Id` is a
-        // deterministic, unique-per-(actor,target) IRI so a retried follow dedupes. The ActivityStreams
-        // Follow type has no typed `id`/`actor`/`object` scalar beyond the library's, so the
-        // object-initializer form is used and the constructor sets `Type = "Follow"`.
+        // delivers it to the target's inbox (the server owns the recipient hop).
+        //
+        // Decision 055 (server is the object-id authority): the client sends only the follow's *shape*
+        // (actor + object) — no `Id`. The server mints the follow's id (an unguessable ULID) and returns
+        // the created follow in the 2xx body, so the caller reads <see cref="DeliveryResult.MintedId"/>
+        // to learn the id it should pass to <see cref="UndoFollowAsync"/> later.
         var follow = new Follow
         {
-            Id = $"{actorId.Value}/follows/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = targetId.Uri }],
         };
@@ -217,22 +251,23 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UndoFollowAsync(Iri actorId, Iri originalFollowId, CancellationToken ct = default)
     {
         // An un-follow is the ActivityStreams inverse of a Follow: an Undo whose object references the
         // original Follow by IRI. Per the delivery model, the Undo is published to the follower's OWN
         // outbox (actorId) — the party that made the follow undoes it, and an authored activity always
         // flows through the acting actor's own outbox — not the un-followed actor's inbox. The server
-        // records it and delivers it to the target's inbox (the server owns the recipient hop). The
-        // object IRI reuses FollowAsync's deterministic {actorId}/follows/{targetId} IRI so the receiver
-        // resolves exactly the follow that was recorded; the Undo gets its own deterministic
-        // unique-per-(actor,target) IRI so a retried un-follow dedupes.
-        var followIri = new Iri($"{actorId.Value}/follows/{targetId.Value}");
+        // records it and delivers it to the target's inbox (the server owns the recipient hop).
+        //
+        // Decision 055 (learned-id references): <paramref name="originalFollowId"/> is the id the server
+        // minted for the original follow (learned from <see cref="DeliveryResult.MintedId"/> when the
+        // follow was made via <see cref="FollowAsync"/>), not a client-derived formula — the client never
+        // recomputes the server's ids. The client sends only the Undo's shape (actor + object); the server
+        // mints the Undo's own id and returns it in the 2xx body.
         var undo = new Undo
         {
-            Id = $"{actorId.Value}/unfollows/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = followIri.Uri }],
+            Object = [new Link { Href = originalFollowId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -244,14 +279,15 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // An Accept is the followed actor's response to an inbound Follow: it is published to the
         // FOLLOWED actor's OWN outbox (actorId) — the party that decides the follow authors the Accept,
         // and an authored activity always flows through the acting actor's own outbox — and signed by the
-        // pipeline as actorId. The object references the original Follow by IRI (the deterministic
-        // {follower}/follows/{target} IRI the follower recorded). The server records the Accept in the
-        // actor's outbox, ensures the follower→actor edge, and delivers the Accept to the follower's
-        // inbox (the server owns the recipient hop). The `Id` is deterministic per (actor,follow) so a
-        // retried accept dedupes; the constructor sets `Type = "Accept"`.
+        // pipeline as actorId. The object references the original Follow by its id (<paramref
+        // name="followIri"/>, the id the follower learned from its own outbox). The server records the
+        // Accept in the actor's outbox, ensures the follower→actor edge, and delivers the Accept to the
+        // follower's inbox (the server owns the recipient hop).
+        //
+        // Decision 055: the client sends only the Accept's shape (actor + object); the server mints the
+        // Accept's id (an unguessable ULID) and returns it in the 2xx body.
         var accept = new Accept
         {
-            Id = $"{actorId.Value}/accepts/{followIri.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = followIri.Uri }],
         };
@@ -264,13 +300,15 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     {
         // A Reject is the followed actor's refusal of an inbound Follow: it is published to the
         // FOLLOWED actor's OWN outbox (actorId) and signed by the pipeline as actorId. The object
-        // references the original Follow by IRI. The server records the Reject in the actor's outbox,
-        // removes the provisional follower→actor edge, and delivers the Reject to the follower's inbox
-        // (the server owns the recipient hop). The `Id` is deterministic per (actor,follow) so a retried
-        // reject dedupes; the constructor sets `Type = "Reject"`.
+        // references the original Follow by its id (<paramref name="followIri"/>, the id the follower
+        // learned from its own outbox). The server records the Reject in the actor's outbox, removes the
+        // provisional follower→actor edge, and delivers the Reject to the follower's inbox (the server
+        // owns the recipient hop).
+        //
+        // Decision 055: the client sends only the Reject's shape (actor + object); the server mints the
+        // Reject's id (an unguessable ULID) and returns it in the 2xx body.
         var reject = new Reject
         {
-            Id = $"{actorId.Value}/rejects/{followIri.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = followIri.Uri }],
         };
@@ -284,13 +322,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // A like is published to the liker's OWN outbox (the write surface for the activities an actor
         // authors): the instance records the like edge (liker → object) in the liker's `liked` collection
         // and the outbox, and the server federates it to the object's owner. A content object (the liked
-        // note) has no inbox of its own — only actors do — so the recipient hop belongs to the server. The
-        // `Id` is a deterministic, unique-per-(actor,object) IRI so a retried like dedupes on the
-        // receiver. The ActivityStreams Like type has no typed scalar beyond the library's, so the
-        // object-initializer form is used and the constructor sets `Type = "Like"`.
+        // note) has no inbox of its own — only actors do — so the recipient hop belongs to the server.
+        //
+        // Decision 055: the client sends only the Like's shape (actor + object); the server mints the
+        // Like's id (an unguessable ULID) and returns it in the 2xx body, so the caller reads
+        // <see cref="DeliveryResult.MintedId"/> to learn the id to pass to <see cref="UnlikeAsync"/>.
         var like = new Like
         {
-            Id = $"{actorId.Value}/likes/{objectId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = objectId.Uri }],
         };
@@ -299,20 +337,21 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default)
     {
         // An unlike is the ActivityStreams inverse of a Like: an Undo whose object references the
-        // original Like by IRI. Per the delivery model, the Undo is published to the liker's OWN outbox
+        // original Like by id. Per the delivery model, the Undo is published to the liker's OWN outbox
         // (actorId) — the party that made the like undoes it — not the liked object (a content object has
-        // no inbox of its own). The object IRI reuses LikeAsync's deterministic {actorId}/likes/{objectId}
-        // IRI so the receiver resolves exactly the like that was recorded; the Undo gets its own
-        // deterministic unique-per-(actor,object) IRI so a retried unlike dedupes.
-        var likeIri = new Iri($"{actorId.Value}/likes/{objectId.Value}");
+        // no inbox of its own).
+        //
+        // Decision 055 (learned-id references): <paramref name="originalLikeId"/> is the id the server
+        // minted for the original like (learned from <see cref="DeliveryResult.MintedId"/> via
+        // <see cref="LikeAsync"/>) — the client never recomputes the server's ids. The client sends only
+        // the Undo's shape; the server mints the Undo's own id and returns it in the 2xx body.
         var undo = new Undo
         {
-            Id = $"{actorId.Value}/unlikes/{objectId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = likeIri.Uri }],
+            Object = [new Link { Href = originalLikeId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -326,13 +365,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // the boost surfaces in the announcer's feed) and the activity store, and fans it out to the
         // announcer's remote, non-blocked followers (mirroring the Create fan-out). An Announce carries
         // no embedded object — it is a reference to an existing object IRI — so no object-store write is
-        // needed. The `Id` is a deterministic, unique-per-(actor,object) IRI matching the server's
-        // AnnounceIris.AnnounceIri ({actorId}/announces/{objectId}) so a retried boost dedupes on the
-        // receiver. The ActivityStreams Announce type has no typed scalar beyond the library's, so the
-        // object-initializer form is used and the constructor sets `Type = "Announce"`.
+        // needed.
+        //
+        // Decision 055: the client sends only the Announce's shape (actor + object); the server mints the
+        // Announce's id (an unguessable ULID, minted once at record-time and reused for every propagated
+        // copy) and returns it in the 2xx body, so the caller reads <see cref="DeliveryResult.MintedId"/>
+        // to learn the id to pass to <see cref="UnannounceAsync"/>.
         var announce = new Announce
         {
-            Id = $"{actorId.Value}/announces/{objectId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = objectId.Uri }],
         };
@@ -341,21 +381,21 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnannounceAsync(Iri actorId, Iri originalAnnounceId, CancellationToken ct = default)
     {
         // An unboost is the ActivityStreams inverse of an Announce: an Undo whose object references the
-        // original Announce by IRI. Per the delivery model, the Undo is published to the announcer's OWN
+        // original Announce by id. Per the delivery model, the Undo is published to the announcer's OWN
         // outbox (actorId) — the party that made the boost undoes it — not the boosted object (a content
-        // object has no inbox of its own). The object IRI reuses AnnounceAsync's deterministic
-        // {actorId}/announces/{objectId} IRI so the receiver resolves exactly the announce that was
-        // recorded; the Undo gets its own deterministic unique-per-(actor,object) IRI so a retried
-        // unboost dedupes.
-        var announceIri = new Iri($"{actorId.Value}/announces/{objectId.Value}");
+        // object has no inbox of its own).
+        //
+        // Decision 055 (learned-id references): <paramref name="originalAnnounceId"/> is the id the
+        // server minted for the original announce (learned from <see cref="DeliveryResult.MintedId"/> via
+        // <see cref="AnnounceAsync"/>) — the client never recomputes the server's ids. The client sends
+        // only the Undo's shape; the server mints the Undo's own id and returns it in the 2xx body.
         var undo = new Undo
         {
-            Id = $"{actorId.Value}/unannounces/{objectId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = announceIri.Uri }],
+            Object = [new Link { Href = originalAnnounceId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -370,10 +410,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // mirroring the server's DeleteActivityHandler). The server records the Delete in the outbox and
         // activity store, then routes it to the DeleteActivityHandler, which tombstones the object, removes
         // its reply edge, and propagates the tombstone to the author's remote followers (the federated half
-        // of F-03). The `Id` is a deterministic, unique-per-(actor,object) IRI so a retried delete dedupes.
+        // of F-03).
+        //
+        // Decision 055: the client sends only the Delete's shape (actor + object, where object is the id
+        // the client learned for the object); the server mints the Delete's id (an unguessable ULID) and
+        // returns it in the 2xx body.
         var delete = new Delete
         {
-            Id = $"{actorId.Value}/deletes/{ObjectIdSuffix(objectId.Value)}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = objectId.Uri }],
         };
@@ -402,13 +445,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // A block is published to the blocker's OWN outbox (the write surface for the activities an actor
         // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
         // actorId. The server records the block edge and delivers it to the target's inbox (the server
-        // owns the recipient hop). The `Id` is a deterministic, unique-per-(actor,target) IRI so a
-        // retried block dedupes. The ActivityStreams Block type (a subclass of Ignore) has no typed
-        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
-        // the constructor sets `Type = "Block"`.
+        // owns the recipient hop).
+        //
+        // Decision 055: the client sends only the Block's shape (actor + object); the server mints the
+        // Block's id (an unguessable ULID) and returns it in the 2xx body, so the caller reads
+        // <see cref="DeliveryResult.MintedId"/> to learn the id to pass to <see cref="UnblockAsync"/>.
         var block = new Block
         {
-            Id = $"{actorId.Value}/blocks/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = targetId.Uri }],
         };
@@ -429,22 +472,22 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnblockAsync(Iri actorId, Iri originalBlockId, CancellationToken ct = default)
     {
         // An un-block is the ActivityStreams inverse of a Block: an Undo whose object references the
-        // original Block by IRI. Per the delivery model the Undo is published to the blocker's OWN outbox
+        // original Block by id. Per the delivery model the Undo is published to the blocker's OWN outbox
         // (an authored activity always flows through the acting actor's own outbox) and is signed by the
         // pipeline as actorId; the server records it and delivers it to the target's inbox (the server
-        // owns the recipient hop, so the receiving instance removes the edge). The object IRI reuses
-        // BlockAsync's deterministic {actor}/blocks/{target} IRI so it references exactly the block that
-        // was recorded; the Undo gets its own deterministic unique-per-(actor,target) IRI so a retried
-        // un-block dedupes on the receiver.
-        var blockIri = new Iri($"{actorId.Value}/blocks/{targetId.Value}");
+        // owns the recipient hop, so the receiving instance removes the edge).
+        //
+        // Decision 055 (learned-id references): <paramref name="originalBlockId"/> is the id the server
+        // minted for the original block (learned from <see cref="DeliveryResult.MintedId"/> via
+        // <see cref="BlockAsync"/>) — the client never recomputes the server's ids. The client sends only
+        // the Undo's shape; the server mints the Undo's own id and returns it in the 2xx body.
         var undo = new Undo
         {
-            Id = $"{actorId.Value}/unblocks/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = blockIri.Uri }],
+            Object = [new Link { Href = originalBlockId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -456,13 +499,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // A flag is published to the flagger's OWN outbox (the write surface for the activities an actor
         // authors — the client never addresses a recipient's inbox) and is signed by the pipeline as
         // actorId. The server records the flag edge and delivers it to the target's inbox (the server
-        // owns the recipient hop). The `Id` is a deterministic, unique-per-(actor,target) IRI so a
-        // retried flag dedupes. The ActivityStreams Flag type (a subclass of Activity) has no typed
-        // `id`/`actor`/`object` scalar beyond the library's, so the object-initializer form is used and
-        // the constructor sets `Type = "Flag"`.
+        // owns the recipient hop).
+        //
+        // Decision 055: the client sends only the Flag's shape (actor + object); the server mints the
+        // Flag's id (an unguessable ULID) and returns it in the 2xx body, so the caller reads
+        // <see cref="DeliveryResult.MintedId"/> to learn the id to pass to <see cref="UnflagAsync"/>.
         var flag = new Flag
         {
-            Id = $"{actorId.Value}/flags/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = targetId.Uri }],
         };
@@ -471,20 +514,23 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri targetId, CancellationToken ct = default)
+    public Task<DeliveryResult> UnflagAsync(Iri actorId, Iri originalFlagId, CancellationToken ct = default)
     {
-        // An un-flag is the inverse of FlagAsync: the Undo references the deterministic Flag IRI
-        // {actorId}/flags/{targetId} (the same IRI FlagAsync used), so the receiving instance resolves
-        // the original Flag's parties from the stored Flag and removes the recorded edge. Per the
-        // delivery model the Undo is published to the flagger's OWN outbox (an authored activity always
-        // flows through the acting actor's own outbox) and is signed by the pipeline as actorId; the
-        // server records it and delivers it to the target's inbox (the server owns the recipient hop).
-        var flagIri = new Iri($"{actorId.Value}/flags/{targetId.Value}");
+        // An un-flag is the inverse of FlagAsync: the Undo references the id the server minted for the
+        // original Flag, so the receiving instance resolves the original Flag's parties from the stored
+        // Flag and removes the recorded edge. Per the delivery model the Undo is published to the
+        // flagger's OWN outbox (an authored activity always flows through the acting actor's own outbox)
+        // and is signed by the pipeline as actorId; the server records it and delivers it to the target's
+        // inbox (the server owns the recipient hop).
+        //
+        // Decision 055 (learned-id references): <paramref name="originalFlagId"/> is the id the server
+        // minted for the original flag (learned from <see cref="DeliveryResult.MintedId"/> via
+        // <see cref="FlagAsync"/>) — the client never recomputes the server's ids. The client sends only
+        // the Undo's shape; the server mints the Undo's own id and returns it in the 2xx body.
         var undo = new Undo
         {
-            Id = $"{actorId.Value}/unflags/{targetId.Value}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = flagIri.Uri }],
+            Object = [new Link { Href = originalFlagId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -494,41 +540,38 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     public Task<DeliveryResult> AddMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
     {
         // A community manages its own membership (19.5.2 self-management): the Add's actor is the
-        // recipient community, so the server's AddActivityHandler gate (actor == recipient community)
-        // passes and the member is added. The request is signed as the community (the client's signing
-        // identity), so the actor and the signature agree.
+        // community, so the server's community-outbox gate (actor == community) passes and the member is
+        // added. The request is signed as the community (the client's signing identity), so the actor and
+        // the signature agree.
         //
-        // Direct-inbox target (a deviation from the outbox convention): the community outbox publish
-        // endpoint accepts only Follow/Undo/Accept/Reject, so a membership Add is posted directly to the
-        // community's inbox, where AddActivityHandler runs. The Id is unique per operation (a guid
-        // suffix) — not a deterministic dedupe IRI — because a member can be added/removed repeatedly and
-        // each operation is a distinct stored activity.
+        // Decision 055: posted to the community's OWN outbox (the authoring surface) — the server mints
+        // the Add's id (an unguessable ULID) and returns it in the 2xx body, so the client never chooses
+        // (or recomputes) the id. The client sends only the Add's shape (actor + object).
         var add = new Add
         {
-            Id = $"{communityId.Value}/add-{Guid.NewGuid():N}",
             Actor = [new Link { Href = communityId.Uri }],
             Object = [new Link { Href = memberId.Uri }],
         };
 
-        return DeliverAsync(communityId.InboxOf(), add, ct);
+        return DeliverAsync(communityId.OutboxOf(), add, ct);
     }
 
     /// <inheritdoc/>
     public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
     {
         // The inverse of AddMemberAsync: the community removes a member from its own member set. The
-        // Remove's actor is the recipient community (the 19.5.2 gate), the request is signed as the
-        // community, and it is delivered directly to the community's inbox (the community outbox publish
-        // endpoint accepts only Follow/Undo/Accept/Reject). The Id is unique per operation so a repeated
-        // add/remove is a distinct stored activity.
+        // Remove's actor is the community (the 19.5.2 gate), the request is signed as the community, and
+        // it is published to the community's OWN outbox (the authoring surface, decision 055).
+        //
+        // Decision 055: the server mints the Remove's id (an unguessable ULID) and returns it in the 2xx
+        // body; the client sends only the Remove's shape (actor + object).
         var remove = new Remove
         {
-            Id = $"{communityId.Value}/remove-{Guid.NewGuid():N}",
             Actor = [new Link { Href = communityId.Uri }],
             Object = [new Link { Href = memberId.Uri }],
         };
 
-        return DeliverAsync(communityId.InboxOf(), remove, ct);
+        return DeliverAsync(communityId.OutboxOf(), remove, ct);
     }
 
     /// <inheritdoc/>
@@ -548,6 +591,11 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         var origin = $"{actorId.Uri.Scheme}://{actorId.Uri.Authority}";
         var communityIri = new Iri($"{origin}/ap/v1/c/{name}");
 
+        // The community's IRI is its public handle ({instanceBase}/ap/v1/c/{name}) — a stable,
+        // meaningful identifier chosen by the creator (the community is addressed by name), not a
+        // server-minted object id. Decision 055 leaves it client-chosen because the community's
+        // identity is its name; the server mints only the wrapping Create's id (and returns it in the
+        // 2xx body).
         var group = new Group
         {
             Id = communityIri.Value,
@@ -555,11 +603,10 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Name = [displayName],
         };
 
-        // A deterministic Create IRI (community-{name}) so a repeated create of the same community is a
-        // no-op re-store (idempotent by IRI), mirroring the deterministic note/reply Create IRIs.
+        // Decision 055: the client sends only the Create's shape (actor + the embedded Group); the server
+        // mints the Create's id (an unguessable ULID) and returns it in the 2xx body.
         var create = new Create
         {
-            Id = $"{actorId.Value}/creates/community-{name}",
             Actor = [new Link { Href = actorId.Uri }],
             Object = [group],
         };
@@ -610,14 +657,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     /// <inheritdoc/>
     public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
     {
-        // A deterministic, unique IRI per (actor, content) so a retried post dedupes on the receiver:
-        // the note id derives from the actor + a content hash, and the Create id from the note id.
-        var noteIri = $"{actorId.Value}/notes/{CreateNoteIdSuffix(content)}";
-        var createIri = $"{actorId.Value}/creates/{CreateNoteIdSuffix(content)}";
-
+        // Decision 055 (server is the object-id authority): the client sends only the post's *shape*
+        // (content, attributedTo, audience) — no note id, no Create id. The server mints both the
+        // Create's id and the embedded note's id (unguessable ULIDs) and returns the created Create in
+        // the 2xx body, so the caller reads <see cref="DeliveryResult.MintedId"/> to learn the Create's
+        // id. (The embedded note's own id is carried in the returned body's `object`; a caller that needs
+        // to reference the note — e.g. to reply to or delete it — parses the returned object's id.)
         var note = new Note
         {
-            Id = noteIri,
             Content = [content],
             AttributedTo = [new Link { Href = actorId.Uri }],
         };
@@ -636,7 +683,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // without a second fetch.
         var create = new Create
         {
-            Id = createIri,
             Actor = [new Link { Href = actorId.Uri }],
             Object = [note],
         };
@@ -656,16 +702,13 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         IEnumerable<Iri>? to = null,
         CancellationToken ct = default)
     {
-        // A deterministic, unique IRI per (actor, parent, content) so a retried reply dedupes on the
-        // receiver: the note id derives from the actor + parent + a content hash, and the Create id
-        // from the note id. Including the parent in the hash keeps replies to different parents distinct
-        // even for identical content.
-        var noteIri = $"{actorId.Value}/notes/{CreateReplyIdSuffix(parentIri.Value, content)}";
-        var createIri = $"{actorId.Value}/creates/{CreateReplyIdSuffix(parentIri.Value, content)}";
-
+        // Decision 055 (server is the object-id authority): the client sends only the reply's *shape*
+        // (content, attributedTo, the parent's learned id as inReplyTo, mentions, audience) — no note id,
+        // no Create id. <paramref name="parentIri"/> is the id the server minted for the parent note
+        // (learned when the parent was posted). The server mints the Create's id and the embedded note's
+        // id (unguessable ULIDs) and returns the created Create in the 2xx body.
         var note = new Note
         {
-            Id = noteIri,
             Content = [content],
             AttributedTo = [new Link { Href = actorId.Uri }],
             // F-12 threading: the parent note is the reply's inReplyTo (a link to the parent).
@@ -696,9 +739,11 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 
         // The embedded Note (a full object, not a link) carries inReplyTo + the mention tags, so the
         // receiver's Create handler records the parent → child reply edge from the note's inReplyTo.
+        // Decision 055: the client sends only the Create's shape (actor + the embedded note); the server
+        // mints the Create's id and the note's id (unguessable ULIDs) and returns the created Create in
+        // the 2xx body.
         var create = new Create
         {
-            Id = createIri,
             Actor = [new Link { Href = actorId.Uri }],
             Object = [note],
         };
@@ -706,31 +751,6 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // Published to the author's OWN outbox (the outbox is the write surface for the activities an
         // actor authors): the author's instance records the reply in the outbox and federates it.
         return DeliverAsync(actorId.OutboxOf(), create, ct);
-    }
-
-    /// <summary>
-    /// Derives a short, deterministic suffix for a reply note/Create IRI from its parent IRI + content
-    /// (a stable content hash), so identical replies to the same parent from the same actor map to the
-    /// same IRI (dedupe) and replies to different parents (or with different content) map to distinct
-    /// IRIs.
-    /// </summary>
-    private static string CreateReplyIdSuffix(string parentIri, string content)
-    {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(parentIri + "\u0000" + content);
-        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
-        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// Derives a short, deterministic suffix for a note/Create IRI from its content (a stable
-    /// content hash), so identical posts from the same actor map to the same IRI (dedupe) and
-    /// distinct posts map to distinct IRIs.
-    /// </summary>
-    private static string CreateNoteIdSuffix(string content)
-    {
-        var bytes = System.Text.Encoding.UTF8.GetBytes(content);
-        var hash = System.Security.Cryptography.SHA256.HashData(bytes);
-        return Convert.ToHexString(hash)[..16].ToLowerInvariant();
     }
 
     /// <inheritdoc/>

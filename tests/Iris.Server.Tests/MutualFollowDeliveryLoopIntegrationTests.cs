@@ -106,27 +106,34 @@ public sealed class MutualFollowDeliveryLoopIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // A recorded the Create in alice-a's outbox (the local-surfacing half).
+        // Decision 055: A minted the Create's id (and the embedded Note's id); learn the Create's minted
+        // id from the 2xx body. Inbound federation keeps the originator's id, so B stores it under this
+        // same id.
+        var mintedIdNullable = await LearnMintedIdAsync(response);
+        Assert.True(mintedIdNullable != null, "A should have returned the minted Create id in the 2xx body.");
+        Iri mintedId = mintedIdNullable.Value;
+
+        // A recorded the Create in alice-a's outbox (the local-surfacing half), under the MINTED id.
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceAActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == create.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // Wait for the post to reach B (the intended federation hop), then let the (absent) loop run a
         // while so any unbounded re-delivery would accumulate.
         await WaitForAsync(async () =>
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out _),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(30));
         await Task.Delay(TimeSpan.FromSeconds(8));
 
         // The Create must have landed on B (the federation worked) ...
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(create.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B should have stored the Create federated from A (the post federated to the peer)");
         Assert.IsType<Create>(storedB);
 
         // ... and B's alice outbox surfaces it exactly once (F-1911-2 outbox dedup).
         var bOutbox = await _bPersistence.Activities.GetOutboxAsync(_aliceBActorIri);
-        var bOutboxCount = bOutbox.Count(o => o is IObject { Id: { Length: > 0 } id } && id == create.Id);
+        var bOutboxCount = bOutbox.Count(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
         Assert.True(
             bOutboxCount == 1,
             $"B's alice outbox should list the Create exactly once (no echo duplication); got {bOutboxCount}");
@@ -149,7 +156,16 @@ public sealed class MutualFollowDeliveryLoopIntegrationTests : IDisposable
     [Fact]
     public async Task RedeliveredCreate_IsRecordedOnce_NotReFannedOut()
     {
-        var create = BuildCreate(_aliceAActorIri);
+        // This test simulates a re-delivery of a Create INBOUND to B (a federated echo), so the Create
+        // carries the originator's id verbatim (inbound federation keeps the originator's id — decision
+        // 055). Unlike the outbox-publish path (id-less, server-minted), a directly-delivered inbound
+        // Create must carry an id (the inbox handler requires one).
+        var create = new Create
+        {
+            Id = $"https://{AHost}/activities/recreate-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(_aliceAActorIri.Value) }],
+            Object = [new Note { Id = $"https://{AHost}/objects/recreate-note-{Guid.NewGuid():N}", Content = ["re-delivery post"] }],
+        };
 
         // Re-deliver the same Create to B's alice inbox a second time (simulating a retry / duplicate
         // delivery of an activity already stored on B). B records it as a no-op and does NOT re-fan-out
@@ -352,13 +368,31 @@ public sealed class MutualFollowDeliveryLoopIntegrationTests : IDisposable
 
     private static Create BuildCreate(Iri actorIri) => new()
     {
-        Id = $"https://{AHost}/activities/create-{Guid.NewGuid():N}",
+        // Decision 055: the client sends the Create's shape (no id on the activity or the embedded Note);
+        // the server mints both and returns the created object in the 2xx body.
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
         Object =
         [
-            new Note { Id = $"https://{AHost}/objects/note-{Guid.NewGuid():N}", Content = ["loop-safety post"] },
+            new Note { Content = ["loop-safety post"] },
         ],
     };
+
+    /// <summary>
+    /// Learns the server-minted id from a 2xx response body (decision 055: the server returns the
+    /// created object in the 2xx body). Returns null when the body is empty or carries no id.
+    /// </summary>
+    private static async Task<Iri?> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        var activity = ActivityJson.Deserialize<IObjectOrLink>(body) as Activity;
+        var id = activity?.Id;
+        return string.IsNullOrWhiteSpace(id) ? null : new Iri(id);
+    }
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
     {

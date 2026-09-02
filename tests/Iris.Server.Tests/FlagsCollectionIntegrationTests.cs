@@ -164,13 +164,17 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
 
         // bob flags carol (202), the edge is recorded, and carol appears in bob's flags.
-        Assert.Equal(202, (await client.FlagAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        // Decision 055: the server mints the Flag's id, returned in DeliveryResult.MintedId.
+        var flagResult = await client.FlagAsync(_bobActorIri, _carolActorIri);
+        Assert.Equal(202, flagResult.StatusCode);
+        Assert.True(flagResult.MintedId != null, "the server should have minted the Flag's id.");
         Assert.True(await _persistence.Moderation.HasFlaggedAsync(_bobActorIri, _carolActorIri));
         Assert.Contains(_carolActorIri, await _persistence.Moderation.GetFlagsAsync(_bobActorIri));
 
-        // bob un-flags carol: the Undo of the Flag (actor = bob, object = the original Flag) is
-        // delivered to carol's inbox; the instance removes the recorded edge.
-        Assert.Equal(202, (await client.UnflagAsync(_bobActorIri, _carolActorIri)).StatusCode);
+        // bob un-flags carol: the Undo of the Flag (actor = bob, object = the original Flag's LEARNED
+        // id) is published to bob's outbox; the instance removes the recorded edge.
+        var unflagResult = await client.UnflagAsync(_bobActorIri, new Iri(flagResult.MintedId!));
+        Assert.Equal(202, unflagResult.StatusCode);
         Assert.False(await _persistence.Moderation.HasFlaggedAsync(_bobActorIri, _carolActorIri));
         Assert.Empty(await _persistence.Moderation.GetFlagsAsync(_bobActorIri));
     }

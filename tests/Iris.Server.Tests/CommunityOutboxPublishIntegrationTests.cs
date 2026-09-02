@@ -116,16 +116,21 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
         var follow = BuildFollow(_localCommunityIri, _remoteCommunityIri);
         using var request = SignedRequest(_localCommunityIri, _bCommunityKey, follow, $"/ap/v1/c/{LocalCommunity}/outbox");
 
-        var response = await _bHttp.SendAsync(request);
+        using var response = await _bHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // Decision 055: the server minted the follow's id; learn it from the 2xx body.
+        var mintedIdNullable = await LearnMintedIdAsync(response);
+        Assert.True(mintedIdNullable != null, "B should have returned the minted follow id in the 2xx body.");
+        Iri mintedId = mintedIdNullable.Value;
 
         // The community's follows-set edge is recorded (the community `following` collection lists the
         // target) ...
         Assert.Contains(_remoteCommunityIri, await _bPersistence.Communities.GetFollowsAsync(_localCommunityIri));
 
-        // ... and the activity + the community's outbox are recorded.
-        Assert.True(await _bPersistence.Activities.TryGetActivityAsync(new Iri(follow.Id!), out _),
-            "B should have stored the community's follow in the activity store");
+        // ... and the activity + the community's outbox are recorded (under the MINTED id).
+        Assert.True(await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
+            "B should have stored the community's follow in the activity store under its minted id");
         var outbox = await _bPersistence.Activities.GetOutboxAsync(_localCommunityIri);
         Assert.Single(outbox);
         Assert.IsType<Follow>(outbox[0]);
@@ -187,18 +192,24 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
     {
         // Record a follow first (publish it to the outbox), then undo it.
         var follow = BuildFollow(_localCommunityIri, _remoteCommunityIri);
+        Iri mintedFollowId = default!;
         using (var followRequest = SignedRequest(_localCommunityIri, _bCommunityKey, follow, $"/ap/v1/c/{LocalCommunity}/outbox"))
         {
-            var followResponse = await _bHttp.SendAsync(followRequest);
+            using var followResponse = await _bHttp.SendAsync(followRequest);
             Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
+            // Decision 055: learn the follow's minted id from the 2xx body.
+            var followMintedNullable = await LearnMintedIdAsync(followResponse);
+            Assert.True(followMintedNullable != null, "the server should have returned the minted follow id in the 2xx body.");
+            mintedFollowId = followMintedNullable.Value;
         }
 
         Assert.Contains(_remoteCommunityIri, await _bPersistence.Communities.GetFollowsAsync(_localCommunityIri));
 
-        // The Undo references the follow by IRI; its actor is the community (the un-follower).
-        var undo = BuildUndo(_localCommunityIri, follow);
+        // The Undo references the follow by its LEARNED (minted) IRI; its actor is the community (the
+        // un-follower).
+        var undo = BuildUndo(_localCommunityIri, mintedFollowId);
         using var undoRequest = SignedRequest(_localCommunityIri, _bCommunityKey, undo, $"/ap/v1/c/{LocalCommunity}/outbox");
-        var undoResponse = await _bHttp.SendAsync(undoRequest);
+        using var undoResponse = await _bHttp.SendAsync(undoRequest);
         Assert.Equal(HttpStatusCode.Accepted, undoResponse.StatusCode);
 
         // The community's follows-set edge is removed.
@@ -215,8 +226,14 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
         using var request = SignedRequest(_localCommunityIri, _bCommunityKey, follow, $"/ap/v1/c/{LocalCommunity}/outbox");
 
         // B's community iris publishes the follow to its own outbox.
-        var response = await _bHttp.SendAsync(request);
+        using var response = await _bHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // Decision 055: B minted the follow's id (returned in the 2xx body). Inbound federation keeps the
+        // originator's id, so A stores the follow under this same minted id.
+        var mintedIdNullable = await LearnMintedIdAsync(response);
+        Assert.True(mintedIdNullable != null, "B should have returned the minted follow id in the 2xx body.");
+        Iri mintedId = mintedIdNullable.Value;
 
         // B recorded its side of the edge immediately (the community's follows set).
         Assert.Contains(_remoteCommunityIri, await _bPersistence.Communities.GetFollowsAsync(_localCommunityIri));
@@ -228,8 +245,8 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
         await WaitForAsync(async () =>
             (await _aPersistence.Communities.GetFollowsAsync(_remoteCommunityIri)).Contains(_localCommunityIri),
             timeout: TimeSpan.FromSeconds(10));
-        Assert.True(await _aPersistence.Activities.TryGetActivityAsync(new Iri(follow.Id!), out _),
-            "A should have stored the community follow delivered by B's server");
+        Assert.True(await _aPersistence.Activities.TryGetActivityAsync(mintedId, out _),
+            "A should have stored the community follow delivered by B's server (under the minted id)");
         Assert.Contains(_localCommunityIri, await _aPersistence.Communities.GetFollowsAsync(_remoteCommunityIri));
         Assert.Contains(_localCommunityIri, await _aPersistence.Communities.GetFollowersAsync(_remoteCommunityIri));
 
@@ -246,10 +263,15 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
     public async Task CommunityOutbox_UndoOfRemoteFollow_RemovesEdgeOnBothSides()
     {
         var follow = BuildFollow(_localCommunityIri, _remoteCommunityIri);
+        Iri mintedFollowId = default!;
         using (var followRequest = SignedRequest(_localCommunityIri, _bCommunityKey, follow, $"/ap/v1/c/{LocalCommunity}/outbox"))
         {
-            var followResponse = await _bHttp.SendAsync(followRequest);
+            using var followResponse = await _bHttp.SendAsync(followRequest);
             Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
+            // Decision 055: learn the follow's minted id from the 2xx body (the Undo references it).
+            var followMintedNullable = await LearnMintedIdAsync(followResponse);
+            Assert.True(followMintedNullable != null, "the server should have returned the minted follow id in the 2xx body.");
+            mintedFollowId = followMintedNullable.Value;
         }
 
         // Wait for the follow to federate to A (A records its side of the edge).
@@ -257,10 +279,10 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
             (await _aPersistence.Communities.GetFollowsAsync(_remoteCommunityIri)).Contains(_localCommunityIri),
             timeout: TimeSpan.FromSeconds(10));
 
-        // iris un-follows lumen: publish the Undo to iris's outbox.
-        var undo = BuildUndo(_localCommunityIri, follow);
+        // iris un-follows lumen: publish the Undo (referencing the follow's LEARNED id) to iris's outbox.
+        var undo = BuildUndo(_localCommunityIri, mintedFollowId);
         using var undoRequest = SignedRequest(_localCommunityIri, _bCommunityKey, undo, $"/ap/v1/c/{LocalCommunity}/outbox");
-        var undoResponse = await _bHttp.SendAsync(undoRequest);
+        using var undoResponse = await _bHttp.SendAsync(undoRequest);
         Assert.Equal(HttpStatusCode.Accepted, undoResponse.StatusCode);
 
         // B removed its side of the edge immediately.
@@ -452,17 +474,36 @@ public sealed class CommunityOutboxPublishIntegrationTests : IDisposable
 
     private static Follow BuildFollow(Iri followerIri, Iri targetIri) => new()
     {
-        Id = $"https://{BHost}/activities/follow-{Guid.NewGuid():N}",
+        // Decision 055: the client sends the follow's shape (no id); the server mints the id and returns
+        // it in the 2xx body.
         Actor = [new Link { Href = new Uri(followerIri.Value) }],
         Object = [new Link { Href = new Uri(targetIri.Value) }],
     };
 
-    private static Undo BuildUndo(Iri actorIri, Follow follow) => new()
+    private static Undo BuildUndo(Iri actorIri, Iri originalFollowId) => new()
     {
-        Id = $"https://{BHost}/activities/undo-{Guid.NewGuid():N}",
+        // Decision 055: the Undo references the original follow by its LEARNED (server-minted) id and
+        // carries no id of its own (the server mints the Undo's id).
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
-        Object = [new Link { Href = new Uri(follow.Id!) }],
+        Object = [new Link { Href = new Uri(originalFollowId.Value) }],
     };
+
+    /// <summary>
+    /// Learns the server-minted id from a community-outbox 2xx response body (decision 055: the server
+    /// returns the created object in the 2xx body). Returns null when the body is empty or carries no id.
+    /// </summary>
+    private static async Task<Iri?> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        var activity = ActivityJson.Deserialize<IObjectOrLink>(body) as Activity;
+        var id = activity?.Id;
+        return string.IsNullOrWhiteSpace(id) ? null : new Iri(id);
+    }
 
     private static async Task<List<string>> CollectionItemsAsync(HttpClient http, string url)
     {

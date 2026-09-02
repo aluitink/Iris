@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Iris.Core;
+using Iris.Server.Identity;
 using Iris.Server.InMemory;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -254,21 +255,21 @@ public sealed class FollowActivityHandlerTests
     public void Ctor_NullPersistence_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            null!, new RecordingDeliveryService(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
+            null!, new RecordingDeliveryService(), new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new IdMinter()));
     }
 
     [Fact]
     public void Ctor_NullDelivery_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            new InMemoryPersistenceProvider(), null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider())));
+            new InMemoryPersistenceProvider(), null!, new DefaultLocalActorResolver(new InMemoryPersistenceProvider()), new IdMinter()));
     }
 
     [Fact]
     public void Ctor_NullLocalActors_Throws()
     {
         Assert.Throws<ArgumentNullException>(() => new FollowActivityHandler(
-            new InMemoryPersistenceProvider(), new RecordingDeliveryService(), null!));
+            new InMemoryPersistenceProvider(), new RecordingDeliveryService(), null!, new IdMinter()));
     }
 
     // --- Helpers --------------------------------------------------------------------------
@@ -278,7 +279,7 @@ public sealed class FollowActivityHandlerTests
     {
         var delivery = new RecordingDeliveryService();
         var handler = new FollowActivityHandler(
-            persistence, delivery, new DefaultLocalActorResolver(persistence));
+            persistence, delivery, new DefaultLocalActorResolver(persistence), new IdMinter());
         return (handler, delivery);
     }
 

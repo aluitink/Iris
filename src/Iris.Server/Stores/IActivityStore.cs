@@ -88,4 +88,17 @@ public interface IActivityStore
     /// lists the deleted content. Removing a missing item is a no-op (returns <see langword="false"/>).
     /// </remarks>
     public Task<bool> RemoveFromOutboxAsync(Iri actorIri, Iri itemIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Enumerates every activity stored in the activity store (regardless of author or type).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with all stored activities (possibly empty).</returns>
+    /// <remarks>
+    /// A read-only enumeration of the store's full contents. Decision 055 mints unguessable object ids
+    /// (ULIDs), so a received activity's id can no longer be recomputed from its originator + a formula;
+    /// this enumeration lets a consumer (e.g. an inbound <c>Accept</c>/<c>Reject</c> lookup by its
+    /// <c>object</c> reference) find a stored activity when its minted id is not known in advance.
+    /// </remarks>
+    public Task<IReadOnlyList<IObject>> GetAllActivitiesAsync(CancellationToken ct = default);
 }

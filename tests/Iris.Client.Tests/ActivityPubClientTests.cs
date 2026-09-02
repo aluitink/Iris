@@ -178,8 +178,9 @@ public class ActivityPubClientTests
         Assert.Equal("Follow", root.GetProperty("type").GetString());
         Assert.Equal(follower.Value, root.GetProperty("actor").GetString());
         Assert.Equal(ActorIri, root.GetProperty("object").GetString());
-        // A deterministic, unique id so a retried follow dedupes.
-        Assert.Equal($"{follower.Value}/follows/{ActorIri}", root.GetProperty("id").GetString());
+        // Decision 055: the client sends the follow's shape only — no id (the server mints it and returns
+        // it in the 2xx body).
+        Assert.False(root.TryGetProperty("id", out _), "the client must not set the follow's id (server is the authority)");
     }
 
     [Fact]
@@ -242,8 +243,8 @@ public class ActivityPubClientTests
         Assert.Equal(ActorIri, root.GetProperty("actor").GetString());
         // The object references the original Follow by IRI (a Link serializes as its bare IRI string).
         Assert.Equal(followIri.Value, root.GetProperty("object").GetString());
-        // A deterministic, unique-per-(actor,follow) id so a retried accept dedupes.
-        Assert.Equal($"{ActorIri}/accepts/{followIri.Value}", root.GetProperty("id").GetString());
+        // Decision 055: no client-set id (the server mints the Accept's id).
+        Assert.False(root.TryGetProperty("id", out _), "the client must not set the Accept's id (server is the authority)");
     }
 
     [Fact]
@@ -266,7 +267,8 @@ public class ActivityPubClientTests
         Assert.Equal("Reject", root.GetProperty("type").GetString());
         Assert.Equal(ActorIri, root.GetProperty("actor").GetString());
         Assert.Equal(followIri.Value, root.GetProperty("object").GetString());
-        Assert.Equal($"{ActorIri}/rejects/{followIri.Value}", root.GetProperty("id").GetString());
+        // Decision 055: no client-set id (the server mints the Reject's id).
+        Assert.False(root.TryGetProperty("id", out _), "the client must not set the Reject's id (server is the authority)");
     }
 
     [Fact]
@@ -321,20 +323,12 @@ public class ActivityPubClientTests
         Assert.Equal("hello world", note.GetProperty("content").GetString());
         // The note is attributed to the author.
         Assert.Equal(author.Value, note.GetProperty("attributedTo").GetString());
-        // Deterministic, unique ids so a retried post dedupes on the receiver.
-        var noteId = note.GetProperty("id").GetString()!;
-        var createId = root.GetProperty("id").GetString()!;
-        Assert.StartsWith($"{author.Value}/notes/", noteId);
-        Assert.StartsWith($"{author.Value}/creates/", createId);
-        // Same content → same ids (dedupe); different content → different ids.
-        var again = await client.PostNoteAsync(author, "hello world");
-        Assert.Equal(202, again.StatusCode);
-        using var doc2 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
-        Assert.Equal(noteId, doc2.RootElement.GetProperty("object").GetProperty("id").GetString());
-        var different = await client.PostNoteAsync(author, "a different note");
-        Assert.Equal(202, different.StatusCode);
-        using var doc3 = System.Text.Json.JsonDocument.Parse(Encoding.UTF8.GetString(fake.LastBody));
-        Assert.NotEqual(noteId, doc3.RootElement.GetProperty("object").GetProperty("id").GetString());
+        // Decision 055: the client sends the post's shape only — no Create id, no embedded-note id. The
+        // server mints both (unguessable ULIDs) and returns the created Create in the 2xx body; the
+        // caller reads <see cref="DeliveryResult.MintedId"/> (the Create's id) and the returned object's
+        // id (the note's id).
+        Assert.False(root.TryGetProperty("id", out _), "the client must not set the Create's id (server is the authority)");
+        Assert.False(note.TryGetProperty("id", out _), "the client must not set the embedded note's id (server is the authority)");
     }
 
     [Fact]

@@ -6,6 +6,7 @@ using System.Text;
 using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Server.Identity;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
@@ -73,6 +74,12 @@ public static class ActivityPubServerExtensions
 
         // The signing key provider for the local actor (Phase 4 delivery signs with the actor's key).
         services.TryAddSingleton<IKeyProvider, InMemoryKeyProvider>();
+
+        // The server-side id authority (decision 055): mints the collision-resistant, unguessable id
+        // for every object/activity this instance creates (the outbox write path and the inbound
+        // response paths). The authoring client sends the activity shape without an id; the server mints
+        // it and returns it, so the id is never chosen by an untrusted client.
+        services.TryAddSingleton<IdMinter>();
 
         // The server-side object caches (remote actors, remote keys, collection pages, WebFinger).
         // The TTLs come from ActivityPubServerOptions.CachePolicies (ServerCachePolicies); a null
@@ -1281,6 +1288,7 @@ public static class ActivityPubServerExtensions
         ILocalActorResolver localActors,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         IEnumerable<IActivityHandler> handlers,
+        IdMinter idMinter,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1308,7 +1316,7 @@ public static class ActivityPubServerExtensions
         }
 
         IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
-        if (payload is not Activity { Id: not null } activity)
+        if (payload is not Activity activity)
         {
             return Results.BadRequest();
         }
@@ -1320,6 +1328,14 @@ public static class ActivityPubServerExtensions
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
+
+        // Decision 055: the server is the sole authority for the id of an object/activity it creates.
+        // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
+        // the server mints a collision-resistant, unguessable ULID in a fixed per-type namespace and
+        // assigns it to the activity — and to any embedded object (a Note/Group inside a Create), whose
+        // id the client no longer sends either. The minted id is returned to the authoring client in the
+        // 202 body so it can reference the object later (an Undo, a delete, an Accept of this follow).
+        MintActivityIds(idMinter, actorIri, activity);
 
         try
         {
@@ -1403,7 +1419,11 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
 
-        return Results.Accepted();
+        // Decision 055: return the created activity (with its server-minted id) in the 202 body so the
+        // authoring client can learn the id and reference the object later (an Undo, a delete, an Accept
+        // of this follow). The body is the activity serialized as ActivityStreams JSON (a raw text body —
+        // NOT Results.Accepted(string), which would JSON-serialize the string into a quoted JSON string).
+        return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
     }
 
     /// <summary>
@@ -1432,6 +1452,7 @@ public static class ActivityPubServerExtensions
     /// <param name="name">The community's handle (the <c>{name}</c> route value).</param>
     /// <param name="persistence">The persistence provider (activity store + community store).</param>
     /// <param name="delivery">The delivery service (schedules the server→server delivery hop).</param>
+    /// <param name="idMinter">The id minter (decision 055: mints the community-authored activity's id).</param>
     /// <param name="optionsAccessor">The server options (the base URL, for the community IRI).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>
@@ -1448,6 +1469,7 @@ public static class ActivityPubServerExtensions
         string name,
         IPersistenceProvider persistence,
         IDeliveryService delivery,
+        IdMinter idMinter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -1490,8 +1512,35 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        // Decision 055: the server is the sole authority for the object id. The community (like an actor)
+        // authors id-less activities through its own outbox; the server mints the activity's id (and any
+        // embedded Create object's id) before recording it, so the activity store can key it.
+        if (payload is not Activity activityToMint)
+        {
+            return Results.BadRequest();
+        }
+        MintActivityIds(idMinter, communityIri, activityToMint);
+
         try
         {
+            // Membership self-management (Add/Remove) is a local-only operation: the community edits its
+            // own members (the actor == community gate above already passed), so no cross-instance delivery
+            // is needed. It is handled separately from the follow/decision cases, which DO carry a delivery
+            // recipient.
+            if (payload is Add add)
+            {
+                await RecordCommunityAddAsync(persistence, communityIri, add, ct).ConfigureAwait(false);
+                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, ct)
+                    .ConfigureAwait(false);
+            }
+
+            if (payload is Remove remove)
+            {
+                await RecordCommunityRemoveAsync(persistence, communityIri, remove, ct).ConfigureAwait(false);
+                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, ct)
+                    .ConfigureAwait(false);
+            }
+
             Iri? recipientIri = payload switch
             {
                 Follow follow => await RecordCommunityFollowAsync(persistence, communityIri, follow, ct)
@@ -1509,22 +1558,8 @@ public static class ActivityPubServerExtensions
                 return Results.BadRequest();
             }
 
-            // Record the activity in the community's outbox (so the `following` collection surfaces the
-            // edge) and the activity store (for Undo resolution + the remote side to look it up). The
-            // payload is a Follow/Undo (a non-null Activity) — recipientIri is only non-null in that case.
-            ArgumentNullException.ThrowIfNull(payload);
-            await persistence.Activities.AddToOutboxAsync(communityIri, payload, ct).ConfigureAwait(false);
-            await persistence.Activities.PutActivityAsync((IObject)payload, ct).ConfigureAwait(false);
-
-            // The server (not the client) delivers the activity to the target's inbox. A local target
-            // needs no cross-instance hop (the local edge is already recorded); only a remote target is
-            // delivered to, signed as the community.
-            if (recipientIri is { } recipient
-                && !await IsLocalCommunityAsync(persistence, recipient, ct).ConfigureAwait(false)
-                && !await IsLocalActorAsync(persistence, recipient, ct).ConfigureAwait(false))
-            {
-                await delivery.DeliverToActorAsync(recipient, (Activity)payload, communityIri, ct).ConfigureAwait(false);
-            }
+            return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, recipientIri, delivery, ct)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1534,8 +1569,77 @@ public static class ActivityPubServerExtensions
         {
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
+    }
 
-        return Results.Accepted();
+    /// <summary>
+    /// Records a published community-outbox activity in the community's outbox + activity store and
+    /// (when a non-null, non-local <paramref name="recipientIri"/> is supplied) delivers it to the
+    /// recipient's inbox, signed as the community. Returns the 202 Accepted. A <see langword="null"/>
+    /// recipient (a local-only membership Add/Remove) records without delivering.
+    /// </summary>
+    private static async Task<IResult> FinishCommunityOutboxPublishAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        IObjectOrLink? payload,
+        Iri? recipientIri,
+        IDeliveryService delivery,
+        CancellationToken ct)
+    {
+        // Record the activity in the community's outbox (so the `following`/membership collections
+        // surface the edge) and the activity store (for Undo resolution + the remote side to look it up).
+        ArgumentNullException.ThrowIfNull(payload);
+        await persistence.Activities.AddToOutboxAsync(communityIri, payload, ct).ConfigureAwait(false);
+        await persistence.Activities.PutActivityAsync((IObject)payload, ct).ConfigureAwait(false);
+
+        // The server (not the client) delivers the activity to the target's inbox. A local target
+        // needs no cross-instance hop (the local edge is already recorded); only a remote target is
+        // delivered to, signed as the community.
+        if (recipientIri is { } recipient
+            && !await IsLocalCommunityAsync(persistence, recipient, ct).ConfigureAwait(false)
+            && !await IsLocalActorAsync(persistence, recipient, ct).ConfigureAwait(false))
+        {
+            await delivery.DeliverToActorAsync(recipient, (Activity)payload, communityIri, ct).ConfigureAwait(false);
+        }
+
+        // Decision 055: return the created object (with its minted id) in the 2xx body so the client can
+        // learn the id (for a future Undo of this activity, e.g. un-adding a member).
+        return Results.Text(ActivityJson.Serialize((Activity)payload), ActivityJson.ActivityJsonContentType, statusCode: 202);
+    }
+
+    /// <summary>
+    /// Records a community <see cref="Add"/> (membership self-management): adds the <c>object</c> (the
+    /// member) to the community's member set via <see cref="ICommunityStore.AddMemberAsync"/>. The actor
+    /// == community gate is applied by the caller, so this records unconditionally.
+    /// </summary>
+    private static async Task RecordCommunityAddAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Add add,
+        CancellationToken ct)
+    {
+        var memberIri = add.Object?.FirstOrDefault().ResolveObjectIri();
+        if (memberIri is { } member)
+        {
+            await persistence.Communities.AddMemberAsync(communityIri, member, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Records a community <see cref="Remove"/> (membership self-management): removes the <c>object</c>
+    /// (the member) from the community's member set via <see cref="ICommunityStore.RemoveMemberAsync"/>.
+    /// The actor == community gate is applied by the caller, so this records unconditionally.
+    /// </summary>
+    private static async Task RecordCommunityRemoveAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Remove remove,
+        CancellationToken ct)
+    {
+        var memberIri = remove.Object?.FirstOrDefault().ResolveObjectIri();
+        if (memberIri is { } member)
+        {
+            await persistence.Communities.RemoveMemberAsync(communityIri, member, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -1669,9 +1773,9 @@ public static class ActivityPubServerExtensions
     /// </summary>
     /// <remarks>
     /// This is the outbox (AP-native) follow-decision path (the legacy operator follow-decision endpoints
-    /// were removed in Phase 19.0b): the client authors the deterministic
-    /// <c>Accept</c>/<c>Reject</c> (via <see cref="FollowIris.BuildAccept(Iri, Follow)"/> /
-    /// <see cref="FollowIris.BuildReject(Iri, Follow)"/>) and publishes it to the followed actor's outbox;
+    /// were removed in Phase 19.0b): the client authors the
+    /// <c>Accept</c>/<c>Reject</c> (its own id is minted by the server on the outbox write path — decision
+    /// 055) and publishes it to the followed actor's outbox;
     /// this helper applies the local edge effect and returns the follower so the caller server-delivers
     /// the activity to the follower's inbox (signed as the acting local actor).
     /// </remarks>
@@ -2315,6 +2419,57 @@ public static class ActivityPubServerExtensions
     {
         var normalized = baseUrl.TrimEnd('/');
         return new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/u/{handle}");
+    }
+
+    /// <summary>
+    /// Mints the server-authoritative id for an outbox-published activity (decision 055): assigns the
+    /// activity its id (<c>{actorBase}/{activity-namespace}/{ulid}</c>) and, when the activity carries an
+    /// embedded object (a <see cref="Create"/> whose object is a <see cref="Note"/>/<see cref="Group"/>,
+    /// not a link), assigns that object its id too (<c>{actorBase}/{object-namespace}/{ulid}</c>).
+    /// </summary>
+    /// <remarks>
+    /// The authoring client sends the activity shape without ids; the server is the sole authority for
+    /// the id of every object/activity it creates. A reference-carrying activity (a Follow, Undo, Accept,
+    /// …) carries no embedded object — only a link to an existing object — so only the activity's own id
+    /// is minted. The minted ids are unguessable (ULID) and permanent.
+    /// </remarks>
+    /// <param name="idMinter">The id authority.</param>
+    /// <param name="actorIri">The IRI of the authoring actor (the id's base).</param>
+    /// <param name="activity">The deserialized activity to mint ids on (mutated in place).</param>
+    private static void MintActivityIds(IdMinter idMinter, Iri actorIri, Activity activity)
+    {
+        // The activity's own id (the client no longer sends it).
+        activity.Id = idMinter.Mint(actorIri, activity).Value;
+
+        // A Create (or other activity) may embed a full object (a Note, a Group) whose id the client no
+        // longer sends either. Mint it under the object's own namespace. A reference-carrying activity
+        // (Follow/Undo/Accept/…) has only a link as its object, so there is nothing to mint here.
+        if (activity is Create create && create.Object is { } objects)
+        {
+            // The ActivityStreams library's Create.Object returns fresh object instances on each access
+            // (mutating one does not persist), so build a NEW Object collection whose embedded objects
+            // carry their minted ids, and replace create.Object with it.
+            //
+            // Only mint an embedded object's id when the client did NOT set one. A community (a Group
+            // whose id is this instance's /ap/v1/c/{name}) carries a client-chosen, meaningful IRI (its
+            // name is its identity); the server preserves it rather than overwriting it with a minted
+            // /groups/{ulid}. A plain Note (no client-chosen id) gets a minted /notes/{ulid}.
+            var mintedItems = new List<IObjectOrLink>();
+            foreach (var item in objects)
+            {
+                if (item is IObject embedded && string.IsNullOrWhiteSpace(embedded.Id))
+                {
+                    var mintedId = idMinter.Mint(actorIri, embedded).Value;
+                    embedded.Id = mintedId;
+                    mintedItems.Add(embedded);
+                }
+                else
+                {
+                    mintedItems.Add(item);
+                }
+            }
+            create.Object = mintedItems;
+        }
     }
 
     /// <summary>

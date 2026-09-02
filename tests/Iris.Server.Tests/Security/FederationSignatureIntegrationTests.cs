@@ -4,6 +4,7 @@
 using Iris.Client;
 using Iris.Core;
 using Iris.Server;
+using Iris.Server.Identity;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
@@ -172,18 +173,22 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             await bPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "B should record that alice follows bob");
 
-        // B's FollowActivityHandler scheduled an Accept with a deterministic IRI (bob's actor IRI +
-        // /accepts + the follow IRI). B's DeliveryWorker delivers it to alice's inbox over the wire;
-        // A validates bob's signature (fetching B's actor doc) and stores it under that IRI.
-        var acceptIri = new Iri($"{bobActorIri}/accepts/{follow.Id}");
-        await WaitForAsync(
-            () => aPersistence.Activities.TryGetActivityAsync(acceptIri, out _),
-            timeout: TimeSpan.FromSeconds(10));
+        // B's FollowActivityHandler scheduled an Accept (actor = bob, object = the original follow).
+        // Decision 055: the Accept's OWN id is minted by B's server (an unguessable ULID under
+        // {bob}/accepts/{ulid}) — no longer the deterministic {bob}/accepts/{follow-iri} formula — so this
+        // test locates the stored Accept by its OBJECT (the original follow's id, kept verbatim inbound),
+        // not by a computed IRI. B's DeliveryWorker delivers it to alice's inbox over the wire; A
+        // validates bob's signature (fetching B's actor doc) and stores it.
+        Accept? accept = null;
+        await WaitForAsync(async () =>
+        {
+            accept = await FindAcceptForObjectAsync(aPersistence, follow.Id!);
+            return accept != null;
+        }, timeout: TimeSpan.FromSeconds(10));
 
         Assert.True(
-            await aPersistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
+            accept != null,
             "A should have stored the Accept delivered by B over the wire");
-        var accept = Assert.IsType<Accept>(stored!);
 
         // The Accept's object references the original follow (by IRI) and its actor is bob.
         Assert.NotNull(accept.Object);
@@ -253,16 +258,17 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "Before the Reject, A should record alice's own follow of bob");
 
-        // bob rejects the follow. B builds the Reject (object = the original follow, by IRI) with the
-        // deterministic IRI bob's actor IRI + /rejects + the follow IRI, and delivers it to alice's
-        // inbox over the wire, signed as bob. A validates bob's signature (fetching B's actor doc for
-        // bob) and stores the Reject under that IRI.
-        var reject = FollowIris.BuildReject(bobActorIri, follow);
+        // bob rejects the follow. B builds the Reject (object = the original follow, by IRI) — decision
+        // 055: the Reject's own id is minted by B's server (an unguessable ULID under bob's /rejects
+        // namespace); the test reads the minted id back from the constructed activity. B delivers the
+        // Reject to alice's inbox over the wire, signed as bob. A validates bob's signature (fetching
+        // B's actor doc for bob) and stores the Reject under that (B-minted) id.
+        var reject = FollowIris.BuildReject(new IdMinter(), bobActorIri, follow);
         using var bClient = BuildDeliveryClient(bobActorIri, bSeeded.Key, a.CreateHandler());
         var rejectStatusCode = await bClient.DeliverAsync(aliceActorIri.InboxOf(), reject);
         Assert.Equal(202, rejectStatusCode.StatusCode);
 
-        var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
+        var rejectIri = new Iri(reject.Id!);
         Assert.True(
             await aPersistence.Activities.TryGetActivityAsync(rejectIri, out var stored),
             "A should have stored the Reject delivered by B over the wire");
@@ -361,11 +367,14 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
         var rejectResult = await bobClient.RejectAsync(bobActorIri, new Iri(follow.Id!));
         Assert.Equal(HttpStatusCode.Accepted, (HttpStatusCode)rejectResult.StatusCode);
 
-        // B recorded the Reject under its deterministic IRI, in both the activity store and bob's outbox.
-        var rejectIri = FollowIris.RejectIri(bobActorIri, follow);
+        // Decision 055: B mints the Reject's id (an unguessable ULID under bob's /rejects namespace) and
+        // returns it in the 202 body (DeliveryResult.MintedId). B records the Reject under that minted
+        // id, in both the activity store and bob's outbox.
+        Assert.True(rejectResult.MintedId != null, "B should have minted the Reject's id and returned it.");
+        var rejectIri = new Iri(rejectResult.MintedId!);
         Assert.True(
             await bPersistence.Activities.TryGetActivityAsync(rejectIri, out var bStored),
-            "B should have recorded the operator's Reject under its deterministic IRI");
+            "B should have recorded the operator's Reject under its server-minted IRI");
         Assert.IsType<Reject>(bStored!);
         var bobOutbox = await bPersistence.Activities.GetOutboxAsync(bobActorIri);
         Assert.Contains(bobOutbox, a => a.Id == rejectIri.Value);
@@ -450,21 +459,23 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             await bPersistence.Follows.IsFollowingAsync(aSeeded.ActorIri, carolActorIri),
             "B should record that alice follows carol");
 
-        // B's FollowActivityHandler scheduled an Accept (deterministic IRI: carol's actor IRI +
-        // /accepts + the follow IRI). B's DeliveryWorker delivers it to alice's inbox, signed as
-        // carol (the acting actor). A validates carol's signature (fetching B's actor doc for
-        // carol) and stores the Accept.
-        var acceptIri = new Iri($"{carolActorIri}/accepts/{follow.Id}");
-        await WaitForAsync(
-            () => aPersistence.Activities.TryGetActivityAsync(acceptIri, out _),
-            timeout: TimeSpan.FromSeconds(10));
+        // B's FollowActivityHandler scheduled an Accept (actor = carol, object = the original follow).
+        // Decision 055: the Accept's own id is minted by B's server (an unguessable ULID), so this test
+        // locates it by its OBJECT (the original follow's id, kept verbatim inbound), not by a computed
+        // IRI. B's DeliveryWorker delivers it to alice's inbox, signed as carol (the acting actor). A
+        // validates carol's signature (fetching B's actor doc for carol) and stores the Accept.
+        Accept? accept = null;
+        await WaitForAsync(async () =>
+        {
+            accept = await FindAcceptForObjectAsync(aPersistence, follow.Id!);
+            return accept != null;
+        }, timeout: TimeSpan.FromSeconds(10));
 
         Assert.True(
-            await aPersistence.Activities.TryGetActivityAsync(acceptIri, out var stored),
+            accept != null,
             "A should have stored the Accept signed with carol's key (the acting actor), " +
             "delivered by B's worker");
-        var accept = Assert.IsType<Accept>(stored!);
-        Assert.NotNull(accept.Actor);
+        Assert.NotNull(accept!.Actor);
         Assert.Contains(accept.Actor!, a => a is ILink { Href: { } href } && href == new Uri(carolActorIri.Value));
     }
 
@@ -736,6 +747,31 @@ public sealed class FederationSignatureIntegrationTests : IDisposable
             Object = [new Link { Href = new Uri(targetIri.Value) }],
         };
         return follow;
+    }
+
+    /// <summary>
+    /// Finds a stored <see cref="Accept"/> whose <c>object</c> references the given follow IRI.
+    /// Decision 055 mints the Accept's own id (an unguessable ULID), so it cannot be recomputed from the
+    /// follow's id; locating it by its <c>object</c> (the original follow, kept verbatim inbound) is the
+    /// 055-correct way to find a received follow-response.
+    /// </summary>
+    private static async Task<Accept?> FindAcceptForObjectAsync(IPersistenceProvider persistence, string followIri)
+    {
+        foreach (var activity in await persistence.Activities.GetAllActivitiesAsync())
+        {
+            if (activity is not Accept accept)
+            {
+                continue;
+            }
+
+            var objectIri = accept.Object?.FirstOrDefault().ResolveObjectIri();
+            if (objectIri is { } iri && iri.Value == followIri)
+            {
+                return accept;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

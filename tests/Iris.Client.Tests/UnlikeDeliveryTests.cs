@@ -23,9 +23,12 @@ public class UnlikeDeliveryTests
         var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
         var client = new ActivityPubClient(new HttpClient(fake));
         var actor = new Iri(ActorIri);
-        var target = new Iri(ObjectIri);
+        // Decision 055 (learned-id references): the unlike references the id the SERVER minted for the
+        // original like (learned from LikeAsync's DeliveryResult.MintedId) — the client never recomputes
+        // the server's ids.
+        var mintedLikeId = new Iri($"{ActorIri}/likes/{Guid.NewGuid():N}");
 
-        var result = await client.UnlikeAsync(actor, target);
+        var result = await client.UnlikeAsync(actor, mintedLikeId);
 
         Assert.Equal(202, result.StatusCode);
         Assert.True(result.IsSuccess);
@@ -34,24 +37,33 @@ public class UnlikeDeliveryTests
         Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
         Assert.EndsWith("/ap/v1/u/alice/outbox", fake.LastUri!.AbsolutePath);
 
-        // The body is an Undo whose object references the original Like by its deterministic IRI.
+        // The body is an Undo whose object references the original (server-minted) Like's id.
         // (ActivityJson serializes a single-element activity `object` as a bare IRI string.)
         var body = Encoding.UTF8.GetString(fake.LastBody);
         var doc = JsonNode.Parse(body)!.AsObject();
         Assert.Equal("Undo", (string?)doc["type"]);
-        Assert.Equal($"{ActorIri}/unlikes/{ObjectIri}", (string?)doc["id"]);
 
-        // The Undo's object is the original Like's IRI ({actor}/likes/{object}), so the receiver
-        // resolves exactly the like that was recorded.
-        Assert.Equal($"{ActorIri}/likes/{ObjectIri}", (string?)doc["object"]);
+        // The Undo's object is the learned (server-minted) like id, so the receiver resolves exactly the
+        // like that was recorded.
+        Assert.Equal(mintedLikeId.Value, (string?)doc["object"]);
+
+        // Decision 055: the client sends the Undo's shape only — no id (the server mints the Undo's id).
+        Assert.False(doc.ContainsKey("id"), "the client must not set the Undo's id (server is the authority)");
     }
 
     [Fact]
-    public async Task UnlikeAsync_MatchesLikeAsyncsDeterministicLikeIri()
+    public async Task UnlikeAsync_ReferencesTheMintedLikeIdLearnedFromLikeAsync()
     {
-        // Unlike must reference the SAME like IRI that LikeAsync mints, so the receiver can find the
-        // recorded like. Capture both and assert the reference matches.
-        var likeFake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
+        // Decision 055: the client never recomputes the server's ids. LikeAsync mints the Like's id
+        // server-side and returns it in the 2xx body (DeliveryResult.MintedId); UnlikeAsync references
+        // that learned id. Simulate the round-trip: the like's fake returns a 202 body carrying the
+        // created (minted) like; the caller learns it and passes it to UnlikeAsync.
+        var mintedLikeIri = $"{ActorIri}/likes/{Guid.NewGuid():N}";
+        var likeFake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted)
+        {
+            Content = new StringContent(
+                $"{{\"id\":\"{mintedLikeIri}\",\"type\":\"Like\"}}", Encoding.UTF8, ActivityJson.ActivityJsonContentType),
+        });
         var unlikeFake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.Accepted));
         var actor = new Iri(ActorIri);
         var target = new Iri(ObjectIri);
@@ -59,15 +71,14 @@ public class UnlikeDeliveryTests
         var likeClient = new ActivityPubClient(new HttpClient(likeFake));
         var unlikeClient = new ActivityPubClient(new HttpClient(unlikeFake));
 
-        _ = await likeClient.LikeAsync(actor, target);
-        _ = await unlikeClient.UnlikeAsync(actor, target);
-
-        var likeBody = JsonNode.Parse(Encoding.UTF8.GetString(likeFake.LastBody)!)!.AsObject();
-        var likeId = (string?)likeBody["id"];
+        var likeResult = await likeClient.LikeAsync(actor, target);
+        Assert.NotNull(likeResult.MintedId);
+        _ = await unlikeClient.UnlikeAsync(actor, new Iri(likeResult.MintedId!));
 
         var undoBody = JsonNode.Parse(Encoding.UTF8.GetString(unlikeFake.LastBody)!)!.AsObject();
         var undoObjectIri = (string?)undoBody["object"];
 
-        Assert.Equal(likeId, undoObjectIri);
+        // The Undo references the same id the server minted for the like.
+        Assert.Equal(likeResult.MintedId, undoObjectIri);
     }
 }

@@ -76,24 +76,26 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IDisposable
         var announce = BuildAnnounce(_aliceActorIri);
 
         // Sign the request as alice (the outbox-publish write surface requires a valid signature from
-        // the acting actor) and POST to A's /ap/v1/u/alice/outbox.
+        // the acting actor) and POST to A's /ap/v1/u/alice/outbox. Decision 055: the announce is id-less;
+        // the server mints the id and returns the created activity in the 202 body.
         using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // A recorded the Announce in alice's outbox (the local-surfacing half).
+        // A recorded the Announce in alice's outbox under its server-minted id (the local-surfacing half).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // B validated the federated Announce (resolving alice's key from A's actor doc) and stored it
         // — the boost reached the remote follower's instance (F-15: outbound Announce federation).
         await WaitForAsync(async () =>
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(15));
 
         Assert.True(
-            await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out var storedB),
+            await _bPersistence.Activities.TryGetActivityAsync(mintedId, out var storedB),
             "B should have stored the Announce federated by A's server (signed as alice)");
         Assert.IsType<Announce>(storedB);
     }
@@ -112,14 +114,15 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IDisposable
         using var request = SignedRequest(daveActorIri, daveSeeded.Key, announce, "/ap/v1/u/dave/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // Surfaced in dave's outbox ...
+        // Surfaced in dave's outbox under its server-minted id ...
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(daveActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // ... and nothing was federated (no followers) — B stored nothing.
-        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _));
+        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _));
     }
 
     // --- A blocked remote follower does not receive the federated Announce -------------------
@@ -135,14 +138,16 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IDisposable
         using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var mintedId = await LearnMintedIdAsync(response);
 
-        // Alice's outbox recorded the Announce (local surfacing is independent of block).
+        // Alice's outbox recorded the Announce under its server-minted id (local surfacing is
+        // independent of block).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
-            o => o is IObject { Id: { Length: > 0 } id } && id == announce.Id);
+            o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // Bob (blocked) did NOT receive the federated Announce.
-        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(new Iri(announce.Id!), out _));
+        Assert.False(await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _));
     }
 
     // --- Helpers ---------------------------------------------------------------------------
@@ -355,13 +360,29 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IDisposable
 
     private static Announce BuildAnnounce(Iri actorIri)
     {
+        // Decision 055: the client sends the activity shape WITHOUT an id; the server mints the id and
+        // returns the created activity (with its minted id) in the 202 body. The test learns the id from
+        // the response (LearnMintedIdAsync), mirroring the real client's DeliveryResult.MintedId flow.
         var objectIri = new Iri($"https://{AHost}/objects/note-{Guid.NewGuid():N}");
         return new Announce
         {
-            Id = AnnounceIris.AnnounceIri(actorIri, objectIri).Value,
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
             Object = [new Link { Href = new Uri(objectIri.Value) }],
         };
+    }
+
+    /// <summary>
+    /// Learns the server-minted id of an activity from the 202 outbox-publish response body (decision
+    /// 055): the server is the sole id authority and returns the created activity (with its minted id)
+    /// in the 202 body. This mirrors the real client's <c>DeliveryResult.MintedId</c> flow.
+    /// </summary>
+    private static async Task<Iri> LearnMintedIdAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        var created = ActivityJson.Deserialize<Activity>(body);
+        Assert.NotNull(created);
+        Assert.NotNull(created!.Id);
+        return new Iri(created.Id);
     }
 
     private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
