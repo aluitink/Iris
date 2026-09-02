@@ -188,11 +188,26 @@ Iris.slnx
     **Suite green, 0 failed:** Core 220, Client 136, Ext 29, Server 770, LiveInterop 18,
     SampleBlazor 136 (+32), SampleServer 25 — **1,334 total**.
 
-    **Next: Phase 20.4 (continued) — (a) media remains.** With 20.3, 20.4(b) and 20.4(c) closed, the last
-    20.4 slice is **(a) media** (compose upload → Create object with attachment → stored/served → rendered
-    in the object view, building on 20.2's attachment-rewrite decision — the local media storage +
-    URL-rewrite staged from 20.2). Phase 20 then proceeds 20.5 test triage → 20.6 cohesion → 20.7 manual
-    plan.
+     **Phase 20.4 (a) (change 161v) — DONE: media (closes Phase 20.4).** A note's attachment is uploaded to
+    the author's instance (a local, Basic-authenticated multipart POST, `POST /local/v1/u/{handle}/media`,
+    owner-only, 10 MiB cap) which stores the bytes and returns (201) the same-origin media IRI; the uploader
+    sets that IRI as the `url` of an `Image` attachment on the note it posts. `GET /ap/v1/media/{id}` serves
+    the bytes back from the same origin (long-cacheable), so the browser loads the attachment from the same
+    origin, never a cross-origin media host (Decision 056 (b)). Storage: `IMediaStore` (in-memory +
+    file-backed, wired into both persistence providers). Client: `IMediaClient` (Basic-auth multipart POST)
+    + `PostNoteAsync(Iri, Note, ct)` + factory/`IrisClientBundle` `CreateMediaClient`. Core:
+    `IriExtensions.GetMediaAttachments` (single boundary read of an object's `Image` attachments → same-origin
+    media IRIs). Sample: compose uploads via `InputFile` (Blazor WASM `IBrowserFile`); the object view renders
+    the attachment `<img>`. +23 tests (6 `MediaClientTests`, in-memory + file-backed store tests,
+    upload/serve integration, round-trip integration). `docs/changes/161v-20.4-media.md`.
+    **Suite green, 0 failed:** Core 220, Client 142 (+6), Ext 29, Server 789 (+19), LiveInterop 18,
+    SampleBlazor 136, SampleServer 25 — **1,371 total**.
+
+    **Next: Phase 20.5 — test-suite triage.** Phase 20.4 (media, sensitivity, markdown) is closed. 20.5
+    audits the suite (now ~1,371 tests) to **remove tests that add no coverage** (duplicates, over-fine
+    unit tests of trivial glue, tests that pin implementation details that changed with 055) and
+    keep/grow the integration tests that genuinely exercise the concepts; target a smaller or stable count
+    with higher per-test value. Then 20.6 architecture-cohesion pass → 20.7 manual test plan (capstone).
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).
