@@ -649,10 +649,11 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
  - [ ] **19.8.4 — Community view completeness.** Community screen: rendered group fields, members
    (clickable), feed (rendered items, clickable), following/followers (clickable), community
    follow/unfollow, and the management surfaces from 19.5 (creation, membership, peer management).
-    `remaining:` rendered group fields (name/icon/summary/url via ObjectView), following/followers
-    collections (paged, clickable), community follow/unfollow, and members + feed items clickable all
-    now render (changes 165 + 166). Still open: the **19.5 management surfaces** (community creation,
-    membership management, peer/follow management) as dedicated UI.
+     `remaining:` rendered group fields (name/icon/summary/url via ObjectView), following/followers
+     collections (paged, clickable), community follow/unfollow, members + feed items clickable, and
+     **membership management** (add/remove member) all now render (changes 165, 166, 167). Still open:
+     **community creation** (server-side/admin — no AP activity type, deferred per change 161k) and
+     **peer/follow management** (the community follows/unfollows a specific actor) as dedicated UI.
 - [ ] **19.8.5 — Cross-instance navigation.** From iris-a's UI, selecting a peer (iris-b) item
   navigates to a rendered view of that item (fetched via proxy fallback or direct, per the dial
   config) — remote objects render, not just resolve; instance switching (recent-instances) preserves
