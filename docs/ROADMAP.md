@@ -655,9 +655,16 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
       management (the community's outbound follow/unfollow, 19.5.3 gap G-3). Community **creation** is a
       server-side/admin concern (no AP activity type, deferred per change 161k) — not a UI surface.
 - [ ] **19.8.5 — Cross-instance navigation.** From iris-a's UI, selecting a peer (iris-b) item
-  navigates to a rendered view of that item (fetched via proxy fallback or direct, per the dial
-  config) — remote objects render, not just resolve; instance switching (recent-instances) preserves
-  navigable state.
+   navigates to a rendered view of that item (fetched via proxy fallback or direct, per the dial
+   config) — remote objects render, not just resolve; instance switching (recent-instances) preserves
+   navigable state.
+  `remaining:` selecting a peer item already navigates to a rendered view (the object/actor detail pages
+  deep-link to `/object?iri=…` / `/actor?iri=…` and fetch via `GetObjectAsync`/`GetActorAsync`, which
+  carry the proxy-fallback handler for remote reads — change S8). Now added (change 169): the session
+  tracks the **navigable state** (last-viewed object/actor IRI), preserved across instance switching
+  (logon/logout/switch), and the Home page offers a "Continue where you left off" card (link back +
+  Clear). Still open: the **live/UI-verification half** — drive a real iris-a → iris-b peer-item
+  selection through the browser and confirm the remote object renders (a live/UI item, not a code gate).
 - [ ] **19.8.6 — Write-screen round-trips.** Every write screen (compose, follow, like, boost,
   reply, delete, unlike, unfollow, reject, moderation, relay) shows success state and the effect is
   visible on re-navigation without a full reload (collections update; the raw inspector shows the
