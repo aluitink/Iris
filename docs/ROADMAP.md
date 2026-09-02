@@ -632,13 +632,17 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   actor detail), content HTML (sanitized), audiences (to/cc as handles), timestamp, reply chain
   (conversations view per 19.2.4), like/boost counts where available, and a link to the canonical
   public URL (on the originating instance) when the object is remote.
-  `remaining:` **audiences (to/cc) + published timestamp** now render in the object view (change 161n):
-  a new `IriExtensions.GetAudienceIris(this IObject?)` reads the object's `to`+`cc` (de-duplicated,
-  the `as:Public` sentinel excluded) and the `ObjectView` renders each audience as a link to the
-  recipient's actor page plus the `published` time (local). Core unit tests pin the audience read;
-  new in-process `S19ObjectViewQualityTests` (bUnit) pin the rendered markup. Still open: **reply
-  chain / conversations view** (deferred to 19.2.4), **like/boost counts**, and the **canonical
-  public-URL link for remote objects** (needs the remote-read/proxying surface from 19.1.x).
+   `remaining:` **audiences (to/cc) + published timestamp** now render in the object view (change 161n):
+   a new `IriExtensions.GetAudienceIris(this IObject?)` reads the object's `to`+`cc` (de-duplicated,
+   the `as:Public` sentinel excluded) and the `ObjectView` renders each audience as a link to the
+   recipient's actor page plus the `published` time (local). Core unit tests pin the audience read;
+   new in-process `S19ObjectViewQualityTests` (bUnit) pin the rendered markup. **like/boost counts**
+   now render (change 162 / 20.4e: the object's `likes`/`shares` extension collections, read
+   null-tolerantly). The **canonical public-URL link for remote objects** now renders (change 170):
+   the `ObjectPage` resolves the canonical public URL (the object's `url` field when present, else the
+   IRI) via the `ResolveCanonicalPublicUrl` static helper and shows a "View on originating instance"
+   link when the object is remote (its IRI host differs from the current instance's host). Still open:
+   **reply chain / conversations view** (deferred to 19.2.4) — the only remaining sub-item.
 - [x] **19.8.3 — Actor detail completeness.** ActorDetail shows: the document's rendered fields
   (name, summary, icon/avatar, URL), every collection (with correct counts matching the wire),
   moderation controls (mute local / block / flag — federated), follow/unfollow, and the raw inspector
