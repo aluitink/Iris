@@ -291,4 +291,77 @@ public sealed class S19ObjectViewQualityTests
         Assert.Empty(cut.FindAll(".object-summary"));
         Assert.Empty(cut.FindAll(".object-url-link"));
     }
+
+    // --- 19.8.2: canonical public URL resolution (the "View on originating instance" link) ---
+
+    /// <summary>
+    /// The canonical public URL resolution (19.8.2): when the object's <c>url</c> field is present, the
+    /// first URL's Href is the canonical public URL (on the originating instance).
+    /// </summary>
+    [Fact]
+    public void ResolveCanonicalPublicUrl_UrlFieldPresent_UsesUrlField()
+    {
+        var note = new Note
+        {
+            Id = "https://remote.example/ap/v1/n/1",
+            Url = [new Link { Href = new Uri("https://remote.example/@alice/12345") }],
+            Content = ["<p>a note</p>"],
+        };
+        var objectIri = new Iri("https://remote.example/ap/v1/n/1");
+
+        var canonical = Iris.Samples.SampleBlazorClient.Pages.ObjectPage.ResolveCanonicalPublicUrl(note, objectIri);
+
+        Assert.Equal("https://remote.example/@alice/12345", canonical);
+    }
+
+    /// <summary>
+    /// The canonical public URL resolution (19.8.2): when the object has no <c>url</c> field, the
+    /// object's IRI is the fallback canonical public URL.
+    /// </summary>
+    [Fact]
+    public void ResolveCanonicalPublicUrl_NoUrlField_FallsBackToIri()
+    {
+        var note = new Note
+        {
+            Id = "https://remote.example/ap/v1/n/1",
+            Content = ["<p>a note</p>"],
+        };
+        var objectIri = new Iri("https://remote.example/ap/v1/n/1");
+
+        var canonical = Iris.Samples.SampleBlazorClient.Pages.ObjectPage.ResolveCanonicalPublicUrl(note, objectIri);
+
+        Assert.Equal("https://remote.example/ap/v1/n/1", canonical);
+    }
+
+    /// <summary>
+    /// The canonical public URL resolution (19.8.2): when the object's <c>url</c> field is present but
+    /// empty (no Href), the object's IRI is the fallback.
+    /// </summary>
+    [Fact]
+    public void ResolveCanonicalPublicUrl_UrlFieldEmpty_FallsBackToIri()
+    {
+        var note = new Note
+        {
+            Id = "https://remote.example/ap/v1/n/1",
+            Url = [new Link { Href = null }],
+            Content = ["<p>a note</p>"],
+        };
+        var objectIri = new Iri("https://remote.example/ap/v1/n/1");
+
+        var canonical = Iris.Samples.SampleBlazorClient.Pages.ObjectPage.ResolveCanonicalPublicUrl(note, objectIri);
+
+        Assert.Equal("https://remote.example/ap/v1/n/1", canonical);
+    }
+
+    /// <summary>
+    /// The canonical public URL resolution (19.8.2): a null document + a null IRI yields null (no
+    /// canonical URL available).
+    /// </summary>
+    [Fact]
+    public void ResolveCanonicalPublicUrl_NullDocAndIri_ReturnsNull()
+    {
+        var canonical = Iris.Samples.SampleBlazorClient.Pages.ObjectPage.ResolveCanonicalPublicUrl(null, null);
+
+        Assert.Null(canonical);
+    }
 }

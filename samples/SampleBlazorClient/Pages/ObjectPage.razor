@@ -38,6 +38,14 @@ else
         <div class="card">
             <h3>Object</h3>
             <ObjectView Item="ObjectDoc" />
+            @if (IsObjectRemote && CanonicalPublicUrl is { Length: > 0 } canonicalUrl)
+            {
+                <p class="muted">
+                    This object is from another instance.
+                    <a href="@canonicalUrl" class="object-canonical-link" rel="noopener" target="_blank">
+                        View on originating instance</a>
+                </p>
+            }
             <div class="card" style="margin-top: .75rem">
                 <button @onclick="ToggleLikeAsync" disabled="@(WriteBusy)">@(HasLiked ? "Unlike" : "Like")</button>
                 @if (HasLiked)
@@ -122,6 +130,11 @@ else
     private bool HasLiked { get; set; }
     private bool HasBoosted { get; set; }
 
+    // 19.8.2: the canonical public URL of the object on the originating instance (the object's `url`
+    // field when present, else the object's IRI). Shown as a "View on originating instance" link when the
+    // object is remote (its IRI's host differs from the current instance's host).
+    private string? CanonicalPublicUrl { get; set; }
+
     // Decision 055 (learned-id references): the ids the server minted for the like/boost this page made,
     // learned from DeliveryResult.MintedId at creation time. The Unlike/Unannounce reference the original
     // activity by this learned id (the client never recomputes the server's ids). A like/boost that existed
@@ -201,6 +214,12 @@ else
             // e.g. an external object) leaves the count null — shown as nothing, not a misleading 0.
             LikeCount = await CountCollectionAsync(client, objectIri.LikesOf());
             ShareCount = await CountCollectionAsync(client, objectIri.SharesOf());
+
+            // 19.8.2: the canonical public URL of the object on the originating instance — the object's
+            // `url` field (first URL's Href) when present, else the object's IRI. Shown as a "View on
+            // originating instance" link when the object is remote (its IRI's host differs from the
+            // current instance's host).
+            CanonicalPublicUrl = ResolveCanonicalPublicUrl(ObjectDoc, objectIri);
         }
         catch (Exception ex)
         {
@@ -209,6 +228,50 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the canonical public URL of an object on its originating instance (19.8.2): the
+    /// object's <c>url</c> field (the first URL's Href) when present, else the object's IRI. Exposed
+    /// as a static helper so the resolution logic is testable in isolation.
+    /// </summary>
+    /// <param name="doc">The loaded object (may be null).</param>
+    /// <param name="objectIri">The object's IRI (the fallback when no <c>url</c> field is present).</param>
+    /// <returns>The canonical public URL, or null when the object is null and no IRI is given.</returns>
+    public static string? ResolveCanonicalPublicUrl(IObject? doc, Iri? objectIri)
+    {
+        if (doc is ActivityObject ao && ao.Url is { } urls)
+        {
+            var href = urls.FirstOrDefault()?.Href?.ToString();
+            if (href is { Length: > 0 })
+            {
+                return href;
+            }
+        }
+
+        return objectIri?.Value;
+    }
+
+    /// <summary>
+    /// Whether the loaded object is remote (its IRI's host differs from the current instance's host) —
+    /// 19.8.2: drives the "View on originating instance" canonical public URL link.
+    /// </summary>
+    private bool IsObjectRemote
+    {
+        get
+        {
+            if (LoadedObjectIri is not { } objectIri || Session.DialBaseUri is not { } dialBase)
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(objectIri.Value, UriKind.Absolute, out var objectUri))
+            {
+                return false;
+            }
+
+            return !string.Equals(objectUri.Host, dialBase.Host, StringComparison.OrdinalIgnoreCase);
         }
     }
 
