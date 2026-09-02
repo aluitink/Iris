@@ -2098,6 +2098,21 @@ public static class ActivityPubServerExtensions
                 await persistence.Replies.RecordReplyAsync(parent, child, ct).ConfigureAwait(false);
             }
 
+            // Decision 055: record the object → Create link so a later Delete (routed through the
+            // DeleteActivityHandler) can resolve this locally-posted object's originating Create by lookup
+            // and remove it from the author's outbox. Mirrors CreateActivityHandler's
+            // StoreEmbeddedObjectAsync (the federation path records the same index); the local-post path
+            // (this method, used by PostNoteAsync) previously omitted it, so a locally-posted note's
+            // Delete left its Create in the outbox. A Create with a bare-link object (no embedded object
+            // id) records no link.
+            var objectIri = embedded.ResolveObjectIri();
+            if (objectIri is { } obj && create.Id is { } createId)
+            {
+                await persistence.Creates
+                    .RecordAsync(obj, new Iri(createId), ct)
+                    .ConfigureAwait(false);
+            }
+
             // 19.5.1 community-creation write path: a Create whose embedded object is a community (a
             // Group whose IRI is this instance's /ap/v1/c/{name}) materializes the community in the
             // community store (document endpoint, members, feed, collections). A Group with any other

@@ -2,11 +2,11 @@ using Iris.Client;
 using Iris.Client.Collections;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Samples.SampleBlazorClient.Explorer;
+using Iris.Samples.SampleServer;
 using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
-using Iris.Samples.SampleBlazorClient.Explorer;
-using Iris.Samples.SampleServer;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
@@ -197,16 +197,25 @@ public sealed class S6MyModerationTests
         var (server, client, local, alice, bob) = await LogOnAsync();
         using var _ = server;
 
-        // Seed all three edges as alice, then remove each and assert the counts return to 0.
+        // Seed all three edges as alice, then remove each and assert the counts return to 0. Decision 055:
+        // capture the id the server minted for each of block/flag (learned from the 202 body) so the
+        // inverse undo can reference it (the client never recomputes the server's ids). A mute is local
+        // (Basic-authenticated, not an AP activity) and needs no learned id.
         Assert.True((await local.MuteAsync(alice, bob)).StatusCode == 204, "muting must succeed (204)");
-        Assert.True((await client.BlockAsync(alice, bob)).StatusCode == 202, "blocking must succeed (202)");
-        Assert.True((await client.FlagAsync(alice, bob)).StatusCode == 202, "flagging must succeed (202)");
+        var blockResult = await client.BlockAsync(alice, bob);
+        Assert.True(blockResult.StatusCode == 202, "blocking must succeed (202)");
+        Assert.True(blockResult.MintedId is { Length: > 0 }, "the block must carry a server-minted id");
+        var flagResult = await client.FlagAsync(alice, bob);
+        Assert.True(flagResult.StatusCode == 202, "flagging must succeed (202)");
+        Assert.True(flagResult.MintedId is { Length: > 0 }, "the flag must carry a server-minted id");
         var seeded = await MyModerationAsync(client, alice, bypassCache: true);
         Assert.True(seeded == (1, 1, 1), $"after seeding all three edges, alice's own counts must all be 1 (got {seeded})");
 
         Assert.True((await local.UnmuteAsync(alice, bob)).StatusCode == 204, "unmuting must succeed (204)");
-        Assert.True((await client.UnblockAsync(alice, bob)).StatusCode == 202, "unblocking must succeed (202)");
-        Assert.True((await client.UnflagAsync(alice, bob)).StatusCode == 202, "unflagging must succeed (202)");
+        // The inverse unblock/unflag reference the original Block/Flag by their learned (server-minted)
+        // ids, not by the target actor's IRI.
+        Assert.True((await client.UnblockAsync(alice, new Iri(blockResult.MintedId!))).StatusCode == 202, "unblocking must succeed (202)");
+        Assert.True((await client.UnflagAsync(alice, new Iri(flagResult.MintedId!))).StatusCode == 202, "unflagging must succeed (202)");
 
         var cleared = await MyModerationAsync(client, alice, bypassCache: true);
         Assert.True(cleared == (0, 0, 0), $"after unmute/unblock/unflag, alice's own moderation must be empty (got {cleared})");

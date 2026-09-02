@@ -1,6 +1,6 @@
- using System.Net;
- using System.Net.Http.Headers;
- using Iris.Client;
+using System.Net;
+using System.Net.Http.Headers;
+using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.Identity;
@@ -146,9 +146,11 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         Assert.NotNull(undoId);
 
         // 7. Delete the created note. The Delete references the LEARNED note id (the embedded Note's
-        //    server-minted id, read from the stored Create). The note's Create stays in the outbox: this
-        //    Create's IRI is not the deterministic sibling of the note, so the Delete's inverse-removal
-        //    is a no-op — the point here is that the Delete itself is recorded as an authored activity.
+        //    server-minted id, read from the stored Create). Decision 055: the local-post Create recorded
+        //    the object → Create index (RecordCreateLocalAsync), so the Delete resolves the note's
+        //    originating Create by lookup and removes it from the outbox (the inverse of the add) — the
+        //    point here is that the Delete itself is recorded as an authored activity AND that its
+        //    inverse-removal takes effect (the note's Create is no longer listed in the outbox).
         var noteIri = await LearnEmbeddedNoteIriAsync(createId!.Value);
         var delete = BuildDelete(_alice, noteIri);
         var (deleteStatus, deleteId) = await PostOutboxAsync(delete);
@@ -209,10 +211,13 @@ public sealed class OutboxSingleSourceOfTruthIntegrationTests : IDisposable
         var outbox = (await _persistence.Activities.GetOutboxAsync(_alice)).ToList();
         var ids = outbox.Select(a => a.Id).Cast<string>().ToList();
 
-        // The authored set (each its server-minted id, as a string), in authoring order.
+        // The authored set (each its server-minted id, as a string), in authoring order. The note's Create
+        // (createId) is NOT in the set: the Delete of the note (step 7) removed its originating Create
+        // from the outbox (decision 055: the object → Create index makes the inverse-removal resolve), so
+        // the outbox no longer lists it.
         var authored = new[]
         {
-            followId!.Value.Value, createId!.Value.Value, likeId!.Value.Value, announceId!.Value.Value, blockId!.Value.Value,
+            followId!.Value.Value, likeId!.Value.Value, announceId!.Value.Value, blockId!.Value.Value,
             undoId!.Value.Value, deleteId!.Value.Value, acceptId!.Value.Value, rejectId!.Value.Value, flagId!.Value.Value,
             undoFlagId!.Value.Value, undoLikeId!.Value.Value, undoAnnounceId!.Value.Value, undoBlockId!.Value.Value,
         };

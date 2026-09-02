@@ -1,11 +1,11 @@
 using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Samples.SampleBlazorClient.Explorer;
+using Iris.Samples.SampleServer;
 using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
-using Iris.Samples.SampleBlazorClient.Explorer;
-using Iris.Samples.SampleServer;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
@@ -262,9 +262,13 @@ public sealed class S7ScreenTests
         var result = await client.LikeAsync(actorIri, target);
         Assert.Equal(202, result.StatusCode);
 
-        // The like is stored and the liker's `liked` collection lists the liked object's IRI.
+        // Decision 055: the server mints the Like's id (an unguessable ULID) and returns it in the 202
+        // body; the caller reads DeliveryResult.MintedId. The Like is stored under that learned id (no
+        // longer the pre-055 deterministic {actor}/likes/{object} formula), so resolve it by the learned
+        // id, not by derivation.
+        Assert.True(result.MintedId is { Length: > 0 }, "the like must carry a server-minted id");
         var activity = await server.Services.GetRequiredService<IPersistenceProvider>()
-            .Activities.TryGetActivityAsync(new Iri($"{actorIri.Value}/likes/{target.Value}"), out var stored);
+            .Activities.TryGetActivityAsync(new Iri(result.MintedId!), out var stored);
         Assert.True(activity, "the like activity must be stored on the receiving instance");
         Assert.NotNull(stored);
 
@@ -289,12 +293,17 @@ public sealed class S7ScreenTests
             AttributedTo = [new Link { Href = bob.Uri }],
             Content = ["<p>a note to unlike</p>"],
         });
-        Assert.Equal(202, (await client.LikeAsync(actorIri, target)).StatusCode);
+        // Decision 055: capture the id the server minted for the Like (learned from the 202 body) so the
+        // unlike can reference it. The client never recomputes the server's ids.
+        var likeResult = await client.LikeAsync(actorIri, target);
+        Assert.Equal(202, likeResult.StatusCode);
+        Assert.True(likeResult.MintedId is { Length: > 0 }, "the like must carry a server-minted id");
         var likedBefore = await CollectAsync(client.GetCollectionItemsAsync(actorIri.LikedOf()));
         Assert.Contains(likedBefore, o => IriOf(o) is { } iri && iri == target);
 
-        // The unlike is the inverse: it removes the like edge from the liker's `liked` collection.
-        Assert.Equal(202, (await client.UnlikeAsync(actorIri, target)).StatusCode);
+        // The unlike is the inverse: it removes the like edge from the liker's `liked` collection. It
+        // references the original Like by its learned (server-minted) id, not by the liked object's IRI.
+        Assert.Equal(202, (await client.UnlikeAsync(actorIri, new Iri(likeResult.MintedId!))).StatusCode);
         // Bypass the client's collection cache — the like wrote a `liked` page the client cached, and a
         // post-write re-read must observe the removal (the same refresh the S4 relay screen uses).
         var likedAfter = await CollectAsync(client.GetCollectionItemsAsync(
@@ -328,16 +337,19 @@ public sealed class S7ScreenTests
         var result = await client.AnnounceAsync(actorIri, target);
         Assert.Equal(202, result.StatusCode);
 
-        // The Announce is stored with the deterministic {actor}/announces/{object} IRI.
+        // Decision 055: the server mints the Announce's id (an unguessable ULID) and returns it in the
+        // 202 body; resolve it by the learned id (the pre-055 {actor}/announces/{object} formula no
+        // longer holds).
+        Assert.True(result.MintedId is { Length: > 0 }, "the announce must carry a server-minted id");
+        var announceIri = new Iri(result.MintedId!);
         var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
-        var activity = await persistence.Activities.TryGetActivityAsync(
-            new Iri($"{actorIri.Value}/announces/{target.Value}"), out var stored);
+        var activity = await persistence.Activities.TryGetActivityAsync(announceIri, out var stored);
         Assert.True(activity, "the announce activity must be stored on the receiving instance");
         Assert.IsType<Announce>(stored);
 
         // The announcer's outbox lists the Announce (the object view's boost indicator reads it).
         var outbox = await CollectAsync(client.GetCollectionItemsAsync(actorIri.OutboxOf()));
-        Assert.Contains(outbox, o => IriOf(o) is { } iri && iri.Value == $"{actorIri.Value}/announces/{target.Value}");
+        Assert.Contains(outbox, o => IriOf(o) is { } iri && iri.Value == announceIri.Value);
     }
 
     [Fact]
@@ -355,21 +367,27 @@ public sealed class S7ScreenTests
             Content = ["<p>a note to boost and unboost</p>"],
         });
 
-        // Boost, then unboost (the ObjectPage's Boost → Unboost toggle).
-        Assert.Equal(202, (await client.AnnounceAsync(actorIri, target)).StatusCode);
+        // Boost, then unboost (the ObjectPage's Boost → Unboost toggle). Decision 055: capture the id the
+        // server minted for the Announce (learned from the 202 body) so the unboost can reference it.
+        var announceResult = await client.AnnounceAsync(actorIri, target);
+        Assert.Equal(202, announceResult.StatusCode);
+        Assert.True(announceResult.MintedId is { Length: > 0 }, "the announce must carry a server-minted id");
+        var announceIri = new Iri(announceResult.MintedId!);
         var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
-        var announced = await persistence.Activities.TryGetActivityAsync(
-            new Iri($"{actorIri.Value}/announces/{target.Value}"), out var _);
+        var announced = await persistence.Activities.TryGetActivityAsync(announceIri, out var _);
         Assert.True(announced, "the announce must be stored before the unboost");
-        Assert.Equal(202, (await client.UnannounceAsync(actorIri, target)).StatusCode);
 
-        // The unboost is an Undo referencing the exact Announce by its deterministic IRI.
+        // The unboost is an Undo referencing the exact Announce by its learned (server-minted) IRI. The
+        // server mints the Undo's own id (returned in the 202 body); resolve it by that learned id.
+        var undoResult = await client.UnannounceAsync(actorIri, announceIri);
+        Assert.Equal(202, undoResult.StatusCode);
+        Assert.True(undoResult.MintedId is { Length: > 0 }, "the unannounce must carry a server-minted id");
         var undo = await persistence.Activities.TryGetActivityAsync(
-            new Iri($"{actorIri.Value}/unannounces/{target.Value}"), out var storedUndo);
+            new Iri(undoResult.MintedId!), out var storedUndo);
         Assert.True(undo, "the undo-of-announce activity must be stored on the receiving instance");
         Assert.IsType<Undo>(storedUndo);
         var referenced = (storedUndo as Undo)!.Object?.FirstOrDefault()?.ResolveObjectIri();
-        Assert.Equal($"{actorIri.Value}/announces/{target.Value}", referenced?.Value);
+        Assert.Equal(announceIri.Value, referenced?.Value);
     }
 
     [Fact]
@@ -442,16 +460,21 @@ public sealed class S7ScreenTests
         var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
 
         // A block is a signed write to the actor's own outbox (the delivery model); the instance records
-        // the block edge in the blocker's blocks collection (202 Accepted).
-        Assert.Equal(202, (await client.BlockAsync(actorIri, target)).StatusCode);
+        // the block edge in the blocker's blocks collection (202 Accepted). Decision 055: capture the id
+        // the server minted for the Block so the un-block can reference it (the client never recomputes
+        // the server's ids).
+        var blockResult = await client.BlockAsync(actorIri, target);
+        Assert.Equal(202, blockResult.StatusCode);
+        Assert.True(blockResult.MintedId is { Length: > 0 }, "the block must carry a server-minted id");
         Assert.True(
             await persistence.Moderation.IsBlockedAsync(actorIri, target),
             "after a block, the blocker's blocks collection must list the target");
         var blocks = await CollectAsync(client.GetBlocksAsync(actorIri));
         Assert.Contains(blocks, o => IriOf(o) is { } iri && iri == target);
 
-        // The inverse un-block (an Undo published to the actor's outbox) removes the edge.
-        Assert.Equal(202, (await client.UnblockAsync(actorIri, target)).StatusCode);
+        // The inverse un-block (an Undo published to the actor's outbox) removes the edge, referencing
+        // the original Block by its learned (server-minted) id.
+        Assert.Equal(202, (await client.UnblockAsync(actorIri, new Iri(blockResult.MintedId!))).StatusCode);
         Assert.False(
             await persistence.Moderation.IsBlockedAsync(actorIri, target),
             "after an un-block, the block edge must be gone");
@@ -467,16 +490,20 @@ public sealed class S7ScreenTests
         var persistence = server.Services.GetRequiredService<IPersistenceProvider>();
 
         // A flag is a signed write to the actor's own outbox (a moderation report); the instance records
-        // the flag edge in the flagger's flags collection (202 Accepted).
-        Assert.Equal(202, (await client.FlagAsync(actorIri, target)).StatusCode);
+        // the flag edge in the flagger's flags collection (202 Accepted). Decision 055: capture the id
+        // the server minted for the Flag so the un-flag can reference it.
+        var flagResult = await client.FlagAsync(actorIri, target);
+        Assert.Equal(202, flagResult.StatusCode);
+        Assert.True(flagResult.MintedId is { Length: > 0 }, "the flag must carry a server-minted id");
         Assert.True(
             await persistence.Moderation.HasFlaggedAsync(actorIri, target),
             "after a flag, the flagger's flags collection must list the target");
         var flags = await CollectAsync(client.GetFlagsAsync(actorIri));
         Assert.Contains(flags, o => IriOf(o) is { } iri && iri == target);
 
-        // The inverse un-flag (an Undo published to the actor's outbox) removes the edge.
-        Assert.Equal(202, (await client.UnflagAsync(actorIri, target)).StatusCode);
+        // The inverse un-flag (an Undo published to the actor's outbox) removes the edge, referencing
+        // the original Flag by its learned (server-minted) id.
+        Assert.Equal(202, (await client.UnflagAsync(actorIri, new Iri(flagResult.MintedId!))).StatusCode);
         Assert.False(
             await persistence.Moderation.HasFlaggedAsync(actorIri, target),
             "after an un-flag, the flag edge must be gone");
@@ -506,11 +533,15 @@ public sealed class S7ScreenTests
         using var _ = server;
 
         var target = new Iri("http://localhost/ap/v1/u/bob");
-        Assert.Equal(202, (await client.FollowAsync(follower, target)).StatusCode);
+        // Decision 055: capture the id the server minted for the Follow so the un-follow can reference it
+        // (the client never recomputes the server's ids).
+        var followResult = await client.FollowAsync(follower, target);
+        Assert.Equal(202, followResult.StatusCode);
+        Assert.True(followResult.MintedId is { Length: > 0 }, "the follow must carry a server-minted id");
 
-        // The un-follow is an Undo delivered to the follower's own inbox; the receiver resolves the
-        // original Follow (stored when alice sent it) and removes the recorded edge.
-        Assert.Equal(202, (await client.UndoFollowAsync(follower, target)).StatusCode);
+        // The un-follow is an Undo referencing the original Follow by its learned (server-minted) id; the
+        // receiver resolves it and removes the recorded edge.
+        Assert.Equal(202, (await client.UndoFollowAsync(follower, new Iri(followResult.MintedId!))).StatusCode);
 
         var followers = await CollectAsync(client.GetCollectionItemsAsync(target.FollowersOf()));
         Assert.DoesNotContain(followers, o => IriOf(o) is { } iri && iri == follower);
@@ -564,8 +595,12 @@ public sealed class S7ScreenTests
 
         // alice follows bob: the Follow is published to alice's own outbox (A); A records it in its own
         // follow store (the actor's `following` collection lists even a remote target) and the server
-        // delivers it to bob's inbox (B), where B records the follow edge.
-        Assert.Equal(202, (await toA.FollowAsync(aliceActorIri, bobActorIri)).StatusCode);
+        // delivers it to bob's inbox (B), where B records the follow edge. Decision 055: capture the id
+        // the server minted for the Follow so the un-follow can reference it (the client never
+        // recomputes the server's ids).
+        var followResult = await toA.FollowAsync(aliceActorIri, bobActorIri);
+        Assert.Equal(202, followResult.StatusCode);
+        Assert.True(followResult.MintedId is { Length: > 0 }, "the follow must carry a server-minted id");
         Assert.True(
             await aPersistence.Follows.IsFollowingAsync(aliceActorIri, bobActorIri),
             "after a federated Follow, alice must follow bob in A's follow store (her own outbox)");
@@ -580,8 +615,8 @@ public sealed class S7ScreenTests
             "after a federated Follow, B must record the follow edge (server delivered it to bob's inbox)");
 
         // alice un-follows bob: the Undo is published to alice's own outbox (A); A resolves the stored
-        // Follow (the same deterministic IRI FollowAsync used) and removes the edge.
-        Assert.Equal(202, (await toA.UndoFollowAsync(aliceActorIri, bobActorIri)).StatusCode);
+        // Follow (by its learned, server-minted id) and removes the edge.
+        Assert.Equal(202, (await toA.UndoFollowAsync(aliceActorIri, new Iri(followResult.MintedId!))).StatusCode);
         var aliceFollowing = await aPersistence.Follows.GetFollowingAsync(aliceActorIri);
         Assert.DoesNotContain(bobActorIri, aliceFollowing);
     }

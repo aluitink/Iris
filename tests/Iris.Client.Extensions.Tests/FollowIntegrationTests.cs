@@ -123,16 +123,21 @@ public sealed class FollowIntegrationTests : IDisposable
         using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
 
         // Step 1: follow the target. The signed Follow is delivered to the target's inbox; the server
-        // records the follow edge and stores the Follow (deduping on its deterministic IRI).
+        // records the follow edge and stores the Follow. Decision 055: the server mints the Follow's id
+        // (an unguessable ULID) and returns it in the 202 body; the caller reads it from
+        // DeliveryResult.MintedId (the pre-055 deterministic {follower}/follows/{target} IRI is
+        // overwritten by the minter).
         var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(TargetIri));
         Assert.Equal(202, followStatus.StatusCode);
+        Assert.True(followStatus.MintedId is { Length: > 0 }, "the follow must carry a server-minted id");
         Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(TargetIri)),
             "the follow edge should be recorded after the signed Follow is accepted");
 
         // Step 2: un-follow. The Undo is delivered to the FOLLOWER's own inbox (the recipient of the
         // delivery is the follower, who made the follow). The Undo references the original Follow by its
-        // deterministic IRI, which the server resolved the follow edge from.
-        var followIri = new Iri($"{FollowerIri}/follows/{TargetIri}");
+        // LEARNED (server-minted) IRI — not a client-derived formula — which the server resolves the
+        // follow edge from.
+        var followIri = new Iri(followStatus.MintedId!);
         var undo = new KristofferStrube.ActivityStreams.Undo
         {
             Id = $"{FollowerIri}/undoes/{followIri}",
@@ -173,17 +178,22 @@ public sealed class FollowIntegrationTests : IDisposable
 
         using var client = bundle.CreateClient(new Iri(FollowerIri), _server.CreateHandler());
 
-        // Step 1: alice follows herself (a local actor). The server records the follow edge.
+        // Step 1: alice follows herself (a local actor). The server records the follow edge. Decision 055:
+        // the server mints the Follow's id (an unguessable ULID) and returns it in the 202 body; the
+        // caller reads it from DeliveryResult.MintedId (the pre-055 deterministic {follower}/follows/
+        // {target} IRI is overwritten by the minter).
         var followStatus = await client.FollowAsync(new Iri(FollowerIri), new Iri(FollowerIri));
         Assert.Equal(202, followStatus.StatusCode);
+        Assert.True(followStatus.MintedId is { Length: > 0 }, "the follow must carry a server-minted id");
         Assert.True(await _persistence.Follows.IsFollowingAsync(new Iri(FollowerIri), new Iri(FollowerIri)),
             "the follow edge should be recorded after the signed self-Follow is accepted");
 
         // Step 2: the operator rejects the follow. The Reject's actor is the followed actor (alice — the
         // owner of the followed actor), so the client signs it as alice; the server resolves alice's
-        // public key from the self-fetcher. The Reject references the original Follow by its
-        // deterministic IRI, which the server stores (the Follow was stored when it was accepted).
-        var followIri = new Iri($"{FollowerIri}/follows/{FollowerIri}");
+        // public key from the self-fetcher. The Reject references the original Follow by its LEARNED
+        // (server-minted) IRI — not a client-derived formula — which the server stores (the Follow was
+        // stored when it was accepted).
+        var followIri = new Iri(followStatus.MintedId!);
         var reject = new KristofferStrube.ActivityStreams.Reject
         {
             Id = $"{FollowerIri}/rejects/{followIri}",

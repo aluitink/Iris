@@ -105,18 +105,26 @@ public sealed class SampleServerCommunitySigningTests : IDisposable
         var communityIri = new Iri($"{BaseUri}/ap/v1/c/{Community}");
         // Follow the remote-host actor (carla): a remote target, so the server must deliver the Follow
         // to carla's inbox signed as the community — the path that dead-lettered before F-1911-3.
+        // Decision 055: the client sends the Follow's *shape* without an id; the server mints the id and
+        // returns the created Follow in the 202 body, so the caller learns the id from that body (the
+        // pre-055 client-set deterministic id is overwritten by the minter).
         var carlaIri = new Iri($"http://{SampleServer.RemoteHostName}/ap/v1/u/{SampleServer.CarlaHandle}");
         var follow = new Follow
         {
-            Id = $"{communityIri.Value}/follows/carla-live-test",
             Actor = [new Link { Href = communityIri.Uri }],
             Object = [new Link { Href = carlaIri.Uri }],
         };
 
         using var request = BuildSignedRequestAsCommunity(communityIri, follow, $"/ap/v1/c/{Community}/outbox");
-        var response = await _client.SendAsync(request);
+        using var response = await _client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // Learn the id the server minted for the Follow (decision 055) from the 202 body.
+        var body = await response.Content.ReadAsStringAsync();
+        var created = ActivityJson.Deserialize<IObjectOrLink>(body);
+        Assert.NotNull(created?.Id);
+        var mintedFollowId = created!.Id;
 
         // The community's follows-set edge is recorded (the community `following` collection lists the
         // target).
@@ -124,7 +132,7 @@ public sealed class SampleServerCommunitySigningTests : IDisposable
             carlaIri,
             await _persistence.Communities.GetFollowsAsync(communityIri));
         var outbox = await _persistence.Activities.GetOutboxAsync(communityIri);
-        Assert.Contains(outbox, a => a.Id == follow.Id);
+        Assert.Contains(outbox, a => a.Id == mintedFollowId);
     }
 
     // --- Helpers ------------------------------------------------------------------
