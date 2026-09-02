@@ -646,14 +646,14 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   **Done** (changes 163 + 164): followers/following collections (paged, clickable), raw inspector
   (formatted JSON), and the ObjectView now renders actor name/icon/summary/url. The live/UI-verification
   half (Playwright-MCP browser confirmation) is a 19.8.x live item, not a code gate.
- - [ ] **19.8.4 — Community view completeness.** Community screen: rendered group fields, members
-   (clickable), feed (rendered items, clickable), following/followers (clickable), community
-   follow/unfollow, and the management surfaces from 19.5 (creation, membership, peer management).
-     `remaining:` rendered group fields (name/icon/summary/url via ObjectView), following/followers
-     collections (paged, clickable), community follow/unfollow, members + feed items clickable, and
-     **membership management** (add/remove member) all now render (changes 165, 166, 167). Still open:
-     **community creation** (server-side/admin — no AP activity type, deferred per change 161k) and
-     **peer/follow management** (the community follows/unfollows a specific actor) as dedicated UI.
+  - [x] **19.8.4 — Community view completeness.** Community screen: rendered group fields, members
+    (clickable), feed (rendered items, clickable), following/followers (clickable), community
+    follow/unfollow, and the management surfaces from 19.5 (creation, membership, peer management).
+      All UI surfaces now render (changes 165, 166, 167, 168): rendered group fields (name/icon/summary/url
+      via ObjectView), following/followers collections (paged, clickable), community follow/unfollow,
+      members + feed items clickable, membership management (add/remove member), and peer/follow
+      management (the community's outbound follow/unfollow, 19.5.3 gap G-3). Community **creation** is a
+      server-side/admin concern (no AP activity type, deferred per change 161k) — not a UI surface.
 - [ ] **19.8.5 — Cross-instance navigation.** From iris-a's UI, selecting a peer (iris-b) item
   navigates to a rendered view of that item (fetched via proxy fallback or direct, per the dial
   config) — remote objects render, not just resolve; instance switching (recent-instances) preserves
