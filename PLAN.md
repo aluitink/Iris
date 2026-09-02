@@ -177,12 +177,22 @@ Iris.slnx
     **Suite green, 0 failed:** Core 220 (+10), Client 136, Ext 29, Server 770, LiveInterop 18,
     SampleBlazor 104 (+7), SampleServer 25 — **1,302 total**.
 
-    **Next: Phase 20.4 (continued) — (a) media + (c) markdown remain.** With 20.3 and 20.4(b) closed, the
-    next self-contained slices are **(a) media** (compose upload → Create object with attachment →
-    stored/served → rendered in the object view, building on 20.2's attachment-rewrite decision — the local
-    media storage + URL-rewrite staged from 20.2) and **(c) markdown** (a renderer so `content` that is
-    markdown renders properly — pick a dependency-free renderer or a small lib; note any new NuGet in
-    ROADMAP.md). Phase 20 then proceeds 20.5 test triage → 20.6 cohesion → 20.7 manual plan.
+    **Phase 20.4 (c) (change 161u) — PARTIAL: markdown done.** A note's `content` that is **Markdown** now
+    renders properly in the object view (headings, inline/fenced code, links, lists, emphasis) via a small
+    **dependency-free** `Markdown` renderer (sample-local — a deliberate choice over adding a markdown
+    NuGet just for a sample-UI feature; **no new package**). It HTML-escapes first (raw markup inert) and
+    allow-lists link schemes to http/https/mailto (a `javascript:` scheme renders as text, never a live
+    link). The object view renders `content` through it (emitted as a `MarkupString`); the sensitive-notice
+    path renders the markdown only after reveal. +32 tests (25 `MarkdownTests` unit, 7 bUnit object-view).
+    `docs/changes/161u-20.4-markdown.md`.
+    **Suite green, 0 failed:** Core 220, Client 136, Ext 29, Server 770, LiveInterop 18,
+    SampleBlazor 136 (+32), SampleServer 25 — **1,334 total**.
+
+    **Next: Phase 20.4 (continued) — (a) media remains.** With 20.3, 20.4(b) and 20.4(c) closed, the last
+    20.4 slice is **(a) media** (compose upload → Create object with attachment → stored/served → rendered
+    in the object view, building on 20.2's attachment-rewrite decision — the local media storage +
+    URL-rewrite staged from 20.2). Phase 20 then proceeds 20.5 test triage → 20.6 cohesion → 20.7 manual
+    plan.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).

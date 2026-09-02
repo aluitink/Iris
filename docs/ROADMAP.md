@@ -811,13 +811,23 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   viewer:** the object view currently renders `content` as-is; add a **markdown renderer** so content
   that is markdown (rather than HTML) renders properly (links, code, lists, headings) — pick the approach
   (a dependency-free renderer or a small markdown lib; note any new NuGet in this file per the rules).
-  **Partial — (b) sensitivity done:** a content-sensitive object (`sensitive` term + `summary`) renders
-  behind a notice in the object view, its real content absent from the DOM until the viewer reveals it —
-  `IriExtensions.IsSensitive`/`GetSummary` (Core) read the term (`sensitive` surfaces via the library's
-  `ExtensionData`, per the 3rd-Party rules; `summary` is typed) + the object view's show/hide toggle.
-  +17 tests (10 Core read-helper, 5 bUnit object-view, 2 integration round-trip); full suite 1,302/0; see
-  `docs/changes/161t-20.4-sensitivity.md`. **Remaining: (a) media (compose upload → attachment → stored/
-  served → rendered) and (c) markdown rendering.**
+   **Partial — (b) sensitivity + (c) markdown done; (a) media remaining.**
+   **(b) Sensitivity:** a content-sensitive object (`sensitive` term + `summary`) renders behind a notice
+   in the object view, its real content absent from the DOM until the viewer reveals it —
+   `IriExtensions.IsSensitive`/`GetSummary` (Core) read the term (`sensitive` surfaces via the library's
+   `ExtensionData`, per the 3rd-Party rules; `summary` is typed) + the object view's show/hide toggle.
+   +17 tests (10 Core read-helper, 5 bUnit object-view, 2 integration round-trip); see
+   `docs/changes/161t-20.4-sensitivity.md`.
+   **(c) Markdown:** a note's `content` that is Markdown now renders properly (headings, inline/fenced
+   code, links, lists, emphasis) via a small **dependency-free** `Markdown` renderer (sample-local — a
+   deliberate choice over adding a markdown NuGet just for a sample-UI feature; **no new package**). It
+   HTML-escapes first (raw markup inert) and sanitizes link targets to http/https/mailto (a
+   `javascript:` scheme renders as text, never a live link). The object view renders `content` through it
+   (emitted as a `MarkupString`); the sensitive-notice path renders the markdown only after reveal. +32
+   tests (25 `MarkdownTests` unit, 7 bUnit object-view). Full suite 1,334/0; see
+   `docs/changes/161u-20.4-markdown.md`.
+   **Remaining: (a) media (compose upload → Create object with attachment → stored/served → rendered in
+   the object view, building on 20.2's attachment-rewrite decision).**
 - [ ] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
   suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
   of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
