@@ -837,8 +837,28 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
     `javascript:` scheme renders as text, never a live link). The object view renders `content` through it
     (emitted as a `MarkupString`); the sensitive-notice path renders the markdown only after reveal. +32
     tests (25 `MarkdownTests` unit, 7 bUnit object-view); see
-    `docs/changes/161u-20.4-markdown.md`.
- - [x] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
+     `docs/changes/161u-20.4-markdown.md`.
+  - [ ] **20.4(d) — Browser-loadable media for *external* attachments (the inbound/external-read half of
+    media, deferred by 20.2/056 (b) and scoped out by 161v).** **Decision 057.** When the client browses any
+    **external** stream — a random user's outbox, a user's liked/featured, communities, the followed feed,
+    synced peers, **and** the owner-only inbox — an object's attachment can carry a **cross-origin** `url`
+    that the browser cannot load (the remote host sends no CORS headers → the image is blocked). **Design
+    (decision 057):** the **wire stays 100% AP-native/verbatim** in every collection; the **client's render
+    boundary** rewrites each cross-origin attachment `url` to a same-origin proxy IRI
+    (`{base}/ap/v1/media/proxy?url={originator-url}`) — the **URL is the key** (the client always has it, so
+    it works for cold external objects a content hash could not cover); a new **public, long-cacheable**
+    `GET /ap/v1/media/proxy?url=…` route **fetches-once, stores, serves same-origin** (502 + client link-out
+    fallback on fetch failure); the media store gains a **URL key** + a **content-hash dedupe index** (the
+    hash is **server-internal** — the client never computes or uses it); **eager-warm is on by default**
+    (a `MediaOptions.EagerWarm` flag) — when the server *stores* an object with attachments (inbound/
+    followed/community/synced) it pre-fetches them by URL so the proxy serves instantly; cold external
+    browsing is lazy-by-nature (warmed on first proxy hit). A small `IMediaFetcher` seam (unsigned outbound
+    fetch, reusing the existing `IHttpClientFactory`-backed pattern) + the client rewrite helper. **No new
+    NuGet; no id/document rewrite (055 + 056 (c) unchanged); no collection-serializer rewrite.** Vertically
+    complete: fetcher + route + URL/hash store + client render boundary + eager-warm hook + integration
+    tests (proxy fetch/serve + cache hit + 502 fallback + client rewrite unit + an end-to-end
+    "browse external outbox → attachment loads same-origin").
+  - [x] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
    suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
    of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
    **integration tests that genuinely exercise the concepts** (outbox write→delivery→peer record;
