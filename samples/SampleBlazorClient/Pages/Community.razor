@@ -33,6 +33,147 @@ else
     else if (CommunityIri is not null)
     {
         <div class="card">
+            <h3>Community</h3>
+            <ObjectView Item="CommunityDoc" />
+            <p class="muted">IRI: <code>@CommunityIri.Value</code></p>
+        </div>
+
+        <div class="card">
+            <h3>Following</h3>
+            <p class="muted">
+                Actors/communities that <code>@CommunityIri.Value</code> follows (their <c>following</c>
+                collection), paged with <c>next</c>-link walking. Each item links to the followed actor's
+                detail.
+            </p>
+            @if (FollowingError is not null)
+            {
+                <div class="error">@FollowingError</div>
+            }
+            @if (FollowingItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (FollowingItems.Count == 0 && !FollowingHasMore)
+            {
+                <p class="muted">Not following anyone.</p>
+            }
+            else
+            {
+                @if (FollowingItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in FollowingItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (FollowingHasMore)
+                {
+                    <button @onclick="LoadMoreFollowingAsync" disabled="@(FollowingLoadingMore)">Load more</button>
+                    @if (FollowingLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Followers</h3>
+            <p class="muted">
+                Actors/communities that follow <code>@CommunityIri.Value</code> (their <c>followers</c>
+                collection), paged with <c>next</c>-link walking. Each item links to the follower's actor
+                detail.
+            </p>
+            @if (FollowersError is not null)
+            {
+                <div class="error">@FollowersError</div>
+            }
+            @if (FollowersItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (FollowersItems.Count == 0 && !FollowersHasMore)
+            {
+                <p class="muted">No followers recorded.</p>
+            }
+            else
+            {
+                @if (FollowersItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in FollowersItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (FollowersHasMore)
+                {
+                    <button @onclick="LoadMoreFollowersAsync" disabled="@(FollowersLoadingMore)">Load more</button>
+                    @if (FollowersLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Follow / unfollow</h3>
+            <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
+            <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
+            <button @onclick="UnfollowAsync" disabled="@(WriteBusy)">Unfollow</button>
+            @if (WriteBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (WriteResult is not null)
+            {
+                <p class="muted">Status: <code>@WriteResult</code></p>
+            }
+            @if (WriteError is not null)
+            {
+                <div class="error">@WriteError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Feed</h3>
             @if (Feed is not null)
             {
@@ -117,9 +258,24 @@ else
     private bool Busy { get; set; }
     private bool SearchBusy { get; set; }
     private Iri? CommunityIri { get; set; }
+    private IObjectOrLink? CommunityDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
     private IReadOnlyList<IObjectOrLink>? Members { get; set; }
     private IReadOnlyList<IObjectOrLink>? SearchResults { get; set; }
+    private List<IObjectOrLink>? FollowersItems { get; set; }
+    private List<IObjectOrLink>? FollowingItems { get; set; }
+    private bool FollowersHasMore { get; set; }
+    private bool FollowingHasMore { get; set; }
+    private bool FollowersLoadingMore { get; set; }
+    private bool FollowingLoadingMore { get; set; }
+    private Iri? _followersResumeFrom;
+    private Iri? _followingResumeFrom;
+    private string? FollowersError { get; set; }
+    private string? FollowingError { get; set; }
+    private bool WriteBusy { get; set; }
+    private string? WriteResult { get; set; }
+    private string? WriteError { get; set; }
+    private Iri? FollowLearnedId { get; set; }
     private string? LoadError { get; set; }
     private string? SearchError { get; set; }
 
@@ -132,8 +288,17 @@ else
 
         Busy = true;
         CommunityIri = null;
+        CommunityDoc = null;
         Feed = null;
         Members = null;
+        FollowersItems = [];
+        FollowingItems = [];
+        FollowersHasMore = false;
+        FollowingHasMore = false;
+        _followersResumeFrom = null;
+        _followingResumeFrom = null;
+        FollowersError = null;
+        FollowingError = null;
         LoadError = null;
         try
         {
@@ -142,6 +307,13 @@ else
             CommunityIri = communityIri;
 
             var client = Session.GetClient();
+
+            // The community document (a Group, which is an Actor) — rendered for its name/icon/summary/url.
+            var doc = await client.GetActorAsync(communityIri);
+            if (doc is { } group)
+            {
+                CommunityDoc = group;
+            }
 
             var feed = new List<IObjectOrLink>();
             await foreach (var item in client.GetCommunityFeedAsync(communityIri))
@@ -160,6 +332,10 @@ else
             }
 
             Members = members;
+
+            // Followers + following: paged collections at {community}/followers and {community}/following.
+            await LoadInitialFollowersAsync(communityIri);
+            await LoadInitialFollowingAsync(communityIri);
         }
         catch (Exception ex)
         {
@@ -201,5 +377,233 @@ else
         {
             SearchBusy = false;
         }
+    }
+
+    // --- 19.8.4: followers + following collections (paged, clickable) -----------------
+
+    private async Task LoadInitialFollowersAsync(Iri communityIri)
+    {
+        FollowersItems = [];
+        FollowersHasMore = false;
+        FollowersError = null;
+        _followersResumeFrom = null;
+        try
+        {
+            await EnumerateOneFollowersPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            FollowersError = ex.Message;
+        }
+    }
+
+    private async Task LoadMoreFollowersAsync()
+    {
+        if (FollowersLoadingMore || !FollowersHasMore || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        FollowersLoadingMore = true;
+        FollowersError = null;
+        try
+        {
+            await EnumerateOneFollowersPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            FollowersError = ex.Message;
+        }
+        finally
+        {
+            FollowersLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneFollowersPageAsync(Iri communityIri)
+    {
+        var client = Session.GetClient();
+        if (_followersResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                FollowersItems ??= [];
+                FollowersItems.AddRange(page.Items);
+                FollowersHasMore = !page.IsLastPage;
+                _followersResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(communityIri.FollowersOf(), null, CancellationToken.None))
+        {
+            FollowersItems ??= [];
+            FollowersItems.AddRange(page.Items);
+            FollowersHasMore = !page.IsLastPage;
+            _followersResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    private async Task LoadInitialFollowingAsync(Iri communityIri)
+    {
+        FollowingItems = [];
+        FollowingHasMore = false;
+        FollowingError = null;
+        _followingResumeFrom = null;
+        try
+        {
+            await EnumerateOneFollowingPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            FollowingError = ex.Message;
+        }
+    }
+
+    private async Task LoadMoreFollowingAsync()
+    {
+        if (FollowingLoadingMore || !FollowingHasMore || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        FollowingLoadingMore = true;
+        FollowingError = null;
+        try
+        {
+            await EnumerateOneFollowingPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            FollowingError = ex.Message;
+        }
+        finally
+        {
+            FollowingLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneFollowingPageAsync(Iri communityIri)
+    {
+        var client = Session.GetClient();
+        if (_followingResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                FollowingItems ??= [];
+                FollowingItems.AddRange(page.Items);
+                FollowingHasMore = !page.IsLastPage;
+                _followingResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(communityIri.FollowingOf(), null, CancellationToken.None))
+        {
+            FollowingItems ??= [];
+            FollowingItems.AddRange(page.Items);
+            FollowingHasMore = !page.IsLastPage;
+            _followingResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    // --- 19.8.4: community follow / unfollow -----------------------------------------
+
+    private async Task FollowAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || WriteBusy)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            var result = await Session.GetClient().FollowAsync(actorIri, communityIri);
+            WriteResult = result.IsSuccess ? $"followed (status {result.StatusCode})" : $"failed (status {result.StatusCode})";
+            if (result.IsSuccess && result.MintedId is { } minted && Iri.TryParse(minted, out var learned))
+            {
+                // Decision 055: learn the id the server minted for the created Follow so a later
+                // Unfollow can reference it. On a non-IRI minted id leave the previous learned id untouched.
+                FollowLearnedId = learned;
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
+        }
+    }
+
+    private async Task UnfollowAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || FollowLearnedId is not { } followIri || WriteBusy)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        WriteBusy = true;
+        WriteResult = null;
+        WriteError = null;
+        try
+        {
+            var result = await Session.GetClient().UndoFollowAsync(actorIri, followIri);
+            WriteResult = result.IsSuccess ? $"unfollowed (status {result.StatusCode})" : $"failed (status {result.StatusCode})";
+            if (result.IsSuccess)
+            {
+                FollowLearnedId = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteError = ex.Message;
+        }
+        finally
+        {
+            WriteBusy = false;
+        }
+    }
+
+    // --- 19.8.4: display helpers ------------------------------------------------------
+
+    /// <summary>
+    /// A short display for an actor IRI string: the path's last segment (the username) when it looks
+    /// like an actor IRI, else the raw IRI.
+    /// </summary>
+    private static string HandleOf(string iri)
+    {
+        var idx = iri.LastIndexOf('/');
+        return idx >= 0 && idx < iri.Length - 1 ? iri[(idx + 1)..] : iri;
+    }
+
+    /// <summary>
+    /// The IRI of a collection item for a non-link, non-object fallback display.
+    /// </summary>
+    private static string? RelayIriOf(IObjectOrLink item)
+    {
+        if (item is IObject { Id: { } id })
+        {
+            return id;
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            return href.ToString();
+        }
+
+        return null;
     }
 }
