@@ -7,6 +7,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Server.Identity;
+using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
@@ -214,6 +215,20 @@ public static class ActivityPubServerExtensions
             var collectionPages = sp.GetRequiredService<CollectionPageCache>();
             return new IrisRemoteCollectionFetcher(factory.Create(clientOptions, new HttpClientHandler()), collectionPages);
         });
+
+        // Media proxy (Phase 20.4 (d)): the unsigned outbound media fetch (DefaultMediaFetcher wraps a
+        // pre-built HttpClient, per the coding style — no HttpClient ownership in library code). The
+        // HttpClient is IHttpClientFactory-backed (a shared, handler-managing factory) with a generous
+        // timeout: a media fetch is a plain GET of a remote attachment url, so it needs no signing,
+        // retry, or activity-streams pipeline — just a bounded, cancellable read of the bytes.
+        services.AddHttpClient(
+            MediaFetcherClientName,
+            client => client.Timeout = MediaFetchTimeout);
+        services.TryAddSingleton<IMediaFetcher>(sp =>
+            new DefaultMediaFetcher(sp.GetRequiredService<IHttpClientFactory>().CreateClient(MediaFetcherClientName)));
+        // Eager-warm (Phase 20.4 (d), ON by default): pre-fetches a stored object's cross-origin
+        // attachments so the media proxy serves them instantly. Best-effort and non-fatal.
+        services.TryAddSingleton<IMediaWarmer, DefaultMediaWarmer>();
 
         // Inbox processing (Phase 4): the processor stores each validated activity and dispatches it
         // to the registered activity handlers. The default set interprets the follow lifecycle:
@@ -554,6 +569,16 @@ public static class ActivityPubServerExtensions
         // attachment's url on the note it authored.
         group.MapGet($"/{Iris.Client.MediaConstants.ServeSegment}/{{id}}", MediaServeHandler)
             .WithName("media-serve-endpoint");
+
+        // Media proxy (Phase 20.4 (d)): GET /ap/v1/media/proxy?url={originator-url} — a same-origin,
+        // long-cacheable GET that makes an external attachment loadable in the browser. The client's
+        // render boundary rewrites every cross-origin attachment url to this IRI; the server fetches
+        // the remote url once (IMediaFetcher), stores it (IMediaStore.PutBySourceUrlAsync, keyed by the
+        // URL + a server-internal content-hash dedupe), and serves the bytes from the same origin. On a
+        // fetch failure it returns 502 (the client's <img onerror> falls back to a link-out to the raw
+        // URL). Public (the browser's <img> loads it), like the media-serve read.
+        group.MapGet($"/{Iris.Client.MediaConstants.ServeSegment}/{Iris.Client.MediaConstants.ProxySegment}", MediaProxyHandler)
+            .WithName("media-proxy-endpoint");
 
         // Inbox: POST /ap/v1/u/{handle}/inbox — receives federation activities (Follow, Accept,
         // Create, ...) that a REMOTE peer delivers TO this actor. Requires a valid HTTP signature
@@ -1301,9 +1326,95 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Serves an external attachment from the same origin (Phase 20.4 (d)):
+    /// <c>GET /ap/v1/media/proxy?url={originator-url}</c>. Public (the browser's <c>&lt;img&gt;</c>
+    /// loads it) and long-cacheable. Fetches the remote <c>url</c> once (via <see cref="IMediaFetcher"/>),
+    /// stores it (via <see cref="Stores.IMediaStore.PutBySourceUrlAsync"/>, keyed by the URL + a
+    /// server-internal content-hash dedupe), and serves the bytes with the remote
+    /// <c>Content-Type</c>. A cache hit (the URL was already stored) serves straight from the store with
+    /// no outbound fetch. On a fetch failure (a dead or unreachable URL) it returns
+    /// <c>502 Bad Gateway</c> so the client's <c>&lt;img onerror&gt;</c> falls back to a link-out to the
+    /// raw URL (a degraded case is a link, never a broken image).
+    /// </summary>
+    private static async Task<IResult> MediaProxyHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IMediaFetcher mediaFetcher,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        // 1. The external attachment URL is the ?url= query parameter (the client's render boundary
+        // always has the originator's attachment url — it is the stable key, not a content hash). It
+        // must be an absolute HTTP(S) URL (a relative or non-HTTP(S) value is rejected with 400 — the
+        // proxy only proxies absolute remote media URLs).
+        if (!context.Request.Query.TryGetValue(Iris.Client.MediaConstants.ProxyQueryParam, out var urlValue)
+            || urlValue.Count == 0
+            || string.IsNullOrWhiteSpace(urlValue[0])
+            || !Uri.TryCreate(urlValue[0], UriKind.Absolute, out var sourceUri)
+            || (sourceUri.Scheme != Uri.UriSchemeHttp && sourceUri.Scheme != Uri.UriSchemeHttps))
+        {
+            return Results.BadRequest();
+        }
+
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var sourceUrl = new Iri(sourceUri);
+
+        // 2. Cache hit: the URL was already stored (by a prior proxy hit or the eager-warm hook) →
+        // serve straight from the store with no outbound fetch.
+        if (await persistence.Media
+                .TryGetMediaIriBySourceUrlAsync(sourceUrl, out var existingIri, ct)
+                .ConfigureAwait(false)
+            && existingIri is { } existing
+            && await persistence.Media
+                    .TryGetAsync(existing, out var cachedBytes, out var cachedType, out _, ct)
+                    .ConfigureAwait(false)
+                && cachedBytes is not null
+                && cachedType is not null)
+        {
+            context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = "max-age=31536000, immutable";
+            return Results.File(cachedBytes, cachedType);
+        }
+
+        // 3. Miss: fetch the remote URL once (unsigned outbound GET). A failure (4xx/5xx, network
+        // error, timeout) is an expected condition → 502 (the client falls back to a link-out).
+        var fetched = await mediaFetcher.FetchAsync(sourceUrl, ct).ConfigureAwait(false);
+        if (fetched is null)
+        {
+            return Results.StatusCode(StatusCodes.Status502BadGateway);
+        }
+
+        // 4. Enforce the same size cap as an upload (a media attachment must not be unbounded).
+        if (fetched.Content.Length > MaxMediaUploadBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status502BadGateway);
+        }
+
+        // 5. Store the fetched bytes (keyed by the source URL + a server-internal content-hash dedupe)
+        // and serve them from the same origin, long-cacheable.
+        var mediaIri = await persistence.Media
+            .PutBySourceUrlAsync(sourceUrl, fetched.Content, fetched.ContentType, new Iri(baseUrl), ct)
+            .ConfigureAwait(false);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = "max-age=31536000, immutable";
+        return Results.File(fetched.Content, fetched.ContentType);
+    }
+
+    /// <summary>
     /// The maximum size (in bytes) of a single media upload (Phase 20.4 (a)).
     /// </summary>
     private const long MaxMediaUploadBytes = 10L * 1024 * 1024; // 10 MiB
+
+    /// <summary>
+    /// The named-client name for the media-proxy outbound fetch (Phase 20.4 (d)).
+    /// </summary>
+    private const string MediaFetcherClientName = "IrisMediaFetcher";
+
+    /// <summary>
+    /// The timeout for a single media-proxy outbound fetch (Phase 20.4 (d)). A media attachment is a
+    /// bounded asset; a generous timeout bounds the wait while tolerating slow remote media hosts.
+    /// </summary>
+    private static readonly TimeSpan MediaFetchTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient

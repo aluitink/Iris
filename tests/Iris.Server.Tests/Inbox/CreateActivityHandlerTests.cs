@@ -1,6 +1,8 @@
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Server.Media;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Tests.Inbox;
 
@@ -402,7 +404,20 @@ public sealed class CreateActivityHandlerTests
         => new(
             persistence,
             delivery ?? new RecordingDeliveryService(),
-            new DefaultLocalActorResolver(persistence));
+            new DefaultLocalActorResolver(persistence),
+            new NoOpMediaWarmer(),
+            // No BaseUri → the handler's eager-warm hook is skipped (these unit tests do not exercise
+            // media warming; the integration tests do, over a real host).
+            Options.Create(new ActivityPubServerOptions()));
+
+    /// <summary>
+    /// A no-op <see cref="IMediaWarmer"/> for the unit tests (they do not exercise media warming).
+    /// </summary>
+    private sealed class NoOpMediaWarmer : IMediaWarmer
+    {
+        public Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 
     private static Task SeedLocalActorAsync(IPersistenceProvider persistence, Iri actorIri)
     {

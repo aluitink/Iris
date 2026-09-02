@@ -46,4 +46,46 @@ public interface IMediaStore
         out string? contentType,
         out string? fileName,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Stores media fetched from an external source URL (the media proxy, Phase 20.4 (d)) and returns
+    /// the same-origin media IRI that now serves it.
+    /// </summary>
+    /// <remarks>
+    /// The store keys the item by the SHA-256 of <paramref name="content"/> (a server-internal dedupe
+    /// index: the same bytes fetched from any source URL are stored once) and records the source URL →
+    /// media-IRI mapping (the URL is the client-facing key — the client always knows the originator's
+    /// attachment <c>url</c>, so a cold external object the content hash could not pre-cover still
+    /// resolves). Re-storing the same source URL is idempotent: it returns the existing IRI without
+    /// re-writing the bytes. The content hash is <em>never</em> exposed to the client; the URL is the
+    /// stable identifier the proxy and the eager-warm hook use.
+    /// </remarks>
+    /// <param name="sourceUrl">The external URL the bytes were fetched from (the originator's attachment
+    /// <c>url</c>).</param>
+    /// <param name="content">The media bytes.</param>
+    /// <param name="contentType">The media's <c>Content-Type</c> (as reported by the remote server).</param>
+    /// <param name="baseUrl">The instance's base IRI; the media IRI is built as
+    /// <c>{baseUrl}/ap/v1/media/{id}</c>.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The same-origin media IRI that serves the fetched bytes.</returns>
+    Task<Iri> PutBySourceUrlAsync(
+        Iri sourceUrl,
+        byte[] content,
+        string contentType,
+        Iri baseUrl,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Resolves an external source URL to its same-origin media IRI when the bytes have already been
+    /// stored by <see cref="PutBySourceUrlAsync"/> (the media proxy's cache hit, Phase 20.4 (d)).
+    /// </summary>
+    /// <param name="sourceUrl">The external URL to look up.</param>
+    /// <param name="mediaIri">Receives the same-origin media IRI when found.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the source URL is already stored; otherwise
+    /// <see langword="false"/> (the caller should fetch + store it).</returns>
+    Task<bool> TryGetMediaIriBySourceUrlAsync(
+        Iri sourceUrl,
+        out Iri? mediaIri,
+        CancellationToken ct = default);
 }

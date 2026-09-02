@@ -1,5 +1,7 @@
 using Iris.Core;
+using Iris.Server.Media;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Inbox;
 
@@ -66,6 +68,8 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly IPersistenceProvider _persistence;
     private readonly IDeliveryService _delivery;
     private readonly ILocalActorResolver _localActors;
+    private readonly IMediaWarmer _mediaWarmer;
+    private readonly IOptions<ActivityPubServerOptions> _options;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -76,18 +80,28 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// the author's remote followers' inboxes, signed as the author).</param>
     /// <param name="localActors">Resolves whether the recipient (and each candidate follower/member) is a
     /// local actor.</param>
+    /// <param name="mediaWarmer">The media warmer (eager-warms the stored object's cross-origin media
+    /// attachments, Phase 20.4 (d); a no-op when eager-warm is disabled).</param>
+    /// <param name="options">The server options (the instance base IRI, used to classify an attachment
+    /// as same-origin when warming).</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
-        ILocalActorResolver localActors)
+        ILocalActorResolver localActors,
+        IMediaWarmer mediaWarmer,
+        IOptions<ActivityPubServerOptions> options)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(localActors);
+        ArgumentNullException.ThrowIfNull(mediaWarmer);
+        ArgumentNullException.ThrowIfNull(options);
         _persistence = persistence;
         _delivery = delivery;
         _localActors = localActors;
+        _mediaWarmer = mediaWarmer;
+        _options = options;
     }
 
     /// <inheritdoc/>
@@ -186,6 +200,15 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         if (embedded is not null)
         {
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
+
+            // Phase 20.4 (d): eager-warm the stored object's cross-origin media attachments (best-effort;
+            // a no-op when eager-warm is disabled, the object has none, or the instance base is unset —
+            // the warm classifies attachments by host). The warm runs after the object is stored (the
+            // object is durable even if the warm is a no-op or fails).
+            if (_options.Value.BaseUri is { } instanceBase)
+            {
+                await _mediaWarmer.WarmAsync(embedded, instanceBase, ct).ConfigureAwait(false);
+            }
 
             // Decision 055: record the object → Create link so a later Delete can resolve this object's
             // originating Create by lookup (the object's ULID and its Create's ULID are independent — the

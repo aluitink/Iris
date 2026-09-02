@@ -1,6 +1,7 @@
 @using Iris.Core
 @using Iris.Core.Identity
 @using KristofferStrube.ActivityStreams
+@using Microsoft.Extensions.DependencyInjection
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <div class="object-view">
@@ -83,7 +84,12 @@
             @foreach (var media in MediaAttachments)
             {
                 <div class="object-media">
-                    <img src="@media.Url" alt="@media.Name" loading="lazy" />
+                    @* The img loads the same-origin IRI (rewritten at the render boundary, Decision 057).
+                       When the proxy returns 502 (a dead/unreachable remote URL) the onerror handler
+                       replaces the broken image with a link-out to the raw URL (a degraded case is a
+                       link, never a broken image). *@
+                    <img src="@media.Url" alt="@media.Name" loading="lazy"
+                         @onerror="@(e => OnMediaLoadErrorAsync(e, media))" />
                     @if (string.IsNullOrWhiteSpace(media.Name) is false)
                     {
                         <div class="object-media-name" title="@media.Name">@media.Name</div>
@@ -112,6 +118,28 @@
     /// </summary>
     [Parameter]
     public IObjectOrLink? Item { get; set; }
+
+    /// <summary>
+    /// The service provider (used to resolve the logged-on <see cref="ExplorerSession"/> lazily, so the
+    /// component renders in contexts where the session is not registered — e.g. the bunit component
+    /// tests — without a hard dependency).
+    /// </summary>
+    [Inject]
+    private IServiceProvider Services { get; set; } = default!;
+
+    /// <summary>
+    /// The logged-on session (the instance's dial base URI, the render-boundary rewrite's instance
+    /// base), resolved lazily from the service provider. <see langword="null"/> when the session is not
+    /// registered (the component renders without the media-proxy rewrite — the raw URL is used) or when
+    /// logged out. Resolving it this way (rather than a hard <c>[Inject]</c>) keeps <c>ObjectView</c>
+    /// renderable standalone (the bunit tests) while still doing the same-origin rewrite in the app.
+    /// </summary>
+    private ExplorerSession? Session
+        => Services.GetService(typeof(ExplorerSession)) as ExplorerSession;
+
+    /// <summary>JS interop (the <c>&lt;img onerror&gt;</c> link-out fallback, Decision 057).</summary>
+    [Inject]
+    private IJSRuntime JsRuntime { get; set; } = default!;
 
     private IObject? Obj => Item as IObject;
 
@@ -175,16 +203,58 @@
 
     /// <summary>
     /// The object's media attachments (embedded <see cref="Image"/> entries with a resolvable media IRI),
-    /// when present — rendered as <c>&lt;img&gt;</c> (Phase 20.4 (a)). Each attachment's media IRI is the
-    /// same-origin <c>/ap/v1/media/{id}</c> path the instance minted on upload (so the browser loads it
-    /// from the same origin, never a cross-origin media host — Decision 056 (b)); the <c>alt</c> is the
-    /// file's name. Uses <see cref="IriExtensions.GetMediaAttachments"/>.
+    /// when present — rendered as <c>&lt;img&gt;</c> (Phase 20.4 (a) + (d)). Each attachment's media IRI
+    /// is rewritten at the render boundary to its browser-loadable form (Decision 057): a same-origin
+    /// IRI (the instance's own <c>/ap/v1/media/{id}</c>) passes through unchanged; a cross-origin
+    /// IRI becomes the same-origin media-proxy IRI
+    /// (<c>{base}/ap/v1/media/proxy?url={originator-url}</c>) so the browser loads it from the
+    /// instance's own origin, never a cross-origin media host. The <c>alt</c> is the file's name. Uses
+    /// <see cref="IriExtensions.GetMediaAttachments"/> + <see cref="IriMediaProxyExtensions.ToBrowserMediaIri"/>.
     /// </summary>
     private IReadOnlyList<MediaAttachment> MediaAttachments
-        => (Obj?.GetMediaAttachments() ?? []).Select(m => new MediaAttachment(m.Iri.Value, m.Name)).ToList();
+    {
+        get
+        {
+            // The render boundary (Decision 057): the wire stays AP-native/verbatim; the rewrite happens
+            // here. The instance base is the logged-on session's dial base URI; when there is no session
+            // (not registered) or it is logged out (DialBaseUri null), the rewrite is a no-op (the raw
+            // URL is used).
+            Iri? instanceBase = Session?.DialBaseUri is { } baseUri ? new Iri(baseUri) : null;
+            return (Obj?.GetMediaAttachments() ?? [])
+                .Select(m =>
+                {
+                    var browserIri = instanceBase is { } b ? m.Iri.ToBrowserMediaIri(b) : m.Iri;
+                    return new MediaAttachment(browserIri.Value, m.Iri.Value, m.Name);
+                })
+                .ToList();
+        }
+    }
 
-    /// <summary>A rendered media attachment (a same-origin media IRI to <c>&lt;img&gt;</c> + its file name).</summary>
-    private sealed record MediaAttachment(string Url, string? Name);
+    /// <summary>
+    /// A rendered media attachment: the browser-loadable IRI to <c>&lt;img&gt;</c> (the same-origin
+    /// proxy IRI or a passthrough same-origin IRI, Decision 057), the raw originator URL (the link-out
+    /// target when the proxy 502s), and the file's name (the <c>&lt;img&gt;</c> <c>alt</c>).
+    /// </summary>
+    private sealed record MediaAttachment(string Url, string RawUrl, string? Name);
+
+    /// <summary>
+    /// The <c>&lt;img onerror&gt;</c> fallback (Decision 057): when the proxy returns <c>502</c> (a dead
+    /// or unreachable remote URL), the broken image is replaced by a link-out to the raw URL. A
+    /// degraded case is a link, never a broken image.
+    /// </summary>
+    private async Task OnMediaLoadErrorAsync(
+        Microsoft.AspNetCore.Components.Web.ErrorEventArgs e,
+        MediaAttachment media)
+    {
+        // The error target is the DOM <img>; swap it for an anchor pointing at the raw originator URL
+        // (open in a new tab, no referrer). The raw URL is carried by the attachment (the link-out
+        // target), distinct from the browser-loadable proxy IRI used as the <img> src. (The handler
+        // itself is the fallback — a broken image never stays broken.)
+        await JsRuntime.InvokeVoidAsync(
+            "eval",
+            $"var el=window.event.target; " +
+            $"if(el){{var a=document.createElement('a');a.href='{media.RawUrl}';a.textContent='media unavailable — open original';a.target='_blank';a.rel='noopener';el.replaceWith(a);}}");
+    }
 
     /// <summary>
     /// Whether the viewer has revealed a sensitive object's content. Per-instance UI state: a

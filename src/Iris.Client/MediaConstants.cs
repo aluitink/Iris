@@ -42,4 +42,18 @@ public static class MediaConstants
     /// The route segment for the media serve read (<c>{ServeRoutePrefix}/media/{id}</c>).
     /// </summary>
     public const string ServeSegment = "media";
+
+    /// <summary>
+    /// The route segment for the media-proxy read (<c>{ServeRoutePrefix}/media/proxy?url=…</c>, Phase
+    /// 20.4 (d)): a same-origin, long-cacheable GET that fetches an external attachment <c>url</c>
+    /// once, stores it, and serves it back from the same origin (the browser never loads a
+    /// cross-origin media host).
+    /// </summary>
+    public const string ProxySegment = "proxy";
+
+    /// <summary>
+    /// The query-parameter name carrying the external attachment URL on the media-proxy route
+    /// (<c>?url={originator-url}</c>, Phase 20.4 (d)).
+    /// </summary>
+    public const string ProxyQueryParam = "url";
 }

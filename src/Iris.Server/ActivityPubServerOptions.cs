@@ -62,6 +62,33 @@ public sealed class ActivityPubServerOptions
     /// requests per actor per minute.
     /// </summary>
     public ProxySettings? ProxySettings { get; set; }
+
+    /// <summary>
+    /// The media-proxy (Phase 20.4 (d)) settings: the eager-warm toggle. When null, the default applies:
+    /// eager-warm ON (a stored object's cross-origin attachments are pre-fetched when it is stored, so
+    /// the media proxy serves them instantly).
+    /// </summary>
+    public MediaOptions? Media { get; set; }
+}
+
+/// <summary>
+/// Settings for the media proxy (Phase 20.4 (d), browser-loadable external media).
+/// </summary>
+/// <remarks>
+/// The media proxy fetches an external attachment <c>url</c> on demand (lazy-by-nature: warmed on the
+/// first proxy hit). Eager-warm (ON by default) additionally pre-fetches an object's cross-origin
+/// attachments when the server <em>stores</em> the object (inbound <c>Create</c>, followed/community
+/// content, synced peers), so the proxy serves them instantly. It is best-effort and non-blocking: a
+/// warm failure (a dead URL) is logged, never thrown, and the proxy still fetches lazily on demand.
+/// </remarks>
+public sealed class MediaOptions
+{
+    /// <summary>
+    /// When <see langword="true"/> (the default), the server pre-fetches an object's cross-origin
+    /// attachments when it stores the object, so the media proxy serves them instantly. When
+    /// <see langword="false"/>, attachments are fetched lazily on the first proxy hit only.
+    /// </summary>
+    public bool EagerWarm { get; set; } = true;
 }
 
 /// <summary>
