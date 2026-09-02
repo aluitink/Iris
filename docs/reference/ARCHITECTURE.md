@@ -101,13 +101,16 @@ A foundational ActivityPub fact that the whole library is built on:
   a remote `Block`/`Flag` *of* it, a remote `Create` it follows. The inbox is never the target of an
   activity the local actor is itself authoring.
 
-> **Consequence (and a known defect, Phase 8 S7):** the client's `FollowAsync` / `BlockAsync` /
-> `FlagAsync` (and their `Undo` inverses) currently deliver **directly to the target's inbox**
-> (`targetId.InboxOf()`) — a client→recipient-inbox hop that violates the model above. They must instead
-> POST to the **acting actor's own outbox**, and the **server** must deliver the activity to the
-> target's inbox. The write surface must therefore accept a **POST to an outbox** (an "outbox publish"),
-> not only a POST to an inbox. The full invariant is in [Delivery model](#delivery-model-the-outbox-is-the-write-surface)
-> above; the Phase 8 S7 slice that built the write surface is [change 077](../changes/077-delivery-model-outbox-write-surface.md).
+> **Consequence (resolved in the 19.0b AP-native rework):** every client authoring method —
+> `FollowAsync` / `BlockAsync` / `FlagAsync` and their `Undo` inverses, plus `PostNoteAsync`,
+> `LikeAsync`, `AnnounceAsync`, `AddMemberAsync`/`RemoveMemberAsync`, `CreateCommunityAsync`, and
+> `DeleteActivityAsync` — now POSTs to the **acting actor's own outbox** (`actorId.OutboxOf()`), and the
+> **server** delivers the activity to the relevant recipient's inbox. There are **zero** `InboxOf()` call
+> sites in the client authoring path (verified in the 20.1 + 20.6 cohesion passes). The write surface
+> therefore accepts a **POST to an outbox** (an "outbox publish"). The full invariant is in [Delivery
+> model](#delivery-model-the-outbox-is-the-write-surface) above; the original write-surface slice is
+> [change 077](../changes/077-delivery-model-outbox-write-surface.md), and the AP-native pivot that
+> repointed every method onto it is [Phase 19.0b](../ROADMAP.md#phase-190b--ap-native-rework-architectural-pivot-gates-191-execution).
 
 ### Proxied Request Fallback (detailed flow)
 
