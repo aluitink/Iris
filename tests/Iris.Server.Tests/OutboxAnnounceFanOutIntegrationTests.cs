@@ -125,6 +125,74 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IDisposable
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _));
     }
 
+    // --- A local outbox Announce records the per-object boost edge (decision 056 (d)) --------
+
+    [Fact]
+    public async Task OutboxPublish_Announce_RecordsLocalBoostEdge()
+    {
+        // Regression: the outbox-publish Announce path (OutboxPublishHandler) must record the local
+        // announcer → object edge in the announce store (the per-object boost counter, decision 056 (d)),
+        // exactly like the outbox Like path records the like edge (RecordLikeLocalAsync). Before the
+        // fix, the Announce branch only fanned out to remote followers and never recorded the edge, so
+        // the object's /shares collection (totalItems) stayed 0 even after a local boost.
+        var announce = BuildAnnounce(_aliceActorIri);
+        var announcedObjectIri = announce.Object!.FirstOrDefault().ResolveObjectIri()
+            ?? throw new InvalidOperationException("test announce must carry a resolvable object");
+
+        using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
+        using var response = await _aHttp.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // The local boost edge is recorded: alice → announced object, and the reverse index surfaces
+        // alice as the announcer (the object's shares counter).
+        Assert.True(
+            await _aPersistence.Announces.HasAnnouncedAsync(_aliceActorIri, announcedObjectIri),
+            "the outbox Announce must record the local announcer → object edge");
+        var announcers = await _aPersistence.Announces.GetAnnouncersAsync(announcedObjectIri);
+        Assert.True(
+            announcers.Any(i => i.Value == _aliceActorIri.Value),
+            "the object's shares reverse index must list the announcer");
+    }
+
+    // --- An outbox Undo(Announce) removes the local boost edge --------------------------------
+
+    [Fact]
+    public async Task OutboxPublish_UndoAnnounce_RemovesLocalBoostEdge()
+    {
+        // Regression: an Undo of an Announce published to the actor's own outbox must remove the local
+        // boost edge (RecordUndoLocalAsync → RemoveAnnounceLocalAsync), mirroring the Undo(Like) path.
+        var announce = BuildAnnounce(_aliceActorIri);
+        var announcedObjectIri = announce.Object!.FirstOrDefault().ResolveObjectIri()
+            ?? throw new InvalidOperationException("test announce must carry a resolvable object");
+
+        // First boost: records the local edge.
+        using (var req1 = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox"))
+        using (var res1 = await _aHttp.SendAsync(req1))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, res1.StatusCode);
+            var mintedBoost = await LearnMintedIdAsync(res1);
+
+            Assert.True(await _aPersistence.Announces.HasAnnouncedAsync(_aliceActorIri, announcedObjectIri));
+
+            // Now undo the boost (an Undo referencing the minted boost activity) via the same outbox.
+            var undo = new Undo
+            {
+                Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+                Object = [new Link { Href = new Uri(mintedBoost.Value) }],
+            };
+            using var req2 = SignedRequest(_aliceActorIri, _aliceKey, undo, $"/ap/v1/u/{Alice}/outbox");
+            using var res2 = await _aHttp.SendAsync(req2);
+            Assert.Equal(HttpStatusCode.Accepted, res2.StatusCode);
+
+            // The local boost edge is removed (the object's shares counter drops back to 0).
+            Assert.False(await _aPersistence.Announces.HasAnnouncedAsync(_aliceActorIri, announcedObjectIri));
+            var afterUndo = await _aPersistence.Announces.GetAnnouncersAsync(announcedObjectIri);
+            Assert.True(
+                !afterUndo.Any(i => i.Value == _aliceActorIri.Value),
+                "the object's shares reverse index must not list the announcer after Undo(Announce)");
+        }
+    }
+
     // --- A blocked remote follower does not receive the federated Announce -------------------
 
     [Fact]

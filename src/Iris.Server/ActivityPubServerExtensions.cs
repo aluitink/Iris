@@ -1616,12 +1616,22 @@ public static class ActivityPubServerExtensions
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
             }
-            else if (activity is Announce)
+            else if (activity is Announce announce)
             {
                 // An Announce (boost/repost) fans out to every remote, non-blocked follower, mirroring
                 // the Create branch (F-15: outbound Announce federation). Unlike a Create, an Announce
                 // carries no embedded object — it is a reference to an existing object IRI — so no
                 // object-store write is needed.
+                //
+                // Record the local announce edge (announcer → announced-object, both directions) BEFORE
+                // the fan-out: this is the durable boost record and the per-object boost counter
+                // (decision 056 (d), the object's <c>shares</c> collection / <c>totalItems</c>). The
+                // inbound-federation path records the same edge in AnnounceActivityHandler; the local
+                // outbox-write path (this branch) records it here so a local boost is counted exactly
+                // like a local like is (RecordLikeLocalAsync). Reversible via Undo(Announce)
+                // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync).
+                await RecordAnnounceLocalAsync(persistence, actorIri, announce, ct).ConfigureAwait(false);
+
                 var recipients = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, actorIri, ct)
                     .ConfigureAwait(false);
                 foreach (var recipient in recipients)
@@ -2181,6 +2191,89 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Records the local announce edge (announcer → announced-object, both directions) for an
+    /// <see cref="Announce"/> published to the actor's own outbox, and returns the announced object's
+    /// owner (the recipient of the server→server delivery). Mirrors <see cref="RecordLikeLocalAsync"/>
+    /// for the boost: this is the durable per-object boost counter (decision 056 (d), the object's
+    /// <c>shares</c> collection) for the local outbox-write path. The inbound-federation path records the
+    /// same edge in <see cref="Inbox.AnnounceActivityHandler"/>; this is the local-authoring counterpart.
+    /// Returns <see langword="null"/> when the announce has no resolvable object.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IAnnounceStore"/>).</param>
+    /// <param name="announcerIri">The acting actor (the announcer, the outbox owner).</param>
+    /// <param name="announce">The <see cref="Announce"/> activity.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The announced object's owner IRI (or the object IRI when the owner is not resolvable), or
+    /// <see langword="null"/> when the announce has no resolvable object.</returns>
+    private static async Task<Iri?> RecordAnnounceLocalAsync(
+        IPersistenceProvider persistence,
+        Iri announcerIri,
+        Announce announce,
+        CancellationToken ct)
+    {
+        var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!objectIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Announces.RecordAnnounceAsync(announcerIri, objectIri.Value, ct).ConfigureAwait(false);
+
+        // The owner is the object's attributedTo (mirrors RecordLikeLocalAsync): a local object's owner
+        // is resolved from the object store; a remote object's owner is resolved by the remote instance
+        // (the delivery still goes to the object IRI, whose instance routes it to the owner).
+        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
+            .ConfigureAwait(false) &&
+            storedObject is { } &&
+            storedObject.AttributedTo is { } attributed &&
+            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
+        {
+            return ownerIri;
+        }
+
+        return objectIri.Value;
+    }
+
+    /// <summary>
+    /// Removes the local announce edge (announcer → announced-object, both directions) for an
+    /// <see cref="Undo"/> of an <see cref="Announce"/> published to the actor's own outbox, mirroring
+    /// <see cref="RemoveLikeLocalAsync"/> for the boost. This is the local-authoring counterpart of the
+    /// <see cref="Inbox.UndoActivityHandler"/> <c>Undo(Announce)</c> branch (the inbound path). Returns
+    /// <see langword="null"/> when the announce has no resolvable object.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IAnnounceStore"/>).</param>
+    /// <param name="announcerIri">The acting actor (the announcer whose edge is removed).</param>
+    /// <param name="announce">The undone <see cref="Announce"/> activity.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The announced object's owner IRI (or the object IRI when the owner is not resolvable), or
+    /// <see langword="null"/> when the announce has no resolvable object.</returns>
+    private static async Task<Iri?> RemoveAnnounceLocalAsync(
+        IPersistenceProvider persistence,
+        Iri announcerIri,
+        Announce announce,
+        CancellationToken ct)
+    {
+        var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!objectIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Announces.RemoveAnnounceAsync(announcerIri, objectIri.Value, ct).ConfigureAwait(false);
+
+        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
+            .ConfigureAwait(false) &&
+            storedObject is { } &&
+            storedObject.AttributedTo is { } attributed &&
+            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
+        {
+            return ownerIri;
+        }
+
+        return objectIri.Value;
+    }
+
+    /// <summary>
     /// Records the local edge removal for an <see cref="Undo"/> published to the actor's outbox and
     /// returns the original activity's target (the recipient of the server→server delivery, so the remote
     /// side removes its edge). Resolves the undone activity from the activity store (the actor stored it
@@ -2211,6 +2304,7 @@ public static class ActivityPubServerExtensions
             Block block => await RemoveBlockLocalAsync(persistence, actorIri, block, ct).ConfigureAwait(false),
             Flag flag => await RemoveFlagLocalAsync(persistence, actorIri, flag, ct).ConfigureAwait(false),
             Like like => await RemoveLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
+            Announce announce => await RemoveAnnounceLocalAsync(persistence, actorIri, announce, ct).ConfigureAwait(false),
             _ => null,
         };
     }
