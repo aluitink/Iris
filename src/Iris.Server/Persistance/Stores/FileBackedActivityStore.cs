@@ -21,6 +21,7 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
 {
     private const string Activities = "activities";
     private const string Outboxes = "outboxes";
+    private const string Inboxes = "inboxes";
 
     private readonly FilePersistence _file;
 
@@ -209,6 +210,63 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
             return result;
         }, ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<IObjectOrLink>>(s =>
+        {
+            var inboxes = InboxMap(s);
+            var result = new List<IObjectOrLink>();
+            if (inboxes.TryGetValue(actorIri.Value, out var items))
+            {
+                foreach (var itemJson in items)
+                {
+                    var item = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
+                    if (item is not null)
+                    {
+                        result.Add(item);
+                    }
+                }
+            }
+
+            return result;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task AddToInboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        var json = ActivityJson.Serialize(item);
+        var itemIri = item is IObject obj ? obj.Id : (item as Link)?.Href?.AbsoluteUri;
+        return _file.WithStateAsync(s =>
+        {
+            var inboxes = InboxMap(s);
+            if (!inboxes.TryGetValue(actorIri.Value, out var list))
+            {
+                list = new List<string>();
+                inboxes[actorIri.Value] = list;
+            }
+
+            // Idempotent by IRI (mirrors the outbox): a re-delivered activity (at-least-once delivery,
+            // restart replay) is not duplicated in the inbox.
+            if (itemIri is not null)
+            {
+                var alreadyPresent = list.Any(existing =>
+                {
+                    var existingItem = ActivityJson.Deserialize<IObjectOrLink>(existing);
+                    var existingIri = existingItem is IObject eobj ? eobj.Id : (existingItem as Link)?.Href?.AbsoluteUri;
+                    return existingIri == itemIri;
+                });
+                if (alreadyPresent)
+                {
+                    return 0;
+                }
+            }
+
+            list.Insert(0, json); // newest first (mirrors the in-memory store)
+            return 0;
+        }, true, ct);
+    }
+
     /// <summary>
     /// The activity document map for the current state (activity IRI value → entry), created on demand.
     /// </summary>
@@ -223,6 +281,13 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
         => (ConcurrentDictionary<string, List<string>>)(state.TryGetValue(Outboxes, out var d) ? d! : state[Outboxes] = new ConcurrentDictionary<string, List<string>>());
 
     /// <summary>
+    /// The inbox map for the current state (actor IRI value → list of inbox-item JSON strings, newest
+    /// first), created on demand.
+    /// </summary>
+    private static ConcurrentDictionary<string, List<string>> InboxMap(ConcurrentDictionary<string, object> state)
+        => (ConcurrentDictionary<string, List<string>>)(state.TryGetValue(Inboxes, out var d) ? d! : state[Inboxes] = new ConcurrentDictionary<string, List<string>>());
+
+    /// <summary>
     /// Serializes both sections to a JSON document.
     /// </summary>
     private static JsonDocument ActivityToDocument(ConcurrentDictionary<string, object> state)
@@ -233,10 +298,14 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
         var outboxes = state.TryGetValue(Outboxes, out var o)
             ? (ConcurrentDictionary<string, List<string>>)o!
             : new ConcurrentDictionary<string, List<string>>();
+        var inboxes = state.TryGetValue(Inboxes, out var i)
+            ? (ConcurrentDictionary<string, List<string>>)i!
+            : new ConcurrentDictionary<string, List<string>>();
 
         var activitiesJson = JsonSerializer.Serialize(activities.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
         var outboxesJson = JsonSerializer.Serialize(outboxes.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
-        return JsonDocument.Parse($"{{\"{Activities}\":{activitiesJson},\"{Outboxes}\":{outboxesJson}}}");
+        var inboxesJson = JsonSerializer.Serialize(inboxes.ToDictionary(kv => kv.Key, kv => kv.Value), FilePersistence.JsonOptions);
+        return JsonDocument.Parse($"{{\"{Activities}\":{activitiesJson},\"{Outboxes}\":{outboxesJson},\"{Inboxes}\":{inboxesJson}}}");
     }
 
     /// <summary>
@@ -279,8 +348,31 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
             }
         }
 
+        var inboxes = new ConcurrentDictionary<string, List<string>>();
+        if (root.TryGetProperty(Inboxes, out var iEl) && iEl.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var prop in iEl.EnumerateObject())
+            {
+                if (prop.Value.ValueKind == JsonValueKind.Array)
+                {
+                    var list = new List<string>();
+                    foreach (var item in prop.Value.EnumerateArray())
+                    {
+                        var s = item.GetString();
+                        if (s is not null)
+                        {
+                            list.Add(s);
+                        }
+                    }
+
+                    inboxes[prop.Name] = list;
+                }
+            }
+        }
+
         state[Activities] = activities;
         state[Outboxes] = outboxes;
+        state[Inboxes] = inboxes;
     }
 
     /// <summary>

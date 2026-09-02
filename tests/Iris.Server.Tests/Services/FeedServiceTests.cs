@@ -687,6 +687,12 @@ public sealed class FeedServiceTests
             CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+            Iri actorId, Iris.Client.Pipeline.ProxyCredentials credentials, CollectionQuery? query = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield break;
+        }
+
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
         {
             var iri = request.RequestUri is { } uri ? new Iri(uri) : default;

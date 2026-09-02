@@ -564,6 +564,15 @@ public static class ActivityPubServerExtensions
         // valid signature from the acting local actor.
         group.MapPost("/u/{handle}/outbox", OutboxPublishHandler);
 
+        // Inbox: GET /ap/v1/u/{handle}/inbox — the activities DELIVERED TO the actor (what they received),
+        // as opposed to the outbox (what they authored). Decision 056: the inbox is a first-class,
+        // per-actor collection and, unlike the public collections, it is PRIVATE — it is served only to
+        // the owner (Basic auth via IActorCredentialValidator, the same seam that gates the owner-only
+        // privateKey extension) and is never cached (no-store). An unauthenticated / non-owner request
+        // gets 403; an unknown actor gets 404. Paged via ?page=N / ?limit=N.
+        group.MapGet("/u/{handle}/inbox", InboxEndpointHandler)
+            .WithName("inbox-endpoint");
+
         // Paged collections: GET /ap/v1/u/{handle}/{collection} where {collection} is one of outbox
         // (the actor's posted activities, newest first), followers (actors following the local actor),
         // following (actors the local actor follows), liked (objects the local actor has liked, F-04),
@@ -3052,6 +3061,64 @@ public static class ActivityPubServerExtensions
 
         var separator = redirectUri.Contains('?', StringComparison.Ordinal) ? '&' : '?';
         return Results.Redirect($"{redirectUri}{separator}code={Uri.EscapeDataString(code)}&state={Uri.EscapeDataString(state)}");
+    }
+
+    // --- Inbox endpoint (owner-only, decision 056) ----------------------------
+
+    /// <summary>
+    /// Serves a local actor's <c>inbox</c> (the activities delivered TO the actor — what they received,
+    /// as opposed to the outbox, what they authored) as a paged <c>OrderedCollection</c> for
+    /// <c>GET /ap/v1/u/{handle}/inbox</c>. Decision 056: the inbox is private — it is served only to the
+    /// owner (Basic auth via <see cref="IActorCredentialValidator"/>, the same seam that gates the
+    /// owner-only <c>privateKey</c> extension) and is never cached (no-store). An unauthenticated or
+    /// non-owner request is <c>403</c>; an unknown actor is <c>404</c>. Paged via <c>?page=N</c> /
+    /// <c>?limit=N</c>.
+    /// </summary>
+    private static async Task<IResult> InboxEndpointHandler(
+        string handle,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        IActorCredentialValidator credentialValidator,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // Owner-only: the inbox is the actor's private delivery surface. The requester must be the owner
+        // (Basic auth matching this actor). A non-owner / unauthenticated request is 403 (the collection
+        // exists but the requester may not read it). A bare 403 (not Results.Forbid, which would require
+        // IAuthenticationService) so the endpoint works in any host (with or without authentication).
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var items = await persistence.Activities.GetInboxAsync(actorIri, ct).ConfigureAwait(false);
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+        var collectionIri = new Iri($"{actorIri}/inbox");
+        var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+
+        // Private, owner-scoped data: never cached (the same no-store treatment as the owner-only actor
+        // document). Intermediates and the browser must not serve a stale copy of someone's inbox.
+        var result = Results.Text(document, ActivityJson.ActivityJsonContentType);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.NoStoreCacheControl;
+        return result;
     }
 
     // --- Paged collection endpoints (outbox / followers / following) -----------

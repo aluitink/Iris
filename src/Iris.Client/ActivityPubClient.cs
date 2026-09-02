@@ -860,6 +860,114 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+        Iri actorId,
+        ProxyCredentials credentials,
+        CollectionQuery? query = null,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(credentials);
+
+        // Decision 056: the inbox is the activities DELIVERED TO the actor (what they received), as
+        // opposed to the outbox (what they authored). Unlike the public collections, it is PRIVATE —
+        // the server serves it only to the owner via Basic auth (the same seam that gates the
+        // owner-only privateKey extension) and with no-store caching. So this read carries the owner's
+        // Basic credentials on every page fetch and does NOT route through the CollectionPageCache
+        // (private, owner-scoped data must not be cached like a public collection).
+        var inboxIri = new Iri($"{actorId.Value}/inbox");
+        Iri? pageIri = inboxIri;
+        int? limit = query?.Limit;
+        int yielded = 0;
+
+        while (pageIri is { } current)
+        {
+            var page = await FetchAuthenticatedCollectionPageAsync(current, credentials, ct).ConfigureAwait(false);
+            if (page is null)
+            {
+                yield break;
+            }
+
+            foreach (var item in page.Items)
+            {
+                yield return item;
+                yielded++;
+                if (limit is not null && yielded >= limit)
+                {
+                    yield break;
+                }
+            }
+
+            pageIri = page.NextPage;
+        }
+    }
+
+    /// <summary>
+    /// Fetches a single page of the owner-only inbox (a Basic-authenticated GET), returning a
+    /// <see cref="CollectionPage"/> (its flattened <see cref="CollectionPage.Items"/> are the inbox
+    /// entries; <see cref="CollectionPage.NextPage"/> is the <c>next</c> pointer, or null when there is
+    /// no further page). The inbox is private + no-store, so the page is always fetched from the network
+    /// (never from the collection page cache) and every request carries the owner's Basic credentials.
+    /// </summary>
+    private async Task<CollectionPage?> FetchAuthenticatedCollectionPageAsync(
+        Iri pageIri,
+        ProxyCredentials credentials,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, pageIri.Value);
+        request.Headers.Authorization = new AuthenticationHeaderValue(
+            "Basic",
+            Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{credentials.Username}:{credentials.Password}")));
+
+        using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            // A 403 (not the owner) or 404 (unknown actor) means there is no readable inbox — stop.
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        // The inbox page is an OrderedCollectionPage (or, on a single page, an OrderedCollection). Both
+        // carry `items`; read them via the shared IObject/Collection pattern.
+        var obj = ActivityJson.Deserialize<IObjectOrLink>(json);
+        if (obj is not IObject pageObj || pageObj is not Collection)
+        {
+            return null;
+        }
+
+        var items = (pageObj as OrderedCollectionPage)?.Items ?? (pageObj as Collection)?.Items;
+        var itemList = items is { } i ? i.ToList() : [];
+
+        // The `next` pointer lives on the page (ExtensionData for an OrderedCollection, typed on an
+        // OrderedCollectionPage).
+        Iri? next = pageObj switch
+        {
+            OrderedCollectionPage { Next: { } n } => n.ResolveCollectionIri(),
+            OrderedCollection collection => ResolveCollectionNextLink(collection),
+            _ => null,
+        };
+
+        return new CollectionPage
+        {
+            Page = new OrderedCollectionPage
+            {
+                Id = pageObj.Id,
+                Items = itemList,
+                TotalItems = (pageObj as Collection)?.TotalItems,
+            },
+            Items = itemList,
+            NextPage = next,
+            PrevPage = null,
+            TotalItems = (pageObj as Collection)?.TotalItems is { } total ? (int)total : null,
+            PageId = pageIri,
+        };
+    }
+
+    /// <inheritdoc/>
     public async IAsyncEnumerable<IObjectOrLink> SearchAsync(
         Iri instanceBase,
         string? query = null,

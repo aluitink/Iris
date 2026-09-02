@@ -101,4 +101,34 @@ public interface IActivityStore
     /// <c>object</c> reference) find a stored activity when its minted id is not known in advance.
     /// </remarks>
     public Task<IReadOnlyList<IObject>> GetAllActivitiesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the activities delivered to an actor's inbox (what was received, as opposed to the outbox,
+    /// which is what the actor authored), newest first, as an <see cref="OrderedCollectionPage"/>-ready
+    /// sequence of <see cref="IObjectOrLink"/>.
+    /// </summary>
+    /// <param name="actorIri">The IRI identifying the actor whose inbox is requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the inbox items (possibly empty).</returns>
+    /// <remarks>
+    /// Decision 056: the inbox is a first-class, per-actor collection distinct from the outbox. It holds
+    /// the activities <em>delivered to</em> the actor (inbound <c>Create</c>/<c>Follow</c>/<c>Like</c>/
+    /// <c>Announce</c>/…). It is recorded on first delivery by the inbox pipeline and is the read surface
+    /// for an owner-only <c>GET /{actor}/inbox</c>.
+    /// </remarks>
+    public Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Adds an activity to an actor's inbox (newest first).
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor whose inbox is updated.</param>
+    /// <param name="item">The activity to add. Must not be null.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes when the activity has been added to the inbox.</returns>
+    /// <remarks>
+    /// Decision 056: the inbox is the actor's <em>received</em> activities (as opposed to the outbox, the
+    /// <em>authored</em> ones). Recorded by the inbox pipeline on first delivery. Like the outbox, the
+    /// store de-duplicates by the item's IRI, so a re-delivered (at-least-once) activity is not duplicated.
+    /// </remarks>
+    public Task AddToInboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default);
 }

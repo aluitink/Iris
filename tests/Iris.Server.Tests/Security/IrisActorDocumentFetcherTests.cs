@@ -204,6 +204,13 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+            Iri actorId, Iris.Client.Pipeline.ProxyCredentials credentials, CollectionQuery? query = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            yield break;
+        }
+
+        /// <inheritdoc/>
         public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
             => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NoContent));
 

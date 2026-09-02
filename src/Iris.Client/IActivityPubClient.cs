@@ -629,6 +629,33 @@ public interface IActivityPubClient : IDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Reads the activities delivered TO an actor (their inbox — what they received, as opposed to the
+    /// outbox, what they authored). Decision 056: the inbox is a first-class, per-actor collection that is
+    /// <em>private</em> — the server serves it only to the owner via Basic auth (the same seam that gates
+    /// the owner-only <c>privateKey</c> extension) and with no-store caching.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose inbox is read.</param>
+    /// <param name="credentials">The owner's Basic-auth credentials. The request is sent with an
+    /// <c>Authorization: Basic</c> header; without valid owner credentials the server returns 403 and
+    /// this method yields nothing.</param>
+    /// <param name="query">Optional paging / limit query.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>
+    /// The inbox entries (the delivered activities), newest first. Yields nothing when the actor has no
+    /// inbox, the credentials are not the owner's (403), the actor is unknown (404), or the request fails.
+    /// </returns>
+    /// <remarks>
+    /// The inbox page is read directly from the network (never through the <see cref="CollectionPageCache"/>)
+    /// because it is private, owner-scoped data — the same no-store treatment the server applies to the
+    /// owner-only actor document. The inbox is <c>{actor}/inbox</c>.
+    /// </remarks>
+    public IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
+        Iri actorId,
+        Pipeline.ProxyCredentials credentials,
+        CollectionQuery? query = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Sends a raw HTTP request through the client's signed pipeline and returns the response.
     /// </summary>
     /// <param name="request">The request to send. It is signed by the pipeline (the

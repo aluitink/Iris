@@ -62,6 +62,14 @@ public sealed class InboxProcessor : IInboxProcessor
             return;
         }
 
+        // Decision 056: record the delivered activity in the recipient's inbox (the "received" surface,
+        // distinct from the outbox's "authored" surface) so the owner can browse it via GET /{actor}/inbox.
+        // Gated on firstDelivery so a re-delivered (duplicate) activity does not duplicate the inbox entry
+        // — the same loop-safety guard that prevents re-fan-out.
+        await _persistence.Activities
+            .AddToInboxAsync(delivery.RecipientIri, delivery.Activity, ct)
+            .ConfigureAwait(false);
+
         var handler = FindHandler(delivery.Activity);
         if (handler is null)
         {

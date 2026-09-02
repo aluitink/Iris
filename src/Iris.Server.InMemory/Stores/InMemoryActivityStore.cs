@@ -15,6 +15,7 @@ public sealed class InMemoryActivityStore : IActivityStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, IObject> _activities = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, List<IObjectOrLink>> _outboxes = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, List<IObjectOrLink>> _inboxes = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetActivityAsync(Iri activityIri, out IObject? activity, CancellationToken ct = default)
@@ -109,6 +110,41 @@ public sealed class InMemoryActivityStore : IActivityStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<IObject>>(_activities.Values.ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var inbox = _inboxes.TryGetValue(actorIri, out var items) ? items : [];
+        return Task.FromResult<IReadOnlyList<IObjectOrLink>>(inbox.ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task AddToInboxAsync(Iri actorIri, IObjectOrLink item, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        ct.ThrowIfCancellationRequested();
+        var itemIri = ItemIri(item);
+        lock (_inboxes)
+        {
+            if (!_inboxes.TryGetValue(actorIri, out var list))
+            {
+                list = [];
+                _inboxes[actorIri] = list;
+            }
+
+            // Idempotent by IRI (mirrors the outbox): a re-delivered activity (at-least-once delivery,
+            // restart replay) is not duplicated in the inbox.
+            if (itemIri is not null && list.Any(existing => ItemIri(existing) == itemIri))
+            {
+                return Task.CompletedTask;
+            }
+
+            list.Insert(0, item); // newest first
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
