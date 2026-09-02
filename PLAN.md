@@ -116,10 +116,30 @@ Iris.slnx
   `MintActivityIds` not persisting the embedded-object mutation). `dotnet test` green: **1,111 tests, 0
   failed** (Core 210 / Client 135 / Server 766; was 5 failing at 20.0 start).
 
-  **Next: Phase 20.1 (confirm the four C2S pillars + decide outbox-returns-Creates).** With 20.0 closed and
-  the suite green, Phase 20 proceeds item-by-item (20.1 pillars → 20.2 inbox design → 20.3 UI browsing →
-  20.4 features → 20.5 test triage → 20.6 cohesion → 20.7 manual plan). Phase 19.1 (live interop) remains
-  available but is not the active focus.
+  **Phase 20.1 (change 161q) — COMPLETE (four C2S pillars confirmed + outbox-returns-Creates decided).**
+  Confirmed all four load-bearing pillars hold as the current architecture implements them: **(a)** every
+  client authoring method posts to `actorId.OutboxOf()` (zero inbox call sites) and the outbox-publish
+  handler records the activity in the actor's outbox + activity store (embedded object in the object store
+  — outbox & object store agree); **(b)** the browser's signed POST verifies (161o `X-Signature-Date`;
+  signer + verifier share `ResolveDateComponent`); **(c)** the proxy fallback is a *signature-rejection*
+  fallback — it engages on **401/403** (remote can't validate the browser's signature), **not** on a
+  network/CORS failure (a CORS-blocked browser fetch throws with no status and propagates); CORS-blocked
+  *writes* use the always-proxy mode (same-origin) and *reads* rely on the remote CORS-opening its AP
+  routes — pinned by a new `DirectNetworkFailure_Propagates_NotRoutedThroughProxy` test; **(d)**
+  `GetCollectionAsync`/`GetCollectionItemsAsync` are host-agnostic (any IRI, paged next-links) and
+  ActorDetail (outbox) + ObjectPage (replies) render remote IRIs (Feed/Community local-only by design).
+  **Decision (e):** the outbox yields **`Create`** activities (the post is the Create; the embedded Note is
+  the object, addressable by its originator-minted id); the 2xx body returns the Create — matches the
+  operator's expectation, no divergence. 1,112 tests, 0 failed (+1 proxy test; Client now 136).
+
+  **Next: Phase 20.2 (C2S inbox design — design decision first, code second).** With 20.0–20.1 closed and
+  the suite green, the next item is the deepest open question: how a **local client user browses their own
+  inbox** in a C2S scenario and how that content is **accessible to the browser** — browser access,
+  content + attachment storage/rewrite (local URL vs. remote link), id rewrite, reply + like/boost sync,
+  and pull-on-encounter fidelity vs. TTL cache. **Write the decision doc before touching code**, then
+  implement to match it. Phase 20 then proceeds 20.3 UI outbox enumeration → 20.4 media/sensitivity/markdown
+  → 20.5 test triage → 20.6 cohesion → 20.7 manual plan. Phase 19.1 (live interop) remains available but is
+  not the active focus.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).

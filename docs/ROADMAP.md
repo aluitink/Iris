@@ -755,18 +755,25 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   objects by reference rather than a computed IRI. `dotnet test` green: **1,111 tests, 0 failed**
   (Core 210 / Client 135 / Server 766; was 5 failing at 20.0 start). Change doc
   `docs/changes/161p-055-server-is-object-id-authority.md`.
-- [ ] **20.1 — Confirm the four C2S load-bearing pillars + decide outbox-returns-Creates.**
-  (a) **C2S via the user's outbox:** a client-authored activity (post/reply/follow/like/boost/…) is a
-  signed POST to the actor's **outbox** and the server records it in that outbox — confirm the outbox is
-  the single source of truth for what the actor authored. (b) **Digest auth:** the browser's signed POST
-  (Basic log-on key, HTTP signature) verifies — re-confirm after the 161o `X-Signature-Date` fix. (c)
-  **Proxy fallback for CORS:** when a browser read of a remote IRI CORS-fails, the client falls back to
-  the same-origin server proxy route — confirm it engages (not just the direct dial). (d) **Browse
-  external collections:** the sample UI can open a remote (peer-instance or federated) collection and
-  display its items. **(e) Outbox-returns-Creates decision:** confirm what the outbox collection yields —
-  the operator's expectation is the outbox returns **`Create`** activities (the post itself is the
-  Create; the embedded Note is the object). Record the decision (outbox = `Create` of objects, with the
-  object addressable by its minted id) as a change doc / decision if it diverges from current behavior.
+- [x] **20.1 — Confirm the four C2S load-bearing pillars + decide outbox-returns-Creates.**
+  (a) **C2S via the user's outbox:** CONFIRMED — every client authoring method posts to
+  `actorId.OutboxOf()` (zero inbox call sites); the outbox-publish handler records the activity in the
+  actor's outbox + activity store, and the embedded object in the object store (outbox & object store
+  agree). (b) **Digest auth:** CONFIRMED — the browser's signed POST verifies (161o `X-Signature-Date`
+  live-verified; signer + verifier share `ResolveDateComponent`; federation round-trips green). (c)
+  **Proxy fallback for CORS:** CONFIRMED with the trigger made explicit — the fallback is a
+  *signature-rejection* fallback (engages on **401/403**, the case where the remote can't validate the
+  browser's WebCrypto signature), **not** a network/CORS-failure fallback (a CORS-blocked browser fetch
+  throws with no status, so it propagates, not re-routed through the proxy); CORS-blocked *writes* use the
+  always-proxy mode (same-origin proxy) and CORS-blocked *reads* rely on the remote CORS-opening its AP
+  routes. Pinned by the new `DirectNetworkFailure_Propagates_NotRoutedThroughProxy` test. (d) **Browse
+  external collections:** CONFIRMED — `GetCollectionAsync`/`GetCollectionItemsAsync` are host-agnostic
+  (any IRI, paged next-links); ActorDetail (outbox) + ObjectPage (replies) render remote IRIs; Feed/
+  Community are local-only by design (dial-base derived). **(e) Outbox-returns-Creates:** CONFIRMED as the
+  operator's expectation — the outbox yields **`Create`** activities (the post is the Create; the embedded
+  Note is the object), the object is a first-class object addressable by its (originator-)minted id, and
+  the 2xx body returns the Create. No divergence from current behavior. Change doc
+  `docs/changes/161q-20.1-c2s-pillars-confirmed.md`; +1 proxy test (1,112 tests, 0 failed).
 - [ ] **20.2 — C2S inbox design (design decision first, code second).** How does a **local client user
   browse their own inbox** in a C2S scenario, and how is that content **accessible to the browser**?
   Sub-questions to resolve and record as a decision doc: (a) **Browser access:** the inbox is the actor's
