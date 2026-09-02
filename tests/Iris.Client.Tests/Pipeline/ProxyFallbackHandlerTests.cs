@@ -133,6 +133,39 @@ public sealed class ProxyFallbackHandlerTests
         Assert.Equal(HttpMethod.Get, inner.LastRequest!.Method);
     }
 
+    // --- A network failure (a CORS-blocked browser fetch) is NOT a signature rejection ----
+    //
+    // The proxy fallback is a *signature-rejection* fallback: it engages only when the remote instance
+    // REJECTS the direct attempt with 401/403 (it cannot validate the browser's WebCrypto signature).
+    // A genuine network failure — the mode a CORS-blocked browser read surfaces (a JS `TypeError:
+    // Failed to fetch`, surfaced to .NET as an HttpRequestException, with NO status code) — is not a
+    // signature rejection, so it must NOT be re-routed through the proxy (the proxy POST would hit the
+    // same network partition). It propagates as-is. (CORS-blocked *reads* are instead handled by the
+    // remote instance CORS-opening its AP routes; CORS-blocked *writes* use the always-proxy mode, which
+    // routes the write straight to the home proxy where it is same-origin and cannot CORS-fail.)
+
+    [Fact]
+    public async Task DirectNetworkFailure_Propagates_NotRoutedThroughProxy()
+    {
+        var inner = new RecordingHandler(_ => throw new HttpRequestException("Failed to fetch (CORS-blocked)"));
+
+        var handler = NewHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        // The network failure propagates (it is not converted into a proxy attempt).
+        var ex = await Assert.ThrowsAsync<HttpRequestException>(
+            () => http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://b.example/x")));
+
+        // The proxy endpoint was never contacted (only the single, failed direct attempt).
+        Assert.Contains("Failed to fetch", ex.Message);
+        var last = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Get, last.Method);
+        Assert.Equal("https://b.example/x", last.RequestUri!.ToString());
+        Assert.False(
+            last.RequestUri.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal),
+            "a network (CORS) failure must not be re-routed through the proxy");
+    }
+
     // --- The proxy's own failure is returned (no loop) -----------------------------------
 
     [Fact]
