@@ -335,6 +335,99 @@ public sealed class S19CommunityViewCompletenessTests
     }
 
     /// <summary>
+    /// The community's outbound follow (19.5.3 gap G-3 — the "Peer management" card): <c>FollowAsync</c>
+    /// signed as the community (whose key is the logged-on actor's in the sample seed) makes the community
+    /// follow a peer actor — the community's <c>following</c> collection contains the peer's IRI.
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_CommunityFollowsPeer_SignedAsCommunity_FollowsPeer()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // A peer actor IRI the community does not yet follow (not bob, which is seeded as followed).
+        var peerIri = new Iri($"{AliceIri.Value.TrimEnd('/')}/../u/carla");
+
+        // The page's exact call: FollowAsync(communityIri, peerIri) — the activity's actor is the
+        // community, published to the community's outbox, signed as the community (the 19.5.3
+        // outbound follow).
+        var result = await client.FollowAsync(CommunityIri, peerIri);
+        Assert.True(result.IsSuccess, $"the community's follow of the peer must succeed: {result.StatusCode}");
+
+        // The community's following collection now contains the peer's IRI (async, on the delivery
+        // worker): poll until the edge is reflected.
+        var following = await PollFollowingUntilAsync(client, peerIri.Value);
+        Assert.Contains(following, iri => iri == peerIri.Value);
+    }
+
+    /// <summary>
+    /// The community's outbound follow/unfollow round-trip (19.5.3 gap G-3 — the "Peer management"
+    /// card): <c>FollowAsync</c> (signed as the community) makes the community follow a peer;
+    /// <c>UndoFollowAsync</c> (referencing the learned follow id) clears the edge — the community's
+    /// <c>following</c> collection no longer contains the peer.
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_CommunityFollowThenUnfollowPeer_RoundTrips()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // A peer actor IRI the community does not yet follow.
+        var peerIri = new Iri($"{AliceIri.Value.TrimEnd('/')}/../u/dave");
+
+        // Follow (the page's PeerFollowAsync): succeeds and mints the activity id the page learns.
+        var followResult = await client.FollowAsync(CommunityIri, peerIri);
+        Assert.True(followResult.IsSuccess, $"the community's follow of the peer must succeed: {followResult.StatusCode}");
+        Assert.True(followResult.MintedId is { Length: > 0 }, "the follow must mint an activity id for a later undo");
+        Assert.True(Iri.TryParse(followResult.MintedId, out var followIri), "the minted id must be a parseable IRI");
+
+        // The undo (the page's PeerUnfollowAsync) references the learned id.
+        var undoResult = await client.UndoFollowAsync(CommunityIri, followIri);
+        Assert.True(undoResult.IsSuccess, $"the undo must succeed: {undoResult.StatusCode}");
+
+        // After the undo the community's following edge is cleared (async, on the delivery worker):
+        // the following collection no longer contains the peer.
+        var following = await PollFollowingUntilGoneAsync(client, peerIri.Value);
+        Assert.DoesNotContain(following, iri => iri == peerIri.Value);
+    }
+
+    private static async Task<IReadOnlyList<string>> PollFollowingUntilAsync(IActivityPubClient client, string peerIriValue)
+    {
+        var last = new List<string>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var following = await CollectItemsAsync(client.GetCollectionItemsAsync(CommunityIri.FollowingOf()));
+            last = following.Select(IriOf).Where(iri => iri is not null).Cast<string>().ToList();
+            if (last.Contains(peerIriValue))
+            {
+                return last;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return last;
+    }
+
+    private static async Task<IReadOnlyList<string>> PollFollowingUntilGoneAsync(IActivityPubClient client, string peerIriValue)
+    {
+        var last = new List<string>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var following = await CollectItemsAsync(client.GetCollectionItemsAsync(CommunityIri.FollowingOf()));
+            last = following.Select(IriOf).Where(iri => iri is not null).Cast<string>().ToList();
+            if (!last.Contains(peerIriValue))
+            {
+                return last;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return last;
+    }
+
+    /// <summary>
     /// The community's members read: <c>GetCollectionItemsAsync(communityIri + "/members")</c> returns the
     /// member actor IRIs as bare <see cref="ILink"/> items (ActorIrisToLinks) — the exact shape the page's
     /// Members card renders as clickable links to each member's actor detail (19.8.4 — members clickable).

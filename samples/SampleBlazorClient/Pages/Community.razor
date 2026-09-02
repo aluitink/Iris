@@ -198,6 +198,30 @@ else
         </div>
 
         <div class="card">
+            <h3>Peer management</h3>
+            <p class="muted">The community follows or unfollows a specific actor (19.5.3 gap G-3 — the
+                community's outbound follow, signed as the community; in the sample deployment the
+                community signs with the primary actor's key).</p>
+            <label for="peer-iri">Peer actor IRI</label>
+            <input id="peer-iri" type="text" @bind="PeerIriInput"
+                   placeholder="e.g. http://iris-dev2.luit.ink/ap/v1/u/carla" />
+            <button @onclick="PeerFollowAsync" disabled="@(PeerBusy)">Community follows</button>
+            <button @onclick="PeerUnfollowAsync" disabled="@(PeerBusy)">Community unfollows</button>
+            @if (PeerBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (PeerResult is not null)
+            {
+                <p class="muted">Status: <code>@PeerResult</code></p>
+            }
+            @if (PeerError is not null)
+            {
+                <div class="error">@PeerError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Feed</h3>
             <p class="muted">
                 The community's unified feed (its <c>feed</c> collection). Each item renders via
@@ -343,6 +367,12 @@ else
     private bool MemberBusy { get; set; }
     private string? MemberResult { get; set; }
     private string? MemberError { get; set; }
+
+    private string? PeerIriInput { get; set; }
+    private bool PeerBusy { get; set; }
+    private string? PeerResult { get; set; }
+    private string? PeerError { get; set; }
+    private Iri? PeerFollowLearnedId { get; set; }
 
     private async Task LoadAsync()
     {
@@ -686,6 +716,75 @@ else
         else
         {
             MemberError = "Enter a valid member IRI (e.g. http://host/ap/v1/u/alice).";
+        }
+    }
+
+    private async Task PeerFollowAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || PeerBusy)
+        {
+            return;
+        }
+
+        var peerIri = PeerIriInput?.Trim() ?? "";
+        if (!Iri.TryParse(peerIri, out var target))
+        {
+            PeerError = "Enter a valid peer actor IRI (e.g. http://host/ap/v1/u/carla).";
+            return;
+        }
+
+        PeerBusy = true;
+        PeerResult = null;
+        PeerError = null;
+        try
+        {
+            // The community follows the peer: FollowAsync(communityIri, target) — the activity's actor is
+            // the community, published to the community's outbox, signed as the community (the 19.5.3
+            // outbound follow, gap G-3). The minted follow id is learned for a later undo.
+            var result = await Session.GetClient().FollowAsync(communityIri, target);
+            PeerResult = result.IsSuccess ? $"community followed (status {result.StatusCode})" : $"failed (status {result.StatusCode})";
+            if (result.IsSuccess && result.MintedId is { Length: > 0 } minted && Iri.TryParse(minted, out var learned))
+            {
+                PeerFollowLearnedId = learned;
+            }
+        }
+        catch (Exception ex)
+        {
+            PeerError = ex.Message;
+        }
+        finally
+        {
+            PeerBusy = false;
+        }
+    }
+
+    private async Task PeerUnfollowAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || PeerFollowLearnedId is not { } followIri || PeerBusy)
+        {
+            PeerError = "Follow a peer first (the undo references the learned follow id).";
+            return;
+        }
+
+        PeerBusy = true;
+        PeerResult = null;
+        PeerError = null;
+        try
+        {
+            var result = await Session.GetClient().UndoFollowAsync(communityIri, followIri);
+            PeerResult = result.IsSuccess ? $"community unfollowed (status {result.StatusCode})" : $"failed (status {result.StatusCode})";
+            if (result.IsSuccess)
+            {
+                PeerFollowLearnedId = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            PeerError = ex.Message;
+        }
+        finally
+        {
+            PeerBusy = false;
         }
     }
 
