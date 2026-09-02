@@ -39,13 +39,13 @@
                         </div>
                         @if (Revealed)
                         {
-                            <div class="object-content">@content</div>
+                            <div class="object-content">@RenderedContent</div>
                         }
                     </div>
                 }
                 else
                 {
-                    <div class="object-content">@content</div>
+                    <div class="object-content">@RenderedContent</div>
                 }
             }
             @foreach (var audience in AudienceIris)
@@ -148,6 +148,14 @@
     /// <see cref="IriExtensions.GetSummary"/>.
     /// </summary>
     private string? Summary => Obj?.GetSummary();
+
+    /// <summary>
+    /// The object's <c>content</c> rendered as HTML from Markdown (20.4c). The content is run through
+    /// the dependency-free <see cref="Markdown"/> renderer (HTML-escaped first, so it is safe to emit
+    /// as a <see cref="MarkupString"/>). An empty or null content renders as an empty string.
+    /// </summary>
+    private MarkupString RenderedContent
+        => new(Markdown.ToHtml(JoinStrings(Obj?.Content)));
 
     /// <summary>
     /// The attachment IRIs, when present — rendered as links (S2).

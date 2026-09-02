@@ -212,6 +212,61 @@ ul.object-list li {
 .object-content {
     color: #e6e9ef;
     font-size: 0.9rem;
+    line-height: 1.5;
+    overflow-wrap: break-word;
+}
+
+/* Markdown-rendered content (20.4c): the object view renders a note's markdown content as real
+   elements; these keep the rendered elements legible in the app palette. */
+.object-content h1,
+.object-content h2,
+.object-content h3,
+.object-content h4,
+.object-content h5,
+.object-content h6 {
+    margin: 0.4rem 0 0.2rem;
+    font-size: 1rem;
+    color: #e6e9ef;
+}
+
+.object-content p {
+    margin: 0.2rem 0;
+}
+
+.object-content a {
+    color: #8fd3a7;
+    text-decoration: underline;
+}
+
+.object-content code {
+    padding: 0.05rem 0.3rem;
+    border-radius: 0.2rem;
+    background: #1c2430;
+    color: #cdd6e1;
+    font-size: 0.85em;
+}
+
+.object-content pre {
+    margin: 0.3rem 0;
+    padding: 0.5rem;
+    border-radius: 0.3rem;
+    background: #1c2430;
+    overflow-x: auto;
+}
+
+.object-content pre code {
+    padding: 0;
+    background: none;
+}
+
+.object-content ul,
+.object-content ol {
+    margin: 0.2rem 0;
+    padding-left: 1.2rem;
+}
+
+.object-content li {
+    margin: 0.1rem 0;
 }
 
 .object-sensitive {
