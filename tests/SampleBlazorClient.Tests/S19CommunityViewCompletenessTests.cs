@@ -398,4 +398,87 @@ public sealed class S19CommunityViewCompletenessTests
 
         return list;
     }
+
+    /// <summary>
+    /// The community membership management write (19.8.4 — the "Manage membership" card): <c>AddMemberAsync</c>
+    /// (signed as the community, whose key is the logged-on actor's in the sample seed) adds a new member —
+    /// the member is recorded in the community's member set.
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_AddMember_SignedAsCommunity_AddsMember()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // A new actor IRI to add as a member (not yet a member).
+        var newMemberIri = new Iri($"{AliceIri.Value.TrimEnd('/')}/../u/dave");
+
+        // The page's exact call: AddMemberAsync(communityIri, memberIri) — signed as alice (the
+        // community's key in the seed), so the 19.5.2 self-management gate passes.
+        var result = await client.AddMemberAsync(CommunityIri, newMemberIri);
+        Assert.True(result.IsSuccess, $"the Add member must succeed: {result.StatusCode}");
+
+        // The new member is now in the community's member set (the members collection, which is the
+        // {community}/members paged collection the page reads).
+        var members = await PollMembersUntilAsync(client, newMemberIri.Value);
+        Assert.Contains(members, iri => iri == newMemberIri.Value);
+    }
+
+    /// <summary>
+    /// The community membership management write (19.8.4 — the "Manage membership" card): <c>RemoveMemberAsync</c>
+    /// (signed as the community) removes a member — the member is no longer in the community's member set.
+    /// </summary>
+    [Fact]
+    public async Task CommunityView_RemoveMember_SignedAsCommunity_RemovesMember()
+    {
+        var (server, client) = await LogOnAsync();
+        using var _ = server;
+
+        // Bob is a seeded member; remove him (the page's Remove member button).
+        var result = await client.RemoveMemberAsync(CommunityIri, BobIri);
+        Assert.True(result.IsSuccess, $"the Remove member must succeed: {result.StatusCode}");
+
+        // The member set no longer contains bob (async, on the delivery worker): poll the members
+        // collection until bob is gone.
+        var members = await PollMembersUntilGoneAsync(client, BobIri.Value);
+        Assert.DoesNotContain(members, iri => iri == BobIri.Value);
+    }
+
+    private static async Task<IReadOnlyList<string>> PollMembersUntilAsync(IActivityPubClient client, string memberIriValue)
+    {
+        var membersIri = new Iri($"{CommunityIri.Value.TrimEnd('/')}/members");
+        var last = new List<string>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var members = await CollectItemsAsync(client.GetCollectionItemsAsync(membersIri));
+            last = members.Select(IriOf).Where(iri => iri is not null).Cast<string>().ToList();
+            if (last.Contains(memberIriValue))
+            {
+                return last;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return last;
+    }
+
+    private static async Task<IReadOnlyList<string>> PollMembersUntilGoneAsync(IActivityPubClient client, string memberIriValue)
+    {
+        var membersIri = new Iri($"{CommunityIri.Value.TrimEnd('/')}/members");
+        var last = new List<string>();
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var members = await CollectItemsAsync(client.GetCollectionItemsAsync(membersIri));
+            last = members.Select(IriOf).Where(iri => iri is not null).Cast<string>().ToList();
+            if (!last.Contains(memberIriValue))
+            {
+                return last;
+            }
+
+            await Task.Delay(50);
+        }
+
+        return last;
+    }
 }
