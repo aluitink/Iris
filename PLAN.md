@@ -200,14 +200,25 @@ Iris.slnx
     media IRIs). Sample: compose uploads via `InputFile` (Blazor WASM `IBrowserFile`); the object view renders
     the attachment `<img>`. +23 tests (6 `MediaClientTests`, in-memory + file-backed store tests,
     upload/serve integration, round-trip integration). `docs/changes/161v-20.4-media.md`.
-    **Suite green, 0 failed:** Core 220, Client 142 (+6), Ext 29, Server 789 (+19), LiveInterop 18,
+     **Suite green, 0 failed:** Core 220, Client 142 (+6), Ext 29, Server 789 (+19), LiveInterop 18,
     SampleBlazor 136, SampleServer 25 — **1,371 total**.
 
-    **Next: Phase 20.5 — test-suite triage.** Phase 20.4 (media, sensitivity, markdown) is closed. 20.5
-    audits the suite (now ~1,371 tests) to **remove tests that add no coverage** (duplicates, over-fine
-    unit tests of trivial glue, tests that pin implementation details that changed with 055) and
-    keep/grow the integration tests that genuinely exercise the concepts; target a smaller or stable count
-    with higher per-test value. Then 20.6 architecture-cohesion pass → 20.7 manual test plan (capstone).
+     **Phase 20.5 (change 161w) — DONE: test-suite triage.** Audited the whole suite (Core, Client,
+    Client.Extensions, Server, SampleBlazor, SampleServer) against the three removal categories. Removed
+    **34 over-fine unit tests of trivial glue** — `Ctor`/`Dispatch` null-guard tests in `Iris.Server.Tests`
+    that only asserted `ArgumentNullException.ThrowIfNull` (one-line BCL guards, no Iris-specific coverage).
+    **No duplicates** were found and **no pre-055 id pins** existed (the client suite already asserts the
+    correct Decision-055 contract — the client does not set ids / uses learned `MintedId`). Every "throws"
+    test asserting a real invariant (blank Id, negative window, missing credential, wrong activity type)
+    and every integration test is **kept**. `docs/changes/161w-20.5-test-triage.md`.
+    **Suite green, 0 failed:** Core 220, Client 142, Ext 29, Server 755 (−34), LiveInterop 18,
+    SampleBlazor 136, SampleServer 25 — **1,337 total** (down 34 from the 1,371 baseline).
+
+    **Next: Phase 20.6 — architecture-cohesion pass.** Re-verify, end to end, that the intended operations
+    hold after 20.0–20.5: C2S via the outbox, digest auth, proxy fallback for CORS, external-collection
+    browsing + display, outbox-returns-Creates, the C2S inbox design (browser access + attachment rewrite +
+    id rewrite + reply/like/boost sync + pull-on-encounter), media + sensitivity + markdown. Confirm no layer
+    contradicts another (client ↔ server ↔ sample UI). Then 20.7 manual test plan (capstone, done last).
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).

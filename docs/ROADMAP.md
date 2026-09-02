@@ -838,13 +838,17 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
     (emitted as a `MarkupString`); the sensitive-notice path renders the markdown only after reveal. +32
     tests (25 `MarkdownTests` unit, 7 bUnit object-view); see
     `docs/changes/161u-20.4-markdown.md`.
-- [ ] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
-  suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
-  of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
-  **integration tests that genuinely exercise the concepts** (outbox write→delivery→peer record;
-  collection→paged items→object view; proxy fallback; inbox attachment rewrite; digest auth). Record the
-  removed/added set + new count in a change doc; target a **smaller or stable** count with higher
-  per-test value, not growth.
+ - [x] **20.5 — Test-suite triage: remove the useless, keep the integration-first few.** Audit the test
+   suite (growing too fast) and **remove tests that add no coverage** (duplicates, over-fine unit tests
+   of trivial glue, tests that pin implementation details that changed with 055). Keep/grow the
+   **integration tests that genuinely exercise the concepts** (outbox write→delivery→peer record;
+   collection→paged items→object view; proxy fallback; inbox attachment rewrite; digest auth). Record the
+   removed/added set + new count in a change doc; target a **smaller or stable** count with higher
+   per-test value, not growth. **Done — removed 34 over-fine null-guard tests (Iris.Server.Tests) that
+   only asserted `ArgumentNullException.ThrowIfNull` (trivial BCL glue, no Iris coverage); no duplicates and
+   no pre-055 id pins existed (the suite is already Decision-055 compliant). Every "throws" test asserting a
+   real invariant (blank Id, negative window, missing credential, wrong activity type) and every
+   integration test kept. Suite: 1,371 → 1,337 (0 failed); see `docs/changes/161w-20.5-test-triage.md`.**
 - [ ] **20.6 — Architecture-cohesion pass (re-confirm the whole story after the changes).** Re-verify,
   end to end, that the intended operations hold **after** 20.0–20.5: C2S via the outbox, digest auth,
   proxy fallback for CORS, external-collection browsing + display, outbox-returns-Creates, the C2S inbox
