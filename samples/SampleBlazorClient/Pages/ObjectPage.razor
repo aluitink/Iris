@@ -171,6 +171,9 @@ else
             var objectIri = new Iri(uri);
             var client = Session.GetClient();
             LoadedObjectIri = objectIri;
+            // 19.8.5 — cross-instance navigation: record the navigable state (the last-viewed object)
+            // so a UI can offer "continue where you left off" after an instance switch.
+            Session.SetNavigableObjectIri(objectIri);
             ObjectDoc = await client.GetObjectAsync(objectIri);
 
             // Whether the logged-on actor is the object's author (drives the Delete button — only the

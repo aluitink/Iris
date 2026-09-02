@@ -68,6 +68,30 @@ else
         <button class="secondary" @onclick="LogOut">Log out</button>
     </div>
 
+    @if (Session.NavigableObjectIri is { } navObject || Session.NavigableActorIri is { } navActor)
+    {
+        <div class="card">
+            <h2>Continue where you left off</h2>
+            <p class="muted">
+                The last item you viewed (preserved across instance switches — 19.8.5 cross-instance
+                navigation). Select it to navigate back to it on the current instance.
+            </p>
+            @if (Session.NavigableObjectIri is { } navObj)
+            {
+                <a href="/object?iri=@Uri.EscapeDataString(navObj.Value)" class="btn">
+                    Object: <code>@navObj.Value</code>
+                </a>
+            }
+            @if (Session.NavigableActorIri is { } navAct)
+            {
+                <a href="/actor?iri=@Uri.EscapeDataString(navAct.Value)" class="btn">
+                    Actor: <code>@navAct.Value</code>
+                </a>
+            }
+            <button class="secondary" @onclick="ClearNavigable">Clear</button>
+        </div>
+    }
+
     @if (Session.RecentInstances.Count > 0)
     {
         <div class="card">
@@ -381,6 +405,14 @@ else
         Session.LogOut();
         FeedItems = null;
         SwitchTarget = null;
+        StateHasChanged();
+    }
+
+    // 19.8.5 — cross-instance navigation: clear the navigable state (the "continue where you left off"
+    // last-viewed item) so the Home page's affordance disappears.
+    private void ClearNavigable()
+    {
+        Session.ClearNavigableState();
         StateHasChanged();
     }
 

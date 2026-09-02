@@ -518,6 +518,10 @@ else
 
             ActorDoc = actor;
 
+            // 19.8.5 — cross-instance navigation: record the navigable state (the last-viewed actor) so
+            // a UI can offer "continue where you left off" after an instance switch.
+            Session.SetNavigableActorIri(actorIri);
+
             // 20.3: load the outbox paged (first page only) — the "Load more" button walks `next` links
             // for the rest. Mirrors Feed.razor's paged idiom (GetCollectionAsync + CollectionQuery(Limit)).
             await LoadInitialOutboxAsync(actorIri);

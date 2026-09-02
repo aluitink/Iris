@@ -106,6 +106,11 @@ public sealed class ExplorerSession : IDisposable
     private Iri? _resolvedActorIri;
     private readonly List<RecentInstance> _recent = [];
 
+    // 19.8.5 — cross-instance navigation: the last-viewed item (object or actor IRI), preserved across
+    // instance switching so a UI can offer "continue where you left off" after a switch.
+    private Iri? _navigableObjectIri;
+    private Iri? _navigableActorIri;
+
     /// <summary>
     /// Initializes a new <see cref="ExplorerSession"/>.
     /// </summary>
@@ -166,6 +171,51 @@ public sealed class ExplorerSession : IDisposable
     /// Gets the most recent logged-on instances (newest first), so a UI can offer one-click switching.
     /// </summary>
     public IReadOnlyList<RecentInstance> RecentInstances => _recent;
+
+    /// <summary>
+    /// Gets the IRI of the last object the user viewed (the "navigable state"), or
+    /// <see langword="null"/> when none. Preserved across instance switching (19.8.5 — cross-instance
+    /// navigation), so a UI can offer "continue where you left off" after a switch.
+    /// </summary>
+    public Iri? NavigableObjectIri => _navigableObjectIri;
+
+    /// <summary>
+    /// Gets the IRI of the last actor the user viewed (the "navigable state"), or
+    /// <see langword="null"/> when none. Preserved across instance switching (19.8.5 — cross-instance
+    /// navigation), so a UI can offer "continue where you left off" after a switch.
+    /// </summary>
+    public Iri? NavigableActorIri => _navigableActorIri;
+
+    /// <summary>
+    /// Records the IRI of the object the user just viewed (the "navigable state" for 19.8.5
+    /// cross-instance navigation). Called by the object detail page on load.
+    /// </summary>
+    /// <param name="objectIri">The IRI of the object being viewed. Must not be null.</param>
+    public void SetNavigableObjectIri(Iri objectIri)
+    {
+        _navigableObjectIri = objectIri;
+    }
+
+    /// <summary>
+    /// Records the IRI of the actor the user just viewed (the "navigable state" for 19.8.5
+    /// cross-instance navigation). Called by the actor detail page on load.
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor being viewed. Must not be null.</param>
+    public void SetNavigableActorIri(Iri actorIri)
+    {
+        _navigableActorIri = actorIri;
+    }
+
+    /// <summary>
+    /// Clears the navigable state (the last-viewed object/actor IRIs). Called when the user explicitly
+    /// wants a fresh start (e.g. a "clear history" action). Not called on logon/switch/logout — the
+    /// navigable state is preserved across instance switching (19.8.5).
+    /// </summary>
+    public void ClearNavigableState()
+    {
+        _navigableObjectIri = null;
+        _navigableActorIri = null;
+    }
 
     /// <summary>
     /// Logs on to an instance by WebFinger address (the headline explorer capability). The address is

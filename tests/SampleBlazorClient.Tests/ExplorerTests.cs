@@ -193,6 +193,85 @@ public sealed class ExplorerTests
         Assert.Null(session.ActorIri);
     }
 
+    // --- 19.8.5: cross-instance navigation — navigable state preserved across switching ---
+
+    /// <summary>
+    /// The navigable state (the last-viewed object/actor IRI) is preserved across instance switching
+    /// (19.8.5 — cross-instance navigation): log on as alice, record a navigable object IRI, switch to
+    /// bob (a different identity), and the navigable state survives the switch — a UI can offer
+    /// "continue where you left off" on the new instance.
+    /// </summary>
+    [Fact]
+    public async Task NavigableState_PreservedAcrossInstanceSwitch()
+    {
+        using var fixture = new ServerFixture();
+        using var session = new ExplorerSession(() => fixture.Server.CreateHandler());
+
+        // Log on as alice and record a navigable object IRI (as the object detail page would).
+        Assert.True(await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase));
+        var objectIri = new Iri("http://localhost:5000/ap/v1/n/42");
+        session.SetNavigableObjectIri(objectIri);
+        var actorIri = new Iri("http://localhost:5000/ap/v1/u/bob");
+        session.SetNavigableActorIri(actorIri);
+        Assert.Equal(objectIri, session.NavigableObjectIri);
+        Assert.Equal(actorIri, session.NavigableActorIri);
+
+        // Switch to bob (a different identity) — the session logs out of alice and logs on to bob.
+        // (LogOnAsync to a different identity is the switch: it disposes the current identity and
+        // logs on to the new one, recording both in RecentInstances.)
+        Assert.True(await session.LogOnAsync("bob@localhost", SampleServer.SampleServer.Password, DialBase));
+
+        // The identity switched to bob…
+        Assert.Equal("http://localhost:5000/ap/v1/u/bob", session.ActorIri?.Value);
+        // …but the navigable state is preserved (not cleared by the switch).
+        Assert.Equal(objectIri, session.NavigableObjectIri);
+        Assert.Equal(actorIri, session.NavigableActorIri);
+    }
+
+    /// <summary>
+    /// The navigable state survives logout (19.8.5 — cross-instance navigation): log on as alice,
+    /// record a navigable object IRI, log out, and the navigable state survives — a UI can offer
+    /// "continue where you left off" after re-logging on to a different instance.
+    /// </summary>
+    [Fact]
+    public async Task NavigableState_PreservedAcrossLogout()
+    {
+        using var fixture = new ServerFixture();
+        using var session = new ExplorerSession(() => fixture.Server.CreateHandler());
+
+        Assert.True(await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase));
+        var objectIri = new Iri("http://localhost:5000/ap/v1/n/42");
+        session.SetNavigableObjectIri(objectIri);
+
+        // Log out — the identity clears, but the navigable state survives.
+        session.LogOut();
+        Assert.False(session.IsLoggedIn);
+        Assert.Null(session.ActorIri);
+        Assert.Equal(objectIri, session.NavigableObjectIri);
+    }
+
+    /// <summary>
+    /// The navigable state can be explicitly cleared (19.8.5 — cross-instance navigation): after
+    /// recording a navigable object IRI, <c>ClearNavigableState</c> resets it to null — the Home page's
+    /// "Clear" button.
+    /// </summary>
+    [Fact]
+    public async Task NavigableState_Clearable()
+    {
+        using var fixture = new ServerFixture();
+        using var session = new ExplorerSession(() => fixture.Server.CreateHandler());
+
+        Assert.True(await session.LogOnAsync("alice@localhost", SampleServer.SampleServer.Password, DialBase));
+        session.SetNavigableObjectIri(new Iri("http://localhost:5000/ap/v1/n/42"));
+        session.SetNavigableActorIri(new Iri("http://localhost:5000/ap/v1/u/bob"));
+        Assert.NotNull(session.NavigableObjectIri);
+        Assert.NotNull(session.NavigableActorIri);
+
+        session.ClearNavigableState();
+        Assert.Null(session.NavigableObjectIri);
+        Assert.Null(session.NavigableActorIri);
+    }
+
     // --- DI registration (AddIrisExplorer) ------------------------------------------
 
     [Fact]
