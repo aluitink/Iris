@@ -793,12 +793,16 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   per-object like/boost counters, fetch-on-encounter. `docs/decisions/056-c2s-inbox-model.md`;
   `docs/changes/161r-20.2-c2s-inbox-design.md`; +4 inbox tests (1,116 tests, 0 failed in the suite that
   runs; 2 pre-existing `FollowIntegrationTests` failures are unrelated to this change).
-- [ ] **20.3 — Sample-UI object browsing: outbox enumeration + paging (local or remote).** Enhance the
+- [x] **20.3 — Sample-UI object browsing: outbox enumeration + paging (local or remote).** Enhance the
   explorer so a user can **enumerate a local or remote user's outbox and page through it** (the paged
   collection with `next`-link paging), rendering each item as a navigable object view (not raw JSON).
   This makes 20.1's "outbox = source of truth" and 20.2's inbox design visible in the UI. Reuse the
   existing paged-collection client + object view; add an "Outbox" surface to the actor detail page (local
-  + remote) with paging controls.
+  + remote) with paging controls. **Done** — the actor detail page's non-paged "Feed (outbox)" card is
+  replaced by a paged "Outbox" surface (first page via `GetCollectionAsync` against `{actor}/outbox`, a
+  "Load more" button walking `next`-linked server pages, each item a navigable `<ObjectView>`); local or
+  remote (host-agnostic paging). +4 integration tests (`S20OutboxPagingTests`); see
+  `docs/changes/161s-20.3-outbox-enumeration-paging.md`.
 - [ ] **20.4 — Implementation feature work: media, sensitivity, markdown rendering.** (a) **Media:**
   support media attachments end-to-end (compose upload → Create object with attachment → stored/served →
   rendered in the object view), building on 20.2's attachment-rewrite decision. (b) **Sensitivity

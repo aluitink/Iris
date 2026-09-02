@@ -146,16 +146,33 @@ Iris.slnx
    impls), recorded on first delivery by the `InboxProcessor`, read via the owner-only route +
    `GetInboxItemsAsync` client method. **Remaining (staged, self-contained):** local media rewrite (20.4),
    reply thread-tree, per-object like/boost counters, fetch-on-encounter. `docs/decisions/056-c2s-inbox-model.md`;
-   `docs/changes/161r-20.2-c2s-inbox-design.md`. Suite: Server 770/770 (+4 inbox tests), Client 136/136;
-   2 pre-existing `FollowIntegrationTests` failures are unrelated (fail at the baseline commit).
+   `docs/changes/161r-20.2-c2s-inbox-design.md`. Suite: Server 770/770 (+4 inbox tests), Client 136/136.
+   **Note:** 13 pre-existing 055-fallout failures (a server bug in `RecordCreateLocalAsync` — it did not
+   record the object→Create index, so locally-posted notes' Deletes could not remove the Create from the
+   outbox — + 12 stale tests still referencing pre-055 deterministic IRIs) were found and fixed in a
+   preceding `fix:` commit; with that repair the full suite is green.
 
-   **Next: Phase 20.3 (Sample-UI object browsing: outbox enumeration + paging).** With 20.2 closed, the
-   next item is to make 20.1's "outbox = source of truth" and 20.2's inbox design **visible in the UI**:
-   enhance the explorer so a user can enumerate a local or remote user's outbox and page through it (the
-   paged collection with `next`-link paging), rendering each item as a navigable object view. Reuse the
-   existing paged-collection client + object view; add an "Outbox" surface to the actor detail page (local +
-   remote) with paging controls. Phase 20 then proceeds 20.4 media/sensitivity/markdown → 20.5 test triage →
-   20.6 cohesion → 20.7 manual plan.
+   **Phase 20.3 (change 161s) — COMPLETE (Sample-UI outbox enumeration + paging, local or remote).**
+   Makes 20.1's "outbox = source of truth" and 20.2's inbox design **visible in the UI**: the actor
+   detail page's non-paged "Feed (outbox)" card (which loaded the *entire* outbox up front) is replaced by
+   a paged **"Outbox" surface** — first page via the paged `IActivityPubClient.GetCollectionAsync` against
+   `{actor}/outbox` (no `CollectionQuery.Limit` — the server pages at its natural size, and "Load more"
+   walks those `next`-linked server pages), each item a navigable `<ObjectView>`, a "Load more" button
+   resuming from `CollectionPage.NextPage` (one server page per click). **Local or remote** — the paging
+   contract is host-agnostic. UI-only (no server/client/persistence changes); reuses the existing
+   paged-collection client + object view. `PendingFollows` still reads the full outbox (a separate
+   concern needing all `Follow`s). +4 integration tests (`S20OutboxPagingTests`, mirroring
+   `S3FollowFeedTests`'s harness). `docs/changes/161s-20.3-outbox-enumeration-paging.md`.
+   **Suite green, 0 failed:** Core 210, Client 136, Ext 29, Server 770, LiveInterop 18,
+   SampleBlazor 97 (+4), SampleServer 25 — **1,285 total**.
+
+   **Next: Phase 20.4 (Implementation feature work: media, sensitivity, markdown rendering).** With 20.3
+   closed, the next item is the self-contained feature work: **(a) media** (compose upload → Create object
+   with attachment → stored/served → rendered in the object view, building on 20.2's attachment-rewrite
+   decision — the local media storage + URL-rewrite staged from 20.2), **(b) sensitivity** (the
+   content-sensitivity / warning extensions, e.g. `sensitive`/`summary`, rendering behind a blur/notice),
+   and **(c) markdown** (a renderer so `content` that is markdown renders properly). Phase 20 then proceeds
+   20.5 test triage → 20.6 cohesion → 20.7 manual plan.
 
 - **Blocked (external)** — Phase 13.5–13.10 live interop and Phase 14 remediation are folded into Phase 19.1 (live interop verification) + 19.4 (remediation); the CI-testable sub-slices and the CI-gating model are already done.
 - **Tabled** — external/remote community-style interaction testing (per operator decision).
