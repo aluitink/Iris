@@ -79,6 +79,135 @@ else
             }
         </div>
 
+        <div class="card">
+            <h3>Followers</h3>
+            <p class="muted">
+                Actors that follow <code>@ActorIri.Value</code> (their <c>followers</c> collection), paged with
+                <c>next</c>-link walking. Each item links to the follower's actor detail.
+            </p>
+            @if (FollowersError is not null)
+            {
+                <div class="error">@FollowersError</div>
+            }
+            @if (FollowersItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (FollowersItems.Count == 0 && !FollowersHasMore)
+            {
+                <p class="muted">No followers recorded.</p>
+            }
+            else
+            {
+                @if (FollowersItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in FollowersItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (FollowersHasMore)
+                {
+                    <button @onclick="LoadMoreFollowersAsync" disabled="@(FollowersLoadingMore)">Load more</button>
+                    @if (FollowersLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Following</h3>
+            <p class="muted">
+                Actors that <code>@ActorIri.Value</code> follows (their <c>following</c> collection), paged with
+                <c>next</c>-link walking. Each item links to the followed actor's detail.
+            </p>
+            @if (FollowingError is not null)
+            {
+                <div class="error">@FollowingError</div>
+            }
+            @if (FollowingItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (FollowingItems.Count == 0 && !FollowingHasMore)
+            {
+                <p class="muted">Not following anyone.</p>
+            }
+            else
+            {
+                @if (FollowingItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in FollowingItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (FollowingHasMore)
+                {
+                    <button @onclick="LoadMoreFollowingAsync" disabled="@(FollowingLoadingMore)">Load more</button>
+                    @if (FollowingLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+        </div>
+
+        <div class="card">
+            <h3>Raw inspector</h3>
+            <p class="muted">
+                The actor document as served (formatted JSON) — the explicit escape hatch for inspecting
+                the raw ActivityStreams/ActivityPub representation.
+            </p>
+            <button @onclick="() => ShowRaw = !ShowRaw" disabled="@(ActorDoc is null)">
+                @(ShowRaw ? "Hide raw JSON" : "Show raw JSON")
+            </button>
+            @if (ShowRaw && ActorDoc is not null)
+            {
+                <pre class="raw-json">@RawJson</pre>
+            }
+        </div>
+
         @if (Moderation is { } mod)
         {
             <div class="card">
@@ -261,6 +390,21 @@ else
     /// </summary>
     private Iri? _outboxResumeFrom;
 
+    private List<IObjectOrLink>? FollowersItems { get; set; }
+    private bool FollowersHasMore { get; set; }
+    private bool FollowersLoadingMore { get; set; }
+    private string? FollowersError { get; set; }
+    private Iri? _followersResumeFrom;
+
+    private List<IObjectOrLink>? FollowingItems { get; set; }
+    private bool FollowingHasMore { get; set; }
+    private bool FollowingLoadingMore { get; set; }
+    private string? FollowingError { get; set; }
+    private Iri? _followingResumeFrom;
+
+    private bool ShowRaw { get; set; }
+    private string? RawJson { get; set; }
+
     /// <summary>
     /// The <em>target</em> actor's moderation counts (its <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections).
     /// S6: shown alongside the logged-on actor's own moderation so the user can tell the two apart.
@@ -334,17 +478,27 @@ else
     {
         Busy = true;
         Error = null;
-        ActorIri = null;
-        ActorDoc = null;
-        OutboxItems = null;
-        OutboxHasMore = false;
-        OutboxError = null;
-        _outboxResumeFrom = null;
-        Moderation = null;
-        MyModeration = null;
-        Relays = null;
-        RelayResult = null;
-        RelayError = null;
+            ActorIri = null;
+            ActorDoc = null;
+            OutboxItems = null;
+            OutboxHasMore = false;
+            OutboxError = null;
+            _outboxResumeFrom = null;
+            FollowersItems = null;
+            FollowersHasMore = false;
+            FollowersError = null;
+            _followersResumeFrom = null;
+            FollowingItems = null;
+            FollowingHasMore = false;
+            FollowingError = null;
+            _followingResumeFrom = null;
+            ShowRaw = false;
+            RawJson = null;
+            Moderation = null;
+            MyModeration = null;
+            Relays = null;
+            RelayResult = null;
+            RelayError = null;
         try
         {
             ActorIri = actorIri;
@@ -367,6 +521,15 @@ else
             // 20.3: load the outbox paged (first page only) — the "Load more" button walks `next` links
             // for the rest. Mirrors Feed.razor's paged idiom (GetCollectionAsync + CollectionQuery(Limit)).
             await LoadInitialOutboxAsync(actorIri);
+
+            // 19.8.3: load followers + following paged (first page only).
+            await LoadInitialFollowersAsync(actorIri);
+            await LoadInitialFollowingAsync(actorIri);
+
+            // Raw inspector: serialize the actor document to formatted JSON.
+            RawJson = System.Text.Json.JsonSerializer.Serialize(
+                actor,
+                new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
 
             Moderation = (
                 await CountAsync(client.GetMutesAsync(actorIri)),
@@ -512,6 +675,168 @@ else
             _outboxResumeFrom = page.NextPage;
             break;
         }
+    }
+
+    /// <summary>
+    /// Loads the first page of the actor's followers collection (19.8.3). Mirrors the outbox paged idiom.
+    /// </summary>
+    private async Task LoadInitialFollowersAsync(Iri actorIri)
+    {
+        FollowersItems = [];
+        FollowersHasMore = false;
+        FollowersError = null;
+        _followersResumeFrom = null;
+        try
+        {
+            await EnumerateOneFollowersPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            FollowersError = ex.Message;
+        }
+    }
+
+    private async Task LoadMoreFollowersAsync()
+    {
+        if (FollowersLoadingMore || !FollowersHasMore || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        FollowersLoadingMore = true;
+        FollowersError = null;
+        try
+        {
+            await EnumerateOneFollowersPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            FollowersError = ex.Message;
+        }
+        finally
+        {
+            FollowersLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneFollowersPageAsync(Iri actorIri)
+    {
+        var client = Session.GetClient();
+        if (_followersResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                FollowersItems ??= [];
+                FollowersItems.AddRange(page.Items);
+                FollowersHasMore = !page.IsLastPage;
+                _followersResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(actorIri.FollowersOf(), null, CancellationToken.None))
+        {
+            FollowersItems ??= [];
+            FollowersItems.AddRange(page.Items);
+            FollowersHasMore = !page.IsLastPage;
+            _followersResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    /// <summary>
+    /// Loads the first page of the actor's following collection (19.8.3). Mirrors the outbox paged idiom.
+    /// </summary>
+    private async Task LoadInitialFollowingAsync(Iri actorIri)
+    {
+        FollowingItems = [];
+        FollowingHasMore = false;
+        FollowingError = null;
+        _followingResumeFrom = null;
+        try
+        {
+            await EnumerateOneFollowingPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            FollowingError = ex.Message;
+        }
+    }
+
+    private async Task LoadMoreFollowingAsync()
+    {
+        if (FollowingLoadingMore || !FollowingHasMore || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        FollowingLoadingMore = true;
+        FollowingError = null;
+        try
+        {
+            await EnumerateOneFollowingPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            FollowingError = ex.Message;
+        }
+        finally
+        {
+            FollowingLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneFollowingPageAsync(Iri actorIri)
+    {
+        var client = Session.GetClient();
+        if (_followingResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                FollowingItems ??= [];
+                FollowingItems.AddRange(page.Items);
+                FollowingHasMore = !page.IsLastPage;
+                _followingResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(actorIri.FollowingOf(), null, CancellationToken.None))
+        {
+            FollowingItems ??= [];
+            FollowingItems.AddRange(page.Items);
+            FollowingHasMore = !page.IsLastPage;
+            _followingResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    /// <summary>
+    /// A short display for an actor IRI: the path's last segment (the username) when it looks like an
+    /// actor IRI, else the raw IRI.
+    /// </summary>
+    private static string HandleOf(IObject obj)
+    {
+        if (obj is Actor { PreferredUsername: { Length: > 0 } username })
+        {
+            return username;
+        }
+
+        return obj.Id ?? obj.GetType().Name;
+    }
+
+    /// <summary>
+    /// A short display for an actor IRI string: the path's last segment (the username) when it looks
+    /// like an actor IRI (<c>…/u/{username}</c>), else the raw IRI.
+    /// </summary>
+    private static string HandleOf(string iri)
+    {
+        var idx = iri.LastIndexOf('/');
+        return idx >= 0 && idx < iri.Length - 1 ? iri[(idx + 1)..] : iri;
     }
 
     private async Task AcceptFollowAsync(Iri followIri)
