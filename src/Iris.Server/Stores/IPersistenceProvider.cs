@@ -70,4 +70,10 @@ public interface IPersistenceProvider
     /// The key store for the local instance's signing keys.
     /// </summary>
     public IKeyStore Keys { get; }
+
+    /// <summary>
+    /// The media store (Phase 20.4 (a)): uploaded media (a note's attachment) and the same-origin media
+    /// IRI an object's attachment references.
+    /// </summary>
+    public IMediaStore Media { get; }
 }

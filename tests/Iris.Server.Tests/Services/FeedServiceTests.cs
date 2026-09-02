@@ -678,6 +678,9 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId,
             Iri parentIri,

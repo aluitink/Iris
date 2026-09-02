@@ -80,6 +80,16 @@
                     <a href="@attachment" title="@attachment" class="object-iri">@attachment</a>
                 </div>
             }
+            @foreach (var media in MediaAttachments)
+            {
+                <div class="object-media">
+                    <img src="@media.Url" alt="@media.Name" loading="lazy" />
+                    @if (string.IsNullOrWhiteSpace(media.Name) is false)
+                    {
+                        <div class="object-media-name" title="@media.Name">@media.Name</div>
+                    }
+                </div>
+            }
         </div>
     }
     else if (Item is ILink { Href: { } linkHref })
@@ -162,6 +172,19 @@
     /// Uses <see cref="IriExtensions.GetAttachmentIris"/>.
     /// </summary>
     private IReadOnlyList<Iri> AttachmentIris => Obj?.GetAttachmentIris() ?? [];
+
+    /// <summary>
+    /// The object's media attachments (embedded <see cref="Image"/> entries with a resolvable media IRI),
+    /// when present — rendered as <c>&lt;img&gt;</c> (Phase 20.4 (a)). Each attachment's media IRI is the
+    /// same-origin <c>/ap/v1/media/{id}</c> path the instance minted on upload (so the browser loads it
+    /// from the same origin, never a cross-origin media host — Decision 056 (b)); the <c>alt</c> is the
+    /// file's name. Uses <see cref="IriExtensions.GetMediaAttachments"/>.
+    /// </summary>
+    private IReadOnlyList<MediaAttachment> MediaAttachments
+        => (Obj?.GetMediaAttachments() ?? []).Select(m => new MediaAttachment(m.Iri.Value, m.Name)).ToList();
+
+    /// <summary>A rendered media attachment (a same-origin media IRI to <c>&lt;img&gt;</c> + its file name).</summary>
+    private sealed record MediaAttachment(string Url, string? Name);
 
     /// <summary>
     /// Whether the viewer has revealed a sensitive object's content. Per-instance UI state: a

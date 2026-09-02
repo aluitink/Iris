@@ -12,7 +12,8 @@ namespace Iris.Client.Extensions.Tests;
 /// <summary>
 /// Phase 11 Slice 11.5 end-to-end test (gap J-6 — the client's "post a note" API): a real
 /// <see cref="TestServer"/> runs the Iris ActivityPub server. A local actor authenticates (Basic auth →
-/// PEM private key), then — using the client's one-call <see cref="IActivityPubClient.PostNoteAsync"/>
+/// PEM private key), then — using the client's one-call
+/// <see cref="IActivityPubClient.PostNoteAsync(Iri, string, IEnumerable{Iri}?, CancellationToken)"/>
 /// — posts a note. The request is signed through the full pipeline and accepted by the server's inbox
 /// (signature-validated and stored). This proves the post step — the headline write-path dead-end — is
 /// reachable through the client as a user would drive it.

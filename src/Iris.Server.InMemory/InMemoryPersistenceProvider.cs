@@ -23,6 +23,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryCreateIndex _creates;
     private readonly InMemoryCommunityStore _communities;
     private readonly IKeyStore _keys;
+    private readonly IMediaStore _media;
 
     /// <summary>
     /// Initializes a new provider with fresh in-memory stores and a fresh in-memory key store.
@@ -31,7 +32,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         : this(new InMemoryActorStore(), new InMemoryActivityStore(), new InMemoryFollowStore(),
             new InMemoryLikeStore(), new InMemoryReplyStore(), new InMemoryModerationStore(),
             new InMemoryRelayStore(), new InMemoryObjectStore(), new InMemoryCreateIndex(),
-            new InMemoryCommunityStore(), new InMemoryKeyStore())
+            new InMemoryCommunityStore(), new InMemoryKeyStore(), new InMemoryMediaStore())
     {
     }
 
@@ -48,7 +49,8 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="objects">The object store.</param>
     /// <param name="creates">The object → Create index (decision 055).</param>
     /// <param name="communities">The community store.</param>
-    /// <param name="keys">The key store. Must not be null.</param>
+    /// <param name="keys">The key store.</param>
+    /// <param name="media">The media store (Phase 20.4 (a)).</param>
     public InMemoryPersistenceProvider(
         InMemoryActorStore actors,
         InMemoryActivityStore activities,
@@ -60,7 +62,8 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryObjectStore objects,
         InMemoryCreateIndex creates,
         InMemoryCommunityStore communities,
-        IKeyStore keys)
+        IKeyStore keys,
+        IMediaStore media)
     {
         _actors = actors ?? throw new ArgumentNullException(nameof(actors));
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
@@ -73,6 +76,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _creates = creates ?? throw new ArgumentNullException(nameof(creates));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
+        _media = media ?? throw new ArgumentNullException(nameof(media));
     }
 
     /// <inheritdoc/>
@@ -107,6 +111,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public IKeyStore Keys => _keys;
+
+    /// <inheritdoc/>
+    public IMediaStore Media => _media;
 
     /// <summary>
     /// The concrete in-memory actor store (for seeding/tests).

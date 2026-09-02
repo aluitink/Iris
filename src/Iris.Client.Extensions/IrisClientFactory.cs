@@ -112,4 +112,29 @@ public sealed class IrisClientFactory
 
         return _clientFactory.CreateLocalModerationClient(options, transport ?? new HttpClientHandler());
     }
+
+    /// <summary>
+    /// Creates a new <see cref="IMediaClient"/> — the client for uploading a note's media attachment
+    /// (Phase 20.4 (a)): a local, Basic-authenticated multipart POST to the acting actor's own instance.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor the media upload acts for.</param>
+    /// <param name="transport">
+    /// The innermost transport handler (e.g. an <c>HttpClientHandler</c>). Not owned by the returned
+    /// client. May be <see langword="null"/> to use the platform default.
+    /// </param>
+    /// <returns>
+    /// A media client. When <see cref="IrisClientOptions.LocalModeration"/> is enabled (and
+    /// <see cref="IrisClientOptions.ProxyCredentials"/> is set) its no-credential overload uses those
+    /// credentials; otherwise only the explicit-credential overload works.
+    /// </returns>
+    public IMediaClient CreateMediaClient(Iri actorId, HttpMessageHandler? transport = null)
+    {
+        var options = new ActivityPubClientOptions
+        {
+            ActorId = actorId,
+            LocalCredentials = _options.LocalModeration ? _options.ProxyCredentials : null,
+        };
+
+        return _clientFactory.CreateMediaClient(options, transport ?? new HttpClientHandler());
+    }
 }

@@ -254,6 +254,51 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Resolves the media attachments of an object: its embedded <see cref="Image"/> entries that carry a
+    /// resolvable media IRI (Phase 20.4 (a)). Each entry is the media IRI (the same-origin
+    /// <c>/ap/v1/media/{id}</c> path minted on upload) and the attachment's file name (the image's
+    /// <c>name</c>), for an <c>&lt;img&gt;</c> (<c>src</c> + <c>alt</c>).
+    /// </summary>
+    /// <remarks>
+    /// Only <see cref="Image"/> attachments with a resolvable media IRI are returned (a plain
+    /// <see cref="Link"/> attachment has no media body to render as an image, and an <see cref="Image"/>
+    /// without a <c>url</c>/<c>id</c> is skipped). Returns an empty list when the object has no renderable
+    /// media attachments. This is the single boundary read that lets a renderer surface a note's media
+    /// without reaching into the 3rd-party ActivityStreams types.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>attachment</c> is read. May be null.</param>
+    /// <returns>The media attachments (IRI + file name, in <c>attachment</c> order); possibly empty.</returns>
+    public static IReadOnlyList<(Iri Iri, string? Name)> GetMediaAttachments(this IObject? obj)
+    {
+        var attachments = obj?.Attachment;
+        if (attachments is null)
+        {
+            return [];
+        }
+
+        var list = new List<(Iri Iri, string? Name)>();
+        foreach (var attachment in attachments)
+        {
+            if (attachment is not Image image)
+            {
+                continue;
+            }
+
+            var iri = image.Id is { Length: > 0 } id
+                ? new Iri(id)
+                : ResolveAttachmentImageIri(image);
+            if (iri is not { } resolvedIri)
+            {
+                continue;
+            }
+
+            list.Add((resolvedIri, image.Name?.FirstOrDefault()));
+        }
+
+        return list;
+    }
+
+    /// <summary>
     /// Resolves the audience IRIs of an object: the union of its <c>to</c> and <c>cc</c> entries,
     /// de-duplicated, in first-seen order (19.8.2 rendered object view quality).
     /// </summary>

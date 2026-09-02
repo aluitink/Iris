@@ -13,7 +13,9 @@ namespace Iris.Client.Extensions.Tests;
 /// <summary>
 /// Phase 11 Slice 11.6 end-to-end test (gap J-6 — the server half of "post a note", J-8): a real
 /// <see cref="TestServer"/> runs the Iris ActivityPub server. A local actor posts a note through the
-/// client's one-call <see cref="IActivityPubClient.PostNoteAsync"/> (a signed <see cref="KristofferStrube.ActivityStreams.Create"/>
+/// client's one-call
+/// <see cref="IActivityPubClient.PostNoteAsync(Iri, string, IEnumerable{Iri}?, CancellationToken)"/>
+/// (a signed <see cref="KristofferStrube.ActivityStreams.Create"/>
 /// delivered to the author's own inbox). The server's <see cref="CreateActivityHandler"/> records the
 /// <see cref="KristofferStrube.ActivityStreams.Create"/> in the author's outbox, so the post is
 /// <em>surfaced</em> — reading the author's outbox collection endpoint over HTTP returns the post. This

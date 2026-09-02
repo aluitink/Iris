@@ -547,6 +547,14 @@ public static class ActivityPubServerExtensions
         // health probe must reach it without an ActivityPub signature.
         group.MapGet($"/{ActivityPubServerConstants.HealthRouteSegment}", HealthHandler);
 
+        // Media serve (Phase 20.4 (a)): GET /ap/v1/media/{id} — serves a stored note attachment (an image
+        // or document) by its same-origin media IRI. Public (the browser's <img>/<a> loads it), and
+        // long-cacheable (the media is immutable per id; the id is a minted, unguessable GUID). The
+        // uploader got this IRI from the upload write (POST /local/v1/u/{handle}/media) and set it as the
+        // attachment's url on the note it authored.
+        group.MapGet($"/{Iris.Client.MediaConstants.ServeSegment}/{{id}}", MediaServeHandler)
+            .WithName("media-serve-endpoint");
+
         // Inbox: POST /ap/v1/u/{handle}/inbox — receives federation activities (Follow, Accept,
         // Create, ...) that a REMOTE peer delivers TO this actor. Requires a valid HTTP signature
         // (validated by SignatureValidationMiddleware); unsigned or invalidly-signed requests are
@@ -814,6 +822,15 @@ public static class ActivityPubServerExtensions
         // the credential seam (IActorCredentialValidator). {target} is a catch-all of the absolute IRI
         // of the actor being muted.
         localGroup.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
+
+        // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
+        // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
+        // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
+        // attachment's url. Not an ActivityStreams activity (a local, non-federated write), so it is on
+        // the non-AP /local/v1 tree, not /ap/v1.
+        localGroup
+            .MapPost($"/u/{{handle}}/{Iris.Client.MediaConstants.UploadSegment}", LocalMediaUploadHandler)
+            .WithName("local-media-upload-endpoint");
 
         return endpoints;
     }
@@ -1168,6 +1185,125 @@ public static class ActivityPubServerExtensions
 
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// Handles a media upload (Phase 20.4 (a)): <c>POST /local/v1/u/{handle}/media</c>. The requesting
+    /// actor (identified by Basic auth via <see cref="IActorCredentialValidator"/>) POSTs a note's
+    /// attachment (an image or document) as a multipart file. The server stores the bytes in the media
+    /// store and returns <c>201 Created</c> with a JSON body carrying the same-origin media IRI (which
+    /// the uploader sets as the attachment's <c>url</c>), the content-type, and the file name.
+    /// </summary>
+    /// <remarks>
+    /// A media upload is not an ActivityStreams activity (it is a local, non-federated write), so it is
+    /// on the non-AP <c>/local/v1</c> tree and is Basic-authenticated (not signed). An unknown actor is
+    /// <c>404</c>; an unauthenticated / non-owner request is <c>401</c>; a missing or non-multipart body
+    /// is <c>400</c>; an oversized upload is <c>413</c>.
+    /// </remarks>
+    private static async Task<IResult> LocalMediaUploadHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. The actor must exist (404 when unknown) and the requester must be the owner (Basic auth).
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Read the uploaded file from the multipart form. The file is the single required part (named
+        // "file"); its content-type + file name are carried by the part.
+        IFormFile? file;
+        try
+        {
+            var form = await context.Request.ReadFormAsync(ct).ConfigureAwait(false);
+            file = form.Files.Count > 0 ? form.Files[0] : null;
+        }
+        catch (BadHttpRequestException)
+        {
+            return Results.BadRequest();
+        }
+
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Enforce a size cap (a media attachment must not be unbounded).
+        if (file.Length > MaxMediaUploadBytes)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        // 4. Store the bytes + metadata; the store mints the same-origin media IRI.
+        await using var buffer = new MemoryStream();
+        await file.CopyToAsync(buffer, ct).ConfigureAwait(false);
+        var bytes = buffer.ToArray();
+        var contentType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType;
+        var fileName = string.IsNullOrWhiteSpace(file.FileName) ? string.Empty : file.FileName;
+        var mediaIri = await persistence.Media.PutAsync(bytes, contentType, fileName, new Iri(baseUrl), ct).ConfigureAwait(false);
+
+        // 5. Return 201 with the media IRI + content-type + file name (the uploader sets the IRI as the
+        // attachment's url and the content-type/file name as the Image's mediaType/name).
+        return Results.Created(
+            mediaIri.Value,
+            new { id = mediaIri.Value, type = contentType, name = fileName });
+    }
+
+    /// <summary>
+    /// Serves a stored note attachment (Phase 20.4 (a)): <c>GET /ap/v1/media/{id}</c>. Public (the
+    /// browser's <c>&lt;img&gt;</c>/<c>&lt;a&gt;</c> loads it) and long-cacheable (the media is immutable
+    /// per id; the id is a minted, unguessable GUID). Returns the stored bytes with the recorded
+    /// <c>Content-Type</c> and a long <c>Cache-Control</c>; <c>404</c> when the media is unknown.
+    /// </summary>
+    private static async Task<IResult> MediaServeHandler(
+        string id,
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var mediaIri = new Iri($"{baseUrl.TrimEnd('/')}/ap/v1/media/{id}");
+
+        if (!await persistence.Media.TryGetAsync(
+                mediaIri, out var bytes, out var contentType, out var fileName, ct)
+            .ConfigureAwait(false)
+            || bytes is null
+            || contentType is null)
+        {
+            return Results.NotFound();
+        }
+
+        // The media is immutable per id (a minted, unguessable GUID); cache it aggressively (the browser
+        // should not re-fetch a stable attachment). A long max-age with no revalidation. The content-type
+        // is the recorded media type (the <img>/<a> renders/downloads it accordingly).
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = "max-age=31536000, immutable";
+        return Results.File(bytes, contentType);
+    }
+
+    /// <summary>
+    /// The maximum size (in bytes) of a single media upload (Phase 20.4 (a)).
+    /// </summary>
+    private const long MaxMediaUploadBytes = 10L * 1024 * 1024; // 10 MiB
 
     /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient

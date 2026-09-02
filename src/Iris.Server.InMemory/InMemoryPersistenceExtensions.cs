@@ -36,6 +36,7 @@ public static class InMemoryPersistenceExtensions
         services.TryAddSingleton<InMemoryObjectStore>();
         services.TryAddSingleton<InMemoryCreateIndex>();
         services.TryAddSingleton<InMemoryCommunityStore>();
+        services.TryAddSingleton<InMemoryMediaStore>();
 
         // Ensure a key store is registered (the local actor's signing keys).
         services.TryAddSingleton<IKeyStore, InMemoryKeyStore>();
@@ -52,7 +53,8 @@ public static class InMemoryPersistenceExtensions
             sp.GetRequiredService<InMemoryObjectStore>(),
             sp.GetRequiredService<InMemoryCreateIndex>(),
             sp.GetRequiredService<InMemoryCommunityStore>(),
-            sp.GetRequiredService<IKeyStore>()));
+            sp.GetRequiredService<IKeyStore>(),
+            sp.GetRequiredService<InMemoryMediaStore>()));
 
         return services;
     }

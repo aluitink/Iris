@@ -250,6 +250,14 @@ public sealed class IrisClientFactoryTests
             // the options it was asked to build with).
             return new LocalModerationClient(null);
         }
+
+        public IMediaClient CreateMediaClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+        {
+            Seen.Add(options);
+            // No default local-auth handler is needed for the factory-contract test (it only records
+            // the options it was asked to build with).
+            return new MediaClient(null);
+        }
     }
 
     private sealed class FakeAuthenticator : IClientAuthenticator

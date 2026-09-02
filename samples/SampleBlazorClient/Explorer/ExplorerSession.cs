@@ -412,6 +412,23 @@ public sealed class ExplorerSession : IDisposable
     }
 
     /// <summary>
+    /// Gets the local, Basic-authenticated media client for the currently logged-on actor (uploading a
+    /// note's media attachment, Phase 20.4 (a) — not an AP activity). Created on first call and reused.
+    /// Throws when not logged on.
+    /// </summary>
+    /// <returns>A media client.</returns>
+    /// <exception cref="InvalidOperationException">When the session is not logged on.</exception>
+    public IMediaClient GetMediaClient()
+    {
+        if (_service is null)
+        {
+            throw new InvalidOperationException("Not logged on to an instance.");
+        }
+
+        return _service.GetMediaClient();
+    }
+
+    /// <summary>
     /// Gets the current bundle's discovery service (for resolving an <c>@user@host</c> account to an
     /// actor IRI via WebFinger), or <see langword="null"/> when not logged on.
     /// </summary>

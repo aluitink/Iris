@@ -34,6 +34,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     private readonly ICreateIndex _creates;
     private readonly ICommunityStore _communities;
     private readonly IKeyStore _keys;
+    private readonly IMediaStore _media;
 
     /// <summary>
     /// Initializes a new file-backed provider with one JSON file per store under
@@ -57,6 +58,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _creates = new FileBackedCreateIndex(Path.Combine(directory, "creates.json"));
         _communities = new FileBackedCommunityStore(Path.Combine(directory, "communities.json"));
         _keys = new FileBackedKeyStore(Path.Combine(directory, "keys.json"));
+        _media = new FileBackedMediaStore(Path.Combine(directory, "media.json"));
     }
 
     /// <summary>
@@ -73,7 +75,8 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     /// <param name="objects">The object store.</param>
     /// <param name="creates">The object → Create index (decision 055).</param>
     /// <param name="communities">The community store.</param>
-    /// <param name="keys">The key store. Must not be null.</param>
+    /// <param name="keys">The key store.</param>
+    /// <param name="media">The media store (Phase 20.4 (a)).</param>
     public FileBackedPersistenceProvider(
         IActorStore actors,
         IActivityStore activities,
@@ -85,7 +88,8 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         IObjectStore objects,
         ICreateIndex creates,
         ICommunityStore communities,
-        IKeyStore keys)
+        IKeyStore keys,
+        IMediaStore media)
     {
         _actors = actors ?? throw new ArgumentNullException(nameof(actors));
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
@@ -98,6 +102,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _creates = creates ?? throw new ArgumentNullException(nameof(creates));
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
+        _media = media ?? throw new ArgumentNullException(nameof(media));
     }
 
     /// <inheritdoc/>
@@ -133,6 +138,9 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     /// <inheritdoc/>
     public IKeyStore Keys => _keys;
 
+    /// <inheritdoc/>
+    public IMediaStore Media => _media;
+
     /// <summary>
     /// Releases the file locks of the underlying stores. The per-store files on disk are left in place
     /// (the data is durable); this only frees the <see cref="FilePersistence"/> locks that serialize
@@ -150,6 +158,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         DisposeIf(_objects);
         DisposeIf(_communities);
         DisposeIf(_keys);
+        DisposeIf(_media);
     }
 
     private static void DisposeIf(object store)

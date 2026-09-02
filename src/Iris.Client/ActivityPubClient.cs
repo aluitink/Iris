@@ -678,9 +678,17 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             }
         }
 
+        return PostNoteAsync(actorId, note, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+
         // The constructor sets Type = "Create"; the embedded Note sets Type = "Note". The Create's
         // object is the embedded note (a full object, not a link) so the receiver stores the content
-        // without a second fetch.
+        // (and its attachments) without a second fetch.
         var create = new Create
         {
             Actor = [new Link { Href = actorId.Uri }],

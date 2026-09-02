@@ -383,6 +383,9 @@ public sealed class RecreationStabilityIntegrationTests : IDisposable
 
         public ILocalModerationClient CreateLocalModerationClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
             => new LocalModerationClient(null);
+
+        public IMediaClient CreateMediaClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+            => new MediaClient(null);
     }
 
     /// <summary>

@@ -107,4 +107,23 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
 
         return new LocalModerationClient(localAuth);
     }
+
+    /// <inheritdoc/>
+    public IMediaClient CreateMediaClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(httpHandler);
+
+        // Media upload (Phase 20.4 (a)): when the home instance's Basic-auth credentials are configured,
+        // the client can upload a note's attachment (a file is not a signed inbox delivery — it is a
+        // Basic-authenticated multipart POST to the actor's own instance). The local-auth handler is a
+        // separate, unsigned pipeline (it must not go through the SigningHandler, which would throw for a
+        // request it cannot sign). With no LocalCredentials the client is built without a default handler
+        // — only the explicit-credential overload works.
+        var localAuth = options.LocalCredentials is { } localCreds
+            ? new LocalAuthHandler(localCreds, httpHandler)
+            : null;
+
+        return new MediaClient(localAuth);
+    }
 }

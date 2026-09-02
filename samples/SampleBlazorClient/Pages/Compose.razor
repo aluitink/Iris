@@ -1,5 +1,6 @@
 @page "/compose"
 @using Iris.Client
+@using KristofferStrube.ActivityStreams
 
 <PageTitle>Compose · Iris</PageTitle>
 
@@ -24,6 +25,13 @@ else
             Who the note is addressed to (<c>to</c>). <code>Public</code> addresses the public collection;
             leave empty for the default (unaddressed) audience.
         </p>
+
+        <label>Attachment (optional — image; uploaded to the instance and attached)</label>
+        <InputFile id="attachment" OnChange="OnAttachmentChosen" accept="image/*" />
+        @if (MediaStatus is not null)
+        {
+            <p class="muted">@MediaStatus</p>
+        }
 
         <details>
             <summary>Reply to…</summary>
@@ -61,6 +69,27 @@ else
     private DeliveryResult? Result { get; set; }
     private string? Error { get; set; }
 
+    // Phase 20.4 (a) media: the chosen attachment (a WASM IBrowserFile, held until posted) and the
+    // upload result (the same-origin media IRI to set as the Image attachment's url). A null upload means
+    // "not yet uploaded".
+    private IBrowserFile? Attachment { get; set; }
+    private MediaUploadResult? Media { get; set; }
+    private string? MediaStatus { get; set; }
+
+    /// <summary>The maximum attachment size accepted (10 MiB — matches the server's upload cap).</summary>
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// Records the chosen attachment (a WASM <see cref="IBrowserFile"/>, read lazily at post time) and
+    /// clears any previous upload. A no-op when nothing is chosen.
+    /// </summary>
+    private void OnAttachmentChosen(InputFileChangeEventArgs e)
+    {
+        Attachment = e.File;
+        Media = null;
+        MediaStatus = Attachment is null ? null : $"Selected {Attachment.Name} ({Attachment.Size} bytes) — will upload on post.";
+    }
+
     private async Task PostAsync()
     {
         if (!Session.IsLoggedIn)
@@ -76,9 +105,61 @@ else
         {
             var client = Session.GetClient();
             var to = ParseAudience();
-            Result = string.IsNullOrWhiteSpace(ParentIri)
-                ? await client.PostNoteAsync(actorIri, Content, to)
-                : await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions(), to);
+            if (string.IsNullOrWhiteSpace(ParentIri))
+            {
+                // A top-level note: when an attachment was chosen, upload it first (a local,
+                // Basic-authenticated multipart POST — not a signed inbox delivery) and build the note with
+                // an Image attachment whose url is the returned same-origin media IRI (so the browser loads
+                // it from the same origin, never a cross-origin media host — Decision 056 (b)).
+                Note note;
+                if (Attachment is { Size: > 0 } file)
+                {
+                    Media = await Session.GetMediaClient().UploadAsync(
+                        actorIri,
+                        await ReadBytesAsync(file),
+                        file.ContentType ?? "application/octet-stream",
+                        file.Name,
+                        CancellationToken.None);
+                    MediaStatus = $"Uploaded as {Media.MediaIri}.";
+
+                    note = new Note
+                    {
+                        Content = [Content],
+                        AttributedTo = [new Link { Href = actorIri.Uri }],
+                        // The Image's url is the same-origin media IRI (and its id mirrors it, so a reader
+                        // can resolve the media without the url). mediaType + name come from the upload.
+                        Attachment = [new Image
+                        {
+                            Url = [new Link { Href = Media.MediaIri.Uri }],
+                            Id = Media.MediaIri.Value,
+                            MediaType = Media.ContentType,
+                            Name = [Media.FileName],
+                        }],
+                    };
+                }
+                else
+                {
+                    note = new Note
+                    {
+                        Content = [Content],
+                        AttributedTo = [new Link { Href = actorIri.Uri }],
+                    };
+                }
+
+                if (to is not null && to.Count > 0)
+                {
+                    note.To = to.Select(i => new Link { Href = i.Uri }).ToList();
+                }
+
+                Result = await client.PostNoteAsync(actorIri, note);
+            }
+            else
+            {
+                Result = await client.PostReplyAsync(actorIri, new Iri(ParentIri.Trim()), Content, ParseMentions(), to);
+            }
+
+            // A posted note's attachment is consumed (uploaded + referenced); clear the selection.
+            Attachment = null;
         }
         catch (Exception ex)
         {
@@ -88,6 +169,15 @@ else
         {
             Busy = false;
         }
+    }
+
+    /// <summary>Reads a WASM browser file's bytes (capped at <see cref="MaxAttachmentBytes"/>).</summary>
+    private static async Task<byte[]> ReadBytesAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(MaxAttachmentBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 
     private IReadOnlyList<Iri>? ParseMentions()

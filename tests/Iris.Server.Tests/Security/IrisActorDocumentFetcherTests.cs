@@ -194,6 +194,10 @@ public class IrisActorDocumentFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId,
             Iri parentIri,

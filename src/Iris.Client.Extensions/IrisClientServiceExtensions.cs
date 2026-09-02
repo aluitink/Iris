@@ -223,6 +223,18 @@ public sealed class IrisClientBundle : IDisposable
         => ClientFactory.CreateLocalModerationClient(actorId, transport);
 
     /// <summary>
+    /// Builds a pre-configured <see cref="IMediaClient"/> for the given actor (the local,
+    /// Basic-authenticated surface for uploading a note's media attachment, Phase 20.4 (a)).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor the media upload acts for.</param>
+    /// <param name="transport">
+    /// The innermost transport handler. <see langword="null"/> uses the platform default.
+    /// </param>
+    /// <returns>A media client (credentials per <see cref="IrisClientOptions.LocalModeration"/>).</returns>
+    public IMediaClient CreateMediaClient(Iri actorId, HttpMessageHandler? transport = null)
+        => ClientFactory.CreateMediaClient(actorId, transport);
+
+    /// <summary>
     /// Disposes the bundle: logs out the session (removing the key) and disposes the key store.
     /// </summary>
     public void Dispose()

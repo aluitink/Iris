@@ -567,6 +567,22 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> PostNoteAsync(Iri actorId, string content, IEnumerable<Iri>? to = null, CancellationToken ct = default);
 
     /// <summary>
+    /// Posts a fully-built note as <paramref name="actorId"/>: wraps the caller-supplied
+    /// <paramref name="note"/> (which may carry attachments, e.g. an <see cref="KristofferStrube.ActivityStreams.Image"/>
+    /// whose <c>url</c> is a same-origin media IRI from an <see cref="IMediaClient"/> upload, Phase 20.4 (a))
+    /// in a <see cref="Create"/> and publishes it through the signed pipeline to the actor's own outbox.
+    /// This is the overload for a note whose shape the caller has already assembled (content plus any
+    /// attachments); the simpler string overload builds a bare note.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor authoring the note (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="note">The note to post (its <c>attributedTo</c> should be the author; its
+    /// <c>attachment</c> may carry media whose <c>url</c> is a same-origin media IRI).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> PostNoteAsync(Iri actorId, KristofferStrube.ActivityStreams.Note note, CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
     /// builds a <see cref="Create"/> carrying an embedded <see cref="Note"/> whose <c>inReplyTo</c> is
     /// the parent note and whose <c>tag</c> carries an <see cref="Mention"/> per <c>@mention</c> in
@@ -589,7 +605,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
-    /// Mirrors <see cref="PostNoteAsync"/> but sets <c>inReplyTo</c> (the parent) and, when
+    /// Mirrors <c>PostNoteAsync</c> but sets <c>inReplyTo</c> (the parent) and, when
     /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
     /// receiving server's <c>Create</c> handler records the parent → child reply edge (via the note's
     /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The

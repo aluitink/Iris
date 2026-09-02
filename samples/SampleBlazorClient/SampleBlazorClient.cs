@@ -224,6 +224,7 @@ public sealed class ClientService : IDisposable
     private readonly Func<HttpMessageHandler> _transportFactory;
     private IActivityPubClient? _client;
     private ILocalModerationClient? _localModerationClient;
+    private IMediaClient? _mediaClient;
     private readonly Iri _actorIri;
 
     /// <summary>
@@ -300,6 +301,22 @@ public sealed class ClientService : IDisposable
 
         _localModerationClient = _bundle.CreateLocalModerationClient(_actorIri, _transportFactory());
         return _localModerationClient;
+    }
+
+    /// <summary>
+    /// Gets the local, Basic-authenticated media client for the configured actor (uploading a note's
+    /// media attachment, Phase 20.4 (a) — not an AP activity). Created on first call and reused thereafter.
+    /// </summary>
+    /// <returns>A media client.</returns>
+    public IMediaClient GetMediaClient()
+    {
+        if (_mediaClient is not null)
+        {
+            return _mediaClient;
+        }
+
+        _mediaClient = _bundle.CreateMediaClient(_actorIri, _transportFactory());
+        return _mediaClient;
     }
 
     /// <summary>
