@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 
@@ -450,5 +451,116 @@ public class IriExtensionsTests
     public void IsPublicAudience_DetectsTheWellKnownPublicIri(string value, bool expected)
     {
         Assert.Equal(expected, new Iri(value).IsPublicAudience());
+    }
+
+    [Fact]
+    public void IsSensitive_SensitiveTrue_ReturnsTrue()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Content = ["<p>secret</p>"],
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["sensitive"] = JsonDocument.Parse("true").RootElement.Clone(),
+        };
+
+        Assert.True(note.IsSensitive());
+    }
+
+    [Fact]
+    public void IsSensitive_SensitiveFalse_ReturnsFalse()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["sensitive"] = JsonDocument.Parse("false").RootElement.Clone(),
+        };
+
+        Assert.False(note.IsSensitive());
+    }
+
+    [Fact]
+    public void IsSensitive_NoSensitiveTerm_ReturnsFalse()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.False(note.IsSensitive());
+    }
+
+    [Fact]
+    public void IsSensitive_NonBooleanSensitiveTerm_ReturnsFalse()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["sensitive"] = JsonDocument.Parse("\"maybe\"").RootElement.Clone(),
+        };
+
+        Assert.False(note.IsSensitive());
+    }
+
+    [Fact]
+    public void IsSensitive_Null_ReturnsFalse()
+    {
+        IObject? none = null;
+
+        Assert.False(none.IsSensitive());
+    }
+
+    [Fact]
+    public void GetSummary_SingleSummary_ReturnsIt()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Summary = ["A secret photo"],
+        };
+
+        Assert.Equal("A secret photo", note.GetSummary());
+    }
+
+    [Fact]
+    public void GetSummary_MultipleSummaries_JoinsWithSpace()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Summary = ["Part one", "Part two"],
+        };
+
+        Assert.Equal("Part one Part two", note.GetSummary());
+    }
+
+    [Fact]
+    public void GetSummary_NoSummary_ReturnsNull()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Null(note.GetSummary());
+    }
+
+    [Fact]
+    public void GetSummary_OnlyBlankSummaries_ReturnsNull()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Summary = ["", "   "],
+        };
+
+        Assert.Null(note.GetSummary());
+    }
+
+    [Fact]
+    public void GetSummary_Null_ReturnsNull()
+    {
+        IObject? none = null;
+
+        Assert.Null(none.GetSummary());
     }
 }

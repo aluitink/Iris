@@ -24,7 +24,29 @@
             <a href="@ObjectHref(new Iri(id))" title="@id" class="object-iri">@id</a>
             @if (JoinStrings(obj.Content) is { Length: > 0 } content)
             {
-                <div class="object-content">@content</div>
+                @if (IsSensitive)
+                {
+                    <div class="object-sensitive">
+                        <div class="object-sensitive-notice">
+                            @if (Summary is { Length: > 0 } summary)
+                            {
+                                <span class="object-sensitive-summary">@summary</span>
+                            }
+                            <span class="object-sensitive-label">This content may be sensitive.</span>
+                            <button type="button" class="object-sensitive-reveal" @onclick="() => Revealed = !Revealed">
+                                @(Revealed ? "Hide" : "Show")
+                            </button>
+                        </div>
+                        @if (Revealed)
+                        {
+                            <div class="object-content">@content</div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="object-content">@content</div>
+                }
             }
             @foreach (var audience in AudienceIris)
             {
@@ -114,10 +136,31 @@
     private DateTime? Published => Obj?.Published;
 
     /// <summary>
+    /// Whether the object is content-sensitive — when true the content renders behind a notice and
+    /// is not shown until the viewer reveals it (20.4). Uses
+    /// <see cref="IriExtensions.IsSensitive"/>.
+    /// </summary>
+    private bool IsSensitive => Obj?.IsSensitive() ?? false;
+
+    /// <summary>
+    /// The object's <c>summary</c> (the sensitivity preview / warning), when present — shown in the
+    /// notice in place of a sensitive object's content (20.4). Uses
+    /// <see cref="IriExtensions.GetSummary"/>.
+    /// </summary>
+    private string? Summary => Obj?.GetSummary();
+
+    /// <summary>
     /// The attachment IRIs, when present — rendered as links (S2).
     /// Uses <see cref="IriExtensions.GetAttachmentIris"/>.
     /// </summary>
     private IReadOnlyList<Iri> AttachmentIris => Obj?.GetAttachmentIris() ?? [];
+
+    /// <summary>
+    /// Whether the viewer has revealed a sensitive object's content. Per-instance UI state: a
+    /// sensitive object's real content is not rendered (nor present in the DOM) until this flips to
+    /// <c>true</c> via the reveal button (20.4).
+    /// </summary>
+    private bool Revealed;
 
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);

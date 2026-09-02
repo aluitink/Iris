@@ -214,6 +214,47 @@ ul.object-list li {
     font-size: 0.9rem;
 }
 
+.object-sensitive {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.object-sensitive-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #3a4658;
+    border-radius: 0.3rem;
+    background: #1c2430;
+    font-size: 0.85rem;
+}
+
+.object-sensitive-summary {
+    color: #e6e9ef;
+}
+
+.object-sensitive-label {
+    color: #9aa4b2;
+}
+
+.object-sensitive-reveal {
+    margin-left: auto;
+    padding: 0.15rem 0.6rem;
+    border: 1px solid #3a4658;
+    border-radius: 0.3rem;
+    background: #232d3b;
+    color: #8fd3a7;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.object-sensitive-reveal:hover {
+    background: #2b3748;
+}
+
 .muted {
     color: #9aa4b2;
     font-size: 0.85rem;

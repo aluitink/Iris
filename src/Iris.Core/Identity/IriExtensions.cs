@@ -1,3 +1,4 @@
+using System.Text.Json;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Core.Identity;
@@ -292,6 +293,51 @@ public static class IriExtensions
         Add(obj?.To);
         Add(obj?.Cc);
         return audiences;
+    }
+
+    /// <summary>
+    /// Reports whether an object is marked content-sensitive (the ActivityStreams <c>sensitive</c>
+    /// term, which the library does not model as a property and so surfaces via
+    /// <c>ExtensionData</c>). A sensitive object should be rendered behind a notice and not shown
+    /// in full until the viewer reveals it.
+    /// </summary>
+    /// <param name="obj">The object to inspect.</param>
+    /// <returns>
+    /// <c>true</c> when the object carries a JSON-boolean <c>sensitive</c> of <c>true</c>; otherwise
+    /// <c>false</c> (including when the term is absent or not a boolean).
+    /// </returns>
+    public static bool IsSensitive(this IObject? obj)
+    {
+        // `sensitive` is a standard AS term the library leaves in ExtensionData (Rule 6).
+        return obj is { ExtensionData: { } ext }
+            && ext.TryGetValue("sensitive", out var element)
+            && element.ValueKind == JsonValueKind.True;
+    }
+
+    /// <summary>
+    /// Reads an object's <c>summary</c> (the ActivityStreams content-sensitivity preview / warning)
+    /// as a single joined string. The summary is the text a client shows in place of a
+    /// <see cref="IsSensitive(IObject)"/> object's real content until the viewer reveals it.
+    /// </summary>
+    /// <param name="obj">The object to inspect.</param>
+    /// <returns>The joined summary text, or <c>null</c> when the object has no <c>summary</c>.</returns>
+    public static string? GetSummary(this IObject? obj)
+    {
+        if (obj?.Summary is not { } summaries)
+        {
+            return null;
+        }
+
+        var parts = new List<string>();
+        foreach (var part in summaries)
+        {
+            if (!string.IsNullOrWhiteSpace(part))
+            {
+                parts.Add(part);
+            }
+        }
+
+        return parts.Count == 0 ? null : string.Join(" ", parts);
     }
 
     /// <summary>
