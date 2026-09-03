@@ -161,20 +161,37 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.2.2, Feed refresh button + 19.5.5 / 19.6.6 UI half):** added a **Refresh** button to
- the Feed and Community feed cards that issues `?refresh=true` (the page-cache bypass). The
- `PagedCollection` component gains a `ShowRefreshButton` parameter + a one-shot `RefreshAsync`
- (re-fetches the first page with `BypassCache: true`, i.e. `?refresh=true`), enabled on the Feed page
- (21.2.2). The Community feed card (hand-rolled, not a `PagedCollection`) gains its own Refresh button +
- `RefreshFeedAsync` (re-fetches with `new CollectionQuery(BypassCache: true)`). No backend change (the
- `?refresh=true` wire parameter + server-side bypass handling already existed, changes 149/154). Manually
- verified (Playwright MCP): the Community feed went **1080 → 1200 items** after a Refresh click (a new
- note published from a second tab was visible only after the bypass), and every page fetch carried
- `?refresh=true`. The Feed page's followed-feed endpoint 500s in this local compose setup (FQDN
- resolution — the same documented external-FQDN blocker as 19.6.1/19.6.2); on the public FQDN route the
- button will re-fetch the followed feed. No new framework tests (UI work, Phase 22 rule 5). 1,284 tests
- green. See
- [docs/changes/201-21.2.2-feed-refresh-button.md](docs/changes/201-21.2.2-feed-refresh-button.md).
+**Latest slice (21.2.3, member management from the list):** the Community page's **Members** list gains
+  a **Remove** button per member (`RemoveMemberFromListAsync`), so the logged-on community owner removes
+  a member directly rather than only via the "Manage membership" card's IRI input. The IRI-input-based
+  `ManageMemberAsync` is refactored to delegate to a shared `ManageMemberAsync(bool isAdd, Iri member)`
+  core that both entry points (the card's IRI input + the per-list-item button) use, so the write path is
+  identical (the community-signed `Remove` posted to the community's own outbox — decision 055). A
+  `MemberIriOf` helper extracts each member's actor IRI (an object's `Id` or a link's `Href`). No backend
+  change. Manual "remove + confirm gone" is constrained by the pre-existing external-FQDN proxy blocker
+  (as in 19.6.1/19.6.2/21.2.2): the community's collection `first` link carries the advertised FQDN
+  (`iris-dev1.luit.ink`), and the page walk + membership write route through the browser proxy, which in
+  this env is rate-limited (429) / CORS-blocked — so the Members list renders "No members." and the write
+  429s, even though the API confirms the seeded members exist (`totalItems: 2`). On the public FQDN route
+  the list populates and the button exercises the verified write path. No new framework tests (UI work,
+  Phase 22 rule 5). 1,284 tests green. See
+  [docs/changes/202-21.2.3-member-removal-from-list.md](docs/changes/202-21.2.3-member-removal-from-list.md).
+
+**Prior slice (21.2.2, Feed refresh button + 19.5.5 / 19.6.6 UI half):** added a **Refresh** button to
+  the Feed and Community feed cards that issues `?refresh=true` (the page-cache bypass). The
+  `PagedCollection` component gains a `ShowRefreshButton` parameter + a one-shot `RefreshAsync`
+  (re-fetches the first page with `BypassCache: true`, i.e. `?refresh=true`), enabled on the Feed page
+  (21.2.2). The Community feed card (hand-rolled, not a `PagedCollection`) gains its own Refresh button +
+  `RefreshFeedAsync` (re-fetches with `new CollectionQuery(BypassCache: true)`). No backend change (the
+  `?refresh=true` wire parameter + server-side bypass handling already existed, changes 149/154). Manually
+  verified (Playwright MCP): the Community feed went **1080 → 1200 items** after a Refresh click (a new
+  note published from a second tab was visible only after the bypass), and every page fetch carried
+  `?refresh=true`. The Feed page's followed-feed endpoint 500s in this local compose setup (FQDN
+  resolution — the same documented external-FQDN blocker as 19.6.1/19.6.2); on the public FQDN route the
+  button will re-fetch the followed feed. No new framework tests (UI work, Phase 22 rule 5). 1,284 tests
+  green. See
+  [docs/changes/201-21.2.2-feed-refresh-button.md](docs/changes/201-21.2.2-feed-refresh-button.md).
+
 
 **Prior slice (19.6.2, broad signed-outbox-write enumeration — manual pass):** drove the remaining
  signed AP outbox write screens through the UI on the compose stack (logged on as `alice@localhost`

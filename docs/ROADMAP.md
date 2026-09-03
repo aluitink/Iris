@@ -377,8 +377,14 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   enabled on the Feed page (21.2.2) and the Community feed card (19.5.5). Manually verified (Playwright
   MCP): the Community feed went 1080 → 1200 items after a Refresh click (the new note published from a
   second tab was visible only after the bypass), and every page fetch carried `?refresh=true`.
-- [ ] **21.2.3 — Member management from the list.** Expand the Members list to offer **remove** directly
+- [x] **21.2.3 — Member management from the list.** Expand the Members list to offer **remove** directly
   (not just the IRI input) for the logged-on community owner. → Phase 22 US-6.
+  **Done (change 202):** the Community page's **Members** list gains a **Remove** button per member
+  (`RemoveMemberFromListAsync`, sharing the existing `RemoveMemberAsync` write path — decision 055);
+  the IRI-input-based `ManageMemberAsync` is refactored to delegate to a shared core both entry points
+  use. Manual "remove + confirm gone" is constrained by the pre-existing external-FQDN proxy blocker
+  (as in 19.6.1/19.6.2/21.2.2); on the public FQDN route the list populates and the button exercises the
+  verified write path.
 - [ ] **21.3.1 — Reply form.** Add a **Reply** form to the object detail page (`PostNoteAsync` with
   `InReplyTo`). → Phase 22 US-12.
 - [ ] **21.3.2 — Like/Boost from the detail page.** Ensure the Like/Boost buttons are present and
