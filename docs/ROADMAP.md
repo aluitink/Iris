@@ -969,6 +969,95 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
   tests. One deployment/UX sharp edge documented (default logon base GET-only). See
   [162-20.7-manual-test-plan.md](changes/162-20.7-manual-test-plan.md).
 
+## Phase 21 — Sample UI expansion (in planning; work item-by-item)
+
+The sample-client UI is now the primary surface for exercising the ActivityPub server + client. This
+phase expands and enhances the sample UI so that **every aspect** of the server and client is reachable
+and verifiable from the browser. The direction: the sample UI is **verified manually** (not bUnit-tested)
+while it remains in flux; the underlying wire is proven by the existing server/client integration tests.
+
+**Guiding principles:**
+- **Better detail pages:** every actor/community/object detail page shows the full set of related
+  collections (followers, following, moderation, outbox, inbox) and offers management actions where the
+  user has authority.
+- **Exercise every client API:** every `IActivityPubClient` / `ILocalModerationClient` method is
+  reachable from at least one UI surface (so the sample exercises the full client surface).
+- **Exercise every server endpoint:** every server endpoint (AP + local) is reachable from at least one
+  UI surface (so the sample exercises the full server surface).
+- **Consistent navigation:** every collection item is clickable (deep-links to the detail page); every
+  detail page has a back link to its parent collection.
+
+### 21.1 — Actor detail page expansion
+
+- [ ] **21.1.1 — Followers + Following management.** The actor detail page already shows the followers
+  and following collections (read-only, clickable). Expand to **management**: from the followers list,
+  the logged-on actor (if they own the actor) can **unfollow** a follower (remove the edge); from the
+  following list, they can **unfollow** a followed actor. This exercises `UndoFollowAsync` from the
+  detail page (not just the follow/unfollow card).
+- [ ] **21.1.2 — Moderation management (target list).** The actor detail page already has a Moderation
+  card (mute/block/flag the target). Expand to show the **target actor's moderation state** (who has
+  muted/blocked/flagged them) via the `GET /ap/v1/u/{handle}/{blocks|flags|mutes}` collections, with
+  the ability to **unmute/unblock/unflag** from the list (not just the target input).
+- [ ] **21.1.3 — Inbox view.** The actor detail page does not show the inbox. Add an **Inbox** card that
+  reads the actor's inbox collection (`GET /ap/v1/u/{handle}/inbox`, paged) and renders each activity
+  (who did what to this actor). This exercises `GetCollectionItemsAsync(inboxIri)`.
+- [ ] **21.1.4 — Outbox view (full).** The actor detail page already shows the outbox (paged). Ensure
+  every outbox item is clickable (deep-links to the object detail) and that the outbox shows the full
+  activity (not just a summary).
+
+### 21.2 — Community detail page expansion
+
+- [ ] **21.2.1 — Moderation collections (target list).** The community page already has a Moderation
+  card (mute/block/flag a target). Expand to show the **community's moderation collections**
+  (`GET /ap/v1/c/{name}/{blocks|flags|mutes}`, paged) with the ability to **unmute/unblock/unflag**
+  from the list. This exercises the community moderation collection reads.
+- [ ] **21.2.2 — Feed refresh button.** The community feed card already shows the feed. Add a **Refresh**
+  button that issues `?refresh=true` (bypassing the page cache) so the user can force a fresh read.
+  This exercises the `?refresh=true` cache bypass (19.5.5 remaining).
+- [ ] **21.2.3 — Member management (from the list).** The community page already has a "Manage
+  membership" card (add/remove by IRI). Expand the Members list to offer **remove** directly from the
+  list (not just the IRI input) for the logged-on community owner.
+
+### 21.3 — Object detail page expansion
+
+- [ ] **21.3.1 — Reply form.** The object detail page shows replies (read-only). Add a **Reply** form
+  (compose a note in reply to the object) that exercises `PostNoteAsync` with the `InReplyTo` field set
+  to the object's IRI. This exercises the reply/threads surface (19.2.4 code half).
+- [ ] **21.3.2 — Like/Boost from the detail page.** The object detail page already shows like/boost
+  counts. Ensure the Like/Boost buttons are present and functional (not just counts). This exercises
+  `LikeAsync`/`AnnounceAsync` from the detail page.
+- [ ] **21.3.3 — Delete (author only).** The object detail page already has a Delete button (author
+  only). Ensure it is present and functional (exercises `DeleteAsync`).
+
+### 21.4 — Home / Feed page expansion
+
+- [ ] **21.4.1 — Feed pagination (Load more).** The feed page shows the first page of the feed. Add a
+  **Load more** button that walks the `next` links (exercises `GetCollectionAsync` paging from the feed
+  page).
+- [ ] **21.4.2 — Feed filter (?q).** The feed page does not support content filtering. Add a **search
+  box** that issues `?q={query}` to the feed collection (exercises the feed's `?q` filter, 19.5.5).
+
+### 21.5 — Logon / Instance page expansion
+
+- [ ] **21.5.1 — Instance info (nodeinfo).** The instance page shows the recent-instances list. Add an
+  **Instance info** card that reads the nodeinfo document (`GET /.well-known/nodeinfo` or
+  `GET /api/v1/instance`) and shows the instance name, software, version, and open-registration status.
+  This exercises the nodeinfo/discovery surface (19.1.7).
+- [ ] **21.5.2 — WebFinger lookup.** Add a **WebFinger** card to the instance page that takes a handle
+  (`@user@host`) and resolves it via `GET /.well-known/webfinger?resource=acct:{handle}`, showing the
+  resolved actor IRI. This exercises the WebFinger/discovery surface (19.1.7).
+
+### 21.6 — Cross-cutting
+
+- [ ] **21.6.1 — Consistent navigation (back links).** Every detail page (actor, community, object,
+  instance) has a **back link** to its parent (the page that deep-linked to it, or the home page).
+- [ ] **21.6.2 — Error/empty state consistency.** Every card on every page has a consistent error/empty
+  state (a clear message, not a blank card). This is partially done (19.8.7); ensure it is consistent
+  across all new cards added in 21.1–21.5.
+- [ ] **21.6.3 — Raw inspector (JSON view).** Every detail page has a **Raw JSON** toggle that shows the
+  raw ActivityStreams JSON of the loaded object/actor/community (for debugging + verification that the
+  UI writes are AP-native, 19.6.1). This exercises the "raw inspector" expectation.
+
 ## Remaining work (pre-Phase-19 carry-forward, now superseded)
 
 - ~~Phase 13.5–13.7, 13.9–13.10 (live interop)~~ → **Phase 19.1** (the FQDNs are live; execute now).
