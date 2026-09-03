@@ -251,13 +251,16 @@ US-24) will also close the UI-side remote-rendering pieces.
   path is complete** (client `CreateCommunityAsync` + server materialization, change 161l). Still open:
   the **UI creation screen** (a Blazor form calling `CreateCommunityAsync` — now a Phase 22 item, US-18)
   and the WebFinger/`iris:capabilities` discovery verification.
-- [ ] **19.5.2 — Membership management (UI remainder).** The `Add`/`Remove` mechanism + the
+- [ ] **19.5.2 — Membership management (live remainder).** The `Add`/`Remove` mechanism + the
   self-management gate are done (change 150). The remote-actor **join request → accept** flow is done
   (changes 215+216): a community with `manuallyApprovesMembers` stores the inbound `Join` in its outbox
   (AP-native, mirroring inbound follows) and records a pending join request; the operator Accepts/Rejects
   via the community outbox (the Join activity IRI is read from the outbox). Communities without the flag
   retain the legacy auto-grant. The **UI** "Pending join requests" card + "Join (as me)" button are done
-  (change 216). Still open: the two-instance wire drive of a remote actor's Join → Accept (live-interop).
+  (change 216). The **AP-native settings change** (set/clear `manuallyApprovesMembers` via `Add`/`Remove`
+  of the community document to the outbox) is done (change 217): the community's "Settings" card shows
+  the gating state with toggle buttons; the flag is auditable in the outbox. Still open: the two-instance
+  wire drive of a remote actor's Join → Accept (live-interop).
 - [ ] **19.5.3 — Community peers (live remainder).** Outbound follow/unfollow, inbound accept/reject, and
   the community **UI** "Inbound follows" card are done (changes 148/152/174). Still open: the
   two-instance wire drive of a gated community's inbound follow (live-interop).
