@@ -129,7 +129,10 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
     [22-2](plans/22-2-raw-inspector-component.md) (components) +
     [22-3](plans/22-3-identity-bar-and-back-links.md) (identity bar + back links).
 - [ ] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
-  community (US-6,18), instance (US-10).
+  community (US-6,18), instance (US-10). **In progress** — actor slice started: the actor page now
+  renders the `liked` collection (US-5) and the logged-on actor's follow state (US-15) (change
+  [183](changes/183-22.2-actor-liked-and-follow-state.md)); actor US-16/17, object US-7/12/13/14,
+  community US-6/18, and instance US-10 follow.
 - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
   + reply-chain rendering (US-12).
 - [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
