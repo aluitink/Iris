@@ -161,8 +161,24 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6.5, audience metadata — on-the-wire `to`/`cc` enumeration):** implemented the
-production half that change 158 scoped out. The outbox publish delivered an outbound Create/Announce to
+**Latest slice (19.6.2, outbox page-cache invalidation on a local write):** fixed the server-side
+ blocker behind the 19.6.2 "all activities flow through the outbox" UI half. The outbox collection page
+ is served through the `LocalCollectionPageCache` (a 60s server→client response cache keyed by the page
+ IRI), but a local outbox write (`Insert(0)`, newest-first) never dropped the cached page-1 — so the UI's
+ plain (non-`?refresh`) outbox read lagged the activity it had just published (the outbox card showed the
+ pre-write count; a `?refresh=true` read showed the new item at the head). `OutboxPublishHandler` (actor)
+ and `CommunityOutboxPublishHandler` / `FinishCommunityOutboxPublishAsync` (community) now invalidate the
+ owner's outbox page-1 (`{owner}/outbox`) after `AddToOutboxAsync`, via a small
+ `InvalidateLocalOutboxPage` helper. Scoped to the handler path (a raw store write still relies on the
+ 19.6.6 `?refresh=true` escape hatch — the two are complementary). CI-pinned in
+ `OutboxPublishCacheInvalidationIntegrationTests` (actor Create + community Follow), and confirmed to
+ **fail** with the invalidation disabled (genuine regression guards). Verified on the compose stack:
+ compose a post → 202, re-load the actor detail (plain read) → the new Create is at the head, no manual
+ refresh. Create + Block write screens now enumerate 1:1. 1,284 tests green. See
+ [docs/changes/199-19.6.2-outbox-page-cache-invalidation-on-write.md](docs/changes/199-19.6.2-outbox-page-cache-invalidation-on-write.md).
+
+**Prior slice (19.6.5, audience metadata — on-the-wire `to`/`cc` enumeration):** implemented the
+ production half that change 158 scoped out. The outbox publish delivered an outbound Create/Announce to
 the right inboxes (the remote, non-blocked follower set) but recorded and federated the activity exactly
 as the author composed it — a public post carried only `as:Public`, no per-follower enumeration on the
 wire. `OutboxPublishHandler` now rewrites the activity's audience before recording (so the stored and

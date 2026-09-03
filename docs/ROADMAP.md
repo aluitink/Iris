@@ -278,7 +278,11 @@ its rendered signed document matches the stored activity; and the actor/object d
 a deep-link `?iri=` param change (the `OnParametersSetAsync` + guard fix). Change 198 implemented the
 **19.6.5 audience metadata** production change: the outbound Create/Announce now rewrites its on-the-wire
 `to`/`cc` to enumerate the follower set (and a reply's target), so the federated document carries the
-distribution list, not just the composed address.
+distribution list, not just the composed address. Change 199 fixed the **19.6.2 outbox-enumeration
+blocker**: a local outbox write now invalidates the cached outbox page-1 (the `LocalCollectionPageCache`
+was never dropped on a write, so the UI's plain outbox read lagged the activity it just published), so
+the outbox card enumerates 1:1 with the writes taken (Create + Block verified 1:1 in the live manual
+test).
 
 - [x] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
   browser and confirm the rendered signed message in the raw inspector matches the ActivityStream
@@ -286,8 +290,13 @@ distribution list, not just the composed address.
   fetched by its id returns the full signed AS document (200, was 404) and the Object view's Raw inspector
   renders it 1:1 with the outbox (same minted id, normalized advertised `object` IRI, correct type/actor).
   Remaining: the external-FQDN reverse-proxy pass (blocked on network reachability in this env).
-- [ ] **19.6.2 — All activities flow through the outbox (UI half).** Enumerate the outbox in the UI after
-  exercising every write screen and match entries 1:1 with the actions taken.
+- [~] **19.6.2 — All activities flow through the outbox (UI half).** Enumerate the outbox in the UI after
+  exercising every write screen and match entries 1:1 with the actions taken. — **Blocker resolved
+  (change 199):** the outbox page-cache invalidation gap that made the UI outbox card lag the writes it
+  records is fixed (a local outbox write now drops the cached page-1, so a plain read is fresh), and the
+  Create + Block write screens are verified 1:1 (outbox count + head item track the actions taken, no
+  manual refresh). Remaining: the broader raw-inspector enumeration of the *every* write screen
+  (Follow/Like/Flag/Mute/Accept/Reject/Undo) 1:1 — folded into the Phase 22 manual test (22.6).
 - [ ] **19.6.3 / 19.6.4 / 19.6.6 — Server-delivers, signature identity, cache bypass (UI halves).** Drive
   compose/follow/like through the UI and confirm the peer's inbox received the activity signed as the
   acting actor, and that the refresh path actually re-fetches (a new activity is visible after the
