@@ -329,6 +329,13 @@ else
                                 {
                                     <ObjectView Item="item" />
                                 }
+                                @if (MemberIriOf(item) is { } memberIri)
+                                {
+                                    <button class="member-remove" @onclick="() => RemoveMemberFromListAsync(memberIri)"
+                                            disabled="@MemberBusy" title="Remove this member">
+                                        Remove
+                                    </button>
+                                }
                             </li>
                         }
                     </ul>
@@ -674,38 +681,53 @@ else
 
     private async Task ManageMemberAsync(bool isAdd)
     {
+        var memberIri = MemberIriInput?.Trim() ?? "";
+        if (Iri.TryParse(memberIri, out var member))
+        {
+            await ManageMemberAsync(isAdd, member);
+        }
+        else
+        {
+            MemberError = "Enter a valid member IRI (e.g. http://host/ap/v1/u/alice).";
+        }
+    }
+
+    /// <summary>
+    /// Removes a member directly from the Members list (21.2.3 — member management from the list): the
+    /// same <c>Remove</c> the "Manage membership" card performs by IRI input, but addressed to a specific
+    /// member rendered in the list (no IRI input required).
+    /// </summary>
+    private async Task RemoveMemberFromListAsync(Iri member)
+    {
+        await ManageMemberAsync(isAdd: false, member);
+    }
+
+    private async Task ManageMemberAsync(bool isAdd, Iri member)
+    {
         if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || MemberBusy)
         {
             return;
         }
 
-        var memberIri = MemberIriInput?.Trim() ?? "";
-        if (Iri.TryParse(memberIri, out var member))
+        MemberBusy = true;
+        MemberResult = null;
+        MemberError = null;
+        try
         {
-            MemberBusy = true;
-            MemberResult = null;
-            MemberError = null;
-            try
-            {
-                var result = isAdd
-                    ? await Session.GetClient().AddMemberAsync(communityIri, member)
-                    : await Session.GetClient().RemoveMemberAsync(communityIri, member);
-                MemberResult = result.IsSuccess
-                    ? $"{(isAdd ? "added" : "removed")} member (status {result.StatusCode})"
-                    : $"failed (status {result.StatusCode})";
-            }
-            catch (Exception ex)
-            {
-                MemberError = ex.Message;
-            }
-            finally
-            {
-                MemberBusy = false;
-            }
+            var result = isAdd
+                ? await Session.GetClient().AddMemberAsync(communityIri, member)
+                : await Session.GetClient().RemoveMemberAsync(communityIri, member);
+            MemberResult = result.IsSuccess
+                ? $"{(isAdd ? "added" : "removed")} member (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
         }
-        else
+        catch (Exception ex)
         {
-            MemberError = "Enter a valid member IRI (e.g. http://host/ap/v1/u/alice).";
+            MemberError = ex.Message;
+        }
+        finally
+        {
+            MemberBusy = false;
         }
     }
 
@@ -1031,6 +1053,26 @@ else
         if (item is ILink { Href: { } href })
         {
             return href.ToString();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The actor IRI of a member list item (an object's <c>Id</c> or a link's <c>Href</c>) — the target
+    /// of the per-member <c>Remove</c> button (21.2.3). <c>null</c> when the item carries no IRI (it is
+    /// rendered without a Remove button).
+    /// </summary>
+    private static Iri? MemberIriOf(IObjectOrLink item)
+    {
+        if (item is ILink { Href: { } href } && Iri.TryParse(href.ToString(), out var linkIri))
+        {
+            return linkIri;
+        }
+
+        if (item is IObject { Id: { Length: > 0 } fid } && Iri.TryParse(fid, out var iri))
+        {
+            return iri;
         }
 
         return null;
