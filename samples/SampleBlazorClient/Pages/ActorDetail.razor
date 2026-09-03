@@ -48,6 +48,13 @@ else
             Description="The activities this actor authored or accepted (their outbox), paged with next-link walking — local or remote. Each item is a navigable object view."
             EmptyMessage="No items in the outbox." />
 
+        <PagedCollection
+            Client="@Session.GetClient()"
+            CollectionIri="@(ActorIri?.LikedOf())"
+            Title="Liked"
+            Description="The objects this actor liked (their <c>liked</c> collection), paged with next-link walking. Each item is a navigable object view (a like is recorded as the liked object)."
+            EmptyMessage="Nothing liked." />
+
         <div class="card">
             <h3>Followers</h3>
             <p class="muted">
@@ -434,8 +441,19 @@ else
             <div class="card">
                 <h3>Follow / unfollow</h3>
                 <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
-                <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
-                <button @onclick="UnfollowAsync" disabled="@(WriteBusy)">Unfollow</button>
+                @if (IsOwnActor)
+                {
+                    <p class="muted">This is you — you can't follow yourself.</p>
+                }
+                else
+                {
+                    <button @onclick="FollowAsync" disabled="@(WriteBusy)">@FollowButtonLabel</button>
+                    <button @onclick="UnfollowAsync" disabled="@(WriteBusy || !IsFollowing || FollowLearnedId is null)">Unfollow</button>
+                    @if (IsFollowing)
+                    {
+                        <span class="muted">You follow this actor.</span>
+                    }
+                }
                 @if (WriteBusy)
                 {
                     <span class="muted">Working…</span>
@@ -651,6 +669,19 @@ else
     private DeliveryResult? RelayResult { get; set; }
     private string? RelayError { get; set; }
 
+    // 22.2 (US-15): the follow state of the logged-on actor toward the actor being viewed. `IsFollowing`
+    // is the authoritative read (does the logged-on actor's `following` collection contain this actor) —
+    // it reflects a follow made anywhere (not only this page's session). `FollowLearnedId` (below) is
+    // the id captured when THIS page made the follow, and is what the Unfollow references (Decision 055).
+    private bool IsFollowing { get; set; }
+
+    /// <summary>
+    /// The label of the follow button (the current follow state). Kept as a property (not an inline
+    /// ternary in the markup) because a ternary inside a Razor attribute/element with quoted string
+    /// literals is mis-parsed — the <c>?</c> is read as markup rather than the C# conditional.
+    /// </summary>
+    private string FollowButtonLabel => IsFollowing ? "Following" : "Follow";
+
     /// <summary>
     /// The actor IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
     /// directly (an actor link from anywhere — ObjectView, feed, replies — navigates here and loads).
@@ -733,6 +764,15 @@ else
             // 19.8.3: load followers + following paged (first page only).
             await LoadInitialFollowersAsync(actorIri);
             await LoadInitialFollowingAsync(actorIri);
+
+            // 22.2 (US-15): the logged-on actor's follow state toward this actor — whether the logged-on
+            // actor's `following` collection contains this actor. The authoritative follow-state read
+            // (reflects a follow made anywhere, not only this page's session). A read failure leaves the
+            // state `false` (the Follow button stays available).
+            if (Session.ActorIri is { } followStateIri)
+            {
+                IsFollowing = await IsInFollowingCollectionAsync(followStateIri, actorIri);
+            }
 
             Moderation = (
                 await CountAsync(client.GetMutesAsync(actorIri)),
@@ -1335,10 +1375,10 @@ else
     private Iri? FlagLearnedId { get; set; }
 
     private async Task FollowAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FollowAsync(actor, target), captureCreatedId: r => FollowLearnedId = r is { } id ? new Iri(id) : null, clearCreatedId: () => FollowLearnedId = null);
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().FollowAsync(actor, target), captureCreatedId: r => FollowLearnedId = r is { } id ? new Iri(id) : null, clearCreatedId: () => FollowLearnedId = null, affectsFollowState: true);
 
     private async Task UnfollowAsync()
-        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, FollowLearnedId!.Value), clearCreatedId: () => FollowLearnedId = null);
+        => await FollowUnfollowAsync((actor, target) => Session.GetClient().UndoFollowAsync(actor, FollowLearnedId!.Value), clearCreatedId: () => FollowLearnedId = null, affectsFollowState: true);
 
     private async Task MuteAsync()
         => await FollowUnfollowAsync((actor, target) => Session.GetLocalModerationClient().MuteAsync(actor, target));
@@ -1361,7 +1401,8 @@ else
     private async Task FollowUnfollowAsync(
         Func<Iri, Iri, Task<DeliveryResult>> write,
         Action<string?>? captureCreatedId = null,
-        Action? clearCreatedId = null)
+        Action? clearCreatedId = null,
+        bool affectsFollowState = false)
     {
         if (!Session.IsLoggedIn || ActorIri is null)
         {
@@ -1392,6 +1433,13 @@ else
             // S6: refresh the logged-on actor's own moderation counts (bypassing the page cache) so a
             // mute/block/flag's effect is visible immediately rather than after the 60s fresh window.
             await RefreshMyModerationAsync(bypassCache: true);
+            // 22.2 (US-15): a follow/unfollow also changes the follow state — re-read whether the
+            // logged-on actor's `following` collection now (no longer) contains this actor so the
+            // Follow/Unfollow button reflects the write immediately.
+            if (affectsFollowState)
+            {
+                IsFollowing = await IsInFollowingCollectionAsync(actorIri, ActorIri.Value);
+            }
         }
         catch (Exception ex)
         {
@@ -1539,5 +1587,35 @@ else
         }
 
         Relays = relays;
+    }
+
+    /// <summary>
+    /// Whether the logged-on actor's <c>following</c> collection contains <paramref name="targetIri"/>
+    /// (the authoritative follow-state read, 22.2 US-15). Mirrors the <c>liked</c> check on the
+    /// object page: the read bypasses the client's collection page cache so a re-read after a
+    /// follow/unfollow reflects the current store. A failed read is treated as "not following" — the
+    /// Follow button stays available.
+    /// </summary>
+    private async Task<bool> IsInFollowingCollectionAsync(Iri selfIri, Iri targetIri)
+    {
+        try
+        {
+            var client = Session.GetClient();
+            await foreach (var item in client.GetCollectionItemsAsync(
+                selfIri.FollowingOf(), new CollectionQuery { BypassCache = true }))
+            {
+                var iri = RelayIriOf(item);
+                if (iri is { Length: > 0 } && Iri.TryParse(iri, out var parsed) && parsed == targetIri)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
