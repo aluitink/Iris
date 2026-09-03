@@ -3020,8 +3020,27 @@ public static class ActivityPubServerExtensions
 
         var objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
 
-        if (!await persistence.Objects.TryGetObjectAsync(objectIri, out var obj, ct).ConfigureAwait(false) ||
-            obj is null)
+        // A content object (a Note, a Link, an embedded object) is in the Objects store. A minted
+        // ACTIVITY id (a Follow/Block/Flag/Like/Create the outbox publish minted, e.g.
+        // /u/{handle}/blocks/{ulid}) is in the Activities store — the object-document catch-all serves
+        // both, so the Object view / raw inspector can fetch a minted activity back by its IRI (the
+        // 19.6.1 raw-inspector invariant: the rendered signed message is the stored activity document).
+        IObject? obj = null;
+        if (!await persistence.Objects.TryGetObjectAsync(objectIri, out var contentObj, ct).ConfigureAwait(false)
+            || contentObj is null)
+        {
+            if (await persistence.Activities.TryGetActivityAsync(objectIri, out var storedActivity, ct).ConfigureAwait(false)
+                && storedActivity is not null)
+            {
+                obj = storedActivity;
+            }
+        }
+        else
+        {
+            obj = contentObj;
+        }
+
+        if (obj is null)
         {
             return Results.NotFound();
         }

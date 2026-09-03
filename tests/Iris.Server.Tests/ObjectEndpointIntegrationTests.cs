@@ -176,6 +176,43 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
         Assert.Equal("Note", doc.RootElement.GetProperty("type").GetString());
     }
 
+    // --- A minted ACTIVITY id (in the Activities store, not the Objects store) is served by
+    //     the object-document catch-all (the 19.6.1 raw-inspector read path) --------------------------
+
+    [Fact]
+    public async Task MintedActivityId_ServedByObjectDocumentEndpoint()
+    {
+        // The outbox publish mints an activity id (e.g. /u/{handle}/blocks/{ulid}) and stores the
+        // activity in the ACTIVITIES store (PutActivityAsync) — not the Objects store. The object-document
+        // catch-all must serve it so the Object view / raw inspector can fetch a minted activity back by
+        // its IRI (before this fix the endpoint only consulted the Objects store and 404'd).
+        var blockIri = new Iri($"{ActorIri.Value}/blocks/{Guid.NewGuid():N}");
+        var block = new Block
+        {
+            Id = blockIri.Value,
+            Actor = [new Link { Href = _actor }],
+            Object = [new Link { Href = new Uri($"{ActorIri.Value}/u/bob") }],
+        };
+        await _persistence.Activities.PutActivityAsync(block);
+
+        var response = await _http.GetAsync(ObjectPath(blockIri));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("Block", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(blockIri.Value, doc.RootElement.GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task UnknownIri_NotInEitherStore_Returns404()
+    {
+        // A IRI that is neither a stored object nor a stored activity still 404s (the fallback does not
+        // mask a genuine miss).
+        var missing = new Iri($"{ActorIri.Value}/blocks/{Guid.NewGuid():N}");
+        var response = await _http.GetAsync(ObjectPath(missing));
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
     // --- Helpers ----------------------------------------------------------------------
 
     /// <summary>

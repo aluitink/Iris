@@ -154,6 +154,13 @@ else
     private IObject? ObjectDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Replies { get; set; }
     private Iri? LoadedObjectIri { get; set; }
+
+    /// <summary>
+    /// The last deep-link param key (<c>iri:&lt;value&gt;</c>) that triggered an auto-load in
+    /// <see cref="OnParametersSetAsync"/>. Guards against re-loading on every re-render (a write such as
+    /// Like/Reply re-renders the component with the param still set) — only a param change re-loads.
+    /// </summary>
+    private string? _lastLoadedParamKey;
     // Per-object interaction counts (decision 056 (d)): read from the object's `likes` / `shares`
     // extension collections (the bare, non-namespaced ecosystem terms). Nullable because the collection
     // is an extension — an external object that does not expose it 404s, so the count is unavailable
@@ -199,12 +206,23 @@ else
     [SupplyParameterFromQuery(Name = "iri")]
     private string? IriParam { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
+        // OnParametersSetAsync (not OnInitializedAsync) so a deep-link to a DIFFERENT object while already
+        // on this page (?iri= change) re-loads it — navigating to /object?iri=…/n2 from /object?iri=…/n1 is
+        // a query-param change on the already-initialized component, and OnInitializedAsync would not re-fire
+        // for it. On first render Blazor still calls this after OnInitialized, so the initial deep-link load
+        // is preserved. The _lastLoadedParamKey guard stops a re-render (e.g. after a Like/Reply write) from
+        // re-loading when the param is unchanged.
         if (Session.IsLoggedIn && IriParam is { Length: > 0 })
         {
-            IriInput = IriParam;
-            await LoadAsync();
+            var key = "iri:" + IriParam;
+            if (key != _lastLoadedParamKey)
+            {
+                _lastLoadedParamKey = key;
+                IriInput = IriParam;
+                await LoadAsync();
+            }
         }
     }
 

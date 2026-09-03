@@ -413,6 +413,14 @@ else
     private Iri? ActorIri { get; set; }
     private IObject? ActorDoc { get; set; }
 
+    /// <summary>
+    /// The last deep-link param key (<c>iri:&lt;value&gt;</c> / <c>handle:&lt;value&gt;</c>) that triggered an
+    /// auto-load in <see cref="OnParametersSetAsync"/>. Guards against re-loading on every re-render (a
+    /// write such as Mute/Block re-renders the component with the param still set) — only a param change
+    /// re-loads the actor.
+    /// </summary>
+    private string? _lastLoadedParamKey;
+
     private List<IObjectOrLink>? FollowersItems { get; set; }
     private bool FollowersHasMore { get; set; }
     private bool FollowersLoadingMore { get; set; }
@@ -495,21 +503,37 @@ else
     [SupplyParameterFromQuery(Name = "handle")]
     private string? HandleParam { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
         if (!Session.IsLoggedIn)
         {
             return;
         }
 
+        // OnParametersSetAsync (not OnInitializedAsync) so a deep-link to a DIFFERENT actor while already
+        // on this page (?iri= / ?handle= change) re-loads that actor — navigating to /actor?iri=…/bob from
+        // /actor (showing alice) is a query-param change on the already-initialized component, and
+        // OnInitializedAsync would not re-fire for it. On first render Blazor still calls this after
+        // OnInitialized, so the initial deep-link load is preserved. The _lastLoadedParamKey guard stops a
+        // re-render (e.g. after a Mute/Block write) from re-loading when the param is unchanged.
         if (IriParam is { Length: > 0 })
         {
-            await LoadByIriAsync(new Iri(IriParam));
+            var key = "iri:" + IriParam;
+            if (key != _lastLoadedParamKey)
+            {
+                _lastLoadedParamKey = key;
+                await LoadByIriAsync(new Iri(IriParam));
+            }
         }
         else if (HandleParam is { Length: > 0 })
         {
-            Handle = HandleParam;
-            await LoadAsync();
+            var key = "handle:" + HandleParam;
+            if (key != _lastLoadedParamKey)
+            {
+                _lastLoadedParamKey = key;
+                Handle = HandleParam;
+                await LoadAsync();
+            }
         }
     }
 
