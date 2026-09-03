@@ -102,8 +102,18 @@ the remote document; a same-host `GET` dials directly. New opt-in options
 every AP read goes same-origin). 4 handler-level + 1 end-to-end pipeline test; 1,284 tests green. Live
 FQDN verification is deferred to the 22.6 manual pass (the external proxy is unreachable in this env).
 See [docs/changes/188-22.4-cross-instance-reads-via-proxy.md](docs/changes/188-22.4-cross-instance-reads-via-proxy.md).
-**22.4 US-8 is done** — 22.4 remaining: live verification + the multi-server identity/switching
-polish (US-2, US-24); then 22.5 (broad story review) and 22.6 (implementation sweep + manual pass).
+
+**Latest slice (22.4, US-2/US-24 multi-server verification):** the multi-server identity/switching
+surfaces (recent-instances one-click switch + current-instance marker, the identity bar, the
+"Continue where you left off" cross-instance navigable) were **manually verified** on the real
+two-instance compose stack (iris-a:8081 / iris-b:8082, internal names): log on to iris-b, load an
+iris-a note through the home proxy (no CORS block, US-8), switch iris-b→iris-a one-click with the
+navigable state preserved. No UI-feature code changed; the `InstanceBaseUrls` map gained the two local
+compose FQDNs (`iris-dev1/dev2.luit.ink` → 8081/8082) so a logon by the advertised handle dials the
+right host-published port. Build clean, format clean, suite green. See
+[docs/changes/189-22.4-cross-server-manual-verification.md](docs/changes/189-22.4-cross-server-manual-verification.md).
+**22.4 is done** (US-8 in change 188; US-2/US-24 in change 189) — next: 22.5 (broad story review) and
+22.6 (implementation sweep + manual pass; the external-FQDN reverse-proxy pass folds in here).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
