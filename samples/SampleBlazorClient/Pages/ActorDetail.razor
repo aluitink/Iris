@@ -257,6 +257,168 @@ else
             }
 
             <div class="card">
+                <h3>Moderation (this actor's collections)</h3>
+                <p class="muted">
+                    The collections below show who <em>this actor</em> has muted, blocked, and flagged (their
+                    <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections), paged with <c>next</c>-link walking.
+                    Each item links to the moderated actor's detail. No per-item undo buttons: the
+                    Decision 055 learned-id model requires the id of the original activity to undo it, which
+                    these collections do not carry (they carry actor IRIs, not activity ids). The
+                    unmute/unblock/unflag capability is provided by the "Moderation" card below.
+                </p>
+                <h4>Mutes</h4>
+                @if (TargetMutesError is not null)
+                {
+                    <div class="error">@TargetMutesError</div>
+                }
+                @if (TargetMutesItems is null)
+                {
+                    <p class="muted">Loading…</p>
+                }
+                else if (TargetMutesItems.Count == 0 && !TargetMutesHasMore)
+                {
+                    <p class="muted">No mutes recorded.</p>
+                }
+                else
+                {
+                    @if (TargetMutesItems.Count > 0)
+                    {
+                        <ul class="object-list">
+                            @foreach (var item in TargetMutesItems)
+                            {
+                                <li>
+                                    @if (item is ILink { Href: { } href })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                            @HandleOf(href.ToString())
+                                        </a>
+                                    }
+                                    else if (item is IObject { Id: { Length: > 0 } fid })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                            @HandleOf(fid)
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <code>@RelayIriOf(item)</code>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (TargetMutesHasMore)
+                    {
+                        <button @onclick="LoadMoreTargetMutesAsync" disabled="@(TargetMutesLoadingMore)">Load more</button>
+                        @if (TargetMutesLoadingMore)
+                        {
+                            <span class="muted">Loading…</span>
+                        }
+                    }
+                }
+                <h4>Blocks</h4>
+                @if (TargetBlocksError is not null)
+                {
+                    <div class="error">@TargetBlocksError</div>
+                }
+                @if (TargetBlocksItems is null)
+                {
+                    <p class="muted">Loading…</p>
+                }
+                else if (TargetBlocksItems.Count == 0 && !TargetBlocksHasMore)
+                {
+                    <p class="muted">No blocks recorded.</p>
+                }
+                else
+                {
+                    @if (TargetBlocksItems.Count > 0)
+                    {
+                        <ul class="object-list">
+                            @foreach (var item in TargetBlocksItems)
+                            {
+                                <li>
+                                    @if (item is ILink { Href: { } href })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                            @HandleOf(href.ToString())
+                                        </a>
+                                    }
+                                    else if (item is IObject { Id: { Length: > 0 } fid })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                            @HandleOf(fid)
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <code>@RelayIriOf(item)</code>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (TargetBlocksHasMore)
+                    {
+                        <button @onclick="LoadMoreTargetBlocksAsync" disabled="@(TargetBlocksLoadingMore)">Load more</button>
+                        @if (TargetBlocksLoadingMore)
+                        {
+                            <span class="muted">Loading…</span>
+                        }
+                    }
+                }
+                <h4>Flags</h4>
+                @if (TargetFlagsError is not null)
+                {
+                    <div class="error">@TargetFlagsError</div>
+                }
+                @if (TargetFlagsItems is null)
+                {
+                    <p class="muted">Loading…</p>
+                }
+                else if (TargetFlagsItems.Count == 0 && !TargetFlagsHasMore)
+                {
+                    <p class="muted">No flags recorded.</p>
+                }
+                else
+                {
+                    @if (TargetFlagsItems.Count > 0)
+                    {
+                        <ul class="object-list">
+                            @foreach (var item in TargetFlagsItems)
+                            {
+                                <li>
+                                    @if (item is ILink { Href: { } href })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                            @HandleOf(href.ToString())
+                                        </a>
+                                    }
+                                    else if (item is IObject { Id: { Length: > 0 } fid })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                            @HandleOf(fid)
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <code>@RelayIriOf(item)</code>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
+                    @if (TargetFlagsHasMore)
+                    {
+                        <button @onclick="LoadMoreTargetFlagsAsync" disabled="@(TargetFlagsLoadingMore)">Load more</button>
+                        @if (TargetFlagsLoadingMore)
+                        {
+                            <span class="muted">Loading…</span>
+                        }
+                    }
+                }
+            </div>
+
+            <div class="card">
                 <h3>Follow / unfollow</h3>
                 <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
                 <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
@@ -445,6 +607,25 @@ else
     /// </summary>
     private (int Mutes, int Blocks, int Flags)? MyModeration { get; set; }
 
+    // 21.1.2: target actor's moderation collections (who the target has muted/blocked/flagged), paged.
+    private List<IObjectOrLink>? TargetMutesItems { get; set; }
+    private bool TargetMutesHasMore { get; set; }
+    private bool TargetMutesLoadingMore { get; set; }
+    private string? TargetMutesError { get; set; }
+    private Iri? _targetMutesResumeFrom;
+
+    private List<IObjectOrLink>? TargetBlocksItems { get; set; }
+    private bool TargetBlocksHasMore { get; set; }
+    private bool TargetBlocksLoadingMore { get; set; }
+    private string? TargetBlocksError { get; set; }
+    private Iri? _targetBlocksResumeFrom;
+
+    private List<IObjectOrLink>? TargetFlagsItems { get; set; }
+    private bool TargetFlagsHasMore { get; set; }
+    private bool TargetFlagsLoadingMore { get; set; }
+    private string? TargetFlagsError { get; set; }
+    private Iri? _targetFlagsResumeFrom;
+
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
@@ -577,6 +758,36 @@ else
                     await CountAsync(client.GetMutesAsync(selfIri)),
                     await CountAsync(client.GetBlocksAsync(selfIri)),
                     await CountAsync(client.GetFlagsAsync(selfIri)));
+            }
+
+            // 21.1.2: load the first page of the target actor's moderation collections (who the target
+            // has muted/blocked/flagged), so the "Moderation (this actor's collections)" card is
+            // populated on initial load.
+            try
+            {
+                await EnumerateOneTargetMutesPageAsync(actorIri);
+            }
+            catch (Exception ex)
+            {
+                TargetMutesError = ex.Message;
+            }
+
+            try
+            {
+                await EnumerateOneTargetBlocksPageAsync(actorIri);
+            }
+            catch (Exception ex)
+            {
+                TargetBlocksError = ex.Message;
+            }
+
+            try
+            {
+                await EnumerateOneTargetFlagsPageAsync(actorIri);
+            }
+            catch (Exception ex)
+            {
+                TargetFlagsError = ex.Message;
             }
 
             var relays = new List<string>();
@@ -842,6 +1053,158 @@ else
             FollowingItems.AddRange(page.Items);
             FollowingHasMore = !page.IsLastPage;
             _followingResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    // 21.1.2: target actor's moderation collections (who the target has muted/blocked/flagged), paged.
+
+    private async Task LoadMoreTargetMutesAsync()
+    {
+        if (TargetMutesLoadingMore || !TargetMutesHasMore || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        TargetMutesLoadingMore = true;
+        TargetMutesError = null;
+        try
+        {
+            await EnumerateOneTargetMutesPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            TargetMutesError = ex.Message;
+        }
+        finally
+        {
+            TargetMutesLoadingMore = false;
+        }
+    }
+
+    private async Task LoadMoreTargetBlocksAsync()
+    {
+        if (TargetBlocksLoadingMore || !TargetBlocksHasMore || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        TargetBlocksLoadingMore = true;
+        TargetBlocksError = null;
+        try
+        {
+            await EnumerateOneTargetBlocksPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            TargetBlocksError = ex.Message;
+        }
+        finally
+        {
+            TargetBlocksLoadingMore = false;
+        }
+    }
+
+    private async Task LoadMoreTargetFlagsAsync()
+    {
+        if (TargetFlagsLoadingMore || !TargetFlagsHasMore || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        TargetFlagsLoadingMore = true;
+        TargetFlagsError = null;
+        try
+        {
+            await EnumerateOneTargetFlagsPageAsync(actorIri);
+        }
+        catch (Exception ex)
+        {
+            TargetFlagsError = ex.Message;
+        }
+        finally
+        {
+            TargetFlagsLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneTargetMutesPageAsync(Iri actorIri)
+    {
+        var client = Session.GetClient();
+        if (_targetMutesResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                TargetMutesItems ??= [];
+                TargetMutesItems.AddRange(page.Items);
+                TargetMutesHasMore = !page.IsLastPage;
+                _targetMutesResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(actorIri.MutesOf(), null, CancellationToken.None))
+        {
+            TargetMutesItems ??= [];
+            TargetMutesItems.AddRange(page.Items);
+            TargetMutesHasMore = !page.IsLastPage;
+            _targetMutesResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    private async Task EnumerateOneTargetBlocksPageAsync(Iri actorIri)
+    {
+        var client = Session.GetClient();
+        if (_targetBlocksResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                TargetBlocksItems ??= [];
+                TargetBlocksItems.AddRange(page.Items);
+                TargetBlocksHasMore = !page.IsLastPage;
+                _targetBlocksResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(actorIri.BlocksOf(), null, CancellationToken.None))
+        {
+            TargetBlocksItems ??= [];
+            TargetBlocksItems.AddRange(page.Items);
+            TargetBlocksHasMore = !page.IsLastPage;
+            _targetBlocksResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    private async Task EnumerateOneTargetFlagsPageAsync(Iri actorIri)
+    {
+        var client = Session.GetClient();
+        if (_targetFlagsResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                TargetFlagsItems ??= [];
+                TargetFlagsItems.AddRange(page.Items);
+                TargetFlagsHasMore = !page.IsLastPage;
+                _targetFlagsResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(actorIri.FlagsOf(), null, CancellationToken.None))
+        {
+            TargetFlagsItems ??= [];
+            TargetFlagsItems.AddRange(page.Items);
+            TargetFlagsHasMore = !page.IsLastPage;
+            _targetFlagsResumeFrom = page.NextPage;
             break;
         }
     }
