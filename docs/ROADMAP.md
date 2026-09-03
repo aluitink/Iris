@@ -98,6 +98,8 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
      `PagedCollection` card (US-20) deep-dive.
    - [plans/22-2-raw-inspector-component.md](plans/22-2-raw-inspector-component.md) — the
      `RawInspector` toggle (US-21) deep-dive.
+   - [plans/22-3-identity-bar-and-back-links.md](plans/22-3-identity-bar-and-back-links.md) — the
+     `MainLayout` identity bar (US-3) + shared back links (US-22) deep-dive.
 
   The high-level areas (each expands into the stories + deep-dives above):
   - **Better components** — the shared `ObjectView` (US-19), a reusable `PagedCollection` card (US-20),
@@ -110,20 +112,22 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
     multi-server use (US-24).
   - **Authoring** — compose with media/markdown/sensitivity (US-11) and reply/threads (US-12).
 
-- [ ] **22.1 — Shared components first** (they unblock every page). Deep-dive + build: `ObjectView`
+- [x] **22.1 — Shared components first** (they unblock every page). Deep-dive + build: `ObjectView`
   (US-19), `PagedCollection` (US-20), `RawInspector` (US-21), the card state pattern (US-23), and the
   `MainLayout` identity bar + back links (US-3, US-22). Each lands a `plans/22-*.md` deep-dive referenced
-  from 22.0.
+  from 22.0. **Complete** — all five sub-slices built and manually verified on the docker compose FQDN
+  stack.
   - **Done:** `PagedCollection` (US-20) + `RawInspector` (US-21) built; `Feed` and `ActorDetail`
     (Outbox + Raw inspector) refactored onto them (change
     [180](changes/180-22.1-paged-collection-and-raw-inspector.md)); the `MainLayout` identity bar
     (US-3) + shared back links (US-22) built and wired onto `ObjectPage` / `ActorDetail` / `Community`
-    (change [181](changes/181-22.1-identity-bar-and-back-links.md)). All manually verified on the docker
-    compose FQDN stack.
+    (change [181](changes/181-22.1-identity-bar-and-back-links.md)); `ObjectView` now renders
+    `published`/`updated` (US-19), `ObjectPage` gains a `RawInspector`, and a shared card-loading
+    spinner standardises the loading state (US-23) (change
+    [182](changes/182-22.1-objectview-and-card-states.md)).
   - **Deep-dives:** [22-1](plans/22-1-paged-collection-component.md) +
     [22-2](plans/22-2-raw-inspector-component.md) (components) +
     [22-3](plans/22-3-identity-bar-and-back-links.md) (identity bar + back links).
-  - **Remaining:** the `ObjectView` deep-dive (US-19) and the card loading/empty/error pattern (US-23).
 - [ ] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
   community (US-6,18), instance (US-10).
 - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
