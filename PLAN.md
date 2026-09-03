@@ -161,7 +161,16 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.7.2, dial-base / base-URL story — implicit production, explicit opt-in override):**
+**Latest slice (19.6.3, dial-base normalization cross-instance guard — production fix):**
+  the outbox dial-base IRI normalization (`NormalizeLocalActorObjectIriAsync`) now guards against
+  cross-instance handle collision: a Follow of a remote actor sharing a handle with a local actor
+  (e.g. `alice@iris-dev2` when `alice` exists locally on `iris-dev1`) is no longer rewritten to the
+  local actor. The rewrite applies only when the target's host is the advertised base, the request
+  host (dial base), or a local-looking host (`localhost`/`127.0.0.1`). CI-pinned by a new regression
+  test. 1,301 tests green. See
+  [docs/changes/213-19.6.3-dial-base-normalization-cross-instance-guard.md](docs/changes/213-19.6.3-dial-base-normalization-cross-instance-guard.md).
+
+**Prior slice (21.7.2, dial-base / base-URL story — implicit production, explicit opt-in override):**
   the log-on's dial-base resolution now implicitly assumes the IRI host is browser-reachable
   (production assumption): an empty endpoint override dials `https://{host}`. The `InstanceBaseUrls`
   map is no longer consulted in the resolution path (no silent localhost redirect). The base URL
