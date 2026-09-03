@@ -1,0 +1,44 @@
+@if (Session.IsLoggedIn)
+{
+    @if (Session.NavigableObjectIri is { } navObject)
+    {
+        <a class="back-link" href="/object?iri=@Uri.EscapeDataString(navObject.Value)" title="@navObject.Value">
+            ← Back to object
+        </a>
+    }
+    else if (Session.NavigableActorIri is { } navActor)
+    {
+        <a class="back-link" href="/actor?iri=@Uri.EscapeDataString(navActor.Value)" title="@navActor.Value">
+            ← Back to actor
+        </a>
+    }
+    else
+    {
+        <a class="back-link" href="/">← Home</a>
+    }
+}
+
+@implements IDisposable
+@code {
+    /// <summary>
+    /// The explorer session, whose navigable state (the last-viewed object/actor) is the back-link
+    /// target. Injected by the component so a page just drops in <c>&lt;BackLink /&gt;</c>.
+    /// </summary>
+    [Inject]
+    private ExplorerSession Session { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        Session.PropertyChanged += OnSessionChanged;
+    }
+
+    public void Dispose()
+    {
+        Session.PropertyChanged -= OnSessionChanged;
+    }
+
+    private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        StateHasChanged();
+    }
+}

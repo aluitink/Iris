@@ -1,17 +1,22 @@
 @inherits LayoutComponentBase
+@implements IDisposable
 
 <div class="explorer-header">
     <h1>Iris · server explorer</h1>
-    <span class="instance">
-        @if (Session.IsLoggedIn)
-        {
-            <span>@Session.ActorIri?.Value</span>
-        }
-        else
-        {
-            <span>not logged on</span>
-        }
-    </span>
+    @if (Session.IsLoggedIn)
+    {
+        <div class="identity">
+            <span class="identity-actor" title="@IdentityIri?.Value">@IdentityIri?.Value</span>
+            @if (Session.DialBaseUri is { } dialBase)
+            {
+                <span class="identity-dial">Dialing <code>@dialBase</code></span>
+            }
+        </div>
+    }
+    else
+    {
+        <span class="instance">not logged on</span>
+    }
 </div>
 
 <nav class="explorer-nav">
@@ -31,4 +36,25 @@
 @code {
     [Inject]
     private ExplorerSession Session { get; set; } = default!;
+
+    /// <summary>
+    /// The authoritative advertised actor IRI to show in the identity bar (the WebFinger-resolved IRI
+    /// when available, else the direct IRI), or <see langword="null"/> when logged out.
+    /// </summary>
+    private Iri? IdentityIri => Session.ResolvedActorIri ?? Session.ActorIri;
+
+    protected override void OnInitialized()
+    {
+        Session.PropertyChanged += OnSessionChanged;
+    }
+
+    public void Dispose()
+    {
+        Session.PropertyChanged -= OnSessionChanged;
+    }
+
+    private void OnSessionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        StateHasChanged();
+    }
 }

@@ -39,6 +39,44 @@ html, body {
     color: #9aa4b2;
 }
 
+/* Identity bar (US-3): the logged-on actor IRI + the dial base, always visible (not only on Home). */
+.explorer-header .identity {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.1rem;
+    max-width: 40rem;
+    text-align: right;
+}
+
+.explorer-header .identity-actor {
+    font-size: 0.85rem;
+    color: #cdd6e1;
+    word-break: break-all;
+}
+
+.explorer-header .identity-dial {
+    font-size: 0.75rem;
+    color: #7a8494;
+}
+
+.explorer-header .identity-dial code {
+    font-size: 0.75rem;
+}
+
+/* Back link (US-22): a consistent sub-heading link at the top of each detail page. */
+.back-link {
+    display: inline-block;
+    margin: 0 0 1rem;
+    color: #8fd3a7;
+    font-size: 0.85rem;
+    text-decoration: none;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
 /* Navigation (the S6 explorer screens) */
 .explorer-nav {
     display: flex;

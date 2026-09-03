@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Net.Http;
 using Iris.Client;
 using Iris.Client.Discovery;
@@ -92,7 +93,7 @@ public static class ExplorerHostExtensions
 /// two never have to be the same value.
 /// </para>
 /// </remarks>
-public sealed class ExplorerSession : IDisposable
+public sealed class ExplorerSession : IDisposable, INotifyPropertyChanged
 {
     private readonly Func<HttpMessageHandler> _transportFactory;
     private readonly InstanceBaseUrls _baseUrls;
@@ -137,6 +138,16 @@ public sealed class ExplorerSession : IDisposable
         _baseUrls = baseUrls ?? new InstanceBaseUrls();
         _keyFactory = keyFactory;
     }
+
+    /// <summary>
+    /// Raised whenever the logged-on identity changes — on logon, switch, and logout. Shell components
+    /// that display the identity (the <c>MainLayout</c> header, the back-link state) subscribe so they
+    /// re-render without a full page navigation. The event is a "refresh" signal (a null property
+    /// name): the subscriber re-reads the public identity properties (<see cref="IsLoggedIn"/>,
+    /// <see cref="ResolvedActorIri"/>, <see cref="DialBaseUri"/>, the navigable IRIs) rather than
+    /// keying off a specific property.
+    /// </summary>
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
     /// Gets the instance base-URL map (advertised host → browser base URL). The UI uses this to
@@ -194,6 +205,7 @@ public sealed class ExplorerSession : IDisposable
     public void SetNavigableObjectIri(Iri objectIri)
     {
         _navigableObjectIri = objectIri;
+        NotifyIdentityChanged();
     }
 
     /// <summary>
@@ -204,6 +216,7 @@ public sealed class ExplorerSession : IDisposable
     public void SetNavigableActorIri(Iri actorIri)
     {
         _navigableActorIri = actorIri;
+        NotifyIdentityChanged();
     }
 
     /// <summary>
@@ -215,6 +228,7 @@ public sealed class ExplorerSession : IDisposable
     {
         _navigableObjectIri = null;
         _navigableActorIri = null;
+        NotifyIdentityChanged();
     }
 
     /// <summary>
@@ -294,6 +308,7 @@ public sealed class ExplorerSession : IDisposable
         _dialBaseUri = dialBaseUri;
         _resolvedActorIri = actorIri;
         RecordRecent(parsed, dialBaseUri, actorIri);
+        NotifyIdentityChanged();
         return true;
     }
 
@@ -365,6 +380,7 @@ public sealed class ExplorerSession : IDisposable
         RecordRecent(
             WebFingerAddress.Parse($"{handle}@{dialBaseUri.Host}"),
             dialBaseUri, actorIri);
+        NotifyIdentityChanged();
         return true;
     }
 
@@ -392,6 +408,7 @@ public sealed class ExplorerSession : IDisposable
     public void LogOut()
     {
         DisposeCurrent();
+        NotifyIdentityChanged();
     }
 
     /// <summary>
@@ -504,6 +521,17 @@ public sealed class ExplorerSession : IDisposable
             _dialBaseUri = null;
             _resolvedActorIri = null;
         }
+    }
+
+    /// <summary>
+    /// Signals shell components that the logged-on identity changed (logon, switch, or logout) so they
+    /// re-read the public identity properties and re-render. No-ops when there are no subscribers.
+    /// </summary>
+    private void NotifyIdentityChanged()
+    {
+        // A null property name: the event is a "the identity may have changed, re-read the public
+        // properties" refresh signal, not a per-property change.
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(null));
     }
 
     private void RecordRecent(WebFingerAddress address, Uri dialBaseUri, Iri actorIri)
