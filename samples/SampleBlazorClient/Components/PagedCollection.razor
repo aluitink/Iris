@@ -23,7 +23,12 @@
         }
         @if (Items is null)
         {
-            <p class="muted">Loading…</p>
+            <div class="card-loading">
+                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                </svg>
+                <span class="muted">Loading…</span>
+            </div>
         }
         else
         {
@@ -54,7 +59,12 @@
                 <button @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
                 @if (LoadingMore)
                 {
-                    <span class="muted">Loading…</span>
+                    <div class="card-loading card-loading-inline">
+                        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                        </svg>
+                        <span class="muted">Loading…</span>
+                    </div>
                 }
             }
         }

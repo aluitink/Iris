@@ -394,6 +394,12 @@ a.object-feed-link:hover {
     background: #2b3748;
 }
 
+.object-updated {
+    color: #9aa4b2;
+    font-size: 0.75rem;
+    font-style: italic;
+}
+
 .muted {
     color: #9aa4b2;
     font-size: 0.85rem;
@@ -436,12 +442,37 @@ pre.raw-json {
 .loading-spinner {
     width: 50px;
     height: 50px;
+}
+
+/* The spinner's arc (the dashed, rotating stroke). Sized small (1.75rem) so it reads as a compact
+   card-loading indicator rather than the full-page startup spinner. */
+.loading-spinner-circle {
     animation: 1.7s linear infinite loading-dash;
     stroke-dasharray: 90, 150;
     stroke-dashoffset: 0;
     stroke: #8fd3a7;
     stroke-width: 5;
     stroke-linecap: round;
+    transform-origin: center;
+}
+
+/* Consistent card loading state (22.1 US-23): a compact spinner + label, so a card that is fetching
+   its first page never renders blank. The inline variant (a "Load more" in flight) sits beside the
+   button rather than as a full-width block. */
+.card-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+}
+
+.card-loading .loading-spinner {
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
+.card-loading-inline {
+    margin-top: 0.4rem;
 }
 
 @keyframes loading-dash {

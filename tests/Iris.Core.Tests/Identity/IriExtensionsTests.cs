@@ -563,4 +563,33 @@ public class IriExtensionsTests
 
         Assert.Null(none.GetSummary());
     }
+
+    [Fact]
+    public void GetUpdated_WithUpdated_ReturnsIt()
+    {
+        var updated = new DateTime(2026, 9, 1, 12, 30, 0, DateTimeKind.Utc);
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Updated = updated,
+        };
+
+        Assert.Equal(updated, note.GetUpdated());
+    }
+
+    [Fact]
+    public void GetUpdated_NoUpdated_ReturnsNull()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+
+        Assert.Null(note.GetUpdated());
+    }
+
+    [Fact]
+    public void GetUpdated_Null_ReturnsNull()
+    {
+        IObject? none = null;
+
+        Assert.Null(none.GetUpdated());
+    }
 }

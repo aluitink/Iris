@@ -27,7 +27,12 @@ else
         <button @onclick="LoadAsync" disabled="@(Busy)">Load</button>
         @if (Busy)
         {
-            <span class="muted">Loading…</span>
+            <div class="card-loading card-loading-inline">
+                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                </svg>
+                <span class="muted">Loading…</span>
+            </div>
         }
         @if (Error is not null)
         {
@@ -86,6 +91,8 @@ else
                 }
             </div>
         </div>
+
+        <RawInspector Document="ObjectDoc" Title="Raw inspector" />
 
         @if (Replies is not null)
         {

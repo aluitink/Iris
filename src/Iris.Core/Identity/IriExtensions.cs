@@ -418,6 +418,18 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reads an object's <c>updated</c> timestamp (the ActivityStreams <c>updated</c> term — when the
+    /// content was last edited), when present. A renderer shows it alongside <c>published</c> so an
+    /// edited post is distinguishable from a fresh one (22.1 US-19: "published/updated").
+    /// </summary>
+    /// <param name="obj">The object to inspect. May be null.</param>
+    /// <returns>The <c>updated</c> timestamp, or <c>null</c> when the object has no <c>updated</c>.</returns>
+    public static DateTime? GetUpdated(this IObject? obj)
+    {
+        return obj?.Updated;
+    }
+
+    /// <summary>
     /// Reports whether an IRI is the well-known public-audience sentinel (<c>as:Public</c> /
     /// <c>https://www.w3.org/ns/activitystreams#Public</c>).
     /// </summary>
