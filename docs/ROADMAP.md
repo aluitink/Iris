@@ -423,6 +423,15 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   4 integration tests verify the filter. End-to-end "filter returns matching items" is constrained by the
   pre-existing external-FQDN proxy blocker (as in 19.6.1/19.6.2/21.2.2/21.2.3); on the public FQDN route
   the feed populates and the `?q` filter returns the matching items.
+- [x] **21.7.1 — Dial-base resolution (no silent localhost override).** The log-on's `InstanceBaseUrls`
+  map no longer silently overrides the user's explicit base-URL input; the dial base is now resolved at
+  log-on time: an entered base URL is used as-is, and an empty field derives the dial base from the
+  address's host (a known local instance → its host-published port; an unknown host → the actor's home
+  server over `https`). **Done (change 205):** `Home.razor` gains a `ResolveDialBase` helper (shared by
+  the password + OAuth2 log-on paths) that honors the user's explicit input and falls back to the
+  address's host; the map override is removed from both paths. Manually verified (Playwright MCP):
+  log-on by `alice@iris-dev1.luit.ink` with an empty base URL dials `http://localhost:8081` (the map's
+  value) and the actor IRI carries the advertised FQDN; the "Dialing" line confirms the resolved base.
 - [ ] **21.5.1 — Instance info (nodeinfo).** Add an **Instance info** card (nodeinfo: name, software,
   version, open-registration). → Phase 22 US-10.
 - [ ] **21.5.2 — WebFinger lookup.** Add a **WebFinger** card (resolve `@user@host` to an actor IRI). →

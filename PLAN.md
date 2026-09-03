@@ -161,7 +161,21 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.3.1/21.3.2/21.3.3/21.4.1, object-detail interactions + feed pagination —
+**Latest slice (21.7.1, dial-base resolution — no silent localhost override):** the log-on's
+  `InstanceBaseUrls` map no longer silently overrides the user's explicit base-URL input. The dial
+  base is now resolved at log-on time by a shared `ResolveDialBase` helper: an entered base URL is
+  used as-is (the user's explicit input always wins); an empty field derives the dial base from the
+  address's host (a known local instance → its host-published port, e.g. `iris-dev1.luit.ink` →
+  `http://localhost:8081`; an unknown host → the actor's home server over `https`, e.g.
+  `alice@example.com` → `https://example.com`). The map override is removed from both the password
+  and OAuth2 log-on paths. The README's "Logon & the base-URL / IRI-host rule" section is rewritten
+  to document the new resolution behavior. Manually verified (Playwright MCP): log-on by
+  `alice@iris-dev1.luit.ink` with an empty base URL dials `http://localhost:8081` (the map's value),
+  the actor IRI carries the advertised FQDN, and the "Dialing" line confirms the resolved base. No
+  new framework tests (UI work, Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/205-21.7.1-dial-base-resolution-no-silent-localhost-override.md](docs/changes/205-21.7.1-dial-base-resolution-no-silent-localhost-override.md).
+
+**Prior slice (21.3.1/21.3.2/21.3.3/21.4.1, object-detail interactions + feed pagination —
   verification slice):** performed a Playwright MCP manual pass on the local compose stack
   (logged on as `alice@localhost`) to confirm four already-implemented Phase 21 features work
   end-to-end, then ticked them in the ROADMAP. **21.3.1 Reply form:** typed a reply on alice's
