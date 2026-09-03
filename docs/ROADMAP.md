@@ -506,35 +506,14 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
    (Playwright MCP): on the actor detail page, clicking "Show raw JSON" revealed the formatted
    ActivityStreams document (`@context`, `id`, `type`, `publicKey`, …) and toggled to "Hide raw JSON".
    No new code or tests (verification-only slice).
-- [ ] **21.7.2 — Dial-base / base-URL story: implicit production, explicit opt-in override.** Explore and
-   resolve the log-on / base-URL story in depth. **Goal:** a first-time user of the sample fires up the
-   sample server + UI, navigates to the UI, and can log in and interact **without** needing to create an
-   FQDN or understand "dial base" vs "identity base" internals. The UI should **implicitly** expect it is
-   talking to a real production server (the IRI host is browser-reachable), and the dial base should be an
-   **opt-in override** — the user only supplies a separate endpoint if they explicitly say "but talk to
-   this endpoint". **Scope (exploration + resolution):**
-   1. Re-audit the current log-on flow (`Home.razor`: `LogOnAsync`, `LogOnWithOAuth2Async`,
-      `ResolveDialBase`) and the `InstanceBaseUrls` map; document the exact current behavior for:
-      (a) a production-like server (IRI host resolvable by the browser), (b) the compose dev env (IRI
-      host not resolvable; only `localhost:8081`/`8082` reachable), (c) an explicitly-entered base URL.
-   2. Decide the default: when the user logs in with `user@host` and leaves the base-URL field empty, the
-      UI should **assume** the IRI host (`https://host/`) is the dial base (production assumption). Only
-      fall back to a local/derived endpoint when the production assumption fails (or when the user
-      explicitly overrides).
-   3. Make the dial base an **opt-in override**: a clearly-labelled, collapsed/advanced "Talk to a
-      different endpoint" field that is **empty by default** (production assumption). When filled, it is
-      used as the dial base; when empty, the IRI host is used. Remove or de-emphasise the always-visible
-      "Dialing …" line (it is internal detail, not user-facing).
-   4. Reconcile with the server's `Iris:AdvertiseHost`/`Iris:HostName` split (identity base vs
-      communication/listen base) and the CORS `Iris:CorsOrigins` config; document in the sample README how
-      a first-time user gets a working local setup (no FQDN required) and how to point the UI at a real
-      production instance.
-   5. Manually verify (Playwright MCP) the full matrix: (a) production assumption with a resolvable host,
-      (b) compose dev env via the opt-in override, (c) explicit override, (d) empty base + non-resolvable
-      host (graceful error, not a silent wrong dial). Update the sample README's "Logon & the base-URL /
-      IRI-host rule" + "external-instance mechanism" sections to match the resolved behavior.
-   This is an **exploration + design + small UI change** item; the UI change is manual-tested (Phase 22
-   rule 5), with an integration test only if a client/server seam or config behavior changes.
+- [x] **21.7.2 — Dial-base / base-URL story: implicit production, explicit opt-in override.**
+   **Done (change 212):** the log-on's dial-base resolution now implicitly assumes the IRI host is
+   browser-reachable (production assumption): an empty endpoint override dials `https://{host}`. The
+   `InstanceBaseUrls` map is no longer consulted in the resolution path (no silent localhost
+   redirect). The base URL field is a collapsed "Advanced: talk to a different endpoint" section
+   (empty by default); the "Dialing …" line is removed from the Home card and the MainLayout header.
+   `Program.cs` no longer seeds the map. README rewritten. Manually verified (Playwright MCP):
+   production assumption + explicit override both work end-to-end.
 
 ## Tabled / blocked
 
