@@ -161,7 +161,20 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6, minted-activity object read + client deep-link reload):** removed the
+**Latest slice (19.6.5, audience metadata — on-the-wire `to`/`cc` enumeration):** implemented the
+production half that change 158 scoped out. The outbox publish delivered an outbound Create/Announce to
+the right inboxes (the remote, non-blocked follower set) but recorded and federated the activity exactly
+as the author composed it — a public post carried only `as:Public`, no per-follower enumeration on the
+wire. `OutboxPublishHandler` now rewrites the activity's audience before recording (so the stored and
+federated forms match): an `Announce` is addressed `to` each follower and `cc`'d to the announcer; a
+`Create` appends the follower set to `cc`, keeps `as:Public` on `to`, and, for a reply (`inReplyTo`),
+appends the reply target (the parent note's author) to `to`. The embedded Note is untouched. Design A
+(activity-level single object, reusing `GetRemoteNonBlockedFollowersAsync` so audience and delivery stay
+in lockstep). CI-pinned in `OutboxAudienceMetadataIntegrationTests` (public Create / boost / reply).
+1,294 tests green. See
+[docs/changes/198-19.6.5-audience-metadata-on-the-wire.md](docs/changes/198-19.6.5-audience-metadata-on-the-wire.md).
+
+**Prior slice (19.6, minted-activity object read + client deep-link reload):** removed the
 raw-inspector read blocker behind the 19.6.1 UI half. A minted activity id (e.g.
 `/u/alice/blocks/{ulid}`) stored in the Activities store 404'd on the object-document endpoint, which
 only consulted the Objects store — so the Object view / raw inspector could not fetch a minted

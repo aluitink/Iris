@@ -275,7 +275,10 @@ base (the Docker-only-routable IRI mismatch), with CI-pinned regression tests. C
 **raw-inspector read blocker**: the object-document endpoint now serves a minted activity id (falling
 back to the Activities store), so the Object view can fetch a minted Follow/Block/Flag/Like by its id and
 its rendered signed document matches the stored activity; and the actor/object detail pages now reload on
-a deep-link `?iri=` param change (the `OnParametersSetAsync` + guard fix).
+a deep-link `?iri=` param change (the `OnParametersSetAsync` + guard fix). Change 198 implemented the
+**19.6.5 audience metadata** production change: the outbound Create/Announce now rewrites its on-the-wire
+`to`/`cc` to enumerate the follower set (and a reply's target), so the federated document carries the
+distribution list, not just the composed address.
 
 - [x] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
   browser and confirm the rendered signed message in the raw inspector matches the ActivityStream
@@ -289,9 +292,14 @@ a deep-link `?iri=` param change (the `OnParametersSetAsync` + guard fix).
   compose/follow/like through the UI and confirm the peer's inbox received the activity signed as the
   acting actor, and that the refresh path actually re-fetches (a new activity is visible after the
   bypass).
-- [ ] **19.6.5 — Audience metadata (deferred production change).** Rewriting the outbound Create/Announce
-  `to`/`cc` to enumerate the follower set + adding the reply target to a reply's `to`/`cc`. The delivery
-  already reaches the right inboxes; only the on-the-wire `to`/`cc` enumeration is left.
+- [x] **19.6.5 — Audience metadata (production change).** Rewriting the outbound Create/Announce
+  `to`/`cc` to enumerate the follower set + adding the reply target to a reply's `to`/`cc`. Change 198
+  implemented the on-the-wire enumeration (the delivery already reached the right inboxes; now the
+  federated document carries it too): `OutboxPublishHandler` rewrites the activity's `to`/`cc` before
+  recording — an `Announce` is addressed `to` each remote non-blocked follower and `cc`'d to the
+  announcer; a `Create` appends the follower set to `cc`, keeps `as:Public` on `to`, and, for a reply
+  (`inReplyTo` set), appends the reply target (the parent note's author) to `to`. CI-pinned in
+  `OutboxAudienceMetadataIntegrationTests`.
 
 ### Phase 19.7 — Threads compatibility probe (Threads.net — best-effort)
 
