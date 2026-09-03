@@ -45,6 +45,46 @@ else
             </p>
         }
     </div>
+
+    @if (Session.RecentInstances.Count > 0)
+    {
+        <div class="card">
+            <h2>Recent instances</h2>
+            <p class="muted">
+                Switch instance: re-enter the password and the session logs out of the current
+                identity and logs on to the selected instance by its WebFinger address.
+            </p>
+            <ul class="recents">
+                @foreach (var recent in Session.RecentInstances)
+                {
+                    <li>
+                        <code>@recent.Handle</code>@recent.Host
+                        @if (recent.DialBaseUri == (Session.DialBaseUri ?? recent.DialBaseUri))
+                        {
+                            <span class="muted">(current)</span>
+                        }
+                        else if (SwitchTarget is not null && SwitchTarget == recent)
+                        {
+                            <input class="inline" type="password" @bind="SwitchPassword" placeholder="password" />
+                            <button @onclick="() => SwitchAsync(recent)" disabled="@(SwitchBusy)">Switch</button>
+                        }
+                        else
+                        {
+                            <button class="secondary" @onclick="() => SelectSwitchTarget(recent)">Use</button>
+                        }
+                    </li>
+                }
+            </ul>
+            @if (SwitchBusy)
+            {
+                <span class="muted">Switching…</span>
+            }
+            @if (SwitchError is not null)
+            {
+                <div class="error">@SwitchError</div>
+            }
+        </div>
+    }
 }
 
 @code {
@@ -54,6 +94,14 @@ else
     private NodeInfo? NodeInfo { get; set; }
     private bool Busy { get; set; }
     private string? Error { get; set; }
+
+    // 19.8.1 gap (b): the Instance page's recent-instances list (one-click instance switching,
+    // mirroring the Home page's surface). The current instance (dial base match) is shown with a
+    // "(current)" marker instead of a switch button.
+    private RecentInstance? SwitchTarget { get; set; }
+    private string SwitchPassword { get; set; } = "iris-sample";
+    private bool SwitchBusy { get; set; }
+    private string? SwitchError { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -78,6 +126,56 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    private void SelectSwitchTarget(RecentInstance recent)
+    {
+        SwitchTarget = recent;
+        SwitchError = null;
+        StateHasChanged();
+    }
+
+    private async Task SwitchAsync(RecentInstance recent)
+    {
+        SwitchBusy = true;
+        SwitchError = null;
+        try
+        {
+            var ok = await Session.SwitchInstanceAsync(recent, SwitchPassword);
+            if (!ok)
+            {
+                SwitchError = "Switch failed (wrong password, or the instance is no longer running?).";
+                return;
+            }
+
+            SwitchTarget = null;
+            // Re-load the NodeInfo for the newly switched-to instance.
+            NodeInfo = null;
+            Error = null;
+            Busy = true;
+            try
+            {
+                var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+                var instanceBase = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1");
+                NodeInfo = await Session.GetClient().GetNodeInfoAsync(instanceBase);
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+            }
+            finally
+            {
+                Busy = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            SwitchError = ex.Message;
+        }
+        finally
+        {
+            SwitchBusy = false;
         }
     }
 }

@@ -62,4 +62,5 @@ OPENCODE.md
 .probe_tmp/
 .probe_tmp2/
 .probe_loop/
+.tmp-bunit-probe/
 probe_*.txt
