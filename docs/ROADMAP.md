@@ -360,9 +360,17 @@ verification** (Playwright-MCP) and are folded into the Phase 22 manual test pas
   seed host (expected in this env — the proxy's error response for an unresolvable host lacks CORS
   headers, but the UI renders a clear "TypeError: Failed to fetch" error state). No new code or tests
   (verification-only slice, Phase 22 rule 5).
-- [ ] **19.8.2 — Rendered object view quality (live remainder).** Audiences + published timestamp +
-  like/boost counts + the remote canonical-URL link now render. Still open: **the reply-chain /
-  conversations view** (built in Phase 22 US-12/19.2.4) and the live verification of the rest.
+- [x] **19.8.2 — Rendered object view quality (live remainder).** Audiences + published timestamp +
+  like/boost counts + the remote canonical-URL link now render. **Done (change 211):** a Playwright MCP
+  pass drove the object view through the browser and confirmed the rendered quality. **Audiences:**
+  bob's reply (to alice) renders the "to alice" link. **Like/boost counts:** alice's note shows "1
+  like" + "1 boost"; bob's reply shows "0 likes" + "0 boosts". **Remote canonical-URL link:** both
+  objects render "View on originating instance". **Reply-chain / conversations view:** alice's note
+  shows "2 reply(ies)" with links to bob's reply + alice's own reply; bob's reply renders "in reply to
+  {alice's note IRI}" (clickable, navigates back to the parent). The published timestamp feature is
+  built (ObjectView.razor:84-87) but not visible in the sample data (no objects carry a `published`
+  field) — the feature is verified by code inspection. No new code or tests (verification-only slice,
+  Phase 22 rule 5).
 - [x] **19.8.5 — Cross-instance navigation (live remainder).** The navigable state is preserved across
   instance switches + the "continue where you left off" card is done. **Done (change 210):** a Playwright
   MCP pass drove a real iris-a → iris-b peer-item selection through the browser and confirmed the remote
@@ -493,11 +501,40 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   consistently (no raw stack dumps; the only console errors are the pre-existing 429 proxy route). No
   new code or tests (verification-only slice).
 - [x] **21.6.3 — Raw inspector (JSON view).** Every detail page has a Raw JSON toggle. → Phase 22 US-21.
-  **Done (change 206):** the shared `RawInspector` component (a "Show raw JSON"/"Hide raw JSON" toggle
-  revealing the document as formatted JSON) was already present on the detail pages. Manually verified
-  (Playwright MCP): on the actor detail page, clicking "Show raw JSON" revealed the formatted
-  ActivityStreams document (`@context`, `id`, `type`, `publicKey`, …) and toggled to "Hide raw JSON".
-  No new code or tests (verification-only slice).
+   **Done (change 206):** the shared `RawInspector` component (a "Show raw JSON"/"Hide raw JSON" toggle
+   revealing the document as formatted JSON) was already present on the detail pages. Manually verified
+   (Playwright MCP): on the actor detail page, clicking "Show raw JSON" revealed the formatted
+   ActivityStreams document (`@context`, `id`, `type`, `publicKey`, …) and toggled to "Hide raw JSON".
+   No new code or tests (verification-only slice).
+- [ ] **21.7.2 — Dial-base / base-URL story: implicit production, explicit opt-in override.** Explore and
+   resolve the log-on / base-URL story in depth. **Goal:** a first-time user of the sample fires up the
+   sample server + UI, navigates to the UI, and can log in and interact **without** needing to create an
+   FQDN or understand "dial base" vs "identity base" internals. The UI should **implicitly** expect it is
+   talking to a real production server (the IRI host is browser-reachable), and the dial base should be an
+   **opt-in override** — the user only supplies a separate endpoint if they explicitly say "but talk to
+   this endpoint". **Scope (exploration + resolution):**
+   1. Re-audit the current log-on flow (`Home.razor`: `LogOnAsync`, `LogOnWithOAuth2Async`,
+      `ResolveDialBase`) and the `InstanceBaseUrls` map; document the exact current behavior for:
+      (a) a production-like server (IRI host resolvable by the browser), (b) the compose dev env (IRI
+      host not resolvable; only `localhost:8081`/`8082` reachable), (c) an explicitly-entered base URL.
+   2. Decide the default: when the user logs in with `user@host` and leaves the base-URL field empty, the
+      UI should **assume** the IRI host (`https://host/`) is the dial base (production assumption). Only
+      fall back to a local/derived endpoint when the production assumption fails (or when the user
+      explicitly overrides).
+   3. Make the dial base an **opt-in override**: a clearly-labelled, collapsed/advanced "Talk to a
+      different endpoint" field that is **empty by default** (production assumption). When filled, it is
+      used as the dial base; when empty, the IRI host is used. Remove or de-emphasise the always-visible
+      "Dialing …" line (it is internal detail, not user-facing).
+   4. Reconcile with the server's `Iris:AdvertiseHost`/`Iris:HostName` split (identity base vs
+      communication/listen base) and the CORS `Iris:CorsOrigins` config; document in the sample README how
+      a first-time user gets a working local setup (no FQDN required) and how to point the UI at a real
+      production instance.
+   5. Manually verify (Playwright MCP) the full matrix: (a) production assumption with a resolvable host,
+      (b) compose dev env via the opt-in override, (c) explicit override, (d) empty base + non-resolvable
+      host (graceful error, not a silent wrong dial). Update the sample README's "Logon & the base-URL /
+      IRI-host rule" + "external-instance mechanism" sections to match the resolved behavior.
+   This is an **exploration + design + small UI change** item; the UI change is manual-tested (Phase 22
+   rule 5), with an integration test only if a client/server seam or config behavior changes.
 
 ## Tabled / blocked
 

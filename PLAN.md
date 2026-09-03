@@ -161,7 +161,33 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.8.5, cross-instance navigation — live verification):** a Playwright MCP pass drove
+**Latest slice (19.8.2, rendered object view quality — live verification):** a Playwright MCP pass
+  drove the object view through the browser and confirmed the rendered quality. **Audiences:** bob's
+  reply (to alice) renders the "to alice" link. **Like/boost counts:** alice's note shows "1 like" +
+  "1 boost"; bob's reply shows "0 likes" + "0 boosts". **Remote canonical-URL link:** both objects
+  render "View on originating instance". **Reply-chain / conversations view:** alice's note shows "2
+  reply(ies)" with links to bob's reply + alice's own reply; bob's reply renders "in reply to
+  {alice's note IRI}" (clickable, navigates back to the parent). The published timestamp feature is
+  built (ObjectView.razor:84-87) but not visible in the sample data (no objects carry a `published`
+  field) — the feature is verified by code inspection. No new code or tests (verification-only slice,
+  Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/211-19.8.2-rendered-object-view-quality-live-verification.md](docs/changes/211-19.8.2-rendered-object-view-quality-live-verification.md).
+
+**Next item (21.7.2, dial-base / base-URL story — implicit production, explicit opt-in override):**
+  explore and resolve the log-on / base-URL story in depth. A first-time user fires up the sample
+  server + UI and should be able to log in and interact **without** needing to create an FQDN or
+  understand "dial base" vs "identity base" internals. The UI should **implicitly** assume it is
+  talking to a real production server (the IRI host is browser-reachable); the dial base becomes an
+  **opt-in override** (a collapsed/advanced "Talk to a different endpoint" field, empty by default).
+  When the field is empty, the IRI host is the dial base (production assumption); when filled, it is
+  used as the dial base. The always-visible "Dialing …" line is removed/de-emphasised. Reconcile with
+  the server's `Iris:AdvertiseHost`/`Iris:HostName` split + CORS `Iris:CorsOrigins`; update the sample
+  README. Manually verify the full matrix (production assumption, compose dev env via override,
+  explicit override, empty base + non-resolvable host → graceful error). This is an exploration +
+  design + small UI change item (Phase 22 rule 5: UI manual-tested, integration test only if a
+  client/server seam or config behavior changes). See ROADMAP.md 21.7.2.
+
+**Prior slice (19.8.5, cross-instance navigation — live verification):** a Playwright MCP pass drove
   a real iris-a → iris-b peer-item selection through the browser and confirmed the remote object
   renders. **Object page:** navigated to `https://iris-dev2.luit.ink/ap/v1/u/alice/notes/1` (an iris-b
   object) from the Object page; the UI rendered the Note (content "Welcome to the Iris sample
