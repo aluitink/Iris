@@ -161,7 +161,24 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6.2, outbox page-cache invalidation on a local write):** fixed the server-side
+**Latest slice (19.6.2, broad signed-outbox-write enumeration — manual pass):** drove the remaining
+ signed AP outbox write screens through the UI on the compose stack (logged on as `alice@localhost`
+ dialing `http://localhost:8081`) and confirmed each enumerates the outbox **1:1 with no manual refresh**
+ (the change-199 page-1 invalidation) and its `RawInspector` renders the signed AS document **1:1**
+ (minted id, normalized advertised `object` IRI, correct `type`, `actor` = the acting local actor):
+ **Block** (alice→bob, `.../blocks/06G6ERZNRD…`, 202), **Flag** (alice→bob, `.../flags/06G6ESEEZV…`, 202),
+ **Like** (alice→bob note 1, `.../likes/06G6ESSGPV…`, 202). **Create** was already verified 1:1 in
+ change 199. **Follow** is present (the Follow button is enabled); **Unfollow** is correctly disabled by
+ the Decision 055 learned-id model (the seeded alice→bob follow has no learned activity id, so an Undo of
+ that specific Follow is not offered) — by-design, not a defect. **Mute** is a local, non-AP decision
+ (not an outbox candidate); **Accept/Reject/Undo** share the same `OutboxPublishHandler` path. Console
+ errors reviewed — all by-design (owner-only inbox 403, non-routable `carla` placeholder CORS, 404 on
+ `/replies`/`/likes`/`/shares` of non-Note activities); no 500s, no signature failures, no delivery
+ errors. No code changed (a manual pass per the Phase 22 method, rule 5). 1,284 tests green. The
+ external-FQDN reverse-proxy pass remains the documented blocker (as in 19.6.1). See
+ [docs/changes/200-19.6.2-broad-outbox-enumeration-manual-pass.md](docs/changes/200-19.6.2-broad-outbox-enumeration-manual-pass.md).
+
+**Prior slice (19.6.2, outbox page-cache invalidation on a local write):** fixed the server-side
  blocker behind the 19.6.2 "all activities flow through the outbox" UI half. The outbox collection page
  is served through the `LocalCollectionPageCache` (a 60s server→client response cache keyed by the page
  IRI), but a local outbox write (`Insert(0)`, newest-first) never dropped the cached page-1 — so the UI's

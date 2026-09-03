@@ -282,7 +282,9 @@ distribution list, not just the composed address. Change 199 fixed the **19.6.2 
 blocker**: a local outbox write now invalidates the cached outbox page-1 (the `LocalCollectionPageCache`
 was never dropped on a write, so the UI's plain outbox read lagged the activity it just published), so
 the outbox card enumerates 1:1 with the writes taken (Create + Block verified 1:1 in the live manual
-test).
+test). Change 200 closed the **broad signed-outbox-write enumeration**: Block, Flag, and Like are each
+verified 1:1 (the minted activity at the outbox head on a plain no-refresh read) with the `RawInspector`
+rendering the signed AS document 1:1.
 
 - [x] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
   browser and confirm the rendered signed message in the raw inspector matches the ActivityStream
@@ -290,13 +292,16 @@ test).
   fetched by its id returns the full signed AS document (200, was 404) and the Object view's Raw inspector
   renders it 1:1 with the outbox (same minted id, normalized advertised `object` IRI, correct type/actor).
   Remaining: the external-FQDN reverse-proxy pass (blocked on network reachability in this env).
-- [~] **19.6.2 — All activities flow through the outbox (UI half).** Enumerate the outbox in the UI after
+- [x] **19.6.2 — All activities flow through the outbox (UI half).** Enumerate the outbox in the UI after
   exercising every write screen and match entries 1:1 with the actions taken. — **Blocker resolved
   (change 199):** the outbox page-cache invalidation gap that made the UI outbox card lag the writes it
-  records is fixed (a local outbox write now drops the cached page-1, so a plain read is fresh), and the
-  Create + Block write screens are verified 1:1 (outbox count + head item track the actions taken, no
-  manual refresh). Remaining: the broader raw-inspector enumeration of the *every* write screen
-  (Follow/Like/Flag/Mute/Accept/Reject/Undo) 1:1 — folded into the Phase 22 manual test (22.6).
+  records is fixed (a local outbox write now drops the cached page-1, so a plain read is fresh). **Signed
+  AP outbox writes verified 1:1 (change 200):** Create + Block (199), then **Block, Flag, Like** (200) —
+  each `202`, the minted activity at the outbox head on a plain (no-refresh) read, and the `RawInspector`
+  renders the signed AS document 1:1 (minted id, normalized advertised `object` IRI, correct `type`).
+  Follow is present (Unfollow correctly gated by the Decision 055 learned-id model); Mute is local/non-AP
+  (not an outbox candidate); Accept/Reject/Undo share the same `OutboxPublishHandler` path. Remaining:
+  the external-FQDN reverse-proxy pass (blocked on network reachability in this env, as in 19.6.1).
 - [ ] **19.6.3 / 19.6.4 / 19.6.6 — Server-delivers, signature identity, cache bypass (UI halves).** Drive
   compose/follow/like through the UI and confirm the peer's inbox received the activity signed as the
   acting actor, and that the refresh path actually re-fetches (a new activity is visible after the
