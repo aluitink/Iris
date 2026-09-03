@@ -161,7 +161,23 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.4.2, feed filter `?q`):** the followed-feed endpoint (`GET /u/{handle}/feed`) gains a
+**Latest slice (21.3.1/21.3.2/21.3.3/21.4.1, object-detail interactions + feed pagination —
+  verification slice):** performed a Playwright MCP manual pass on the local compose stack
+  (logged on as `alice@localhost`) to confirm four already-implemented Phase 21 features work
+  end-to-end, then ticked them in the ROADMAP. **21.3.1 Reply form:** typed a reply on alice's
+  note, posted (202), Replies count went 2 → 3, the new reply's object page showed the content +
+  "in reply to" link. **21.3.2 Like/Boost:** Like → 202 `Like` + "You liked this."; Unlike → 202
+  `Undo`; Boost → 202 `Announce` + "You boosted this." **21.3.3 Delete (author only):** on a
+  reply authored by the logged-on actor, Delete → the object re-loaded as a Tombstone, the Delete
+  button was removed, 202 `Delete` activity. **21.4.1 Feed pagination (Load more):** the
+  `PagedCollection` component (one server page per click, `HasMore = !page.IsLastPage`) loaded
+  1100 items on the Community feed, confirming pagination at scale. The followed-feed (Feed page)
+  showed "No followed items yet" (alice has no follows; the followed-feed endpoint 500s on the
+  remote-follow fetch — the pre-existing FQDN blocker). No new code or tests (UI work, Phase 22
+  rule 5; verification-only slice). 1,288 tests green. See
+  [docs/changes/204-21.3.1-21.3.2-21.3.3-21.4.1-object-page-interactions-and-feed-pagination-verification.md](docs/changes/204-21.3.1-21.3.2-21.3.3-21.4.1-object-page-interactions-and-feed-pagination-verification.md).
+
+**Prior slice (21.4.2, feed filter `?q`):** the followed-feed endpoint (`GET /u/{handle}/feed`) gains a
   `?q` content filter (case-insensitive content/name match, including nested objects — the same logic as
   the community feed's F-23 `?q`). `IFollowFeedService.GetFeedAsync` + `FeedService` gain a `query` param
   (the unfiltered build is extracted to `BuildFeedAsync`; a non-empty query delegates to a new

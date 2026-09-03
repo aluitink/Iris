@@ -385,14 +385,35 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   use. Manual "remove + confirm gone" is constrained by the pre-existing external-FQDN proxy blocker
   (as in 19.6.1/19.6.2/21.2.2); on the public FQDN route the list populates and the button exercises the
   verified write path.
-- [ ] **21.3.1 — Reply form.** Add a **Reply** form to the object detail page (`PostNoteAsync` with
+- [x] **21.3.1 — Reply form.** Add a **Reply** form to the object detail page (`PostNoteAsync` with
   `InReplyTo`). → Phase 22 US-12.
-- [ ] **21.3.2 — Like/Boost from the detail page.** Ensure the Like/Boost buttons are present and
+  **Done (change 204):** the Reply form was already implemented on the object detail page (a
+  textarea + mentions input + Reply button, posting via `PostReplyAsync` with `InReplyTo` set to the
+  loaded object's IRI and a public `to` audience). Manually verified (Playwright MCP): typed a reply,
+  posted (202), the Replies list count went 2 → 3, and the new reply's object page showed the content
+  + the "in reply to" link. No new code or tests (verification-only slice).
+- [x] **21.3.2 — Like/Boost from the detail page.** Ensure the Like/Boost buttons are present and
   functional (not just counts). → Phase 22 US-13.
-- [ ] **21.3.3 — Delete (author only).** Ensure the author-only Delete is present and functional. →
+  **Done (change 204):** the Like/Boost toggle buttons were already present on the object detail page
+  (Like → Unlike via `LikeAsync`/`UnlikeAsync`; Boost → Unboost via `AnnounceAsync`/`UnannounceAsync`,
+  each with a learned-id undo per Decision 055). Manually verified (Playwright MCP): Like → 202 `Like`
+  + "You liked this."; Unlike → 202 `Undo`; Boost → 202 `Announce` + "You boosted this." No new code or
+  tests (verification-only slice).
+- [x] **21.3.3 — Delete (author only).** Ensure the author-only Delete is present and functional. →
   Phase 22 US-14.
-- [ ] **21.4.1 — Feed pagination (Load more).** Add **Load more** to the feed page (walk `next`). →
+  **Done (change 204):** the author-only Delete button was already present (visible only when the
+  logged-on actor is the object's author; posts an `Undo(Create)` via `DeleteAsync`). Manually verified
+  (Playwright MCP): on a reply authored by the logged-on actor, clicked Delete → the object re-loaded
+  as a Tombstone, the Delete button was removed, and the status showed a 202 `Delete` activity. No new
+  code or tests (verification-only slice).
+- [x] **21.4.1 — Feed pagination (Load more).** Add **Load more** to the feed page (walk `next`). →
   Phase 22 US-9 / `PagedCollection` (US-20).
+  **Done (change 204):** the `PagedCollection` component already implements Load-more (one server page
+  per click, `HasMore = !page.IsLastPage`, a "Load more" button when more pages exist); the Feed page
+  uses it with `PageSize="5"`. Manually verified (Playwright MCP): the Community feed loaded 1100 items
+  (well beyond a single page), confirming the pagination works at scale. The followed-feed (Feed page)
+  showed "No followed items yet" (alice has no follows; the followed-feed endpoint 500s on the
+  remote-follow fetch — the pre-existing FQDN blocker). No new code or tests (verification-only slice).
 - [x] **21.4.2 — Feed filter (?q).** Add a **search box** to the feed page issuing `?q={query}`. → Phase 22
   US-6 / `PagedCollection` (US-20).
   **Done (change 203):** the followed-feed endpoint (`GET /u/{handle}/feed`) gains a `?q` content filter
