@@ -173,13 +173,16 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   flags** (change [193](changes/193-22.6-community-moderation-collections-pagedcollection.md)), and
   Actor-detail **mutes/blocks/flags** (change
   [194](changes/194-22.6-actor-moderation-collections-pagedcollection.md)) are all consolidated onto the
-  shared `PagedCollection` via the robust field-based `RenderFragment<T>` `ItemTemplate` pattern (inline
-  lambda attributes are unreliable). The **local** manual test pass of the full explorer (UI + wire) is
-  done (change [195](changes/195-22.6-local-manual-test-pass.md)) — every page renders, the C2S write path
-  returns 202, and the only console errors are the cosmetic favicon 404, the by-design owner-only inbox 403
-  (treated as an empty collection), and the unreachable external-FQDN reverse-proxy route. **Remaining:**
-  only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
-  unreachable in this env.
+   shared `PagedCollection` via the robust field-based `RenderFragment<T>` `ItemTemplate` pattern (inline
+   lambda attributes are unreliable). The **local** manual test pass of the full explorer (UI + wire) is
+   done (change [195](changes/195-22.6-local-manual-test-pass.md)) — every page renders, the C2S write path
+   returns 202, and the only console errors are the cosmetic favicon 404, the by-design owner-only inbox 403
+   (treated as an empty collection), and the unreachable external-FQDN reverse-proxy route. A follow-up
+   verification pass (change [206](changes/206-21.5.1-21.5.2-21.6.1-21.6.2-21.6.3-instance-webfinger-nav-error-raw-verification.md))
+   confirmed the remaining Phase 21 UI items (21.5.1 nodeinfo, 21.5.2 WebFinger, 21.6.1 back links,
+   21.6.2 error/empty states, 21.6.3 raw inspector) all work end-to-end locally. **Remaining:**
+   only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
+   unreachable in this env.
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
@@ -432,15 +435,40 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   address's host; the map override is removed from both paths. Manually verified (Playwright MCP):
   log-on by `alice@iris-dev1.luit.ink` with an empty base URL dials `http://localhost:8081` (the map's
   value) and the actor IRI carries the advertised FQDN; the "Dialing" line confirms the resolved base.
-- [ ] **21.5.1 — Instance info (nodeinfo).** Add an **Instance info** card (nodeinfo: name, software,
+- [x] **21.5.1 — Instance info (nodeinfo).** Add an **Instance info** card (nodeinfo: name, software,
   version, open-registration). → Phase 22 US-10.
-- [ ] **21.5.2 — WebFinger lookup.** Add a **WebFinger** card (resolve `@user@host` to an actor IRI). →
+  **Done (change 206):** the Instance page's NodeInfo card (instance name, software, protocols, open
+  registrations, NodeInfo version) was already implemented (`Instance.razor` → `GetNodeInfoAsync`).
+  Manually verified (Playwright MCP): the card rendered the seeded instance's metadata
+  (Instance `iris-iris-dev1.luit.ink`, Software `iris 1`, Protocols `activitypub`, NodeInfo `2.0`).
+  No new code or tests (verification-only slice).
+- [x] **21.5.2 — WebFinger lookup.** Add a **WebFinger** card (resolve `@user@host` to an actor IRI). →
   Phase 22 US-10.
-- [ ] **21.6.1 — Consistent navigation (back links).** Every detail page has a back link to its parent. →
+  **Done (change 206):** the Instance page's WebFinger handle-lookup card (input + Resolve button →
+  `ResolveActorAsync` → a link to the actor's detail page) was already implemented. Manually verified
+  (Playwright MCP): resolving `alice@localhost` returned the actor IRI
+  (`https://iris-dev1.luit.ink/ap/v1/u/alice`) with a working link to the actor detail. No new code or
+  tests (verification-only slice).
+- [x] **21.6.1 — Consistent navigation (back links).** Every detail page has a back link to its parent. →
   Phase 22 US-22.
-- [ ] **21.6.2 — Error/empty state consistency.** Every card has a consistent error/empty state across all
+  **Done (change 206):** the shared `BackLink` component (the last-viewed object/actor, or Home) was
+  already present on all three detail pages (ActorDetail, ObjectPage, Community). Manually verified
+  (Playwright MCP): each detail page rendered "← Back to actor"/"← Back to object", and clicking it
+  navigated back correctly. No new code or tests (verification-only slice).
+- [x] **21.6.2 — Error/empty state consistency.** Every card has a consistent error/empty state across all
   new cards. → Phase 22 US-23.
-- [ ] **21.6.3 — Raw inspector (JSON view).** Every detail page has a Raw JSON toggle. → Phase 22 US-21.
+  **Done (change 206):** all cards use a consistent pattern — errors in a `class="error"` div, loading/
+  empty states in `class="muted"` with specific messages ("No members.", "No followed items yet.",
+  "Could not resolve that address", "Object not found: …"). Manually verified (Playwright MCP) across the
+  Instance, Actor-detail, Object, Community, and Feed pages: empty states and error states render
+  consistently (no raw stack dumps; the only console errors are the pre-existing 429 proxy route). No
+  new code or tests (verification-only slice).
+- [x] **21.6.3 — Raw inspector (JSON view).** Every detail page has a Raw JSON toggle. → Phase 22 US-21.
+  **Done (change 206):** the shared `RawInspector` component (a "Show raw JSON"/"Hide raw JSON" toggle
+  revealing the document as formatted JSON) was already present on the detail pages. Manually verified
+  (Playwright MCP): on the actor detail page, clicking "Show raw JSON" revealed the formatted
+  ActivityStreams document (`@context`, `id`, `type`, `publicKey`, …) and toggled to "Hide raw JSON".
+  No new code or tests (verification-only slice).
 
 ## Tabled / blocked
 

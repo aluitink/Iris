@@ -161,7 +161,24 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.7.1, dial-base resolution — no silent localhost override):** the log-on's
+**Latest slice (21.5.1/21.5.2/21.6.1/21.6.2/21.6.3, instance + WebFinger + nav + error/empty + raw
+  — verification slice):** a Playwright MCP manual pass on the local compose stack (logged on as
+  `alice@localhost`, dial base derived from the map → `http://localhost:8081`) to confirm five
+  already-implemented Phase 21 UI features work end-to-end, then ticked them in the ROADMAP.
+  **21.5.1 nodeinfo:** the Instance page's NodeInfo card rendered the seeded instance's metadata
+  (Instance `iris-iris-dev1.luit.ink`, Software `iris 1`, Protocols `activitypub`, NodeInfo `2.0`).
+  **21.5.2 WebFinger:** the handle-lookup card resolved `alice@localhost` → the actor IRI with a
+  working link to the actor detail. **21.6.1 back links:** all three detail pages (ActorDetail,
+  ObjectPage, Community) rendered a back link; clicking it navigated back correctly. **21.6.2
+  error/empty states:** consistent across pages — errors in `class="error"`, loading/empty in
+  `class="muted"` with specific messages ("No members.", "No followed items yet.", "Object not
+  found: …"); no raw stack dumps. **21.6.3 raw inspector:** the actor detail page's "Show raw JSON"
+  toggle revealed the formatted ActivityStreams document and toggled to "Hide raw JSON". The only
+  console errors were the pre-existing 429 external-FQDN proxy route. No new code or tests
+  (verification-only slice, Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/206-21.5.1-21.5.2-21.6.1-21.6.2-21.6.3-instance-webfinger-nav-error-raw-verification.md](docs/changes/206-21.5.1-21.5.2-21.6.1-21.6.2-21.6.3-instance-webfinger-nav-error-raw-verification.md).
+
+**Prior slice (21.7.1, dial-base resolution — no silent localhost override):** the log-on's
   `InstanceBaseUrls` map no longer silently overrides the user's explicit base-URL input. The dial
   base is now resolved at log-on time by a shared `ResolveDialBase` helper: an entered base URL is
   used as-is (the user's explicit input always wins); an empty field derives the dial base from the
