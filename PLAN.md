@@ -127,6 +127,19 @@ Build clean, format clean, suite green (1,274). See
 **22.5 is done** — next: 22.6 (implementation sweep + manual pass, incl. the recorded `PagedCollection`
 dedup and the external-FQDN reverse-proxy pass).
 
+**Latest slice (22.6, implementation sweep — first slice):** consolidated the Actor-detail **Inbox**
+card (US-21) onto the shared [`PagedCollection`](samples/SampleBlazorClient/Components/PagedCollection.razor),
+removing its hand-rolled load/empty/error/"Load more"/next-link state. Discovered + documented the
+reliable way to give `PagedCollection` a custom item renderer: a **field-based `RenderFragment<T>`**
+(built with `RenderTreeBuilder`) passed as `ItemTemplate="@InboxItemTemplate"` — an **inline lambda
+attribute** with a multi-statement body is unreliable on net10.0 Razor (cascading `CS9348`), and the
+`Description` string attribute cannot hold markup/interpolation (`RZ9986`). Behaviorally identical to
+the old card (the owner-only inbox read yields an empty collection on a plain session, as before).
+Build clean, format clean, suite green (1,274), verified on the local compose stack. Remaining 22.6:
+Community `following`/`followers` + mutes/blocks/flags cards, and the full manual pass (incl. the
+external-FQDN reverse-proxy route). See
+[docs/changes/191-22.6-inbox-pagedcollection-consolidation.md](docs/changes/191-22.6-inbox-pagedcollection-consolidation.md).
+
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
 [docs/decisions/](docs/decisions/README.md).

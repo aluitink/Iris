@@ -167,6 +167,11 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
    candidate (cosmetic, not a contradiction).
 - [ ] **22.6 — Implementation sweep + manual test pass.** Implement the remaining items and end the
   round with a full Playwright-MCP manual test pass of the explorer (UI + wire), resolving gaps/errors.
+  **In progress:** Actor-detail **Inbox** consolidated onto the shared `PagedCollection` (change
+  [191](changes/191-22.6-inbox-pagedcollection-consolidation.md)); the robust field-based
+  `RenderFragment<T>` `ItemTemplate` pattern is established (inline lambda attributes are unreliable).
+  Remaining: Community `following`/`followers` + mutes/blocks/flags cards, and the full manual pass
+  (incl. the external-FQDN reverse-proxy route).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
