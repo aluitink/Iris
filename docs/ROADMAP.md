@@ -1023,10 +1023,15 @@ while it remains in flux; the underlying wire is proven by the existing server/c
 
 ### 21.2 — Community detail page expansion
 
-- [ ] **21.2.1 — Moderation collections (target list).** The community page already has a Moderation
-  card (mute/block/flag a target). Expand to show the **community's moderation collections**
-  (`GET /ap/v1/c/{name}/{blocks|flags|mutes}`, paged) with the ability to **unmute/unblock/unflag**
-  from the list. This exercises the community moderation collection reads.
+- [x] **21.2.1 — Moderation collections (target list, change 179).** The community page now shows the
+  community's moderation collections (who the community has muted/blocked/flagged) via
+  `GET /ap/v1/c/{name}/{mutes|blocks|flags}`, paged with `next`-link walking. Each item links to the
+  moderated actor's detail. No per-item unmute/unblock/unflag buttons: the Decision 055 learned-id model
+  requires the id of the original activity to undo it, which these collections do not carry (they carry
+  actor IRIs, not activity ids). The unmute/unblock/unflag capability is provided by the existing
+  "Moderation" card (which uses the captured learned ids). Per the current direction, the sample-client
+  UI is verified manually (not bUnit-tested) while it remains in flux; the underlying wire is proven by
+  the existing server/client integration tests.
 - [ ] **21.2.2 — Feed refresh button.** The community feed card already shows the feed. Add a **Refresh**
   button that issues `?refresh=true` (bypassing the page cache) so the user can force a fresh read.
   This exercises the `?refresh=true` cache bypass (19.5.5 remaining).
