@@ -94,6 +94,33 @@ else
 
         <RawInspector Document="ObjectDoc" Title="Raw inspector" />
 
+        <div class="card">
+            <h3>Reply</h3>
+            <p class="muted">
+                Post a reply to this object as your account (a note whose <c>inReplyTo</c> is this
+                object). The reply appears under "Replies" once the server records it.
+            </p>
+            <label for="reply-content">Your reply</label>
+            <textarea id="reply-content" rows="3" @bind="ReplyContent"
+                      placeholder="Write a reply…"></textarea>
+            <label for="reply-mentions">Mentions (comma-separated actor IRIs, optional)</label>
+            <input id="reply-mentions" type="text" @bind="ReplyMentions"
+                   placeholder="http://localhost/ap/v1/u/bob" />
+            <button @onclick="ReplyAsync" disabled="@(ReplyBusy)">Reply</button>
+            @if (ReplyBusy)
+            {
+                <span class="muted">Posting…</span>
+            }
+            @if (ReplyResult is not null)
+            {
+                <p class="muted">Status: <code>@ReplyResult</code></p>
+            }
+            @if (ReplyError is not null)
+            {
+                <div class="error">@ReplyError</div>
+            }
+        </div>
+
         @if (Replies is not null)
         {
             <div class="card">
@@ -152,6 +179,18 @@ else
     private Iri? LikeLearnedId { get; set; }
     private Iri? BoostLearnedId { get; set; }
     private bool IsAuthor { get; set; }
+
+    // 22.2 (US-12): the reply form. `ReplyContent` is the reply text; `ReplyMentions` is an optional
+    // comma-separated list of actor IRIs to @mention. Posting calls PostReplyAsync, which derives the
+    // note's inReplyTo (the loaded object), the @mention tags, and the public `to` audience.
+    private string ReplyContent { get; set; } = "";
+    private string ReplyMentions { get; set; } = "";
+    private bool ReplyBusy { get; set; }
+    private string? ReplyResult { get; set; }
+    private string? ReplyError { get; set; }
+
+    /// <summary>The ActivityStreams public collection address (the conventional <c>to</c> for public replies).</summary>
+    private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
 
     /// <summary>
     /// The object IRI deep-linked via the <c>?iri=</c> query param (S2). When present, the page loads it
@@ -218,8 +257,13 @@ else
             // toggle so a re-loaded object shows the current like state.
             HasLiked = await IsLikedByActorAsync(client, objectIri);
 
+            // Bypass the client's collection cache: the replies collection is public data that changes
+            // when a reply is posted, so a re-load after a reply (or after any write) must reflect the
+            // current store, not a page cached from a prior load (the same reason the like-count and
+            // like-state reads bypass the cache).
             var replies = new List<IObjectOrLink>();
-            await foreach (var item in client.GetRepliesAsync(objectIri))
+            await foreach (var item in client.GetRepliesAsync(
+                objectIri, new CollectionQuery { BypassCache = true }))
             {
                 replies.Add(item);
             }
@@ -427,6 +471,77 @@ else
         {
             WriteBusy = false;
         }
+    }
+
+    /// <summary>
+    /// Posts a reply to the loaded object as the logged-on actor (22.2 US-12): calls
+    /// <see cref="IActivityPubClient.PostReplyAsync"/> (a note whose <c>inReplyTo</c> is the loaded
+    /// object, with any <c>@mention</c> tags and a public <c>to</c> audience). On success the reply
+    /// content is cleared and the object is re-loaded so the new reply surfaces under "Replies".
+    /// </summary>
+    private async Task ReplyAsync()
+    {
+        if (!Session.IsLoggedIn || LoadedObjectIri is null || ReplyBusy)
+        {
+            return;
+        }
+
+        var content = ReplyContent.Trim();
+        if (content.Length == 0)
+        {
+            ReplyError = "Write a reply before posting.";
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        var client = Session.GetClient();
+        ReplyBusy = true;
+        ReplyResult = null;
+        ReplyError = null;
+        try
+        {
+            var result = await client.PostReplyAsync(
+                actorIri, LoadedObjectIri.Value, content, ParseReplyMentions(), [AsPublic]);
+            if (result.IsSuccess)
+            {
+                ReplyResult = $"posted reply (status {result.StatusCode})";
+                ReplyContent = "";
+                ReplyMentions = "";
+                // Re-load so the new reply surfaces under "Replies" (and the object's counts refresh).
+                await LoadAsync();
+            }
+            else
+            {
+                ReplyResult = $"failed (status {result.StatusCode})";
+            }
+        }
+        catch (Exception ex)
+        {
+            ReplyError = ex.Message;
+        }
+        finally
+        {
+            ReplyBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Parses the reply's mention input (comma-separated actor IRIs) into the <c>@mention</c> tags for
+    /// <see cref="IActivityPubClient.PostReplyAsync"/>. Null when empty (the reply carries no mention
+    /// tags). Mirrors the Compose page's mention parsing.
+    /// </summary>
+    private IReadOnlyList<Iri>? ParseReplyMentions()
+    {
+        if (string.IsNullOrWhiteSpace(ReplyMentions))
+        {
+            return null;
+        }
+
+        var list = ReplyMentions
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(m => new Iri(m))
+            .ToList();
+        return list.Count > 0 ? list : null;
     }
 
     /// <summary>
