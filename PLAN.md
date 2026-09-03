@@ -161,6 +161,18 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
+**Latest slice (19.6, dial-base IRI normalization):** fixed the server-side blocker behind the
+19.6.1/19.6.2/19.6.3 write UI halves. A signed Follow of a *local* actor 500'd because the client
+dials the instance on a host-published base (`http://localhost:8081`) and carries that base in the
+activity's object reference, while the instance stores local actors under the advertised base
+(`https://iris-dev1.luit.ink`) — the exact-IRI local-actor check missed, so the server treated its own
+actor as remote and attempted an unroutable cross-instance delivery. The outbox publish path now
+rewrites a dial-base local-actor/community object reference to the advertised base (a no-op for
+already-canonical or remote targets) before recording the edge; the 500 catch block now logs the
+exception. Verified on the compose stack (Follow/Unfollow → 202) and CI-pinned with three
+`TestServer` integration tests. 1,289 tests green. See
+[docs/changes/196-19.6-dial-base-iri-normalization.md](docs/changes/196-19.6-dial-base-iri-normalization.md).
+
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
 [docs/decisions/](docs/decisions/README.md).

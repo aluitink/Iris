@@ -268,7 +268,10 @@ US-24) will also close the UI-side remote-rendering pieces.
 The CI-testable halves of 19.6.1–19.6.6 are **done and pinned**. The remaining halves are all the
 **raw-inspector (UI) verification** — drive the write/read screens through the browser and confirm the
 rendered signed message / collection / cache behavior — and are folded into the Phase 22 manual test
-pass (22.6) + the `RawInspector` component (US-21):
+pass (22.6) + the `RawInspector` component (US-21). Change 196 resolved the **server-side blocker**
+that was keeping the Follow/Unfollow (and other single-target write) UI halves from completing: the
+outbox publish path now normalizes a dial-base local-actor/community object reference to the advertised
+base (the Docker-only-routable IRI mismatch), with CI-pinned regression tests.
 
 - [ ] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
   browser and confirm the rendered signed message in the raw inspector matches the ActivityStream
