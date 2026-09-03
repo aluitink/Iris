@@ -110,12 +110,20 @@ else
                                     <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
                                         @HandleOf(href.ToString())
                                     </a>
+                                    @if (IsOwnActor && Iri.TryParse(href.ToString(), out var blockTarget))
+                                    {
+                                        <button @onclick="() => BlockFollowerAsync(blockTarget)" disabled="@(FollowersManagementBusy)">Block</button>
+                                    }
                                 }
                                 else if (item is IObject { Id: { Length: > 0 } fid })
                                 {
                                     <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
                                         @HandleOf(fid)
                                     </a>
+                                    @if (IsOwnActor && Iri.TryParse(fid, out var blockTarget))
+                                    {
+                                        <button @onclick="() => BlockFollowerAsync(blockTarget)" disabled="@(FollowersManagementBusy)">Block</button>
+                                    }
                                 }
                                 else
                                 {
@@ -124,6 +132,14 @@ else
                             </li>
                         }
                     </ul>
+                    @if (FollowersManagementError is not null)
+                    {
+                        <div class="error">@FollowersManagementError</div>
+                    }
+                    @if (FollowersManagementResult is not null)
+                    {
+                        <p class="muted">@FollowersManagementResult</p>
+                    }
                 }
                 @if (FollowersHasMore)
                 {
@@ -401,6 +417,17 @@ else
     private bool FollowingLoadingMore { get; set; }
     private string? FollowingError { get; set; }
     private Iri? _followingResumeFrom;
+
+    // 21.1.1: followers-list management (block a follower from the list, owner only)
+    private bool FollowersManagementBusy { get; set; }
+    private string? FollowersManagementError { get; set; }
+    private string? FollowersManagementResult { get; set; }
+
+    /// <summary>
+    /// True when the logged-on actor owns the actor being viewed (i.e. <c>ActorIri</c> == <c>Session.ActorIri</c>).
+    /// Used to gate management actions (unfollow from the following list).
+    /// </summary>
+    private bool IsOwnActor => Session.ActorIri is { } own && ActorIri is { } target && own.Value == target.Value;
 
     private bool ShowRaw { get; set; }
     private string? RawJson { get; set; }
@@ -1068,6 +1095,41 @@ else
             await CountAsync(client.GetMutesAsync(selfIri, query)),
             await CountAsync(client.GetBlocksAsync(selfIri, query)),
             await CountAsync(client.GetFlagsAsync(selfIri, query)));
+    }
+
+    // 21.1.1: block a follower from the followers list (owner only). Blocking a follower severs the
+    // relationship (the blocked follower's activities no longer reach the owner). This is a practical
+    // management action for the followers list (the owner can't "unfollow" a follower in AP — the
+    // follower owns the follow edge — but can block them).
+    private async Task BlockFollowerAsync(Iri target)
+    {
+        if (!Session.IsLoggedIn || !IsOwnActor || FollowersManagementBusy)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        FollowersManagementBusy = true;
+        FollowersManagementResult = null;
+        FollowersManagementError = null;
+        try
+        {
+            var result = await Session.GetClient().BlockAsync(actorIri, target);
+            FollowersManagementResult = result.IsSuccess
+                ? $"Blocked (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
+            // S6: refresh the logged-on actor's own moderation counts (bypassing the page cache) so the
+            // new block is visible immediately.
+            await RefreshMyModerationAsync(bypassCache: true);
+        }
+        catch (Exception ex)
+        {
+            FollowersManagementError = ex.Message;
+        }
+        finally
+        {
+            FollowersManagementBusy = false;
+        }
     }
 
     /// <summary>
