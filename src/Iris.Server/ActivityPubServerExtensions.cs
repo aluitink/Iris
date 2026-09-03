@@ -1585,6 +1585,15 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status403Forbidden);
         }
 
+        // Docker-only-routable IRI normalization: the authoring client dials the instance on a
+        // host-published base (e.g. http://localhost:8081) and carries that base in the activity's
+        // object references (a Follow's target), but the instance's local actors are stored under the
+        // advertised base (e.g. https://iris-dev1.luit.ink). When the object is a local actor reached
+        // via the dial base, rewrite it to the advertised base so the local-actor check (and the
+        // recorded edge) use the canonical IRI — otherwise the instance treats its own actor as remote
+        // and attempts a cross-instance delivery that cannot route.
+        await NormalizeLocalActorObjectIriAsync(activity, baseUrl, persistence, ct).ConfigureAwait(false);
+
         // Decision 055: the server is the sole authority for the id of an object/activity it creates.
         // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
         // the server mints a collision-resistant, unguessable ULID in a fixed per-type namespace and
@@ -1680,8 +1689,12 @@ public static class ActivityPubServerExtensions
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            context.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Iris.Server.OutboxPublishHandler")
+                .LogError(ex, "Outbox publish for actor {Handle} ({Type}) failed.", handle, activity.GetType().Name);
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
 
@@ -2784,6 +2797,73 @@ public static class ActivityPubServerExtensions
     {
         var normalized = baseUrl.TrimEnd('/');
         return new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/u/{handle}");
+    }
+
+    /// <summary>
+    /// Rewrites an outbox-published activity's <c>object</c> reference to the instance's advertised base
+    /// when it points at a local actor or community reached via a different (dial) base.
+    /// </summary>
+    /// <remarks>
+    /// Docker-only-routable IRI normalization. The authoring client dials the instance on a
+    /// host-published base (e.g. <c>http://localhost:8081</c>) and carries that base in the activity's
+    /// object references (a <c>Follow</c>'s target), but the instance stores its local actors under the
+    /// advertised base (e.g. <c>https://iris-dev1.luit.ink</c>). Without this rewrite the local-actor
+    /// check (an exact-IRI store lookup) misses the actor — the instance treats its own actor as remote
+    /// and attempts a cross-instance delivery that cannot route (the dial base is not reachable from
+    /// inside the instance's network). The rewrite is a no-op when the object is already on the
+    /// advertised base, is not a local-actor/local-community path, or the actor/community is not local.
+    /// Only the first object reference is normalized (a person/community <c>Follow</c>/<c>Block</c>/
+    /// <c>Flag</c> carries exactly one target).
+    /// </remarks>
+    /// <param name="activity">The activity whose object reference is normalized (mutated in place).</param>
+    /// <param name="baseUrl">The instance's advertised base (scheme + host + port, no trailing slash).</param>
+    /// <param name="persistence">The persistence provider (the actor + community stores, consulted to
+    /// confirm the target is local).</param>
+    /// <param name="ct">The cancellation token.</param>
+    private static async Task NormalizeLocalActorObjectIriAsync(
+        Activity activity,
+        string baseUrl,
+        IPersistenceProvider persistence,
+        CancellationToken ct)
+    {
+        var target = activity.Object?.FirstOrDefault().ResolveObjectIri();
+        if (target is not { } targetIri)
+        {
+            return;
+        }
+
+        // A person-actor path (/ap/v1/u/{handle}) or a community path (/ap/v1/c/{name}) is the only
+        // shape a local follow/block/flag target takes. Anything else (a Note, a remote actor on a
+        // genuinely foreign host) is left untouched.
+        var personPrefix = $"{ActivityPubServerConstants.RoutePrefix}/u/";
+        var communityPrefix = $"{ActivityPubServerConstants.RoutePrefix}/c/";
+        var path = targetIri.Value;
+        Iri? localIri = null;
+        if (path.Contains(personPrefix, StringComparison.Ordinal))
+        {
+            var handle = path[(path.IndexOf(personPrefix, StringComparison.Ordinal) + personPrefix.Length)..];
+            var candidate = BuildActorIri(baseUrl, handle);
+            if (await persistence.Actors.TryGetActorAsync(candidate, out _, ct).ConfigureAwait(false))
+            {
+                localIri = candidate;
+            }
+        }
+        else if (path.Contains(communityPrefix, StringComparison.Ordinal))
+        {
+            var name = path[(path.IndexOf(communityPrefix, StringComparison.Ordinal) + communityPrefix.Length)..];
+            var candidate = new Iri($"{baseUrl.TrimEnd('/')}{ActivityPubServerConstants.RoutePrefix}/c/{name}");
+            if (await persistence.Communities.TryGetCommunityAsync(candidate, out _, ct).ConfigureAwait(false))
+            {
+                localIri = candidate;
+            }
+        }
+
+        // Rewrite only when the target is local AND its base differs from the advertised base (the
+        // dial-base case). An already-canonical local IRI, or a remote target, is left as-is.
+        if (localIri is { } canonical && canonical.Value != targetIri.Value)
+        {
+            activity.Object = [new Link { Href = canonical.Uri }];
+        }
     }
 
     /// <summary>
