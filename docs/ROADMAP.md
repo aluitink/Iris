@@ -179,10 +179,28 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
    returns 202, and the only console errors are the cosmetic favicon 404, the by-design owner-only inbox 403
    (treated as an empty collection), and the unreachable external-FQDN reverse-proxy route. A follow-up
    verification pass (change [206](changes/206-21.5.1-21.5.2-21.6.1-21.6.2-21.6.3-instance-webfinger-nav-error-raw-verification.md))
-   confirmed the remaining Phase 21 UI items (21.5.1 nodeinfo, 21.5.2 WebFinger, 21.6.1 back links,
-   21.6.2 error/empty states, 21.6.3 raw inspector) all work end-to-end locally. **Remaining:**
-   only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
-   unreachable in this env.
+    confirmed the remaining Phase 21 UI items (21.5.1 nodeinfo, 21.5.2 WebFinger, 21.6.1 back links,
+    21.6.2 error/empty states, 21.6.3 raw inspector) all work end-to-end locally. **Remaining:**
+    only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
+    unreachable in this env.
+   - [ ] **22.6.1 — Review: account settings & control as JSON-LD extensions.** Before the next
+    implementation step, review every account-level settings/control endpoint and confirm it is
+    **advertised as a JSON-LD extension** on the actor/community object (the `iris:` namespace pattern,
+    Resolved Decision #11). The existing `iris:capabilities` extension advertises which specialized
+    endpoints exist (feed, members, search, mute, relay, likes, shares), but **settings and control
+    surfaces** (e.g. a community's `manuallyApprovesMembers` gate, a person's `manuallyApprovesFollowers`
+    gate, moderation collections) should also be discoverable as typed IRI extensions on the object —
+    not just as `iris:capabilities` list entries. Concretely: if a community has a settings endpoint
+    (or an AP-native settings change surface), the community object's `ExtensionData` should carry an
+    `iris:settings` property whose value is the settings IRI (or the `Add`/`Remove`-of-self-to-outbox
+    pattern IRI), so a remote client can discover the settings surface from the actor document alone
+    (no hardcoded endpoint paths). Scope: (1) inventory every settings/control endpoint (person +
+    community); (2) for each, determine whether it is already advertised via `iris:capabilities` or
+    needs a dedicated `iris:*` extension property; (3) add the missing extension properties to the
+    actor/community document rendering; (4) update the client to read the new extensions (so the
+    sample UI can navigate to the settings surface from the actor/community detail page). CI-testable:
+    the document-rendering change + the client read seam ship with integration tests (the document
+    carries the extension; the client resolves the IRI).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
