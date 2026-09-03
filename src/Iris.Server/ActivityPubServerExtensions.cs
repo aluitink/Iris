@@ -1602,6 +1602,12 @@ public static class ActivityPubServerExtensions
         // 202 body so it can reference the object later (an Undo, a delete, an Accept of this follow).
         MintActivityIds(idMinter, actorIri, activity);
 
+        // 19.6.5 audience metadata: rewrite the on-the-wire audience (to/cc) of an outbound Create/Announce
+        // to enumerate the actual distribution list (the remote, non-blocked follower set — and, for a
+        // reply, the reply target). This runs BEFORE the outbox/activity-store record so the stored form and
+        // the federated (on-the-wire) form are the same canonical activity; no-op for other activity types.
+        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, ct).ConfigureAwait(false);
+
         try
         {
             // 1. Record the activity in the actor's outbox (surfaces it in the actor's feed / outbox
@@ -2598,6 +2604,125 @@ public static class ActivityPubServerExtensions
         }
 
         return recipients;
+    }
+
+    /// <summary>
+    /// Rewrites the on-the-wire audience (<c>to</c>/<c>cc</c>) of an outbound <see cref="Create"/> or
+    /// <see cref="Announce"/> published to a local actor's outbox so the federation document enumerates
+    /// the actual audience, not just the author's composed address (19.6.5 audience metadata — the
+    /// production half that change 158 scoped out). The delivery already reaches the right inboxes (the
+    /// follower set, via <see cref="GetRemoteNonBlockedFollowersAsync"/>); this adds the same set to the
+    /// activity's audience so a conforming receiver that reads <c>to</c>/<c>cc</c> sees the correct
+    /// distribution list.
+    /// </summary>
+    /// <remarks>
+    /// The audience split follows the ActivityStreams convention (and mirrors the inbound-federation
+    /// boost convention in <see cref="AnnounceIris.BuildAnnounce"/>):
+    /// <list type="bullet">
+    /// <item><see cref="Announce"/> — a boost is addressed <em>to</em> each follower, carbon-copied to the
+    /// announcer. So <c>to</c> = the (remote, non-blocked) follower set; <c>cc</c> = the announcer.</item>
+    /// <item><see cref="Create"/> — a post's followers are the carbon-copy (public/follower) audience, so
+    /// the follower set is appended to <c>cc</c>; <c>to</c> keeps the author's composed direct recipients
+    /// (which for a public post is the <c>as:Public</c> sentinel, preserved). When the embedded object is a
+    /// <em>reply</em> (<c>inReplyTo</c> set), the reply target — the parent note's author — is a direct
+    /// recipient and is appended to <c>to</c>.</item>
+    /// </list>
+    /// Existing entries are preserved and the result is de-duplicated (case-insensitive, keeping the
+    /// first occurrence; the <c>as:Public</c> sentinel is retained where present). The author is never
+    /// added to the audience (a post is not addressed to its author). No-op for an activity that is
+    /// neither a <see cref="Create"/> nor an <see cref="Announce"/>.
+    /// </remarks>
+    /// <param name="activity">The outbound activity to rewrite (a <see cref="Create"/> or
+    /// <see cref="Announce"/>).</param>
+    /// <param name="authorIri">The acting local actor (the outbox owner; the author/announcer).</param>
+    /// <param name="persistence">The persistence provider (provides the followers, moderation, and object
+    /// stores used to compute the audience and resolve a reply's parent author).</param>
+    /// <param name="localActors">Resolves whether a candidate follower is a local actor.</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task RewriteOutboundAudienceAsync(
+        Activity activity,
+        Iri authorIri,
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        CancellationToken ct)
+    {
+        var followers = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct)
+            .ConfigureAwait(false);
+
+        switch (activity)
+        {
+            case Announce announce:
+                // A boost is addressed to each follower (to) and carbon-copied to the announcer (cc),
+                // mirroring AnnounceIris.BuildAnnounce for the inbound path — here at the activity level
+                // for the whole follower set (the local outbox path delivers one object to all).
+                announce.Cc = [new Link { Href = new Uri(authorIri.Value) }];
+                announce.To = MergeAudience(announce.To, followers);
+                break;
+
+            case Create create:
+                // A post's followers are the cc (public/follower) audience; to keeps the composed direct
+                // recipients (as:Public for a public post) and, for a reply, gains the reply target.
+                create.Cc = MergeAudience(create.Cc, followers);
+
+                if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
+                    && await persistence.Objects.TryGetObjectAsync(parentIri, out var parent, ct).ConfigureAwait(false)
+                    && parent is { }
+                    && parent.AttributedTo?.FirstOrDefault().ResolveObjectIri() is { } parentAuthor)
+                {
+                    // The reply target (the parent note's author) is a direct recipient of the reply.
+                    create.To = MergeAudience(create.To, [parentAuthor]);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Merges a set of audience IRIs into an existing <c>to</c>/<c>cc</c> sequence, preserving the
+    /// existing entries (including the <c>as:Public</c> sentinel) and de-duplicating case-insensitively
+    /// (first occurrence wins). Returns <see langword="null"/> when the result is empty.
+    /// </summary>
+    /// <param name="existing">The activity's current audience sequence (may be null/empty).</param>
+    /// <param name="toAppend">The IRIs to append (the follower set, or a reply target).</param>
+    /// <returns>The merged audience as a sequence of <see cref="Link"/>s, or null when empty.</returns>
+    private static IEnumerable<ILink>? MergeAudience(IEnumerable<IObjectOrLink>? existing, IEnumerable<Iri> toAppend)
+    {
+        var links = new List<ILink>();
+        var seen = new HashSet<Iri>(AudienceIriComparer.Instance);
+
+        void Add(Iri? iri)
+        {
+            if (iri is { } value && seen.Add(value))
+            {
+                links.Add(new Link { Href = new Uri(value.Value) });
+            }
+        }
+
+        if (existing is not null)
+        {
+            foreach (var entry in existing)
+            {
+                Add(entry.ResolveObjectIri());
+            }
+        }
+
+        foreach (var iri in toAppend)
+        {
+            Add(iri);
+        }
+
+        return links.Count == 0 ? null : links;
+    }
+
+    /// <summary>
+    /// A case-insensitive, ordinal comparer for <see cref="Iri"/> used to de-duplicate audience entries
+    /// in <see cref="MergeAudience"/> (the wire form is compared by its absolute URI string, ignoring
+    /// case, so a follower IRI spelled with a different host case does not duplicate).
+    /// </summary>
+    private sealed class AudienceIriComparer : IEqualityComparer<Iri>
+    {
+        public static readonly AudienceIriComparer Instance = new();
+        public bool Equals(Iri x, Iri y) => string.Equals(x.Value, y.Value, StringComparison.OrdinalIgnoreCase);
+        public int GetHashCode(Iri obj) => StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Value);
     }
 
     /// <summary>
