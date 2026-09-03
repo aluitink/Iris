@@ -223,6 +223,168 @@ else
         </div>
 
         <div class="card">
+            <h3>Moderation (this community's collections)</h3>
+            <p class="muted">
+                The collections below show who <em>this community</em> has muted, blocked, and flagged
+                (their <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections), paged with <c>next</c>-link
+                walking. Each item links to the moderated actor's detail. No per-item undo buttons: the
+                Decision 055 learned-id model requires the id of the original activity to undo it, which
+                these collections do not carry (they carry actor IRIs, not activity ids). The
+                unmute/unblock/unflag capability is provided by the "Moderation" card above.
+            </p>
+            <h4>Mutes</h4>
+            @if (CommunityMutesError is not null)
+            {
+                <div class="error">@CommunityMutesError</div>
+            }
+            @if (CommunityMutesItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (CommunityMutesItems.Count == 0 && !CommunityMutesHasMore)
+            {
+                <p class="muted">No mutes recorded.</p>
+            }
+            else
+            {
+                @if (CommunityMutesItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in CommunityMutesItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (CommunityMutesHasMore)
+                {
+                    <button @onclick="LoadMoreCommunityMutesAsync" disabled="@(CommunityMutesLoadingMore)">Load more</button>
+                    @if (CommunityMutesLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+            <h4>Blocks</h4>
+            @if (CommunityBlocksError is not null)
+            {
+                <div class="error">@CommunityBlocksError</div>
+            }
+            @if (CommunityBlocksItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (CommunityBlocksItems.Count == 0 && !CommunityBlocksHasMore)
+            {
+                <p class="muted">No blocks recorded.</p>
+            }
+            else
+            {
+                @if (CommunityBlocksItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in CommunityBlocksItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (CommunityBlocksHasMore)
+                {
+                    <button @onclick="LoadMoreCommunityBlocksAsync" disabled="@(CommunityBlocksLoadingMore)">Load more</button>
+                    @if (CommunityBlocksLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+            <h4>Flags</h4>
+            @if (CommunityFlagsError is not null)
+            {
+                <div class="error">@CommunityFlagsError</div>
+            }
+            @if (CommunityFlagsItems is null)
+            {
+                <p class="muted">Loading…</p>
+            }
+            else if (CommunityFlagsItems.Count == 0 && !CommunityFlagsHasMore)
+            {
+                <p class="muted">No flags recorded.</p>
+            }
+            else
+            {
+                @if (CommunityFlagsItems.Count > 0)
+                {
+                    <ul class="object-list">
+                        @foreach (var item in CommunityFlagsItems)
+                        {
+                            <li>
+                                @if (item is ILink { Href: { } href })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                        @HandleOf(href.ToString())
+                                    </a>
+                                }
+                                else if (item is IObject { Id: { Length: > 0 } fid })
+                                {
+                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                        @HandleOf(fid)
+                                    </a>
+                                }
+                                else
+                                {
+                                    <code>@RelayIriOf(item)</code>
+                                }
+                            </li>
+                        }
+                    </ul>
+                }
+                @if (CommunityFlagsHasMore)
+                {
+                    <button @onclick="LoadMoreCommunityFlagsAsync" disabled="@(CommunityFlagsLoadingMore)">Load more</button>
+                    @if (CommunityFlagsLoadingMore)
+                    {
+                        <span class="muted">Loading…</span>
+                    }
+                }
+            }
+        </div>
+
+        <div class="card">
             <h3>Follow / unfollow</h3>
             <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
             <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
@@ -448,6 +610,25 @@ else
     private Iri? ModBlockLearnedId { get; set; }
     private Iri? ModFlagLearnedId { get; set; }
 
+    // 21.2.1: community's moderation collections (who the community has muted/blocked/flagged), paged.
+    private List<IObjectOrLink>? CommunityMutesItems { get; set; }
+    private bool CommunityMutesHasMore { get; set; }
+    private bool CommunityMutesLoadingMore { get; set; }
+    private string? CommunityMutesError { get; set; }
+    private Iri? _communityMutesResumeFrom;
+
+    private List<IObjectOrLink>? CommunityBlocksItems { get; set; }
+    private bool CommunityBlocksHasMore { get; set; }
+    private bool CommunityBlocksLoadingMore { get; set; }
+    private string? CommunityBlocksError { get; set; }
+    private Iri? _communityBlocksResumeFrom;
+
+    private List<IObjectOrLink>? CommunityFlagsItems { get; set; }
+    private bool CommunityFlagsHasMore { get; set; }
+    private bool CommunityFlagsLoadingMore { get; set; }
+    private string? CommunityFlagsError { get; set; }
+    private Iri? _communityFlagsResumeFrom;
+
     private string? MemberIriInput { get; set; }
     private bool MemberBusy { get; set; }
     private string? MemberResult { get; set; }
@@ -479,6 +660,18 @@ else
         _followingResumeFrom = null;
         FollowersError = null;
         FollowingError = null;
+        CommunityMutesItems = null;
+        CommunityMutesHasMore = false;
+        _communityMutesResumeFrom = null;
+        CommunityMutesError = null;
+        CommunityBlocksItems = null;
+        CommunityBlocksHasMore = false;
+        _communityBlocksResumeFrom = null;
+        CommunityBlocksError = null;
+        CommunityFlagsItems = null;
+        CommunityFlagsHasMore = false;
+        _communityFlagsResumeFrom = null;
+        CommunityFlagsError = null;
         LoadError = null;
         try
         {
@@ -516,6 +709,35 @@ else
             // Followers + following: paged collections at {community}/followers and {community}/following.
             await LoadInitialFollowersAsync(communityIri);
             await LoadInitialFollowingAsync(communityIri);
+
+            // 21.2.1: the community's moderation collections (who the community has muted/blocked/
+            // flagged), paged collections at {community}/{mutes|blocks|flags}.
+            try
+            {
+                await EnumerateOneCommunityMutesPageAsync(communityIri);
+            }
+            catch (Exception ex)
+            {
+                CommunityMutesError = ex.Message;
+            }
+
+            try
+            {
+                await EnumerateOneCommunityBlocksPageAsync(communityIri);
+            }
+            catch (Exception ex)
+            {
+                CommunityBlocksError = ex.Message;
+            }
+
+            try
+            {
+                await EnumerateOneCommunityFlagsPageAsync(communityIri);
+            }
+            catch (Exception ex)
+            {
+                CommunityFlagsError = ex.Message;
+            }
 
             // Inbound follows of this community (actors/communities that follow it), read from its
             // outbox (each inbound follow is stored in the followed community's outbox on receipt).
@@ -705,6 +927,158 @@ else
             FollowingItems.AddRange(page.Items);
             FollowingHasMore = !page.IsLastPage;
             _followingResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    // --- 21.2.1: community moderation collections (mutes / blocks / flags) -----------
+
+    private async Task LoadMoreCommunityMutesAsync()
+    {
+        if (CommunityMutesLoadingMore || !CommunityMutesHasMore || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        CommunityMutesLoadingMore = true;
+        CommunityMutesError = null;
+        try
+        {
+            await EnumerateOneCommunityMutesPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            CommunityMutesError = ex.Message;
+        }
+        finally
+        {
+            CommunityMutesLoadingMore = false;
+        }
+    }
+
+    private async Task LoadMoreCommunityBlocksAsync()
+    {
+        if (CommunityBlocksLoadingMore || !CommunityBlocksHasMore || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        CommunityBlocksLoadingMore = true;
+        CommunityBlocksError = null;
+        try
+        {
+            await EnumerateOneCommunityBlocksPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            CommunityBlocksError = ex.Message;
+        }
+        finally
+        {
+            CommunityBlocksLoadingMore = false;
+        }
+    }
+
+    private async Task LoadMoreCommunityFlagsAsync()
+    {
+        if (CommunityFlagsLoadingMore || !CommunityFlagsHasMore || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        CommunityFlagsLoadingMore = true;
+        CommunityFlagsError = null;
+        try
+        {
+            await EnumerateOneCommunityFlagsPageAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            CommunityFlagsError = ex.Message;
+        }
+        finally
+        {
+            CommunityFlagsLoadingMore = false;
+        }
+    }
+
+    private async Task EnumerateOneCommunityMutesPageAsync(Iri communityIri)
+    {
+        var client = Session.GetClient();
+        if (_communityMutesResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                CommunityMutesItems ??= [];
+                CommunityMutesItems.AddRange(page.Items);
+                CommunityMutesHasMore = !page.IsLastPage;
+                _communityMutesResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(communityIri.MutesOf(), null, CancellationToken.None))
+        {
+            CommunityMutesItems ??= [];
+            CommunityMutesItems.AddRange(page.Items);
+            CommunityMutesHasMore = !page.IsLastPage;
+            _communityMutesResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    private async Task EnumerateOneCommunityBlocksPageAsync(Iri communityIri)
+    {
+        var client = Session.GetClient();
+        if (_communityBlocksResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                CommunityBlocksItems ??= [];
+                CommunityBlocksItems.AddRange(page.Items);
+                CommunityBlocksHasMore = !page.IsLastPage;
+                _communityBlocksResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(communityIri.BlocksOf(), null, CancellationToken.None))
+        {
+            CommunityBlocksItems ??= [];
+            CommunityBlocksItems.AddRange(page.Items);
+            CommunityBlocksHasMore = !page.IsLastPage;
+            _communityBlocksResumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    private async Task EnumerateOneCommunityFlagsPageAsync(Iri communityIri)
+    {
+        var client = Session.GetClient();
+        if (_communityFlagsResumeFrom is { } resume)
+        {
+            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            {
+                CommunityFlagsItems ??= [];
+                CommunityFlagsItems.AddRange(page.Items);
+                CommunityFlagsHasMore = !page.IsLastPage;
+                _communityFlagsResumeFrom = page.NextPage;
+                break;
+            }
+
+            return;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(communityIri.FlagsOf(), null, CancellationToken.None))
+        {
+            CommunityFlagsItems ??= [];
+            CommunityFlagsItems.AddRange(page.Items);
+            CommunityFlagsHasMore = !page.IsLastPage;
+            _communityFlagsResumeFrom = page.NextPage;
             break;
         }
     }
