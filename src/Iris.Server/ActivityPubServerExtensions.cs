@@ -1593,7 +1593,7 @@ public static class ActivityPubServerExtensions
         // via the dial base, rewrite it to the advertised base so the local-actor check (and the
         // recorded edge) use the canonical IRI — otherwise the instance treats its own actor as remote
         // and attempts a cross-instance delivery that cannot route.
-        await NormalizeLocalActorObjectIriAsync(activity, baseUrl, persistence, ct).ConfigureAwait(false);
+        await NormalizeLocalActorObjectIriAsync(activity, baseUrl, context.Request.Host.Value ?? string.Empty, persistence, ct).ConfigureAwait(false);
 
         // Decision 055: the server is the sole authority for the id of an object/activity it creates.
         // The client sends the activity shape (type, actor, object content/references) WITHOUT an id;
@@ -2959,12 +2959,17 @@ public static class ActivityPubServerExtensions
     /// </remarks>
     /// <param name="activity">The activity whose object reference is normalized (mutated in place).</param>
     /// <param name="baseUrl">The instance's advertised base (scheme + host + port, no trailing slash).</param>
+    /// <param name="requestHost">The host the authoring client used to dial this instance (the dial base,
+    /// e.g. <c>localhost:8081</c>). The target IRI's host must match either the advertised base's host or
+    /// this dial host for the rewrite to apply — a remote actor on a different instance that shares a
+    /// handle with a local actor is left untouched.</param>
     /// <param name="persistence">The persistence provider (the actor + community stores, consulted to
     /// confirm the target is local).</param>
     /// <param name="ct">The cancellation token.</param>
     private static async Task NormalizeLocalActorObjectIriAsync(
         Activity activity,
         string baseUrl,
+        string requestHost,
         IPersistenceProvider persistence,
         CancellationToken ct)
     {
@@ -3000,12 +3005,46 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        if (localIri is not { } canonical)
+        {
+            return;
+        }
+
         // Rewrite only when the target is local AND its base differs from the advertised base (the
         // dial-base case). An already-canonical local IRI, or a remote target, is left as-is.
-        if (localIri is { } canonical && canonical.Value != targetIri.Value)
+        //
+        // Guard: the target IRI's host must match either the advertised base's host or the request's
+        // host (the dial base). This prevents a remote actor on a different instance that shares a
+        // handle with a local actor from being incorrectly rewritten to the local actor (e.g. a
+        // Follow of alice@iris-dev2 must not be rewritten to alice@iris-dev1 when iris-dev1 also has
+        // an alice).
+        if (canonical.Value == targetIri.Value)
         {
-            activity.Object = [new Link { Href = canonical.Uri }];
+            return;
         }
+
+        var targetUri = new Uri(targetIri.Value);
+        var baseUri = new Uri(baseUrl);
+        // Compare the host part (without port) so that a dial base on a different port (e.g.
+        // localhost:8081 vs localhost) still matches. The rewrite applies when the target's host is
+        // the advertised base's host, the request's host (the dial base), or a local-looking host
+        // (localhost / 127.0.0.1). A genuinely foreign host (a different instance's public hostname)
+        // is left untouched even if the handle matches a local actor.
+        var targetHostOnly = targetUri.DnsSafeHost;
+        var baseHostOnly = baseUri.DnsSafeHost;
+        var requestHostOnly = requestHost.Contains(':')
+            ? requestHost[..requestHost.LastIndexOf(':')]
+            : requestHost;
+        var isLocalHost = targetHostOnly.Equals(baseHostOnly, StringComparison.OrdinalIgnoreCase)
+            || targetHostOnly.Equals(requestHostOnly, StringComparison.OrdinalIgnoreCase)
+            || targetHostOnly.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || targetHostOnly.Equals("127.0.0.1", StringComparison.Ordinal);
+        if (!isLocalHost)
+        {
+            return;
+        }
+
+        activity.Object = [new Link { Href = canonical.Uri }];
     }
 
     /// <summary>

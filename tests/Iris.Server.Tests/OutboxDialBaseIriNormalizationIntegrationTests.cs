@@ -176,6 +176,38 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
             "the follow edge must not be rewritten to the advertised base for a remote target");
     }
 
+    // --- A Follow of a REMOTE actor that shares a handle with a LOCAL actor is NOT rewritten --------
+
+    [Fact]
+    public async Task OutboxPublish_Follow_RemoteTarget_SharedHandle_NotRewritten()
+    {
+        // Regression: a follow of alice on a DIFFERENT instance (iris-dev2) must not be rewritten to
+        // alice on THIS instance (iris-dev1) just because the handle matches. The target's host is a
+        // genuinely foreign public hostname, not a dial base for this instance.
+        const string remoteHost = "iris-dev2.luit.ink";
+        var remoteAliceIri = new Iri($"https://{remoteHost}/ap/v1/u/{Alice}");
+
+        var follow = new Follow
+        {
+            Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+            Object = [new Link { Href = new Uri(remoteAliceIri.Value) }],
+        };
+
+        using var request = SignedRequest(_aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
+        using var response = await _http.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // The follow edge is recorded under the REMOTE alice's IRI (iris-dev2), NOT the local alice's
+        // IRI (iris-dev1).
+        Assert.True(
+            await _persistence.Follows.IsFollowingAsync(_aliceActorIri, remoteAliceIri),
+            "the follow edge must be recorded under the remote alice's IRI (iris-dev2)");
+        Assert.False(
+            await _persistence.Follows.IsFollowingAsync(_aliceActorIri, _aliceActorIri),
+            "the follow edge must NOT be rewritten to the local alice's IRI (iris-dev1)");
+    }
+
     // --- Helpers ------------------------------------------------------------------------------------
 
     private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
