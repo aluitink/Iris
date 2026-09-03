@@ -26,6 +26,32 @@ else
         }
     </div>
 
+    <div class="card">
+        <h3>Create a community</h3>
+        <p class="muted">
+            Publish a <c>Create</c> of a new Group to your outbox (the server materializes the
+            community and federates it). After it is created, set the "Community" name above to the
+            new name and click <c>Load</c> to review and manage it.
+        </p>
+        <label for="new-name">Name (handle on this instance)</label>
+        <input id="new-name" type="text" @bind="CreateName" placeholder="e.g. mycommunity" />
+        <label for="new-display">Display name</label>
+        <input id="new-display" type="text" @bind="CreateDisplayName" placeholder="e.g. My Community" />
+        <button @onclick="CreateCommunityAsync" disabled="@(CreateBusy)">Create</button>
+        @if (CreateBusy)
+        {
+            <span class="muted">Creating…</span>
+        }
+        @if (CreateResult is not null)
+        {
+            <p class="muted">Status: <code>@CreateResult</code></p>
+        }
+        @if (CreateError is not null)
+        {
+            <div class="error">@CreateError</div>
+        }
+    </div>
+
     @if (LoadError is not null)
     {
         <div class="card">
@@ -642,6 +668,16 @@ else
     private string? PeerError { get; set; }
     private Iri? PeerFollowLearnedId { get; set; }
 
+    // 22.2 (US-18): the create-community surface. `CreateName` is the community's handle on this
+    // instance (the path segment, e.g. `mycommunity` → `{base}/ap/v1/c/mycommunity`);
+    // `CreateDisplayName` is the human-readable Group name. Publishing a `Create` of a Group to the
+    // logged-on actor's outbox materializes the community (the server mints the id + collections).
+    private string CreateName { get; set; } = "";
+    private string CreateDisplayName { get; set; } = "";
+    private bool CreateBusy { get; set; }
+    private string? CreateResult { get; set; }
+    private string? CreateError { get; set; }
+
     private async Task LoadAsync()
     {
         if (!Session.IsLoggedIn)
@@ -1193,6 +1229,54 @@ else
         else
         {
             MemberError = "Enter a valid member IRI (e.g. http://host/ap/v1/u/alice).";
+        }
+    }
+
+    /// <summary>
+    /// Creates a new community (Group) as the logged-on actor (22.2 US-18): publishes a <c>Create</c>
+    /// of a Group to the actor's outbox via <see cref="IActivityPubClient.CreateCommunityAsync"/> (the
+    /// server materializes the community, minting its id + collections, and federates it). On success
+    /// the new community's name is reported (set the "Community" name above to it and click Load to
+    /// review it).
+    /// </summary>
+    private async Task CreateCommunityAsync()
+    {
+        if (!Session.IsLoggedIn || CreateBusy)
+        {
+            return;
+        }
+
+        var name = CreateName.Trim();
+        var displayName = CreateDisplayName.Trim();
+        CreateError = null;
+        if (name.Length == 0)
+        {
+            CreateError = "Enter a community name (the handle on this instance, e.g. mycommunity).";
+            return;
+        }
+
+        if (displayName.Length == 0)
+        {
+            displayName = name;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        CreateBusy = true;
+        CreateResult = null;
+        try
+        {
+            var result = await Session.GetClient().CreateCommunityAsync(actorIri, name, displayName);
+            CreateResult = result.IsSuccess
+                ? $"created community '{name}' (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
+        }
+        catch (Exception ex)
+        {
+            CreateError = ex.Message;
+        }
+        finally
+        {
+            CreateBusy = false;
         }
     }
 
