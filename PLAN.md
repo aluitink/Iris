@@ -148,18 +148,18 @@ identical; verified on the local compose stack (Following renders the `carla` li
 empty state; zero console errors). Build clean, format clean, suite green (1,274). See
 [docs/changes/192-22.6-community-following-followers-pagedcollection.md](docs/changes/192-22.6-community-following-followers-pagedcollection.md).
 
-**Latest slice (22.6, implementation sweep — fourth slice):** consolidated the Actor-detail **mutes/
- blocks/flags** moderation collections (21.1.2) onto three shared
-[`PagedCollection`](samples/SampleBlazorClient/Components/PagedCollection.razor) components (Mutes/Blocks/
- Flags), reusing the field-based `RenderFragment<T>` `ActorLinkTemplate` pattern (same item shape as
- change 192). The card's h3 + muted description (contains markup, so kept out of the `Description` string
- attribute) is preserved as a plain header card above the three. Removed the moderation state + six
- methods (−298 lines net). Behaviorally identical; verified on the local compose stack (all three show
- their empty states; only the expected inbox 403 console errors). Build clean, format clean, suite green
- (1,274). **The 22.6 implementation sweep is now complete** — all hand-rolled paged reads on the
- actor-detail and community pages are consolidated. Remaining 22.6: the full manual test pass (incl. the
- external-FQDN reverse-proxy route, unreachable in this env). See
-[docs/changes/194-22.6-actor-moderation-collections-pagedcollection.md](docs/changes/194-22.6-actor-moderation-collections-pagedcollection.md).
+**Latest slice (22.6, manual test pass — local compose stack):** ran the full Playwright-MCP manual pass
+of the sample explorer on the two-instance local stack (iris-a:8081 / iris-b:8082 / iris-ui:8090), logged
+on as `alice@localhost`, walking every page (Home, Instance, Actors, Actor detail, Object, Community,
+Compose, Raw delivery, Feed). All render correctly; the WebFinger resolver resolves and navigates; the
+**C2S write path returns 202 `IsSuccess=True`** (a signed `Create` minted by the server — the core
+"post and have it federate" proof, local side); the four `PagedCollection` consolidations (changes 191–194)
+render correctly in context. Console errors triaged: cosmetic favicon 404, the by-design owner-only inbox
+403 (treated as an empty collection → "No activities delivered." empty state), and the unreachable
+external-FQDN (`iris.luit.ink`) reverse-proxy route. No new gaps/regressions. **The 22.6 local manual pass
+is complete**; only the external-FQDN reverse-proxy route (unreachable in this env) remains to close the
+phase. See
+[docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in

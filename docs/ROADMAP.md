@@ -174,8 +174,12 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   Actor-detail **mutes/blocks/flags** (change
   [194](changes/194-22.6-actor-moderation-collections-pagedcollection.md)) are all consolidated onto the
   shared `PagedCollection` via the robust field-based `RenderFragment<T>` `ItemTemplate` pattern (inline
-  lambda attributes are unreliable). Remaining: the full manual test pass (incl. the external-FQDN
-  reverse-proxy route, unreachable in this env).
+  lambda attributes are unreliable). The **local** manual test pass of the full explorer (UI + wire) is
+  done (change [195](changes/195-22.6-local-manual-test-pass.md)) — every page renders, the C2S write path
+  returns 202, and the only console errors are the cosmetic favicon 404, the by-design owner-only inbox 403
+  (treated as an empty collection), and the unreachable external-FQDN reverse-proxy route. **Remaining:**
+  only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
+  unreachable in this env.
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
