@@ -259,6 +259,11 @@ else
                 The community's unified feed (its <c>feed</c> collection). Each item renders via
                 <c>ObjectView</c>; selecting it (the object link) navigates to the full object detail.
             </p>
+            <div class="paged-collection-actions">
+                <button @onclick="RefreshFeedAsync" disabled="@(FeedRefreshing || CommunityIri is null)">
+                    @(FeedRefreshing ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
             @if (Feed is not null)
             {
                 @if (Feed.Count == 0)
@@ -378,6 +383,7 @@ else
     private Iri? CommunityIri { get; set; }
     private IObjectOrLink? CommunityDoc { get; set; }
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
+    private bool FeedRefreshing { get; set; }
     private IReadOnlyList<IObjectOrLink>? Members { get; set; }
     private IReadOnlyList<IObjectOrLink>? SearchResults { get; set; }
     private bool WriteBusy { get; set; }
@@ -501,6 +507,36 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Re-fetches the loaded community's feed with the page cache bypassed (the <c>?refresh=true</c>
+    /// path), replacing the current feed items — a manual refresh that re-reads the server even within
+    /// the cache TTL (19.5.5). Does not change any other community state.
+    /// </summary>
+    private async Task RefreshFeedAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || FeedRefreshing)
+        {
+            return;
+        }
+
+        FeedRefreshing = true;
+        try
+        {
+            var client = Session.GetClient();
+            var feed = new List<IObjectOrLink>();
+            await foreach (var item in client.GetCommunityFeedAsync(communityIri, new CollectionQuery(BypassCache: true)))
+            {
+                feed.Add(item);
+            }
+
+            Feed = feed;
+        }
+        finally
+        {
+            FeedRefreshing = false;
         }
     }
 

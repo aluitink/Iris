@@ -17,6 +17,14 @@
         {
             @HeaderContent
         }
+        @if (ShowRefreshButton)
+        {
+            <div class="paged-collection-actions">
+                <button @onclick="RefreshAsync" disabled="@Refreshing">
+                    @(Refreshing ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+        }
         @if (LoadError is not null)
         {
             <div class="error">@LoadError</div>
@@ -132,10 +140,26 @@
     [Parameter]
     public string? EmptyMessage { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, renders a <c>Refresh</c> button that re-fetches the collection's first page
+    /// with the page cache bypassed (the <c>?refresh=true</c> path) — a one-shot bypass that does not
+    /// change <see cref="BypassCache"/>. Used by the feed cards (21.2.2 / 19.5.5) so a manual refresh
+    /// re-reads the server even within the cache TTL.
+    /// </summary>
+    [Parameter]
+    public bool ShowRefreshButton { get; set; }
+
     private List<IObjectOrLink>? Items { get; set; }
     private bool HasMore { get; set; }
     private bool LoadingMore { get; set; }
+    private bool Refreshing { get; set; }
     private string? LoadError { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, the next fetch bypasses the page cache (the one-shot <c>?refresh=true</c> from
+    /// <see cref="RefreshAsync"/>). Reset after the first page of the refresh.
+    /// </summary>
+    private bool _bypassNext;
 
     /// <summary>
     /// The enumeration position: the page IRI to resume from (<c>null</c> = start at the collection's
@@ -198,6 +222,39 @@
     }
 
     /// <summary>
+    /// Re-fetches the collection's first page with the page cache bypassed (the <c>?refresh=true</c>
+    /// path), replacing the current items — a manual refresh that re-reads the server even within the
+    /// cache TTL (21.2.2 / 19.5.5). The bypass is one-shot: it does not change <see cref="BypassCache"/>.
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        if (Refreshing)
+        {
+            return;
+        }
+
+        Refreshing = true;
+        _bypassNext = true;
+        LoadError = null;
+        try
+        {
+            Items = [];
+            HasMore = false;
+            _resumeFrom = null;
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            Refreshing = false;
+            _bypassNext = false;
+        }
+    }
+
+    /// <summary>
     /// Fetches one page (resuming from <see cref="_resumeFrom"/> when set, else from the collection's
     /// first page) and appends its items — one server page per "Load more" click (20.3).
     /// </summary>
@@ -218,7 +275,7 @@
             resumeIri = firstIri;
         }
 
-        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache);
+        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache || _bypassNext);
 
         await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
         {
