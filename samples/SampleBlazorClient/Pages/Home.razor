@@ -15,8 +15,8 @@
         <h2>Log on to an instance</h2>
         <p class="muted">
             Enter a WebFinger address (e.g. <code>alice@localhost</code>) and the actor's Basic-auth
-            password. The base URL is what the browser dials (a host-published port for the local
-            sample instances).
+            password. The explorer dials the actor's home server by default; use the advanced section
+            below only if the instance is reachable at a different endpoint.
         </p>
 
         <label for="address">WebFinger address</label>
@@ -25,13 +25,17 @@
         <label for="password">Password</label>
         <input id="password" type="password" @bind="Password" placeholder="iris-sample" />
 
-        <label for="base">Base URL (what the browser dials)</label>
-        <input id="base" type="url" @bind="BaseUrl" placeholder="https://iris.luit.ink" />
-        <p class="muted">
-            The base URL defaults to the actor's home server (the address's host, e.g.
-            <code>https://iris-dev1.luit.ink</code>); a known local instance is pre-filled with its
-            host-published port (e.g. <code>http://localhost:8081</code>). Edit it to override.
-        </p>
+        <details>
+            <summary class="muted">Advanced: talk to a different endpoint</summary>
+            <p class="muted">
+                By default the explorer dials the actor's home server (the address's host over
+                <code>https</code>). Enter a base URL here only when the instance is reachable at a
+                different address than its advertised host (e.g. a local Docker instance behind a
+                host-published port, or a reverse proxy).
+            </p>
+            <label for="base">Endpoint override</label>
+            <input id="base" type="url" @bind="BaseUrl" placeholder="http://localhost:8081" />
+        </details>
 
         <button @onclick="LogOnAsync" disabled="@(Busy)">Log on</button>
         @if (Busy)
@@ -59,7 +63,6 @@ else
     <div class="card">
         <h2>Logged on</h2>
         <p>Actor: <code>@(Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value)</code></p>
-        <p class="muted">Dialing <code>@Session.DialBaseUri</code></p>
         <p class="muted">
             The explorer screens (instance overview, actors, actor detail, object view, community,
             compose, follow/like) build on this session — see <code>ExplorerSession.GetClient()</code>.
@@ -159,7 +162,7 @@ else
 
     private string Address { get; set; } = "alice@iris.luit.ink";
     private string Password { get; set; } = "iris-sample";
-    private string BaseUrl { get; set; } = "https://iris.luit.ink";
+    private string BaseUrl { get; set; } = "";
     private string? Error { get; set; }
     private bool Busy { get; set; }
 
@@ -355,12 +358,12 @@ else
         => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
     /// <summary>
-    /// Resolves the dial base for log-on: when the user entered a base URL it is used as-is (the
-    /// user's explicit input always wins); when the field is empty the dial base is derived from the
-    /// address's host — a known local instance (the <see cref="InstanceBaseUrls"/> map) yields its
-    /// host-published port, otherwise the actor's home server (the host over <c>https</c>).
+    /// Resolves the dial base for log-on: when the user entered an endpoint override it is used as-is
+    /// (the user's explicit input always wins); when the field is empty the dial base is the actor's
+    /// home server (the address's host over <c>https</c>) — the production assumption that the IRI host
+    /// is browser-reachable.
     /// </summary>
-    /// <param name="enteredBase">The user-entered base URL (may be empty).</param>
+    /// <param name="enteredBase">The user-entered endpoint override (may be empty).</param>
     /// <returns>The resolved dial base, or <see langword="null"/> when it cannot be resolved.</returns>
     private Uri? ResolveDialBase(string enteredBase)
     {
@@ -375,7 +378,7 @@ else
             return null;
         }
 
-        return Session.BaseUrls.TryGet(host, out var knownBase) ? knownBase : new Uri($"https://{host}");
+        return new Uri($"https://{host}");
     }
 
     private async Task LogOnAsync()

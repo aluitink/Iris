@@ -7,10 +7,6 @@
     {
         <div class="identity">
             <span class="identity-actor" title="@IdentityIri?.Value">@IdentityIri?.Value</span>
-            @if (Session.DialBaseUri is { } dialBase)
-            {
-                <span class="identity-dial">Dialing <code>@dialBase</code></span>
-            }
         </div>
     }
     else

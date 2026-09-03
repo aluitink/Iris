@@ -35,15 +35,21 @@ docker compose -f docker-compose.yml up --build -d     # iris-a → host:8081, i
 ```
 
 **Log on to a local instance:** enter the WebFinger address + the shared sample password
-(`iris-sample`):
+(`iris-sample`). The endpoint override is **empty by default** — the explorer dials the actor's home
+server (the address's host over `https`). For the local compose stack, the advertised FQDN
+(`iris-dev1.luit.ink` / `iris-dev2.luit.ink`) is not resolvable from the browser, so expand the
+**"Advanced: talk to a different endpoint"** section and enter the host-published port:
 
-| Instance | WebFinger address | Base URL (pre-filled) |
+| Instance | WebFinger address | Endpoint override |
 |---|---|---|
-| iris-a | `alice@iris-a` | `http://localhost:8081` |
-| iris-b | `alice@iris-b` | `http://localhost:8082` |
+| iris-a | `alice@iris-dev1.luit.ink` | `http://localhost:8081` |
+| iris-b | `alice@iris-dev2.luit.ink` | `http://localhost:8082` |
 
 (Both instances seed the same local actor, `alice`; the password for every seeded actor is
 `iris-sample` — see [`samples/SampleServer/README.md`](../SampleServer/README.md).)
+
+> **Production instances:** when the FQDN is directly reachable from the browser (the normal
+> production case), no override is needed — the explorer dials `https://{host}` automatically.
 
 **Local (no Docker):** the explorer is a static site, so it can be run against a local
 [`SampleServer`](../SampleServer/README.md):
@@ -52,11 +58,10 @@ docker compose -f docker-compose.yml up --build -d     # iris-a → host:8081, i
 dotnet run --project samples/SampleServer                       # → http://localhost:5000
 dotnet run --project samples/SampleBlazorClient --no-build      # → http://localhost:8080 (Blazor dev server)
 # in a browser, open http://localhost:8080 and log on with:
-#   address alice@localhost · password iris-sample · base http://localhost:5000
+#   address alice@localhost · password iris-sample
+#   (expand "Advanced" and set endpoint override to http://localhost:5000, since the
+#    advertised IRI host `localhost` resolves to https://localhost by default)
 ```
-
-(For a clean browser session, log in with the base URL pointed at the local `SampleServer`
-(`http://localhost:5000`); the advertised IRI host (`localhost`) and the dial base are the same here.)
 
 ## Screens
 
@@ -86,51 +91,57 @@ instance.
 
 ## Logon & the base-URL / IRI-host rule
 
-Log on (`Pages/Home.razor`) takes three fields:
+Log on (`Pages/Home.razor`) takes two fields plus an optional override:
 
 - **WebFinger address** — `handle@host` (e.g. `alice@iris-a`). Parsed by `Explorer/WebFingerAddress.cs`.
 - **Password** — the Basic-auth password for that actor.
-- **Base URL (what the browser dials)** — the browser-reachable base the client connects to. **Optional:**
-  when left empty, the dial base is derived from the address's host (the actor's home server).
+- **Endpoint override** (collapsed "Advanced" section) — **empty by default.** When empty, the explorer
+  dials the actor's home server (the address's host over `https`). When filled, it is used as the dial
+  base as-is (the user's explicit input always wins).
 
-The base URL and the IRI host are **separate** ([DEPLOYMENT — Routable addresses](../../docs/reference/DEPLOYMENT.md#routable-addresses-the-docker-only-routable-rule), [change 074](../../docs/changes/074-base-url-vs-iri-host-config.md)):
+The **advertised IRI host** and the **dial base** are **separate**
+([DEPLOYMENT — Routable addresses](../../docs/reference/DEPLOYMENT.md#routable-addresses-the-docker-only-routable-rule),
+[change 074](../../docs/changes/074-base-url-vs-iri-host-config.md)):
 
 - The **advertised IRI host** is the address's host — for a local instance that is its Docker service name
   (`iris-a`) or its public FQDN (`iris-dev1.luit.ink`), which may not be resolvable from the browser.
-- The **base URL** is what the browser actually dials — a host-published port (`http://localhost:8081`) or
-  the FQDN when it is directly reachable.
+- The **dial base** is what the browser actually dials — by default the IRI host (production assumption);
+  overridden by the advanced field for unusual deployments (a host-published port, a reverse proxy, etc.).
 
 **The dial base is resolved at log-on time** (`Pages/Home.razor` → `ResolveDialBase`):
 
-- When the user **enters** a base URL, it is used **as-is** — the user's explicit input always wins.
-- When the base URL field is **empty**, the dial base is derived from the address's host:
-  - a **known local instance** (the `InstanceBaseUrls` map, `Explorer/InstanceBaseUrls.cs`, seeded in
-    `Program.cs`) yields its host-published port (e.g. `iris-dev1.luit.ink` → `http://localhost:8081`);
-  - an **unknown host** yields the actor's home server (the host over `https`, e.g. `alice@example.com` →
-    `https://example.com`).
+- When the user **enters** an endpoint override, it is used **as-is**.
+- When the override is **empty**, the dial base is the actor's home server (the address's host over
+  `https`, e.g. `alice@example.com` → `https://example.com`). This is the **production assumption**:
+  the IRI host is browser-reachable.
 
-The user therefore only needs the address + password in the common cases; the base URL is a visible,
-editable override for unusual deployments.
+The user therefore only needs the address + password when talking to a real production server; the
+endpoint override is a collapsed, opt-in field for deployments where the instance is reachable at a
+different address than its advertised host.
 
 ## The external-instance mechanism (no real dev FQDN committed)
 
 The explorer is pointed at an instance that is **not** one of the two local Docker instances by supplying,
 at logon:
 
-1. a **WebFinger address** on that instance (`user@example.com`),
-2. the actor's **password**, and
-3. a **browser-reachable base URL** for it (e.g. `http://my-host:port` — whatever address the browser can
-   reach for that instance).
+1. a **WebFinger address** on that instance (`user@example.com`), and
+2. the actor's **password**.
 
-For an unknown host the `InstanceBaseUrls` lookup misses, so the dial base **defaults to the actor's home
-server** (the address's host over `https`) — nothing about the external instance is hard-coded. The user
-may still override it by entering a base URL explicitly. The WebFinger-resolved actor IRI (whose host is
-the *external* host) becomes the client's `actorIriOverride` (what it authenticates as and signs as), while
-the transport dials the resolved dial base — the base-URL / IRI-host separation that makes an external
-instance work the same way a local one does. The read + follow + **proxy-fallback** paths all run against
-the external instance through this one mechanism (a direct request the browser cannot make — CORS, or a
-401 the instance cannot validate — falls back through the home proxy, which re-signs with the acting
-actor's key).
+That's all. The dial base **defaults to the actor's home server** (the address's host over `https`) —
+the **production assumption**: the IRI host is browser-reachable. Nothing about the external instance
+is hard-coded.
+
+When the instance **is not** reachable at its advertised host (a local Docker instance behind a
+host-published port, a reverse proxy on a different port, a LAN IP, etc.), the user expands the
+**"Advanced: talk to a different endpoint"** section on the log-on form and enters the browser-reachable
+address (e.g. `http://my-host:port`). That value is used as the dial base as-is.
+
+The WebFinger-resolved actor IRI (whose host is the *external* host) becomes the client's
+`actorIriOverride` (what it authenticates as and signs as), while the transport dials the resolved dial
+base — the base-URL / IRI-host separation that makes an external instance work the same way a local one
+does. The read + follow + **proxy-fallback** paths all run against the external instance through this one
+mechanism (a direct request the browser cannot make — CORS, or a 401 the instance cannot validate — falls
+back through the home proxy, which re-signs with the acting actor's key).
 
 > **No real dev FQDN is committed.** The sample is self-contained on `localhost` (host-published ports) +
 > service names (in-network). Any external base URL / FQDN is **operator-supplied at logon** (runtime, in the
