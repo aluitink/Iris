@@ -189,6 +189,14 @@ else
             Session.SetNavigableObjectIri(objectIri);
             ObjectDoc = await client.GetObjectAsync(objectIri);
 
+            // 19.8.7: GetObjectAsync returns null on a 404 (unknown object) — surface a clear error
+            // rather than a blank page.
+            if (ObjectDoc is null)
+            {
+                Error = $"Object not found: {objectIri.Value}";
+                return;
+            }
+
             // Whether the logged-on actor is the object's author (drives the Delete button — only the
             // author may delete their own content).
             IsAuthor = ObjectDoc is ActivityObject obj
