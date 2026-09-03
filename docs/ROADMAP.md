@@ -248,9 +248,12 @@ US-24) will also close the UI-side remote-rendering pieces.
 ### Phase 19.5 — Community (live/UI remainder; the CI-testable halves are done)
 
 - [ ] **19.5.1 — Community creation surface (UI + live-verification remainder).** The creation **write
-  path is complete** (client `CreateCommunityAsync` + server materialization, change 161l). Still open:
-  the **UI creation screen** (a Blazor form calling `CreateCommunityAsync` — now a Phase 22 item, US-18)
-  and the WebFinger/`iris:capabilities` discovery verification.
+  path is complete** (client `CreateCommunityAsync` + server materialization, change 161l). The
+  **WebFinger + `iris:capabilities` discovery** is done (change 218): the WebFinger handler resolves
+  community handles (fallback to the community store after the actor lookup fails), and the created
+  community document advertises its `iris:capabilities` extension. Still open: the **UI creation
+  screen** (a Blazor form calling `CreateCommunityAsync` — now a Phase 22 item, US-18) and the
+  two-instance wire drive (live-interop).
 - [ ] **19.5.2 — Membership management (live remainder).** The `Add`/`Remove` mechanism + the
   self-management gate are done (change 150). The remote-actor **join request → accept** flow is done
   (changes 215+216): a community with `manuallyApprovesMembers` stores the inbound `Join` in its outbox
