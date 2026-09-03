@@ -135,10 +135,20 @@ reliable way to give `PagedCollection` a custom item renderer: a **field-based `
 attribute** with a multi-statement body is unreliable on net10.0 Razor (cascading `CS9348`), and the
 `Description` string attribute cannot hold markup/interpolation (`RZ9986`). Behaviorally identical to
 the old card (the owner-only inbox read yields an empty collection on a plain session, as before).
-Build clean, format clean, suite green (1,274), verified on the local compose stack. Remaining 22.6:
-Community `following`/`followers` + mutes/blocks/flags cards, and the full manual pass (incl. the
-external-FQDN reverse-proxy route). See
+Build clean, format clean, suite green (1,274), verified on the local compose stack. See
 [docs/changes/191-22.6-inbox-pagedcollection-consolidation.md](docs/changes/191-22.6-inbox-pagedcollection-consolidation.md).
+
+**Latest slice (22.6, implementation sweep — second slice):** consolidated the Community **following**
+and **followers** cards (19.8.4) onto two shared [`PagedCollection`](samples/SampleBlazorClient/Components/PagedCollection.razor)
+components, driven by a single field-based `RenderFragment<IObjectOrLink>` `ItemTemplate`
+(`ActorLinkTemplate`) that renders each entry as a link to its actor detail (handle + title) or a
+relay-IRI fallback. Removed the following/followers state + six methods (−227 lines net); kept
+`HandleOf`/`RelayIriOf` (still used by the Inbound follows / Members / Search cards). Behaviorally
+identical; verified on the local compose stack (Following renders the `carla` link; Followers shows the
+empty state; zero console errors). Build clean, format clean, suite green (1,274). Remaining 22.6:
+mutes/blocks/flags cards (actor + community) and the full manual pass (incl. the external-FQDN
+reverse-proxy route). See
+[docs/changes/192-22.6-community-following-followers-pagedcollection.md](docs/changes/192-22.6-community-following-followers-pagedcollection.md).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
