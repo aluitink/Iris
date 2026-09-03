@@ -349,11 +349,17 @@ An **exploratory probe**: attempt the baseline interactions and, if we get stuck
 The code halves are done (changes 161h/161n/161m/163–174). The remaining halves are the **live/UI
 verification** (Playwright-MCP) and are folded into the Phase 22 manual test pass (22.6):
 
-- [ ] **19.8.1 — Click-through audit (live remainder).** The local collection→view transitions render
+- [x] **19.8.1 — Click-through audit (live remainder).** The local collection→view transitions render
   proper views (no raw-JSON dead ends); the recent-instances list + the `#handle` full-IRI fix are done.
-  Still open: **(a) remote (cross-instance) object reads CORS-fail in the browser** — the client dials
-  the remote IRI directly with no same-origin proxy route, so a remote item in a feed cannot be opened
-  (a 19.1.x live-interop item; addressed on the UI side by Phase 22 US-8/US-24).
+  **Done (change 207):** a systematic Playwright MCP click-through audit of every collection→view
+  transition (actor→detail, object→detail, community, feed, instance, actors directory, remote
+  actor→detail, compose) confirmed no raw-JSON dead ends and no CORS failures with no status code.
+  The 22.4 US-8 proxy fallback (ch.188) is working: cross-instance GETs are routed through the home
+  proxy (not direct cross-origin GETs); the only console errors are the pre-existing 429 external-FQDN
+  proxy route, the by-design 403 owner-only inbox, and CORS errors on the unreachable `remote.example`
+  seed host (expected in this env — the proxy's error response for an unresolvable host lacks CORS
+  headers, but the UI renders a clear "TypeError: Failed to fetch" error state). No new code or tests
+  (verification-only slice, Phase 22 rule 5).
 - [ ] **19.8.2 — Rendered object view quality (live remainder).** Audiences + published timestamp +
   like/boost counts + the remote canonical-URL link now render. Still open: **the reply-chain /
   conversations view** (built in Phase 22 US-12/19.2.4) and the live verification of the rest.

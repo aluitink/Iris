@@ -161,7 +161,22 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.5.1/21.5.2/21.6.1/21.6.2/21.6.3, instance + WebFinger + nav + error/empty + raw
+**Latest slice (19.8.1, click-through audit — local collection→view transitions):** a systematic
+  Playwright MCP click-through audit of every collection→view transition (actor→detail, object→
+  detail, community, feed, instance, actors directory, remote actor→detail, compose), logged on as
+  `alice@localhost` (dial base `http://localhost:8081`), to confirm no raw-JSON dead ends and no
+  CORS failures with no status code. All 9 transitions PASS: local actor/object/community/feed/
+  instance/actors/compose render proper views with the shared components; the remote actor (carla on
+  the unresolvable `remote.example` seed host) renders a clear "TypeError: Failed to fetch" error
+  state (not a raw-JSON dead end). The 22.4 US-8 proxy fallback (ch.188) is confirmed working:
+  cross-instance GETs route through the same-origin home proxy (no direct cross-origin GET). The
+  only console errors are the pre-existing 429 external-FQDN proxy route, the by-design 403
+  owner-only inbox, and CORS errors on the unreachable `remote.example` seed host (expected — the
+  proxy's error response for an unresolvable upstream lacks CORS headers). No new code or tests
+  (verification-only slice, Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/207-19.8.1-click-through-audit-local-collection-view-transitions.md](docs/changes/207-19.8.1-click-through-audit-local-collection-view-transitions.md).
+
+**Prior slice (21.5.1/21.5.2/21.6.1/21.6.2/21.6.3, instance + WebFinger + nav + error/empty + raw
   — verification slice):** a Playwright MCP manual pass on the local compose stack (logged on as
   `alice@localhost`, dial base derived from the map → `http://localhost:8081`) to confirm five
   already-implemented Phase 21 UI features work end-to-end, then ticked them in the ROADMAP.
