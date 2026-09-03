@@ -1008,9 +1008,13 @@ while it remains in flux; the underlying wire is proven by the existing server/c
   "Moderation" card (which uses the captured learned ids). Per the current direction, the sample-client
   UI is verified manually (not bUnit-tested) while it remains in flux; the underlying wire is proven by
   the existing server/client integration tests.
-- [ ] **21.1.3 — Inbox view.** The actor detail page does not show the inbox. Add an **Inbox** card that
-  reads the actor's inbox collection (`GET /ap/v1/u/{handle}/inbox`, paged) and renders each activity
-  (who did what to this actor). This exercises `GetCollectionItemsAsync(inboxIri)`.
+- [x] **21.1.3 — Inbox view (change 178).** The actor detail page now shows the actor's inbox
+  collection (activities delivered to this actor) via `GET /ap/v1/u/{handle}/inbox`, paged with
+  `next`-link walking. Each item is an activity (a Follow, Like, Announce, Create, etc.) that was
+  delivered to this actor, shown with its type and IRI. This exercises `GetCollectionAsync(inboxIri)`
+  from the detail page. Per the current direction, the sample-client UI is verified manually (not
+  bUnit-tested) while it remains in flux; the underlying wire is proven by the existing server/client
+  integration tests.
 - [ ] **21.1.4 — Outbox view (full).** The actor detail page already shows the outbox (paged). Ensure
   every outbox item is clickable (deep-links to the object detail) and that the outbox shows the full
   activity (not just a summary).
