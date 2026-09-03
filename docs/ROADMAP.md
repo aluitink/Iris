@@ -628,7 +628,10 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
      `mastodon.world/...`) with no same-origin proxy route, so a remote item in a feed cannot be
      opened (19.1.x live-interop). Minor UX: the Actor-detail `#handle` field rejects a full IRI with
      a confusing double-path "Not an actor" error. See
-     `docs/changes/161m-19.8.1-click-through-audit.md`.
+     `docs/changes/161m-19.8.1-click-through-audit.md`. The minor-UX gap (the Actor-detail `#handle`
+     field rejecting a full IRI with a confusing double-path "Not an actor" error) is now closed
+     (change 172): the field accepts a full IRI directly (used as-is) or a username (resolved on the
+     current instance), via the `ResolveActorIri` helper.
 - [ ] **19.8.2 — Rendered object view quality.** ObjectPage renders: author (clickable to their
   actor detail), content HTML (sanitized), audiences (to/cc as handles), timestamp, reply chain
   (conversations view per 19.2.4), like/boost counts where available, and a link to the canonical
