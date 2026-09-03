@@ -145,10 +145,20 @@ components, driven by a single field-based `RenderFragment<IObjectOrLink>` `Item
 relay-IRI fallback. Removed the following/followers state + six methods (−227 lines net); kept
 `HandleOf`/`RelayIriOf` (still used by the Inbound follows / Members / Search cards). Behaviorally
 identical; verified on the local compose stack (Following renders the `carla` link; Followers shows the
-empty state; zero console errors). Build clean, format clean, suite green (1,274). Remaining 22.6:
-mutes/blocks/flags cards (actor + community) and the full manual pass (incl. the external-FQDN
-reverse-proxy route). See
+empty state; zero console errors). Build clean, format clean, suite green (1,274). See
 [docs/changes/192-22.6-community-following-followers-pagedcollection.md](docs/changes/192-22.6-community-following-followers-pagedcollection.md).
+
+**Latest slice (22.6, implementation sweep — third slice):** consolidated the Community **mutes/blocks/
+flags** moderation collections (21.2.1) onto three shared
+[`PagedCollection`](samples/SampleBlazorClient/Components/PagedCollection.razor) components (Mutes/Blocks/
+Flags), reusing the field-based `RenderFragment<T>` `ActorLinkTemplate` from change 192 (same item shape).
+The card's h3 + muted description (contains markup, so kept out of the `Description` string attribute) is
+preserved as a plain header card above the three. Removed the moderation state + six methods (−334 lines
+net). Behaviorally identical; verified on the local compose stack (all three show their empty states;
+zero console errors). Build clean, format clean, suite green (1,274). Remaining 22.6: the Actor-detail
+mutes/blocks/flags cards (last dedup candidate) and the full manual pass (incl. the external-FQDN
+reverse-proxy route). See
+[docs/changes/193-22.6-community-moderation-collections-pagedcollection.md](docs/changes/193-22.6-community-moderation-collections-pagedcollection.md).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
