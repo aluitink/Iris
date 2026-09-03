@@ -28,10 +28,9 @@
         <label for="base">Base URL (what the browser dials)</label>
         <input id="base" type="url" @bind="BaseUrl" placeholder="https://iris.luit.ink" />
         <p class="muted">
-            The WebFinger dial uses the address's host + scheme (default <code>https</code>); the Base
-            URL is the actor/community base for reads and writes. For the public instance use
-            <code>alice@iris.luit.ink</code> + <code>https://iris.luit.ink</code>; for the local
-            instance use <code>alice@localhost</code> + <code>http://localhost:8081</code>.
+            The base URL defaults to the actor's home server (the address's host, e.g.
+            <code>https://iris-dev1.luit.ink</code>); a known local instance is pre-filled with its
+            host-published port (e.g. <code>http://localhost:8081</code>). Edit it to override.
         </p>
 
         <button @onclick="LogOnAsync" disabled="@(Busy)">Log on</button>
@@ -277,9 +276,10 @@ else
 
     private async Task LogOnWithOAuth2Async()
     {
-        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var dialBase))
+        var dialBase = ResolveDialBase(BaseUrl);
+        if (dialBase is null)
         {
-            Error = "The base URL is not a valid absolute URI.";
+            Error = "Enter a valid base URL (or a WebFinger address whose host can be reached).";
             return;
         }
 
@@ -290,20 +290,13 @@ else
             // The OAuth2 client_id is the actor handle (the v1 model has no separate client
             // registration). Parse it from the WebFinger address the user entered (or default to
             // "alice").
-            var host = Address.Contains('@') ? Address[(Address.LastIndexOf('@') + 1)..].Trim() : string.Empty;
             var handle = Address.Contains('@') ? Address[..Address.IndexOf('@')].TrimStart('@') : "alice";
             if (string.IsNullOrEmpty(handle))
             {
                 handle = "alice";
             }
 
-            // Dial base: when the address's host has a known browser base URL (the instance base-URL
-            // config surface), use it; otherwise use the entered base.
             var instanceBase = dialBase;
-            if (!string.IsNullOrEmpty(host) && Session.BaseUrls.TryGet(host, out var knownBase))
-            {
-                instanceBase = knownBase;
-            }
 
             // The redirect_uri is the WASM app's callback route. The app's base URI (the static host)
             // is what the browser reaches; the callback path is /callback. The dial base + handle are
@@ -361,11 +354,36 @@ else
     private static string JsonEscape(string s)
         => "\"" + s.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
 
+    /// <summary>
+    /// Resolves the dial base for log-on: when the user entered a base URL it is used as-is (the
+    /// user's explicit input always wins); when the field is empty the dial base is derived from the
+    /// address's host — a known local instance (the <see cref="InstanceBaseUrls"/> map) yields its
+    /// host-published port, otherwise the actor's home server (the host over <c>https</c>).
+    /// </summary>
+    /// <param name="enteredBase">The user-entered base URL (may be empty).</param>
+    /// <returns>The resolved dial base, or <see langword="null"/> when it cannot be resolved.</returns>
+    private Uri? ResolveDialBase(string enteredBase)
+    {
+        if (Uri.TryCreate(enteredBase, UriKind.Absolute, out var explicitBase))
+        {
+            return explicitBase;
+        }
+
+        var host = Address.Contains('@') ? Address[(Address.LastIndexOf('@') + 1)..].Trim() : string.Empty;
+        if (string.IsNullOrEmpty(host))
+        {
+            return null;
+        }
+
+        return Session.BaseUrls.TryGet(host, out var knownBase) ? knownBase : new Uri($"https://{host}");
+    }
+
     private async Task LogOnAsync()
     {
-        if (!Uri.TryCreate(BaseUrl, UriKind.Absolute, out var dialBase))
+        var dialBase = ResolveDialBase(BaseUrl);
+        if (dialBase is null)
         {
-            Error = "The base URL is not a valid absolute URI.";
+            Error = "Enter a valid base URL (or a WebFinger address whose host can be reached).";
             return;
         }
 
@@ -373,14 +391,6 @@ else
         Error = null;
         try
         {
-            // The instance base-URL config surface (§4.4): when the address's host has a known
-            // browser base URL, use it (the user needn't type it); otherwise use the entered base.
-            var host = Address.Contains('@') ? Address[(Address.LastIndexOf('@') + 1)..].Trim() : string.Empty;
-            if (!string.IsNullOrEmpty(host) && Session.BaseUrls.TryGet(host, out var knownBase))
-            {
-                dialBase = knownBase;
-            }
-
             var ok = await Session.LogOnAsync(Address, Password, dialBase);
             if (!ok)
             {

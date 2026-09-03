@@ -90,20 +90,27 @@ Log on (`Pages/Home.razor`) takes three fields:
 
 - **WebFinger address** — `handle@host` (e.g. `alice@iris-a`). Parsed by `Explorer/WebFingerAddress.cs`.
 - **Password** — the Basic-auth password for that actor.
-- **Base URL (what the browser dials)** — the browser-reachable base the client connects to.
+- **Base URL (what the browser dials)** — the browser-reachable base the client connects to. **Optional:**
+  when left empty, the dial base is derived from the address's host (the actor's home server).
 
 The base URL and the IRI host are **separate** ([DEPLOYMENT — Routable addresses](../../docs/reference/DEPLOYMENT.md#routable-addresses-the-docker-only-routable-rule), [change 074](../../docs/changes/074-base-url-vs-iri-host-config.md)):
 
 - The **advertised IRI host** is the address's host — for a local instance that is its Docker service name
-  (`iris-a`), which is only resolvable *inside* the `iris-net` network. A browser on the host cannot dial it
-  directly.
-- The **base URL** is what the browser actually dials — a host-published port (`http://localhost:8081`).
+  (`iris-a`) or its public FQDN (`iris-dev1.luit.ink`), which may not be resolvable from the browser.
+- The **base URL** is what the browser actually dials — a host-published port (`http://localhost:8081`) or
+  the FQDN when it is directly reachable.
 
-When the address's host has a known browser base URL (the `InstanceBaseUrls` map,
-`Explorer/InstanceBaseUrls.cs`), the map **pre-fills** the base URL so the user enters only the address +
-password. The shipped sample registers the explorer with an **empty** map
-(`Program.cs` → `AddIrisExplorer()`), so in practice the user supplies (or confirms) the base URL in the
-field for every logon — including an external instance.
+**The dial base is resolved at log-on time** (`Pages/Home.razor` → `ResolveDialBase`):
+
+- When the user **enters** a base URL, it is used **as-is** — the user's explicit input always wins.
+- When the base URL field is **empty**, the dial base is derived from the address's host:
+  - a **known local instance** (the `InstanceBaseUrls` map, `Explorer/InstanceBaseUrls.cs`, seeded in
+    `Program.cs`) yields its host-published port (e.g. `iris-dev1.luit.ink` → `http://localhost:8081`);
+  - an **unknown host** yields the actor's home server (the host over `https`, e.g. `alice@example.com` →
+    `https://example.com`).
+
+The user therefore only needs the address + password in the common cases; the base URL is a visible,
+editable override for unusual deployments.
 
 ## The external-instance mechanism (no real dev FQDN committed)
 
@@ -115,13 +122,15 @@ at logon:
 3. a **browser-reachable base URL** for it (e.g. `http://my-host:port` — whatever address the browser can
    reach for that instance).
 
-For an unknown host the `InstanceBaseUrls` lookup misses, so the **user-typed base URL is used as-is** —
-nothing about the external instance is hard-coded. The WebFinger-resolved actor IRI (whose host is the
-*external* host) becomes the client's `actorIriOverride` (what it authenticates as and signs as), while the
-transport dials the user-typed base URL — the base-URL / IRI-host separation that makes an external instance
-work the same way a local one does. The read + follow + **proxy-fallback** paths all run against the
-external instance through this one mechanism (a direct request the browser cannot make — CORS, or a 401 the
-instance cannot validate — falls back through the home proxy, which re-signs with the acting actor's key).
+For an unknown host the `InstanceBaseUrls` lookup misses, so the dial base **defaults to the actor's home
+server** (the address's host over `https`) — nothing about the external instance is hard-coded. The user
+may still override it by entering a base URL explicitly. The WebFinger-resolved actor IRI (whose host is
+the *external* host) becomes the client's `actorIriOverride` (what it authenticates as and signs as), while
+the transport dials the resolved dial base — the base-URL / IRI-host separation that makes an external
+instance work the same way a local one does. The read + follow + **proxy-fallback** paths all run against
+the external instance through this one mechanism (a direct request the browser cannot make — CORS, or a
+401 the instance cannot validate — falls back through the home proxy, which re-signs with the acting
+actor's key).
 
 > **No real dev FQDN is committed.** The sample is self-contained on `localhost` (host-published ports) +
 > service names (in-network). Any external base URL / FQDN is **operator-supplied at logon** (runtime, in the
