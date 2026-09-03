@@ -271,11 +271,18 @@ rendered signed message / collection / cache behavior — and are folded into th
 pass (22.6) + the `RawInspector` component (US-21). Change 196 resolved the **server-side blocker**
 that was keeping the Follow/Unfollow (and other single-target write) UI halves from completing: the
 outbox publish path now normalizes a dial-base local-actor/community object reference to the advertised
-base (the Docker-only-routable IRI mismatch), with CI-pinned regression tests.
+base (the Docker-only-routable IRI mismatch), with CI-pinned regression tests. Change 197 removed the
+**raw-inspector read blocker**: the object-document endpoint now serves a minted activity id (falling
+back to the Activities store), so the Object view can fetch a minted Follow/Block/Flag/Like by its id and
+its rendered signed document matches the stored activity; and the actor/object detail pages now reload on
+a deep-link `?iri=` param change (the `OnParametersSetAsync` + guard fix).
 
-- [ ] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
+- [x] **19.6.1 — Management via ActivityStream only (UI half).** Drive every write screen through the
   browser and confirm the rendered signed message in the raw inspector matches the ActivityStream
-  activity.
+  activity. — **local-stack pass:** Block/Flag/Mute writes verified (`202`/`204`), the minted Block
+  fetched by its id returns the full signed AS document (200, was 404) and the Object view's Raw inspector
+  renders it 1:1 with the outbox (same minted id, normalized advertised `object` IRI, correct type/actor).
+  Remaining: the external-FQDN reverse-proxy pass (blocked on network reachability in this env).
 - [ ] **19.6.2 — All activities flow through the outbox (UI half).** Enumerate the outbox in the UI after
   exercising every write screen and match entries 1:1 with the actions taken.
 - [ ] **19.6.3 / 19.6.4 / 19.6.6 — Server-delivers, signature identity, cache bypass (UI halves).** Drive

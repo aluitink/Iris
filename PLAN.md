@@ -161,7 +161,21 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6, dial-base IRI normalization):** fixed the server-side blocker behind the
+**Latest slice (19.6, minted-activity object read + client deep-link reload):** removed the
+raw-inspector read blocker behind the 19.6.1 UI half. A minted activity id (e.g.
+`/u/alice/blocks/{ulid}`) stored in the Activities store 404'd on the object-document endpoint, which
+only consulted the Objects store — so the Object view / raw inspector could not fetch a minted
+Follow/Block/Flag/Like by its id. `ObjectDocumentHandler` now falls back to the Activities store on an
+Objects-store miss (a IRI in neither store still 404s). Separately, the actor/object detail pages loaded
+their entity in `OnInitializedAsync` (once), so a deep-link `?iri=` param change on the already-loaded
+page never re-loaded the new entity; both now use `OnParametersSetAsync` with a `_lastLoadedParamKey`
+guard (reload only on a param change, not on a write-triggered re-render). Verified on the compose
+stack: the minted Block fetched by its id returns the full signed AS document (200, was 404) and the
+Raw inspector renders it 1:1 with the outbox; an Object-page param change re-loads the new note.
+1,291 tests green. See
+[docs/changes/197-19.6-minted-activity-object-read-and-deeplink.md](docs/changes/197-19.6-minted-activity-object-read-and-deeplink.md).
+
+**Prior slice (19.6, dial-base IRI normalization):** fixed the server-side blocker behind the
 19.6.1/19.6.2/19.6.3 write UI halves. A signed Follow of a *local* actor 500'd because the client
 dials the instance on a host-published base (`http://localhost:8081`) and carries that base in the
 activity's object reference, while the instance stores local actors under the advertised base
