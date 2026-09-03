@@ -366,9 +366,14 @@ verification** (Playwright-MCP) and are folded into the Phase 22 manual test pas
 - [ ] **19.8.5 — Cross-instance navigation (live remainder).** The navigable state is preserved across
   instance switches + the "continue where you left off" card is done. Still open: drive a real iris-a →
   iris-b peer-item selection through the browser and confirm the remote object renders (Phase 22 US-8).
-- [ ] **19.8.6 — Write-screen round-trips (live remainder).** The Boost button is wired. Still open: drive
-  every write screen through the browser and confirm the success state + the raw-inspector signed message
-  on re-navigation (Phase 22 manual pass).
+- [x] **19.8.6 — Write-screen round-trips (live remainder).** The Boost button is wired. **Done (change
+  208):** a Playwright MCP pass drove the Create-note write screen through the browser and confirmed the
+  success state (202 `Create` with the minted id + the signed ActivityStreams body) and the raw-inspector
+  signed message on re-navigation (the object page renders the note + the Raw inspector toggle). The
+  other write screens (Reply, Like, Boost, Follow, Block, Flag, Mute, Delete) were already verified in
+  the 22.6 local manual pass (ch.195) + the outbox-enumeration verification (ch.200: Block/Flag/Like 1:1
+  with the RawInspector) + the object-detail interactions verification (ch.204: Reply/Like/Boost/Delete).
+  No new code or tests (verification-only slice, Phase 22 rule 5).
 - [ ] **19.8.7 — Error & empty states (live remainder).** Error handling is added to the four pages that
   lacked it + the ObjectPage 404 gap is closed. Still open: drive each error state through the browser and
   confirm the rendered message is clear (the proxy-fallback-failure + unreachable-instance states are

@@ -161,7 +161,17 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.8.1, click-through audit — local collection→view transitions):** a systematic
+**Latest slice (19.8.6, write-screen round-trips — Create note + prior verifications):** a Playwright
+  MCP pass drove the Create-note write screen through the browser and confirmed the success state
+  (202 `Create` with the minted id + the signed ActivityStreams body) and the raw-inspector signed
+  message on re-navigation (the object page renders the note + the Raw inspector toggle). The other
+  write screens (Reply, Like, Boost, Delete, Block, Flag, Mute, Follow) were already verified in the
+  22.6 local manual pass (ch.195) + the outbox-enumeration verification (ch.200: Block/Flag/Like 1:1
+  with the RawInspector) + the object-detail interactions verification (ch.204: Reply/Like/Boost/
+  Delete). No new code or tests (verification-only slice, Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/208-19.8.6-write-screen-round-trips-create-note-and-prior-verification.md](docs/changes/208-19.8.6-write-screen-round-trips-create-note-and-prior-verification.md).
+
+**Prior slice (19.8.1, click-through audit — local collection→view transitions):** a systematic
   Playwright MCP click-through audit of every collection→view transition (actor→detail, object→
   detail, community, feed, instance, actors directory, remote actor→detail, compose), logged on as
   `alice@localhost` (dial base `http://localhost:8081`), to confirm no raw-JSON dead ends and no
