@@ -91,13 +91,15 @@ remote rendering, multi-server identity); and authoring (compose with media/mark
 reply/threads). The remaining pre-Phase-22 items (the Phase 19 live-interop + raw-inspector UI halves
 and the Phase 21 UI deltas) are listed in the roadmap and are largely subsumed by Phase 22.
 
-**Latest slice (22.2, instance — in progress):** the second 22.2 sub-slice landed — the instance page
-now resolves a `handle@host` address to an actor IRI via WebFinger (US-10) and deep-links to the
-actor's detail page. With the actor slice (change 183), the **actor** page (US-5/15/16/17) and the
-**instance** page (US-10) are complete for 22.2; 22.1 "shared components first" is also complete.
-Manually verified on the docker compose FQDN stack. See
-[docs/changes/184-22.2-instance-webfinger-lookup.md](docs/changes/184-22.2-instance-webfinger-lookup.md).
-**22.2** continues: object (US-7/12/13/14) and community (US-6/18).
+**Latest slice (22.2, community — in progress):** the third 22.2 sub-slice landed — the community page
+can now **create** a community (US-18): a "Create a community" card publishes a `Create` of a Group to
+the logged-on actor's outbox (server materializes it), then it loads and manages the new community.
+With the actor slice (change 183) and the instance slice (change 184), the **actor** page (US-5/15/16/17),
+the **instance** page (US-10), and community **create** (US-18) are complete for 22.2; 22.1 "shared
+components first" is also complete. Manually verified on the docker compose FQDN stack. See
+[docs/changes/185-22.2-community-create.md](docs/changes/185-22.2-community-create.md).
+**22.2** remaining: the object-page **reply form (US-12)** (object review US-7 + like/boost US-13 +
+delete US-14 and the community review surface US-6 are already present); US-12 is tracked under 22.3.
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in

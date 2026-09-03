@@ -133,8 +133,11 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   collection + US-15 follow state, change [183](changes/183-22.2-actor-liked-and-follow-state.md);
   US-16 inbound-follows accept/reject + US-17 moderation were already present) and instance page
   complete (US-10 WebFinger handle lookup, change
-  [184](changes/184-22.2-instance-webfinger-lookup.md)); object US-7/12/13/14 and community US-6/18
-  follow.
+   [184](changes/184-22.2-instance-webfinger-lookup.md)); community create (US-18, change
+   [185](changes/185-22.2-community-create.md)) complete; the object page's review + like/boost + delete
+   (US-7/13/14) are already present and the community review surface (US-6) is already present — the
+   remaining 22.2 item is the object-page **reply form (US-12)**, which is tracked under 22.3
+   (authoring).
 - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
   + reply-chain rendering (US-12).
 - [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
