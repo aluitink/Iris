@@ -3641,7 +3641,24 @@ public static class ActivityPubServerExtensions
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var actorIri = BuildActorIri(baseUrl, handle);
 
-        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false))
+        Iri? resolvedIri = null;
+        if (await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            resolvedIri = actorIri;
+        }
+        else
+        {
+            // Fallback: the handle may be a community (Group) rather than a person. Communities live
+            // in the community store (not the actor store), so a community handle like
+            // @iris@host resolves to {base}/ap/v1/c/iris (19.5.1 discovery).
+            var communityIri = BuildCommunityIri(baseUrl, handle);
+            if (await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+            {
+                resolvedIri = communityIri;
+            }
+        }
+
+        if (resolvedIri is null)
         {
             return Results.NotFound();
         }
@@ -3649,7 +3666,9 @@ public static class ActivityPubServerExtensions
         // The instance host (for the acct: subject) is derived from the base URL, not the request
         // host (which may differ, e.g. in tests or behind a proxy).
         var instanceHost = new Uri(baseUrl).Host;
-        // WebFinger response: { subject, links: [{ rel: self, type: activity+json, href: actorIri }] }.
+        // WebFinger response: { subject, links: [{ rel: self, type: activity+json, href: resolvedIri }] }.
+        // The href must be a plain string (the Iri struct serializes as an object with Uri/Value/etc.).
+        var href = resolvedIri.ToString();
         var webFinger = new
         {
             subject = $"acct:{handle}@{instanceHost}",
@@ -3659,7 +3678,7 @@ public static class ActivityPubServerExtensions
                 {
                     rel = "self",
                     type = ActivityJson.ActivityJsonContentType,
-                    href = actorIri.Value,
+                    href,
                 },
             },
         };

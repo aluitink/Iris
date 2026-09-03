@@ -150,6 +150,77 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
             "a Create of a Note must not materialize a community (19.5.1 is Group-only)");
     }
 
+    // --- 19.5.1 discovery: WebFinger resolves the newly-created community handle -------------
+
+    [Fact]
+    public async Task CreateCommunityAsync_ThenWebFinger_ResolvesCommunityHandle()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        // Create the community.
+        var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(result.IsSuccess, $"the CreateCommunityAsync must be accepted (got {result.StatusCode})");
+
+        // WebFinger for the community handle @devs@a.domain.local should resolve to the community IRI.
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"https://{AHost}/.well-known/webfinger?resource=acct:devs@{AHost}");
+        using var response = await _server.CreateClient().SendAsync(request);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var links = doc.RootElement.GetProperty("links");
+        string? href = null;
+        foreach (var l in links.EnumerateArray())
+        {
+            if (l.TryGetProperty("rel", out var rel)
+                && rel.ValueKind == System.Text.Json.JsonValueKind.String
+                && string.Equals(rel.GetString(), "self", StringComparison.Ordinal))
+            {
+                href = l.GetProperty("href").GetString();
+                break;
+            }
+        }
+        Assert.True(href is not null, "the WebFinger response must contain a self link");
+        Assert.True(string.Equals(communityIri.Value, href, StringComparison.Ordinal),
+            $"the WebFinger self link must resolve to the community IRI (expected {communityIri.Value}, got {href})");
+    }
+
+    // --- 19.5.1 discovery: the community document advertises iris:capabilities ---------------
+
+    [Fact]
+    public async Task CreateCommunityAsync_ThenDocument_AdvertisesCapabilities()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        // Create the community.
+        var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(result.IsSuccess, $"the CreateCommunityAsync must be accepted (got {result.StatusCode})");
+
+        // The community document (GET /c/devs) must advertise iris:capabilities (the feed, members,
+        // search, and mute capabilities are computed on-the-fly by the CommunityDocumentHandler).
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"https://{AHost}/ap/v1/c/devs");
+        using var response = await _server.CreateClient().SendAsync(request);
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+
+        // The capabilities term is {NamespaceIri}capabilities.
+        var capabilitiesTerm = (ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri)
+            + ActivityPubServerConstants.CapabilitiesTerm;
+        Assert.True(
+            doc.RootElement.TryGetProperty(capabilitiesTerm, out var capabilities),
+            $"the community document must advertise the {capabilitiesTerm} extension (19.5.1 discovery)");
+        Assert.Equal(System.Text.Json.JsonValueKind.Array, capabilities.ValueKind);
+        var capabilitiesValues = capabilities.EnumerateArray()
+            .Select(e => e.GetString())
+            .ToList();
+        Assert.Contains(ActivityPubServerConstants.CapabilityFeed, capabilitiesValues);
+        Assert.Contains(ActivityPubServerConstants.CapabilityMembers, capabilitiesValues);
+        Assert.Contains(ActivityPubServerConstants.CapabilitySearch, capabilitiesValues);
+    }
+
     /// <summary>
     /// Builds a signed <see cref="IActivityPubClient"/> (signed as <paramref name="actorIri"/>, key
     /// <paramref name="key"/>) whose transport routes to <paramref name="handler"/>.
