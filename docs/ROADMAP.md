@@ -143,8 +143,14 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
     render pre-rendered HTML verbatim (`IriExtensions.IsPreRenderedHtmlContent`) — change
     [187](changes/187-22.3-compose-markdown-sensitivity.md). The reply form + reply-chain rendering
     (US-12) was completed under 22.2 (change 186).
-- [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
-  and first-class multi-server identity/switching (US-2, US-24).
+ - [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
+  and first-class multi-server identity/switching (US-2, US-24). **US-8 done** (change
+  [188](changes/188-22.4-cross-instance-reads-via-proxy.md)): the browser could not open a remote
+  object/actor (a direct cross-origin GET is CORS-blocked — a network failure with no status code, so
+  the 401/403 proxy fallback never engaged); the `ProxyFallbackHandler` now routes a cross-instance GET
+  straight through the same-origin home proxy (no direct attempt). **remaining:** live FQDN manual
+  verification (the external proxy is unreachable in this env — folded into the 22.6 manual pass) and
+  the multi-server identity/switching polish (US-2, US-24).
 - [ ] **22.5 — Broad story review.** Review the full story set together to confirm they play well with
   each other (shared components, no contradictions, consistent navigation + error/empty states) before
   the implementation sweep.

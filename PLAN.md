@@ -91,20 +91,19 @@ remote rendering, multi-server identity); and authoring (compose with media/mark
 reply/threads). The remaining pre-Phase-22 items (the Phase 19 live-interop + raw-inspector UI halves
 and the Phase 21 UI deltas) are listed in the roadmap and are largely subsumed by Phase 22.
 
-**Latest slice (22.3, compose — 22.3 complete):** the Compose page gains the two remaining US-11
-authoring capabilities on top of the existing media upload: a **Markdown** content toggle (typed
-content rendered to safe HTML by the dependency-free `Markdown.ToHtml` before posting, so the stored
-`content` is HTML) and a **content-sensitivity** flag + summary (the AS `sensitive` term in
-`ExtensionData` + the `summary` term). A new pure helper `Iris.Core.Compose.ComposeNote.Build` (unit
-tested) composes the note's wire shape, and a new `IriExtensions.IsPreRenderedHtmlContent` detector
-lets `ObjectView` render pre-rendered HTML verbatim (previously it re-ran all content through the
-Markdown renderer and would have shown the posted HTML as escaped literal text). Manually verified on
-the docker compose FQDN stack (Markdown + sensitive note posts 202, stores `"sensitive": true` +
-`summary`, and renders as real `<h1>`/`<strong>`/`<em>`/`<ul>`/`<a>` behind a reveal; plain-text
-content still renders via the Markdown path). See
-[docs/changes/187-22.3-compose-markdown-sensitivity.md](docs/changes/187-22.3-compose-markdown-sensitivity.md).
-**22.3 is done** — next is 22.4 (cross-server polish: remote object/actor rendering via the proxy +
-media proxy, US-8; multi-server identity/switching, US-2/US-24).
+**Latest slice (22.4, US-8 cross-instance reads):** a browser could not open a remote object or
+actor — `GetObjectAsync`/`GetActorAsync` dial the target IRI directly, and a direct cross-origin GET
+is CORS-blocked (a network failure with no status code, so the 401/403 `ProxyFallbackHandler` fallback
+never engaged). The handler now has a **cross-instance-read** mode: a `GET` whose host differs from
+the dial base is routed straight through the same-origin home proxy (no direct attempt), which relays
+the remote document; a same-host `GET` dials directly. New opt-in options
+(`ActivityPubClientOptions.DialBaseUri` / `RouteCrossInstanceReadsViaProxy`, surfaced on
+`IrisClientOptions`) and the sample opts in (the home proxy relays both cross- and same-host reads, so
+every AP read goes same-origin). 4 handler-level + 1 end-to-end pipeline test; 1,284 tests green. Live
+FQDN verification is deferred to the 22.6 manual pass (the external proxy is unreachable in this env).
+See [docs/changes/188-22.4-cross-instance-reads-via-proxy.md](docs/changes/188-22.4-cross-instance-reads-via-proxy.md).
+**22.4 US-8 is done** — 22.4 remaining: live verification + the multi-server identity/switching
+polish (US-2, US-24); then 22.5 (broad story review) and 22.6 (implementation sweep + manual pass).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
