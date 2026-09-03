@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Xunit;
 
 namespace Iris.Core.Tests.Identity;
 
@@ -591,5 +592,58 @@ public class IriExtensionsTests
         IObject? none = null;
 
         Assert.Null(none.GetUpdated());
+    }
+
+    [Theory]
+    [InlineData("<p>Hello</p>")]
+    [InlineData("<h1>Title</h1>")]
+    [InlineData("<ul><li>a</li></ul>")]
+    [InlineData("  <p>leading whitespace</p>")]
+    [InlineData("<P>uppercase</P>")]
+    [InlineData("<pre><code>x</code></pre>")]
+    [InlineData("<blockquote>quote</blockquote>")]
+    public void IsPreRenderedHtmlContent_BlockHtml_ReturnsTrue(string content)
+    {
+        IObject note = new Note { Id = "https://a.domain.local/n/1", Content = [content] };
+
+        Assert.True(note.IsPreRenderedHtmlContent());
+    }
+
+    [Theory]
+    [InlineData("# A heading")]
+    [InlineData("**bold** and *italic*")]
+    [InlineData("plain text, no markup")]
+    [InlineData("- a list item")]
+    [InlineData("[a link](https://example.com)")]
+    public void IsPreRenderedHtmlContent_MarkdownOrPlain_ReturnsFalse(string content)
+    {
+        IObject note = new Note { Id = "https://a.domain.local/n/1", Content = [content] };
+
+        Assert.False(note.IsPreRenderedHtmlContent());
+    }
+
+    [Fact]
+    public void IsPreRenderedHtmlContent_NoContent_ReturnsFalse()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/n/1" };
+
+        Assert.False(note.IsPreRenderedHtmlContent());
+    }
+
+    [Fact]
+    public void IsPreRenderedHtmlContent_Null_ReturnsFalse()
+    {
+        IObject? none = null;
+
+        Assert.False(none.IsPreRenderedHtmlContent());
+    }
+
+    [Fact]
+    public void IsPreRenderedHtmlContent_FirstNonEmptyValue_Decides()
+    {
+        // The first non-empty content value is the one inspected (a blank leading value is skipped).
+        IObject note = new Note { Id = "https://a.domain.local/n/1", Content = ["", "<p>real content</p>"] };
+
+        Assert.True(note.IsPreRenderedHtmlContent());
     }
 }

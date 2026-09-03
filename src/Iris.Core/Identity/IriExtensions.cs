@@ -418,6 +418,67 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reports whether an object's <c>content</c> is already pre-rendered HTML (and so should be emitted
+    /// verbatim by a renderer) rather than Markdown source (which a renderer must first convert). This
+    /// drives the renderer's choice between emitting the content as-is and running it through a
+    /// Markdown-to-HTML transform (22.3 US-11: a compose surface renders Markdown to safe HTML before
+    /// posting, so the stored content is already HTML — re-rendering it would escape the markup and show
+    /// it as literal text).
+    /// </summary>
+    /// <remarks>
+    /// A heuristic (not a full parser): content that begins with a block-level HTML tag
+    /// (<c>&lt;p&gt;</c>, <c>&lt;h1&gt;</c>–<c>&lt;h6&gt;</c>, <c>&lt;ul&gt;</c>/<c>&lt;ol&gt;</c>,
+    /// <c>&lt;pre&gt;</c>, <c>&lt;blockquote&gt;</c>, <c>&lt;table&gt;</c>, <c>&lt;div&gt;</c>) is taken to
+    /// be pre-rendered HTML; everything else (Markdown source or plain text) is not. Markdown source
+    /// never begins with a block tag, so the two cases are unambiguous for content authored by a
+    /// Markdown-rendering client.
+    /// </remarks>
+    /// <param name="obj">The object to inspect. May be null.</param>
+    /// <returns>
+    /// <see langword="true"/> when the first non-empty content value starts with a block-level HTML tag;
+    /// <see langword="false"/> otherwise (including when the object has no content).
+    /// </returns>
+    public static bool IsPreRenderedHtmlContent(this IObject? obj)
+    {
+        if (obj?.Content is not { } contents)
+        {
+            return false;
+        }
+
+        foreach (var part in contents)
+        {
+            if (string.IsNullOrWhiteSpace(part))
+            {
+                continue;
+            }
+
+            return StartsWithBlockTag(part);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The block-level HTML tag prefixes treated as evidence of pre-rendered HTML content (the leading
+    /// tag, case-insensitive).
+    /// </summary>
+    private static readonly string[] BlockTagPrefixes =
+    [
+        "<p", "<h1", "<h2", "<h3", "<h4", "<h5", "<h6",
+        "<ul", "<ol", "<pre", "<blockquote", "<table", "<div",
+    ];
+
+    /// <summary>
+    /// Reports whether a content string begins (after any leading whitespace) with a block-level HTML
+    /// tag prefix (case-insensitive).
+    /// </summary>
+    private static bool StartsWithBlockTag(string content)
+    {
+        var trimmed = content.TrimStart();
+        return BlockTagPrefixes.Any(prefix => trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
     /// Reads an object's <c>updated</c> timestamp (the ActivityStreams <c>updated</c> term — when the
     /// content was last edited), when present. A renderer shows it alongside <c>published</c> so an
     /// edited post is distinguishable from a fresh one (22.1 US-19: "published/updated").

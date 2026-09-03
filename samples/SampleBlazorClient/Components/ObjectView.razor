@@ -306,12 +306,29 @@
     }
 
     /// <summary>
-    /// The object's <c>content</c> rendered as HTML from Markdown (20.4c). The content is run through
-    /// the dependency-free <see cref="Markdown"/> renderer (HTML-escaped first, so it is safe to emit
-    /// as a <see cref="MarkupString"/>). An empty or null content renders as an empty string.
+    /// The object's <c>content</c> rendered to a safe <see cref="MarkupString"/> (20.4c + 22.3 US-11).
+    /// When the content is pre-rendered HTML (a client rendered Markdown to HTML before posting —
+    /// <see cref="IriExtensions.IsPreRenderedHtmlContent"/>), it is emitted verbatim (it is already
+    /// safe HTML; re-rendering it through the Markdown renderer would escape the markup and show it as
+    /// literal text). Otherwise (Markdown source or plain text) the content is run through the
+    /// dependency-free <see cref="Markdown"/> renderer (HTML-escaped first, so it is safe to emit).
+    /// An empty or null content renders as an empty string.
     /// </summary>
     private MarkupString RenderedContent
-        => new(Markdown.ToHtml(JoinStrings(Obj?.Content)));
+    {
+        get
+        {
+            var content = JoinStrings(Obj?.Content);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new MarkupString(string.Empty);
+            }
+
+            // Pre-rendered HTML (a Markdown-rendering client) is emitted verbatim; Markdown source is
+            // rendered (escaped first). See IsPreRenderedHtmlContent.
+            return new MarkupString(Obj is { } o && o.IsPreRenderedHtmlContent() ? content : Markdown.ToHtml(content));
+        }
+    }
 
     /// <summary>
     /// The attachment IRIs, when present — rendered as links (S2).

@@ -1,4 +1,5 @@
 @page "/compose"
+@using System.Text.Json
 @using Iris.Client
 @using KristofferStrube.ActivityStreams
 
@@ -18,6 +19,15 @@ else
         <p class="muted">Posting as <code>@(Session.ActorIri?.Value ?? "…")</code></p>
         <label for="content">Content</label>
         <textarea id="content" rows="4" @bind="Content" placeholder="What's on your mind?"></textarea>
+        <label class="compose-toggle">
+            <input id="markdown" type="checkbox" @bind="IsMarkdown" />
+            <span>Markdown</span>
+        </label>
+        <p class="muted">
+            When enabled, the content is rendered as Markdown (headings, <code>**bold**</code>,
+            <code>*italic*</code>, links, lists, code) before it is posted — so it displays formatted.
+            Leave off to post the content exactly as typed.
+        </p>
 
         <label for="audience">Audience (optional — <code>Public</code> or comma-separated actor IRIs)</label>
         <input id="audience" type="text" @bind="Audience" placeholder="Public" />
@@ -32,6 +42,18 @@ else
         {
             <p class="muted">@MediaStatus</p>
         }
+
+        <label class="compose-toggle">
+            <input id="sensitive" type="checkbox" @bind="IsSensitive" />
+            <span>Mark as sensitive</span>
+        </label>
+        <p class="muted">
+            Adds the ActivityStreams <c>sensitive</c> flag. Readers see a "may be sensitive" notice
+            (with the summary below) and must reveal the content to see it.
+        </p>
+        <label for="summary">Sensitivity summary (optional — shown in place of the content)</label>
+        <input id="summary" type="text" @bind="Summary" placeholder="e.g. Contains spoilers"
+               disabled="@(!IsSensitive)" />
 
         <details>
             <summary>Reply to…</summary>
@@ -65,6 +87,11 @@ else
     private string ParentIri { get; set; } = string.Empty;
     private string Mentions { get; set; } = string.Empty;
     private string Audience { get; set; } = string.Empty;
+    // 22.3 (US-11): Markdown content (rendered to HTML before posting) and the content-sensitivity
+    // flag + summary (the ActivityStreams `sensitive` term + `summary` term).
+    private bool IsMarkdown { get; set; }
+    private bool IsSensitive { get; set; }
+    private string Summary { get; set; } = string.Empty;
     private bool Busy { get; set; }
     private DeliveryResult? Result { get; set; }
     private string? Error { get; set; }
@@ -124,7 +151,7 @@ else
 
                     note = new Note
                     {
-                        Content = [Content],
+                        Content = [RenderedContent()],
                         AttributedTo = [new Link { Href = actorIri.Uri }],
                         // The Image's url is the same-origin media IRI (and its id mirrors it, so a reader
                         // can resolve the media without the url). mediaType + name come from the upload.
@@ -136,14 +163,18 @@ else
                             Name = [Media.FileName],
                         }],
                     };
+
+                    ApplySensitivity(note);
                 }
                 else
                 {
                     note = new Note
                     {
-                        Content = [Content],
+                        Content = [RenderedContent()],
                         AttributedTo = [new Link { Href = actorIri.Uri }],
                     };
+
+                    ApplySensitivity(note);
                 }
 
                 if (to is not null && to.Count > 0)
@@ -168,6 +199,37 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Resolves the note's wire content (22.3 US-11): when the Markdown toggle is on, the typed content is
+    /// rendered to safe HTML by the dependency-free <see cref="Markdown"/> renderer (headings, bold, italic,
+    /// links, lists, code) and posted as HTML (the object view renders HTML content); otherwise the content
+    /// is posted exactly as typed.
+    /// </summary>
+    private string RenderedContent()
+        => IsMarkdown ? Markdown.ToHtml(Content) : Content;
+
+    /// <summary>
+    /// Applies the content-sensitivity inputs to <paramref name="note"/> (22.3 US-11): when
+    /// <see cref="IsSensitive"/> is set, the ActivityStreams <c>sensitive</c> flag (in ExtensionData, the
+    /// representation <c>IriExtensions.IsSensitive</c> reads) and — when a non-blank
+    /// <see cref="Summary"/> is entered — the <c>summary</c> term (the preview text a client shows in place
+    /// of a sensitive note's content until revealed) are set.
+    /// </summary>
+    private void ApplySensitivity(Note note)
+    {
+        if (!IsSensitive)
+        {
+            return;
+        }
+
+        note.ExtensionData ??= new Dictionary<string, JsonElement>();
+        note.ExtensionData["sensitive"] = JsonSerializer.SerializeToElement(true);
+        if (!string.IsNullOrWhiteSpace(Summary))
+        {
+            note.Summary = [Summary];
         }
     }
 
