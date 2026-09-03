@@ -443,10 +443,20 @@ How do we create and manage communities, and their peers (the communities/actors
      credential seam) records/removes a community-scoped mute (`?unmute=true`). Block/flag are the
      federated `Block`/`Flag` activities (not a local POST).
      (change 153)
-   - `remaining:` for full 19.5.4 — the **community UI** moderation screen (wiring the mute POST + the
-     block/flag collection reads) and the two-instance wire drive of a signed `Block`/`Flag` addressed to
-     a community (the federated half reuses the existing `Block`/`Flag` inbox-handler path, proven for the
-     person level) — both live/UI-verification items.
+    - [x] **Community UI moderation screen (19.5.4 community-UI half) is complete** (change 175): the
+      Community page now has a "Moderation" card (mirroring the person ActorDetail Moderation card) — it
+      offers Mute/Unmute, Block/Unblock, and Flag/Unflag buttons that act as the community (the community
+      signs with the primary actor's key in the sample deployment). Mute/Unmute are local,
+      Basic-authenticated decisions (no federation) via `GetLocalModerationClient().MuteAsync(communityIri,
+      target)`; Block/Unblock and Flag/Unflag are signed writes to the community's outbox via
+      `GetClient().BlockAsync/FlagAsync`. Decision 055: the learned id of a created block/flag is captured
+      for a later undo. Per the current direction, the sample-client UI is verified manually (not
+      bUnit-tested) while it remains in flux; the underlying wire is proven by the existing
+      server/client integration tests (change 153).
+    - `remaining:` for full 19.5.4 — the community **UI** moderation screen is done (change 175). Still
+      open: the two-instance wire drive of a signed `Block`/`Flag` addressed to a community (the federated
+      half reuses the existing `Block`/`Flag` inbox-handler path, proven for the person level) — a
+      live-interop item.
  - [ ] **19.5.5 — Community feed correctness.** The unified feed (members' outboxes, newest first,
    de-duplicated) yields exactly the right activities: local member posts, remote content delivered to
    the community inbox (the catch-all recording into member outboxes), pagination, and `?refresh=true`
