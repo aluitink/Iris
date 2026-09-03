@@ -161,7 +161,17 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6.3, dial-base normalization cross-instance guard — production fix):**
+**Latest slice (19.6.6, signature header accumulation + feed 500 — production fix):**
+  two linked defects surfaced by growing signature headers on failing feed requests. (1) The
+  `SigningHandler` now removes pre-existing `Signature`/`Date`/`X-Signature-Date` headers before
+  signing, so a re-signed/re-dispatched request no longer stacks them (the peer's validator no longer
+  comma-joins them into a malformed signature → 401). (2) `FeedService` now guards the remote
+  actor-doc fetch (a throwing outbound fetch — transport error, timeout, signing-key failure — no
+  longer propagates uncaught to the feed handler → 500). CI-pinned by three new regression tests.
+  1,304 tests green. See
+  [docs/changes/214-19.6.6-signature-header-accumulation-and-feed-500.md](docs/changes/214-19.6.6-signature-header-accumulation-and-feed-500.md).
+
+**Prior slice (19.6.3, dial-base normalization cross-instance guard — production fix):**
   the outbox dial-base IRI normalization (`NormalizeLocalActorObjectIriAsync`) now guards against
   cross-instance handle collision: a Follow of a remote actor sharing a handle with a local actor
   (e.g. `alice@iris-dev2` when `alice` exists locally on `iris-dev1`) is no longer rewritten to the

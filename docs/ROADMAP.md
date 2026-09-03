@@ -315,9 +315,13 @@ rendering the signed AS document 1:1.
   items). **19.6.3 correctness fix (change 213):** the outbox dial-base IRI
    normalization (`NormalizeLocalActorObjectIriAsync`) now guards against cross-instance handle
    collision — a Follow of a remote actor sharing a handle with a local actor is no longer rewritten
-   to the local actor (CI-pinned regression test). 19.6.3 (server-delivers to peer inbox) and 19.6.4
-   (signature identity) remain open for the full live verification (constrained by the owner-only inbox,
-   decision 056, and the external-FQDN proxy route).
+   to the local actor (CI-pinned regression test). **19.6.6 correctness fix (change 214):** the
+   `SigningHandler` now removes pre-existing signature headers before signing (a re-signed/re-dispatched
+   request no longer stacks `Signature`/`Date`/`X-Signature-Date` — the peer's validator no longer
+   comma-joins them into a malformed signature → 401); `FeedService` now guards the remote actor-doc
+   fetch (a throwing outbound fetch no longer 500s the whole feed). 19.6.3 (server-delivers to peer
+   inbox) and 19.6.4 (signature identity) remain open for the full live verification (constrained by the
+   owner-only inbox, decision 056, and the external-FQDN proxy route).
 - [x] **19.6.5 — Audience metadata (production change).** Rewriting the outbound Create/Announce
   `to`/`cc` to enumerate the follower set + adding the reply target to a reply's `to`/`cc`. Change 198
   implemented the on-the-wire enumeration (the delivery already reached the right inboxes; now the
