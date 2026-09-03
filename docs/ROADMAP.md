@@ -136,8 +136,13 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
    present), community (US-6 review already present; US-18 create, change
    [185](changes/185-22.2-community-create.md)), and instance (US-10 WebFinger handle lookup, change
    [184](changes/184-22.2-instance-webfinger-lookup.md)) all verified on the FQDN compose stack.
- - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11). The reply form +
-   reply-chain rendering (US-12) was completed under 22.2 (change 186).
+  - [x] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) — **complete**:
+    media was already present; this adds a **Markdown** content toggle (rendered to safe HTML by the
+    dependency-free `Markdown.ToHtml` before posting) and a **content-sensitivity** flag + summary
+    (the AS `sensitive` term in `ExtensionData` + the `summary` term), plus the `ObjectView` fix to
+    render pre-rendered HTML verbatim (`IriExtensions.IsPreRenderedHtmlContent`) — change
+    [187](changes/187-22.3-compose-markdown-sensitivity.md). The reply form + reply-chain rendering
+    (US-12) was completed under 22.2 (change 186).
 - [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
   and first-class multi-server identity/switching (US-2, US-24).
 - [ ] **22.5 — Broad story review.** Review the full story set together to confirm they play well with
