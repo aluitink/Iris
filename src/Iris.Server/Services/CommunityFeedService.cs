@@ -1,15 +1,19 @@
+using Iris.Client;
 using Iris.Core;
+using Iris.Server.Caching;
+using Iris.Server.Security;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
+using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Server.Services;
 
 /// <summary>
-/// The default <see cref="ICommunityFeedService"/>: merges the local members' outbox activities into a
+/// The default <see cref="ICommunityFeedService"/>: merges the members' outbox activities into a
 /// single newest-first feed for a community, and searches that content.
 /// </summary>
 /// <remarks>
-/// For each local member of the community, reads the member's outbox (the member's posted activities,
+/// For each member of the community, reads the member's outbox (the member's posted activities,
 /// newest first) and merges them into a single **newest-first** feed: items are ordered by (outbox
 /// position, then member IRI) — a stable, deterministic merge that ranks a member's newest post above
 /// its older posts and orders same-position posts by member IRI. The merged items are de-duplicated by
@@ -17,6 +21,14 @@ namespace Iris.Server.Services;
 /// nothing; an unknown community or a community with no members yields an empty feed. The
 /// <see cref="SearchCommunityAsync"/> method runs a case-insensitive substring search over the feed's
 /// items' <c>content</c>/<c>name</c>.
+/// </remarks>
+/// <remarks>
+/// <strong>Local vs remote members.</strong> A <em>local</em> member's outbox is read from the local
+/// activity store (no network). A <em>remote</em> member's outbox is fetched over the wire (walking the
+/// outbox's pages, capped by <see cref="FeedOptions.PagesPerActor"/>). A remote outbox that cannot be
+/// fetched contributes nothing — a single broken remote must not fail the whole feed. When the service
+/// is constructed without an <see cref="ILocalActorResolver"/> (the default), every member is treated
+/// as local (the legacy behavior).
 /// </remarks>
 /// <remarks>
 /// <strong>Community moderation (19.5.4, apply the community's moderation edges).</strong> When
@@ -36,6 +48,10 @@ public sealed class CommunityFeedService : ICommunityFeedService
 {
     private readonly IPersistenceProvider _persistence;
     private readonly ICommunityStore? _communities;
+    private readonly ILocalActorResolver? _localActors;
+    private readonly IActorDocumentFetcher? _actorDocs;
+    private readonly IActivityPubClient? _client;
+    private readonly FeedOptions _options;
 
     /// <summary>
     /// Initializes a new feed service over the given persistence provider.
@@ -48,9 +64,39 @@ public sealed class CommunityFeedService : ICommunityFeedService
     /// this parameter is the same store instance, injected so the moderation edges are resolvable without
     /// the service depending on a concrete provider shape.</param>
     public CommunityFeedService(IPersistenceProvider persistence, ICommunityStore? communities = null)
+        : this(persistence, communities, null, null, null, new FeedOptions())
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new feed service with full local/remote member support.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (the community + activity stores). Must not be null.</param>
+    /// <param name="communities">The community store (19.5.4): when present, a member the community has
+    /// <em>blocked</em> or <em>muted</em> is excluded from the feed. Null disables community-moderation
+    /// filtering.</param>
+    /// <param name="localActors">Resolves whether a member is local (its outbox is read from the local
+    /// store) or remote (its outbox is fetched over the wire). Null (the default) treats every member
+    /// as local (the legacy behavior).</param>
+    /// <param name="actorDocs">Fetches a remote member's document to read its <c>outbox</c> IRI. Required
+    /// when <paramref name="localActors"/> is non-null.</param>
+    /// <param name="client">Fetches a remote member's outbox pages over the wire. Required when
+    /// <paramref name="localActors"/> is non-null.</param>
+    /// <param name="options">The feed options (pages per remote member + max items).</param>
+    public CommunityFeedService(
+        IPersistenceProvider persistence,
+        ICommunityStore? communities,
+        ILocalActorResolver? localActors,
+        IActorDocumentFetcher? actorDocs,
+        IActivityPubClient? client,
+        FeedOptions options)
     {
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         _communities = communities;
+        _localActors = localActors;
+        _actorDocs = actorDocs;
+        _client = client;
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     /// <inheritdoc/>
@@ -99,13 +145,15 @@ public sealed class CommunityFeedService : ICommunityFeedService
         // the feed is reproducible for a given set of outboxes). This is the "newest first" the feed
         // advertises (the union of the members' outboxes, de-duplicated, newest first).
         //
-        // De-duplicate by activity IRI (keep the first, i.e. newest, occurrence). Members are local
-        // actors, so their outboxes are served by the local activity store.
+        // De-duplicate by activity IRI (keep the first, i.e. newest, occurrence). A local member's
+        // outbox is read from the local activity store; a remote member's outbox is fetched over the
+        // wire (walking the outbox's pages, capped by FeedOptions.PagesPerActor).
         var seen = new HashSet<Iri>();
         var merged = new List<(int Position, Iri MemberIri, IObjectOrLink Item)>();
         foreach (var memberIri in orderedMembers)
         {
-            var outbox = await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
+            IReadOnlyList<IObjectOrLink> outbox =
+                await ReadOutboxAsync(memberIri, ct).ConfigureAwait(false);
             for (var position = 0; position < outbox.Count; position++)
             {
                 var item = outbox[position];
@@ -121,11 +169,13 @@ public sealed class CommunityFeedService : ICommunityFeedService
             }
         }
 
-        return merged
+        var feed = merged
             .OrderBy(m => m.Position)
             .ThenBy(m => m.MemberIri.Value, StringComparer.Ordinal)
             .Select(m => m.Item)
             .ToList();
+
+        return TruncateDedup(feed);
     }
 
     /// <inheritdoc/>
@@ -172,6 +222,102 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         return matches;
+    }
+
+    /// <summary>
+    /// Reads a member's outbox: local members from the local activity store, remote members over the
+    /// wire (walking the outbox's pages, capped by <see cref="FeedOptions.PagesPerActor"/>). A remote
+    /// outbox that cannot be fetched contributes nothing.
+    /// </summary>
+    private async Task<IReadOnlyList<IObjectOrLink>> ReadOutboxAsync(Iri memberIri, CancellationToken ct)
+    {
+        // When the local-actor resolver is not configured, every member is treated as local (the
+        // legacy behavior: the outbox is read from the local activity store).
+        if (_localActors is null || _actorDocs is null || _client is null)
+        {
+            return await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
+        }
+
+        var isLocal = await _localActors.IsLocalActorAsync(memberIri, ct).ConfigureAwait(false);
+        if (isLocal)
+        {
+            return await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
+        }
+
+        return await FetchRemoteOutboxAsync(memberIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Walks a remote member's outbox (up to <see cref="FeedOptions.PagesPerActor"/> pages) over the
+    /// wire and returns the items. A remote that cannot be resolved or fetched contributes nothing.
+    /// </summary>
+    private async Task<IReadOnlyList<IObjectOrLink>> FetchRemoteOutboxAsync(Iri memberIri, CancellationToken ct)
+    {
+        // Read the remote member's document to get its outbox IRI (a remote outbox is not always at the
+        // conventional {actor}/outbox, so the advertised IRI is authoritative). The library's
+        // collection properties are typed as a single <c>Link</c> (the OneOrMultiple shape), so the
+        // first entry is read via its <c>Href</c>; when absent, fall back to the ActivityPub convention.
+        //
+        // The IActorDocumentFetcher contract is "return null, do not throw" on fetch failure, but the
+        // implementation can still throw (a transport error, timeout, or a signing-key failure in the
+        // outbound actor-doc fetch propagates uncaught). Guard it the same way the outbox walk below is
+        // guarded: a broken remote member-document contributes nothing rather than failing the whole feed.
+        Actor? actor = null;
+        try
+        {
+            actor = await _actorDocs!.GetActorAsync(memberIri, ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // A remote member-document that errors (network, timeout, signing) contributes nothing; a
+            // single broken remote must not fail the whole feed.
+        }
+
+        var outboxIri = actor?.Outbox is { } outboxRef
+            ? outboxRef.ResolveCollectionIri() ?? memberIri.OutboxOf()
+            : memberIri.OutboxOf();
+
+        // Walk the outbox through the shared client enumeration (it resolves the collection's `first`
+        // page, then follows `next` across pages — handling both the page-1 OrderedCollection shape and
+        // the page-N>1 OrderedCollectionPage shape). Cap the walk at PagesPerActor pages; a fetch
+        // failure (404, network error, not a page) yields nothing, so a broken remote contributes no
+        // items rather than failing the whole feed.
+        var items = new List<IObjectOrLink>();
+        var pagesWalked = 0;
+        try
+        {
+            await foreach (var page in _client!.GetCollectionAsync(outboxIri, new CollectionQuery(), ct).ConfigureAwait(false))
+            {
+                if (pagesWalked >= _options.PagesPerActor)
+                {
+                    break;
+                }
+
+                pagesWalked++;
+                items.AddRange(page.Items);
+            }
+        }
+        catch (Exception)
+        {
+            // A remote outbox that errors mid-walk contributes what was already fetched (usually
+            // nothing); a single broken remote must not fail the whole feed.
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// Truncates the merged feed to <see cref="FeedOptions.MaxItems"/>. De-duplication is already
+    /// applied during the merge; this cap bounds the total item count.
+    /// </summary>
+    private IReadOnlyList<IObjectOrLink> TruncateDedup(IReadOnlyList<IObjectOrLink> items)
+    {
+        if (items.Count <= _options.MaxItems)
+        {
+            return items;
+        }
+
+        return items.Take(_options.MaxItems).ToList();
     }
 
     /// <summary>

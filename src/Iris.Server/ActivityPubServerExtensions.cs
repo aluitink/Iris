@@ -315,11 +315,32 @@ public static class ActivityPubServerExtensions
         // GetCommunityFeedAsync. A host may replace this to add followed-community content or ranking.
         // The community store is passed in (19.5.4, read via the persistence provider's Communities
         // property) so the feed applies the community's own moderation edges (a blocked/muted member's
-        // content is excluded from the feed).
+        // content is excluded from the feed). The local-actor resolver, actor-document fetcher, and
+        // outbound client enable remote-member outbox fetching (a remote member's content appears in
+        // the community feed, fetched over the wire and capped by FeedOptions.PagesPerActor). Without
+        // a configured instance actor, remote members contribute nothing (local members still work).
         services.TryAddSingleton<ICommunityFeedService>(sp =>
         {
             var persistence = sp.GetRequiredService<IPersistenceProvider>();
-            return new CommunityFeedService(persistence, persistence.Communities);
+            var localActors = sp.GetRequiredService<ILocalActorResolver>();
+            var actorDocs = sp.GetRequiredService<IActorDocumentFetcher>();
+            var options = sp.GetRequiredService<IOptions<FeedOptions>>().Value;
+
+            // The outbound client for remote outbox fetches: reuse the same client the
+            // IActorDocumentFetcher uses (signed as the instance actor). Without a configured
+            // instance actor, the fetcher is a NoopActorDocumentFetcher and the client is null
+            // (remote members contribute nothing; local members still work).
+            IActivityPubClient? client = null;
+            var serverOptions = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+            if (serverOptions.InstanceActorId is not null)
+            {
+                var factory = sp.GetRequiredService<IActivityPubClientFactory>();
+                client = factory.Create(
+                    new ActivityPubClientOptions { ActorId = serverOptions.InstanceActorId.Value, EnableRetry = false },
+                    new HttpClientHandler());
+            }
+
+            return new CommunityFeedService(persistence, persistence.Communities, localActors, actorDocs, client, options);
         });
 
         // Global search (F-13): searches the instance's local actors (the directory) and stored content
