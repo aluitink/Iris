@@ -33,12 +33,12 @@ else
         }
     </div>
 
-    @if (ActorIri is not null)
+    @if (ActorIri is { } actorIri)
     {
         <div class="card">
             <h3>Actor</h3>
             <ObjectView Item="ActorDoc" />
-            <p class="muted">IRI: <code>@(ActorIri?.Value)</code></p>
+            <p class="muted">IRI: <code>@actorIri.Value</code></p>
         </div>
 
         <PagedCollection
@@ -381,62 +381,13 @@ else
                 }
             </div>
 
-            <div class="card">
-                <h3>Inbox</h3>
-                <p class="muted">
-                    The activities <em>delivered to</em> <code>@(ActorIri?.Value)</code> (their <c>inbox</c>
-                    collection), paged with <c>next</c>-link walking. Each item is an activity (a
-                    Follow, Like, Announce, Create, etc.) that was delivered to this actor.
-                </p>
-                @if (InboxError is not null)
-                {
-                    <div class="error">@InboxError</div>
-                }
-                @if (InboxItems is null)
-                {
-                    <p class="muted">Loading…</p>
-                }
-                else if (InboxItems.Count == 0 && !InboxHasMore)
-                {
-                    <p class="muted">No activities delivered.</p>
-                }
-                else
-                {
-                    @if (InboxItems.Count > 0)
-                    {
-                        <ul class="object-list">
-                            @foreach (var item in InboxItems)
-                            {
-                                <li>
-                                    @if (item is IObject inboxObj)
-                                    {
-                                        @if (inboxObj.Type?.FirstOrDefault() is { Length: > 0 } inboxType)
-                                        {
-                                            <span class="muted">@inboxType</span>
-                                        }
-                                        @if (inboxObj.Id is { Length: > 0 } inboxId)
-                                        {
-                                            <code>@inboxId</code>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <code>@RelayIriOf(item)</code>
-                                    }
-                                </li>
-                            }
-                        </ul>
-                    }
-                    @if (InboxHasMore)
-                    {
-                        <button @onclick="LoadMoreInboxAsync" disabled="@(InboxLoadingMore)">Load more</button>
-                        @if (InboxLoadingMore)
-                        {
-                            <span class="muted">Loading…</span>
-                        }
-                    }
-                }
-            </div>
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@actorIri.InboxOf()"
+                Title="Inbox"
+                Description="The activities delivered to this actor (their inbox collection), paged with next-link walking. Each item is an activity (a Follow, Like, Announce, Create, etc.) that was delivered to this actor."
+                EmptyMessage="No activities delivered."
+                ItemTemplate="@InboxItemTemplate" />
 
             <div class="card">
                 <h3>Follow / unfollow</h3>
@@ -643,13 +594,6 @@ else
     private string? TargetFlagsError { get; set; }
     private Iri? _targetFlagsResumeFrom;
 
-    // 21.1.3: inbox view (activities delivered to this actor), paged.
-    private List<IObjectOrLink>? InboxItems { get; set; }
-    private bool InboxHasMore { get; set; }
-    private bool InboxLoadingMore { get; set; }
-    private string? InboxError { get; set; }
-    private Iri? _inboxResumeFrom;
-
     private bool WriteBusy { get; set; }
     private DeliveryResult? WriteResult { get; set; }
     private string? WriteError { get; set; }
@@ -821,16 +765,8 @@ else
                 TargetFlagsError = ex.Message;
             }
 
-            // 21.1.3: load the first page of the actor's inbox (activities delivered to this actor),
-            // so the "Inbox" card is populated on initial load.
-            try
-            {
-                await EnumerateOneInboxPageAsync(actorIri);
-            }
-            catch (Exception ex)
-            {
-                InboxError = ex.Message;
-            }
+            // 21.1.3: the actor's inbox (activities delivered to this actor) is a read-only paged
+            // collection rendered by the shared <PagedCollection> (it walks {actor}/inbox on demand).
 
             var relays = new List<string>();
             await foreach (var relay in client.GetRelaysAsync(actorIri))
@@ -1160,57 +1096,38 @@ else
         }
     }
 
-    // 21.1.3: inbox view (activities delivered to this actor), paged.
-
-    private async Task LoadMoreInboxAsync()
+    /// <summary>
+    /// The item renderer for the "Inbox" <c>PagedCollection</c>: each delivered activity shows its
+    /// ActivityStreams <c>type</c> (muted) and its <c>id</c> (as a <c>&lt;code&gt;</c>), or the relay IRI
+    /// when the entry is a bare link. Built as a <see cref="RenderFragment{TData}"/> field (not an
+    /// inline lambda attribute — Razor does not reliably parse multi-statement render-fragment
+    /// attributes) so <c>PagedCollection</c> can render custom item markup.
+    /// </summary>
+    private static RenderFragment<IObjectOrLink> InboxItemTemplate = item => builder =>
     {
-        if (InboxLoadingMore || !InboxHasMore || ActorIri is not { } actorIri)
+        if (item is IObject { Type: { } typeList, Id: { Length: > 0 } id })
         {
-            return;
-        }
-
-        InboxLoadingMore = true;
-        InboxError = null;
-        try
-        {
-            await EnumerateOneInboxPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            InboxError = ex.Message;
-        }
-        finally
-        {
-            InboxLoadingMore = false;
-        }
-    }
-
-    private async Task EnumerateOneInboxPageAsync(Iri actorIri)
-    {
-        var client = Session.GetClient();
-        if (_inboxResumeFrom is { } resume)
-        {
-            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
+            if (typeList.FirstOrDefault() is { Length: > 0 } type)
             {
-                InboxItems ??= [];
-                InboxItems.AddRange(page.Items);
-                InboxHasMore = !page.IsLastPage;
-                _inboxResumeFrom = page.NextPage;
-                break;
+                builder.OpenElement(0, "span");
+                builder.AddAttribute(1, "class", "muted");
+                builder.AddContent(2, type);
+                builder.CloseElement();
             }
 
+            builder.OpenElement(3, "code");
+            builder.AddContent(4, id);
+            builder.CloseElement();
             return;
         }
 
-        await foreach (var page in client.GetCollectionAsync(actorIri.InboxOf(), null, CancellationToken.None))
+        if (item is ILink { Href: { } href })
         {
-            InboxItems ??= [];
-            InboxItems.AddRange(page.Items);
-            InboxHasMore = !page.IsLastPage;
-            _inboxResumeFrom = page.NextPage;
-            break;
+            builder.OpenElement(0, "code");
+            builder.AddContent(1, href.ToString());
+            builder.CloseElement();
         }
-    }
+    };
 
     /// <summary>
     /// A short display for an actor IRI: the path's last segment (the username) when it looks like an
