@@ -64,6 +64,15 @@ public sealed class SigningHandler : DelegatingHandler
         // WebCrypto-backed key in a Blazor WebAssembly host awaits the browser's crypto.subtle here.
         var signature = await _signer.SignAsync(metadata, identity, ProfileFor(body.Length > 0), ct).ConfigureAwait(false);
 
+        // Remove any pre-existing signature headers before adding the new ones. A request that has
+        // already been signed (re-used message, retry re-dispatch) must not stack headers — the
+        // receiving peer's validator comma-joins all Signature headers, so a second signature makes
+        // the header malformed and the request is rejected. This preserves the "exactly one
+        // Signature header" invariant asserted by the signing-handler tests.
+        request.Headers.Remove(Signatures.DateHeaderName);
+        request.Headers.Remove(Signatures.SignatureDateHeaderName);
+        request.Headers.Remove(Signatures.SignatureHeaderName);
+
         request.Headers.TryAddWithoutValidation(Signatures.DateHeaderName, metadata.Date);
         // The standard Date header is a forbidden header in the browser: a Blazor WebAssembly host's
         // fetch overrides it on the wire, so the server would verify the date component over a value

@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http;
 using System.Runtime.CompilerServices;
 using Iris.Client;
 using Iris.Core;
@@ -437,6 +438,50 @@ public sealed class FeedServiceTests
         Assert.Equal($"https://{RemoteHost}/notes/r-1", IdOf(feed[0]));
     }
 
+    [Fact]
+    public async Task Feed_RemoteFollow_DocumentFetchThrows_ContributesNothing_Not500()
+    {
+        // Regression: the IActorDocumentFetcher contract is "return null, do not throw" on fetch
+        // failure, but the implementation can still throw (a transport error, timeout, or a signing-key
+        // failure in the outbound actor-doc fetch). Before the fix, this throw propagated uncaught
+        // through FeedService.FetchRemoteOutboxAsync → the feed handler → a 500 on the whole feed.
+        // After the fix, the actor-doc fetch is guarded: a throwing remote contributes nothing and the
+        // feed still completes (falling back to the conventional outbox IRI).
+        var remote = Actor(RemoteHost, "bob");
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(Actor(LocalHost, "alice"), remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new ThrowingActorDocumentFetcher(),
+            client: new StubClient(Pages(
+                Page($"{remote.Value}/outbox", [Item("r-1")], next: null))));
+
+        // Must not throw (the actor-doc fetch exception is caught; the feed falls back to the
+        // conventional outbox IRI and fetches r-1 from the stub client).
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+        Assert.Single(feed);
+        Assert.Equal($"https://{RemoteHost}/notes/r-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_RemoteFollow_DocumentFetchThrows_NoOutbox_ContributesNothing()
+    {
+        // Same regression, but the conventional outbox IRI also has no document: the remote contributes
+        // nothing (empty feed) and the feed still completes without throwing.
+        var remote = Actor(RemoteHost, "bob");
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                persistence.Follows.RecordFollowAsync(Actor(LocalHost, "alice"), remote).GetAwaiter().GetResult();
+            }),
+            actorDocs: new ThrowingActorDocumentFetcher(),
+            client: new StubClient(Pages())); // no documents at all
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+        Assert.Empty(feed);
+    }
+
     // --- Mixed local + remote, dedup, cap --------------------------------------------
 
     [Fact]
@@ -612,6 +657,17 @@ public sealed class FeedServiceTests
     {
         public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
             => Task.FromResult(factory(actorIri));
+    }
+
+    /// <summary>
+    /// An <see cref="IActorDocumentFetcher"/> that always throws — simulating a transport error, timeout,
+    /// or signing-key failure in the outbound actor-document fetch (a condition the contract says should
+    /// return null, but the implementation can still throw).
+    /// </summary>
+    private sealed class ThrowingActorDocumentFetcher : IActorDocumentFetcher
+    {
+        public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+            => throw new HttpRequestException("simulated outbound actor-doc fetch failure");
     }
 
     /// <summary>

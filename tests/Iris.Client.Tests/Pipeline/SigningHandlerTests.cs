@@ -184,4 +184,36 @@ public class SigningHandlerTests
         using var client = new HttpClient(handler);
         await Assert.ThrowsAsync<KeyNotFoundException>(() => client.GetAsync("https://a.domain.local/u/alice"));
     }
+
+    [Fact]
+    public async Task ResignedRequest_DoesNotStackSignatureHeaders()
+    {
+        // Regression: a request that already carries Signature/Date/X-Signature-Date headers (a re-used
+        // or re-dispatched message, e.g. a retry clone) must NOT accumulate a second set of headers.
+        // The SigningHandler must remove the pre-existing signature headers before adding the new ones,
+        // preserving the "exactly one Signature header" invariant. Without this fix, the headers stack
+        // and the receiving peer's validator comma-joins them into a malformed signature → 401.
+        var (_, _, handler, fake) = Build();
+        using var client = new HttpClient(handler);
+
+        // Simulate a request that was already signed (e.g. by a previous pass through the pipeline).
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://a.domain.local/u/alice");
+        request.Headers.TryAddWithoutValidation(Signatures.SignatureHeaderName, "stale-signature-value");
+        request.Headers.TryAddWithoutValidation(Signatures.DateHeaderName, "stale-date-value");
+        request.Headers.TryAddWithoutValidation(Signatures.SignatureDateHeaderName, "stale-date-value");
+
+        await client.SendAsync(request);
+
+        var sent = fake.LastRequest!;
+        // Exactly one of each signature header — the stale values were removed and replaced.
+        Assert.Single(sent.Headers.GetValues(Signatures.SignatureHeaderName));
+        Assert.Single(sent.Headers.GetValues(Signatures.DateHeaderName));
+        Assert.Single(sent.Headers.GetValues(Signatures.SignatureDateHeaderName));
+
+        // The Signature header is the FRESH one (not the stale value).
+        var signatureValue = sent.Headers.GetValues(Signatures.SignatureHeaderName).Single();
+        Assert.NotEqual("stale-signature-value", signatureValue);
+        Assert.True(SignatureHeader.TryParse(signatureValue, out var header));
+        Assert.Equal("rsa-sha256", header!.Algorithm);
+    }
 }

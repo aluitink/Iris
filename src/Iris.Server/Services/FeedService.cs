@@ -215,7 +215,22 @@ public sealed class FeedService : IFollowFeedService
         // conventional {actor}/outbox, so the advertised IRI is authoritative). The library's
         // collection properties are typed as a single <c>Link</c> (the OneOrMultiple shape), so the
         // first entry is read via its <c>Href</c>; when absent, fall back to the ActivityPub convention.
-        var actor = await _actorDocs.GetActorAsync(followIri, ct).ConfigureAwait(false);
+        //
+        // The IActorDocumentFetcher contract is "return null, do not throw" on fetch failure, but the
+        // implementation can still throw (a transport error, timeout, or a signing-key failure in the
+        // outbound actor-doc fetch propagates uncaught). Guard it the same way the outbox walk below is
+        // guarded: a broken remote actor-document contributes nothing rather than failing the whole feed.
+        Actor? actor = null;
+        try
+        {
+            actor = await _actorDocs.GetActorAsync(followIri, ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // A remote actor-document that errors (network, timeout, signing) contributes nothing; a
+            // single broken remote must not fail the whole feed.
+        }
+
         var outboxIri = actor?.Outbox is { } outboxRef
             ? outboxRef.ResolveCollectionIri() ?? followIri.OutboxOf()
             : followIri.OutboxOf();
