@@ -275,7 +275,10 @@ US-24) will also close the UI-side remote-rendering pieces.
   propagation, and `?refresh=true` cache bypass are done (changes 149/154). The **community UI** feed
   screen now issues `?refresh=true` on a manual refresh (change 201, the 21.2.2 Refresh button): the
   Community feed card's Refresh button re-fetches the feed with the page cache bypassed, verified
-  live (1080 → 1200 items after a Refresh click, `?refresh=true` on every page fetch).
+  live (1080 → 1200 items after a Refresh click, `?refresh=true` on every page fetch). **Remote
+  members' outboxes** are now fetched over the wire and merged into the community feed (change 219):
+  a remote member's content appears in the feed, fetched via `IActorDocumentFetcher` +
+  `IActivityPubClient` and capped by `FeedOptions.PagesPerActor`; a broken remote contributes nothing.
 
 ### Phase 19.6 — C2S invariants (raw-inspector UI halves)
 
