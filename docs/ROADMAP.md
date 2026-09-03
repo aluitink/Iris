@@ -253,10 +253,11 @@ US-24) will also close the UI-side remote-rendering pieces.
   and the WebFinger/`iris:capabilities` discovery verification.
 - [ ] **19.5.2 — Membership management (UI remainder).** The `Add`/`Remove` mechanism + the
   self-management gate are done (change 150). The remote-actor **join request → accept** flow is done
-  (change 215): a community with `manuallyApprovesMembers` records a pending join request on an inbound
-  `Join` and requires an explicit `Accept`/`Reject` via the community outbox; communities without the
-  flag retain the legacy auto-grant. Still open: the **UI membership-management screens** (add/remove
-  member from the community page — a Phase 22 item, US-6).
+  (changes 215+216): a community with `manuallyApprovesMembers` stores the inbound `Join` in its outbox
+  (AP-native, mirroring inbound follows) and records a pending join request; the operator Accepts/Rejects
+  via the community outbox (the Join activity IRI is read from the outbox). Communities without the flag
+  retain the legacy auto-grant. The **UI** "Pending join requests" card + "Join (as me)" button are done
+  (change 216). Still open: the two-instance wire drive of a remote actor's Join → Accept (live-interop).
 - [ ] **19.5.3 — Community peers (live remainder).** Outbound follow/unfollow, inbound accept/reject, and
   the community **UI** "Inbound follows" card are done (changes 148/152/174). Still open: the
   two-instance wire drive of a gated community's inbound follow (live-interop).
