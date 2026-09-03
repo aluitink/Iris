@@ -999,10 +999,15 @@ while it remains in flux; the underlying wire is proven by the existing server/c
   follows via this UI). Per the current direction, the sample-client UI is verified manually (not
   bUnit-tested) while it remains in flux; the underlying wire is proven by the existing server/client
   integration tests (change 153).
-- [ ] **21.1.2 — Moderation management (target list).** The actor detail page already has a Moderation
-  card (mute/block/flag the target). Expand to show the **target actor's moderation state** (who has
-  muted/blocked/flagged them) via the `GET /ap/v1/u/{handle}/{blocks|flags|mutes}` collections, with
-  the ability to **unmute/unblock/unflag** from the list (not just the target input).
+- [x] **21.1.2 — Moderation management (target list, change 177).** The actor detail page now shows the
+  target actor's moderation collections (who the target has muted/blocked/flagged) via
+  `GET /ap/v1/u/{handle}/{mutes|blocks|flags}`, paged with `next`-link walking. Each item links to the
+  moderated actor's detail. No per-item unmute/unblock/unflag buttons: the Decision 055 learned-id model
+  requires the id of the original activity to undo it, which these collections do not carry (they carry
+  actor IRIs, not activity ids). The unmute/unblock/unflag capability is provided by the existing
+  "Moderation" card (which uses the captured learned ids). Per the current direction, the sample-client
+  UI is verified manually (not bUnit-tested) while it remains in flux; the underlying wire is proven by
+  the existing server/client integration tests.
 - [ ] **21.1.3 — Inbox view.** The actor detail page does not show the inbox. Add an **Inbox** card that
   reads the actor's inbox collection (`GET /ap/v1/u/{handle}/inbox`, paged) and renders each activity
   (who did what to this actor). This exercises `GetCollectionItemsAsync(inboxIri)`.
