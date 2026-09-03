@@ -157,9 +157,14 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
    `InstanceBaseUrls` map gained the two local compose FQDNs (iris-dev1/dev2.luit.ink → 8081/8082) so a
    logon by the advertised handle dials the right instance. **Note:** live verification used the local
    compose stack (host-published ports); the external-FQDN (reverse-proxy) pass is folded into 22.6.
-- [ ] **22.5 — Broad story review.** Review the full story set together to confirm they play well with
-  each other (shared components, no contradictions, consistent navigation + error/empty states) before
-  the implementation sweep.
+ - [x] **22.5 — Broad story review.** Review the full story set together to confirm they play well with
+   each other (shared components, no contradictions, consistent navigation + error/empty states) before
+   the implementation sweep. **Complete** (change [190](changes/190-22.5-broad-story-review.md)): US-1…US-24
+   cross-checked against the pages/components and confirmed consistent (shared `ObjectView`/`PagedCollection`/
+   `RawInspector`/`BackLink`, log-on gating, loading/empty/error states, no raw stack dumps); the one gap
+   found (Community page missing the US-21 raw-JSON inspector) is fixed and verified; the hand-rolled
+   read-only `following`/`followers`/`inbox` collections are recorded as a 22.6 `PagedCollection` dedup
+   candidate (cosmetic, not a contradiction).
 - [ ] **22.6 — Implementation sweep + manual test pass.** Implement the remaining items and end the
   round with a full Playwright-MCP manual test pass of the explorer (UI + wire), resolving gaps/errors.
 

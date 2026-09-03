@@ -112,8 +112,20 @@ navigable state preserved. No UI-feature code changed; the `InstanceBaseUrls` ma
 compose FQDNs (`iris-dev1/dev2.luit.ink` → 8081/8082) so a logon by the advertised handle dials the
 right host-published port. Build clean, format clean, suite green. See
 [docs/changes/189-22.4-cross-server-manual-verification.md](docs/changes/189-22.4-cross-server-manual-verification.md).
-**22.4 is done** (US-8 in change 188; US-2/US-24 in change 189) — next: 22.5 (broad story review) and
-22.6 (implementation sweep + manual pass; the external-FQDN reverse-proxy pass folds in here).
+**22.4 is done** (US-8 in change 188; US-2/US-24 in change 189).
+
+**Latest slice (22.5, broad story review):** reviewed the full US-1…US-24 set against the sample UI and
+confirmed the pages/components play together — shared `ObjectView`/`PagedCollection`/`RawInspector`/
+`BackLink` in use, uniform log-on gating, consistent loading/empty/error states (no raw stack dumps),
+and the cross-server surfaces (proxy reads, identity bar, recents/switch). One gap found and fixed: the
+**Community page was missing the US-21 raw-JSON inspector** (it is named as serving US-21 in the plan's
+component inventory but was the only detail page without it) — added `<RawInspector Document="CommunityDoc" />`
+and verified it on the local compose stack. The hand-rolled read-only `following`/`followers`/`inbox`
+collections are recorded as a 22.6 `PagedCollection` dedup candidate (cosmetic, not a contradiction).
+Build clean, format clean, suite green (1,274). See
+[docs/changes/190-22.5-broad-story-review.md](docs/changes/190-22.5-broad-story-review.md).
+**22.5 is done** — next: 22.6 (implementation sweep + manual pass, incl. the recorded `PagedCollection`
+dedup and the external-FQDN reverse-proxy pass).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
