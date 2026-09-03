@@ -408,11 +408,21 @@ How do we create and manage communities, and their peers (the communities/actors
      handler unit tests; full suite 1,231 green. (The community **UI** "Inbound follows" card + the
      cross-instance wire drive are the remaining live/UI items for full 19.5.3; the delivery path is the
      same one the person path proved in the two-instance Docker env.)
-   - `remaining:` for full 19.5.3 — the community *outbound* follow/unfollow is already done
-     (`POST /ap/v1/c/{name}/outbox` Follow/Undo, change 148/earlier); the **inbound** follow accept/reject
-     is done (change 152). Still open: the community **UI** screens (an "Inbound follows" card on the
-     community page wiring the new endpoint) and the two-instance wire drive of a gated community's
-     inbound follow — both live/UI-verification items.
+    - [x] **Community UI "Inbound follows" card (19.5.3 community-UI half) is complete** (change 174):
+      the Community page now has an "Inbound follows" card (mirroring the person ActorDetail card,
+      change 151) — it lists the actors/communities that follow the loaded community (read from the
+      community's outbox) and offers Accept / Reject buttons. Accept/Reject are AP-native: the client
+      authors the deterministic Accept/Reject and publishes it to the community's outbox (the community
+      signs with the primary actor's key in the sample seed); the instance records the edge effect and
+      server-delivers the activity to the follower's inbox. After a decision, the card refreshes the
+      inbound-follows list (bypassing the page cache). Per the current direction, the sample-client UI is
+      verified manually (not bUnit-tested) while it remains in flux; the underlying wire (the
+      follow-decision endpoint + the client's AcceptAsync/RejectAsync) is proven by the existing
+      server/client integration tests (change 152).
+    - `remaining:` for full 19.5.3 — the community *outbound* follow/unfollow is already done
+      (`POST /ap/v1/c/{name}/outbox` Follow/Undo, change 148/earlier); the **inbound** follow accept/reject
+      is done (change 152); the community **UI** "Inbound follows" card is done (change 174). Still open:
+      the two-instance wire drive of a gated community's inbound follow — a live-interop item.
 - [ ] **19.5.4 — Community moderation surface.** Flag/block/mute at the community level where
    supported; verify the moderation collections and that moderated actors' content is excluded from
    the community feed (or record the gap).
