@@ -393,8 +393,15 @@ as the concrete deltas that 22.1–22.4 will close (each is also a story in the 
   Phase 22 US-14.
 - [ ] **21.4.1 — Feed pagination (Load more).** Add **Load more** to the feed page (walk `next`). →
   Phase 22 US-9 / `PagedCollection` (US-20).
-- [ ] **21.4.2 — Feed filter (?q).** Add a **search box** to the feed page issuing `?q={query}`. → Phase 22
+- [x] **21.4.2 — Feed filter (?q).** Add a **search box** to the feed page issuing `?q={query}`. → Phase 22
   US-6 / `PagedCollection` (US-20).
+  **Done (change 203):** the followed-feed endpoint (`GET /u/{handle}/feed`) gains a `?q` content filter
+  (case-insensitive content/name match, including nested objects — the same logic as the community feed's
+  F-23 `?q`); `IFollowFeedService.GetFeedAsync` + `FeedService` gain a `query` param, and the Feed page
+  offers a search box that issues `?q=…` (the `PagedCollection` re-creates on filter change via `@key`).
+  4 integration tests verify the filter. End-to-end "filter returns matching items" is constrained by the
+  pre-existing external-FQDN proxy blocker (as in 19.6.1/19.6.2/21.2.2/21.2.3); on the public FQDN route
+  the feed populates and the `?q` filter returns the matching items.
 - [ ] **21.5.1 — Instance info (nodeinfo).** Add an **Instance info** card (nodeinfo: name, software,
   version, open-registration). → Phase 22 US-10.
 - [ ] **21.5.2 — WebFinger lookup.** Add a **WebFinger** card (resolve `@user@host` to an actor IRI). →

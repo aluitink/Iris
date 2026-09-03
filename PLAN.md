@@ -161,7 +161,24 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (21.2.3, member management from the list):** the Community page's **Members** list gains
+**Latest slice (21.4.2, feed filter `?q`):** the followed-feed endpoint (`GET /u/{handle}/feed`) gains a
+  `?q` content filter (case-insensitive content/name match, including nested objects — the same logic as
+  the community feed's F-23 `?q`). `IFollowFeedService.GetFeedAsync` + `FeedService` gain a `query` param
+  (the unfiltered build is extracted to `BuildFeedAsync`; a non-empty query delegates to a new
+  `FilterFeed` static helper mirroring `CommunityFeedService.SearchCommunityAsync`); the
+  `FollowFeedHandler` reads `?q` and passes it through. The Feed page (`Feed.razor`) gains a search box
+  (input + Filter + Clear) that issues `?q=…`: the `FeedIri` is constructed with `?q=…` appended, and a
+  `@key` on the `PagedCollection` (`feed-{query}`) forces a re-create on filter change. 4 integration
+  tests verify the filter (case-insensitive match on nested Note content, no-match → empty, empty query →
+  unfiltered). Manually verified (Playwright MCP): the search box renders, `?q=hello` is correctly
+  appended to the feed IRI (network log), the banner/title/empty-message update on Filter and revert on
+  Clear. End-to-end "filter returns matching items" is constrained by the pre-existing external-FQDN proxy
+  blocker (the followed feed 500s on the remote-follow fetch before the filter is applied — as in
+  19.6.1/19.6.2/21.2.2/21.2.3); the same filter logic is verified on the community feed's `?q` (22 → 1
+  items for `?q=hello`). 1,288 tests green. See
+  [docs/changes/203-21.4.2-feed-filter-q.md](docs/changes/203-21.4.2-feed-filter-q.md).
+
+**Prior slice (21.2.3, member management from the list):** the Community page's **Members** list gains
   a **Remove** button per member (`RemoveMemberFromListAsync`), so the logged-on community owner removes
   a member directly rather than only via the "Manage membership" card's IRI input. The IRI-input-based
   `ManageMemberAsync` is refactored to delegate to a shared `ManageMemberAsync(bool isAdd, Iri member)`
