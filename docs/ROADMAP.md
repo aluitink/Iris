@@ -989,11 +989,16 @@ while it remains in flux; the underlying wire is proven by the existing server/c
 
 ### 21.1 — Actor detail page expansion
 
-- [ ] **21.1.1 — Followers + Following management.** The actor detail page already shows the followers
-  and following collections (read-only, clickable). Expand to **management**: from the followers list,
-  the logged-on actor (if they own the actor) can **unfollow** a follower (remove the edge); from the
-  following list, they can **unfollow** a followed actor. This exercises `UndoFollowAsync` from the
-  detail page (not just the follow/unfollow card).
+- [x] **21.1.1 — Followers + Following management (change 176).** The actor detail page's followers
+  list now offers a "Block" button per item (owner only) — blocking a follower severs the relationship
+  (the blocked follower's activities no longer reach the owner) via the signed `BlockAsync` write to the
+  owner's outbox. The following list remains read-only (no per-item Unfollow button) because the Decision
+  055 learned-id model requires the id of the original Follow activity to undo it, which the following
+  collection does not carry (it carries actor IRIs, not activity ids). The Unfollow capability is
+  provided by the existing "Follow / unfollow" card (which captures the learned id when the owner
+  follows via this UI). Per the current direction, the sample-client UI is verified manually (not
+  bUnit-tested) while it remains in flux; the underlying wire is proven by the existing server/client
+  integration tests (change 153).
 - [ ] **21.1.2 — Moderation management (target list).** The actor detail page already has a Moderation
   card (mute/block/flag the target). Expand to show the **target actor's moderation state** (who has
   muted/blocked/flagged them) via the `GET /ap/v1/u/{handle}/{blocks|flags|mutes}` collections, with
