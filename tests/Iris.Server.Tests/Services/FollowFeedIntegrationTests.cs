@@ -211,6 +211,69 @@ public sealed class FollowFeedIntegrationTests : IDisposable
         Assert.Contains($"{_bob.Value}/activities/b-2", items);
     }
 
+    // --- ?q content filter (21.4.2) --------------------------------------------------
+
+    [Fact]
+    public async Task Feed_Query_MatchesContent_CaseInsensitive()
+    {
+        // ?q=BOB matches bob's 2 posts (content "bob 1", "bob 2" — case-insensitive) but not carol's
+        // post ("carol 1"). The content lives on the nested Note (the Create's Object), so the filter
+        // must match the referenced object's content, not just the activity's own content.
+        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=BOB&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(2, items.Length);
+        Assert.Contains($"{_bob.Value}/activities/b-1", items);
+        Assert.Contains($"{_bob.Value}/activities/b-2", items);
+        Assert.DoesNotContain($"{_carol.Value}/activities/c-1", items);
+
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Feed_Query_MatchesCarolContent()
+    {
+        // ?q=carol matches carol's 1 post (content "carol 1") but not bob's 2 posts.
+        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=carol&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Single(items);
+        Assert.Equal($"{_carol.Value}/activities/c-1", items[0]);
+
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Feed_Query_NoMatch_ReturnsEmptyCollection()
+    {
+        // ?q=zzz matches nothing: an empty OrderedCollection with totalItems 0.
+        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=zzz&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Feed_EmptyQuery_ReturnsUnfilteredFeed()
+    {
+        // An absent/empty ?q returns the full unfiltered feed: carol's 1 + bob's 2 = 3 items.
+        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(3, items.Length);
+        Assert.Equal(3, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
     // --- Helpers --------------------------------------------------------------------
 
     private string _aBase() => $"https://{AHost}";

@@ -31,10 +31,20 @@ public interface IFollowFeedService
     /// Returns the followed feed for the given actor: the union of the actor's local and remote
     /// follows' outbox items, newest-first, de-duplicated, capped by <see cref="FeedOptions"/>.
     /// </summary>
+    /// <remarks>
+    /// When <paramref name="query"/> is non-empty/whitespace, the feed is **filtered** to the items that
+    /// match it (the same content/name match as the community feed's <c>?q</c> filter, F-23): an item
+    /// matches when its <c>content</c> or <c>name</c> (either as a single value or a value within the
+    /// multi-valued property, and — for activities — the content/name of each referenced object) contains
+    /// the query as a substring, case-insensitively. A null/empty/whitespace query returns the feed
+    /// unfiltered. This is the source for the <c>GET /u/{handle}/feed?q=...</c> filter (21.4.2).
+    /// </remarks>
     /// <param name="actorIri">The IRI of the actor whose followed feed is requested (must be a local actor).</param>
+    /// <param name="query">Optional content filter (matched case-insensitively against item content/name).
+    /// A null/empty/whitespace query returns the feed unfiltered.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes with the feed items (empty when the actor follows no one or no
-    /// followed actor has content). A remote outbox that cannot be fetched contributes nothing (it does
-    /// not fail the whole feed).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, CancellationToken ct = default);
+    /// <returns>A task that completes with the feed items (filtered when a query is supplied; empty when the
+    /// actor follows no one, no followed actor has content, or nothing matches the query). A remote outbox
+    /// that cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, CancellationToken ct = default);
 }

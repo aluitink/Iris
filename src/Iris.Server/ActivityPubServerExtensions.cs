@@ -3967,7 +3967,11 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        var items = await feedService.GetFeedAsync(actorIri, ct).ConfigureAwait(false);
+        // A ?q query filters the feed to the items whose content/name matches it, case-insensitively
+        // (21.4.2 — the followed feed's content filter, mirroring the community feed's F-23 ?q). An
+        // empty/absent ?q returns the feed unfiltered.
+        var query = context.Request.Query["q"].ToString();
+        var items = await feedService.GetFeedAsync(actorIri, query.Length > 0 ? query : null, ct).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());

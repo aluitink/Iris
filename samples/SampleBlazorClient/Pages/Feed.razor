@@ -16,14 +16,48 @@
 }
 else
 {
+    <div class="card">
+        <div class="row">
+            <input type="text"
+                   class="input"
+                   placeholder="Filter the feed by content (e.g. a word or phrase)"
+                   @bind="_searchInput" />
+            <button class="button"
+                    @onclick="ApplySearchAsync">
+                Filter
+            </button>
+            @if (!string.IsNullOrWhiteSpace(_appliedQuery))
+            {
+                <button class="button button--secondary"
+                        @onclick="ClearSearchAsync">
+                    Clear
+                </button>
+            }
+        </div>
+        <p class="muted small">
+            Filters the feed to items whose content or name matches the query (case-insensitive), via the
+            <c>?q</c> query on the <c>{actor}/feed</c> endpoint (21.4.2).
+        </p>
+    </div>
+
+    @if (_appliedQuery is { Length: > 0 } q)
+    {
+        <div class="card">
+            <p class="muted">Showing items matching “<strong>@q</strong>”.</p>
+        </div>
+    }
+
     <PagedCollection
+        @key="@FeedKey"
         Client="@FeedClient"
         CollectionIri="@FeedIri"
-        Title="Home timeline (followed feed)"
+        Title="@(string.IsNullOrWhiteSpace(_appliedQuery) ? "Home timeline (followed feed)" : $"Followed feed — “{_appliedQuery}”")"
         Description="The union of the followed actors' outboxes, newest first, de-duplicated — paged with next-link walking."
         PageSize="5"
         ShowRefreshButton="true"
-        EmptyMessage="No followed items yet. Follow an actor (Actor detail → Follow) to populate your timeline." />
+        EmptyMessage="@(string.IsNullOrWhiteSpace(_appliedQuery)
+            ? "No followed items yet. Follow an actor (Actor detail → Follow) to populate your timeline."
+            : "No followed items match this filter.")" />
 }
 
 @code {
@@ -31,19 +65,68 @@ else
     private ExplorerSession Session { get; set; } = default!;
 
     /// <summary>
+    /// The text typed into the filter input (not yet applied).
+    /// </summary>
+    private string _searchInput = "";
+
+    /// <summary>
+    /// The query currently applied to the feed (empty when unfiltered).
+    /// </summary>
+    private string _appliedQuery = "";
+
+    /// <summary>
+    /// A key for the <c>PagedCollection</c> that changes when the applied query changes (21.4.2), so
+    /// Blazor re-creates the component (fresh state + fresh fetch) whenever the filter is applied or
+    /// cleared.
+    /// </summary>
+    private string FeedKey => $"feed-{_appliedQuery}";
+
+    /// <summary>
     /// The client to dial (the logged-on session's client), or null when not logged in.
     /// </summary>
     private IActivityPubClient? FeedClient => Session.IsLoggedIn ? Session.GetClient() : null;
 
     /// <summary>
-    /// The followed-feed collection IRI (the actor's <c>{actor}/feed</c>), or null when not logged in.
+    /// The followed-feed collection IRI (the actor's <c>{actor}/feed</c>), with the <c>?q</c> content
+    /// filter appended when a query is applied (21.4.2), or null when not logged in.
     /// </summary>
     private Iri? FeedIri
     {
         get
         {
             var actorIri = Session.ResolvedActorIri ?? Session.ActorIri;
-            return actorIri is { } a ? new Iri($"{a.Value.TrimEnd('/')}/feed") : null;
+            if (actorIri is not { } a)
+            {
+                return null;
+            }
+
+            var baseIri = $"{a.Value.TrimEnd('/')}/feed";
+            return string.IsNullOrWhiteSpace(_appliedQuery)
+                ? new Iri(baseIri)
+                : new Iri($"{baseIri}?q={Uri.EscapeDataString(_appliedQuery.Trim())}");
         }
     }
+
+    /// <summary>
+    /// Applies the filter (21.4.2): sets the applied query so the <c>PagedCollection</c>'s <c>@key</c>
+    /// changes, forcing a re-fetch of the feed with the <c>?q</c> filter.
+    /// </summary>
+    private Task ApplySearchAsync()
+    {
+        _appliedQuery = _searchInput.Trim();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Clears the filter (21.4.2): resets the applied query so the feed is re-fetched unfiltered.
+    /// </summary>
+    private Task ClearSearchAsync()
+    {
+        _searchInput = "";
+        _appliedQuery = "";
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
 }

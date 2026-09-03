@@ -75,7 +75,26 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, CancellationToken ct = default)
+    {
+        var feed = await BuildFeedAsync(actorIri, ct).ConfigureAwait(false);
+
+        // A non-empty query filters the feed to the matching items (the same content/name match as the
+        // community feed's ?q filter, F-23 / 21.4.2): an item matches when its content/name (or, for
+        // activities, the content/name of each referenced object) contains the query, case-insensitively.
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            return FilterFeed(feed, query);
+        }
+
+        return feed;
+    }
+
+    /// <summary>
+    /// Builds the unfiltered followed feed for the given actor: the union of the actor's local and remote
+    /// follows' outbox items, newest-first, de-duplicated, capped by <see cref="FeedOptions"/>.
+    /// </summary>
+    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, CancellationToken ct)
     {
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
         if (followed.Count == 0)
@@ -120,6 +139,70 @@ public sealed class FeedService : IFollowFeedService
         }
 
         return TruncateDedup(feed);
+    }
+
+    /// <summary>
+    /// Filters the feed items to those whose content/name matches <paramref name="query"/>,
+    /// case-insensitively (the same match as the community feed's <see cref="CommunityFeedService
+    /// .SearchCommunityAsync"/>). An item matches when its <c>content</c> or <c>name</c> (either as a
+    /// single value or a value within the multi-valued property) contains the query as a substring, and —
+    /// for activities — when the content/name of any referenced object does. The order is preserved.
+    /// </summary>
+    private static IReadOnlyList<IObjectOrLink> FilterFeed(IReadOnlyList<IObjectOrLink> feed, string query)
+    {
+        var normalized = query.Trim();
+        var matches = new List<IObjectOrLink>();
+        foreach (var item in feed)
+        {
+            if (item is IObject obj)
+            {
+                var activityMatches =
+                    ContainsInStrings(obj.Content, normalized) || ContainsInStrings(obj.Name, normalized);
+                var nestedMatches = false;
+                if (obj is Activity activity)
+                {
+                    foreach (var referenced in activity.Object ?? [])
+                    {
+                        if (referenced is IObject refObj &&
+                            (ContainsInStrings(refObj.Content, normalized) || ContainsInStrings(refObj.Name, normalized)))
+                        {
+                            nestedMatches = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (activityMatches || nestedMatches)
+                {
+                    matches.Add(item);
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    /// <summary>
+    /// Returns true when any value in the multi-valued <c>content</c>/<c>name</c> property contains
+    /// <paramref name="query"/> as a substring (case-insensitive, ordinal).
+    /// </summary>
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null &&
+                value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
