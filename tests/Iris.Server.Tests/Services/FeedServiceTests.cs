@@ -716,6 +716,9 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> SetManuallyApprovesMembersAsync(Iri communityIri, bool enabled, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

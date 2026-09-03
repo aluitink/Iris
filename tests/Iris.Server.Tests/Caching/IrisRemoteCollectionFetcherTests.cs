@@ -232,6 +232,10 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> SetManuallyApprovesMembersAsync(Iri communityIri, bool enabled, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

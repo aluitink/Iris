@@ -225,6 +225,35 @@ else
             ItemTemplate="@ActorLinkTemplate" />
 
         <div class="card">
+            <h3>Settings</h3>
+            <p class="muted">
+                Community settings (AP-native, change 217): the <c>manuallyApprovesMembers</c> flag
+                controls whether join requests require operator approval (gated) or are auto-granted
+                (open). The flag is read from the community document's <c>ExtensionData</c>; toggling it
+                publishes an <c>Add</c> (enable) or <c>Remove</c> (disable) of the community's own
+                document to the community's outbox.
+            </p>
+            <p>
+                <strong>Require member approval:</strong>
+                @(IsGated ? "Yes (gated)" : "No (open)")
+            </p>
+            <button @onclick="EnableGatingAsync" disabled="@(SettingsBusy || IsGated)">Require approval</button>
+            <button @onclick="DisableGatingAsync" disabled="@(SettingsBusy || !IsGated)">Open (auto-approve)</button>
+            @if (SettingsBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (SettingsResult is not null)
+            {
+                <p class="muted">Status: <code>@SettingsResult</code></p>
+            }
+            @if (SettingsError is not null)
+            {
+                <div class="error">@SettingsError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Follow / unfollow</h3>
             <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
             <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
@@ -477,6 +506,29 @@ else
     private string? PeerResult { get; set; }
     private string? PeerError { get; set; }
     private Iri? PeerFollowLearnedId { get; set; }
+
+    // Change 217: AP-native community settings (manuallyApprovesMembers flag).
+    private bool SettingsBusy { get; set; }
+    private string? SettingsResult { get; set; }
+    private string? SettingsError { get; set; }
+
+    /// <summary>
+    /// Whether the loaded community requires manual approval of join requests (the
+    /// <c>manuallyApprovesMembers</c> flag in the community document's <c>ExtensionData</c>).
+    /// </summary>
+    private bool IsGated
+    {
+        get
+        {
+            if (CommunityDoc is IObject { ExtensionData: { } ext })
+            {
+                return ext.TryGetValue("manuallyApprovesMembers", out var value)
+                    && value.ValueKind == System.Text.Json.JsonValueKind.True;
+            }
+
+            return false;
+        }
+    }
 
     // 22.2 (US-18): the create-community surface. `CreateName` is the community's handle on this
     // instance (the path segment, e.g. `mycommunity` → `{base}/ap/v1/c/mycommunity`);
@@ -1075,6 +1127,49 @@ else
         finally
         {
             MemberBusy = false;
+        }
+    }
+
+    // --- Change 217: AP-native community settings (manuallyApprovesMembers) --------------
+
+    private Task EnableGatingAsync() => SetGatingAsync(enabled: true);
+
+    private Task DisableGatingAsync() => SetGatingAsync(enabled: false);
+
+    private async Task SetGatingAsync(bool enabled)
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || SettingsBusy)
+        {
+            return;
+        }
+
+        SettingsBusy = true;
+        SettingsResult = null;
+        SettingsError = null;
+        try
+        {
+            var result = await Session.GetClient().SetManuallyApprovesMembersAsync(communityIri, enabled);
+            SettingsResult = result.IsSuccess
+                ? $"{(enabled ? "enabled" : "disabled")} manual approval (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
+
+            // Refresh the community document so the IsGated indicator reflects the change.
+            if (result.IsSuccess)
+            {
+                var doc = await Session.GetClient().GetActorAsync(communityIri);
+                if (doc is { } group)
+                {
+                    CommunityDoc = group;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            SettingsError = ex.Message;
+        }
+        finally
+        {
+            SettingsBusy = false;
         }
     }
 

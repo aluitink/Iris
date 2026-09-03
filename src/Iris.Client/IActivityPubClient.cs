@@ -207,6 +207,23 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default);
 
     /// <summary>
+    /// Sets or clears a community's <c>manuallyApprovesMembers</c> flag (AP-native settings change,
+    /// change 217): builds an <see cref="KristofferStrube.ActivityStreams.Add"/> (enable) or
+    /// <see cref="KristofferStrube.ActivityStreams.Remove"/> (disable) whose <c>object</c> is the
+    /// community's own document carrying the flag, and publishes it to the community's own outbox.
+    /// The server updates the stored community's <c>ExtensionData</c> so the
+    /// <c>MembershipActivityHandler</c> gate reflects the change on the next inbound
+    /// <see cref="KristofferStrube.ActivityStreams.Join"/>.
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community (the operator changing the flag — must match
+    /// the client's signing identity).</param>
+    /// <param name="enabled"><see langword="true"/> to require manual approval of join requests (gated);
+    /// <see langword="false"/> to auto-grant membership (open).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> SetManuallyApprovesMembersAsync(Iri communityIri, bool enabled, CancellationToken ct = default);
+
+    /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
     /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and publishes it through
     /// the signed pipeline to the liker's own outbox (exactly like

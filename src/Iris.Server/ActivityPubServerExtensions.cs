@@ -1909,9 +1909,12 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Records a community <see cref="Add"/> (membership self-management): adds the <c>object</c> (the
-    /// member) to the community's member set via <see cref="ICommunityStore.AddMemberAsync"/>. The actor
-    /// == community gate is applied by the caller, so this records unconditionally.
+    /// Records a community <see cref="Add"/> (membership self-management or settings change): adds the
+    /// <c>object</c> (the member) to the community's member set via <see cref="ICommunityStore.AddMemberAsync"/>,
+    /// or — when the <c>object</c> is the community's own document carrying the
+    /// <c>manuallyApprovesMembers</c> extension — sets that flag on the stored community (AP-native
+    /// settings change, change 217). The actor == community gate is applied by the caller, so this
+    /// records unconditionally.
     /// </summary>
     private static async Task RecordCommunityAddAsync(
         IPersistenceProvider persistence,
@@ -1922,14 +1925,28 @@ public static class ActivityPubServerExtensions
         var memberIri = add.Object?.FirstOrDefault().ResolveObjectIri();
         if (memberIri is { } member)
         {
+            // When the object is the community's own document (a settings change, not a membership add),
+            // update the stored community's ExtensionData (the manuallyApprovesMembers flag) instead of
+            // adding a member.
+            if (member == communityIri && add.Object?.FirstOrDefault() is IObject { ExtensionData: { } ext } obj
+                && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var value))
+            {
+                await SetManuallyApprovesMembersAsync(persistence, communityIri, value.ValueKind == System.Text.Json.JsonValueKind.True, ct)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             await persistence.Communities.AddMemberAsync(communityIri, member, ct).ConfigureAwait(false);
         }
     }
 
     /// <summary>
-    /// Records a community <see cref="Remove"/> (membership self-management): removes the <c>object</c>
-    /// (the member) from the community's member set via <see cref="ICommunityStore.RemoveMemberAsync"/>.
-    /// The actor == community gate is applied by the caller, so this records unconditionally.
+    /// Records a community <see cref="Remove"/> (membership self-management or settings change): removes
+    /// the <c>object</c> (the member) from the community's member set via
+    /// <see cref="ICommunityStore.RemoveMemberAsync"/>, or — when the <c>object</c> is the community's own
+    /// document carrying the <c>manuallyApprovesMembers</c> extension — clears that flag on the stored
+    /// community (AP-native settings change, change 217). The actor == community gate is applied by the
+    /// caller, so this records unconditionally.
     /// </summary>
     private static async Task RecordCommunityRemoveAsync(
         IPersistenceProvider persistence,
@@ -1940,8 +1957,56 @@ public static class ActivityPubServerExtensions
         var memberIri = remove.Object?.FirstOrDefault().ResolveObjectIri();
         if (memberIri is { } member)
         {
+            // When the object is the community's own document (a settings change, not a membership remove),
+            // clear the manuallyApprovesMembers flag on the stored community.
+            if (member == communityIri && remove.Object?.FirstOrDefault() is IObject { ExtensionData: { } ext } obj
+                && ext.ContainsKey(ActivityPubServerConstants.ManuallyApprovesMembersExtensionName))
+            {
+                await SetManuallyApprovesMembersAsync(persistence, communityIri, enabled: false, ct)
+                    .ConfigureAwait(false);
+                return;
+            }
+
             await persistence.Communities.RemoveMemberAsync(communityIri, member, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Sets or clears the <c>manuallyApprovesMembers</c> flag on the stored community's
+    /// <c>ExtensionData</c> (AP-native settings change, change 217): the community publishes an
+    /// <c>Add</c> (enable) or <c>Remove</c> (disable) of its own document carrying the flag, and this
+    /// method updates the stored community so the <see cref="MembershipActivityHandler"/> gate reflects
+    /// the change on the next inbound <c>Join</c>.
+    /// </summary>
+    /// <param name="persistence">The persistence provider.</param>
+    /// <param name="communityIri">The IRI of the community whose flag is being changed.</param>
+    /// <param name="enabled"><see langword="true"/> to set the flag (gated); <see langword="false"/> to
+    /// clear it (open).</param>
+    /// <param name="ct">Cancellation token.</param>
+    private static async Task SetManuallyApprovesMembersAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        bool enabled,
+        CancellationToken ct)
+    {
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return;
+        }
+
+        community.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        if (enabled)
+        {
+            community.ExtensionData[ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
+                System.Text.Json.JsonSerializer.SerializeToElement(true);
+        }
+        else
+        {
+            community.ExtensionData.Remove(ActivityPubServerConstants.ManuallyApprovesMembersExtensionName);
+        }
+
+        await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
     }
 
     /// <summary>

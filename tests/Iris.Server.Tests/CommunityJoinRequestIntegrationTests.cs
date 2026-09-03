@@ -296,6 +296,126 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
             "alice should still NOT be a member after a duplicate Join");
     }
 
+    // --- AP-native settings: Add of the community document sets manuallyApprovesMembers ----
+
+    [Fact]
+    public async Task Add_CommunityDocument_WithManuallyApprovesMembers_SetsFlag()
+    {
+        // Precondition: the open community does NOT have the flag set.
+        Assert.False(IsManuallyApprovingMembers(_openCommunityIri));
+
+        // The community operator publishes an Add of its own document (with the flag set) to its outbox.
+        var add = BuildSettingsAddActivity(_openCommunityIri, enabled: true);
+        using var request = SignedRequest(_openCommunityIri, _openCommunityKey, add, $"/ap/v1/c/{OpenCommunity}/outbox");
+        var response = await _http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // The flag is now set on the stored community.
+        Assert.True(
+            IsManuallyApprovingMembers(_openCommunityIri),
+            "the manuallyApprovesMembers flag should be set after the Add");
+
+        // The Add activity is stored in the community's outbox (AP-native: the settings change is
+        // auditable in the outbox).
+        var outbox = await _persistence.Activities.GetOutboxAsync(_openCommunityIri);
+        var addInOutbox = outbox.OfType<Activity>()
+            .FirstOrDefault(a => a.Type?.Contains("Add") == true
+                && a.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _openCommunityIri.Value);
+        Assert.NotNull(addInOutbox);
+        Assert.NotNull(addInOutbox!.Id);
+    }
+
+    // --- AP-native settings: Remove of the community document clears manuallyApprovesMembers --
+
+    [Fact]
+    public async Task Remove_CommunityDocument_WithManuallyApprovesMembers_ClearsFlag()
+    {
+        // Precondition: the gated community HAS the flag set.
+        Assert.True(IsManuallyApprovingMembers(_communityIri));
+
+        // The community operator publishes a Remove of its own document (with the flag) to its outbox.
+        var remove = BuildSettingsRemoveActivity(_communityIri, enabled: true);
+        using var request = SignedRequest(_communityIri, _communityKey, remove, $"/ap/v1/c/{Community}/outbox");
+        var response = await _http.SendAsync(request);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+        // The flag is now cleared on the stored community.
+        Assert.False(
+            IsManuallyApprovingMembers(_communityIri),
+            "the manuallyApprovesMembers flag should be cleared after the Remove");
+
+        // The Remove activity is stored in the community's outbox (AP-native: the settings change is
+        // auditable in the outbox).
+        var outbox = await _persistence.Activities.GetOutboxAsync(_communityIri);
+        var removeInOutbox = outbox.OfType<Activity>()
+            .FirstOrDefault(a => a.Type?.Contains("Remove") == true
+                && a.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _communityIri.Value);
+        Assert.NotNull(removeInOutbox);
+        Assert.NotNull(removeInOutbox!.Id);
+    }
+
+    // --- AP-native settings: after clearing the flag, Joins auto-grant membership -----------
+
+    [Fact]
+    public async Task Settings_ClearFlag_ThenJoin_AutoGrantsMembership()
+    {
+        // Step 1: Clear the flag on the gated community (it was set in the constructor).
+        var remove = BuildSettingsRemoveActivity(_communityIri, enabled: true);
+        using (var removeRequest = SignedRequest(_communityIri, _communityKey, remove, $"/ap/v1/c/{Community}/outbox"))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await _http.SendAsync(removeRequest)).StatusCode);
+        }
+
+        Assert.False(IsManuallyApprovingMembers(_communityIri), "precondition: flag should be cleared");
+
+        // Step 2: Alice posts a signed Join to the (now open) community's inbox.
+        var join = BuildJoinActivity(_aliceIri, _communityIri);
+        using var joinRequest = SignedRequest(_aliceIri, _aliceKey, join, $"/ap/v1/c/{Community}/inbox");
+        var joinResponse = await _http.SendAsync(joinRequest);
+        Assert.Equal(HttpStatusCode.Accepted, joinResponse.StatusCode);
+
+        // Alice is now a member (the community is open, so the Join auto-grants).
+        Assert.True(
+            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            "alice should be a member after a Join to a community whose flag was just cleared");
+
+        // … and NO pending join request is recorded.
+        Assert.False(
+            await _persistence.Communities.HasJoinRequestAsync(_communityIri, _aliceIri),
+            "no pending join request should be recorded after the flag was cleared");
+    }
+
+    // --- AP-native settings: after setting the flag, Joins record a pending request ----------
+
+    [Fact]
+    public async Task Settings_SetFlag_ThenJoin_RecordsPendingRequest()
+    {
+        // Step 1: Set the flag on the open community (it was not set in the constructor).
+        var add = BuildSettingsAddActivity(_openCommunityIri, enabled: true);
+        using (var addRequest = SignedRequest(_openCommunityIri, _openCommunityKey, add, $"/ap/v1/c/{OpenCommunity}/outbox"))
+        {
+            Assert.Equal(HttpStatusCode.Accepted, (await _http.SendAsync(addRequest)).StatusCode);
+        }
+
+        Assert.True(IsManuallyApprovingMembers(_openCommunityIri), "precondition: flag should be set");
+
+        // Step 2: Alice posts a signed Join to the (now gated) community's inbox.
+        var join = BuildJoinActivity(_aliceIri, _openCommunityIri);
+        using var joinRequest = SignedRequest(_aliceIri, _aliceKey, join, $"/ap/v1/c/{OpenCommunity}/inbox");
+        var joinResponse = await _http.SendAsync(joinRequest);
+        Assert.Equal(HttpStatusCode.Accepted, joinResponse.StatusCode);
+
+        // Alice is NOT a member (the community is now gated, so the Join records a pending request).
+        Assert.False(
+            await _persistence.Communities.IsMemberAsync(_openCommunityIri, _aliceIri),
+            "alice should NOT be a member after a Join to a community whose flag was just set");
+
+        // … and a pending join request IS recorded.
+        Assert.True(
+            await _persistence.Communities.HasJoinRequestAsync(_openCommunityIri, _aliceIri),
+            "a pending join request should be recorded after the flag was set");
+    }
+
     // --- Helpers ------------------------------------------------------------------------
 
     /// <summary>
@@ -349,6 +469,72 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
             };
         activity.Actor = [new Link { Href = new Uri(communityIri.Value) }];
         return activity;
+    }
+
+    /// <summary>
+    /// Builds an <see cref="Add"/> of the community's own document (with the <c>manuallyApprovesMembers</c>
+    /// extension set to <paramref name="enabled"/>), published to the community's outbox (AP-native
+    /// settings change, change 217).
+    /// </summary>
+    private static Add BuildSettingsAddActivity(Iri communityIri, bool enabled)
+    {
+        return new Add
+        {
+            Id = $"{communityIri.Value}/add-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(communityIri.Value) }],
+            Object =
+            [
+                new KristofferStrube.ActivityStreams.Object
+                {
+                    Id = communityIri.Value,
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        [Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
+                            JsonSerializer.SerializeToElement(enabled),
+                    },
+                },
+            ],
+        };
+    }
+
+    /// <summary>
+    /// Builds a <see cref="Remove"/> of the community's own document (with the <c>manuallyApprovesMembers</c>
+    /// extension), published to the community's outbox (AP-native settings change, change 217).
+    /// </summary>
+    private static Remove BuildSettingsRemoveActivity(Iri communityIri, bool enabled)
+    {
+        return new Remove
+        {
+            Id = $"{communityIri.Value}/remove-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(communityIri.Value) }],
+            Object =
+            [
+                new KristofferStrube.ActivityStreams.Object
+                {
+                    Id = communityIri.Value,
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        [Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName] =
+                            JsonSerializer.SerializeToElement(enabled),
+                    },
+                },
+            ],
+        };
+    }
+
+    /// <summary>
+    /// Checks whether the stored community has the <c>manuallyApprovesMembers</c> flag set.
+    /// </summary>
+    private bool IsManuallyApprovingMembers(Iri communityIri)
+    {
+        if (!_persistence.Communities.TryGetCommunityAsync(communityIri, out var community, CancellationToken.None).GetAwaiter().GetResult())
+        {
+            return false;
+        }
+
+        return community!.ExtensionData is { } ext
+            && ext.TryGetValue(Iris.Server.ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var value)
+            && value.ValueKind == JsonValueKind.True;
     }
 
     private enum AcceptType { Accept, Reject }
