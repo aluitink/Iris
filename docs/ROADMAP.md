@@ -686,12 +686,15 @@ view of the item, never raw JSON (the raw inspector remains an explicit, separat
 - [ ] **19.8.7 — Error & empty states.** 404/unknown object, empty collections, failed logon,
   unreachable instance, and proxy-fallback failure each show a clear message (not a blank page or a
   raw error dump).
-  `remaining:` error handling added to Actors, Community, Instance, and Feed pages (change 161h) —
-  the four pages that previously let exceptions propagate unhandled. ObjectPage, ActorDetail, Home,
-  and Compose already had error handling. Still open: the **live/UI-verification half** — drive each
-  error state (404 object, empty collection, failed logon, unreachable instance, proxy-fallback
-  failure) through the UI and confirm the rendered message is clear (not a blank page or raw error
-  dump); the 404-object and proxy-fallback states are already exercised in CI (S10, S8).
+   `remaining:` error handling added to Actors, Community, Instance, and Feed pages (change 161h) —
+   the four pages that previously let exceptions propagate unhandled. ObjectPage, ActorDetail, Home,
+   and Compose already had error handling. The **ObjectPage 404/unknown-object** gap is now closed
+   (change 173): `LoadAsync` surfaces `"Object not found: {iri}"` when `GetObjectAsync` returns null
+   (a 404) instead of a blank page. Four in-process bUnit tests (`S19ErrorEmptyStateTests`) drive each
+   state (404 object, invalid IRI, empty Actors results, empty Feed) and assert the clear message
+   renders. Still open: the **live/UI-verification half** — drive each error state through the browser
+   and confirm the rendered message is clear; the proxy-fallback-failure and unreachable-instance
+   states are exercised in CI (S8).
 
 **Definition of done for Phase 19 overall:** the full evaluation checklist (19.0.5) runs clean over
  the public FQDNs (PASS on every non-tabled waypoint, or a documented GAP/BLOCKED), the volume-backed
