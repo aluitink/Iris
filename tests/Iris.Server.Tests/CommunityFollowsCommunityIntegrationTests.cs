@@ -36,11 +36,11 @@ namespace Iris.Server.Tests;
 /// document (resolving the <c>Group</c>'s key) and records the follow in <c>lumen</c>'s follows set
 /// (lumen follows iris) + queues an <see cref="Accept"/> back to iris's inbox, which B finalizes into
 /// iris's follows set (iris follows lumen). Both sides' <c>following</c> collections then carry the edge.</item>
- /// <item><em>The follow edge is queryable:</em> <c>GET /ap/v1/c/{name}/following</c> (the community
- /// <c>following</c> collection) returns the followed community's IRI; <c>GET /ap/v1/c/{name}/followers</c>
- /// (F-24) returns the follower's IRI — the <c>FollowActivityHandler</c> records the inverse edge
- /// (follower → community) in the community's followers set when it processes an inbound follow, so the
- /// followed community's <c>followers</c> collection lists its followers.</item>
+/// <item><em>The follow edge is queryable:</em> <c>GET /ap/v1/c/{name}/following</c> (the community
+/// <c>following</c> collection) returns the followed community's IRI; <c>GET /ap/v1/c/{name}/followers</c>
+/// (F-24) returns the follower's IRI — the <c>FollowActivityHandler</c> records the inverse edge
+/// (follower → community) in the community's followers set when it processes an inbound follow, so the
+/// followed community's <c>followers</c> collection lists its followers.</item>
 /// <item><em>Followed-community content reaches the feed:</em> A's community <c>lumen</c> posts a
 /// <see cref="Create"/> to B's community inbox; B's <see cref="CommunityInboxActivityHandler"/> records
 /// it in local member <c>bob</c>'s outbox, so it appears in the community feed (the followed-content

@@ -265,12 +265,12 @@ public sealed class DeleteActivityHandlerTests
         Iri? iri = null,
         Iri? parentIri = null,
         Iri? attributedTo = null) => new()
-    {
-        Id = (iri ?? NoteIri).Value,
-        Content = [content],
-        AttributedTo = [new Link { Href = new Uri((attributedTo ?? LocalPerson).Value) }],
-        InReplyTo = parentIri is not null ? [new Link { Href = new Uri(parentIri.Value.Value) }] : null,
-    };
+        {
+            Id = (iri ?? NoteIri).Value,
+            Content = [content],
+            AttributedTo = [new Link { Href = new Uri((attributedTo ?? LocalPerson).Value) }],
+            InReplyTo = parentIri is not null ? [new Link { Href = new Uri(parentIri.Value.Value) }] : null,
+        };
 
     private static Delete BuildDelete(Iri actorIri, Iri objectIri) => new()
     {

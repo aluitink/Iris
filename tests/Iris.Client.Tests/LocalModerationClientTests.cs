@@ -1,7 +1,7 @@
 using System.Net;
 using System.Text;
-using Iris.Core;
 using Iris.Client.Pipeline;
+using Iris.Core;
 
 namespace Iris.Client.Tests;
 

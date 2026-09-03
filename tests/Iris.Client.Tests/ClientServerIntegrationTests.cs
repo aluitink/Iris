@@ -246,12 +246,12 @@ public class ClientServerIntegrationTests : IDisposable
         // request will be the 429).
         using var rateLimitedServer = FakeActivityPubServer.Start(
             "rate-limit.domain.local", ServerActor, rateLimitAfter: 1, rateLimitResumeAfter: 1);
-        
+
         // Consume the "served" slot so the client's first request will be the 429.
         var probe = new System.Net.Http.HttpClient(rateLimitedServer.Handler);
         var probeResponse = await probe.GetAsync(rateLimitedServer.ActorIri.Value);
         Assert.Equal(200, (int)probeResponse.StatusCode);
-        
+
         using var client = CreateClient(rateLimitedServer);
         var actor = await client.GetActorAsync(rateLimitedServer.ActorIri);
 

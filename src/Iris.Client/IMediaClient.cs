@@ -34,7 +34,7 @@ public interface IMediaClient
     /// <exception cref="InvalidOperationException">When the response is not a success (the HTTP status is
     /// carried in the exception message), or when the client has no local credentials configured and none
     /// are passed (a programming error).</exception>
-    Task<MediaUploadResult> UploadAsync(
+    public Task<MediaUploadResult> UploadAsync(
         Iri actorId,
         byte[] content,
         string contentType,
@@ -52,7 +52,7 @@ public interface IMediaClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The upload result (the same-origin media IRI, content-type, and file name).</returns>
     /// <exception cref="InvalidOperationException">When the response is not a success.</exception>
-    Task<MediaUploadResult> UploadAsync(
+    public Task<MediaUploadResult> UploadAsync(
         Iri actorId,
         byte[] content,
         string contentType,

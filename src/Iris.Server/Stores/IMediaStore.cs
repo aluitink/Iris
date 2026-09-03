@@ -28,7 +28,7 @@ public interface IMediaStore
     /// as <c>{baseUrl}/ap/v1/media/{id}</c>.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The same-origin media IRI the uploader should reference from the attachment.</returns>
-    Task<Iri> PutAsync(byte[] content, string contentType, string fileName, Iri baseUrl, CancellationToken ct = default);
+    public Task<Iri> PutAsync(byte[] content, string contentType, string fileName, Iri baseUrl, CancellationToken ct = default);
 
     /// <summary>
     /// Reads a stored media item (by its same-origin media IRI) back, for serving.
@@ -40,7 +40,7 @@ public interface IMediaStore
     /// <param name="fileName">Receives the original file name when found.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns><see langword="true"/> when the media item exists; otherwise <see langword="false"/>.</returns>
-    Task<bool> TryGetAsync(
+    public Task<bool> TryGetAsync(
         Iri mediaIri,
         out byte[]? content,
         out string? contentType,
@@ -68,7 +68,7 @@ public interface IMediaStore
     /// <c>{baseUrl}/ap/v1/media/{id}</c>.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The same-origin media IRI that serves the fetched bytes.</returns>
-    Task<Iri> PutBySourceUrlAsync(
+    public Task<Iri> PutBySourceUrlAsync(
         Iri sourceUrl,
         byte[] content,
         string contentType,
@@ -84,7 +84,7 @@ public interface IMediaStore
     /// <param name="ct">The cancellation token.</param>
     /// <returns><see langword="true"/> when the source URL is already stored; otherwise
     /// <see langword="false"/> (the caller should fetch + store it).</returns>
-    Task<bool> TryGetMediaIriBySourceUrlAsync(
+    public Task<bool> TryGetMediaIriBySourceUrlAsync(
         Iri sourceUrl,
         out Iri? mediaIri,
         CancellationToken ct = default);

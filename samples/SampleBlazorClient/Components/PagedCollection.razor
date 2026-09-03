@@ -1,0 +1,222 @@
+@using Iris.Client
+@using Iris.Client.Collections
+@using KristofferStrube.ActivityStreams
+
+@if (Client is not null && CollectionIri is not null)
+{
+    <div class="card paged-collection">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <h3>@Title</h3>
+        }
+        @if (!string.IsNullOrEmpty(Description))
+        {
+            <p class="muted">@Description</p>
+        }
+        @if (HeaderContent is not null)
+        {
+            @HeaderContent
+        }
+        @if (LoadError is not null)
+        {
+            <div class="error">@LoadError</div>
+        }
+        @if (Items is null)
+        {
+            <p class="muted">Loading…</p>
+        }
+        else
+        {
+            @if (Items.Count == 0 && !HasMore)
+            {
+                <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+            }
+            @if (Items.Count > 0)
+            {
+                <ul class="object-list">
+                    @foreach (var item in Items)
+                    {
+                        <li>
+                            @if (ItemTemplate is not null)
+                            {
+                                @ItemTemplate(item)
+                            }
+                            else
+                            {
+                                <ObjectView Item="item" />
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (HasMore)
+            {
+                <button @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                @if (LoadingMore)
+                {
+                    <span class="muted">Loading…</span>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// The client to dial. When <c>null</c> the component renders nothing and loads nothing (the parent
+    /// gates on a logged-in session).
+    /// </summary>
+    [Parameter]
+    public IActivityPubClient? Client { get; set; }
+
+    /// <summary>
+    /// The IRI of the collection (or of its <c>first</c> page) to enumerate. When <c>null</c> the
+    /// component renders nothing.
+    /// </summary>
+    [Parameter]
+    public Iri? CollectionIri { get; set; }
+
+    /// <summary>
+    /// Optional card title (an <c>&lt;h3&gt;</c>).
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// Optional muted intro paragraph under the title.
+    /// </summary>
+    [Parameter]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Optional extra markup rendered under the title/description (e.g. a management-error line that
+    /// must stay visible).
+    /// </summary>
+    [Parameter]
+    public RenderFragment? HeaderContent { get; set; }
+
+    /// <summary>
+    /// Items fetched per page (<c>CollectionQuery.Limit</c>). When <c>null</c> the server's natural page
+    /// size is used.
+    /// </summary>
+    [Parameter]
+    public int? PageSize { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, page reads bypass the client's page cache (<c>CollectionQuery.BypassCache</c> —
+    /// the <c>?refresh=true</c> path).
+    /// </summary>
+    [Parameter]
+    public bool BypassCache { get; set; }
+
+    /// <summary>
+    /// Renders a single item. Defaults to <c>&lt;ObjectView Item="…" /&gt;</c>; a page may override it to
+    /// render, e.g., a follower/actor link.
+    /// </summary>
+    [Parameter]
+    public RenderFragment<IObjectOrLink>? ItemTemplate { get; set; }
+
+    /// <summary>
+    /// The "no items" message (the empty state).
+    /// </summary>
+    [Parameter]
+    public string? EmptyMessage { get; set; }
+
+    private List<IObjectOrLink>? Items { get; set; }
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
+    private string? LoadError { get; set; }
+
+    /// <summary>
+    /// The enumeration position: the page IRI to resume from (<c>null</c> = start at the collection's
+    /// first page).
+    /// </summary>
+    private Iri? _resumeFrom;
+
+    /// <summary>
+    /// The <see cref="CollectionIri"/> value this card last loaded for, so a new collection (a new
+    /// actor/community) triggers a fresh first-page load.
+    /// </summary>
+    private Iri? _loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
+        {
+            _loadedFor = iri;
+            _ = LoadInitialAsync();
+        }
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        Items = [];
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        LoadError = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches one page (resuming from <see cref="_resumeFrom"/> when set, else from the collection's
+    /// first page) and appends its items — one server page per "Load more" click (20.3).
+    /// </summary>
+    private async Task EnumerateOnePageAsync()
+    {
+        if (Client is not { } client)
+        {
+            return;
+        }
+
+        if (_resumeFrom is not { } resumeIri)
+        {
+            if (CollectionIri is not { } firstIri)
+            {
+                return;
+            }
+
+            resumeIri = firstIri;
+        }
+
+        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache);
+
+        await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
+        {
+            Items ??= [];
+            Items.AddRange(page.Items);
+            HasMore = !page.IsLastPage;
+            _resumeFrom = page.NextPage;
+            break;
+        }
+    }
+}

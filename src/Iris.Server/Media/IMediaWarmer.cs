@@ -30,5 +30,5 @@ public interface IMediaWarmer
     /// disabled (<see cref="MediaOptions.EagerWarm"/> = <see langword="false"/>), in which case this
     /// is a no-op (the proxy still fetches lazily on the first hit).
     /// </remarks>
-    Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default);
+    public Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default);
 }

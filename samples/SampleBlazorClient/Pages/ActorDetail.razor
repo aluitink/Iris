@@ -36,53 +36,20 @@ else
         <div class="card">
             <h3>Actor</h3>
             <ObjectView Item="ActorDoc" />
-            <p class="muted">IRI: <code>@ActorIri.Value</code></p>
+            <p class="muted">IRI: <code>@(ActorIri?.Value)</code></p>
         </div>
 
-        <div class="card">
-            <h3>Outbox</h3>
-            <p class="muted">
-                The activities <code>@ActorIri.Value</code> authored or accepted (their outbox), paged with
-                <c>next</c>-link walking — local or remote. Each item is a navigable object view.
-            </p>
-            @if (OutboxError is not null)
-            {
-                <div class="error">@OutboxError</div>
-            }
-            @if (OutboxItems is null)
-            {
-                <p class="muted">Loading…</p>
-            }
-            else if (OutboxItems.Count == 0 && !OutboxHasMore)
-            {
-                <p class="muted">No items in the outbox.</p>
-            }
-            else
-            {
-                @if (OutboxItems.Count > 0)
-                {
-                    <ul class="object-list">
-                        @foreach (var item in OutboxItems)
-                        {
-                            <li><ObjectView Item="item" /></li>
-                        }
-                    </ul>
-                }
-                @if (OutboxHasMore)
-                {
-                    <button @onclick="LoadMoreOutboxAsync" disabled="@(OutboxLoadingMore)">Load more</button>
-                    @if (OutboxLoadingMore)
-                    {
-                        <span class="muted">Loading…</span>
-                    }
-                }
-            }
-        </div>
+        <PagedCollection
+            Client="@Session.GetClient()"
+            CollectionIri="@(ActorIri?.OutboxOf())"
+            Title="Outbox"
+            Description="The activities this actor authored or accepted (their outbox), paged with next-link walking — local or remote. Each item is a navigable object view."
+            EmptyMessage="No items in the outbox." />
 
         <div class="card">
             <h3>Followers</h3>
             <p class="muted">
-                Actors that follow <code>@ActorIri.Value</code> (their <c>followers</c> collection), paged with
+                Actors that follow <code>@(ActorIri?.Value)</code> (their <c>followers</c> collection), paged with
                 <c>next</c>-link walking. Each item links to the follower's actor detail.
             </p>
             @if (FollowersError is not null)
@@ -155,7 +122,7 @@ else
         <div class="card">
             <h3>Following</h3>
             <p class="muted">
-                Actors that <code>@ActorIri.Value</code> follows (their <c>following</c> collection), paged with
+                Actors that <code>@(ActorIri?.Value)</code> follows (their <c>following</c> collection), paged with
                 <c>next</c>-link walking. Each item links to the followed actor's detail.
             </p>
             @if (FollowingError is not null)
@@ -209,20 +176,7 @@ else
             }
         </div>
 
-        <div class="card">
-            <h3>Raw inspector</h3>
-            <p class="muted">
-                The actor document as served (formatted JSON) — the explicit escape hatch for inspecting
-                the raw ActivityStreams/ActivityPub representation.
-            </p>
-            <button @onclick="() => ShowRaw = !ShowRaw" disabled="@(ActorDoc is null)">
-                @(ShowRaw ? "Hide raw JSON" : "Show raw JSON")
-            </button>
-            @if (ShowRaw && ActorDoc is not null)
-            {
-                <pre class="raw-json">@RawJson</pre>
-            }
-        </div>
+        <RawInspector Document="ActorDoc" />
 
         @if (Moderation is { } mod)
         {
@@ -421,7 +375,7 @@ else
             <div class="card">
                 <h3>Inbox</h3>
                 <p class="muted">
-                    The activities <em>delivered to</em> <code>@ActorIri.Value</code> (their <c>inbox</c>
+                    The activities <em>delivered to</em> <code>@(ActorIri?.Value)</code> (their <c>inbox</c>
                     collection), paged with <c>next</c>-link walking. Each item is an activity (a
                     Follow, Like, Announce, Create, etc.) that was delivered to this actor.
                 </p>
@@ -497,7 +451,7 @@ else
             <div class="card">
                 <h3>Inbound follows</h3>
                 <p class="muted">
-                    Follows <em>of</em> <code>@ActorIri.Value</code> (actors that follow this actor). Accept /
+                    Follows <em>of</em> <code>@(ActorIri?.Value)</code> (actors that follow this actor). Accept /
                     reject are AP-native: the client authors an <c>Accept</c>/<c>Reject</c> and publishes it to
                     this actor's outbox; the instance records the edge and delivers the activity to the
                     follower's inbox.
@@ -533,7 +487,7 @@ else
 
             <div class="card">
                 <h3>Moderation</h3>
-                <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code> → <code>@ActorIri.Value</code></p>
+                <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code> → <code>@(ActorIri?.Value)</code></p>
                 <button @onclick="MuteAsync" disabled="@(WriteBusy)">Mute</button>
                 <button @onclick="UnmuteAsync" disabled="@(WriteBusy)">Unmute</button>
                 <button @onclick="BlockAsync" disabled="@(WriteBusy)">Block</button>
@@ -614,17 +568,6 @@ else
     private Iri? ActorIri { get; set; }
     private IObject? ActorDoc { get; set; }
 
-    private List<IObjectOrLink>? OutboxItems { get; set; }
-    private bool OutboxHasMore { get; set; }
-    private bool OutboxLoadingMore { get; set; }
-    private string? OutboxError { get; set; }
-
-    /// <summary>
-    /// The outbox enumeration position: the page IRI to resume from (<c>null</c> = start at the outbox's
-    /// first page).
-    /// </summary>
-    private Iri? _outboxResumeFrom;
-
     private List<IObjectOrLink>? FollowersItems { get; set; }
     private bool FollowersHasMore { get; set; }
     private bool FollowersLoadingMore { get; set; }
@@ -647,9 +590,6 @@ else
     /// Used to gate management actions (unfollow from the following list).
     /// </summary>
     private bool IsOwnActor => Session.ActorIri is { } own && ActorIri is { } target && own.Value == target.Value;
-
-    private bool ShowRaw { get; set; }
-    private string? RawJson { get; set; }
 
     /// <summary>
     /// The <em>target</em> actor's moderation counts (its <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections).
@@ -752,10 +692,6 @@ else
         Error = null;
             ActorIri = null;
             ActorDoc = null;
-            OutboxItems = null;
-            OutboxHasMore = false;
-            OutboxError = null;
-            _outboxResumeFrom = null;
             FollowersItems = null;
             FollowersHasMore = false;
             FollowersError = null;
@@ -764,8 +700,6 @@ else
             FollowingHasMore = false;
             FollowingError = null;
             _followingResumeFrom = null;
-            ShowRaw = false;
-            RawJson = null;
             Moderation = null;
             MyModeration = null;
             Relays = null;
@@ -794,18 +728,9 @@ else
             // a UI can offer "continue where you left off" after an instance switch.
             Session.SetNavigableActorIri(actorIri);
 
-            // 20.3: load the outbox paged (first page only) — the "Load more" button walks `next` links
-            // for the rest. Mirrors Feed.razor's paged idiom (GetCollectionAsync + CollectionQuery(Limit)).
-            await LoadInitialOutboxAsync(actorIri);
-
             // 19.8.3: load followers + following paged (first page only).
             await LoadInitialFollowersAsync(actorIri);
             await LoadInitialFollowingAsync(actorIri);
-
-            // Raw inspector: serialize the actor document to formatted JSON.
-            RawJson = System.Text.Json.JsonSerializer.Serialize(
-                actor,
-                new System.Text.Json.JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
 
             Moderation = (
                 await CountAsync(client.GetMutesAsync(actorIri)),
@@ -900,97 +825,6 @@ else
         finally
         {
             Busy = false;
-        }
-    }
-
-    /// <summary>
-    /// Loads the actor's outbox paged (20.3): resets the outbox state and fetches the first page via
-    /// <see cref="IActivityPubClient.GetCollectionAsync(Iri, CollectionQuery, CancellationToken)"/> (the
-    /// paged collection; the "Load more" button walks <c>next</c> links for the rest). Works for a local
-    /// or remote actor — the outbox collection IRI is the actor's <c>{actor}/outbox</c>.
-    /// </summary>
-    private async Task LoadInitialOutboxAsync(Iri actorIri)
-    {
-        OutboxItems = [];
-        OutboxHasMore = false;
-        OutboxError = null;
-        _outboxResumeFrom = null;
-        try
-        {
-            await EnumerateOneOutboxPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            OutboxError = ex.Message;
-        }
-    }
-
-    /// <summary>
-    /// The "Load more" continuation: fetches the next outbox page (resuming from
-    /// <see cref="_outboxResumeFrom"/>) and appends its items. One page per click (20.3).
-    /// </summary>
-    private async Task LoadMoreOutboxAsync()
-    {
-        if (OutboxLoadingMore || !OutboxHasMore || ActorIri is not { } actorIri)
-        {
-            return;
-        }
-
-        OutboxLoadingMore = true;
-        OutboxError = null;
-        try
-        {
-            await EnumerateOneOutboxPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            OutboxError = ex.Message;
-        }
-        finally
-        {
-            OutboxLoadingMore = false;
-        }
-    }
-
-    /// <summary>
-    /// Fetches one page of the outbox (resuming from <see cref="_outboxResumeFrom"/> when set, else from
-    /// the outbox's first page) and appends its items. Mirrors <c>Feed.razor</c>'s paged idiom:
-    /// <see cref="IActivityPubClient.GetCollectionAsync(Iri, CollectionQuery, CancellationToken)"/>
-    /// against the actor's <c>{actor}/outbox</c> collection, breaking after the first yielded page (one
-    /// page per "Load more" click).
-    /// </summary>
-    private async Task EnumerateOneOutboxPageAsync(Iri actorIri)
-    {
-        var client = Session.GetClient();
-        // No CollectionQuery.Limit: the server pages the outbox at its natural page size (the
-        // ?limit= default), and the "Load more" button walks those `next`-linked pages. The surface
-        // appends one server page per click (20.3).
-
-        if (_outboxResumeFrom is { } resume)
-        {
-            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
-            {
-                if (OutboxItems is null)
-                {
-                    OutboxItems = [];
-                }
-
-                OutboxItems.AddRange(page.Items);
-                OutboxHasMore = !page.IsLastPage;
-                _outboxResumeFrom = page.NextPage;
-                break;
-            }
-
-            return;
-        }
-
-        await foreach (var page in client.GetCollectionAsync(actorIri.OutboxOf(), null, CancellationToken.None))
-        {
-            OutboxItems ??= [];
-            OutboxItems.AddRange(page.Items);
-            OutboxHasMore = !page.IsLastPage;
-            _outboxResumeFrom = page.NextPage;
-            break;
         }
     }
 

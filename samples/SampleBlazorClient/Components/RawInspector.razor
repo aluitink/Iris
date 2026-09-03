@@ -1,0 +1,68 @@
+<div class="card raw-inspector">
+    <h3>@(string.IsNullOrEmpty(Title) ? "Raw inspector" : Title)</h3>
+    <p class="muted">
+        @(string.IsNullOrEmpty(Description)
+            ? "The document as served (formatted JSON) — the explicit escape hatch for inspecting the raw ActivityStreams/ActivityPub representation."
+            : Description)
+    </p>
+    <button @onclick="ToggleAsync" disabled="@(Document is null)">
+        @(ShowRaw ? "Hide raw JSON" : "Show raw JSON")
+    </button>
+    @if (ShowRaw && RawJson is not null)
+    {
+        <pre class="raw-json">@RawJson</pre>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The loaded document to inspect (the deserialized <c>IObject</c>/<c>Actor</c>/<c>Group</c>/…). When
+    /// <c>null</c> the toggle is disabled and no JSON is shown.
+    /// </summary>
+    [Parameter]
+    public object? Document { get; set; }
+
+    /// <summary>
+    /// Optional card title (defaults to "Raw inspector").
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// Optional muted intro paragraph (defaults to the "as served … escape hatch" line).
+    /// </summary>
+    [Parameter]
+    public string? Description { get; set; }
+
+    private bool ShowRaw { get; set; }
+    private string? RawJson { get; set; }
+
+    protected override void OnParametersSet()
+    {
+        // Collapse (and drop the cached JSON) when the document goes away.
+        if (Document is null)
+        {
+            ShowRaw = false;
+            RawJson = null;
+        }
+    }
+
+    private Task ToggleAsync()
+    {
+        if (!ShowRaw && RawJson is null && Document is not null)
+        {
+            // Serialize lazily, only when first expanded. The same options the inline per-card code used
+            // (indented + relaxed escaping), so the rendered JSON is identical.
+            RawJson = System.Text.Json.JsonSerializer.Serialize(
+                Document,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                });
+        }
+
+        ShowRaw = !ShowRaw;
+        return Task.CompletedTask;
+    }
+}

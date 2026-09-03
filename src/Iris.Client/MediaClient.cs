@@ -1,7 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
-using Iris.Core;
 using Iris.Client.Pipeline;
+using Iris.Core;
 
 namespace Iris.Client;
 

@@ -1,7 +1,7 @@
 using Iris.Client;
-using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 
 namespace Iris.Client.Extensions.Tests.Sessions;
 

@@ -2,8 +2,8 @@ using System.Net;
 using System.Net.Http;
 using Iris.Client;
 using Iris.Core;
-using SessionKeyStoreProvider = Iris.Client.Extensions.Keys.SessionKeyStoreProvider;
 using KristofferStrube.ActivityStreams;
+using SessionKeyStoreProvider = Iris.Client.Extensions.Keys.SessionKeyStoreProvider;
 
 namespace Iris.Client.Extensions.Tests.Keys;
 

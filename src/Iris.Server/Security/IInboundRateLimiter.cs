@@ -33,7 +33,7 @@ public interface IInboundRateLimiter
     /// not (budget exhausted).</returns>
     /// <exception cref="ArgumentException">When <paramref name="senderHost"/> is null or empty.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled.</exception>
-    bool TryAcquire(string senderHost, CancellationToken ct);
+    public bool TryAcquire(string senderHost, CancellationToken ct);
 
     /// <summary>
     /// Returns the <see cref="DateTimeOffset"/> when the peer's rate-limit window will reset (the
@@ -44,5 +44,5 @@ public interface IInboundRateLimiter
     /// <param name="senderHost">The host of the signer's <c>keyId</c> (the peer's identity).</param>
     /// <returns>The time when the peer's window resets, or <see cref="DateTimeOffset.UtcNow"/> when
     /// the limiter is disabled.</returns>
-    DateTimeOffset GetRetryAfter(string senderHost);
+    public DateTimeOffset GetRetryAfter(string senderHost);
 }

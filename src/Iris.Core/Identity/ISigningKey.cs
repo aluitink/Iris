@@ -51,7 +51,7 @@ public interface ISigningKey
     /// <returns>The signature bytes.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="data"/> is null.</exception>
     /// <exception cref="InvalidOperationException">When the key is public-only (cannot sign).</exception>
-    Task<byte[]> SignAsync(byte[] data, CancellationToken ct = default)
+    public Task<byte[]> SignAsync(byte[] data, CancellationToken ct = default)
         => Task.FromResult(Sign(data));
 
     /// <summary>

@@ -3,7 +3,6 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Client.Extensions;
 using Iris.Core;
-using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Testing;
@@ -13,6 +12,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using IrisSession = Iris.Client.Extensions.Sessions.IrisSession;
 
 namespace Iris.Client.Extensions.Tests.Sessions;
 

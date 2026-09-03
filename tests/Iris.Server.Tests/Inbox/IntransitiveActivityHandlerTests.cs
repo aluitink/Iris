@@ -172,9 +172,9 @@ public sealed class IntransitiveActivityHandlerTests
     /// </summary>
     private static TActivity BuildActivity<TActivity>()
         where TActivity : Activity, new() => new()
-    {
-        Id = $"{Actor.Value}/{typeof(TActivity).Name.ToLowerInvariant()}-{Guid.NewGuid():N}",
-        Actor = [new Link { Href = new Uri(Actor.Value) }],
-        Object = [new Link { Href = new Uri(ObjectIri.Value) }],
-    };
+        {
+            Id = $"{Actor.Value}/{typeof(TActivity).Name.ToLowerInvariant()}-{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(Actor.Value) }],
+            Object = [new Link { Href = new Uri(ObjectIri.Value) }],
+        };
 }

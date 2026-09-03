@@ -28,7 +28,7 @@ public interface ISigningKeyFactory
     /// <param name="keyIri">The IRI identifying the key (the actor's <c>publicKey.id</c>).</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The loaded signing key.</returns>
-    Task<ISigningKey> CreateAsync(
+    public Task<ISigningKey> CreateAsync(
         string pem, KeyAlgorithm algorithm, Iri keyIri, CancellationToken ct = default);
 }
 

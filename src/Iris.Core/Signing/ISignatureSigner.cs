@@ -36,7 +36,7 @@ public interface ISignatureSigner
     /// <returns>The <c>Signature</c> header value to set on the request.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="metadata"/> or <paramref name="identity"/> is null.</exception>
     /// <exception cref="KeyNotFoundException">When the identity's key is not present in the store.</exception>
-    Task<string> SignAsync(
+    public Task<string> SignAsync(
         HttpRequestMetadata metadata,
         IIdentity identity,
         SigningProfile profile,

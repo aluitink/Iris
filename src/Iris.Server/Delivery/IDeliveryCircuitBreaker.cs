@@ -40,7 +40,7 @@ public interface IDeliveryCircuitBreaker
     /// or <c>false</c> when it is not (open).</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="inboxIri"/> is null.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled.</exception>
-    Task<bool> TryAcquireAsync(Iri inboxIri, CancellationToken ct);
+    public Task<bool> TryAcquireAsync(Iri inboxIri, CancellationToken ct);
 
     /// <summary>
     /// Records that a delivery to the peer behind <paramref name="inboxIri"/> succeeded. Resets the
@@ -51,7 +51,7 @@ public interface IDeliveryCircuitBreaker
     /// <param name="ct">The cancellation token.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="inboxIri"/> is null.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled.</exception>
-    Task RecordSuccessAsync(Iri inboxIri, CancellationToken ct);
+    public Task RecordSuccessAsync(Iri inboxIri, CancellationToken ct);
 
     /// <summary>
     /// Records that a delivery to the peer behind <paramref name="inboxIri"/> failed. Increments the
@@ -63,5 +63,5 @@ public interface IDeliveryCircuitBreaker
     /// <param name="ct">The cancellation token.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="inboxIri"/> is null.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled.</exception>
-    Task RecordFailureAsync(Iri inboxIri, CancellationToken ct);
+    public Task RecordFailureAsync(Iri inboxIri, CancellationToken ct);
 }

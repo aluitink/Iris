@@ -32,7 +32,7 @@ public interface IMediaFetcher
     /// <c>502</c>). The bytes are read into memory (a media attachment is bounded by the same cap as
     /// an upload, enforced by the caller).
     /// </remarks>
-    Task<FetchedMedia?> FetchAsync(Iri sourceUrl, CancellationToken ct = default);
+    public Task<FetchedMedia?> FetchAsync(Iri sourceUrl, CancellationToken ct = default);
 }
 
 /// <summary>

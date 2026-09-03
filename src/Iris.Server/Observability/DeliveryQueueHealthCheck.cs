@@ -1,5 +1,5 @@
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Iris.Server.Delivery;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace Iris.Server.Observability;
 

@@ -99,7 +99,7 @@ public sealed class IriMediaProxyExtensionsTests
         Assert.StartsWith("https://a.test/ap/v1/media/proxy?url=", result.Value);
         Assert.Contains("sig%3Dabc%26exp%3D123", result.Value);
         // The raw & of the nested query must not appear (it would break the proxy's query parsing).
-        var queryPart = result.Value[result.Value.IndexOf("?url=") ..];
+        var queryPart = result.Value[result.Value.IndexOf("?url=")..];
         Assert.DoesNotContain('&', queryPart);
     }
 

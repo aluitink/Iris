@@ -27,5 +27,5 @@ public interface IDeliveryRateLimiter
     /// <returns>A task that completes when the delivery is permitted and recorded.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="inboxIri"/> is null.</exception>
     /// <exception cref="OperationCanceledException">When <paramref name="ct"/> is canceled while waiting.</exception>
-    Task WaitUntilPermittedAsync(Iri inboxIri, CancellationToken ct);
+    public Task WaitUntilPermittedAsync(Iri inboxIri, CancellationToken ct);
 }
