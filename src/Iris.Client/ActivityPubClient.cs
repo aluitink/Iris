@@ -317,6 +317,60 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+    {
+        // A Join is delivered to the community's inbox (the membership's owner). The community's
+        // MembershipActivityHandler interprets it: when manuallyApprovesMembers is set, the server
+        // records a pending join request; otherwise the server auto-grants membership (19.5.2).
+        //
+        // Decision 055: the client sends only the Join's shape (actor + object); the server mints the
+        // Join's id (an unguessable ULID) and returns it in the 2xx body.
+        var join = new Join
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = communityIri.Uri }],
+        };
+
+        return DeliverAsync(communityIri.InboxOf(), join, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+    {
+        // An Accept of a join request is published to the community's OWN outbox (the operator decides).
+        // The object references the original Join by its id. The server adds the requesting actor as a
+        // member and removes the pending join request (19.5.2).
+        //
+        // Decision 055: the client sends only the Accept's shape (actor + object); the server mints the
+        // Accept's id and returns it in the 2xx body.
+        var accept = new Accept
+        {
+            Actor = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = joinIri.Uri }],
+        };
+
+        return DeliverAsync(communityIri.OutboxOf(), accept, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+    {
+        // A Reject of a join request is published to the community's OWN outbox (the operator decides).
+        // The object references the original Join by its id. The server removes the pending join request
+        // without granting membership (19.5.2).
+        //
+        // Decision 055: the client sends only the Reject's shape (actor + object); the server mints the
+        // Reject's id and returns it in the 2xx body.
+        var reject = new Reject
+        {
+            Actor = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = joinIri.Uri }],
+        };
+
+        return DeliverAsync(communityIri.OutboxOf(), reject, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
         // A like is published to the liker's OWN outbox (the write surface for the activities an actor

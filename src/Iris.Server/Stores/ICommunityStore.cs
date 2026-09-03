@@ -65,6 +65,52 @@ public interface ICommunityStore
     /// <returns>A task that completes with the member IRIs (empty when the community does not exist or has no members).</returns>
     public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default);
 
+    // --- Pending join requests (19.5.2) ---
+    //
+    // When a community sets the manuallyApprovesMembers extension flag (analogous to
+    // manuallyApprovesFollowers), an inbound Join activity from a remote actor does NOT immediately
+    // grant membership. Instead, the request is recorded as pending here and surfaced in the
+    // community's outbox for the operator to Accept or Reject. Accepting adds the actor as a member
+    // (AddMemberAsync) and removes the pending request; Rejecting removes the pending request.
+    // Communities without the flag retain the legacy auto-grant behavior (Join adds membership on
+    // receipt, no pending request is recorded).
+
+    /// <summary>
+    /// Records a pending join request from <paramref name="actorIri"/> for the community. Idempotent:
+    /// recording an existing request is a no-op.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="actorIri">The IRI of the actor requesting to join.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a new request was recorded; <see langword="false"/> when the request was already pending.</returns>
+    public Task<bool> AddJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a pending join request for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="actorIri">The IRI of the actor whose request is being removed.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a request was removed; <see langword="false"/> when no request was pending.</returns>
+    public Task<bool> RemoveJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Determines whether a pending join request exists for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="actorIri">The IRI of the actor to check.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with <see langword="true"/> when a request is pending; otherwise <see langword="false"/>.</returns>
+    public Task<bool> HasJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the IRIs of all actors with a pending join request for the community.
+    /// </summary>
+    /// <param name="communityIri">The IRI identifying the community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the requesting actor IRIs (empty when no requests are pending).</returns>
+    public Task<IReadOnlyCollection<Iri>> GetJoinRequestsAsync(Iri communityIri, CancellationToken ct = default);
+
     /// <summary>
     /// Returns the IRIs of all actors (communities or persons) that the community follows.
     /// </summary>

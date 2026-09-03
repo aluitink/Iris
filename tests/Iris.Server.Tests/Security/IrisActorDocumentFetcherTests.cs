@@ -156,6 +156,17 @@ public class IrisActorDocumentFetcherTests
         public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        /// <inheritdoc/>
+        public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
         public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)

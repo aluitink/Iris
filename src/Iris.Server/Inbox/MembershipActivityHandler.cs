@@ -102,7 +102,9 @@ public sealed class MembershipActivityHandler : IActivityHandler
 
     /// <summary>
     /// Adds the activity's <c>object</c> to the recipient community's member set (for <see cref="Offer"/>,
-    /// <see cref="Invite"/>, and <see cref="Join"/>).
+    /// <see cref="Invite"/>, and <see cref="Join"/>). When the community has
+    /// <c>manuallyApprovesMembers</c> set and the activity is a <see cref="Join"/>, the request is
+    /// recorded as pending instead of granting membership immediately (19.5.2).
     /// </summary>
     private async Task AddMemberAsync(InboxDelivery delivery, Activity activity, CancellationToken ct)
     {
@@ -114,6 +116,18 @@ public sealed class MembershipActivityHandler : IActivityHandler
         var memberIri = activity.Object?.FirstOrDefault().ResolveObjectIri();
         if (memberIri is not { } resolvedMember)
         {
+            return;
+        }
+
+        // When the community manually approves members and this is a Join activity, record a pending
+        // join request instead of auto-granting membership (19.5.2). The operator must respond with an
+        // explicit Accept or Reject via the community outbox.
+        if (activity is Join
+            && await IsManuallyApprovingMembersAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
+        {
+            await _persistence.Communities
+                .AddJoinRequestAsync(delivery.RecipientIri, resolvedMember, ct)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -150,4 +164,30 @@ public sealed class MembershipActivityHandler : IActivityHandler
     /// </summary>
     private Task<bool> IsLocalCommunityAsync(Iri recipientIri, CancellationToken ct)
         => _persistence.Communities.TryGetCommunityAsync(recipientIri, out _, ct);
+
+    /// <summary>
+    /// Reports whether the local community has <c>manuallyApprovesMembers</c> set (i.e. should not
+    /// auto-grant an inbound <c>Join</c>). The library's <c>Group</c> type does not model the property,
+    /// so it is read from the community's <c>ExtensionData</c>. A missing community or a missing/false
+    /// value means auto-grant (the default).
+    /// </summary>
+    /// <param name="communityIri">The IRI of the local community.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns><see langword="true"/> when the community manually approves members; otherwise
+    /// <see langword="false"/>.</returns>
+    private async Task<bool> IsManuallyApprovingMembersAsync(Iri communityIri, CancellationToken ct)
+    {
+        if (await _persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            && community is { } localCommunity)
+        {
+            return IsManuallyApprovingMembers(localCommunity.ExtensionData);
+        }
+
+        return false;
+    }
+
+    private static bool IsManuallyApprovingMembers(Dictionary<string, System.Text.Json.JsonElement>? extensionData)
+        => extensionData is { } ext
+            && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var value)
+            && value.ValueKind == System.Text.Json.JsonValueKind.True;
 }

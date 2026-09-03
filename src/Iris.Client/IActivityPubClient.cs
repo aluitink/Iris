@@ -163,6 +163,50 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RejectAsync(Iri actorId, Iri followIri, CancellationToken ct = default);
 
     /// <summary>
+    /// Requests to join a community as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Join"/>
+    /// (actor = <paramref name="actorId"/>, object = <paramref name="communityIri"/>) and publishes it through
+    /// the signed pipeline to the community's inbox. When the community has <c>manuallyApprovesMembers</c>
+    /// set, the server records a pending join request (the operator must Accept or Reject); otherwise the
+    /// server auto-grants membership (19.5.2).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor requesting to join (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="communityIri">The IRI of the community to join.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending join request for a community as <paramref name="communityIri"/> (the community
+    /// operator's decision): builds an <see cref="KristofferStrube.ActivityStreams.Accept"/> whose
+    /// <c>object</c> references <paramref name="joinIri"/> (the original <see cref="KristofferStrube.ActivityStreams.Join"/>)
+    /// and publishes it to the community's own outbox. The server adds the requesting actor as a member and
+    /// removes the pending join request (19.5.2).
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community (the operator deciding — must match the
+    /// client's signing identity).</param>
+    /// <param name="joinIri">The IRI of the pending <see cref="KristofferStrube.ActivityStreams.Join"/> being
+    /// accepted.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending join request for a community as <paramref name="communityIri"/> (the community
+    /// operator's decision): builds a <see cref="KristofferStrube.ActivityStreams.Reject"/> whose
+    /// <c>object</c> references <paramref name="joinIri"/> (the original <see cref="KristofferStrube.ActivityStreams.Join"/>)
+    /// and publishes it to the community's own outbox. The server removes the pending join request without
+    /// granting membership (19.5.2).
+    /// </summary>
+    /// <param name="communityIri">The IRI of the community (the operator deciding — must match the
+    /// client's signing identity).</param>
+    /// <param name="joinIri">The IRI of the pending <see cref="KristofferStrube.ActivityStreams.Join"/> being
+    /// rejected.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
     /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and publishes it through
     /// the signed pipeline to the liker's own outbox (exactly like

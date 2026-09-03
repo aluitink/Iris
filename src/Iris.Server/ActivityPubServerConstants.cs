@@ -64,6 +64,16 @@ public static class ActivityPubServerConstants
     public const string ManuallyApprovesFollowersExtensionName = "manuallyApprovesFollowers";
 
     /// <summary>
+    /// The ActivityPub group extension property <c>manuallyApprovesMembers</c>: when <c>true</c> on a
+    /// local community (group), an inbound <c>Join</c> activity from a remote actor is <em>not</em>
+    /// auto-granted — the operator must respond with an explicit <c>Accept</c> or <c>Reject</c>. Carried in
+    /// the group's <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> (seeded by the host)
+    /// and echoed onto the public group document. Communities without the flag retain the legacy
+    /// auto-grant behavior.
+    /// </summary>
+    public const string ManuallyApprovesMembersExtensionName = "manuallyApprovesMembers";
+
+    /// <summary>
     /// The <c>iris:capabilities</c> extension property name (Resolved Decision #11).
     /// The full IRI is <c>{NamespaceIri}capabilities</c>; this is the local term.
     /// </summary>

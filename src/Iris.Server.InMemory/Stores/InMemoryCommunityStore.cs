@@ -20,6 +20,7 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _blocks = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _flags = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _mutes = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _joinRequests = new();
 
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
@@ -85,6 +86,27 @@ public sealed class InMemoryCommunityStore : ICommunityStore
 
         return Task.FromResult<IReadOnlyCollection<Iri>>(result);
     }
+
+    // --- Pending join requests (19.5.2) ---
+
+    /// <inheritdoc/>
+    public Task<bool> AddJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => AddToSetAsync(_joinRequests, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+        => RemoveFromSetAsync(_joinRequests, communityIri, actorIri, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> HasJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_joinRequests.TryGetValue(communityIri, out var set) && set.ContainsKey(actorIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyCollection<Iri>> GetJoinRequestsAsync(Iri communityIri, CancellationToken ct = default)
+        => GetSetAsync(_joinRequests, communityIri, ct);
 
     /// <inheritdoc/>
     public Task<IReadOnlyCollection<Iri>> GetFollowsAsync(Iri communityIri, CancellationToken ct = default)

@@ -1844,9 +1844,9 @@ public static class ActivityPubServerExtensions
                     .ConfigureAwait(false),
                 Undo undo => await RecordCommunityUnfollowAsync(persistence, communityIri, undo, ct)
                     .ConfigureAwait(false),
-                Accept accept => await RecordFollowDecisionLocalAsync(persistence, communityIri, accept, accept: true, ct)
+                Accept accept => await RecordCommunityDecisionAsync(persistence, communityIri, accept, accept: true, ct)
                     .ConfigureAwait(false),
-                Reject reject => await RecordFollowDecisionLocalAsync(persistence, communityIri, reject, accept: false, ct)
+                Reject reject => await RecordCommunityDecisionAsync(persistence, communityIri, reject, accept: false, ct)
                     .ConfigureAwait(false),
                 _ => null,
             };
@@ -2059,6 +2059,84 @@ public static class ActivityPubServerExtensions
         }
 
         return targetIri.Value;
+    }
+
+    /// <summary>
+    /// Records the local decision for an <see cref="Accept"/>/<see cref="Reject"/> published to a
+    /// community's outbox, dispatching to the join-decision or follow-decision path based on the type of
+    /// the referenced activity. When the decision's <c>object</c> references a <see cref="Join"/> the
+    /// join-decision path is taken (19.5.2); otherwise the follow-decision path is taken (existing).
+    /// Returns the recipient IRI for server→server delivery (or <see langword="null"/> when the decision
+    /// cannot be resolved).
+    /// </summary>
+    private static async Task<Iri?> RecordCommunityDecisionAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Activity decision,
+        bool accept,
+        CancellationToken ct)
+    {
+        var referencedIri = decision.Object?.FirstOrDefault().ResolveObjectIri();
+        if (referencedIri is not { } objIri)
+        {
+            return null;
+        }
+
+        if (await persistence.Activities.TryGetActivityAsync(objIri, out var stored, ct).ConfigureAwait(false)
+            && stored is Join)
+        {
+            return await RecordJoinDecisionLocalAsync(persistence, communityIri, decision, accept, ct).ConfigureAwait(false);
+        }
+
+        return await RecordFollowDecisionLocalAsync(persistence, communityIri, decision, accept, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records the local join decision for an <see cref="Accept"/>/<see cref="Reject"/> published to a
+    /// community's outbox whose <c>object</c> references a <see cref="Join"/> (19.5.2). For an
+    /// <see cref="Accept"/> the requesting actor is added as a member and the pending join request is
+    /// removed; for a <see cref="Reject"/> the pending join request is removed (no membership granted).
+    /// Returns the requesting actor (the recipient of the server→server delivery). Returns
+    /// <see langword="null"/> when the referenced join is unknown or the requesting actor is not
+    /// resolvable.
+    /// </summary>
+    private static async Task<Iri?> RecordJoinDecisionLocalAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Activity decision,
+        bool accept,
+        CancellationToken ct)
+    {
+        var joinIri = decision.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!joinIri.HasValue
+            || !await persistence.Activities.TryGetActivityAsync(joinIri.Value, out var stored, ct)
+                .ConfigureAwait(false)
+            || stored is not Join { Id: not null } join)
+        {
+            return null;
+        }
+
+        // The join's object (the joining actor) must be resolvable.
+        var joinerIri = join.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!joinerIri.HasValue)
+        {
+            return null;
+        }
+
+        if (accept)
+        {
+            await persistence.Communities
+                .AddMemberAsync(communityIri, joinerIri.Value, ct)
+                .ConfigureAwait(false);
+        }
+
+        // Both accept and reject remove the pending join request (idempotent — a no-op when already
+        // removed, e.g. a duplicate decision or a request that was never recorded).
+        await persistence.Communities
+            .RemoveJoinRequestAsync(communityIri, joinerIri.Value, ct)
+            .ConfigureAwait(false);
+
+        return joinerIri.Value;
     }
 
     /// <summary>
