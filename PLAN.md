@@ -91,6 +91,11 @@ remote rendering, multi-server identity); and authoring (compose with media/mark
 reply/threads). The remaining pre-Phase-22 items (the Phase 19 live-interop + raw-inspector UI halves
 and the Phase 21 UI deltas) are listed in the roadmap and are largely subsumed by Phase 22.
 
+**Latest slice (22.1, in progress):** the shared `PagedCollection` (US-20) + `RawInspector` (US-21)
+components are built, and `Feed` + `ActorDetail` (Outbox + Raw inspector) are refactored onto them;
+manually verified on the docker compose FQDN stack. See
+[docs/changes/180-22.1-paged-collection-and-raw-inspector.md](docs/changes/180-22.1-paged-collection-and-raw-inspector.md).
+
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
 [docs/decisions/](docs/decisions/README.md).

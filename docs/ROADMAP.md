@@ -93,8 +93,11 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   specific stories** as we work through it. The story set is
   [plans/22-sample-ui-user-stories.md](plans/22-sample-ui-user-stories.md) (stories US-1…US-24 + the
   component inventory). As each story/component is worked, its deep-dive plan is written to
-  `plans/22-*.md` and **referenced here**:
-  - *(no deep-dive plans produced yet)*
+   `plans/22-*.md` and **referenced here**:
+   - [plans/22-1-paged-collection-component.md](plans/22-1-paged-collection-component.md) — the
+     `PagedCollection` card (US-20) deep-dive.
+   - [plans/22-2-raw-inspector-component.md](plans/22-2-raw-inspector-component.md) — the
+     `RawInspector` toggle (US-21) deep-dive.
 
   The high-level areas (each expands into the stories + deep-dives above):
   - **Better components** — the shared `ObjectView` (US-19), a reusable `PagedCollection` card (US-20),
@@ -111,6 +114,13 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   (US-19), `PagedCollection` (US-20), `RawInspector` (US-21), the card state pattern (US-23), and the
   `MainLayout` identity bar + back links (US-3, US-22). Each lands a `plans/22-*.md` deep-dive referenced
   from 22.0.
+  - **Done (this slice):** `PagedCollection` (US-20) + `RawInspector` (US-21) built; `Feed` and
+    `ActorDetail` (Outbox + Raw inspector) refactored onto them; deep-dives
+    [22-1](plans/22-1-paged-collection-component.md) + [22-2](plans/22-2-raw-inspector-component.md);
+    manually verified on the docker compose FQDN stack; change
+    [180](changes/180-22.1-paged-collection-and-raw-inspector.md).
+  - **Remaining:** the `ObjectView` deep-dive (US-19), the card loading/empty/error pattern (US-23),
+    and the `MainLayout` identity bar + back links (US-3, US-22).
 - [ ] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
   community (US-6,18), instance (US-10).
 - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
