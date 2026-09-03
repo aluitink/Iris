@@ -46,6 +46,38 @@ else
         }
     </div>
 
+    <div class="card">
+        <h3>Resolve a handle (WebFinger)</h3>
+        <p class="muted">
+            Resolve a <c>handle@host</c> address to an actor IRI via this instance's WebFinger
+            (the <c>/.well-known/webfinger</c> document), then jump to the actor's detail page. The
+            query dials the current instance's base (<code>@DialBaseLabel</code>); for a cross-instance
+            handle the host part is what the query carries, but the dial reaches the current instance
+            (use the recent-instances switch below to resolve on another host).
+        </p>
+        <input class="inline" type="text" @bind="LookupHandle" placeholder="e.g. alice@iris-dev1.luit.ink" />
+        <button @onclick="LookupAsync" disabled="@(LookupBusy)">Resolve</button>
+        @if (LookupBusy)
+        {
+            <span class="muted">Resolving…</span>
+        }
+        @if (LookupError is not null)
+        {
+            <div class="error">@LookupError</div>
+        }
+        @if (LookupHref is not null)
+        {
+            <p>
+                Resolved <code>@LookupHandleInput</code> →
+                <a href="@LookupHref">@LookupIri</a>
+            </p>
+        }
+        else if (LookupAttempted && LookupIri is null)
+        {
+            <p class="muted">Could not resolve that address on this instance.</p>
+        }
+    </div>
+
     @if (Session.RecentInstances.Count > 0)
     {
         <div class="card">
@@ -102,6 +134,30 @@ else
     private string SwitchPassword { get; set; } = "iris-sample";
     private bool SwitchBusy { get; set; }
     private string? SwitchError { get; set; }
+
+    // 22.2 (US-10): the WebFinger handle-lookup card. `LookupHandle` is the bound input; `LookupIri`
+    // is the resolved actor IRI (null until a successful resolve). The resolve dials the current
+    // instance's base URI (the host-published port for local instances) via the session's discovery
+    // service — the same seam the log-on flow uses (see ExplorerSession.LogOnAsync).
+    private string LookupHandle { get; set; } = "";
+    private string? LookupHandleInput { get; set; }
+    private Iri? LookupIri { get; set; }
+    private bool LookupAttempted { get; set; }
+    private bool LookupBusy { get; set; }
+    private string? LookupError { get; set; }
+
+    /// <summary>
+    /// The dial base shown in the lookup card's help text (the current instance base the WebFinger
+    /// query reaches).
+    /// </summary>
+    private string DialBaseLabel => Session.DialBaseUri?.ToString() ?? "…";
+
+    /// <summary>
+    /// The detail-page URL for the resolved actor IRI (null until a successful resolve). Kept as a
+    /// property so the markup's <c>href</c> is a plain expression (no C# interpolation with braces in
+    /// markup, which Razor mis-parses).
+    /// </summary>
+    private string? LookupHref => LookupIri is { } iri ? "/actor?iri=" + Uri.EscapeDataString(iri.ToString()) : null;
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,6 +232,47 @@ else
         finally
         {
             SwitchBusy = false;
+        }
+    }
+
+    private async Task LookupAsync()
+    {
+        var handle = LookupHandle.Trim();
+        LookupAttempted = true;
+        LookupError = null;
+        LookupIri = null;
+        if (handle.Length == 0)
+        {
+            LookupError = "Enter a handle to resolve (e.g. alice@iris-dev1.luit.ink).";
+            return;
+        }
+
+        // The resolve dials the current instance's base URI (the host-published port for local
+        // instances), not the handle's own host — the same authority the session uses to reach the
+        // instance (see ExplorerSession.LogOnAsync). The query resource still carries the handle's
+        // host so the instance knows which actor to resolve.
+        var dialBaseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
+
+        LookupBusy = true;
+        LookupHandleInput = handle;
+        try
+        {
+            // Fully-qualified (this page has no @using for the Iris.Client.Discovery / Iris.Core
+            // namespaces; the rest of the page relies on implicit usings + the @using Iris.Client).
+            var discovery = Session.Discovery ?? throw new InvalidOperationException("No discovery service.");
+            LookupIri = await discovery.ResolveActorAsync(handle, dialBaseUri);
+            if (LookupIri is null)
+            {
+                LookupError = "The instance did not resolve that address (unknown handle or no WebFinger match).";
+            }
+        }
+        catch (Exception ex)
+        {
+            LookupError = ex.Message;
+        }
+        finally
+        {
+            LookupBusy = false;
         }
     }
 }
