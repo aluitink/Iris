@@ -108,6 +108,16 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
         Assert.False(
             await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
             "alice should NOT be a member after a Join to a manuallyApprovesMembers community");
+
+        // AP-native conformance: the Join activity is stored in the community's outbox (mirroring the
+        // inbound-follow pattern), so its IRI is available for an Accept(joinIri)/Reject(joinIri) that
+        // references the original activity.
+        var outbox = await _persistence.Activities.GetOutboxAsync(_communityIri);
+        var joinInOutbox = outbox.OfType<Activity>()
+            .FirstOrDefault(a => a.Type?.Contains("Join") == true
+                && a.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _aliceIri.Value);
+        Assert.NotNull(joinInOutbox);
+        Assert.NotNull(joinInOutbox!.Id);
     }
 
     // --- Gated community: Accept adds the member and removes the pending request --------
@@ -179,6 +189,49 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
         Assert.False(
             await _persistence.Communities.HasJoinRequestAsync(_communityIri, _aliceIri),
             "the pending join request should be removed after the Reject");
+    }
+
+    // --- AP-native: the Join activity IRI in the outbox is usable for Accept/Reject ------
+
+    [Fact]
+    public async Task Join_GatedCommunity_JoinActivityInOutbox_IsUsableForAccept()
+    {
+        // Step 1: Alice posts a signed Join → pending request recorded, no membership.
+        var join = BuildJoinActivity(_aliceIri, _communityIri);
+        using (var joinRequest = SignedRequest(_aliceIri, _aliceKey, join, $"/ap/v1/c/{Community}/inbox"))
+        {
+            var joinResponse = await _http.SendAsync(joinRequest);
+            Assert.Equal(HttpStatusCode.Accepted, joinResponse.StatusCode);
+        }
+
+        // Step 2: Read the community's outbox and find the Join activity (AP-native: the operator
+        // discovers the pending join request by reading the outbox, exactly as they would for an
+        // inbound follow — no separate "join requests" store is needed for the activity IRI).
+        var outbox = await _persistence.Activities.GetOutboxAsync(_communityIri);
+        var joinInOutbox = outbox.OfType<Activity>()
+            .FirstOrDefault(a => a.Type?.Contains("Join") == true
+                && a.Actor?.FirstOrDefault().ResolveObjectIri()?.Value == _aliceIri.Value);
+        Assert.NotNull(joinInOutbox);
+        Assert.NotNull(joinInOutbox!.Id);
+
+        var joinIriFromOutbox = new Iri(joinInOutbox.Id!);
+
+        // Step 3: The community operator publishes an Accept referencing the join IRI from the outbox
+        // (AP-native: the Accept's object is the Join activity's IRI, not a separate "join request" id).
+        var accept = BuildDecisionActivity(AcceptType.Accept, _communityIri, joinIriFromOutbox);
+        using var acceptRequest = SignedRequest(_communityIri, _communityKey, accept, $"/ap/v1/c/{Community}/outbox");
+        var acceptResponse = await _http.SendAsync(acceptRequest);
+        Assert.Equal(HttpStatusCode.Accepted, acceptResponse.StatusCode);
+
+        // Alice is now a member …
+        Assert.True(
+            await _persistence.Communities.IsMemberAsync(_communityIri, _aliceIri),
+            "alice should be a member after the community Accepts the join (by the outbox join IRI)");
+
+        // … and the pending request is removed.
+        Assert.False(
+            await _persistence.Communities.HasJoinRequestAsync(_communityIri, _aliceIri),
+            "the pending join request should be removed after the Accept");
     }
 
     // --- Open community: Join auto-grants membership (no flag) --------------------------

@@ -120,6 +120,44 @@ else
         </div>
 
         <div class="card">
+            <h3>Pending join requests</h3>
+            <p class="muted">
+                Join requests <em>to</em> <code>@CommunityIri.Value</code> (actors that requested to join
+                this community), read from the community's outbox. Accept / reject are AP-native: the
+                client authors an <c>Accept</c>/<c>Reject</c> referencing the Join activity's IRI and
+                publishes it to the community's outbox; the instance records the membership and delivers
+                the activity to the joiner's inbox.
+            </p>
+            @if (PendingJoins is not null && PendingJoins.Count == 0)
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            @if (PendingJoins is not null)
+            {
+                @foreach (var join in PendingJoins)
+                {
+                    <div class="pending-join">
+                        <a href="/actor?iri=@Uri.EscapeDataString(join.JoinerIri)" title="@join.JoinerIri">@HandleOf(join.JoinerIri)</a>
+                        <button @onclick="() => AcceptJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Accept</button>
+                        <button @onclick="() => RejectJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Reject</button>
+                        @if (JoinDecisionResult is not null)
+                        {
+                            <span class="muted">Status: <code>@JoinDecisionResult</code></span>
+                        }
+                    </div>
+                }
+            }
+            @if (JoinDecisionBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (JoinDecisionError is not null)
+            {
+                <div class="error">@JoinDecisionError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Moderation</h3>
             <p class="muted">
                 As <code>@CommunityIri.Value</code> (the community signs with the primary actor's key in
@@ -215,6 +253,7 @@ else
                    placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/alice" />
             <button @onclick="AddMemberAsync" disabled="@(MemberBusy)">Add member</button>
             <button @onclick="RemoveMemberAsync" disabled="@(MemberBusy)">Remove member</button>
+            <button @onclick="RequestJoinAsync" disabled="@(MemberBusy)">Join (as me)</button>
             @if (MemberBusy)
             {
                 <span class="muted">Working…</span>
@@ -410,6 +449,17 @@ else
     private DeliveryResult? FollowDecisionResult { get; set; }
     private string? FollowDecisionError { get; set; }
 
+    /// <summary>
+    /// Pending join requests to the loaded community (actors that requested to join), read from the
+    /// community's outbox (the AP-native pattern: the Join activity is stored in the outbox, so its IRI
+    /// is available for an Accept/Reject that references the original activity — mirroring inbound
+    /// follows). Each is a (joiner IRI, join activity IRI) pair.
+    /// </summary>
+    private IReadOnlyList<(string JoinerIri, Iri JoinIri)>? PendingJoins { get; set; }
+    private bool JoinDecisionBusy { get; set; }
+    private DeliveryResult? JoinDecisionResult { get; set; }
+    private string? JoinDecisionError { get; set; }
+
     private string? ModTargetInput { get; set; }
     private bool ModBusy { get; set; }
     private string? ModResult { get; set; }
@@ -506,6 +556,23 @@ else
             }
 
             PendingFollows = inbound;
+
+            // Pending join requests to this community (actors that requested to join), read from the
+            // same outbox as the inbound follows (the AP-native pattern: the Join activity is stored in
+            // the community's outbox when manuallyApprovesMembers is set, so its IRI is available for an
+            // Accept/Reject that references the original activity — mirroring inbound follows).
+            var joins = new List<(string JoinerIri, Iri JoinIri)>();
+            await foreach (var item in client.GetCollectionItemsAsync(communityIri.OutboxOf()))
+            {
+                if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                    && types.Contains("Join")
+                    && actors.FirstOrDefault()?.ResolveObjectIri() is { } joiner)
+                {
+                    joins.Add((joiner.Value, new Iri(itemId)));
+                }
+            }
+
+            PendingJoins = joins;
         }
         catch (Exception ex)
         {
@@ -910,6 +977,105 @@ else
         }
 
         PendingFollows = inbound;
+    }
+
+    // --- 19.5.2: community join request accept/reject (AP-native) ------------------------
+
+    private Task AcceptJoinAsync(Iri joinIri)
+        => JoinDecisionAsync(joinIri, accept: true);
+
+    private Task RejectJoinAsync(Iri joinIri)
+        => JoinDecisionAsync(joinIri, accept: false);
+
+    private async Task JoinDecisionAsync(Iri joinIri, bool accept)
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        JoinDecisionBusy = true;
+        JoinDecisionResult = null;
+        JoinDecisionError = null;
+        try
+        {
+            // Accept/reject are AP-native: the client authors the Accept/Reject referencing the Join
+            // activity's IRI and publishes it to the community's own outbox. The instance records the
+            // membership effect and server-delivers the activity to the joiner's inbox.
+            JoinDecisionResult = accept
+                ? await Session.GetClient().AcceptJoinAsync(communityIri, joinIri)
+                : await Session.GetClient().RejectJoinAsync(communityIri, joinIri);
+
+            // Refresh the pending-join-requests list (bypassing the page cache) so the accepted/rejected
+            // join's Accept/Reject activity is visible immediately.
+            await RefreshPendingJoinsAsync(bypassCache: true);
+        }
+        catch (Exception ex)
+        {
+            JoinDecisionError = ex.Message;
+        }
+        finally
+        {
+            JoinDecisionBusy = false;
+        }
+    }
+
+    private async Task RefreshPendingJoinsAsync(bool bypassCache = false)
+    {
+        if (CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        var client = Session.GetClient();
+        var query = bypassCache ? new CollectionQuery(BypassCache: true) : null;
+        var joins = new List<(string JoinerIri, Iri JoinIri)>();
+        await foreach (var item in client.GetCollectionItemsAsync(communityIri.OutboxOf(), query))
+        {
+            if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                && types.Contains("Join")
+                && actors.FirstOrDefault()?.ResolveObjectIri() is { } joiner)
+            {
+                joins.Add((joiner.Value, new Iri(itemId)));
+            }
+        }
+
+        PendingJoins = joins;
+    }
+
+    /// <summary>
+    /// Requests to join the loaded community as the logged-on actor (19.5.2): publishes a <c>Join</c>
+    /// (actor = the logged-on actor, object = the logged-on actor) to the community's inbox. When the
+    /// community has <c>manuallyApprovesMembers</c> set, the server records a pending join request; the
+    /// operator then Accepts or Rejects it (the "Pending join requests" card above). When the community
+    /// is open, the server auto-grants membership.
+    /// </summary>
+    private async Task RequestJoinAsync()
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || MemberBusy)
+        {
+            return;
+        }
+
+        var actorIri = Session.ActorIri ?? throw new InvalidOperationException("No actor identity.");
+        MemberBusy = true;
+        MemberResult = null;
+        MemberError = null;
+        try
+        {
+            var result = await Session.GetClient().RequestJoinAsync(actorIri, communityIri);
+            MemberResult = result.IsSuccess
+                ? $"join requested (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
+        }
+        catch (Exception ex)
+        {
+            MemberError = ex.Message;
+        }
+        finally
+        {
+            MemberBusy = false;
+        }
     }
 
     // --- 19.5.4: community moderation (mute / block / flag) -----------------------------

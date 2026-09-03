@@ -125,6 +125,16 @@ public sealed class MembershipActivityHandler : IActivityHandler
         if (activity is Join
             && await IsManuallyApprovingMembersAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
         {
+            // Surface the inbound join in the community's own outbox (the activity store alone is not
+            // enumerable), so a community operator can list — and Accept/Reject — the request (the
+            // community analogue of the person's "Inbound follows" surface; change 152, extended to
+            // join requests in change 215). Storing the Join activity in the outbox makes its IRI
+            // available for an AP-native Accept(joinIri)/Reject(joinIri) that references the original
+            // activity — the same pattern as inbound follows (FollowActivityHandler).
+            await _persistence.Activities
+                .AddToOutboxAsync(delivery.RecipientIri, activity, ct)
+                .ConfigureAwait(false);
+
             await _persistence.Communities
                 .AddJoinRequestAsync(delivery.RecipientIri, resolvedMember, ct)
                 .ConfigureAwait(false);
