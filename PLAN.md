@@ -161,7 +161,20 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.8.7, error & empty states — live verification):** a Playwright MCP pass drove each
+**Latest slice (19.8.5, cross-instance navigation — live verification):** a Playwright MCP pass drove
+  a real iris-a → iris-b peer-item selection through the browser and confirmed the remote object
+  renders. **Object page:** navigated to `https://iris-dev2.luit.ink/ap/v1/u/alice/notes/1` (an iris-b
+  object) from the Object page; the UI rendered the Note (content "Welcome to the Iris sample
+  server!", by alice, with a "View on originating instance" link). **Actor detail page:** clicked the
+  "alice" link in the object view to navigate to the iris-b actor detail; the UI rendered the Person
+  (alice, IRI `https://iris-dev2.luit.ink/ap/v1/u/alice`) with the Outbox, Followers, and Following
+  sections populated. **"Continue where you left off" card:** after navigating away from the iris-b
+  object, the Home page showed the "Continue where you left off" card with a link back to the iris-b
+  object; clicking it navigated back correctly. No new code or tests (verification-only slice, Phase
+  22 rule 5). 1,288 tests green. See
+  [docs/changes/210-19.8.5-cross-instance-navigation-live-verification.md](docs/changes/210-19.8.5-cross-instance-navigation-live-verification.md).
+
+**Prior slice (19.8.7, error & empty states — live verification):** a Playwright MCP pass drove each
   error/empty state through the browser and confirmed the rendered message is clear. **Object page
   404 gap:** "Object not found: {IRI}". **Feed page empty:** "No followed items yet. Follow an actor
   (Actor detail → Follow) to populate your timeline." **Community page empty:** "No followers

@@ -363,9 +363,18 @@ verification** (Playwright-MCP) and are folded into the Phase 22 manual test pas
 - [ ] **19.8.2 — Rendered object view quality (live remainder).** Audiences + published timestamp +
   like/boost counts + the remote canonical-URL link now render. Still open: **the reply-chain /
   conversations view** (built in Phase 22 US-12/19.2.4) and the live verification of the rest.
-- [ ] **19.8.5 — Cross-instance navigation (live remainder).** The navigable state is preserved across
-  instance switches + the "continue where you left off" card is done. Still open: drive a real iris-a →
-  iris-b peer-item selection through the browser and confirm the remote object renders (Phase 22 US-8).
+- [x] **19.8.5 — Cross-instance navigation (live remainder).** The navigable state is preserved across
+  instance switches + the "continue where you left off" card is done. **Done (change 210):** a Playwright
+  MCP pass drove a real iris-a → iris-b peer-item selection through the browser and confirmed the remote
+  object renders. **Object page:** navigated to `https://iris-dev2.luit.ink/ap/v1/u/alice/notes/1` (an
+  iris-b object) from the Object page; the UI rendered the Note (content "Welcome to the Iris sample
+  server!", by alice, with a "View on originating instance" link). **Actor detail page:** clicked the
+  "alice" link in the object view to navigate to the iris-b actor detail; the UI rendered the Person
+  (alice, IRI `https://iris-dev2.luit.ink/ap/v1/u/alice`) with the Outbox, Followers, and Following
+  sections populated. **"Continue where you left off" card:** after navigating away from the iris-b
+  object, the Home page showed the "Continue where you left off" card with a link back to the iris-b
+  object; clicking it navigated back correctly. No new code or tests (verification-only slice, Phase 22
+  rule 5).
 - [x] **19.8.6 — Write-screen round-trips (live remainder).** The Boost button is wired. **Done (change
   208):** a Playwright MCP pass drove the Create-note write screen through the browser and confirmed the
   success state (202 `Create` with the minted id + the signed ActivityStreams body) and the raw-inspector
