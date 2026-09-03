@@ -161,7 +161,21 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.8.6, write-screen round-trips — Create note + prior verifications):** a Playwright
+**Latest slice (19.8.7, error & empty states — live verification):** a Playwright MCP pass drove each
+  error/empty state through the browser and confirmed the rendered message is clear. **Object page
+  404 gap:** "Object not found: {IRI}". **Feed page empty:** "No followed items yet. Follow an actor
+  (Actor detail → Follow) to populate your timeline." **Community page empty:** "No followers
+  recorded.", "No inbound follows recorded.", "No mutes/blocks/flags recorded.", "No members."
+  **Actor detail page empty:** "No items in the outbox.", "Nothing liked.", "No mutes/blocks/flags
+  recorded.", "No activities delivered.", "No inbound follows recorded.", "No relays subscribed."
+  **Proxy-fallback failure:** "TypeError: Failed to fetch". All messages are clear, specific, and
+  consistent across pages (not raw stack dumps, not generic "error"). The only console errors are the
+  pre-existing 429 external-FQDN proxy route, the by-design 403 owner-only inbox, and CORS errors on
+  the unreachable `remote.example` seed host (expected in this env). No new code or tests
+  (verification-only slice, Phase 22 rule 5). 1,288 tests green. See
+  [docs/changes/209-19.8.7-error-empty-states-live-verification.md](docs/changes/209-19.8.7-error-empty-states-live-verification.md).
+
+**Prior slice (19.8.6, write-screen round-trips — Create note + prior verifications):** a Playwright
   MCP pass drove the Create-note write screen through the browser and confirmed the success state
   (202 `Create` with the minted id + the signed ActivityStreams body) and the raw-inspector signed
   message on re-navigation (the object page renders the note + the Raw inspector toggle). The other

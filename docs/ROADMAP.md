@@ -374,10 +374,19 @@ verification** (Playwright-MCP) and are folded into the Phase 22 manual test pas
   the 22.6 local manual pass (ch.195) + the outbox-enumeration verification (ch.200: Block/Flag/Like 1:1
   with the RawInspector) + the object-detail interactions verification (ch.204: Reply/Like/Boost/Delete).
   No new code or tests (verification-only slice, Phase 22 rule 5).
-- [ ] **19.8.7 — Error & empty states (live remainder).** Error handling is added to the four pages that
-  lacked it + the ObjectPage 404 gap is closed. Still open: drive each error state through the browser and
-  confirm the rendered message is clear (the proxy-fallback-failure + unreachable-instance states are
-  already exercised in CI).
+- [x] **19.8.7 — Error & empty states (live remainder).** Error handling is added to the four pages that
+  lacked it + the ObjectPage 404 gap is closed. **Done (change 209):** a Playwright MCP pass drove each
+  error/empty state through the browser and confirmed the rendered message is clear. **Object page 404
+  gap:** "Object not found: {IRI}". **Feed page empty:** "No followed items yet. Follow an actor (Actor
+  detail → Follow) to populate your timeline." **Community page empty:** "No followers recorded.", "No
+  inbound follows recorded.", "No mutes/blocks/flags recorded.", "No members." **Actor detail page
+  empty:** "No items in the outbox.", "Nothing liked.", "No mutes/blocks/flags recorded.", "No
+  activities delivered.", "No inbound follows recorded.", "No relays subscribed." **Proxy-fallback
+  failure:** "TypeError: Failed to fetch". All messages are clear, specific, and consistent across
+  pages (not raw stack dumps, not generic "error"). The only console errors are the pre-existing 429
+  external-FQDN proxy route, the by-design 403 owner-only inbox, and CORS errors on the unreachable
+  `remote.example` seed host (expected in this env). No new code or tests (verification-only slice,
+  Phase 22 rule 5).
 
 ### Phase 21 — Sample UI expansion (remaining items)
 
