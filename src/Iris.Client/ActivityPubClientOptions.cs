@@ -64,6 +64,27 @@ public sealed class ActivityPubClientOptions
     public bool AlwaysProxy { get; set; }
 
     /// <summary>
+    /// Gets or sets the base URI the client <em>dials</em> (the instance the browser can reach
+    /// directly, e.g. the host-published port). When set together with <see cref="ProxyBaseUrl"/>
+    /// and <see cref="RouteCrossInstanceReadsViaProxy"/>, a <c>GET</c> whose host differs from this
+    /// base is routed straight through the home proxy instead of dialed directly — the browser cannot
+    /// reach a cross-origin remote instance directly (CORS), so the read must go through the
+    /// same-origin home proxy, which relays it. When null no host comparison is performed (a
+    /// cross-instance read is never detected), so this setting has no effect.
+    /// </summary>
+    public Uri? DialBaseUri { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether <c>GET</c> reads of a different host than <see cref="DialBaseUri"/>
+    /// are routed straight through the home proxy (the <see cref="Iris.Client.Pipeline.ProxyFallbackHandler"/>
+    /// cross-instance-read mode). Defaults to false (reads dial the target directly; the proxy is used
+    /// only on a 401/403 or, in always-proxy mode, for signed writes). Set true for a browser whose
+    /// direct cross-origin read would be blocked by CORS. Requires <see cref="ProxyBaseUrl"/>,
+    /// <see cref="ProxyCredentials"/>, and <see cref="DialBaseUri"/>.
+    /// </summary>
+    public bool RouteCrossInstanceReadsViaProxy { get; set; }
+
+    /// <summary>
     /// Gets or sets the Basic-auth credentials (username:password) used for local, non-federated
     /// moderation requests (F-07 mute: <c>POST {actor}/mutes/{target}</c>). A mute is Iris-specific
     /// (no ActivityStreams type) and is a local decision, so it is authenticated by Basic auth to the

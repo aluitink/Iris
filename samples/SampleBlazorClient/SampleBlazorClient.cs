@@ -111,6 +111,13 @@ public static partial class SampleBlazorClient
             ProxyCredentials = new ProxyCredentials(handle, password),
             UseProxyFallback = true,
             AlwaysProxy = alwaysProxy,
+            // Cross-instance reads (Phase 22.4 / US-8): a browser cannot reach a cross-origin remote
+            // instance directly (CORS), so a GET of another host is routed straight through the
+            // same-origin home proxy (which relays it) instead of CORS-failing. The dial base is the
+            // instance the browser reaches directly; reads of that host are also proxied (a harmless
+            // same-origin relay) so every AP read the client makes goes through the home proxy.
+            DialBaseUri = serverBaseUri,
+            RouteCrossInstanceReadsViaProxy = true,
         };
 
         var builder = IrisClientBuilder.Create(options).WithAuthenticator(authenticator);

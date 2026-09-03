@@ -316,4 +316,58 @@ public class ClientServerIntegrationTests : IDisposable
         Assert.Equal("Basic", proxied.Scheme);
         Assert.EndsWith($"/ap/v1/proxy/{remote.ActorIri.Value}", proxied.Path, StringComparison.Ordinal);
     }
+
+    // --- Cross-instance read (Phase 22.4 / US-8): a browser cannot reach a cross-origin remote
+    // instance directly (a direct cross-origin GET is CORS-blocked — a network failure with no status
+    // code, so the 401/403 fallback never engages). In the cross-instance-read mode a GET whose host
+    // differs from the dial base is routed straight through the same-origin home proxy (no direct
+    // attempt), which relays the remote actor doc. This proves the full pipeline end-to-end: the real
+    // client, built by the real factory with RouteCrossInstanceReadsViaProxy, makes ZERO direct GETs to
+    // the remote and one Basic-auth POST to the home proxy.
+
+    [Fact]
+    public async Task GetActor_CrossInstanceRead_RoutesThroughProxy_NoDirectAttempt()
+    {
+        const string RemoteHost = "remote.domain.local";
+        using var remote = FakeActivityPubServer.Start(RemoteHost, ServerActor);
+
+        var keyStore = new InMemoryKeyStore();
+        var keyPair = KeyPairGenerator.GenerateRsa(new Iri($"https://{LocalHost}/u/{LocalActor}#key-1"));
+        keyStore.PutKey(keyPair);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        var signer = new HttpSignatureSigner(keyStore);
+        var localActorIri = new Iri($"https://{LocalHost}/u/{LocalActor}");
+        keyProvider.RegisterKey(localActorIri, keyPair.KeyId);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+
+        // The transport would 401 any direct GET to the remote host (the CORS-blocked mode); the cross-
+        // instance-read mode must never reach that leg. The home proxy POST relays the remote actor doc.
+        var transport = new ProxyRoutingTransport(
+            remoteHost: RemoteHost,
+            proxiedBody: remote.ActorDocJson);
+
+        using var client = factory.Create(new ActivityPubClientOptions
+        {
+            ActorId = localActorIri,
+            ProxyBaseUrl = new Iri($"https://{LocalHost}"),
+            ProxyCredentials = new ProxyCredentials(LocalActor, "s3cret!"),
+            // The dial base is the local host; the remote host differs → a cross-instance read.
+            DialBaseUri = new Uri($"https://{LocalHost}"),
+            RouteCrossInstanceReadsViaProxy = true,
+        }, transport);
+
+        var actor = await client.GetActorAsync(remote.ActorIri);
+
+        // The proxied remote actor doc is returned to the caller.
+        Assert.NotNull(actor);
+        Assert.Equal(remote.ActorIri.Value, actor!.Id);
+
+        // No direct attempt was made (the CORS-blocked leg is avoided); the single request was a
+        // Basic-auth POST to the home proxy endpoint.
+        Assert.Equal(0, transport.DirectGetCount);
+        var proxied = Assert.Single(transport.ProxyPosts);
+        Assert.Equal("Basic", proxied.Scheme);
+        Assert.EndsWith($"/ap/v1/proxy/{remote.ActorIri.Value}", proxied.Path, StringComparison.Ordinal);
+    }
 }

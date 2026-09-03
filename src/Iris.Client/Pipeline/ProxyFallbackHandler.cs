@@ -25,12 +25,25 @@ namespace Iris.Client.Pipeline;
 /// Only 401/403 on the <em>direct</em> attempt trigger a fallback; a successful direct response is
 /// returned unchanged. A proxy failure (the proxy itself returns 401/403/5xx) is returned as-is —
 /// the handler does not loop.
+///
+/// <para>
+/// Cross-instance reads (Phase 22.4 / US-8): a browser cannot reach a cross-origin remote instance
+/// directly — a direct cross-origin <c>GET</c> is blocked by CORS, which surfaces as a network
+/// failure with <em>no</em> status code, so the 401/403 fallback never engages and the read fails.
+/// In this mode (the <c>crossInstanceReadsViaProxy</c> constructor argument) a <c>GET</c> whose host
+/// differs from the dial base (the instance the browser can reach directly) is routed straight
+/// through the same-origin home proxy <em>before</em> any direct attempt — the proxy relays it to
+/// the remote instance and returns the response, so the browser only ever talks to its own origin.
+/// A same-host <c>GET</c> (a read of the local instance) dials directly, as before.
+/// </para>
 /// </remarks>
 public sealed class ProxyFallbackHandler : DelegatingHandler
 {
     private readonly Iri _proxyBase;
     private readonly ProxyCredentials _credentials;
     private readonly bool _alwaysProxy;
+    private readonly Uri? _dialBase;
+    private readonly bool _crossInstanceReadsViaProxy;
 
     /// <summary>
     /// Initializes a new <see cref="ProxyFallbackHandler"/> over an explicit inner handler.
@@ -68,10 +81,62 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
         _alwaysProxy = alwaysProxy;
     }
 
+    /// <summary>
+    /// Initializes a new <see cref="ProxyFallbackHandler"/> over an explicit inner handler, with the
+    /// cross-instance-read mode.
+    /// </summary>
+    /// <param name="proxyBase">The home instance that hosts the proxy endpoint (its base IRI).</param>
+    /// <param name="credentials">The Basic-auth credentials to send to the proxy.</param>
+    /// <param name="innerHandler">The inner handler (the signed client pipeline).</param>
+    /// <param name="alwaysProxy">
+    /// When <see langword="true"/> every signed write (POST/PUT) is routed through the proxy without a
+    /// direct attempt.
+    /// </param>
+    /// <param name="dialBase">
+    /// The base URI the client dials directly (the instance the browser can reach). A <c>GET</c> whose
+    /// host differs from this base is a cross-instance read. When <see langword="null"/> no host
+    /// comparison is performed (the mode is a no-op).
+    /// </param>
+    /// <param name="crossInstanceReadsViaProxy">
+    /// When <see langword="true"/> a cross-instance <c>GET</c> read is routed straight through the home
+    /// proxy (no direct attempt) so a browser whose direct cross-origin read would be CORS-blocked can
+    /// still load a remote object/actor.
+    /// </param>
+    public ProxyFallbackHandler(
+        Iri proxyBase,
+        ProxyCredentials credentials,
+        HttpMessageHandler innerHandler,
+        bool alwaysProxy,
+        Uri? dialBase,
+        bool crossInstanceReadsViaProxy)
+    {
+        ArgumentNullException.ThrowIfNull(innerHandler);
+        _proxyBase = proxyBase;
+        _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+        InnerHandler = innerHandler;
+        _alwaysProxy = alwaysProxy;
+        _dialBase = dialBase;
+        _crossInstanceReadsViaProxy = crossInstanceReadsViaProxy;
+    }
+
     /// <inheritdoc/>
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Cross-instance reads (US-8): a browser cannot reach a cross-origin remote instance directly
+        // (a direct cross-origin GET is CORS-blocked, a network failure with no status code, so the
+        // 401/403 fallback below never engages). When the read's host differs from the dial base, route
+        // it straight through the same-origin home proxy (no direct attempt) so the browser only ever
+        // talks to its own origin. A same-host GET (a local read) dials directly, as before.
+        if (_crossInstanceReadsViaProxy
+            && _dialBase is { } dialBase
+            && request.Method == HttpMethod.Get
+            && request.RequestUri is { } readUri
+            && !string.Equals(readUri.Host, dialBase.Host, StringComparison.OrdinalIgnoreCase))
+        {
+            return await SendViaProxyAsync(request, ct).ConfigureAwait(false);
+        }
 
         // Always-proxy mode: the browser's signature cannot be validated against the target host
         // (e.g. the actor's advertised host differs from the dial host), so a direct attempt would

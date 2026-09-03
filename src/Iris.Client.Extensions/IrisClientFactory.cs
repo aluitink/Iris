@@ -79,6 +79,10 @@ public sealed class IrisClientFactory
             ProxyBaseUrl = _options.UseProxyFallback ? new Iri(_options.ServerBaseUri) : null,
             ProxyCredentials = _options.UseProxyFallback ? _options.ProxyCredentials : null,
             AlwaysProxy = _options.AlwaysProxy,
+            // Cross-instance reads (US-8): the dial base is the instance the browser reaches directly;
+            // a GET of another host is routed through the home proxy instead of CORS-failing.
+            DialBaseUri = _options.DialBaseUri ?? _options.ServerBaseUri,
+            RouteCrossInstanceReadsViaProxy = _options.RouteCrossInstanceReadsViaProxy,
             LocalCredentials = _options.LocalModeration ? _options.ProxyCredentials : null,
         };
 

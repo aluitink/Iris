@@ -45,6 +45,17 @@ public sealed class ProxyFallbackHandlerTests
     private static ProxyFallbackHandler NewAlwaysProxyHandler(RecordingHandler inner)
         => new(new Iri(ProxyBase), new ProxyCredentials(Username, Password), inner, alwaysProxy: true);
 
+    // A dial base distinct from the remote target host: the handler is "dialing" https://dial.example
+    // (what the browser reaches), and a GET of https://b.example/... is a cross-instance read.
+    private static ProxyFallbackHandler NewCrossInstanceReadHandler(RecordingHandler inner)
+        => new(
+            new Iri(ProxyBase),
+            new ProxyCredentials(Username, Password),
+            inner,
+            alwaysProxy: false,
+            dialBase: new Uri("https://dial.example"),
+            crossInstanceReadsViaProxy: true);
+
     // --- A 401 on the direct attempt is retried through the proxy -------------------------
 
     [Fact]
@@ -263,5 +274,98 @@ public sealed class ProxyFallbackHandlerTests
         Assert.Contains(
             inner.LastRequest!.Headers.Accept,
             h => h.MediaType == "application/activity+json");
+    }
+
+    // --- Cross-instance reads (Phase 22.4 / US-8): a browser cannot reach a cross-origin remote
+    // instance directly (a direct cross-origin GET is CORS-blocked — a network failure with no status
+    // code, so the 401/403 fallback never engages). In this mode a GET whose host differs from the dial
+    // base is routed straight through the same-origin home proxy (no direct attempt). A same-host GET
+    // dials directly, as before. ---
+
+    [Fact]
+    public async Task CrossInstanceRead_RoutesThroughProxy_WithoutDirectAttempt()
+    {
+        // A GET of a remote host (b.example) while dialing dial.example must NOT make a direct attempt
+        // (which would CORS-fail) — it goes straight to the home proxy POST, even if a direct attempt
+        // would have succeeded.
+        var inner = new RecordingHandler(req =>
+        {
+            var isProxy = req.RequestUri!.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal);
+            return JsonResponse(isProxy ? HttpStatusCode.OK : HttpStatusCode.InternalServerError);
+        });
+
+        var handler = NewCrossInstanceReadHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        var response = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://b.example/ap/v1/u/bob"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The single request made was the proxy POST to the remote target (not a direct GET).
+        var proxyReq = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Post, proxyReq.Method);
+        Assert.Equal(
+            $"{ProxyBase}/ap/v1/proxy/https://b.example/ap/v1/u/bob",
+            proxyReq.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task CrossInstanceRead_SameHost_DialsDirectly_NotProxy()
+    {
+        // A GET of the dial host itself (the local instance) is NOT a cross-instance read — it dials
+        // directly (the proxy is not used for a same-host read).
+        var inner = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK));
+
+        var handler = NewCrossInstanceReadHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        var response = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://dial.example/ap/v1/u/alice"));
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var last = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Get, last.Method);
+        Assert.Equal("https://dial.example/ap/v1/u/alice", last.RequestUri!.ToString());
+        Assert.False(
+            last.RequestUri.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal),
+            "a same-host read must not be routed through the proxy");
+    }
+
+    [Fact]
+    public async Task CrossInstanceRead_AppliesOnlyToGet_PostsAreUnaffected()
+    {
+        // The mode applies only to GET reads. A POST (a signed write) is not a cross-instance read — it
+        // dials directly (writes use the always-proxy mode, which is off here).
+        var inner = new RecordingHandler(_ => JsonResponse(HttpStatusCode.OK));
+
+        var handler = NewCrossInstanceReadHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        await http.SendAsync(new HttpRequestMessage(HttpMethod.Post, "https://b.example/ap/v1/u/bob/outbox"));
+
+        var last = inner.LastRequest!;
+        Assert.Equal(HttpMethod.Post, last.Method);
+        Assert.Equal("https://b.example/ap/v1/u/bob/outbox", last.RequestUri!.ToString());
+        Assert.False(
+            last.RequestUri.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal),
+            "a POST must not be re-routed by the cross-instance-read mode");
+    }
+
+    [Fact]
+    public async Task CrossInstanceRead_ProxyFailure_IsReturnedAsIs_NoLoop()
+    {
+        // If the proxy itself fails (401), the failure is returned as-is (no further fallback).
+        var inner = new RecordingHandler(req =>
+        {
+            var isProxy = req.RequestUri!.AbsolutePath.StartsWith("/ap/v1/proxy/", StringComparison.Ordinal);
+            return JsonResponse(isProxy ? HttpStatusCode.Unauthorized : HttpStatusCode.InternalServerError);
+        });
+
+        var handler = NewCrossInstanceReadHandler(inner);
+        using var http = new HttpClient(handler, disposeHandler: false);
+
+        var response = await http.SendAsync(new HttpRequestMessage(HttpMethod.Get, "https://b.example/x"));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

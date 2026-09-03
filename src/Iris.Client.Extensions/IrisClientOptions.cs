@@ -61,6 +61,25 @@ public sealed class IrisClientOptions
     public bool AlwaysProxy { get; init; }
 
     /// <summary>
+    /// Gets or sets the base URI the client dials directly (the instance the browser can reach, e.g.
+    /// the host-published port). Used with <see cref="RouteCrossInstanceReadsViaProxy"/> to detect a
+    /// cross-instance read (a <c>GET</c> whose host differs from this base), which is then routed
+    /// through the same-origin home proxy. When <see langword="null"/> no cross-instance read is ever
+    /// detected (the mode is a no-op). Defaults to <see langword="null"/>.
+    /// </summary>
+    public Uri? DialBaseUri { get; init; }
+
+    /// <summary>
+    /// Gets or sets whether <c>GET</c> reads of a different host than the dial base are routed
+    /// straight through the home proxy (the <see cref="Iris.Client.Pipeline.ProxyFallbackHandler"/>
+    /// cross-instance-read mode). Defaults to false (reads dial the target directly; the proxy is used
+    /// only on a 401/403 or, in always-proxy mode, for signed writes). Set true for a browser whose
+    /// direct cross-origin read would be blocked by CORS. Requires <see cref="UseProxyFallback"/>,
+    /// <see cref="ProxyCredentials"/>, and a non-null dial base.
+    /// </summary>
+    public bool RouteCrossInstanceReadsViaProxy { get; init; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether idempotent (GET) requests are retried on
     /// <c>429</c>/<c>5xx</c> and transient network failures.
     /// </summary>
