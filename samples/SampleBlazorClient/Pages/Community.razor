@@ -155,6 +155,43 @@ else
         </div>
 
         <div class="card">
+            <h3>Inbound follows</h3>
+            <p class="muted">
+                Follows <em>of</em> <code>@CommunityIri.Value</code> (actors/communities that follow this
+                community), read from the community's outbox. Accept / reject are AP-native: the client
+                authors an <c>Accept</c>/<c>Reject</c> and publishes it to the community's outbox; the
+                instance records the edge and delivers the activity to the follower's inbox.
+            </p>
+            @if (PendingFollows is not null && PendingFollows.Count == 0)
+            {
+                <p class="muted">No inbound follows recorded.</p>
+            }
+            @if (PendingFollows is not null)
+            {
+                @foreach (var follow in PendingFollows)
+                {
+                    <div class="pending-follow">
+                        <code>@follow.FollowerIri</code>
+                        <button @onclick="() => AcceptFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Accept</button>
+                        <button @onclick="() => RejectFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Reject</button>
+                        @if (FollowDecisionResult is not null)
+                        {
+                            <span class="muted">Status: <code>@FollowDecisionResult</code></span>
+                        }
+                    </div>
+                }
+            }
+            @if (FollowDecisionBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (FollowDecisionError is not null)
+            {
+                <div class="error">@FollowDecisionError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Follow / unfollow</h3>
             <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
             <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
@@ -363,6 +400,16 @@ else
     private string? LoadError { get; set; }
     private string? SearchError { get; set; }
 
+    /// <summary>
+    /// Inbound follows of the loaded community (actors/communities that follow this community), read
+    /// from the community's outbox — the "pending follows" list the operator accepts/rejects (each is a
+    /// (follower IRI, follow IRI) pair).
+    /// </summary>
+    private IReadOnlyList<(string FollowerIri, Iri FollowIri)>? PendingFollows { get; set; }
+    private bool FollowDecisionBusy { get; set; }
+    private DeliveryResult? FollowDecisionResult { get; set; }
+    private string? FollowDecisionError { get; set; }
+
     private string? MemberIriInput { get; set; }
     private bool MemberBusy { get; set; }
     private string? MemberResult { get; set; }
@@ -431,6 +478,22 @@ else
             // Followers + following: paged collections at {community}/followers and {community}/following.
             await LoadInitialFollowersAsync(communityIri);
             await LoadInitialFollowingAsync(communityIri);
+
+            // Inbound follows of this community (actors/communities that follow it), read from its
+            // outbox (each inbound follow is stored in the followed community's outbox on receipt).
+            // Shown as the "Inbound follows" list the operator can accept/reject (19.5.3).
+            var inbound = new List<(string FollowerIri, Iri FollowIri)>();
+            await foreach (var item in client.GetCollectionItemsAsync(communityIri.OutboxOf()))
+            {
+                if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                    && types.Contains("Follow")
+                    && actors.FirstOrDefault()?.ResolveObjectIri() is { } follower)
+                {
+                    inbound.Add((follower.Value, new Iri(itemId)));
+                }
+            }
+
+            PendingFollows = inbound;
         }
         catch (Exception ex)
         {
@@ -786,6 +849,70 @@ else
         {
             PeerBusy = false;
         }
+    }
+
+    // --- 19.5.3: community inbound-follow accept/reject --------------------------------
+
+    private Task AcceptFollowAsync(Iri followIri)
+        => FollowDecisionAsync(followIri, accept: true);
+
+    private Task RejectFollowAsync(Iri followIri)
+        => FollowDecisionAsync(followIri, accept: false);
+
+    private async Task FollowDecisionAsync(Iri followIri, bool accept)
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        FollowDecisionBusy = true;
+        FollowDecisionResult = null;
+        FollowDecisionError = null;
+        try
+        {
+            // Accept/reject are AP-native: the client authors the deterministic Accept/Reject and publishes
+            // it to the community's own outbox (this community — the operator IS the followed community). The
+            // instance records the edge effect and server-delivers the activity to the follower's inbox.
+            FollowDecisionResult = accept
+                ? await Session.GetClient().AcceptAsync(communityIri, followIri)
+                : await Session.GetClient().RejectAsync(communityIri, followIri);
+
+            // Refresh the inbound-follows list (bypassing the page cache) so the accepted/rejected follow's
+            // Accept/Reject activity is visible immediately.
+            await RefreshPendingFollowsAsync(bypassCache: true);
+        }
+        catch (Exception ex)
+        {
+            FollowDecisionError = ex.Message;
+        }
+        finally
+        {
+            FollowDecisionBusy = false;
+        }
+    }
+
+    private async Task RefreshPendingFollowsAsync(bool bypassCache = false)
+    {
+        if (CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        var client = Session.GetClient();
+        var query = bypassCache ? new CollectionQuery(BypassCache: true) : null;
+        var inbound = new List<(string FollowerIri, Iri FollowIri)>();
+        await foreach (var item in client.GetCollectionItemsAsync(communityIri.OutboxOf(), query))
+        {
+            if (item is Activity { Id: { } itemId, Type: { } types, Actor: { } actors }
+                && types.Contains("Follow")
+                && actors.FirstOrDefault()?.ResolveObjectIri() is { } follower)
+            {
+                inbound.Add((follower.Value, new Iri(itemId)));
+            }
+        }
+
+        PendingFollows = inbound;
     }
 
     // --- 19.8.4: display helpers ------------------------------------------------------
