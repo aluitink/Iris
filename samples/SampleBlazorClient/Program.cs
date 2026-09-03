@@ -30,6 +30,11 @@ public static class Program
         {
             new KeyValuePair<string, Uri>("iris.luit.ink", new Uri("https://iris.luit.ink")),
             new KeyValuePair<string, Uri>("localhost", new Uri("http://localhost:8081")),
+            // The local two-instance compose stack advertises iris-a as iris-dev1.luit.ink (port 8081)
+            // and iris-b as iris-dev2.luit.ink (port 8082); map each advertised host to its
+            // host-published port so a logon by the advertised handle dials the right instance.
+            new KeyValuePair<string, Uri>("iris-dev1.luit.ink", new Uri("http://localhost:8081")),
+            new KeyValuePair<string, Uri>("iris-dev2.luit.ink", new Uri("http://localhost:8082")),
         }));
 
         var host = builder.Build();
