@@ -6,6 +6,7 @@ using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Samples.SampleBlazorClient.Explorer;
+using Iris.Samples.SampleBlazorClient.Pages;
 using Iris.Samples.SampleServer;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
@@ -232,5 +233,74 @@ public sealed class S19ActorDetailCompletenessTests
             following.AddRange(page.Items);
         }
         Assert.Empty(following);
+    }
+
+    // --- 19.8.1 minor UX fix: the #handle field accepts a full IRI (not just a username) ---
+
+    private static readonly Uri TestDialBase = new("http://localhost");
+
+    /// <summary>
+    /// A plain username is resolved to the current instance's user IRI ({dial-base}/ap/v1/u/{username}).
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_PlainUsername_ResolvesToUserIriOnDialBase()
+    {
+        var iri = ActorDetail.ResolveActorIri("alice", TestDialBase);
+
+        Assert.Equal("http://localhost/ap/v1/u/alice", iri.Value);
+    }
+
+    /// <summary>
+    /// A username with surrounding whitespace is trimmed before resolution.
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_WhitespaceUsername_Trimmed()
+    {
+        var iri = ActorDetail.ResolveActorIri("  alice  ", TestDialBase);
+
+        Assert.Equal("http://localhost/ap/v1/u/alice", iri.Value);
+    }
+
+    /// <summary>
+    /// A full IRI (http) is used directly — it names the actor on its own instance (no double-path).
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_FullHttpIri_UsedDirectly()
+    {
+        var iri = ActorDetail.ResolveActorIri("http://remote.example/ap/v1/u/bob", TestDialBase);
+
+        Assert.Equal("http://remote.example/ap/v1/u/bob", iri.Value);
+    }
+
+    /// <summary>
+    /// A full IRI (https) is used directly.
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_FullHttpsIri_UsedDirectly()
+    {
+        var iri = ActorDetail.ResolveActorIri("https://remote.example/@bob", TestDialBase);
+
+        Assert.Equal("https://remote.example/@bob", iri.Value);
+    }
+
+    /// <summary>
+    /// An IRI-looking input that is not a valid absolute URL (http prefix but malformed) throws — the
+    /// page surfaces the message in its error field rather than a confusing double-path "Not an actor".
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_MalformedIri_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => ActorDetail.ResolveActorIri("http://", TestDialBase));
+    }
+
+    /// <summary>
+    /// An empty (or whitespace-only) input throws — the page surfaces "Enter a username or an actor IRI."
+    /// </summary>
+    [Fact]
+    public void ResolveActorIri_EmptyInput_Throws()
+    {
+        Assert.Throws<InvalidOperationException>(
+            () => ActorDetail.ResolveActorIri("   ", TestDialBase));
     }
 }

@@ -18,7 +18,7 @@
 else
 {
     <div class="card">
-        <label for="handle">Actor (preferredUsername on this instance)</label>
+        <label for="handle">Actor (username on this instance, or a full IRI)</label>
         <input id="handle" type="text" @bind="Handle" placeholder="alice" />
         <button @onclick="LoadAsync" disabled="@(Busy)">Load</button>
         @if (Busy)
@@ -913,8 +913,53 @@ else
         }
 
         var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
-        var actorIri = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1/u/{Handle.Trim()}");
+        Iri actorIri;
+        try
+        {
+            actorIri = ResolveActorIri(Handle, baseUri);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Error = ex.Message;
+            return;
+        }
+
         await LoadByIriAsync(actorIri);
+    }
+
+    /// <summary>
+    /// Resolves the actor-detail <c>#handle</c> input to an actor IRI (19.8.1 minor UX fix). When the
+    /// input is a valid absolute IRI (an <c>http(s)</c> URL), it is used directly — a pasted actor IRI
+    /// loads that actor. Otherwise the input is treated as a preferred username on the current instance
+    /// and resolved to <c>{dial-base}/ap/v1/u/{username}</c>. Exposed as a static helper so the
+    /// resolution logic is testable in isolation.
+    /// </summary>
+    /// <param name="input">The raw <c>#handle</c> field text (a preferred username or a full IRI).</param>
+    /// <param name="dialBase">The current instance's dial base URI (the username is resolved against it).</param>
+    /// <returns>The resolved actor IRI.</returns>
+    /// <exception cref="InvalidOperationException">The input is empty or whitespace.</exception>
+    public static Iri ResolveActorIri(string input, Uri dialBase)
+    {
+        var trimmed = input.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new InvalidOperationException("Enter a username or an actor IRI.");
+        }
+
+        // A pasted absolute IRI (http/https) is used directly — it names the actor on its own instance.
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out _))
+            {
+                throw new InvalidOperationException($"Not a valid IRI: {trimmed}");
+            }
+
+            return new Iri(trimmed);
+        }
+
+        // Otherwise: a preferred username on the current instance.
+        return new Iri($"{dialBase.GetLeftPart(UriPartial.Authority)}/ap/v1/u/{trimmed}");
     }
 
     private static async Task<int> CountAsync(IAsyncEnumerable<IObjectOrLink> items)
