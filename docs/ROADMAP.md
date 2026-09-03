@@ -114,13 +114,16 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   (US-19), `PagedCollection` (US-20), `RawInspector` (US-21), the card state pattern (US-23), and the
   `MainLayout` identity bar + back links (US-3, US-22). Each lands a `plans/22-*.md` deep-dive referenced
   from 22.0.
-  - **Done (this slice):** `PagedCollection` (US-20) + `RawInspector` (US-21) built; `Feed` and
-    `ActorDetail` (Outbox + Raw inspector) refactored onto them; deep-dives
-    [22-1](plans/22-1-paged-collection-component.md) + [22-2](plans/22-2-raw-inspector-component.md);
-    manually verified on the docker compose FQDN stack; change
-    [180](changes/180-22.1-paged-collection-and-raw-inspector.md).
-  - **Remaining:** the `ObjectView` deep-dive (US-19), the card loading/empty/error pattern (US-23),
-    and the `MainLayout` identity bar + back links (US-3, US-22).
+  - **Done:** `PagedCollection` (US-20) + `RawInspector` (US-21) built; `Feed` and `ActorDetail`
+    (Outbox + Raw inspector) refactored onto them (change
+    [180](changes/180-22.1-paged-collection-and-raw-inspector.md)); the `MainLayout` identity bar
+    (US-3) + shared back links (US-22) built and wired onto `ObjectPage` / `ActorDetail` / `Community`
+    (change [181](changes/181-22.1-identity-bar-and-back-links.md)). All manually verified on the docker
+    compose FQDN stack.
+  - **Deep-dives:** [22-1](plans/22-1-paged-collection-component.md) +
+    [22-2](plans/22-2-raw-inspector-component.md) (components) +
+    [22-3](plans/22-3-identity-bar-and-back-links.md) (identity bar + back links).
+  - **Remaining:** the `ObjectView` deep-dive (US-19) and the card loading/empty/error pattern (US-23).
 - [ ] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
   community (US-6,18), instance (US-10).
 - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
