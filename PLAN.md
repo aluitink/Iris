@@ -91,14 +91,13 @@ remote rendering, multi-server identity); and authoring (compose with media/mark
 reply/threads). The remaining pre-Phase-22 items (the Phase 19 live-interop + raw-inspector UI halves
 and the Phase 21 UI deltas) are listed in the roadmap and are largely subsumed by Phase 22.
 
-**Latest slice (22.2, actor — in progress):** the first 22.2 sub-slice landed — the actor detail page
-now renders the actor's `liked` collection (US-5, a `PagedCollection` of navigable object views) and
-the logged-on actor's follow state (US-15: the Follow button shows Follow/Following, "You follow this
-actor." when following, Unfollow gated on the learned id, and a "you can't follow yourself" notice).
-22.1 "shared components first" is already complete (all five sub-slices). Manually verified on the
-docker compose FQDN stack. See
-[docs/changes/183-22.2-actor-liked-and-follow-state.md](docs/changes/183-22.2-actor-liked-and-follow-state.md).
-**22.2** continues: object (US-7/12/13/14), actor (US-16/17), community (US-6/18), instance (US-10).
+**Latest slice (22.2, instance — in progress):** the second 22.2 sub-slice landed — the instance page
+now resolves a `handle@host` address to an actor IRI via WebFinger (US-10) and deep-links to the
+actor's detail page. With the actor slice (change 183), the **actor** page (US-5/15/16/17) and the
+**instance** page (US-10) are complete for 22.2; 22.1 "shared components first" is also complete.
+Manually verified on the docker compose FQDN stack. See
+[docs/changes/184-22.2-instance-webfinger-lookup.md](docs/changes/184-22.2-instance-webfinger-lookup.md).
+**22.2** continues: object (US-7/12/13/14) and community (US-6/18).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
