@@ -167,13 +167,15 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
    candidate (cosmetic, not a contradiction).
 - [ ] **22.6 — Implementation sweep + manual test pass.** Implement the remaining items and end the
   round with a full Playwright-MCP manual test pass of the explorer (UI + wire), resolving gaps/errors.
-  **In progress:** Actor-detail **Inbox** (change
+  **In progress:** the implementation sweep is complete — Actor-detail **Inbox** (change
   [191](changes/191-22.6-inbox-pagedcollection-consolidation.md)), Community **following/followers** (change
-  [192](changes/192-22.6-community-following-followers-pagedcollection.md)), and Community **mutes/blocks/
-  flags** (change [193](changes/193-22.6-community-moderation-collections-pagedcollection.md)) consolidated
-  onto the shared `PagedCollection` via the robust field-based `RenderFragment<T>` `ItemTemplate` pattern
-  (inline lambda attributes are unreliable). Remaining: the Actor-detail mutes/blocks/flags cards and the
-  full manual pass (incl. the external-FQDN reverse-proxy route).
+  [192](changes/192-22.6-community-following-followers-pagedcollection.md)), Community **mutes/blocks/
+  flags** (change [193](changes/193-22.6-community-moderation-collections-pagedcollection.md)), and
+  Actor-detail **mutes/blocks/flags** (change
+  [194](changes/194-22.6-actor-moderation-collections-pagedcollection.md)) are all consolidated onto the
+  shared `PagedCollection` via the robust field-based `RenderFragment<T>` `ItemTemplate` pattern (inline
+  lambda attributes are unreliable). Remaining: the full manual test pass (incl. the external-FQDN
+  reverse-proxy route, unreachable in this env).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 

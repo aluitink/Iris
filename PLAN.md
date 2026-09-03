@@ -148,17 +148,18 @@ identical; verified on the local compose stack (Following renders the `carla` li
 empty state; zero console errors). Build clean, format clean, suite green (1,274). See
 [docs/changes/192-22.6-community-following-followers-pagedcollection.md](docs/changes/192-22.6-community-following-followers-pagedcollection.md).
 
-**Latest slice (22.6, implementation sweep — third slice):** consolidated the Community **mutes/blocks/
-flags** moderation collections (21.2.1) onto three shared
+**Latest slice (22.6, implementation sweep — fourth slice):** consolidated the Actor-detail **mutes/
+ blocks/flags** moderation collections (21.1.2) onto three shared
 [`PagedCollection`](samples/SampleBlazorClient/Components/PagedCollection.razor) components (Mutes/Blocks/
-Flags), reusing the field-based `RenderFragment<T>` `ActorLinkTemplate` from change 192 (same item shape).
-The card's h3 + muted description (contains markup, so kept out of the `Description` string attribute) is
-preserved as a plain header card above the three. Removed the moderation state + six methods (−334 lines
-net). Behaviorally identical; verified on the local compose stack (all three show their empty states;
-zero console errors). Build clean, format clean, suite green (1,274). Remaining 22.6: the Actor-detail
-mutes/blocks/flags cards (last dedup candidate) and the full manual pass (incl. the external-FQDN
-reverse-proxy route). See
-[docs/changes/193-22.6-community-moderation-collections-pagedcollection.md](docs/changes/193-22.6-community-moderation-collections-pagedcollection.md).
+ Flags), reusing the field-based `RenderFragment<T>` `ActorLinkTemplate` pattern (same item shape as
+ change 192). The card's h3 + muted description (contains markup, so kept out of the `Description` string
+ attribute) is preserved as a plain header card above the three. Removed the moderation state + six
+ methods (−298 lines net). Behaviorally identical; verified on the local compose stack (all three show
+ their empty states; only the expected inbox 403 console errors). Build clean, format clean, suite green
+ (1,274). **The 22.6 implementation sweep is now complete** — all hand-rolled paged reads on the
+ actor-detail and community pages are consolidated. Remaining 22.6: the full manual test pass (incl. the
+ external-FQDN reverse-proxy route, unreachable in this env). See
+[docs/changes/194-22.6-actor-moderation-collections-pagedcollection.md](docs/changes/194-22.6-actor-moderation-collections-pagedcollection.md).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
