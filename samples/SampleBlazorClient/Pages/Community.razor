@@ -192,6 +192,37 @@ else
         </div>
 
         <div class="card">
+            <h3>Moderation</h3>
+            <p class="muted">
+                As <code>@CommunityIri.Value</code> (the community signs with the primary actor's key in
+                the sample deployment). Mute is a local, Basic-authenticated decision (no federation);
+                block / flag are signed writes to the community's own outbox (the instance records the
+                edge and federates to the target's inbox).
+            </p>
+            <label for="mod-target">Target actor IRI</label>
+            <input id="mod-target" type="text" @bind="ModTargetInput"
+                   placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/carla" />
+            <button @onclick="ModMuteAsync" disabled="@(ModBusy)">Mute</button>
+            <button @onclick="ModUnmuteAsync" disabled="@(ModBusy)">Unmute</button>
+            <button @onclick="ModBlockAsync" disabled="@(ModBusy)">Block</button>
+            <button @onclick="ModUnblockAsync" disabled="@(ModBusy)">Unblock</button>
+            <button @onclick="ModFlagAsync" disabled="@(ModBusy)">Flag</button>
+            <button @onclick="ModUnflagAsync" disabled="@(ModBusy)">Unflag</button>
+            @if (ModBusy)
+            {
+                <span class="muted">Working…</span>
+            }
+            @if (ModResult is not null)
+            {
+                <p class="muted">Status: <code>@ModResult</code></p>
+            }
+            @if (ModError is not null)
+            {
+                <div class="error">@ModError</div>
+            }
+        </div>
+
+        <div class="card">
             <h3>Follow / unfollow</h3>
             <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
             <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
@@ -409,6 +440,13 @@ else
     private bool FollowDecisionBusy { get; set; }
     private DeliveryResult? FollowDecisionResult { get; set; }
     private string? FollowDecisionError { get; set; }
+
+    private string? ModTargetInput { get; set; }
+    private bool ModBusy { get; set; }
+    private string? ModResult { get; set; }
+    private string? ModError { get; set; }
+    private Iri? ModBlockLearnedId { get; set; }
+    private Iri? ModFlagLearnedId { get; set; }
 
     private string? MemberIriInput { get; set; }
     private bool MemberBusy { get; set; }
@@ -913,6 +951,102 @@ else
         }
 
         PendingFollows = inbound;
+    }
+
+    // --- 19.5.4: community moderation (mute / block / flag) -----------------------------
+
+    private Task ModMuteAsync()
+        => ModDecisionAsync(isAdd: true, kind: ModKind.Mute);
+
+    private Task ModUnmuteAsync()
+        => ModDecisionAsync(isAdd: false, kind: ModKind.Mute);
+
+    private Task ModBlockAsync()
+        => ModDecisionAsync(isAdd: true, kind: ModKind.Block);
+
+    private Task ModUnblockAsync()
+        => ModDecisionAsync(isAdd: false, kind: ModKind.Block);
+
+    private Task ModFlagAsync()
+        => ModDecisionAsync(isAdd: true, kind: ModKind.Flag);
+
+    private Task ModUnflagAsync()
+        => ModDecisionAsync(isAdd: false, kind: ModKind.Flag);
+
+    private enum ModKind { Mute, Block, Flag }
+
+    private async Task ModDecisionAsync(bool isAdd, ModKind kind)
+    {
+        if (!Session.IsLoggedIn || CommunityIri is not { } communityIri || ModBusy)
+        {
+            return;
+        }
+
+        var targetIri = ModTargetInput?.Trim() ?? "";
+        if (!Iri.TryParse(targetIri, out var target))
+        {
+            ModError = "Enter a valid target actor IRI (e.g. http://host/ap/v1/u/carla).";
+            return;
+        }
+
+        ModBusy = true;
+        ModResult = null;
+        ModError = null;
+        try
+        {
+            var client = Session.GetClient();
+            var localClient = Session.GetLocalModerationClient();
+            DeliveryResult result = kind switch
+            {
+                ModKind.Mute => isAdd
+                    ? await localClient.MuteAsync(communityIri, target)
+                    : await localClient.UnmuteAsync(communityIri, target),
+                ModKind.Block => isAdd
+                    ? await client.BlockAsync(communityIri, target)
+                    : await client.UnblockAsync(communityIri, ModBlockLearnedId!.Value),
+                ModKind.Flag => isAdd
+                    ? await client.FlagAsync(communityIri, target)
+                    : await client.UnflagAsync(communityIri, ModFlagLearnedId!.Value),
+                _ => throw new InvalidOperationException($"Unknown moderation kind: {kind}"),
+            };
+
+            ModResult = result.IsSuccess
+                ? $"{(isAdd ? kind.ToString().ToLowerInvariant() : "un" + kind.ToString().ToLowerInvariant())} (status {result.StatusCode})"
+                : $"failed (status {result.StatusCode})";
+
+            // Decision 055: learn the id the server minted for a created block/flag so a later undo can
+            // reference it. Mute has no learned id (it is a local decision, not a federated activity).
+            if (isAdd && result.IsSuccess && result.MintedId is { Length: > 0 } minted && Iri.TryParse(minted, out var learned))
+            {
+                if (kind == ModKind.Block)
+                {
+                    ModBlockLearnedId = learned;
+                }
+                else if (kind == ModKind.Flag)
+                {
+                    ModFlagLearnedId = learned;
+                }
+            }
+            else if (!isAdd && result.IsSuccess)
+            {
+                if (kind == ModKind.Block)
+                {
+                    ModBlockLearnedId = null;
+                }
+                else if (kind == ModKind.Flag)
+                {
+                    ModFlagLearnedId = null;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            ModError = ex.Message;
+        }
+        finally
+        {
+            ModBusy = false;
+        }
     }
 
     // --- 19.8.4: display helpers ------------------------------------------------------
