@@ -161,7 +161,22 @@ is complete**; only the external-FQDN reverse-proxy route (unreachable in this e
 phase. See
 [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md).
 
-**Latest slice (19.6.2, broad signed-outbox-write enumeration — manual pass):** drove the remaining
+**Latest slice (21.2.2, Feed refresh button + 19.5.5 / 19.6.6 UI half):** added a **Refresh** button to
+ the Feed and Community feed cards that issues `?refresh=true` (the page-cache bypass). The
+ `PagedCollection` component gains a `ShowRefreshButton` parameter + a one-shot `RefreshAsync`
+ (re-fetches the first page with `BypassCache: true`, i.e. `?refresh=true`), enabled on the Feed page
+ (21.2.2). The Community feed card (hand-rolled, not a `PagedCollection`) gains its own Refresh button +
+ `RefreshFeedAsync` (re-fetches with `new CollectionQuery(BypassCache: true)`). No backend change (the
+ `?refresh=true` wire parameter + server-side bypass handling already existed, changes 149/154). Manually
+ verified (Playwright MCP): the Community feed went **1080 → 1200 items** after a Refresh click (a new
+ note published from a second tab was visible only after the bypass), and every page fetch carried
+ `?refresh=true`. The Feed page's followed-feed endpoint 500s in this local compose setup (FQDN
+ resolution — the same documented external-FQDN blocker as 19.6.1/19.6.2); on the public FQDN route the
+ button will re-fetch the followed feed. No new framework tests (UI work, Phase 22 rule 5). 1,284 tests
+ green. See
+ [docs/changes/201-21.2.2-feed-refresh-button.md](docs/changes/201-21.2.2-feed-refresh-button.md).
+
+**Prior slice (19.6.2, broad signed-outbox-write enumeration — manual pass):** drove the remaining
  signed AP outbox write screens through the UI on the compose stack (logged on as `alice@localhost`
  dialing `http://localhost:8081`) and confirmed each enumerates the outbox **1:1 with no manual refresh**
  (the change-199 page-1 invalidation) and its `RawInspector` renders the signed AS document **1:1**

@@ -259,9 +259,11 @@ US-24) will also close the UI-side remote-rendering pieces.
   exclusion, the moderation collections + mute endpoint, and the **UI** moderation screen are done
   (changes 153/175). Still open: the two-instance wire drive of a signed `Block`/`Flag` addressed to a
   community (live-interop).
-- [ ] **19.5.5 — Community feed correctness (UI remainder).** The newest-first merge, remote-content
-  propagation, and `?refresh=true` cache bypass are done (changes 149/154). Still open: the **community
-  UI** feed screen issuing `?refresh=true` on a manual refresh (a Phase 22 item, US-6/20.4.2).
+- [x] **19.5.5 — Community feed correctness (UI remainder).** The newest-first merge, remote-content
+  propagation, and `?refresh=true` cache bypass are done (changes 149/154). The **community UI** feed
+  screen now issues `?refresh=true` on a manual refresh (change 201, the 21.2.2 Refresh button): the
+  Community feed card's Refresh button re-fetches the feed with the page cache bypassed, verified
+  live (1080 → 1200 items after a Refresh click, `?refresh=true` on every page fetch).
 
 ### Phase 19.6 — C2S invariants (raw-inspector UI halves)
 
@@ -305,7 +307,10 @@ rendering the signed AS document 1:1.
 - [ ] **19.6.3 / 19.6.4 / 19.6.6 — Server-delivers, signature identity, cache bypass (UI halves).** Drive
   compose/follow/like through the UI and confirm the peer's inbox received the activity signed as the
   acting actor, and that the refresh path actually re-fetches (a new activity is visible after the
-  bypass).
+  bypass). **19.6.6 UI half done (change 201):** the Refresh button (Feed + Community) issues
+  `?refresh=true` and the bypass is verified live (a new note is visible after the refresh, 1080 → 1200
+  items). 19.6.3 (server-delivers to peer inbox) and 19.6.4 (signature identity) remain open (constrained
+  by the owner-only inbox, decision 056 — only verifiable by logging on as the target actor).
 - [x] **19.6.5 — Audience metadata (production change).** Rewriting the outbound Create/Announce
   `to`/`cc` to enumerate the follower set + adding the reply target to a reply's `to`/`cc`. Change 198
   implemented the on-the-wire enumeration (the delivery already reached the right inboxes; now the
@@ -365,8 +370,13 @@ verification** (Playwright-MCP) and are folded into the Phase 22 manual test pas
 The Phase 22 functional-explorer rebuild **subsumes and supersedes** most of these; they are kept here
 as the concrete deltas that 22.1–22.4 will close (each is also a story in the 22 user-stories doc).
 
-- [ ] **21.2.2 — Feed refresh button.** Add a **Refresh** button to the community feed card that issues
+- [x] **21.2.2 — Feed refresh button.** Add a **Refresh** button to the community feed card that issues
   `?refresh=true` (the 19.5.5 cache-bypass UI half). → Phase 22 US-6 / `PagedCollection` (US-20).
+  **Done (change 201):** the `PagedCollection` component gains a `ShowRefreshButton` parameter + a
+  one-shot `RefreshAsync` (re-fetches the first page with `BypassCache: true`, i.e. `?refresh=true`),
+  enabled on the Feed page (21.2.2) and the Community feed card (19.5.5). Manually verified (Playwright
+  MCP): the Community feed went 1080 → 1200 items after a Refresh click (the new note published from a
+  second tab was visible only after the bypass), and every page fetch carried `?refresh=true`.
 - [ ] **21.2.3 — Member management from the list.** Expand the Members list to offer **remove** directly
   (not just the IRI input) for the logged-on community owner. → Phase 22 US-6.
 - [ ] **21.3.1 — Reply form.** Add a **Reply** form to the object detail page (`PostNoteAsync` with
