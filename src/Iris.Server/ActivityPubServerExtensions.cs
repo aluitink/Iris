@@ -1545,6 +1545,7 @@ public static class ActivityPubServerExtensions
         IOptions<ActivityPubServerOptions> optionsAccessor,
         IEnumerable<IActivityHandler> handlers,
         IdMinter idMinter,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1614,6 +1615,14 @@ public static class ActivityPubServerExtensions
             //    collection) and the activity store (for Undo resolution + the remote side to look it up).
             await persistence.Activities.AddToOutboxAsync(actorIri, activity, ct).ConfigureAwait(false);
             await persistence.Activities.PutActivityAsync(activity, ct).ConfigureAwait(false);
+
+            // 19.6.2 outbox-enumeration correctness: the outbox collection page is served through the local
+            // collection-page response cache (a 60s TTL). A new outbox write prepends to the collection
+            // (newest-first), so without invalidation the next non-?refresh read within the TTL returns the
+            // stale page — the actor's outbox card would not show the activity it just published. Drop the
+            // cached page-1 entry (the key a newest-first insert always affects; the new item lands at the
+            // head of the collection) so the next read re-renders with the new activity.
+            InvalidateLocalOutboxPage(collectionCache, actorIri);
 
             // 2. Record the local edge the activity implies + resolve the recipient(s) for the
             //    server→server delivery hop (the client never enumerates recipients — that is the
@@ -1739,6 +1748,8 @@ public static class ActivityPubServerExtensions
     /// <param name="delivery">The delivery service (schedules the server→server delivery hop).</param>
     /// <param name="idMinter">The id minter (decision 055: mints the community-authored activity's id).</param>
     /// <param name="optionsAccessor">The server options (the base URL, for the community IRI).</param>
+    /// <param name="collectionCache">The local collection-page response cache (invalidated on the outbox
+    /// write so the community's outbox card reflects the new activity immediately).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>
     /// <see cref="StatusCodes.Status202Accepted"/> when the activity was recorded + (for a remote target)
@@ -1756,6 +1767,7 @@ public static class ActivityPubServerExtensions
         IDeliveryService delivery,
         IdMinter idMinter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1815,14 +1827,14 @@ public static class ActivityPubServerExtensions
             if (payload is Add add)
             {
                 await RecordCommunityAddAsync(persistence, communityIri, add, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, ct)
+                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
             if (payload is Remove remove)
             {
                 await RecordCommunityRemoveAsync(persistence, communityIri, remove, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, ct)
+                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
@@ -1843,7 +1855,7 @@ public static class ActivityPubServerExtensions
                 return Results.BadRequest();
             }
 
-            return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, recipientIri, delivery, ct)
+            return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, recipientIri, delivery, collectionCache, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -1868,6 +1880,7 @@ public static class ActivityPubServerExtensions
         IObjectOrLink? payload,
         Iri? recipientIri,
         IDeliveryService delivery,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         // Record the activity in the community's outbox (so the `following`/membership collections
@@ -1875,6 +1888,10 @@ public static class ActivityPubServerExtensions
         ArgumentNullException.ThrowIfNull(payload);
         await persistence.Activities.AddToOutboxAsync(communityIri, payload, ct).ConfigureAwait(false);
         await persistence.Activities.PutActivityAsync((IObject)payload, ct).ConfigureAwait(false);
+
+        // 19.6.2 outbox-enumeration correctness: same as OutboxPublishHandler — drop the community's
+        // cached outbox page-1 so the next non-?refresh read reflects the activity just published.
+        InvalidateLocalOutboxPage(collectionCache, communityIri);
 
         // The server (not the client) delivers the activity to the target's inbox. A local target
         // needs no cross-instance hop (the local edge is already recorded); only a remote target is
@@ -3898,6 +3915,27 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(document, ActivityJson.ActivityJsonContentType);
     }
+
+    /// <summary>
+    /// Drops the cached page-1 entry for an owner's (a local actor's or community's) outbox collection
+    /// page in the local collection-page response cache, so the next non-<c>?refresh</c> read re-renders
+    /// with the collection's current contents.
+    /// </summary>
+    /// <remarks>
+    /// The outbox collection page is served through the <see cref="LocalCollectionPageCache"/> (a 60s-TTL
+    /// server→client response cache). An outbox write prepends to the collection (newest-first), so a
+    /// write that is not paired with an invalidation leaves the cached page-1 stale: the owner's outbox
+    /// card would not surface the activity it just published until the TTL lapses or a
+    /// <c>?refresh=true</c> bypass is issued. The page-1 key is the bare collection IRI
+    /// (<c>{owner}/outbox</c>); a newest-first insert always lands the new item at the head of the
+    /// collection (page 1), so invalidating page 1 is sufficient for the primary read. Deeper pages shift
+    /// when page 1 is full, but their staleness self-heals within the short TTL and the new item is never
+    /// on a deeper page.
+    /// </remarks>
+    /// <param name="collectionCache">The local collection-page response cache.</param>
+    /// <param name="ownerIri">The owning actor's or community's IRI.</param>
+    private static void InvalidateLocalOutboxPage(LocalCollectionPageCache collectionCache, Iri ownerIri)
+        => collectionCache.Invalidate(new Iri($"{ownerIri.Value}/outbox"));
 
     /// <summary>
     /// Serves an actor's followed feed (home timeline, F-14) as a paged collection for
