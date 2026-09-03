@@ -1015,9 +1015,11 @@ while it remains in flux; the underlying wire is proven by the existing server/c
   from the detail page. Per the current direction, the sample-client UI is verified manually (not
   bUnit-tested) while it remains in flux; the underlying wire is proven by the existing server/client
   integration tests.
-- [ ] **21.1.4 — Outbox view (full).** The actor detail page already shows the outbox (paged). Ensure
-  every outbox item is clickable (deep-links to the object detail) and that the outbox shows the full
-  activity (not just a summary).
+- [x] **21.1.4 — Outbox view (full, already satisfied by ObjectView).** The actor detail page's outbox
+  already uses the `ObjectView` component, which renders the full object (type, IRI, author, content,
+  audience, published, parent, mentions, attachments, media) and deep-links every item to the object
+  detail page (via `ObjectHref`). The outbox shows the full activity (not just a summary) and every
+  item is clickable. No new code needed; the `ObjectView` component already provides this.
 
 ### 21.2 — Community detail page expansion
 
