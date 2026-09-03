@@ -128,18 +128,16 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
   - **Deep-dives:** [22-1](plans/22-1-paged-collection-component.md) +
     [22-2](plans/22-2-raw-inspector-component.md) (components) +
     [22-3](plans/22-3-identity-bar-and-back-links.md) (identity bar + back links).
-- [ ] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
-  community (US-6,18), instance (US-10). **In progress** — actor page complete (US-5 `liked`
-  collection + US-15 follow state, change [183](changes/183-22.2-actor-liked-and-follow-state.md);
-  US-16 inbound-follows accept/reject + US-17 moderation were already present) and instance page
-  complete (US-10 WebFinger handle lookup, change
-   [184](changes/184-22.2-instance-webfinger-lookup.md)); community create (US-18, change
-   [185](changes/185-22.2-community-create.md)) complete; the object page's review + like/boost + delete
-   (US-7/13/14) are already present and the community review surface (US-6) is already present — the
-   remaining 22.2 item is the object-page **reply form (US-12)**, which is tracked under 22.3
-   (authoring).
-- [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11) and the reply form
-  + reply-chain rendering (US-12).
+ - [x] **22.2 — Detail pages on the shared components.** Object (US-7,12,13,14), actor (US-5,15,16,17),
+   community (US-6,18), instance (US-10). **Complete** — object page (US-7 review + US-13 like/boost +
+   US-14 delete were already present; US-12 reply form, change
+   [186](changes/186-22.2-object-reply-form.md)), actor page (US-5 `liked` collection + US-15 follow
+   state, change [183](changes/183-22.2-actor-liked-and-follow-state.md); US-16 + US-17 already
+   present), community (US-6 review already present; US-18 create, change
+   [185](changes/185-22.2-community-create.md)), and instance (US-10 WebFinger handle lookup, change
+   [184](changes/184-22.2-instance-webfinger-lookup.md)) all verified on the FQDN compose stack.
+ - [ ] **22.3 — Authoring surfaces.** Compose with media/markdown/sensitivity (US-11). The reply form +
+   reply-chain rendering (US-12) was completed under 22.2 (change 186).
 - [ ] **22.4 — Cross-server polish.** Remote object/actor rendering via the proxy + media proxy (US-8)
   and first-class multi-server identity/switching (US-2, US-24).
 - [ ] **22.5 — Broad story review.** Review the full story set together to confirm they play well with

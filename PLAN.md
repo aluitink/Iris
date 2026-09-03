@@ -91,15 +91,16 @@ remote rendering, multi-server identity); and authoring (compose with media/mark
 reply/threads). The remaining pre-Phase-22 items (the Phase 19 live-interop + raw-inspector UI halves
 and the Phase 21 UI deltas) are listed in the roadmap and are largely subsumed by Phase 22.
 
-**Latest slice (22.2, community — in progress):** the third 22.2 sub-slice landed — the community page
-can now **create** a community (US-18): a "Create a community" card publishes a `Create` of a Group to
-the logged-on actor's outbox (server materializes it), then it loads and manages the new community.
-With the actor slice (change 183) and the instance slice (change 184), the **actor** page (US-5/15/16/17),
-the **instance** page (US-10), and community **create** (US-18) are complete for 22.2; 22.1 "shared
+**Latest slice (22.2, object — 22.2 complete):** the fourth and final 22.2 sub-slice landed — the
+object page now has a **reply form** (US-12): a reply text + optional mentions card that posts a note
+whose `inReplyTo` is the loaded object (via the existing `PostReplyAsync`, public `as:Public`
+audience), then re-loads so the new reply surfaces under "Replies" (the replies read now bypasses the
+collection cache so the re-load is fresh). With the actor slice (change 183), the instance slice
+(change 184), and the community slice (change 185), **all four 22.2 detail pages are complete**:
+object (US-7/12/13/14), actor (US-5/15/16/17), community (US-6/18), instance (US-10); 22.1 "shared
 components first" is also complete. Manually verified on the docker compose FQDN stack. See
-[docs/changes/185-22.2-community-create.md](docs/changes/185-22.2-community-create.md).
-**22.2** remaining: the object-page **reply form (US-12)** (object review US-7 + like/boost US-13 +
-delete US-14 and the community review surface US-6 are already present); US-12 is tracked under 22.3.
+[docs/changes/186-22.2-object-reply-form.md](docs/changes/186-22.2-object-reply-form.md).
+**22.2 is done** — next is 22.3 (authoring: US-11 compose with media/markdown/sensitivity).
 
 Status per phase, with one-line summaries, lives in [docs/ROADMAP.md](docs/ROADMAP.md); per-slice build
 notes in [docs/changes/](docs/changes/README.md); substantial design calls in
