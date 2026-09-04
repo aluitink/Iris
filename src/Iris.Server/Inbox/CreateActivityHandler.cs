@@ -112,6 +112,17 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
 
         var recipient = delivery.RecipientIri;
 
+        // F-10: a peer may signal an object deletion by delivering a Create whose embedded object is a
+        // Tombstone (rather than a standalone Tombstone or a Delete). Recognize it: store the tombstone
+        // under the object IRI (so a GET serves it, not stale content or a 404) and clean up the local
+        // copy (outbox Create + object → Create index + reply edge), but do NOT treat it as a new post —
+        // no outbox entry, no object → Create index, no federation fan-out of a deletion.
+        if (activity.ExtractEmbeddedObject() is Tombstone embeddedTombstone)
+        {
+            await TombstoneInbound.ApplyAsync(_persistence, embeddedTombstone, ct).ConfigureAwait(false);
+            return;
+        }
+
         // A Create delivered to a local person's inbox is the person's own post: record it in the
         // person's outbox so it is surfaced in the author's own feed (J-8). The person and community
         // stores are disjoint (a community lives in the community store, not the actor store), so a

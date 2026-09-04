@@ -1552,6 +1552,17 @@ public static class ActivityPubServerExtensions
         // land in the Object's ExtensionData. Wrap it into the Iris-specific MuteActivity (the thin
         // Activity subclass that pins Type to ["Mute"]) so the InboxProcessor stores it and the
         // MuteActivityHandler records the muter → muted edge (24.2).
+        // A standalone inbound Tombstone (an IObject, not an Activity): a peer signals that an object was
+        // deleted on its instance (F-10). Store the tombstone under the object IRI (so a GET serves it,
+        // not stale content or a 404) and clean up any local copy (outbox Create + object → Create index
+        // + reply edge) — the inbound half of the tombstone contract.
+        if (payload is KristofferStrube.ActivityStreams.Tombstone { Id: not null } inboundTombstone)
+        {
+            var persistence = context.RequestServices.GetRequiredService<IPersistenceProvider>();
+            await TombstoneInbound.ApplyAsync(persistence, inboundTombstone, ct).ConfigureAwait(false);
+            return Results.Accepted();
+        }
+
         Activity? activity;
         if (payload is Activity { Id: not null } typedActivity)
         {
