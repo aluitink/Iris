@@ -162,6 +162,65 @@ public static class IrisDocumentExtensions
     public static Iri? GetRelaysIri(this Object document) => GetCollectionIri(document, "star");
 
     /// <summary>
+    /// Reads the <c>manuallyApprovesFollowers</c> gate state from a person (actor) document, returning
+    /// <see langword="true"/> when the gate is set (inbound follows require manual approval),
+    /// <see langword="false"/> when the term is present but not <c>true</c> (disabled), and
+    /// <see langword="null"/> when the term is absent (the actor has no settings gate). This is the read
+    /// half of <see cref="IActivityPubClient.SetManuallyApprovesFollowersAsync"/> (22.6.1): the server
+    /// stores the gate on the actor's <see cref="Object.ExtensionData"/> and advertises it verbatim on the
+    /// public document when set, so a client can read the actor's follow-approval policy from the document
+    /// alone (no persistence access).
+    /// </summary>
+    /// <param name="document">The actor document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>
+    /// <see langword="true"/> when the gate is set, <see langword="false"/> when present but disabled, and
+    /// <see langword="null"/> when the term is absent.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetManuallyApprovesFollowers(this Object document)
+        => GetManuallyApprovesGate(document, "manuallyApprovesFollowers");
+
+    /// <summary>
+    /// Reads the <c>manuallyApprovesMembers</c> gate state from a community (Group) document, returning
+    /// <see langword="true"/> when the gate is set (join requests require manual approval),
+    /// <see langword="false"/> when the term is present but not <c>true</c> (disabled), and
+    /// <see langword="null"/> when the term is absent (the community has no settings gate). This is the read
+    /// half of <see cref="IActivityPubClient.SetManuallyApprovesMembersAsync"/> (change 217): the server
+    /// stores the gate on the community's <see cref="Object.ExtensionData"/> and advertises it verbatim on
+    /// the public document when set, so a client can read the community's membership-approval policy from
+    /// the document alone (no persistence access).
+    /// </summary>
+    /// <param name="document">The community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>
+    /// <see langword="true"/> when the gate is set, <see langword="false"/> when present but disabled, and
+    /// <see langword="null"/> when the term is absent.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetManuallyApprovesMembers(this Object document)
+        => GetManuallyApprovesGate(document, "manuallyApprovesMembers");
+
+    /// <summary>
+    /// Shared implementation for the settings-gate readers: reads the boolean-valued
+    /// <paramref name="term"/> from <see cref="Object.ExtensionData"/>. Returns
+    /// <see langword="true"/> when the term is JSON <c>true</c>, <see langword="false"/> when it is present
+    /// but a different value (e.g. JSON <c>false</c>), and <see langword="null"/> when the term is absent.
+    /// </summary>
+    private static bool? GetManuallyApprovesGate(Object document, string term)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.ExtensionData is not { } ext ||
+            !ext.TryGetValue(term, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind == System.Text.Json.JsonValueKind.True;
+    }
+
+    /// <summary>
     /// Shared implementation for the un-prefixed collection-endpoint extension readers: reads the
     /// string-valued <paramref name="term"/> from <see cref="Object.ExtensionData"/> and returns it as an
     /// <see cref="Iri"/>, or <see langword="null"/> when the term is absent or not a valid IRI.
