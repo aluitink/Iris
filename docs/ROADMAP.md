@@ -188,8 +188,15 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
      are the two settings gates. Both are now advertised as a typed `iris:settings` extension property
      (IRI-valued, pointing to the actor/community outbox where AP-native Add/Remove settings activities
      are published) on the public document, and `"settings"` is added to `iris:capabilities` when the
-     gate is present. Client reads the extension via `IrisDocumentExtensions.GetSettingsIri()` /
-     `GetCapabilities()`. `IriExtensions.SettingsOf()` helper added. 10 integration tests (1,329 total).
+      gate is present. Client reads the extension via `IrisDocumentExtensions.GetSettingsIri()` /
+      `GetCapabilities()`. `IriExtensions.SettingsOf()` helper added. 10 integration tests (1,329 total).
+    - [x] **22.6.2 — Person settings write path: `SetManuallyApprovesFollowersAsync`.** *(change 221)*
+      Closes the read/write asymmetry with the community's `SetManuallyApprovesMembersAsync` (217). A
+      person now toggles its `manuallyApprovesFollowers` gate AP-natively: the client publishes an
+      `Add` (enable) / `Remove` (disable) of the actor's own document to its own outbox; the server's
+      `OutboxPublishHandler` applies it to the stored actor (`RecordPersonAddAsync` /
+      `RecordPersonRemoveAsync`). Also fixes the actor-document cache invalidation on a settings change
+      (the public doc was serving a stale 60s-TTL copy). 4 integration tests (1,321 total).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
