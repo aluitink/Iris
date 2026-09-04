@@ -65,7 +65,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 24 — federation robustness & remaining cross-instance propagation gaps.** Phase 23's locally-actionable scope is fully closed (22.11–22.14). Phase 24 continues the in-process federation hardening: the remaining propagation gaps (mute/un-mute cross-instance, community→community un-follow) and delivery robustness (retry/backoff on transient failure, idempotent handling of duplicate inbound deliveries) — all testable on the 2-instance `TestServer` harness. 24.1 (cross-instance like/announce undo propagation) is now closed: it surfaced and **fixed** a real delivery-target bug (a Like/Announce of a remote object — and its Undo — was delivered to the object IRI's non-existent `/inbox` instead of the object's author's inbox) and locked the fix with tests. 24.2 (cross-instance mute/un-mute propagation) is now closed: a genuine feature addition (not a test-only lock) — `Mute` is **not** an ActivityStreams type, so a mute could neither be sent nor received across instances; fixed by introducing the Iris-specific `MuteActivity` and registering it in the library's type registry so it round-trips, plus the inbound handler, outbox mute/undo arms, and `"mutes"` invalidation. 24.3 (idempotent handling of duplicate inbound deliveries) is now closed: a test-only lock of the C-07 inbox-Id dedup guard for an edge-recording activity (a redelivered `Block`/`Follow` records the edge exactly once, no error, no duplicate `Accept`). 24.4 (community→community un-follow propagation) is now closed: a test-only lock of the `UndoActivityHandler`'s community-target removal arm (a community C on A follows community D on B; the `Undo(Follow)` federates A → B and B removes both of D's edges). **Phase 24's locally-actionable scope is now fully closed (24.1–24.4).** Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) remain open.
+**Phase 25 — federation hardening & robustness (just opened, to be expanded).** Phase 24's locally-actionable scope is now fully closed (24.1–24.4): 24.1 (cross-instance like/announce undo propagation — surfaced and **fixed** a real delivery-target bug), 24.2 (cross-instance mute/un-mute propagation — a genuine feature addition, the Iris-specific `MuteActivity`), 24.3 (idempotent handling of duplicate inbound deliveries — a test-only lock of the C-07 inbox-Id dedup guard), and 24.4 (community→community un-follow propagation — a test-only lock of the `UndoActivityHandler`'s community-target removal arm). All plan docs (phase-22-closeout, the 22.x component plans) are exhausted on their locally-actionable scope; only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain deferred. **Phase 25 is the next in-process federation-hardening phase** (delivery retry/backoff on transient failure, the cross-instance `Reject`/declined-follow path, and remaining activity-type undo-propagation coverage), seeded below and to be broken into concrete slices in the next turn.
 
 ## Active Slice
 
@@ -88,11 +88,16 @@ Short, bounded list — only the next few items, not the whole roadmap. When thi
 > **undo** propagation locked with tests, proven non-vacuous), and 22.14 (cross-instance community
 > **un-follow** propagation locked with tests, proven non-vacuous). Only the two live-infrastructure items
 > (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain
-> deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now active.
+ > deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now fully
+ > closed on its locally-actionable scope (24.1–24.4). Phase 25 (federation hardening & robustness) is now
+ > active.
 
- > **Phase 24 slices (locally-actionable, in-process 2-instance `TestServer`):**
+ > **Phase 25 slices (locally-actionable, in-process 2-instance `TestServer`) — seeded, to be refined in
+ > the next turn:**
  >
- > *(all locally-actionable slices complete — 24.1–24.4. Only the deferred live-infrastructure items below remain.)*
+ 1. **25.1 — delivery retry/backoff on transient failure:** a server→server delivery that hits a transient error (a 5xx or a transport failure) on the first attempt is retried with backoff and eventually succeeds (or is dead-lettered after the retry budget is exhausted), rather than being dropped or retried without delay. (In-process loopback — no external infra.)
+ 2. **25.2 — cross-instance `Reject` (declined follow) propagation:** a community/person on A follows an actor/community on B (federates A → B), then B's operator **Rejects** the follow (a `Reject` authored to B's outbox); the `Reject` federates B → A and A records the follow as declined (the inverse of the existing `Accept` path). (In-process loopback — no external infra.)
+ 3. **25.3 — remaining activity-type undo-propagation coverage:** lock the cross-instance undo path for the activity types not yet covered end-to-end (e.g. a community's `Undo` of a join/membership decision, and any remaining edge-recording activity whose remote-side removal is untested), each proven non-vacuous. (In-process loopback — no external infra.)
  >
  > **Deferred (live-infrastructure, not provisionable in this environment):**
 >
