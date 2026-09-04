@@ -183,24 +183,13 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
     21.6.2 error/empty states, 21.6.3 raw inspector) all work end-to-end locally. **Remaining:**
     only the external-FQDN (reverse-proxy) route over the public `https://iris-dev1/2.luit.ink` FQDNs,
     unreachable in this env.
-   - [ ] **22.6.1 — Review: account settings & control as JSON-LD extensions.** Before the next
-    implementation step, review every account-level settings/control endpoint and confirm it is
-    **advertised as a JSON-LD extension** on the actor/community object (the `iris:` namespace pattern,
-    Resolved Decision #11). The existing `iris:capabilities` extension advertises which specialized
-    endpoints exist (feed, members, search, mute, relay, likes, shares), but **settings and control
-    surfaces** (e.g. a community's `manuallyApprovesMembers` gate, a person's `manuallyApprovesFollowers`
-    gate, moderation collections) should also be discoverable as typed IRI extensions on the object —
-    not just as `iris:capabilities` list entries. Concretely: if a community has a settings endpoint
-    (or an AP-native settings change surface), the community object's `ExtensionData` should carry an
-    `iris:settings` property whose value is the settings IRI (or the `Add`/`Remove`-of-self-to-outbox
-    pattern IRI), so a remote client can discover the settings surface from the actor document alone
-    (no hardcoded endpoint paths). Scope: (1) inventory every settings/control endpoint (person +
-    community); (2) for each, determine whether it is already advertised via `iris:capabilities` or
-    needs a dedicated `iris:*` extension property; (3) add the missing extension properties to the
-    actor/community document rendering; (4) update the client to read the new extensions (so the
-    sample UI can navigate to the settings surface from the actor/community detail page). CI-testable:
-    the document-rendering change + the client read seam ship with integration tests (the document
-    carries the extension; the client resolves the IRI).
+    - [x] **22.6.1 — Review: account settings & control as JSON-LD extensions.** *(change 220)*
+     Inventory completed: `manuallyApprovesFollowers` (person) and `manuallyApprovesMembers` (community)
+     are the two settings gates. Both are now advertised as a typed `iris:settings` extension property
+     (IRI-valued, pointing to the actor/community outbox where AP-native Add/Remove settings activities
+     are published) on the public document, and `"settings"` is added to `iris:capabilities` when the
+     gate is present. Client reads the extension via `IrisDocumentExtensions.GetSettingsIri()` /
+     `GetCapabilities()`. `IriExtensions.SettingsOf()` helper added. 10 integration tests (1,329 total).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
