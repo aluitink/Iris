@@ -91,4 +91,97 @@ public static class IrisDocumentExtensions
 
         return list;
     }
+
+    /// <summary>
+    /// Reads the <c>feed</c> extension property from an actor/community document, returning the IRI of the
+    /// followed-feed collection (the home timeline: the union of the actor's local and remote follows'
+    /// outbox items, or the community feed for a Group). The server advertises it unconditionally on both
+    /// person and community documents. Returns <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="document">The actor or community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The feed IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetFeedIri(this Object document) => GetCollectionIri(document, "feed");
+
+    /// <summary>
+    /// Reads the <c>members</c> extension property from a community document, returning the IRI of the
+    /// members collection (the community's member actors, served at <c>/c/{name}/members</c>). Present
+    /// only on community (Group) documents; absent on person documents. Returns <see langword="null"/>
+    /// when the property is absent.
+    /// </summary>
+    /// <param name="document">The community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The members IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetMembersIri(this Object document) => GetCollectionIri(document, "members");
+
+    /// <summary>
+    /// Reads the <c>blocks</c> extension property from an actor/community document, returning the IRI of
+    /// the blocks collection (the actors the actor has blocked, served at <c>/u/{handle}/blocks</c>).
+    /// Returns <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="document">The actor or community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The blocks IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetBlocksIri(this Object document) => GetCollectionIri(document, "blocks");
+
+    /// <summary>
+    /// Reads the <c>flags</c> extension property from an actor/community document, returning the IRI of
+    /// the flags collection (the actors the actor has flagged, served at <c>/u/{handle}/flags</c>).
+    /// Returns <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="document">The actor or community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The flags IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetFlagsIri(this Object document) => GetCollectionIri(document, "flags");
+
+    /// <summary>
+    /// Reads the <c>mutes</c> extension property from an actor/community document, returning the IRI of
+    /// the mutes collection (the actors the actor has muted, served at <c>/u/{handle}/mutes</c>).
+    /// Returns <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="document">The actor or community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The mutes IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetMutesIri(this Object document) => GetCollectionIri(document, "mutes");
+
+    /// <summary>
+    /// Reads the <c>star</c> (relays) extension property from an actor/community document, returning the
+    /// IRI of the relays collection (the fan-out relays the actor subscribes to, the ActivityPub
+    /// <c>star</c> set, served at <c>/u/{handle}/relays</c>). Advertised unconditionally (even when empty).
+    /// Returns <see langword="null"/> when absent.
+    /// </summary>
+    /// <param name="document">The actor or community document (an <see cref="Object"/> with
+    /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <returns>The relays IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetRelaysIri(this Object document) => GetCollectionIri(document, "star");
+
+    /// <summary>
+    /// Shared implementation for the un-prefixed collection-endpoint extension readers: reads the
+    /// string-valued <paramref name="term"/> from <see cref="Object.ExtensionData"/> and returns it as an
+    /// <see cref="Iri"/>, or <see langword="null"/> when the term is absent or not a valid IRI.
+    /// </summary>
+    private static Iri? GetCollectionIri(Object document, string term)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue(term, out var value) ||
+            value.ValueKind != System.Text.Json.JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var str = value.GetString();
+        return string.IsNullOrWhiteSpace(str) ? null : (Iri.TryParse(str, out var iri) ? iri : null);
+    }
 }
