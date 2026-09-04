@@ -13,7 +13,7 @@ Create one for every vertical slice that lands a commit — a feature, a gap clo
 
 ## Conventions
 
-- **Filename:** `NNN-slug.md`, where `NNN` is a monotonically increasing change number that continues the project-wide numbering shared with [decisions/](../decisions/) (e.g. `054-f12-replies-threading.md`). The number is the slice's identifier — it is referenced from PLAN.md's status table and from ROADMAP.md.
+- **Filename:** `NNN-slug.md`, where `NNN` is a monotonically increasing change number that continues the project-wide numbering shared with [decisions/](../decisions/) (e.g. `054-f12-replies-threading.md`). The number is the slice's identifier — it is referenced from PLAN.md's Recently Completed list and, once archived, from ROADMAP.md's ledger.
 - **Template:**
 
   ```markdown

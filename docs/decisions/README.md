@@ -1,6 +1,6 @@
 # Iris — Design Decisions
 
-One document per **substantial** design decision. This directory exists to keep [PLAN.md](../../PLAN.md) and [ROADMAP.md](../ROADMAP.md) lean: heavy rationale lives here, and the per-change doc in [changes/](../changes/) links to it.
+One document per **substantial** design decision. This directory exists to keep [PLAN.md](../../PLAN.md) lean: heavy rationale lives here, and the per-change doc in [changes/](../changes/) links to it.
 
 ## When to create a decision doc
 
