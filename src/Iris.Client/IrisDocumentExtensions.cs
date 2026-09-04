@@ -179,7 +179,7 @@ public static class IrisDocumentExtensions
     /// </returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
     public static bool? GetManuallyApprovesFollowers(this Object document)
-        => GetManuallyApprovesGate(document, "manuallyApprovesFollowers");
+        => GetManuallyApprovesGate(document, ActivityPubExtensionNames.ManuallyApprovesFollowers);
 
     /// <summary>
     /// Reads the <c>manuallyApprovesMembers</c> gate state from a community (Group) document, returning
@@ -199,7 +199,7 @@ public static class IrisDocumentExtensions
     /// </returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
     public static bool? GetManuallyApprovesMembers(this Object document)
-        => GetManuallyApprovesGate(document, "manuallyApprovesMembers");
+        => GetManuallyApprovesGate(document, ActivityPubExtensionNames.ManuallyApprovesMembers);
 
     /// <summary>
     /// Shared implementation for the settings-gate readers: reads the boolean-valued

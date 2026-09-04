@@ -140,6 +140,57 @@ public sealed class SettingsGateReaderTests : IDisposable
         Assert.Null(communityDoc.GetManuallyApprovesFollowers());
     }
 
+    // --- Shared-constant contract: the client write and the reader both use the Core term -----
+
+    [Fact]
+    public async Task PersonGate_ClientWriteAndReader_ShareTheCoreConstant()
+    {
+        // The client's SetManuallyApprovesFollowersAsync builds the Add's object with the term from
+        // ActivityPubExtensionNames.ManuallyApprovesFollowers (Iris.Core), and the reader reads the same
+        // term. A typo on either side (the pre-centralization magic-string risk) would make this round-trip
+        // fail: the server would store under one term and the reader would read a different one.
+        Assert.True(await CallSetManuallyApprovesFollowersAsync(_aliceIri, _aliceKey, enabled: true),
+            "the Add should be accepted (202)");
+
+        // The stored actor's ExtensionData key is exactly the Core constant's value.
+        Assert.True(await _persistence.Actors.TryGetActorAsync(_aliceIri, out var actor),
+            "the stored actor should exist");
+        Assert.True(
+            actor!.ExtensionData is { } ext
+            && ext.ContainsKey(Iris.Core.ActivityPubExtensionNames.ManuallyApprovesFollowers)
+            && ext[Iris.Core.ActivityPubExtensionNames.ManuallyApprovesFollowers].ValueKind
+                == JsonValueKind.True,
+            "the stored actor should carry the gate under the Core constant's term");
+
+        // And the reader (which reads the same Core term) observes it as set.
+        var doc = await FetchDocumentAsync(_aliceIri);
+        Assert.True(doc.GetManuallyApprovesFollowers());
+    }
+
+    [Fact]
+    public async Task CommunityGate_ClientWriteAndReader_ShareTheCoreConstant()
+    {
+        // The client's SetManuallyApprovesMembersAsync builds the Add's object with the term from
+        // ActivityPubExtensionNames.ManuallyApprovesMembers (Iris.Core), and the reader reads the same
+        // term (the community variant of the person round-trip above).
+        Assert.True(await CallSetManuallyApprovesMembersAsync(_communityIri, _communityKey, enabled: true),
+            "the Add should be accepted (202)");
+
+        // The stored community's ExtensionData key is exactly the Core constant's value.
+        Assert.True(await _persistence.Communities.TryGetCommunityAsync(_communityIri, out var community),
+            "the stored community should exist");
+        Assert.True(
+            community!.ExtensionData is { } ext
+            && ext.ContainsKey(Iris.Core.ActivityPubExtensionNames.ManuallyApprovesMembers)
+            && ext[Iris.Core.ActivityPubExtensionNames.ManuallyApprovesMembers].ValueKind
+                == JsonValueKind.True,
+            "the stored community should carry the gate under the Core constant's term");
+
+        // And the reader (which reads the same Core term) observes it as set.
+        var doc = await FetchDocumentAsync(_communityIri);
+        Assert.True(doc.GetManuallyApprovesMembers());
+    }
+
     // --- Absent-term safety: a bare object returns nulls, not throws --------------------------
 
     [Fact]

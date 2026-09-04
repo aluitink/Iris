@@ -61,7 +61,8 @@ public static class ActivityPubServerConstants
     /// property, so it is carried in the actor's <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/>
     /// (seeded by the host) and echoed onto the public actor document (Resolved Decision #46).
     /// </summary>
-    public const string ManuallyApprovesFollowersExtensionName = "manuallyApprovesFollowers";
+    public const string ManuallyApprovesFollowersExtensionName =
+        Iris.Core.ActivityPubExtensionNames.ManuallyApprovesFollowers;
 
     /// <summary>
     /// The ActivityPub group extension property <c>manuallyApprovesMembers</c>: when <c>true</c> on a
@@ -71,7 +72,8 @@ public static class ActivityPubServerConstants
     /// and echoed onto the public group document. Communities without the flag retain the legacy
     /// auto-grant behavior.
     /// </summary>
-    public const string ManuallyApprovesMembersExtensionName = "manuallyApprovesMembers";
+    public const string ManuallyApprovesMembersExtensionName =
+        Iris.Core.ActivityPubExtensionNames.ManuallyApprovesMembers;
 
     /// <summary>
     /// The <c>iris:capabilities</c> extension property name (Resolved Decision #11).

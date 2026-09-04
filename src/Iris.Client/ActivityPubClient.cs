@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 using CollectionPage = Iris.Core.Collections.CollectionPage;
 
@@ -385,7 +386,8 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Id = communityIri.Value,
             ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
             {
-                ["manuallyApprovesMembers"] = System.Text.Json.JsonSerializer.SerializeToElement(enabled),
+                [ActivityPubExtensionNames.ManuallyApprovesMembers] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(enabled),
             },
         };
 
@@ -419,7 +421,8 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Id = actorIri.Value,
             ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
             {
-                ["manuallyApprovesFollowers"] = System.Text.Json.JsonSerializer.SerializeToElement(enabled),
+                [ActivityPubExtensionNames.ManuallyApprovesFollowers] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(enabled),
             },
         };
 
