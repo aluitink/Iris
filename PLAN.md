@@ -65,7 +65,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 22 — the functional sample explorer.** Not a redesign for appearance; a functional rebuild aimed at making the explorer useful for reviewing activities, objects, and peer interactions: better shared components, better object/actor/community/instance review, and better cross-instance navigation. The user-story/component map lives in [docs/plans/22-sample-ui-user-stories.md](docs/plans/22-sample-ui-user-stories.md).
+**Phase 23 — broader federation maturity & live-account remediation.** The locally-actionable follow-on to the Phase 22 explorer rebuild (per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)): C2S cache invariants, Mastodon wire compatibility, and cross-instance moderation / community / follow propagation — all testable in-process on the `TestServer` / `FederationTopology` harnesses. Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) are deferred.
 
 ## Active Slice
 
@@ -81,17 +81,17 @@ None in progress — the next turn picks the top item from **Up Next** below.
 
 Short, bounded list — only the next few items, not the whole roadmap. When this drops below ~3 items, replenish it from [docs/plans/phase-22-closeout.md](docs/plans/phase-22-closeout.md) or by expanding the next phase in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-> **Phase 22 status (22.10):** all *locally-actionable* closeout scope is now complete — the
-> functional explorer rebuild (22.1–22.6), the extension API-surface conformance (22.7), the final
-> manual UI verification pass (22.8), and both regressions it surfaced (finding A → 22.9, finding B →
-> 22.10). Only the two items below remain, and **both are blocked on external infrastructure not
-> available in this environment** (a reachable public FQDN / reverse proxy, and real external
-> Mastodon accounts). When that infrastructure is available, work them in order; otherwise define the
-> next phase (broader federation maturity / live-account remediation, per
-> [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)).
+> **Phase 23 status (22.11):** Phase 22's *locally-actionable* scope is fully closed (22.1–22.10). Phase 23
+> — **broader federation maturity & live-account remediation** (per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)) — is now the active phase. It opens with locally-testable
+> hardening (C2S cache invariants, Mastodon wire compatibility, cross-instance propagation on the in-process
+> `FederationTopology`), deferring only the two live-infrastructure items (a public FQDN, real external
+> Mastodon accounts) that this environment cannot provision.
 
-1. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy — not available in this environment; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
-2. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+1. **22.12 — Mastodon `Digest` header casing (draft-10 wire form):** an inbound request carrying the uppercase `Digest: SHA-256=…` header (what a strict Mastodon / draft-10 peer emits) must still verify. Add a test-first integration test; normalize the digest algorithm token at exactly one boundary (signer + verifier) if it fails. (Locally testable — single-instance `TestServer`.)
+2. **22.13 — cross-instance moderation undo propagation:** on a 2-instance `FederationTopology`, A blocks/flags B, then A publishes `Undo(Block)`/`Undo(Flag)`; assert B's instance receives the `Undo` and removes the edge it recorded (the "moderation propagation" theme end-to-end). (In-process loopback — no external infra.)
+3. **22.14 — cross-instance community un-follow propagation:** on a 2-instance `FederationTopology`, community C on A follows an actor on B, then C publishes `Undo(Follow)`; assert B receives it and its `followers` no longer lists C (the "community/follow hardening" theme; folds in the community `following`/`followers` page invalidation). (In-process loopback — no external infra.)
+4. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy — not available in this environment; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
+5. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
 
 ## Inbox
 
@@ -107,10 +107,10 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
+- 22.11: **Phase 23 opens** — fixed the moderation-collection cache-invalidation gap (C2S invariant): `blocks`/`flags`/`mutes` pages were served through the 60s-TTL page cache but never invalidated on a local moderation write (a `Block`/`Flag`/mute record or its `Undo`/un-mute), so the owner's card stayed stale until TTL; generalized `InvalidateLocalOutboxPage` → `InvalidateLocalCollectionPage` and wired it into the outbox-publish `Block`/`Flag`/`Undo` branches + both mute handlers. New `ModerationCollectionCacheInvalidationIntegrationTests` (5), prime→write→plain-read (proven to fail on the old code). → [docs/changes/229-22.11-moderation-collection-cache-invalidation.md](docs/changes/229-22.11-moderation-collection-cache-invalidation.md)
 - 22.10: fixed the local no-Docker CORS origin gap (finding B) — widened `SampleServer`'s default `Iris__CorsOrigins` to `http://localhost:8090,http://localhost:8080` so both documented local paths work out of the box; new `SampleServerCorsTests` (5) host the real server and assert the CORS header on the wire (proven to fail on the old default). → [docs/changes/228-22.10-fix-local-cors-origin-gap.md](docs/changes/228-22.10-fix-local-cors-origin-gap.md)
 - 22.9: fixed the WASM browser login serialization regression (finding A) — the `Iris.WebCrypto` bootstrap passed `CancellationToken` as a JSON interop arg (misdiagnosed as a `Task`); reordered to the dedicated `InvokeAsync` overload + new `Iris.WebCrypto.Tests` (first coverage of the browser-only path via a `FakeJsRuntime` that JSON-serializes every arg; proven to fail on the old code). → [docs/changes/227-22.9-fix-wasm-webcrypto-login-serialization.md](docs/changes/227-22.9-fix-wasm-webcrypto-login-serialization.md)
 - 22.8: final manual UI verification pass — wire shape + server endpoints verified clean, but found **A** (hard regression: WASM browser login throws a `Task`-serialization error in the `Iris.WebCrypto` key-import path — untested, breaks the documented browser log-on) and **B** (the local no-Docker README path CORS-blocks because the server's default `Iris__CorsOrigins` lacks `http://localhost:8080`). Findings recorded; both fixed (22.9 + 22.10). → [docs/changes/226-22.8-ui-verification-findings.md](docs/changes/226-22.8-ui-verification-findings.md)
-- 22.7: extension API-surface conformance — every document property classified core-AP (bare) vs Iris extension (`iris:`-namespaced); server declares a JSON-LD `@context`; all wire terms centralized in `Iris.Core`; conformance pinned on the wire. → [docs/changes/225-22.7-extension-api-surface-conformance.md](docs/changes/225-22.7-extension-api-surface-conformance.md)
 
 ## Keeping the docs lean
 
