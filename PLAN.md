@@ -81,11 +81,17 @@ None in progress — the next turn picks the top item from **Up Next** below.
 
 Short, bounded list — only the next few items, not the whole roadmap. When this drops below ~3 items, replenish it from [docs/plans/phase-22-closeout.md](docs/plans/phase-22-closeout.md) or by expanding the next phase in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-1. **Fix finding B (22.8): local no-Docker CORS origin gap.** Add `http://localhost:8080` (the WASM dev-server origin) to `SampleServer`'s default `Iris__CorsOrigins` (or document the env var in the README's local section) so the documented local log-on path isn't CORS-blocked. See [change 226](docs/changes/226-22.8-ui-verification-findings.md).
-2. ~~Fix finding A (22.8): WASM browser login `Task`-serialization regression.~~ **Done (22.9, change 227)** — root cause was `CancellationToken` passed as a JSON interop arg (not a `Task`); reordered to the dedicated `InvokeAsync` overload + new `Iris.WebCrypto.Tests` (first coverage of the browser path, incl. a `FakeJsRuntime` that JSON-serializes every arg). See [change 227](docs/changes/227-22.9-fix-wasm-webcrypto-login-serialization.md).
-3. ~~Final manual UI verification pass across object/actor/community/instance screens.~~ **Done (22.8, change 226)** — surfaced findings A + B; wire shape + endpoints verified clean. See [phase-22-closeout.md §3](docs/plans/phase-22-closeout.md#3-ui-verification-and-final-manual-pass).
-4. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy — not available in this environment; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
-5. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred until the browser path from #2 is green.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+> **Phase 22 status (22.10):** all *locally-actionable* closeout scope is now complete — the
+> functional explorer rebuild (22.1–22.6), the extension API-surface conformance (22.7), the final
+> manual UI verification pass (22.8), and both regressions it surfaced (finding A → 22.9, finding B →
+> 22.10). Only the two items below remain, and **both are blocked on external infrastructure not
+> available in this environment** (a reachable public FQDN / reverse proxy, and real external
+> Mastodon accounts). When that infrastructure is available, work them in order; otherwise define the
+> next phase (broader federation maturity / live-account remediation, per
+> [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)).
+
+1. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy — not available in this environment; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
+2. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
 
 ## Inbox
 
@@ -101,10 +107,10 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
+- 22.10: fixed the local no-Docker CORS origin gap (finding B) — widened `SampleServer`'s default `Iris__CorsOrigins` to `http://localhost:8090,http://localhost:8080` so both documented local paths work out of the box; new `SampleServerCorsTests` (5) host the real server and assert the CORS header on the wire (proven to fail on the old default). → [docs/changes/228-22.10-fix-local-cors-origin-gap.md](docs/changes/228-22.10-fix-local-cors-origin-gap.md)
 - 22.9: fixed the WASM browser login serialization regression (finding A) — the `Iris.WebCrypto` bootstrap passed `CancellationToken` as a JSON interop arg (misdiagnosed as a `Task`); reordered to the dedicated `InvokeAsync` overload + new `Iris.WebCrypto.Tests` (first coverage of the browser-only path via a `FakeJsRuntime` that JSON-serializes every arg; proven to fail on the old code). → [docs/changes/227-22.9-fix-wasm-webcrypto-login-serialization.md](docs/changes/227-22.9-fix-wasm-webcrypto-login-serialization.md)
-- 22.8: final manual UI verification pass — wire shape + server endpoints verified clean, but found **A** (hard regression: WASM browser login throws a `Task`-serialization error in the `Iris.WebCrypto` key-import path — untested, breaks the documented browser log-on) and **B** (the local no-Docker README path CORS-blocks because the server's default `Iris__CorsOrigins` lacks `http://localhost:8080`). Findings recorded; fixes queued in Up Next. → [docs/changes/226-22.8-ui-verification-findings.md](docs/changes/226-22.8-ui-verification-findings.md)
+- 22.8: final manual UI verification pass — wire shape + server endpoints verified clean, but found **A** (hard regression: WASM browser login throws a `Task`-serialization error in the `Iris.WebCrypto` key-import path — untested, breaks the documented browser log-on) and **B** (the local no-Docker README path CORS-blocks because the server's default `Iris__CorsOrigins` lacks `http://localhost:8080`). Findings recorded; both fixed (22.9 + 22.10). → [docs/changes/226-22.8-ui-verification-findings.md](docs/changes/226-22.8-ui-verification-findings.md)
 - 22.7: extension API-surface conformance — every document property classified core-AP (bare) vs Iris extension (`iris:`-namespaced); server declares a JSON-LD `@context`; all wire terms centralized in `Iris.Core`; conformance pinned on the wire. → [docs/changes/225-22.7-extension-api-surface-conformance.md](docs/changes/225-22.7-extension-api-surface-conformance.md)
-- 22.6.2: settings-as-JSON-LD-extensions, manually-approves-followers gate, and centralized settings-gate extension terms. → [docs/changes/224-22.6.2-centralize-settings-gate-extension-terms.md](docs/changes/224-22.6.2-centralize-settings-gate-extension-terms.md)
 
 ## Keeping the docs lean
 
