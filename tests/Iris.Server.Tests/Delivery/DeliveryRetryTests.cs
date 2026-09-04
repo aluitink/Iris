@@ -21,9 +21,13 @@ namespace Iris.Server.Tests.Delivery;
 /// <remarks>
 /// These tests drive a real <see cref="DeliveryWorker"/> (run as a hosted service) against a
 /// <em>failable</em> transport: a stub <see cref="HttpMessageHandler"/> that returns a configured
-/// sequence of responses (e.g. 500, 500, 200) so the retry path is exercised deterministically. The
-/// retry budget is set small (MaxAttempts 2–3) and <see cref="DeliveryRetryOptions.BaseDelay"/> = 0 so
-/// the backoff delays are instant (no real waiting in the test).
+/// sequence of responses (e.g. 500, 500, 200) so the retry path is exercised deterministically. Most
+/// tests set <see cref="DeliveryRetryOptions.BaseDelay"/> = 0 so the backoff delays are instant (no real
+/// waiting). The single exception is <see cref="TransientFailure_WaitsConfiguredBackoff_BetweenRetries"/>
+/// (Phase 25.1), which uses a real 150ms <see cref="DeliveryRetryOptions.BaseDelay"/> to lock that the
+/// worker actually <em>observes</em> the backoff delay between retries (not just that the private
+/// <c>BackoffDelay</c> pure-function has the right shape): it asserts both a total elapsed well above the
+/// two-backoff sum and a per-retry gap well above zero.
 /// </remarks>
 public sealed class DeliveryRetryTests
 {
@@ -164,6 +168,38 @@ public sealed class DeliveryRetryTests
         Assert.Equal("inbox-2", entries[1].InboxIri.Value);
     }
 
+    // --- A transient failure waits the configured backoff before retrying (not zero) -----
+
+    [Fact]
+    public async Task TransientFailure_WaitsConfiguredBackoff_BetweenRetries()
+    {
+        // 500, 500, then 200 with a REAL 150ms BaseDelay: the worker must observe two backoff delays
+        // (150ms before the 2nd attempt, 150ms before the 3rd). The existing recovery test uses
+        // BaseDelay=0, so it cannot catch a regression that removes the wait — this one locks that the
+        // delay between retries is actually observed. Two backoffs (150ms each) put the total elapsed
+        // well clear of the sub-250ms floor, and the gap before the 2nd attempt well clear of the
+        // sub-100ms floor; both assertions fail if the wait is removed (BaseDelay=0 -> ~0ms).
+        var (worker, queue, deadLetter, handler) = BuildWorker(
+            responses: [HttpStatusCode.InternalServerError, HttpStatusCode.InternalServerError, HttpStatusCode.OK],
+            maxAttempts: 5,
+            baseDelayMs: 150,
+            maxDelayMs: 10_000,
+            trackAttemptTimestamps: true);
+
+        var startedAt = Environment.TickCount64;
+        await EnqueueAndRunAsync(worker, queue, isDone: () => handler.CallCount == 3);
+        var totalElapsedMs = Environment.TickCount64 - startedAt;
+
+        Assert.Equal(3, handler.CallCount); // 2 failures + 1 success
+        Assert.Equal(0, deadLetter!.Count); // succeeded, so not dead-lettered
+        // Two 150ms backoffs were observed -> the whole recovery took >= ~300ms (well above the floor).
+        Assert.True(totalElapsedMs >= 250, $"Expected >= 250ms of backoff for 2 retries, observed {totalElapsedMs}ms.");
+        // The first retry waited a real (non-zero) backoff before the 2nd attempt.
+        Assert.True(
+            handler.MillisecondsBetweenAttempt1And2 >= 100,
+            $"Expected >= 100ms backoff before the 2nd attempt, observed {handler.MillisecondsBetweenAttempt1And2}ms.");
+    }
+
     // --- Backoff delay is exponential (unit test of the worker's policy) -----------------
 
     [Fact]
@@ -217,7 +253,7 @@ public sealed class DeliveryRetryTests
     private static (DeliveryWorker, InMemoryDeliveryQueue, IDeliveryDeadLetterStore?, FailableHandler) BuildWorker(
         HttpStatusCode[] responses, int maxAttempts, bool throwOnSend = false,
         IDeliveryDeadLetterStore? deadLetter = null, bool noDeadLetter = false,
-        int baseDelayMs = 0, int maxDelayMs = 0)
+        int baseDelayMs = 0, int maxDelayMs = 0, bool trackAttemptTimestamps = false)
     {
         var keyStore = new InMemoryKeyStore();
         var key = KeyPairGenerator.Generate(KeyAlgorithm.EcP256, new Iri($"{AliceIri}#key-1"));
@@ -229,7 +265,7 @@ public sealed class DeliveryRetryTests
 
         var queue = new InMemoryDeliveryQueue();
         var options = Options.Create(new ActivityPubServerOptions { InstanceActorId = new Iri(AliceIri) });
-        var handler = new FailableHandler(responses, throwOnSend);
+        var handler = new FailableHandler(responses, throwOnSend, trackAttemptTimestamps);
         // The store the worker is actually given: a fresh one (or the caller's) unless the caller asks
         // for NO store (noDeadLetter), in which case the worker dead-letters nothing (pre-F-22 behavior).
         IDeliveryDeadLetterStore? workerDeadLetter = noDeadLetter ? null : (deadLetter ?? new InMemoryDeliveryDeadLetterStore());
@@ -268,19 +304,62 @@ public sealed class DeliveryRetryTests
     /// An <see cref="HttpMessageHandler"/> that returns a scripted sequence of HTTP status codes (one
     /// per send; the last repeats when the sequence is exhausted) — or throws a
     /// <see cref="NotSupportedException"/> on every send when <c>throwOnSend</c> is set (a transport
-    /// failure). Counts each send in <see cref="CallCount"/>.
+    /// failure). Counts each send in <see cref="CallCount"/>. When <c>trackAttemptTimestamps</c> is set,
+    /// it also records the wall-clock time of each send so a test can measure the backoff gap between
+    /// attempts (<see cref="MillisecondsBetweenAttempt1And2"/>).
     /// </summary>
-    private sealed class FailableHandler(HttpStatusCode[] responses, bool throwOnSend) : HttpMessageHandler
+    private sealed class FailableHandler(HttpStatusCode[] responses, bool throwOnSend, bool trackAttemptTimestamps)
+        : HttpMessageHandler
     {
         private readonly HttpStatusCode[] _responses = responses;
         private readonly bool _throwOnSend = throwOnSend;
+        private readonly bool _trackAttemptTimestamps = trackAttemptTimestamps;
+        private readonly List<long> _attemptTicks = [];
 
         public int CallCount { get; private set; }
+
+        /// <summary>
+        /// The raw wall-clock milliseconds (<see cref="Environment.TickCount64"/>) at the moment of each
+        /// send (only populated when <c>trackAttemptTimestamps</c> is set). Exposed for diagnostics.
+        /// </summary>
+        public IReadOnlyList<long> AttemptTicks => _attemptTicks;
+
+        /// <summary>
+        /// The wall-clock milliseconds between consecutive sends (a diagnostics view; empty until at
+        /// least two sends have occurred). <see cref="Environment.TickCount64"/> is already in
+        /// milliseconds, so no tick conversion is needed.
+        /// </summary>
+        public IReadOnlyList<long> AttemptGapsMs
+        {
+            get
+            {
+                var gaps = new List<long>(_attemptTicks.Count > 0 ? _attemptTicks.Count - 1 : 0);
+                for (var i = 1; i < _attemptTicks.Count; i++)
+                {
+                    gaps.Add(_attemptTicks[i] - _attemptTicks[i - 1]);
+                }
+
+                return gaps;
+            }
+        }
+
+        /// <summary>
+        /// The wall-clock milliseconds between the first and second attempts (0 when timestamps are not
+        /// tracked or fewer than two attempts have occurred). <see cref="Environment.TickCount64"/> is
+        /// already in milliseconds, so no tick conversion is needed.
+        /// </summary>
+        public long MillisecondsBetweenAttempt1And2 =>
+            _attemptTicks.Count >= 2 ? _attemptTicks[1] - _attemptTicks[0] : 0;
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request, CancellationToken cancellationToken)
         {
             CallCount++;
+            if (_trackAttemptTimestamps)
+            {
+                _attemptTicks.Add(Environment.TickCount64);
+            }
+
             if (_throwOnSend)
             {
                 throw new NotSupportedException("simulated transport failure");
