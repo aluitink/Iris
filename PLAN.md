@@ -65,7 +65,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 23 — broader federation maturity & live-account remediation.** The locally-actionable follow-on to the Phase 22 explorer rebuild (per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)): C2S cache invariants, Mastodon wire compatibility, and cross-instance moderation / community / follow propagation — all testable in-process on the `TestServer` / `FederationTopology` harnesses. Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) are deferred.
+**Phase 24 — federation robustness & remaining cross-instance propagation gaps.** Phase 23's locally-actionable scope is fully closed (22.11–22.14: moderation cache invalidation, Mastodon `Digest` casing, moderation undo propagation, community un-follow propagation — the last two proven non-vacuous invariant locks). Phase 24 continues the in-process federation hardening: the remaining propagation gaps (community→community un-follow, mute/un-mute cross-instance, like/announce undo cross-instance) and delivery robustness (retry/backoff on transient failure, idempotent handling of duplicate inbound deliveries) — all testable on the 2-instance `TestServer` harness. Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) remain deferred.
 
 ## Active Slice
 
@@ -81,17 +81,25 @@ None in progress — the next turn picks the top item from **Up Next** below.
 
 Short, bounded list — only the next few items, not the whole roadmap. When this drops below ~3 items, replenish it from [docs/plans/phase-22-closeout.md](docs/plans/phase-22-closeout.md) or by expanding the next phase in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-> **Phase 23 status (22.13):** Phase 22's *locally-actionable* scope is fully closed (22.1–22.10). Phase 23
-> — **broader federation maturity & live-account remediation** (per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)) — is the active phase. Three slices done: 22.11 (moderation-collection
-> cache invalidation), 22.12 (Mastodon / draft-10 `Digest` header casing locked with tests), and 22.13
-> (cross-instance moderation **undo** propagation locked with tests — an `Undo(Block)`/`Undo(Flag)` federated
-> A → B already removes B's recorded edge via the stored original; no code change, proven non-vacuous).
-> Next: 22.14 (cross-instance community un-follow propagation). Deferring only the two live-infrastructure
-> items (a public FQDN, real external Mastodon accounts) that this environment cannot provision.
+> **Phase 23 status (CLOSED — 22.11–22.14):** Phase 23 (broader federation maturity & live-account
+> remediation, per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)) is
+> now fully closed on its *locally-actionable* scope: 22.11 (moderation-collection cache invalidation),
+> 22.12 (Mastodon / draft-10 `Digest` header casing locked with tests), 22.13 (cross-instance moderation
+> **undo** propagation locked with tests, proven non-vacuous), and 22.14 (cross-instance community
+> **un-follow** propagation locked with tests, proven non-vacuous). Only the two live-infrastructure items
+> (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain
+> deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now active.
 
-1. **22.14 — cross-instance community un-follow propagation:** on a 2-instance `FederationTopology`, community C on A follows an actor on B, then C publishes `Undo(Follow)`; assert B receives it and its `followers` no longer lists C (the "community/follow hardening" theme; folds in the community `following`/`followers` page invalidation). (In-process loopback — no external infra.)
-2. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy — not available in this environment; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
-3. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+> **Phase 24 slices (locally-actionable, in-process 2-instance `TestServer`):**
+>
+1. **24.1 — cross-instance like / announce undo propagation:** on a 2-instance topology, a local actor on A likes / announces a remote actor's object on B, then A publishes `Undo(Like)` / `Undo(Announce)`; assert B removes the recorded like / announce edge (mirrors 22.13/22.14 for the remaining `UndoActivityHandler` branches). (In-process loopback — no external infra.)
+2. **24.2 — cross-instance mute / un-mute propagation:** on a 2-instance topology, a local actor on A mutes an actor on B (the mute federates A → B), then A un-mutes; assert B reflects the mute then its removal. (In-process loopback — no external infra.)
+3. **24.3 — idempotent handling of duplicate inbound deliveries:** deliver the same signed activity to B's inbox twice (the same server-minted IRI); assert B records the edge exactly once and does not double-record or error (a real federation peer may redeliver on timeout/retry). (In-process loopback — no external infra.)
+>
+> **Deferred (live-infrastructure, not provisionable in this environment):**
+>
+4. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
+5. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
 
 ## Inbox
 
@@ -107,10 +115,10 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
+- 22.14: **Phase 23 closes** — cross-instance community **un-follow** propagation locked with tests (no code change): a community C on A follows a person bob on B (federates A → B; B records C in bob's followers + stores the original `Follow`), then C's `Undo(Follow)` federates A → B and B's `UndoActivityHandler` (F-1911-1) removes C from bob's followers. New `CommunityFollowsPersonUnfollowPropagationIntegrationTests` (2, 2-instance `TestServer`) — proven non-vacuous (disabling the remote removal fails the unfollow test). → [docs/changes/232-22.14-cross-instance-community-unfollow-propagation.md](docs/changes/232-22.14-cross-instance-community-unfollow-propagation.md)
 - 22.13: **cross-instance moderation undo propagation** — locked with tests (no code change): an `Undo(Block)`/`Undo(Flag)` published to A's outbox federates A → B and B's `UndoActivityHandler` (F-07) resolves the parties from the **locally-stored original** and removes the recorded edge. New `ModerationUndoPropagationIntegrationTests` (2, 2-instance `TestServer`: block + flag variants, each asserting the edge is gone on both A and B and the index/collection agrees) — proven non-vacuous (disabling the remote removal makes both fail). → [docs/changes/231-22.13-cross-instance-moderation-undo-propagation.md](docs/changes/231-22.13-cross-instance-moderation-undo-propagation.md)
 - 22.12: **Mastodon / draft-10 `Digest` header casing** — locked with tests (no code change): an inbound request carrying the uppercase `Digest: SHA-256=…` wire form (what a strict Mastodon / draft-10 peer emits) **already verifies**, because the signature base embeds the wire digest value verbatim and the digest's integrity is enforced by the signature (a tampered value → 401). New core unit tests (2) + `InboundUppercaseDigestIntegrationTests` (3, single-instance `TestServer`) lock both casings round-tripping and the tamper rejection. → [docs/changes/230-22.12-mastodon-digest-header-casing.md](docs/changes/230-22.12-mastodon-digest-header-casing.md)
-- 22.11: **Phase 23 opens** — fixed the moderation-collection cache-invalidation gap (C2S invariant): `blocks`/`flags`/`mutes` pages were served through the 60s-TTL page cache but never invalidated on a local moderation write (a `Block`/`Flag`/mute record or its `Undo`/un-mute), so the owner's card stayed stale until TTL; generalized `InvalidateLocalOutboxPage` → `InvalidateLocalCollectionPage` and wired it into the outbox-publish `Block`/`Flag`/`Undo` branches + both mute handlers. New `ModerationCollectionCacheInvalidationIntegrationTests` (5), prime→write→plain-read (proven to fail on the old code). → [docs/changes/229-22.11-moderation-collection-cache-invalidation.md](docs/changes/229-22.11-moderation-collection-cache-invalidation.md)
-- 22.10: fixed the local no-Docker CORS origin gap (finding B) — widened `SampleServer`'s default `Iris__CorsOrigins` to `http://localhost:8090,http://localhost:8080` so both documented local paths work out of the box; new `SampleServerCorsTests` (5) host the real server and assert the CORS header on the wire (proven to fail on the old default). → [docs/changes/228-22.10-fix-local-cors-origin-gap.md](docs/changes/228-22.10-fix-local-cors-origin-gap.md)
+- 22.11: fixed the moderation-collection cache-invalidation gap (C2S invariant): `blocks`/`flags`/`mutes` pages were served through the 60s-TTL page cache but never invalidated on a local moderation write, so the owner's card stayed stale until TTL; generalized `InvalidateLocalOutboxPage` → `InvalidateLocalCollectionPage` and wired it into the outbox-publish `Block`/`Flag`/`Undo` branches + both mute handlers. New `ModerationCollectionCacheInvalidationIntegrationTests` (5), prime→write→plain-read (proven to fail on the old code). → [docs/changes/229-22.11-moderation-collection-cache-invalidation.md](docs/changes/229-22.11-moderation-collection-cache-invalidation.md)
 
 ## Keeping the docs lean
 
