@@ -187,6 +187,29 @@ public static class ActivityPubServerExtensions
             return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache);
         });
 
+        // Outbound object fetch (24.1): the server→server delivery target for a Like / Announce (and an
+        // Undo of one) of a *remote* object is that object's author (attributedTo). A local object's owner
+        // is read from the object store; a remote object's owner is resolved by fetching the object's
+        // document over the wire and reading its attributedTo — without this the delivery would fall back
+        // to the object IRI, whose "/inbox" does not exist (the remote instance never receives the
+        // activity or its undo, so its edge is never recorded or removed). Registered only when an instance
+        // actor is configured (the only case where the server can sign an outbound object fetch); when
+        // absent, IActivityPubClient is left unregistered so the outbox handler's nullable
+        // IActivityPubClient? parameter resolves to null (GetService).
+        var configuredOptions = new ActivityPubServerOptions();
+        configure(configuredOptions);
+        if (configuredOptions.InstanceActorId is { } configuredInstanceActor)
+        {
+            services.TryAddSingleton<IActivityPubClient>(sp =>
+                sp.GetRequiredService<IActivityPubClientFactory>().Create(
+                    new ActivityPubClientOptions
+                    {
+                        ActorId = configuredInstanceActor,
+                        EnableRetry = false,
+                    },
+                    new HttpClientHandler()));
+        }
+
         // Outbound remote-collection fetch (Phase 4): fetches a single page of a remote actor's
         // collection (e.g. a remote actor's outbox/followers), reading through the Phase 3
         // CollectionPageCache so a page is fetched once and reused within the TTL. The outbound
@@ -1577,6 +1600,7 @@ public static class ActivityPubServerExtensions
         IdMinter idMinter,
         LocalCollectionPageCache collectionCache,
         LocalActorDocumentCache actorDocumentCache,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1685,7 +1709,7 @@ public static class ActivityPubServerExtensions
                 // outbox-write path (this branch) records it here so a local boost is counted exactly
                 // like a local like is (RecordLikeLocalAsync). Reversible via Undo(Announce)
                 // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync).
-                await RecordAnnounceLocalAsync(persistence, actorIri, announce, ct).ConfigureAwait(false);
+                await RecordAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct).ConfigureAwait(false);
 
                 var recipients = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, actorIri, ct)
                     .ConfigureAwait(false);
@@ -1735,8 +1759,8 @@ public static class ActivityPubServerExtensions
                     Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
                     Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
                     Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
-                    Like like => await RecordLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
-                    Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, ct).ConfigureAwait(false),
+                    Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
+                    Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
                     Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
                     Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
                     _ => null,
@@ -2500,14 +2524,16 @@ public static class ActivityPubServerExtensions
     /// Records the local like edge for a <see cref="Like"/> published to the actor's outbox and returns
     /// the object's owner (the recipient of the server→server delivery). The liker is the acting local
     /// actor, so the edge (liker → object) is always recorded in the liker's <c>liked</c> collection. The
-    /// owner is the object's <c>attributedTo</c> (fetched from the object store when the object is a
-    /// local object); a remote object's owner is resolved by the remote instance on receipt. Returns
-    /// <see langword="null"/> when the owner is not resolvable.
+    /// owner is the object's <c>attributedTo</c>: a local object's owner is read from the object store; a
+    /// remote object's owner is resolved by fetching the object's document over the wire (24.1) so the
+    /// delivery reaches the object's author's inbox (the object IRI's own <c>/inbox</c> does not exist).
+    /// Returns <see langword="null"/> when the object is not resolvable.
     /// </summary>
     private static async Task<Iri?> RecordLikeLocalAsync(
         IPersistenceProvider persistence,
         Iri likerIri,
         Like like,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var objectIri = like.Object?.FirstOrDefault().ResolveObjectIri();
@@ -2517,20 +2543,59 @@ public static class ActivityPubServerExtensions
         }
 
         await persistence.Likes.RecordLikeAsync(likerIri, objectIri.Value, ct).ConfigureAwait(false);
+        return await ResolveObjectOwnerForDeliveryAsync(persistence, objectFetch, objectIri.Value, ct).ConfigureAwait(false);
+    }
 
-        // The owner is the object's attributedTo. A local object is in the object store; a remote
-        // object's owner is resolved by the remote instance (the delivery still goes to the object IRI,
-        // whose instance routes it to the owner).
-        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
-            .ConfigureAwait(false) &&
-            storedObject is { } &&
-            storedObject.AttributedTo is { } attributed &&
-            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
+    /// <summary>
+    /// Resolves the recipient of the server→server delivery for a Like / Announce (or an Undo of one) of
+    /// the object at <paramref name="objectIri"/>: the object's owner (its <c>attributedTo</c>). A local
+    /// object's owner is read from the object store; a remote object's owner is resolved by fetching the
+    /// object's document over the wire (24.1) and reading its <c>attributedTo</c>. When the owner is not
+    /// resolvable (no local copy and the remote fetch yields no owner) the object IRI itself is returned
+    /// as a best-effort fallback (the prior behavior — the remote instance routes the delivery to the
+    /// owner). Returns <paramref name="objectIri"/> unchanged when unresolvable.
+    /// </summary>
+    private static async Task<Iri> ResolveObjectOwnerForDeliveryAsync(
+        IPersistenceProvider persistence,
+        IActivityPubClient? objectFetch,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        // A local object is in the object store: read its attributedTo directly (no wire hop).
+        if (await persistence.Objects.TryGetObjectAsync(objectIri, out var storedObject, ct).ConfigureAwait(false)
+            && storedObject is { }
+            && storedObject.AttributedTo is { } localAttributed
+            && localAttributed.FirstOrDefault().ResolveObjectIri() is { } localOwner)
         {
-            return ownerIri;
+            return localOwner;
         }
 
-        return objectIri.Value;
+        // A remote object is not in the object store: fetch its document over the wire and read its
+        // attributedTo, so the delivery targets the object's author's inbox (not the object IRI's
+        // non-existent /inbox). A fetch failure (network, not-found, or a document with no attributedTo)
+        // degrades to the object IRI fallback — the remote fetch is best-effort: it must never fail the
+        // local publish (the activity is still recorded locally and delivered to the object IRI, the
+        // prior behavior).
+        if (objectFetch is { } fetch)
+        {
+            try
+            {
+                var remoteObject = await fetch.GetObjectAsync(objectIri, ct).ConfigureAwait(false);
+                if (remoteObject is { }
+                    && remoteObject.AttributedTo is { } remoteAttributed
+                    && remoteAttributed.FirstOrDefault().ResolveObjectIri() is { } remoteOwner)
+                {
+                    return remoteOwner;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                // A remote fetch failure is an expected condition (the object may be on an unreachable
+                // instance); degrade to the object IRI fallback rather than failing the publish.
+            }
+        }
+
+        return objectIri;
     }
 
     /// <summary>
@@ -2545,6 +2610,8 @@ public static class ActivityPubServerExtensions
     /// <param name="persistence">The persistence provider (provides the <see cref="IAnnounceStore"/>).</param>
     /// <param name="announcerIri">The acting actor (the announcer, the outbox owner).</param>
     /// <param name="announce">The <see cref="Announce"/> activity.</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a remote object's owner (24.1);
+    /// null disables remote-object owner resolution (the delivery degrades to the object IRI).</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The announced object's owner IRI (or the object IRI when the owner is not resolvable), or
     /// <see langword="null"/> when the announce has no resolvable object.</returns>
@@ -2552,6 +2619,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         Iri announcerIri,
         Announce announce,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
@@ -2561,20 +2629,7 @@ public static class ActivityPubServerExtensions
         }
 
         await persistence.Announces.RecordAnnounceAsync(announcerIri, objectIri.Value, ct).ConfigureAwait(false);
-
-        // The owner is the object's attributedTo (mirrors RecordLikeLocalAsync): a local object's owner
-        // is resolved from the object store; a remote object's owner is resolved by the remote instance
-        // (the delivery still goes to the object IRI, whose instance routes it to the owner).
-        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
-            .ConfigureAwait(false) &&
-            storedObject is { } &&
-            storedObject.AttributedTo is { } attributed &&
-            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
-        {
-            return ownerIri;
-        }
-
-        return objectIri.Value;
+        return await ResolveObjectOwnerForDeliveryAsync(persistence, objectFetch, objectIri.Value, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2587,6 +2642,8 @@ public static class ActivityPubServerExtensions
     /// <param name="persistence">The persistence provider (provides the <see cref="IAnnounceStore"/>).</param>
     /// <param name="announcerIri">The acting actor (the announcer whose edge is removed).</param>
     /// <param name="announce">The undone <see cref="Announce"/> activity.</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a remote object's owner (24.1);
+    /// null disables remote-object owner resolution (the delivery degrades to the object IRI).</param>
     /// <param name="ct">A cancellation token.</param>
     /// <returns>The announced object's owner IRI (or the object IRI when the owner is not resolvable), or
     /// <see langword="null"/> when the announce has no resolvable object.</returns>
@@ -2594,6 +2651,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         Iri announcerIri,
         Announce announce,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
@@ -2603,17 +2661,7 @@ public static class ActivityPubServerExtensions
         }
 
         await persistence.Announces.RemoveAnnounceAsync(announcerIri, objectIri.Value, ct).ConfigureAwait(false);
-
-        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
-            .ConfigureAwait(false) &&
-            storedObject is { } &&
-            storedObject.AttributedTo is { } attributed &&
-            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
-        {
-            return ownerIri;
-        }
-
-        return objectIri.Value;
+        return await ResolveObjectOwnerForDeliveryAsync(persistence, objectFetch, objectIri.Value, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2631,6 +2679,7 @@ public static class ActivityPubServerExtensions
         ILocalActorResolver localActors,
         Iri actorIri,
         Undo undo,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var referenced = undo.Object?.FirstOrDefault().ResolveObjectIri();
@@ -2646,8 +2695,8 @@ public static class ActivityPubServerExtensions
             Follow follow => await RemoveFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
             Block block => await RemoveBlockLocalAsync(persistence, actorIri, block, ct).ConfigureAwait(false),
             Flag flag => await RemoveFlagLocalAsync(persistence, actorIri, flag, ct).ConfigureAwait(false),
-            Like like => await RemoveLikeLocalAsync(persistence, actorIri, like, ct).ConfigureAwait(false),
-            Announce announce => await RemoveAnnounceLocalAsync(persistence, actorIri, announce, ct).ConfigureAwait(false),
+            Like like => await RemoveLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
+            Announce announce => await RemoveAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct).ConfigureAwait(false),
             _ => null,
         };
     }
@@ -2656,6 +2705,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         Iri likerIri,
         Like like,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var objectIri = like.Object?.FirstOrDefault().ResolveObjectIri();
@@ -2666,20 +2716,11 @@ public static class ActivityPubServerExtensions
 
         // The inverse of RecordLikeLocalAsync: the actor's home instance removes its own like edge
         // (the actor's `liked` collection no longer lists the object). The return value is the object's
-        // owner (the remote side that must remove its like edge) when the object is local; otherwise the
-        // object IRI (whose instance routes the delivery to the owner) — mirroring RecordLikeLocalAsync.
+        // owner (the remote side that receives the Undo) — resolved from the object store for a local
+        // object, or by fetching the remote object's document (24.1) so the Undo reaches the object's
+        // author's inbox.
         await persistence.Likes.RemoveLikeAsync(likerIri, objectIri.Value, ct).ConfigureAwait(false);
-
-        if (await persistence.Objects.TryGetObjectAsync(objectIri.Value, out var storedObject, ct)
-                .ConfigureAwait(false) &&
-            storedObject is { } &&
-            storedObject.AttributedTo is { } attributed &&
-            attributed.FirstOrDefault().ResolveObjectIri() is { } ownerIri)
-        {
-            return ownerIri;
-        }
-
-        return objectIri.Value;
+        return await ResolveObjectOwnerForDeliveryAsync(persistence, objectFetch, objectIri.Value, ct).ConfigureAwait(false);
     }
 
     private static async Task<Iri?> RemoveFollowLocalAsync(

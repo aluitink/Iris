@@ -35,8 +35,14 @@ public sealed class ActivityPubHostOptions
     public IActorDocumentFetcher? Fetcher { get; init; }
 
     /// <summary>Override the outbound delivery transport (federation wiring: route the <c>DeliveryWorker</c>
-    /// to the other instance's <c>TestServer</c>). Defaults to a real <c>HttpClientHandler</c>.</summary>
+    /// to the other instance's <see cref="TestServer"/>). Defaults to a real <see cref="HttpClientHandler"/>.</summary>
     public Func<HttpMessageHandler>? DeliveryTransport { get; init; }
+
+    /// <summary>Override the outbound object fetcher (the <see cref="IActivityPubClient"/> the outbox
+    /// publish handler uses to resolve a remote object's owner for a Like / Announce delivery, 24.1).
+    /// When set, it is registered after the host's default (so it wins for <c>GetService</c>); when null,
+    /// the host's default (a real <see cref="HttpClientHandler"/> client, or none) is used.</summary>
+    public IActivityPubClient? Client { get; init; }
 
     /// <summary>Override the Basic-auth credential validator (the owner-only actor-doc + proxy gate).</summary>
     public IActorCredentialValidator? CredentialValidator { get; init; }
@@ -152,6 +158,14 @@ public static class ActivityPubHostFactory
                 if (options.Fetcher is not null)
                 {
                     s.AddSingleton<IActorDocumentFetcher>(options.Fetcher);
+                }
+
+                // 24.1: override the outbound object fetcher (the outbox handler's IActivityPubClient? param)
+                // so a test can route A's remote-object fetch to B's TestServer. Added after AddActivityPubServer
+                // (which TryAddSingletons the default), so this registration wins for GetService<IActivityPubClient>.
+                if (options.Client is not null)
+                {
+                    s.AddSingleton<IActivityPubClient>(options.Client);
                 }
 
                 if (options.DeliveryTransport is { } transport)
