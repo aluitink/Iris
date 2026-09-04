@@ -84,7 +84,7 @@ Short, bounded list — only the next few items, not the whole roadmap. When thi
 1. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
 2. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
 3. Final manual UI verification pass across object/actor/community/instance screens. See [phase-22-closeout.md §3](docs/plans/phase-22-closeout.md#3-ui-verification-and-final-manual-pass).
-4. Extension API surface audit — classify every custom field/route as core AP, ecosystem convention, or `iris:` extension. See [phase-22-closeout.md §4](docs/plans/phase-22-closeout.md#4-extension-api-surface-audit-and-namespacing-review).
+4. ~~Extension API surface audit — classify every custom field/route as core AP, ecosystem convention, or `iris:` extension.~~ **Done (22.7, change 225).**
 
 ## Inbox
 
@@ -100,7 +100,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
-- 22.6: shared `PagedCollection` consolidation for inbox/followers/following cards; local compose manual pass completed. → [docs/changes/195-22.6-local-manual-test-pass.md](docs/changes/195-22.6-local-manual-test-pass.md)
+- 22.7: extension API-surface conformance — every document property classified core-AP (bare) vs Iris extension (`iris:`-namespaced); server declares a JSON-LD `@context`; all wire terms centralized in `Iris.Core`; conformance pinned on the wire. → [docs/changes/225-22.7-extension-api-surface-conformance.md](docs/changes/225-22.7-extension-api-surface-conformance.md)
 - 22.6.2: settings-as-JSON-LD-extensions, manually-approves-followers gate, and centralized settings-gate extension terms. → [docs/changes/224-22.6.2-centralize-settings-gate-extension-terms.md](docs/changes/224-22.6.2-centralize-settings-gate-extension-terms.md)
 
 ## Keeping the docs lean
