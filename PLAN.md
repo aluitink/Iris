@@ -77,31 +77,19 @@ None in progress — Phase 26 (26.1–26.5) is fully closed on its locally-actio
 
 Short, bounded list — only the next few items, not the whole roadmap. When this drops below ~3 items, replenish it from [docs/plans/phase-22-closeout.md](docs/plans/phase-22-closeout.md) or by expanding the next phase in [docs/ROADMAP.md](docs/ROADMAP.md).
 
-> **Phase 23 status (CLOSED — 22.11–22.14):** Phase 23 (broader federation maturity & live-account
-> remediation, per [phase-22-closeout.md §5](docs/plans/phase-22-closeout.md#5-future-follow-on-work)) is
-> now fully closed on its *locally-actionable* scope: 22.11 (moderation-collection cache invalidation),
-> 22.12 (Mastodon / draft-10 `Digest` header casing locked with tests), 22.13 (cross-instance moderation
-> **undo** propagation locked with tests, proven non-vacuous), and 22.14 (cross-instance community
-> **un-follow** propagation locked with tests, proven non-vacuous). Only the two live-infrastructure items
-> (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain
- > deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now fully
- > closed on its locally-actionable scope (24.1–24.4). Phase 25 (federation hardening & robustness) is now
- > fully closed on its locally-actionable scope (25.1–25.3). Phase 26 (federation completeness & remaining
- > invariant locks) is now active.
+> **Phase 27 slices (locally-actionable, in-process 2-instance `TestServer`) — seeded, to be refined as
+> each is picked up:**
+>
+> 1. **27.1 — cross-instance `Update` (profile change) propagation:** lock that when a remote actor updates their profile (name, summary), the `Update` activity federates to the local instance and the cached actor doc is refreshed. Check if `UpdateActivityHandler` already handles this; if so, test-only lock; if not, a real code fix.
+> 2. **27.2 — inbound `Move` with `iris:` extension round-trip:** verify that a `Move` activity carrying `iris:`-namespaced extension properties (e.g. `iris:reason`) round-trips correctly across instances — the receiving instance stores the extensions and a subsequent `GET` on the activity returns them.
+> 3. **27.3 — cross-instance `Undo(Like)` of a remote object:** verify that undoing a like of a remote object (object IRI on a different instance) federates correctly — the 24.1 fix covered `Like`/`Announce` of remote objects (resolving the object's author for the delivery target); lock that the `Undo(Like)` path also resolves the author correctly.
 
-  > **Phase 26 slices (locally-actionable, in-process 2-instance `TestServer`) — seeded, to be refined as
-  > each is picked up:**
-  >
-  1. ~~**26.1 — cross-instance `Accept` (follow-acceptance) propagation**~~ — **DONE** (test-only lock; new `CrossInstanceAcceptPropagationIntegrationTests`, 2, 2-instance `TestServer`; non-vacuous signal = the stored `Accept` in the follower's activity store; proven non-vacuous). → [docs/changes/240-26.1-cross-instance-accept-propagation.md](docs/changes/240-26.1-cross-instance-accept-propagation.md)
-  2. ~~**26.2 — inbound `Tombstone` object contract (F-10)**~~ — **DONE** (a real code fix, not test-only: a standalone `Tombstone` was rejected with `400` and a `Create`-wrapped `Tombstone` was mis-processed with a bogus outbox entry; new `TombstoneInbound.ApplyAsync` stores the tombstone under the object IRI + cleans the local copy, wired into both inbound paths; new `InboundTombstoneIntegrationTests`, 2, 2-instance `TestServer`; non-vacuous signal = the stored object on A (tombstone, not the stale note) + the cleaned outbox/object→Create index; proven non-vacuous). → [docs/changes/241-26.2-inbound-tombstone-object-contract.md](docs/changes/241-26.2-inbound-tombstone-object-contract.md)
-  3. ~~**26.3 — cross-instance `Announce` (boost) fan-out to a remote author's local followers**~~ — **DONE** (a **no-op**: the cross-instance `Announce` fan-out to a remote author's local followers is already implemented — the inbound `AnnounceActivityHandler` records the boost in the local recipient's outbox + propagates to each local follower (recording directly in their outbox) — and already locked by Phase 19.3.3's `AnnouncePropagationIntegrationTests` (both tests: a boost of a local note reaches the peer's local follower exactly once, and a boost of a remote note reaches the remote author's local follower with the correct object link + no infinite chain). No new test or code was added. A latent test-suite footgun was discovered along the way: a test file's private `LazyHandler` shadows the shared `Iris.Testing.LazyHandler`, and a copy that omits the request-clone logic breaks the nested actor-doc fetch the signature validator uses to resolve a local key (a spurious `401`). → [docs/changes/242-26.3-cross-instance-announce-fanout-noop.md](docs/changes/242-26.3-cross-instance-announce-fanout-noop.md)
-  4. ~~**26.4 — `Move` key-rotation cache invalidation (F-25)**~~ — **DONE** (test-only lock, no code change: the `MoveActivityHandler`'s F-25 cache invalidation already exists and is unit-tested, but no end-to-end 2-instance test locked the full path. New `MoveKeyRotationIntegrationTests`, 1, 2-instance `TestServer`: bob (B) follows old alice (A); Phase 1 warms B's `RemoteActorCache`+`RemoteKeyCache` (old-key `Follow` → 202, key-cache count=1); Phase 2 the old alice delivers a `Move` to a new IRI (on A, new key) → B re-points bob's edge AND clears the old IRI's cache entries (key-cache count=1→0); Phase 3 A decommissions the old IRI → an old-key delivery is rejected 401 (B re-fetches, 404, no key) while a new-key delivery is accepted 202 (B resolves the new key via a fresh fetch of the new actor doc). Non-vacuous: disabling the handler's `RemoteKeyCache` invalidation fails the test at Phase 2 (count stays 1). The new IRI is modeled on the same host as the old (a migration to a new path) so B resolves the new key via the *remote* fetch path, not a local lookup). → [docs/changes/243-26.4-move-key-rotation-cache-invalidation.md](docs/changes/243-26.4-move-key-rotation-cache-invalidation.md)
-   5. ~~**26.5 — delivery-worker dead-letter store wiring into a real topology**~~ — **DONE** (test-only lock, no code change: the `DeliveryWorker`'s dead-letter store wiring already exists and is unit-tested, but no end-to-end 2-instance test locked the full path. New `DeliveryDeadLetterIntegrationTests`, 1, 2-instance `TestServer`: bob (B) follows alice (A); A's `DeliveryWorker` delivers the auto-`Accept` to bob's inbox on B via a failable transport (500); after exhausting the default retry budget (5 attempts, 1s base delay, ~15s total backoff), the job is dead-lettered in A's `IDeliveryDeadLetterStore` with the correct inbox IRI, actor IRI (alice), failure kind (`NonSuccessStatus`), detail (`"500"`), and attempt count (5). Non-vacuous: forcing the "no store" path in `DeadLetterAsync` fails the test (store stays empty, 5 500s served). Key decision: used the default `DeliveryRetryOptions` (5 attempts, 1s base) instead of overriding via `ExtraServices` because `IOptions<T>` caches the first resolved instance and a later `AddSingleton<T>` does not override it.) → [docs/changes/244-26.5-delivery-dead-letter-store-wiring.md](docs/changes/244-26.5-delivery-dead-letter-store-wiring.md)
-  >
-  > **Deferred (live-infrastructure, not provisionable in this environment):**
- >
- 6. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
- 7. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+> **Deferred (live-infrastructure, not provisionable in this environment):**
+>
+> 4. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
+> 5. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+
+
 
 ## Inbox
 
