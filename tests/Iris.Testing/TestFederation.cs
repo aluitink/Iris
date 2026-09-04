@@ -92,6 +92,50 @@ public static class TestFederation
     }
 
     /// <summary>
+    /// Polls <paramref name="valueProbe"/> (every 50ms) until the returned value has been
+    /// <em>stable</em> (unchanged) for <paramref name="settleWindow"/>, or <paramref name="timeout"/>
+    /// elapses — whichever comes first. Returns the last observed value.
+    /// </summary>
+    /// <remarks>
+    /// This is the "let any (absent) amplification settle" replacement for a fixed <c>Task.Delay</c>
+    /// wait: a healthy (bounded) system's count stabilizes quickly, so the wait breaks out in roughly
+    /// <paramref name="settleWindow"/> instead of a fixed several seconds; a broken (unbounded) system's
+    /// count never stabilizes, so the wait runs to the full <paramref name="timeout"/> (the original
+    /// fixed-delay budget) before the caller's boundedness assertion fails. Pass a
+    /// <paramref name="timeout"/> equal to the fixed delay it replaces so detection sensitivity is
+    /// unchanged — the method is strictly faster-or-equal, never slower.
+    /// </remarks>
+    /// <param name="valueProbe">Returns the observed value (e.g. a delivery-counter total or an outbox
+    /// count) on each poll.</param>
+    /// <param name="settleWindow">How long the value must be unchanged before the wait breaks out.</param>
+    /// <param name="timeout">The overall budget (the original fixed-delay value); on expiry the last
+    /// observed value is returned.</param>
+    public static async Task<int> WaitForStableAsync(
+        Func<Task<int>> valueProbe, TimeSpan settleWindow, TimeSpan timeout)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        var lastValue = await valueProbe().ConfigureAwait(false);
+        var stableSince = DateTime.UtcNow;
+        while (DateTime.UtcNow < deadline)
+        {
+            var value = await valueProbe().ConfigureAwait(false);
+            if (value != lastValue)
+            {
+                lastValue = value;
+                stableSince = DateTime.UtcNow;
+            }
+            else if (DateTime.UtcNow - stableSince >= settleWindow)
+            {
+                return value;
+            }
+
+            await Task.Delay(50).ConfigureAwait(false);
+        }
+
+        return lastValue;
+    }
+
+    /// <summary>
     /// Posts <paramref name="activity"/> to <paramref name="actorIri"/>'s inbox via a client signed as
     /// the actor (the "local post" path), routed to the in-process <paramref name="server"/>. Returns the
     /// HTTP status (202 Accepted when the full inbound pipeline — signature validation + handler — ran).

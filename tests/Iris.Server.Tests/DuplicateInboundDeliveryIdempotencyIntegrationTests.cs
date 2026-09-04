@@ -131,7 +131,13 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
         var inbox = InboxOf(_bobActorIri);
         var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _b!);
         var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _b!);
-        await Task.Delay(TimeSpan.FromSeconds(4));
+        // Let the (async) block-edge recording settle: poll until alice's blocker count for bob is
+        // stable for 500ms (a healthy system settles in well under the original fixed 4s), bounded by
+        // the original 4s budget so a duplicate edge (a non-idempotent regression) still lands before
+        // the exactly-once assertion below.
+        await TestFederation.WaitForStableAsync(async () =>
+            (await _bPersistence.Moderation.GetBlockersAsync(_bobActorIri)).Count(b => b == _aliceActorIri),
+            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(4));
 
         // Both deliveries were accepted (a re-delivery is a no-op, not an error).
         Assert.True(first, "the first Block delivery should have been accepted (202).");
@@ -174,7 +180,13 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
         var inbox = InboxOf(_bobActorIri);
         var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _b!);
         var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _b!);
-        await Task.Delay(TimeSpan.FromSeconds(4));
+        // Let the (async) follow-edge recording settle: poll until alice's follower count for bob is
+        // stable for 500ms (a healthy system settles in well under the original fixed 4s), bounded by
+        // the original 4s budget so a duplicate edge (a non-idempotent regression) still lands before
+        // the exactly-once assertion below.
+        await TestFederation.WaitForStableAsync(async () =>
+            (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Count(f => f == _aliceActorIri),
+            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(4));
 
         Assert.True(first, "the first Follow delivery should have been accepted (202).");
         Assert.True(second, "a redelivered Follow should be accepted as a no-op (202), not error (500).");
