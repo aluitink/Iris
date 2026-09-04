@@ -65,7 +65,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 24 — federation robustness & remaining cross-instance propagation gaps.** Phase 23's locally-actionable scope is fully closed (22.11–22.14). Phase 24 continues the in-process federation hardening: the remaining propagation gaps (mute/un-mute cross-instance, community→community un-follow) and delivery robustness (retry/backoff on transient failure, idempotent handling of duplicate inbound deliveries) — all testable on the 2-instance `TestServer` harness. 24.1 (cross-instance like/announce undo propagation) is now closed: it surfaced and **fixed** a real delivery-target bug (a Like/Announce of a remote object — and its Undo — was delivered to the object IRI's non-existent `/inbox` instead of the object's author's inbox) and locked the fix with tests. 24.2 (cross-instance mute/un-mute propagation) is now closed: a genuine feature addition (not a test-only lock) — `Mute` is **not** an ActivityStreams type, so a mute could neither be sent nor received across instances; fixed by introducing the Iris-specific `MuteActivity` and registering it in the library's type registry so it round-trips, plus the inbound handler, outbox mute/undo arms, and `"mutes"` invalidation. Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) remain deferred.
+**Phase 24 — federation robustness & remaining cross-instance propagation gaps.** Phase 23's locally-actionable scope is fully closed (22.11–22.14). Phase 24 continues the in-process federation hardening: the remaining propagation gaps (mute/un-mute cross-instance, community→community un-follow) and delivery robustness (retry/backoff on transient failure, idempotent handling of duplicate inbound deliveries) — all testable on the 2-instance `TestServer` harness. 24.1 (cross-instance like/announce undo propagation) is now closed: it surfaced and **fixed** a real delivery-target bug (a Like/Announce of a remote object — and its Undo — was delivered to the object IRI's non-existent `/inbox` instead of the object's author's inbox) and locked the fix with tests. 24.2 (cross-instance mute/un-mute propagation) is now closed: a genuine feature addition (not a test-only lock) — `Mute` is **not** an ActivityStreams type, so a mute could neither be sent nor received across instances; fixed by introducing the Iris-specific `MuteActivity` and registering it in the library's type registry so it round-trips, plus the inbound handler, outbox mute/undo arms, and `"mutes"` invalidation. 24.3 (idempotent handling of duplicate inbound deliveries) is now closed: a test-only lock of the C-07 inbox-Id dedup guard for an edge-recording activity (a redelivered `Block`/`Follow` records the edge exactly once, no error, no duplicate `Accept`). Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) and the remaining slice 24.4 (community→community un-follow propagation) are still open.
 
 ## Active Slice
 
@@ -90,10 +90,9 @@ Short, bounded list — only the next few items, not the whole roadmap. When thi
 > (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain
 > deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now active.
 
-> **Phase 24 slices (locally-actionable, in-process 2-instance `TestServer`):**
->
-1. **24.3 — idempotent handling of duplicate inbound deliveries:** deliver the same signed activity to B's inbox twice (the same server-minted IRI); assert B records the edge exactly once and does not double-record or error (a real federation peer may redeliver on timeout/retry). (In-process loopback — no external infra.)
-2. **24.4 — community→community un-follow propagation:** a community C on A follows a community D on B (federates A → B; B records C in D's followers), then C's `Undo(Follow)` federates A → B and B removes C from D's followers (the community→community analogue of 22.14). (In-process loopback — no external infra.)
+ > **Phase 24 slices (locally-actionable, in-process 2-instance `TestServer`):**
+ >
+ 1. **24.4 — community→community un-follow propagation:** a community C on A follows a community D on B (federates A → B; B records C in D's followers), then C's `Undo(Follow)` federates A → B and B removes C from D's followers (the community→community analogue of 22.14). (In-process loopback — no external infra.)
 >
 > **Deferred (live-infrastructure, not provisionable in this environment):**
 >
@@ -111,6 +110,8 @@ User-injected requests that arrived mid-workstream. Actioned in order at the top
 Questions the agent asked and is waiting on a real answer for — the loop should not silently proceed past these. *(none currently)*
 
 ## Recently Completed
+
+- 24.3: **idempotent handling of duplicate inbound deliveries** — a real federation peer may redeliver the same signed activity (on timeout/retry/retransmission), so the receiving instance must treat a repeat as a no-op. Locked the C-07 inbox-Id dedup guard (store add-if-absent + skip handler re-dispatch on a re-delivery) for an *edge-recording* activity with `DuplicateInboundDeliveryIdempotencyIntegrationTests` (2, 2-instance `TestServer`): a redelivered `Block` records the block edge exactly once and the second delivery is accepted as a no-op (202, not 500); a redelivered `Follow` records the follow edge exactly once **and** emits exactly one `Accept` to the follower (the `FollowActivityHandler` mints a fresh `Accept` id per dispatch, so the "exactly one Accept" assertion is the non-vacuous proof the handler runs exactly once — the idempotent store edge alone would stay one even if the handler ran twice). Proven non-vacuous: disabling the C-07 early-return makes the `Follow` test observe **two** distinct `Accept`s in the follower's inbox (guard on → one). → [docs/changes/235-24.3-duplicate-inbound-delivery-idempotency.md](docs/changes/235-24.3-duplicate-inbound-delivery-idempotency.md)
 
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
