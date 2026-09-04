@@ -202,9 +202,13 @@ public static partial class SampleServer
         // The Blazor WASM explorer dials the instance cross-origin (the browser base URL is the
         // host-published port / public proxy, not the server's own origin), so the server must answer
         // CORS preflights. The allowed origins come from Iris__CorsOrigins (comma-separated, e.g.
-        // "http://localhost:8090,https://explorer.example"); when unset, only the local sample UI
-        // origin is allowed. Credentials are enabled so Basic-auth / Bearer headers can be sent.
-        var corsOriginsCsv = configuration["Iris:CorsOrigins"] ?? "http://localhost:8090";
+        // "http://localhost:8090,https://explorer.example"). When unset, both documented local UI
+        // origins are allowed: http://localhost:8090 (the Docker `iris-ui` static host) and
+        // http://localhost:8080 (the local no-Docker Blazor dev server) — so either documented local
+        // log-on path works out of the box without setting the env var (change 228, finding B).
+        // Credentials are enabled so Basic-auth / Bearer headers can be sent.
+        var corsOriginsCsv = configuration["Iris:CorsOrigins"]
+            ?? "http://localhost:8090,http://localhost:8080";
         var corsOrigins = corsOriginsCsv
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         services.AddCors(options => options.AddDefaultPolicy(policy =>
