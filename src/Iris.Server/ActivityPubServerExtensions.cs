@@ -1860,6 +1860,20 @@ public static class ActivityPubServerExtensions
                     await deleteHandler.HandleAsync(new InboxDelivery(actorIri, delete), delete, ct).ConfigureAwait(false);
                 }
             }
+            else if (activity is Update update)
+            {
+                // An update (a local actor editing their own content) routes to the UpdateActivityHandler —
+                // the same handler that handles an inbound Update — so the local object-store refresh and
+                // the federated propagation to remote followers (the federated half of F-02) all go through
+                // the one code path. The Update was already recorded in the outbox + activity store (steps
+                // 1); the handler applies the local object-store change and the propagation. A non-author
+                // (or an object not stored here) is a no-op (the handler's owner guard), so the 202
+                // (recorded) is still correct.
+                if (handlers.OfType<UpdateActivityHandler>().FirstOrDefault() is { } updateHandler)
+                {
+                    await updateHandler.HandleAsync(new InboxDelivery(actorIri, update), update, ct).ConfigureAwait(false);
+                }
+            }
             else
             {
                 // AP-native person settings change (22.6.1): an Add (enable) or Remove (disable) of the

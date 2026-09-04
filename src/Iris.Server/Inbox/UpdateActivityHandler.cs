@@ -99,16 +99,16 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
-        // Owner guard: the updating actor must own the stored object. A <em>local</em> author is always
-        // the owner of an object this instance stores (it created it); a <em>remote</em> author is
-        // accepted only when this instance holds a copy of the author's object (stored via the outbound
-        // <c>Create</c> federation) and the stored object is attributed to that author. This is the
-        // federated half of F-02: a remote instance that received an author's post stores a copy and must
-        // apply the author's later <c>Update</c> to it (the actor is remote, so it is not "local" here,
-        // but it is the owner of this instance's copy). A remote actor updating an object it does not own
-        // is rejected.
+        // Owner guard: the updating actor must own the stored object. Both local and remote actors are
+        // checked: the stored object must be <c>attributedTo</c> the updating actor. A local author who
+        // created the object on this instance is attributed to it (the <c>CreateActivityHandler</c> /
+        // outbox-publish path stores the embedded object with its <c>attributedTo</c> set to the
+        // author). A remote author who is the owner of a federated copy (stored via the outbound
+        // <c>Create</c> federation) is likewise attributed. An actor updating an object it does not own
+        // (a local actor forging an update to a remote actor's federated copy, or a remote actor
+        // updating an object attributed to someone else) is rejected.
         var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri.Value, ct).ConfigureAwait(false);
-        if (!actorIsLocal && (stored is null || !IsAttributedTo(stored, actorIri)))
+        if (stored is null || !IsAttributedTo(stored, actorIri))
         {
             return;
         }
