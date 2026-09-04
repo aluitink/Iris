@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Iris.Core;
+using Iris.Core.Identity;
 
 namespace Iris.Core.Tests.Signing;
 
@@ -90,6 +91,76 @@ public class SignaturesTests
             $"digest: {digest}\n" +
             "content-type: application/activity+json";
         Assert.Equal(Encoding.UTF8.GetBytes(expected), baseBytes);
+    }
+
+    // --- Digest header casing: the value is embedded VERBATIM, so a strict draft-10 / Mastodon
+    //     sender's uppercase `SHA-256=…` wire form reconstructs the same base and verifies --------
+
+    [Fact]
+    public void BuildSignatureBase_ServerToServer_EmbodiesUppercaseDigestVerbatim()
+    {
+        // A strict draft-10 / Mastodon peer emits `Digest: SHA-256=<b64>` (uppercase algorithm label).
+        // The signature base must embed that EXACT wire string — the verifier trusts the declared
+        // header value (it does not recompute the digest), so the base must byte-match what the
+        // sender signed over. This is what makes an uppercase-Digest request verifiable.
+        var body = Encoding.UTF8.GetBytes("{\"@context\":\"https://www.w3.org/ns/activitystreams\"}");
+        var uppercaseDigest = $"SHA-256={Convert.ToBase64String(SHA256.HashData(body))}";
+        var metadata = new HttpRequestMetadata(
+            method: "POST",
+            pathAndQuery: "/u/alice/inbox",
+            host: "a.domain.local",
+            date: "Tue, 26 Aug 2026 12:00:00 GMT",
+            contentType: "application/activity+json",
+            body: body,
+            headers: new Dictionary<string, string> { ["digest"] = uppercaseDigest });
+
+        var baseBytes = Signatures.BuildSignatureBase(
+            metadata,
+            ["(request-target)", "host", "date", "digest", "content-type"]);
+
+        var expected =
+            "(request-target): post /u/alice/inbox\n" +
+            "host: a.domain.local\n" +
+            "date: Tue, 26 Aug 2026 12:00:00 GMT\n" +
+            $"digest: {uppercaseDigest}\n" +
+            "content-type: application/activity+json";
+        Assert.Equal(Encoding.UTF8.GetBytes(expected), baseBytes);
+    }
+
+    [Fact]
+    public void ServerToServer_UppercaseDigestHeader_SignAndVerifyRoundTrips()
+    {
+        // The full round-trip that a strict draft-10 / Mastodon peer performs: the sender computes the
+        // digest, formats the header value with the UPPERCASE algorithm label (the draft-10 wire form),
+        // signs over a base embedding that uppercase value, and the verifier reconstructs the same base
+        // from the wire header (verbatim) and accepts. If the verifier recomputed or canonicalized the
+        // digest label, the base would drift and this would fail.
+        var keyId = new Iri("https://remote.example.org/ap/v1/u/alice#key-1");
+        var key = KeyPairGenerator.GenerateRsa(keyId);
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var realSigner = new HttpSignatureSigner(keyStore);
+
+        var body = Encoding.UTF8.GetBytes("{\"@context\":\"https://www.w3.org/ns/activitystreams\"}");
+        var uppercaseDigest = $"SHA-256={Convert.ToBase64String(SHA256.HashData(body))}";
+        var date = "Tue, 26 Aug 2026 12:00:00 GMT";
+        var contentType = "application/activity+json";
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            [Signatures.HostHeaderName] = "remote.example.org",
+            [Signatures.DateHeaderName] = date,
+            [Signatures.ContentTypeHeaderName] = contentType,
+            [Signatures.DigestHeaderName] = uppercaseDigest,
+        };
+        var metadata = new HttpRequestMetadata("POST", "/ap/v1/u/alice/inbox", "remote.example.org", date, contentType, body, headers);
+        var identity = new SystemIdentity(new Iri("https://remote.example.org/ap/v1/u/alice"), keyId);
+        var signatureHeader = realSigner.Sign(metadata, identity, SigningProfile.ServerToServer);
+
+        // The verifier reconstructs the base from the wire (uppercase digest verbatim) and must accept.
+        var verifier = new HttpSignatureVerifier(keyStore);
+        Assert.True(
+            verifier.Verify(metadata, signatureHeader),
+            "An inbound ServerToServer request carrying the uppercase draft-10 Digest header must verify.");
     }
 
     [Fact]
