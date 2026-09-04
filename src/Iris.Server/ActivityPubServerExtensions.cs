@@ -1117,6 +1117,7 @@ public static class ActivityPubServerExtensions
         IActorCredentialValidator credentialValidator,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -1161,6 +1162,13 @@ public static class ActivityPubServerExtensions
         {
             await persistence.Moderation.RecordMuteAsync(actorIri, target, ct).ConfigureAwait(false);
         }
+
+        // 19.6.2 moderation-collection enumeration correctness: the actor's mutes collection is served
+        // through the local collection-page response cache (a 60s TTL). A mute or un-mute that is not
+        // paired with an invalidation leaves the cached page-1 stale: the owner's card would not reflect
+        // the mute it just recorded (or removed) until the TTL lapses or a ?refresh=true bypass is
+        // issued. Drop the mutes page-1 entry so the next non-?refresh read re-renders.
+        InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
 
         return Results.NoContent();
     }
@@ -1733,6 +1741,41 @@ public static class ActivityPubServerExtensions
                     Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
                     _ => null,
                 };
+
+                // 19.6.2 moderation-collection enumeration correctness: the actor's moderation
+                // collections (blocks / flags / mutes) are served through the same local collection-page
+                // response cache (a 60s TTL). A moderation write that is not paired with an invalidation
+                // leaves the cached page-1 stale: the owner's card would not reflect the edge it just
+                // recorded (a Block / a Flag) or removed (an Undo of one) until the TTL lapses or a
+                // ?refresh=true bypass is issued. Drop the affected collection's page-1 entry so the next
+                // non-?refresh read re-renders. An Undo only affects a moderation collection when it undoes
+                // a Block or a Flag (an Undo of a Follow / Like / Announce touches no moderation
+                // collection), so resolve the undone sub-activity and invalidate accordingly.
+                switch (activity)
+                {
+                    case Block:
+                        InvalidateLocalCollectionPage(collectionCache, actorIri, "blocks");
+                        break;
+                    case Flag:
+                        InvalidateLocalCollectionPage(collectionCache, actorIri, "flags");
+                        break;
+                    case Undo undone:
+                        var undoneIri = undone.Object?.FirstOrDefault().ResolveObjectIri();
+                        if (undoneIri.HasValue
+                            && await persistence.Activities.TryGetActivityAsync(undoneIri.Value, out var undoneActivity, ct).ConfigureAwait(false))
+                        {
+                            if (undoneActivity is Block)
+                            {
+                                InvalidateLocalCollectionPage(collectionCache, actorIri, "blocks");
+                            }
+                            else if (undoneActivity is Flag)
+                            {
+                                InvalidateLocalCollectionPage(collectionCache, actorIri, "flags");
+                            }
+                        }
+
+                        break;
+                }
 
                 // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
                 //    recipient needs no cross-instance hop (the local edge is already recorded); only a
@@ -4302,7 +4345,35 @@ public static class ActivityPubServerExtensions
     /// <param name="collectionCache">The local collection-page response cache.</param>
     /// <param name="ownerIri">The owning actor's or community's IRI.</param>
     private static void InvalidateLocalOutboxPage(LocalCollectionPageCache collectionCache, Iri ownerIri)
-        => collectionCache.Invalidate(new Iri($"{ownerIri.Value}/outbox"));
+        => InvalidateLocalCollectionPage(collectionCache, ownerIri, "outbox");
+
+    /// <summary>
+    /// Drops the cached page-1 entry for any of an owner's local collection pages in the local
+    /// collection-page response cache, so the next non-<c>?refresh</c> read re-renders with the
+    /// collection's current contents.
+    /// </summary>
+    /// <remarks>
+    /// Every local collection page (<c>outbox</c>, <c>blocks</c>, <c>flags</c>, <c>mutes</c>,
+    /// <c>followers</c>, <c>following</c>, <c>liked</c>, <c>relays</c>, …) is served through the
+    /// <see cref="LocalCollectionPageCache"/> (a 60s-TTL server→client response cache). Any local write
+    /// that mutates a collection — an outbox publish, a moderation edge (block/flag/mute), or an undo of
+    /// one — must be paired with an invalidation of that collection's page-1 entry. Without it the next
+    /// non-<c>?refresh</c> read within the TTL returns the stale page: the owner's card would not reflect
+    /// the edge it just recorded (or removed) until the TTL lapses or a <c>?refresh=true</c> bypass is
+    /// issued. The page-1 key is the bare collection IRI (<c>{owner}/{collection}</c>); a change always
+    /// lands in page 1's contents (an insert at the head, or a removal that shrinks the set), so
+    /// invalidating page 1 is sufficient for the primary read. Deeper pages self-heal within the short
+    /// TTL. Generalized from <see cref="InvalidateLocalOutboxPage"/>, which is now a thin alias for the
+    /// outbox name.
+    /// </remarks>
+    /// <param name="collectionCache">The local collection-page response cache.</param>
+    /// <param name="ownerIri">The owning actor's or community's IRI.</param>
+    /// <param name="collectionName">The collection's name segment (e.g. <c>outbox</c>, <c>blocks</c>).</param>
+    private static void InvalidateLocalCollectionPage(
+        LocalCollectionPageCache collectionCache,
+        Iri ownerIri,
+        string collectionName)
+        => collectionCache.Invalidate(new Iri($"{ownerIri.Value}/{collectionName}"));
 
     /// <summary>
     /// Serves an actor's followed feed (home timeline, F-14) as a paged collection for
@@ -4814,6 +4885,8 @@ public static class ActivityPubServerExtensions
     /// <param name="credentialValidator">Validates the community's Basic-auth credentials.</param>
     /// <param name="persistence">Provides the community store (the moderation sets).</param>
     /// <param name="optionsAccessor">The server options (the instance base URI).</param>
+    /// <param name="collectionCache">The local collection-page response cache (invalidated on the mute
+    /// write so the community's mutes card reflects the change immediately).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>
     /// <c>401</c> (unauthenticated), <c>404</c> (unknown community), <c>400</c> (no resolvable target), or
@@ -4825,6 +4898,7 @@ public static class ActivityPubServerExtensions
         IActorCredentialValidator credentialValidator,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -4875,6 +4949,13 @@ public static class ActivityPubServerExtensions
         {
             await persistence.Communities.AddMuteAsync(communityIri, target, ct).ConfigureAwait(false);
         }
+
+        // 19.6.2 moderation-collection enumeration correctness: the community's mutes collection is
+        // served through the local collection-page response cache (a 60s TTL). A mute or un-mute that is
+        // not paired with an invalidation leaves the cached page-1 stale: the community's card would not
+        // reflect the mute it just recorded (or removed) until the TTL lapses or a ?refresh=true bypass
+        // is issued. Drop the mutes page-1 entry so the next non-?refresh read re-renders.
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "mutes");
 
         return Results.NoContent();
     }
