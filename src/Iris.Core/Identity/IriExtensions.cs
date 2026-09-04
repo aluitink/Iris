@@ -142,6 +142,18 @@ public static class IriExtensions
     public static Iri SearchOf(this Iri iri) => AppendSegment(iri, "search");
 
     /// <summary>
+    /// Derives the actor/community's settings IRI by appending <c>/settings</c>. The settings IRI is
+    /// the IRI advertised in the <c>iris:settings</c> extension property on the actor/community document
+    /// (22.6.1): a remote client reads the <c>iris:settings</c> value from the document to discover the
+    /// settings surface (the AP-native settings change endpoint — an <c>Add</c>/<c>Remove</c> of the
+    /// actor's own document carrying a settings flag, published to the outbox).
+    /// </summary>
+    /// <param name="iri">The actor or community IRI. Must be absolute.</param>
+    /// <returns>The settings IRI (e.g. <c>https://a.domain.local/ap/v1/c/iris/settings</c>).</returns>
+    /// <exception cref="ArgumentException">When <paramref name="iri"/> is not absolute.</exception>
+    public static Iri SettingsOf(this Iri iri) => AppendSegment(iri, "settings");
+
+    /// <summary>
     /// Converts a library <c>string?</c> IRI (e.g. an object's <c>Id</c>) to an <see cref="Iri"/>.
     /// </summary>
     /// <param name="value">The IRI string. May be null.</param>

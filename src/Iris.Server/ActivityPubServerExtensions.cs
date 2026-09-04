@@ -2993,6 +2993,9 @@ public static class ActivityPubServerExtensions
         // extension (Resolved Decision #11) declares these specialized, non-AP capabilities for client
         // discovery so a client can tell the actor supports mute/relay (and where to POST) without
         // guessing. The full term is {NamespaceIri}capabilities (configurable per-deployment).
+        // 22.6.1: "settings" is also advertised when the actor has the manuallyApprovesFollowers gate
+        // (an AP-native settings surface exists — the operator can toggle the gate via Add/Remove of
+        // the actor's own document to the outbox).
         {
             var capExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
             var capabilitiesTerm =
@@ -3000,11 +3003,22 @@ public static class ActivityPubServerExtensions
                 ActivityPubServerConstants.CapabilitiesTerm;
             if (!capExt.ContainsKey(capabilitiesTerm))
             {
-                capExt[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(new[]
-                {
-                    ActivityPubServerConstants.CapabilityMute,
-                    ActivityPubServerConstants.CapabilityRelay,
-                });
+                var hasSettings = actor.ExtensionData is { } aExt &&
+                    aExt.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var mafCheck) &&
+                    mafCheck.ValueKind == System.Text.Json.JsonValueKind.True;
+                var capabilities = hasSettings
+                    ? new[]
+                    {
+                        ActivityPubServerConstants.CapabilityMute,
+                        ActivityPubServerConstants.CapabilityRelay,
+                        ActivityPubServerConstants.CapabilitySettings,
+                    }
+                    : new[]
+                    {
+                        ActivityPubServerConstants.CapabilityMute,
+                        ActivityPubServerConstants.CapabilityRelay,
+                    };
+                capExt[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(capabilities);
             }
         }
 
@@ -3042,6 +3056,19 @@ public static class ActivityPubServerExtensions
         {
             doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
             doc.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] = maf;
+
+            // 22.6.1: the iris:settings extension property — the IRI of the actor's settings surface
+            // (the AP-native settings change endpoint: an Add/Remove of the actor's own document
+            // carrying the manuallyApprovesFollowers flag, published to the outbox). A remote client
+            // can discover the settings surface from the document alone (no hardcoded endpoint paths).
+            var settingsTerm =
+                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
+                ActivityPubServerConstants.SettingsTerm;
+            if (!doc.ExtensionData.ContainsKey(settingsTerm))
+            {
+                doc.ExtensionData[settingsTerm] = System.Text.Json.JsonSerializer.SerializeToElement(
+                    actorIri.OutboxOf().Value);
+            }
         }
 
         // Enrich the publicKey extension with the JWK form (kty/n/e for RSA) so remote instances that
@@ -4304,14 +4331,53 @@ public static class ActivityPubServerExtensions
             ActivityPubServerConstants.CapabilitiesTerm;
         if (!ext.ContainsKey(capabilitiesTerm))
         {
-            ext[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(new[]
-            {
-                ActivityPubServerConstants.CapabilityFeed,
-                ActivityPubServerConstants.CapabilityMembers,
-                ActivityPubServerConstants.CapabilitySearch,
-                ActivityPubServerConstants.CapabilityMute,
-            });
+            // 22.6.1: advertise "settings" in the capabilities list when the community has the
+            // manuallyApprovesMembers gate (an AP-native settings surface exists — the operator can
+            // toggle the gate via Add/Remove of the community's own document to the outbox). A client
+            // that sees "settings" in iris:capabilities knows the community has a settings surface and
+            // can read the iris:settings IRI (below) to discover where to publish settings changes.
+            var hasSettings = ext.TryGetValue(
+                ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var mam) &&
+                mam.ValueKind == System.Text.Json.JsonValueKind.True;
+            var capabilities = hasSettings
+                ? new[]
+                {
+                    ActivityPubServerConstants.CapabilityFeed,
+                    ActivityPubServerConstants.CapabilityMembers,
+                    ActivityPubServerConstants.CapabilitySearch,
+                    ActivityPubServerConstants.CapabilityMute,
+                    ActivityPubServerConstants.CapabilitySettings,
+                }
+                : new[]
+                {
+                    ActivityPubServerConstants.CapabilityFeed,
+                    ActivityPubServerConstants.CapabilityMembers,
+                    ActivityPubServerConstants.CapabilitySearch,
+                    ActivityPubServerConstants.CapabilityMute,
+                };
+            ext[capabilitiesTerm] = System.Text.Json.JsonSerializer.SerializeToElement(capabilities);
             changed = true;
+        }
+
+        // 22.6.1: the iris:settings extension property — the IRI of the community's settings surface
+        // (the AP-native settings change endpoint: an Add/Remove of the community's own document
+        // carrying the manuallyApprovesMembers flag, published to the outbox). When the community has
+        // the manuallyApprovesMembers gate, a remote client can discover the settings surface from the
+        // document alone (no hardcoded endpoint paths). The settings IRI is the community's outbox
+        // (where the settings activities are published).
+        if (ext.TryGetValue(
+            ActivityPubServerConstants.ManuallyApprovesMembersExtensionName, out var mamExt) &&
+            mamExt.ValueKind == System.Text.Json.JsonValueKind.True)
+        {
+            var settingsTerm =
+                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
+                ActivityPubServerConstants.SettingsTerm;
+            if (!ext.ContainsKey(settingsTerm))
+            {
+                ext[settingsTerm] = System.Text.Json.JsonSerializer.SerializeToElement(
+                    communityIri.OutboxOf().Value);
+                changed = true;
+            }
         }
 
         if (changed)

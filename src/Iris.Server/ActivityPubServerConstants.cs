@@ -80,6 +80,15 @@ public static class ActivityPubServerConstants
     public const string CapabilitiesTerm = "capabilities";
 
     /// <summary>
+    /// The <c>iris:settings</c> extension property name: the IRI of the actor/community's settings
+    /// surface (the AP-native settings change endpoint — an <c>Add</c>/<c>Remove</c> of the actor's
+    /// own document carrying a settings flag, published to the outbox). When present, a remote client
+    /// can discover the settings surface from the actor document alone (no hardcoded endpoint paths).
+    /// The full IRI is <c>{NamespaceIri}settings</c>.
+    /// </summary>
+    public const string SettingsTerm = "settings";
+
+    /// <summary>
     /// The canonical default <c>iris:</c> namespace base IRI (Resolved Decision #9; Open Question #1
     /// resolved) used when a deployment does not override <see cref="ActivityPubServerOptions.NamespaceIri"/>.
     /// The base is configurable per-deployment; this is the out-of-the-box default.
@@ -115,10 +124,20 @@ public static class ActivityPubServerConstants
     /// <summary>
     /// The capability value advertised for a local relay subscription (F-06): the Basic-authenticated
     /// <c>POST {LocalModerationConstants.LocalRoutePrefix}/u/{handle}/relays/{target}</c> write (and its
-    /// <c>?unsubscribe=true</c> removal). A relay subscription is not an ActivityStreams activity, so it
-    /// is not on the <c>/ap/v1</c> AP tree; it is a specialized local capability discovered via this value.
+    /// <c>?unsubscribe=true</c> removal). A relay subscription is not an ActivityStreams activity, so it is
+    /// not on the <c>/ap/v1</c> AP tree; it is a specialized local capability discovered via this value.
     /// </summary>
     public const string CapabilityRelay = "relay";
+
+    /// <summary>
+    /// The capability value advertised for the actor/community's settings surface: the AP-native
+    /// settings change endpoint (an <c>Add</c>/<c>Remove</c> of the actor's own document carrying a
+    /// settings flag, published to the outbox). When present in <c>iris:capabilities</c>, the actor
+    /// document also carries an <c>iris:settings</c> extension property whose value is the settings
+    /// IRI (the outbox IRI, where the settings activities are published). A remote client can discover
+    /// the settings surface from the actor document alone.
+    /// </summary>
+    public const string CapabilitySettings = "settings";
 
     /// <summary>
     /// The capability value advertised for the per-object <c>likes</c> collection
