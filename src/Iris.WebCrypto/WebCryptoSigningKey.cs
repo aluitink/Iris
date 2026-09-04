@@ -192,6 +192,19 @@ internal static class WebCryptoBridgeBootstrap
         await _injected.ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Resets the injection state so the next call to <see cref="EnsureInjectedAsync"/> re-injects the
+    /// bridge. Exposed for the dedicated test project (via <c>InternalsVisibleTo</c>) so each test
+    /// starts from a clean process state; not part of the public API.
+    /// </summary>
+    internal static void ResetForTesting()
+    {
+        lock (Gate)
+        {
+            _injected = null;
+        }
+    }
+
     private static async Task InjectCoreAsync(IJSRuntime js, CancellationToken ct)
     {
         try
@@ -201,7 +214,13 @@ internal static class WebCryptoBridgeBootstrap
             // if the bridge is already present install() is a no-op returning true, so this is safe to
             // call unconditionally (and covers lazy-load / post-navigation re-injection).
             var source = LoadBridgeSource();
-            await js.InvokeAsync<bool>("webcryptoSignBootstrap.install", source, ct).ConfigureAwait(false);
+            // Pass `ct` as the dedicated cancellation-token parameter (the `InvokeAsync<T>(string,
+            // CancellationToken, object?[])` overload) so it is never boxed into the JSON-serialized
+            // `args`. Passing it as a trailing JSON argument (the old `(string, object?[])` binding)
+            // made the JS-interop layer serialize the `CancellationToken`, which throws
+            // `SerializeTypeInstanceNotSupported` at `CancellationToken.WaitHandle.Handle`
+            // (`System.IntPtr`) — see change 226 finding A.
+            await js.InvokeAsync<bool>("webcryptoSignBootstrap.install", ct, [source]).ConfigureAwait(false);
         }
         catch (JSException ex) when (ex.Message.Contains("webcryptoSignBootstrap", StringComparison.OrdinalIgnoreCase)
                                        || ex.Message.Contains("not a function", StringComparison.OrdinalIgnoreCase))
