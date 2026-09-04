@@ -1567,6 +1567,7 @@ public static class ActivityPubServerExtensions
         IEnumerable<IActivityHandler> handlers,
         IdMinter idMinter,
         LocalCollectionPageCache collectionCache,
+        LocalActorDocumentCache actorDocumentCache,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
@@ -1699,6 +1700,27 @@ public static class ActivityPubServerExtensions
             }
             else
             {
+                // AP-native person settings change (22.6.1): an Add (enable) or Remove (disable) of the
+                // actor's own document carrying the manuallyApprovesFollowers extension updates the stored
+                // actor's ExtensionData (mirroring RecordCommunityAddAsync / RecordCommunityRemoveAsync for
+                // the community's manuallyApprovesMembers gate). A local-only operation — no delivery.
+                if (activity is Add personAdd)
+                {
+                    await RecordPersonAddAsync(persistence, actorIri, personAdd, ct).ConfigureAwait(false);
+                    // The actor's public document now renders differently (iris:settings / capabilities).
+                    // Drop the cached render so the next public read re-renders (mirrors the outbox-page
+                    // invalidation above — without it the 60s-TTL document cache serves a stale copy).
+                    actorDocumentCache.Invalidate(actorIri);
+                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                }
+
+                if (activity is Remove personRemove)
+                {
+                    await RecordPersonRemoveAsync(persistence, actorIri, personRemove, ct).ConfigureAwait(false);
+                    actorDocumentCache.Invalidate(actorIri);
+                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                }
+
                 Iri? recipientIri = activity switch
                 {
                     Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
@@ -1927,6 +1949,83 @@ public static class ActivityPubServerExtensions
         // Decision 055: return the created object (with its minted id) in the 2xx body so the client can
         // learn the id (for a future Undo of this activity, e.g. un-adding a member).
         return Results.Text(ActivityJson.Serialize((Activity)payload), ActivityJson.ActivityJsonContentType, statusCode: 202);
+    }
+
+    /// <summary>
+    /// Records a person <see cref="Add"/> (AP-native settings change, 22.6.1): when the <c>object</c> is
+    /// the actor's own document carrying the <c>manuallyApprovesFollowers</c> extension, sets that flag on
+    /// the stored actor's <c>ExtensionData</c>. Other objects are ignored (a person's followers are owned
+    /// by the follow lifecycle, not by <c>Add</c>). The actor == actor gate is applied by the caller.
+    /// </summary>
+    private static async Task RecordPersonAddAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        Add add,
+        CancellationToken ct)
+    {
+        var objectIri = add.Object?.FirstOrDefault().ResolveObjectIri();
+        if (objectIri is { } obj && obj == actorIri &&
+            add.Object?.FirstOrDefault() is IObject { ExtensionData: { } ext } &&
+            ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value))
+        {
+            await SetManuallyApprovesFollowersAsync(persistence, actorIri, value.ValueKind == System.Text.Json.JsonValueKind.True, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Records a person <see cref="Remove"/> (AP-native settings change, 22.6.1): when the <c>object</c>
+    /// is the actor's own document carrying the <c>manuallyApprovesFollowers</c> extension, clears that
+    /// flag on the stored actor's <c>ExtensionData</c>. Other objects are ignored. The actor == actor gate
+    /// is applied by the caller.
+    /// </summary>
+    private static async Task RecordPersonRemoveAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        Remove remove,
+        CancellationToken ct)
+    {
+        var objectIri = remove.Object?.FirstOrDefault().ResolveObjectIri();
+        if (objectIri is { } obj && obj == actorIri &&
+            remove.Object?.FirstOrDefault() is IObject { ExtensionData: { } ext } &&
+            ext.ContainsKey(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName))
+        {
+            await SetManuallyApprovesFollowersAsync(persistence, actorIri, enabled: false, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Sets or clears the <c>manuallyApprovesFollowers</c> flag on the stored actor's
+    /// <c>ExtensionData</c> (AP-native settings change, 22.6.1): the actor publishes an <c>Add</c>
+    /// (enable) or <c>Remove</c> (disable) of its own document carrying the flag, and this method updates
+    /// the stored actor so the <see cref="FollowActivityHandler"/> gate reflects the change on the next
+    /// inbound <c>Follow</c>.
+    /// </summary>
+    private static async Task SetManuallyApprovesFollowersAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        bool enabled,
+        CancellationToken ct)
+    {
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            || actor is null)
+        {
+            return;
+        }
+
+        actor.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        if (enabled)
+        {
+            actor.ExtensionData[ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName] =
+                System.Text.Json.JsonDocument.Parse("true").RootElement.Clone();
+        }
+        else
+        {
+            actor.ExtensionData.Remove(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName);
+        }
+
+        await persistence.Actors.PutActorAsync(actor, ct).ConfigureAwait(false);
     }
 
     /// <summary>

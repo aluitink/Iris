@@ -224,6 +224,23 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> SetManuallyApprovesMembersAsync(Iri communityIri, bool enabled, CancellationToken ct = default);
 
     /// <summary>
+    /// Sets or clears the actor's <c>manuallyApprovesFollowers</c> gate (AP-native settings change, 22.6.1):
+    /// the actor publishes an <see cref="KristofferStrube.ActivityStreams.Add"/> (enable) or
+    /// <see cref="KristofferStrube.ActivityStreams.Remove"/> (disable) of its own document carrying the
+    /// <c>manuallyApprovesFollowers</c> extension to its own outbox. The server updates the stored actor's
+    /// <c>ExtensionData</c> so the <c>FollowActivityHandler</c> gate reflects the change on the next inbound
+    /// <c>Follow</c>. Mirrors <see cref="SetManuallyApprovesMembersAsync"/> for the community's
+    /// <c>manuallyApprovesMembers</c> gate.
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor (the operator changing the flag — must match the
+    /// client's signing identity).</param>
+    /// <param name="enabled"><see langword="true"/> to require manual approval of inbound follows (gated);
+    /// <see langword="false"/> to auto-accept (open).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> SetManuallyApprovesFollowersAsync(Iri actorIri, bool enabled, CancellationToken ct = default);
+
+    /// <summary>
     /// Likes an object as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Like"/>
     /// (actor = <paramref name="actorId"/>, object = <paramref name="objectId"/>) and publishes it through
     /// the signed pipeline to the liker's own outbox (exactly like

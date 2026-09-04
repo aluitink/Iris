@@ -405,6 +405,40 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> SetManuallyApprovesFollowersAsync(Iri actorIri, bool enabled, CancellationToken ct = default)
+    {
+        // An AP-native settings change (22.6.1): the actor publishes an Add (enable) or Remove (disable)
+        // of its OWN document carrying the manuallyApprovesFollowers extension, to its own outbox. The
+        // server (RecordPersonAddAsync / RecordPersonRemoveAsync) detects that the object is the actor's
+        // own document and updates the stored actor's ExtensionData accordingly.
+        //
+        // Decision 055: the client sends only the activity's shape (actor + object); the server mints the
+        // activity's id and returns it in the 2xx body.
+        var objectWithFlag = new KristofferStrube.ActivityStreams.Object
+        {
+            Id = actorIri.Value,
+            ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+            {
+                ["manuallyApprovesFollowers"] = System.Text.Json.JsonSerializer.SerializeToElement(enabled),
+            },
+        };
+
+        var activity = enabled
+            ? (Activity)new Add
+            {
+                Actor = [new Link { Href = actorIri.Uri }],
+                Object = [objectWithFlag],
+            }
+            : new Remove
+            {
+                Actor = [new Link { Href = actorIri.Uri }],
+                Object = [objectWithFlag],
+            };
+
+        return DeliverAsync(actorIri.OutboxOf(), activity, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> LikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
         // A like is published to the liker's OWN outbox (the write surface for the activities an actor
