@@ -65,13 +65,13 @@ Iris.slnx
 
 ## Now
 
-**Phase 25 — federation hardening & robustness (locally-actionable scope CLOSED).** Phase 24's locally-actionable scope is fully closed (24.1–24.4). Phase 25 is the in-process federation-hardening phase (delivery retry/backoff on transient failure, the cross-instance `Reject`/declined-follow path, and remaining activity-type undo-propagation coverage) — all three locally-actionable slices are now done: **25.1** (a test-only lock that the `DeliveryWorker`'s retry loop actually observes the configured exponential backoff between retries), **25.2** (a real code fix + end-to-end lock: `RejectActivityHandler` now mirrors `AcceptActivityHandler`'s G-3 community-follower override, and a new 2-instance test locks the cross-instance `Reject` hop for a person and a community follower), and **25.3** (a test-only lock of the cross-instance person→person `Undo(Follow)` un-follow path — the one follow-flavored undo path still untested end-to-end; `Undo(Join)` investigated and deferred as non-canonical). All plan docs are exhausted on their locally-actionable scope; only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain deferred.
+**Phase 25 — federation hardening & robustness (locally-actionable scope CLOSED).** Phase 25 (the in-process federation-hardening phase — delivery retry/backoff on transient failure, the cross-instance `Reject`/declined-follow path, and remaining activity-type undo-propagation coverage) is fully closed on its locally-actionable scope: **25.1** (a test-only lock that the `DeliveryWorker`'s retry loop actually observes the configured exponential backoff between retries), **25.2** (a real code fix + end-to-end lock: `RejectActivityHandler` now mirrors `AcceptActivityHandler`'s G-3 community-follower override, and a new 2-instance test locks the cross-instance `Reject` hop for a person and a community follower), and **25.3** (a test-only lock of the cross-instance person→person `Undo(Follow)` un-follow path; `Undo(Join)` investigated and deferred as non-canonical). All plan docs are exhausted on their locally-actionable scope.
+
+**Phase 26 — federation completeness & remaining invariant locks (defined this turn; in progress).** The residual locally-actionable federation gaps, seeded in **Up Next** below: the cross-instance `Accept` (follow-acceptance) hop (26.1, the inverse of 25.2's `Reject` lock), the inbound `Tombstone` object contract (26.2, a possible small code fix), the cross-instance `Announce` (boost) fan-out to a remote author's local followers (26.3), the `Move` key-rotation cache invalidation (26.4, F-25), and the delivery-worker dead-letter store wiring into a real 2-instance topology (26.5). Only the two live-infrastructure items (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain deferred across all phases.
 
 ## Active Slice
 
-- **Slice:** 25.3 — remaining activity-type undo-propagation coverage
-- **Definition of done:** build clean (`TreatWarningsAsErrors`), full suite green including the new tests. Lock the cross-instance `Undo(Follow)` path for the one activity-type/role combination still untested end-to-end: a **person** on A un-follows a **person** on B (the community-initiated un-follows — community→person and community→community — are already locked; a plain person→person un-follow is the gap). New 2-instance `TestServer` integration test: alice (A) follows bob (B); A records the local edge + server-delivers the signed `Follow` (B records the edge + stores the `Follow`); alice publishes `Undo(Follow)`; A removes its local edge + server-delivers the signed `Undo` (B's `UndoActivityHandler` removes B's edge). Proven non-vacuous (disabling B's removal path fails the test). `Undo(Join)` investigated and **deferred** (non-canonical — the standard membership departure is the standalone `Leave`, already covered cross-instance).
-- **Remaining steps:** write the test, prove non-vacuity, run full suite, commit impl+tests, write change doc 239 + update PLAN/ROADMAP, commit docs.
+None in progress — the next turn picks the top item from **Up Next** below (Phase 26 slice 26.1: cross-instance `Accept` propagation).
 
 ## Up Next
 
@@ -86,19 +86,22 @@ Short, bounded list — only the next few items, not the whole roadmap. When thi
 > (a public FQDN, real external Mastodon accounts) — which this environment cannot provision — remain
  > deferred. Phase 24 (federation robustness & remaining cross-instance propagation gaps) is now fully
  > closed on its locally-actionable scope (24.1–24.4). Phase 25 (federation hardening & robustness) is now
- > active.
+ > fully closed on its locally-actionable scope (25.1–25.3). Phase 26 (federation completeness & remaining
+ > invariant locks) is now active.
 
- > **Phase 25 slices (locally-actionable, in-process 2-instance `TestServer`) — seeded, to be refined in
- > the next turn:**
+  > **Phase 26 slices (locally-actionable, in-process 2-instance `TestServer`) — seeded, to be refined as
+  > each is picked up:**
+  >
+  1. **26.1 — cross-instance `Accept` (follow-acceptance) propagation:** lock the B → A `Accept` hop end-to-end (the inverse of 25.2's `Reject` lock — the more common follow flow): alice on A follows bob on B (B records the edge + stores the `Follow` + server-delivers the signed `Accept` to alice's inbox on A); A's `AcceptActivityHandler` finalizes alice's local follow edge. Proven non-vacuous (disabling the `Accept` delivery or the handler fails the test).
+  2. **26.2 — inbound `Tombstone` object contract (F-10):** a peer may deliver a `Tombstone` directly (a standalone `Tombstone` or a `Create`/object whose embedded body is a `Tombstone`) when an object is deleted on the peer's instance; ensure such an inbound `Tombstone` is recognized and stored under the object IRI (so a subsequent `GET` serves the tombstone, not stale content or a 404) — a small code fix if `CreateActivityHandler`/the object endpoint do not yet intercept it, locked with a 2-instance test.
+  3. **26.3 — cross-instance `Announce` (boost) fan-out to a remote author's local followers:** lock that a boost of a remote note reaches the remote author's local followers on the receiving instance (erin on B boosts a federated note by alice on A; B's `AnnounceActivityHandler` propagates the boost to alice's local followers on B, e.g. bob; bob's outbox on B surfaces the boost). Proven non-vacuous.
+  4. **26.4 — `Move` key-rotation cache invalidation (F-25):** lock the full `Move` path — alice migrates from an old IRI (A) to a new IRI (B) with a new key; B re-points the follow edge AND clears alice's cached key/actor; a subsequent delivery signed as the new alice (new key) is validated by B by fetching the new actor document (not the stale cached one). Proven non-vacuous (a stale key cache would 401 the new signature).
+  5. **26.5 — delivery-worker dead-letter store wiring into a real topology:** lock that a failed cross-instance delivery (e.g. B's inbox returns a 5xx) is dead-lettered in the `InMemoryDeliveryDeadLetterStore` with the correct inbox IRI, activity IRI, actor IRI, attempt count, and failure kind — wiring the store into a real 2-instance `TestServer` (the existing `DeliveryRetryTests` construct the worker explicitly, so a wiring regression would keep them green). Proven non-vacuous.
+  >
+  > **Deferred (live-infrastructure, not provisionable in this environment):**
  >
-  1. ~~**25.1 — delivery retry/backoff on transient failure**~~ — **done** (test-only lock: the worker's retry loop observes the configured exponential backoff between retries; `BaseDelay = 0` in the pre-existing tests is why no test locked the wait itself). → [docs/changes/237-25.1-delivery-retry-observes-configured-backoff.md](docs/changes/237-25.1-delivery-retry-observes-configured-backoff.md)
- 2. ~~**25.2 — cross-instance `Reject` (declined follow) propagation**~~ — **done** (code fix: `RejectActivityHandler` mirrors `AcceptActivityHandler`'s G-3 community-follower override + community follows-set removal; new 2-instance test locks B → A `Reject` federation for a person and a community follower). → [docs/changes/238-25.2-cross-instance-reject-propagation.md](docs/changes/238-25.2-cross-instance-reject-propagation.md)
- 3. ~~**25.3 — remaining activity-type undo-propagation coverage**~~ — **done** (test-only lock: the cross-instance person→person `Undo(Follow)` un-follow path — the one follow-flavored undo path still untested end-to-end; `Undo(Join)` investigated and deferred as non-canonical). → [docs/changes/239-25.3-person-person-undo-follow-propagation.md](docs/changes/239-25.3-person-person-undo-follow-propagation.md)
- >
- > **Deferred (live-infrastructure, not provisionable in this environment):**
->
-4. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
-5. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
+ 6. External-FQDN verification — resolver reachability, public navigation, browser verification over live hostnames. (Needs a reachable public FQDN / reverse proxy; deferred.) See [phase-22-closeout.md §1](docs/plans/phase-22-closeout.md#1-external-fqdn-verification).
+ 7. Live federation/interop checks against public Mastodon accounts (follow, post/receive, signatures, pagination, community flows). (Needs real external accounts; deferred.) See [phase-22-closeout.md §2](docs/plans/phase-22-closeout.md#2-live-federation-and-interop-checks).
 
 ## Inbox
 
