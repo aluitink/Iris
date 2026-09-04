@@ -197,6 +197,11 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
       `OutboxPublishHandler` applies it to the stored actor (`RecordPersonAddAsync` /
       `RecordPersonRemoveAsync`). Also fixes the actor-document cache invalidation on a settings change
       (the public doc was serving a stale 60s-TTL copy). 4 integration tests (1,321 total).
+    - [x] **22.6.2 — Typed readers for advertised collection-endpoint extensions.** *(change 222)*
+      `IrisDocumentExtensions` gains `GetFeedIri` / `GetMembersIri` / `GetBlocksIri` / `GetFlagsIri` /
+      `GetMutesIri` / `GetRelaysIri` (star), so a client reads each advertised collection IRI from the
+      document alone (no hardcoded endpoint paths, no hand-parsing `ExtensionData`). `members` is
+      community-only; `feed`/moderation collections appear on both. 3 integration tests (1,336 total).
 
 ## Remaining work (pre-Phase-22 carry-forward)
 
