@@ -207,9 +207,15 @@ Phases -1 through 20 are **complete**. One line each; the build notes and decisi
        `GetManuallyApprovesMembers()` (community) — the **read half** of the AP-native settings write path
        (221 / 217): a client reads an actor's follow-approval or a community's membership-approval policy
        from the fetched public document alone (no persistence access). Tristate: `true` when the gate is
-       set, `false` when present-but-disabled, `null` when absent. 5 integration tests (1,341 total).
-
-## Remaining work (pre-Phase-22 carry-forward)
+        set, `false` when present-but-disabled, `null` when absent. 5 integration tests (1,341 total).
+    - [x] **22.6.2 — Centralize the settings-gate extension term names in `Iris.Core`.** *(change 224)*
+      Refactor (no behavior change): the `manuallyApprovesFollowers` / `manuallyApprovesMembers` wire
+      terms now live once in `Iris.Core.ActivityPubExtensionNames`; the client write/read paths
+      (previously hardcoded literals) and the server (`ActivityPubServerConstants`, now aliased) both
+      reference them, so a typo/drift is a compile error instead of a silent wire bug. 4 tests
+      (1,347 total).
+ 
+ ## Remaining work (pre-Phase-22 carry-forward)
 
 These were open before Phase 22 and remain open. Most are **live-interop** items (executed against the
 public FQDNs / `@RayvenMX@mastodon.world`, Playwright-MCP-driven, one slice per loop turn) or the
