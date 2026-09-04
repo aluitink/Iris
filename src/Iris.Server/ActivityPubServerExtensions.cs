@@ -64,6 +64,18 @@ public static class ActivityPubServerExtensions
 
         services.Configure(configure);
 
+        // Mute is an Iris-specific activity (there is no ActivityStreams Mute type), so the ActivityStreams
+        // library does not know it: its ObjectConverter would serialize a MuteActivity as a generic object
+        // (dropping the @context and type) and deserialize an inbound "type": "Mute" to a plain Object.
+        // Register the Iris MuteActivity under its wire type so the library serializes it WITH its
+        // @context/type (so the 202 body, the A → B federated delivery, and the re-read on an Undo all
+        // round-trip) and deserializes an inbound "type": "Mute" back into a MuteActivity (24.2). The
+        // registry is a shared mutable dictionary (idempotent guard).
+        if (!ObjectTypes.Types.ContainsKey(MuteActivity.MuteType))
+        {
+            ObjectTypes.Types[MuteActivity.MuteType] = typeof(MuteActivity);
+        }
+
         // The credential validator for the owner-only actor document extension. The default is a
         // safe no-op (never includes the privateKey extension); a host app replaces this with
         // BasicAuthCredentialValidator (or another implementation) to enable the authenticated path.
@@ -279,6 +291,12 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
         services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, FlagActivityHandler>();
+        // Mute (24.2): Mute is not an ActivityStreams type (the library has no Mute class), so an inbound
+        // "type": "Mute" deserializes to a generic Object. The inbox endpoint wraps it into the
+        // Iris-specific MuteActivity, and this exact-type handler records the muter → muted edge (the
+        // inverse of the outbox-publish mute arm). It does not contend with any other handler (MuteActivity
+        // has a unique type, distance 0).
+        services.AddSingleton<IActivityHandler, MuteActivityHandler>();
         // Collection-modification primitives (F-09): a server that manages a community's membership via
         // Add/Remove (rather than a Follow or Offer/Invite/Join/Leave) updates the local community's
         // member set. Each derives from ActivityHandlerBase{T} so the InboxProcessor dispatches by an
@@ -1528,7 +1546,23 @@ public static class ActivityPubServerExtensions
         }
 
         IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
-        if (payload is not Activity { Id: not null } activity)
+
+        // Mute is not an ActivityStreams type (the library has no Mute class), so an inbound
+        // "type": "Mute" deserializes to a plain Object (not an Activity): its actor/object references
+        // land in the Object's ExtensionData. Wrap it into the Iris-specific MuteActivity (the thin
+        // Activity subclass that pins Type to ["Mute"]) so the InboxProcessor stores it and the
+        // MuteActivityHandler records the muter → muted edge (24.2).
+        Activity? activity;
+        if (payload is Activity { Id: not null } typedActivity)
+        {
+            activity = typedActivity;
+        }
+        else if (payload is KristofferStrube.ActivityStreams.Object { Id: not null } genericMute
+            && IsMuteType(genericMute))
+        {
+            activity = WrapAsMuteActivity(genericMute);
+        }
+        else
         {
             return Results.BadRequest();
         }
@@ -1549,6 +1583,74 @@ public static class ActivityPubServerExtensions
         }
 
         return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Determines whether a deserialized generic <see cref="KristofferStrube.ActivityStreams.Object"/>
+    /// (the result of deserializing an unknown activity <c>type</c>, e.g. the Iris-specific
+    /// <c>Mute</c>) is a <c>Mute</c> activity by inspecting its <c>type</c> property (which the
+    /// ActivityStreams converter stores verbatim, since the
+    /// library has no <c>Mute</c> type).
+    /// </summary>
+    private static bool IsMuteType(KristofferStrube.ActivityStreams.Object @object)
+    {
+        return @object.Type is { } types
+            && types.Contains(MuteActivity.MuteType, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Wraps a deserialized generic <c>Object</c> carrying a <c>Mute</c> <c>type</c> into the
+    /// Iris-specific <see cref="MuteActivity"/> (the thin <see cref="Activity"/> subclass that pins
+    /// <c>Type</c> to <c>["Mute"]</c>). Because the library has no <c>Mute</c> class, the deserializer
+    /// produced a plain <c>Object</c> whose <c>actor</c> (the muter) and <c>object</c> (the muted actor)
+    /// references live in its <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/>; this
+    /// reads them and builds the <see cref="MuteActivity"/> so the <see cref="InboxProcessor"/> stores the
+    /// activity and the <see cref="MuteActivityHandler"/> records the muter → muted edge (24.2).
+    /// </summary>
+    private static MuteActivity WrapAsMuteActivity(KristofferStrube.ActivityStreams.Object @object)
+    {
+        ILink? muter = ReadFirstIriLink(@object.ExtensionData, "actor");
+        ILink? muted = ReadFirstIriLink(@object.ExtensionData, "object");
+        return new MuteActivity
+        {
+            Id = @object.Id,
+            Actor = muter is { } m ? [m] : null,
+            Object = muted is { } o ? [o] : null,
+        };
+    }
+
+    /// <summary>
+    /// Reads the first IRI-bearing link from a deserialized <c>Object</c>'s <c>actor</c>/<c>object</c>
+    /// extension data (a single <c>Link</c>, or a scalar IRI string) — the references the ActivityStreams
+    /// converter parks in <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> for an
+    /// activity type it does not model (here, the Iris-specific <c>Mute</c>).
+    /// </summary>
+    private static ILink? ReadFirstIriLink(
+        Dictionary<string, System.Text.Json.JsonElement>? extensionData,
+        string key)
+    {
+        if (extensionData is not { } data
+            || !data.TryGetValue(key, out var element))
+        {
+            return null;
+        }
+
+        if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+        {
+            var iri = element.GetString();
+            return string.IsNullOrWhiteSpace(iri) ? null : new Link { Href = new Uri(iri) };
+        }
+
+        if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+        {
+            var link = ActivityJson.Deserialize<ILink>(element.GetRawText());
+            if (link is { } && link.Href is { } href)
+            {
+                return new Link { Href = href };
+            }
+        }
+
+        return null;
     }
 
     private static async Task<IResult> InboxHandler(
@@ -1628,7 +1730,23 @@ public static class ActivityPubServerExtensions
         }
 
         IObjectOrLink? payload = ActivityJson.Deserialize<IObjectOrLink>(json);
-        if (payload is not Activity activity)
+
+        // Mute is not an ActivityStreams type (the library has no Mute class), so a posted "type": "Mute"
+        // deserializes to a plain Object (not an Activity): its actor/object references land in the
+        // Object's ExtensionData. Wrap it into the Iris-specific MuteActivity (the thin Activity subclass
+        // that pins Type to ["Mute"]) so the publish proceeds — the outbox-publish mute arm records the
+        // local edge and the server delivers it to the muted actor's inbox (24.2). Mirrors the inbox
+        // endpoint's wrap.
+        Activity? activity;
+        if (payload is Activity typedActivity)
+        {
+            activity = typedActivity;
+        }
+        else if (payload is KristofferStrube.ActivityStreams.Object genericMute && IsMuteType(genericMute))
+        {
+            activity = WrapAsMuteActivity(genericMute);
+        }
+        else
         {
             return Results.BadRequest();
         }
@@ -1759,6 +1877,7 @@ public static class ActivityPubServerExtensions
                     Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
                     Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
                     Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
+                    MuteActivity mute => await RecordMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
                     Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
                     Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
                     Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
@@ -1783,6 +1902,9 @@ public static class ActivityPubServerExtensions
                     case Flag:
                         InvalidateLocalCollectionPage(collectionCache, actorIri, "flags");
                         break;
+                    case MuteActivity:
+                        InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
+                        break;
                     case Undo undone:
                         var undoneIri = undone.Object?.FirstOrDefault().ResolveObjectIri();
                         if (undoneIri.HasValue
@@ -1795,6 +1917,10 @@ public static class ActivityPubServerExtensions
                             else if (undoneActivity is Flag)
                             {
                                 InvalidateLocalCollectionPage(collectionCache, actorIri, "flags");
+                            }
+                            else if (undoneActivity is MuteActivity)
+                            {
+                                InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
                             }
                         }
 
@@ -2521,6 +2647,29 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Records the local mute edge for a <see cref="MuteActivity"/> published to the actor's outbox and
+    /// returns the muted actor (the recipient of the server→server delivery). The muter is the acting
+    /// local actor, so the edge is always recorded (the local actor's <c>mutes</c> collection lists the
+    /// muted actor). Returns <see langword="null"/> when the muted actor is not resolvable. (24.2 — the
+    /// inverse of the inbound <see cref="MuteActivityHandler"/>.)
+    /// </summary>
+    private static async Task<Iri?> RecordMuteLocalAsync(
+        IPersistenceProvider persistence,
+        Iri muterIri,
+        MuteActivity mute,
+        CancellationToken ct)
+    {
+        var mutedIri = mute.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!mutedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RecordMuteAsync(muterIri, mutedIri.Value, ct).ConfigureAwait(false);
+        return mutedIri.Value;
+    }
+
+    /// <summary>
     /// Records the local like edge for a <see cref="Like"/> published to the actor's outbox and returns
     /// the object's owner (the recipient of the server→server delivery). The liker is the acting local
     /// actor, so the edge (liker → object) is always recorded in the liker's <c>liked</c> collection. The
@@ -2695,6 +2844,7 @@ public static class ActivityPubServerExtensions
             Follow follow => await RemoveFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
             Block block => await RemoveBlockLocalAsync(persistence, actorIri, block, ct).ConfigureAwait(false),
             Flag flag => await RemoveFlagLocalAsync(persistence, actorIri, flag, ct).ConfigureAwait(false),
+            MuteActivity mute => await RemoveMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
             Like like => await RemoveLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
             Announce announce => await RemoveAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct).ConfigureAwait(false),
             _ => null,
@@ -2782,6 +2932,29 @@ public static class ActivityPubServerExtensions
 
         await persistence.Moderation.RemoveFlagAsync(flaggerIri, flaggedIri.Value, ct).ConfigureAwait(false);
         return flaggedIri.Value;
+    }
+
+    /// <summary>
+    /// Removes the local mute edge for an undone <see cref="MuteActivity"/> published to the actor's
+    /// outbox and returns the muted actor (the recipient of the server→server delivery, so the remote
+    /// side removes its edge). The inverse of <see cref="RecordMuteLocalAsync"/>: the actor's home
+    /// instance removes its own mute edge (the actor's <c>mutes</c> collection no longer lists the muted
+    /// actor). Returns <see langword="null"/> when the muted actor is not resolvable. (24.2.)
+    /// </summary>
+    private static async Task<Iri?> RemoveMuteLocalAsync(
+        IPersistenceProvider persistence,
+        Iri muterIri,
+        MuteActivity mute,
+        CancellationToken ct)
+    {
+        var mutedIri = mute.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!mutedIri.HasValue)
+        {
+            return null;
+        }
+
+        await persistence.Moderation.RemoveMuteAsync(muterIri, mutedIri.Value, ct).ConfigureAwait(false);
+        return mutedIri.Value;
     }
 
     /// <summary>

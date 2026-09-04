@@ -13,7 +13,9 @@ namespace Iris.Server.Inbox;
 /// <see cref="ILikeStore"/> (an unlike — the inverse of the <see cref="LikeActivityHandler"/>); and when
 /// an actor undoes an <see cref="Announce"/> it made, the local announce edge is removed from the
 /// <see cref="IAnnounceStore"/> and the boost is removed from the announcer's outbox (an un-boost — the
-/// inverse of the <see cref="AnnounceActivityHandler"/>).
+/// inverse of the <see cref="AnnounceActivityHandler"/>); and when an actor undoes a
+/// <see cref="MuteActivity"/> it made, the local mute edge is removed from the
+/// <see cref="IModerationStore"/> (an un-mute — the inverse of the <see cref="MuteActivityHandler"/>).
 /// </summary>
 /// <remarks>
 /// An <c>Undo</c> is the ActivityStreams inverse primitive: it undoes the activity referenced by its
@@ -141,6 +143,18 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
                     .ConfigureAwait(false);
             }
 
+            return;
+        }
+
+        // An un-mute (24.2): when the Undo's object is a Mute, remove the recorded mute edge (the inverse
+        // of the MuteActivityHandler). Handled before the follow path like the block/flag/like/announce
+        // branches — a Mute has no follow target to resolve. A missing mute (never recorded) is a no-op.
+        if (await ResolveMuteEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } muteEdge)
+        {
+            await _persistence.Moderation
+                .RemoveMuteAsync(muteEdge.Muter, muteEdge.Muted, ct)
+                .ConfigureAwait(false);
             return;
         }
 
@@ -412,5 +426,41 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (announcerIri.Value, announcedObjectIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original mute's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="MuteActivity"/>, by IRI) when the undone activity is a <see cref="MuteActivity"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="null"/> when the object is not a <see cref="MuteActivity"/> (the follow
+    /// path applies), when the referenced mute was never stored, or when the stored mute's parties cannot
+    /// be resolved (a malformed mute) — in which case there is no recorded edge to remove.
+    /// </remarks>
+    private async Task<(Iri Muter, Iri Muted)?> ResolveMuteEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var muteIri = responseObject.ResolveObjectIri();
+        if (!muteIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(muteIri.Value, out var stored, ct)
+                .ConfigureAwait(false) ||
+            stored is not MuteActivity mute)
+        {
+            return null;
+        }
+
+        var muterIri = mute.Actor?.FirstOrDefault().ResolveObjectIri();
+        var mutedIri = mute.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!muterIri.HasValue || !mutedIri.HasValue)
+        {
+            return null;
+        }
+
+        return (muterIri.Value, mutedIri.Value);
     }
 }
