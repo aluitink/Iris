@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Iris.Client;
 using Iris.Core;
 using Iris.Samples.SampleServer;
 using KristofferStrube.ActivityStreams;
@@ -167,7 +168,9 @@ public sealed class SampleServerTests : IDisposable
         var ext = doc.ExtensionData;
         Assert.NotNull(ext);
         Assert.True(ext!.ContainsKey("members"), "community document must carry a members endpoint");
-        Assert.True(ext.ContainsKey("feed"), "community document must carry a feed endpoint");
+        Assert.True(
+            ext.ContainsKey(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Feed),
+            "community document must carry a feed endpoint (namespaced under iris:)");
     }
 
     [Fact]

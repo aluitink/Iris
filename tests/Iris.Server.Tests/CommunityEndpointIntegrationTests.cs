@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
@@ -73,9 +74,12 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         Assert.Equal($"{_base}/ap/v1/c/{Community}/followers", doc.RootElement.GetProperty("followers").GetString());
         Assert.Equal($"{_base}/ap/v1/c/{Community}/following", doc.RootElement.GetProperty("following").GetString());
 
-        // The members and feed extensions point at their endpoints.
+        // members is a core AS Group term (bare); feed is an Iris extension (namespaced under iris:).
         Assert.Equal($"{_base}/ap/v1/c/{Community}/members", doc.RootElement.GetProperty("members").GetString());
-        Assert.Equal($"{_base}/ap/v1/c/{Community}/feed", doc.RootElement.GetProperty("feed").GetString());
+        Assert.Equal(
+            $"{_base}/ap/v1/c/{Community}/feed",
+            doc.RootElement.GetProperty(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Feed)
+                .GetString());
     }
 
     [Fact]

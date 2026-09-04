@@ -415,7 +415,7 @@ public static partial class SampleServer
             PreferredUsername = "iris",
         };
         community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        community.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = aliceKeyIri.Value,
             owner = aliceIri.Value,
@@ -563,7 +563,7 @@ public static partial class SampleServer
             Name = [handle],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyIri.Value,
             owner = actorIri.Value,
@@ -677,7 +677,7 @@ public static partial class SampleServer
             Name = [handle],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyIri.Value,
             owner = actorIri.Value,

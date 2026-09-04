@@ -93,7 +93,10 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
 
         // The actor document advertises the relays (star) collection link (via the ActivityStreams
         // extension data, since the library's Person has no typed `star` property).
-        Assert.Equal($"https://{BHost}/ap/v1/u/{Bob}/relays", doc.RootElement.GetProperty("star").GetString());
+        Assert.Equal(
+            $"https://{BHost}/ap/v1/u/{Bob}/relays",
+            doc.RootElement.GetProperty(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Star)
+                .GetString());
     }
 
     // --- The relays collection is an empty OrderedCollection before any subscription ----

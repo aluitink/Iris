@@ -68,7 +68,7 @@ public static class TestSeeder
             Name = [handle],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = actorIriString,
@@ -107,7 +107,7 @@ public static class TestSeeder
             Name = [handle],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = actorIriString,
@@ -169,7 +169,7 @@ public static class TestSeeder
             Name = [handle],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
-        actor.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = actorIri.Value,
@@ -227,7 +227,7 @@ public static class TestSeeder
             Name = [name],
         };
         community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        community.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = communityIri.Value,
@@ -269,7 +269,7 @@ public static class TestSeeder
             Name = [name],
         };
         community.ExtensionData ??= new Dictionary<string, JsonElement>();
-        community.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        community.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = communityIri.Value,

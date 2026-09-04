@@ -11,6 +11,7 @@ using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
+using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -2835,9 +2836,10 @@ public static class ActivityPubServerExtensions
         }
 
         // Stamp the publicKey extension (id, owner, publicKeyPem) — the form the inbound key resolver
-        // reads when verifying a community-signed request (the owner is the community IRI).
+        // reads when verifying a community-signed request (the owner is the community IRI). Bare
+        // (ecosystem convention, not an iris: extension) — see ActivityPubExtensionNames.PublicKey.
         group.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-        group.ExtensionData["publicKey"] = System.Text.Json.JsonSerializer.SerializeToElement(new
+        group.ExtensionData[ActivityPubExtensionNames.PublicKey] = System.Text.Json.JsonSerializer.SerializeToElement(new
         {
             id = keyId.Value,
             owner = communityIri.Value,
@@ -3016,6 +3018,50 @@ public static class ActivityPubServerExtensions
             ActivityPubServerConstants.RefreshQueryParameterName,
             out var values) && values.Count > 0 && values[0] is not null and not "false";
 
+    /// <summary>
+    /// Builds the JSON-LD <c>@context</c> for a public actor/community document: the core ActivityStreams
+    /// context followed by the <c>iris:</c> namespace base declared as <c>@vocab</c>. This makes every
+    /// Iris-invented extension term (written as the full IRI <c>{NamespaceIri}{term}</c>) a resolvable
+    /// JSON-LD term, and is the wire-level marker that distinguishes Iris extensions from the core-AP
+    /// properties (which stay bare). The namespace base is deployment-configurable
+    /// (<see cref="ActivityPubServerOptions.NamespaceIri"/>); the canonical default applies when unset.
+    /// </summary>
+    private static ITermDefinition[] BuildDocumentContext(ActivityPubServerOptions options)
+        => [
+            new ReferenceTermDefinition(new Uri(ActivityStreamsContextIri)),
+            new ExpandedTermDefinition { Vocab = new Uri(IrisExtensionNamespace(options)) },
+        ];
+
+    /// <summary>
+    /// The core ActivityStreams JSON-LD context IRI (the document vocabulary for the standard AP terms).
+    /// </summary>
+    private const string ActivityStreamsContextIri = "https://www.w3.org/ns/activitystreams";
+
+    /// <summary>
+    /// The deployment's <c>iris:</c> extension namespace base IRI (<see cref="ActivityPubServerOptions.NamespaceIri"/>,
+    /// or the canonical default when unset). Full extension keys are <c>base + localTerm</c>.
+    /// </summary>
+    private static string IrisExtensionNamespace(ActivityPubServerOptions options)
+        => options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
+
+    /// <summary>
+    /// Adds an IRI-valued extension property under the given full <c>iris:</c> key to a document's
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/>, omitting it when the value is
+    /// unset or the key is already present (idempotent re-advertisement on a re-rendered document).
+    /// </summary>
+    private static void AddExtensionIri(
+        Dictionary<string, System.Text.Json.JsonElement> ext,
+        string fullKey,
+        string iri)
+    {
+        if (string.IsNullOrWhiteSpace(iri) || ext.ContainsKey(fullKey))
+        {
+            return;
+        }
+
+        ext[fullKey] = System.Text.Json.JsonSerializer.SerializeToElement(iri);
+    }
+
     private static Actor BuildActorDocument(
         Actor actor,
         Iri actorIri,
@@ -3026,6 +3072,12 @@ public static class ActivityPubServerExtensions
         // Deep-copy via serialize/deserialize so we never mutate the stored actor.
         var doc = ActivityJson.Deserialize<Actor>(ActivityJson.Serialize(actor))!;
 
+        // Declare the JSON-LD context: the core ActivityStreams context plus the iris: namespace (@vocab),
+        // so the Iris-invented collection endpoints advertised below are resolvable JSON-LD terms under the
+        // deployment's namespace base (the API-surface conformance contract: every non-core-AP property is
+        // namespaced; the core-AP terms stay bare).
+        doc.JsonLDContext = BuildDocumentContext(options);
+
         // Ensure the document carries the standard collection endpoints (inbox/outbox/followers/following).
         doc.Id ??= actorIri.Value;
         doc.Inbox ??= new Link { Href = new Uri(actorIri.InboxOf().Value) };
@@ -3033,56 +3085,27 @@ public static class ActivityPubServerExtensions
         doc.Followers ??= new Link { Href = new Uri(actorIri.FollowersOf().Value) };
         doc.Following ??= new Link { Href = new Uri(actorIri.FollowingOf().Value) };
         // Advertise the liked collection (F-04): a remote client reads it to enumerate the objects the
-        // actor has liked (the ActivityPub `Liked` relationship, served at /u/{handle}/liked).
+        // actor has liked (the ActivityPub `Liked` relationship, served at /u/{handle}/liked). The library
+        // models `liked` as a typed Actor property, so it is emitted bare (not namespaced).
         doc.Liked ??= new Link { Href = new Uri(actorIri.LikedOf().Value) };
 
-        // Advertise the blocks collection (F-07 moderation): a client (or another instance) reads it to
-        // enumerate the actors the actor has blocked (served at /u/{handle}/blocks). The library's Actor
-        // type does not model a `blocks` property, so it rides in ExtensionData (the same wire shape the
-        // `feed` extension uses, served at /u/{handle}/feed).
+        // Advertise the Iris-invented collection endpoints. Each is an Iris extension (not a core-AP term),
+        // so it is written under the iris: namespace (the full IRI key {NamespaceIri}{term}) — see the
+        // @context declared above. A client reads them via IrisDocumentExtensions.
         {
-            var blocksExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            if (!blocksExt.ContainsKey("blocks"))
-            {
-                blocksExt["blocks"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/blocks");
-            }
-        }
-
-        // Advertise the flags collection (F-07 moderation): a client (or another instance) reads it to
-        // enumerate the actors the actor has flagged (served at /u/{handle}/flags). The library's Actor
-        // type does not model a `flags` property, so it rides in ExtensionData (the same wire shape the
-        // `blocks` extension uses).
-        {
-            var flagsExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            if (!flagsExt.ContainsKey("flags"))
-            {
-                flagsExt["flags"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/flags");
-            }
-        }
-
-        // Advertise the mutes collection (F-07 moderation): a client reads it to enumerate the actors
-        // the actor has muted (served at /u/{handle}/mutes). A mute is Iris-specific (no ActivityStreams
-        // type), so — like `blocks`/`flags` — it rides in ExtensionData (the same wire shape).
-        {
-            var mutesExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            if (!mutesExt.ContainsKey("mutes"))
-            {
-                mutesExt["mutes"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/mutes");
-            }
-        }
-
-        // Advertise the relays collection (F-06): the relays (fan-out servers) the actor subscribes to —
-        // the ActivityPub `star` set (AP §5.1.3). A relay subscription is an Iris-specific local decision
-        // (a local actor configures the relays it fanned-out through), so — like `blocks`/`flags`/`mutes`
-        // — it rides in ExtensionData (the same wire shape), served at /u/{handle}/relays. It is
-        // advertised unconditionally (even when empty) so a remote instance can discover the relays a
-        // local actor fans out through and relay its content to them.
-        {
-            var relaysExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            if (!relaysExt.ContainsKey("star"))
-            {
-                relaysExt["star"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/relays");
-            }
+            var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            var ns = IrisExtensionNamespace(options);
+            // blocks (F-07 moderation): the actors the actor has blocked (served at /u/{handle}/blocks).
+            AddExtensionIri(ext, ns + CollectionExtensionNames.Blocks, $"{actorIri.Value}/blocks");
+            // flags (F-07 moderation): the actors the actor has flagged (served at /u/{handle}/flags).
+            AddExtensionIri(ext, ns + CollectionExtensionNames.Flags, $"{actorIri.Value}/flags");
+            // mutes (F-07 moderation): the actors the actor has muted (served at /u/{handle}/mutes). A mute
+            // is Iris-specific (no ActivityStreams type).
+            AddExtensionIri(ext, ns + CollectionExtensionNames.Mutes, $"{actorIri.Value}/mutes");
+            // star (F-06): the relays (fan-out servers) the actor subscribes to (served at /u/{handle}/relays).
+            // Advertised unconditionally (even when empty) so a remote instance can discover the relays a
+            // local actor fans out through and relay its content to them.
+            AddExtensionIri(ext, ns + CollectionExtensionNames.Star, $"{actorIri.Value}/relays");
         }
 
         // Advertise the local-moderation capabilities (19.0b.2b): a person can mute (F-07) and can
@@ -3098,8 +3121,7 @@ public static class ActivityPubServerExtensions
         {
             var capExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
             var capabilitiesTerm =
-                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
-                ActivityPubServerConstants.CapabilitiesTerm;
+                IrisExtensionNamespace(options) + ActivityPubServerConstants.CapabilitiesTerm;
             if (!capExt.ContainsKey(capabilitiesTerm))
             {
                 var hasSettings = actor.ExtensionData is { } aExt &&
@@ -3123,14 +3145,11 @@ public static class ActivityPubServerExtensions
 
         // Advertise the followed feed (F-14): a client (or another instance) reads it to get the actor's
         // home timeline (the union of the actor's local and remote follows' outbox items). The library's
-        // Actor type does not model a `feed` property, so it rides in ExtensionData (the same wire shape
-        // the community document uses for its `feed` extension, served at /u/{handle}/feed).
+        // Actor type does not model a `feed` property, so it is an Iris extension — written under the iris:
+        // namespace (served at /u/{handle}/feed).
         {
-            var feedExt = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-            if (!feedExt.ContainsKey("feed"))
-            {
-                feedExt["feed"] = System.Text.Json.JsonSerializer.SerializeToElement($"{actorIri.Value}/feed");
-            }
+            var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            AddExtensionIri(ext, IrisExtensionNamespace(options) + CollectionExtensionNames.Feed, $"{actorIri.Value}/feed");
         }
 
         // Advertise the instance's shared inbox (F-01) when the host configured one: a remote sender may
@@ -3161,8 +3180,7 @@ public static class ActivityPubServerExtensions
             // carrying the manuallyApprovesFollowers flag, published to the outbox). A remote client
             // can discover the settings surface from the document alone (no hardcoded endpoint paths).
             var settingsTerm =
-                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
-                ActivityPubServerConstants.SettingsTerm;
+                IrisExtensionNamespace(options) + ActivityPubServerConstants.SettingsTerm;
             if (!doc.ExtensionData.ContainsKey(settingsTerm))
             {
                 doc.ExtensionData[settingsTerm] = System.Text.Json.JsonSerializer.SerializeToElement(
@@ -3175,7 +3193,7 @@ public static class ActivityPubServerExtensions
         // implementations that use it (e.g. Iris itself). (F-1912-1: Mastodon rejected our signature
         // with 401 — likely because it could not resolve the key from publicKeyPem alone.)
         if (doc.ExtensionData is { } existingExt &&
-            existingExt.TryGetValue("publicKey", out var pkEl) &&
+            existingExt.TryGetValue(ActivityPubExtensionNames.PublicKey, out var pkEl) &&
             pkEl.ValueKind == System.Text.Json.JsonValueKind.Object &&
             pkEl.TryGetProperty("id", out var pkIdEl) &&
             pkIdEl.ValueKind == System.Text.Json.JsonValueKind.String &&
@@ -3190,13 +3208,14 @@ public static class ActivityPubServerExtensions
             if (jwkEl.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
                 // Merge the JWK fields into the publicKey object (kty, n, e for RSA; kty, crv, x, y for EC).
-                var pkObj = pkEl.EnumerateObject().ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
+                var pkObj = pkEl.EnumerateObject().ToDictionary(
+                    (System.Text.Json.JsonProperty p) => p.Name, p => p.Value, StringComparer.Ordinal);
                 foreach (var prop in jwkEl.EnumerateObject())
                 {
                     pkObj[prop.Name] = prop.Value.Clone();
                 }
                 doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-                doc.ExtensionData["publicKey"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                doc.ExtensionData[ActivityPubExtensionNames.PublicKey] = System.Text.Json.JsonSerializer.SerializeToElement(
                     pkObj.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal));
             }
         }
@@ -3208,9 +3227,9 @@ public static class ActivityPubServerExtensions
             var keyIdIri = ResolveKeyIri(doc, actorIri);
             if (persistence.Keys.TryGetKey(keyIdIri, out var keyPair) && keyPair is not null)
             {
-                ext[ActivityPubServerConstants.PrivateKeyExtensionName] =
+                ext[ActivityPubExtensionNames.PrivateKey] =
                     System.Text.Json.JsonSerializer.SerializeToElement(keyPair.ExportPrivateKeyPem());
-                ext[ActivityPubServerConstants.KeyAlgorithmExtensionName] =
+                ext[ActivityPubExtensionNames.KeyAlgorithm] =
                     System.Text.Json.JsonSerializer.SerializeToElement(KeyAlgorithmLabel(keyPair.Algorithm));
             }
         }
@@ -3739,7 +3758,7 @@ public static class ActivityPubServerExtensions
         // The key IRI is the actor's publicKey.id (ActivityPub convention). The library carries
         // publicKey in ExtensionData (it's not a typed property). Fall back to the actor IRI with
         // a #key-1 fragment when the document doesn't carry an explicit key id.
-        if (actor.ExtensionData is { } ext && ext.TryGetValue("publicKey", out var pk))
+        if (actor.ExtensionData is { } ext && ext.TryGetValue(ActivityPubExtensionNames.PublicKey, out var pk))
         {
             if (pk.ValueKind == System.Text.Json.JsonValueKind.Object && pk.TryGetProperty("id", out var idEl) &&
                 idEl.ValueKind == System.Text.Json.JsonValueKind.String)
@@ -4362,6 +4381,11 @@ public static class ActivityPubServerExtensions
         // Deep-copy via serialize/deserialize so we never mutate the stored community, and ensure the
         // document carries the standard collection endpoints (inbox/outbox/followers/following) + members.
         var doc = ActivityJson.Deserialize<Group>(ActivityJson.Serialize(community))!;
+
+        // Declare the JSON-LD context (core AS + the iris: namespace @vocab) so the Iris-invented
+        // collection endpoints advertised below are resolvable JSON-LD terms (see the actor document above).
+        doc.JsonLDContext = BuildDocumentContext(options);
+
         doc.Id ??= communityIri.Value;
         doc.Inbox ??= new Link { Href = new Uri(communityIri.InboxOf().Value) };
         doc.Outbox ??= new Link { Href = new Uri(communityIri.OutboxOf().Value) };
@@ -4381,42 +4405,53 @@ public static class ActivityPubServerExtensions
 
         var ext = doc.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
         var changed = false;
-        if (!ext.ContainsKey("members"))
+        // members is a core ActivityStreams Group term — emitted BARE (not namespaced), unlike the
+        // Iris-invented collection endpoints below.
+        if (!ext.ContainsKey(CollectionExtensionNames.Members))
         {
-            ext["members"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/members");
+            ext[CollectionExtensionNames.Members] = System.Text.Json.JsonSerializer.SerializeToElement(
+                $"{communityIri.Value}/members");
             changed = true;
         }
 
-        if (!ext.ContainsKey("feed"))
+        // The Iris-invented collection endpoints (feed/search/blocks/flags/mutes) are written under the
+        // iris: namespace (full IRI key), declared in the @context above.
+        var ns = IrisExtensionNamespace(options);
+        if (!ext.ContainsKey(ns + CollectionExtensionNames.Feed))
         {
-            ext["feed"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/feed");
+            ext[ns + CollectionExtensionNames.Feed] =
+                System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/feed");
             changed = true;
         }
 
-        if (!ext.ContainsKey("search"))
+        if (!ext.ContainsKey(ns + CollectionExtensionNames.Search))
         {
-            ext["search"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/search");
+            ext[ns + CollectionExtensionNames.Search] =
+                System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/search");
             changed = true;
         }
 
         // Advertise the community moderation collections (19.5.4) — blocks/flags/mutes (the actors the
         // community has blocked/flagged/muted), mirroring the person actor document's moderation links so
         // a client can discover the community's moderation surface.
-        if (!ext.ContainsKey("blocks"))
+        if (!ext.ContainsKey(ns + CollectionExtensionNames.Blocks))
         {
-            ext["blocks"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/blocks");
+            ext[ns + CollectionExtensionNames.Blocks] =
+                System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/blocks");
             changed = true;
         }
 
-        if (!ext.ContainsKey("flags"))
+        if (!ext.ContainsKey(ns + CollectionExtensionNames.Flags))
         {
-            ext["flags"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/flags");
+            ext[ns + CollectionExtensionNames.Flags] =
+                System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/flags");
             changed = true;
         }
 
-        if (!ext.ContainsKey("mutes"))
+        if (!ext.ContainsKey(ns + CollectionExtensionNames.Mutes))
         {
-            ext["mutes"] = System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/mutes");
+            ext[ns + CollectionExtensionNames.Mutes] =
+                System.Text.Json.JsonSerializer.SerializeToElement($"{communityIri.Value}/mutes");
             changed = true;
         }
 
@@ -4426,8 +4461,7 @@ public static class ActivityPubServerExtensions
         // under /local/v1/c/{name}/mutes). The full term is {NamespaceIri}capabilities (configurable
         // per-deployment, Resolved Decision #9; the canonical default when unset, Resolved Decision #1).
         var capabilitiesTerm =
-            (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
-            ActivityPubServerConstants.CapabilitiesTerm;
+            IrisExtensionNamespace(options) + ActivityPubServerConstants.CapabilitiesTerm;
         if (!ext.ContainsKey(capabilitiesTerm))
         {
             // 22.6.1: advertise "settings" in the capabilities list when the community has the
@@ -4469,8 +4503,7 @@ public static class ActivityPubServerExtensions
             mamExt.ValueKind == System.Text.Json.JsonValueKind.True)
         {
             var settingsTerm =
-                (options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri) +
-                ActivityPubServerConstants.SettingsTerm;
+                IrisExtensionNamespace(options) + ActivityPubServerConstants.SettingsTerm;
             if (!ext.ContainsKey(settingsTerm))
             {
                 ext[settingsTerm] = System.Text.Json.JsonSerializer.SerializeToElement(
@@ -4888,8 +4921,7 @@ public static class ActivityPubServerExtensions
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
 
         var collectionIri = new Iri($"{communityIri.Value}/search");
-        var namespaceBase = options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
-        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, namespaceBase);
+        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, IrisExtensionNamespace(options));
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
@@ -4924,8 +4956,7 @@ public static class ActivityPubServerExtensions
         // search handler's BuildCommunityIri).
         var baseUrl = (options.BaseUri?.Value ?? $"{context.Request.Scheme}://{context.Request.Host}").TrimEnd('/');
         var collectionIri = new Iri($"{baseUrl}{ActivityPubServerConstants.RoutePrefix}/search");
-        var namespaceBase = options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
-        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, namespaceBase);
+        var document = BuildSearchPageDocument(collectionIri, offset, limit, items, query, IrisExtensionNamespace(options));
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
@@ -5210,7 +5241,7 @@ public static class ActivityPubServerExtensions
 
         // Whether a query was supplied (records the iris:searchQuery extension when non-empty).
         var hasQuery = !string.IsNullOrWhiteSpace(query);
-        var searchQueryTerm = $"{namespaceBase}searchQuery";
+        var searchQueryTerm = $"{namespaceBase}{IrisExtensionTerms.SearchQuery}";
         var nextOffset = start + limit;
         var prevOffset = Math.Max(0, start - limit);
 

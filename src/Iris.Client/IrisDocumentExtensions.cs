@@ -8,13 +8,15 @@ namespace Iris.Client;
 /// Extension methods for reading <c>iris:</c>-namespaced extension properties from ActivityStreams
 /// actor/community documents (22.6.1). These are the JSON-LD extensions that the server advertises on
 /// the public actor/community document (the <c>ExtensionData</c> dictionary) to surface specialized,
-/// non-core-AP capabilities (settings, capabilities list) for client discovery.
+/// non-core-AP capabilities (settings, capabilities list, collection endpoints) for client discovery.
 /// </summary>
 public static class IrisDocumentExtensions
 {
     /// <summary>
-    /// The default <c>iris:</c> namespace base IRI (matching the server's default when the deployment
-    /// does not override <c>ActivityPubServerOptions.NamespaceIri</c>).
+    /// The default <c>iris:</c> namespace base IRI (the canonical out-of-the-box value, matching the
+    /// server's default when the deployment does not override <c>ActivityPubServerOptions.NamespaceIri</c>).
+    /// A deployment that overrides the namespace must pass the same base to these readers; when it does
+    /// not, this default applies on both sides.
     /// </summary>
     public const string DefaultNamespaceIri = "https://iris.example/ns#";
 
@@ -40,7 +42,7 @@ public static class IrisDocumentExtensions
             return null;
         }
 
-        var term = namespaceIri + "settings";
+        var term = namespaceIri + IrisExtensionTerms.Settings;
         if (!ext.TryGetValue(term, out var value) ||
             value.ValueKind != System.Text.Json.JsonValueKind.String)
         {
@@ -72,7 +74,7 @@ public static class IrisDocumentExtensions
             return [];
         }
 
-        var term = namespaceIri + "capabilities";
+        var term = namespaceIri + IrisExtensionTerms.Capabilities;
         if (!ext.TryGetValue(term, out var value) ||
             value.ValueKind != System.Text.Json.JsonValueKind.Array)
         {
@@ -93,73 +95,99 @@ public static class IrisDocumentExtensions
     }
 
     /// <summary>
-    /// Reads the <c>feed</c> extension property from an actor/community document, returning the IRI of the
-    /// followed-feed collection (the home timeline: the union of the actor's local and remote follows'
-    /// outbox items, or the community feed for a Group). The server advertises it unconditionally on both
-    /// person and community documents. Returns <see langword="null"/> when absent.
+    /// Reads the <c>iris:feed</c> extension property from an actor/community document, returning the IRI
+    /// of the followed-feed collection (the home timeline: the union of the actor's local and remote
+    /// follows' outbox items, or the community feed for a Group). The server advertises it unconditionally
+    /// on both person and community documents, namespaced under the <c>iris:</c> namespace (the full IRI
+    /// key <c>{namespaceIri}feed</c>). Returns <see langword="null"/> when absent.
     /// </summary>
     /// <param name="document">The actor or community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
     /// <returns>The feed IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetFeedIri(this Object document) => GetCollectionIri(document, "feed");
+    public static Iri? GetFeedIri(this Object document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Feed);
 
     /// <summary>
     /// Reads the <c>members</c> extension property from a community document, returning the IRI of the
     /// members collection (the community's member actors, served at <c>/c/{name}/members</c>). Present
-    /// only on community (Group) documents; absent on person documents. Returns <see langword="null"/>
-    /// when the property is absent.
+    /// only on community (Group) documents; absent on person documents. Unlike the Iris-invented
+    /// collection endpoints, <c>members</c> is a core ActivityStreams Group term and is therefore emitted
+    /// <strong>bare</strong> (not namespaced). Returns <see langword="null"/> when the property is absent.
     /// </summary>
     /// <param name="document">The community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
     /// <returns>The members IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetMembersIri(this Object document) => GetCollectionIri(document, "members");
+    public static Iri? GetMembersIri(this Object document) => GetCollectionIri(document, CollectionExtensionNames.Members);
 
     /// <summary>
-    /// Reads the <c>blocks</c> extension property from an actor/community document, returning the IRI of
-    /// the blocks collection (the actors the actor has blocked, served at <c>/u/{handle}/blocks</c>).
-    /// Returns <see langword="null"/> when absent.
+    /// Reads the <c>iris:blocks</c> extension property from an actor/community document, returning the IRI
+    /// of the blocks collection (the actors the actor has blocked, served at <c>/u/{handle}/blocks</c>).
+    /// Namespaced under the <c>iris:</c> namespace (the full IRI key <c>{namespaceIri}blocks</c>). Returns
+    /// <see langword="null"/> when absent.
     /// </summary>
     /// <param name="document">The actor or community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
     /// <returns>The blocks IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetBlocksIri(this Object document) => GetCollectionIri(document, "blocks");
+    public static Iri? GetBlocksIri(this Object document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Blocks);
 
     /// <summary>
-    /// Reads the <c>flags</c> extension property from an actor/community document, returning the IRI of
-    /// the flags collection (the actors the actor has flagged, served at <c>/u/{handle}/flags</c>).
-    /// Returns <see langword="null"/> when absent.
+    /// Reads the <c>iris:flags</c> extension property from an actor/community document, returning the IRI
+    /// of the flags collection (the actors the actor has flagged, served at <c>/u/{handle}/flags</c>).
+    /// Namespaced under the <c>iris:</c> namespace (the full IRI key <c>{namespaceIri}flags</c>). Returns
+    /// <see langword="null"/> when absent.
     /// </summary>
     /// <param name="document">The actor or community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
     /// <returns>The flags IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetFlagsIri(this Object document) => GetCollectionIri(document, "flags");
+    public static Iri? GetFlagsIri(this Object document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Flags);
 
     /// <summary>
-    /// Reads the <c>mutes</c> extension property from an actor/community document, returning the IRI of
-    /// the mutes collection (the actors the actor has muted, served at <c>/u/{handle}/mutes</c>).
-    /// Returns <see langword="null"/> when absent.
+    /// Reads the <c>iris:mutes</c> extension property from an actor/community document, returning the IRI
+    /// of the mutes collection (the actors the actor has muted, served at <c>/u/{handle}/mutes</c>).
+    /// Namespaced under the <c>iris:</c> namespace (the full IRI key <c>{namespaceIri}mutes</c>). Returns
+    /// <see langword="null"/> when absent.
     /// </summary>
     /// <param name="document">The actor or community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
     /// <returns>The mutes IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetMutesIri(this Object document) => GetCollectionIri(document, "mutes");
+    public static Iri? GetMutesIri(this Object document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Mutes);
 
     /// <summary>
-    /// Reads the <c>star</c> (relays) extension property from an actor/community document, returning the
-    /// IRI of the relays collection (the fan-out relays the actor subscribes to, the ActivityPub
-    /// <c>star</c> set, served at <c>/u/{handle}/relays</c>). Advertised unconditionally (even when empty).
-    /// Returns <see langword="null"/> when absent.
+    /// Reads the <c>iris:star</c> (relays) extension property from an actor/community document, returning
+    /// the IRI of the relays collection (the fan-out relays the actor subscribes to, served at
+    /// <c>/u/{handle}/relays</c>). Iris reuses the AS <c>star</c> term to carry the relays set; it is
+    /// namespaced under the <c>iris:</c> namespace (the full IRI key <c>{namespaceIri}star</c>) and
+    /// advertised unconditionally (even when empty). Returns <see langword="null"/> when absent.
     /// </summary>
     /// <param name="document">The actor or community document (an <see cref="Object"/> with
     /// <see cref="Object.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
     /// <returns>The relays IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
-    public static Iri? GetRelaysIri(this Object document) => GetCollectionIri(document, "star");
+    public static Iri? GetRelaysIri(this Object document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Star);
 
     /// <summary>
     /// Reads the <c>manuallyApprovesFollowers</c> gate state from a person (actor) document, returning

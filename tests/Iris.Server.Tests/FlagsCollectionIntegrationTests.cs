@@ -81,7 +81,10 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
 
         // The actor document advertises the flags collection link (via the ActivityStreams extension
         // data, since the library's Person has no typed `flags` property).
-        Assert.Equal($"https://{BHost}/ap/v1/u/{Bob}/flags", doc.RootElement.GetProperty("flags").GetString());
+        Assert.Equal(
+            $"https://{BHost}/ap/v1/u/{Bob}/flags",
+            doc.RootElement.GetProperty(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Flags)
+                .GetString());
     }
 
     // --- The flags collection is an empty OrderedCollection before any flag ----------

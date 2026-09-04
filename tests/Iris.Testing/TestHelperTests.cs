@@ -47,7 +47,7 @@ public sealed class TestHelperTests
         // The actor serves the key's public key as PEM (publicKeyPem) in its publicKey extension.
         var found = await persistence.ActorStore.TryGetActorAsync(actorIri, out var actor, CancellationToken.None);
         Assert.True(found);
-        using var publicKey = JsonDocument.Parse(actor!.ExtensionData!["publicKey"].GetRawText());
+        using var publicKey = JsonDocument.Parse(actor!.ExtensionData![ActivityPubExtensionNames.PublicKey].GetRawText());
         Assert.Equal(keyId.Value, publicKey.RootElement.GetProperty("id").GetString());
         Assert.Equal(actorIri.Value, publicKey.RootElement.GetProperty("owner").GetString());
         Assert.Equal(key.ExportPublicKeyPem(), publicKey.RootElement.GetProperty("publicKeyPem").GetString());

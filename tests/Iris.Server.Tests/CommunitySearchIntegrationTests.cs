@@ -218,7 +218,10 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        var searchLink = doc.RootElement.GetProperty("search").GetString();
+        // The search collection link is an Iris extension, namespaced under the iris: namespace.
+        var searchLink = doc.RootElement
+            .GetProperty(DefaultNamespace + CollectionExtensionNames.Search)
+            .GetString();
         Assert.Equal($"{_base}/ap/v1/c/{Community}/search", searchLink);
     }
 

@@ -20,9 +20,8 @@ namespace Iris.Client.Auth;
 /// </remarks>
 public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
 {
-    private const string PrivateKeyProperty = "privateKey";
-    private const string PublicKeyProperty = "publicKey";
-    private const string KeyAlgorithmProperty = "keyAlgorithm";
+    private static readonly string PrivateKeyProperty = ActivityPubExtensionNames.PrivateKey;
+    private static readonly string KeyAlgorithmProperty = ActivityPubExtensionNames.KeyAlgorithm;
 
     private readonly HttpClient _http;
     private readonly Iri _actorId;
@@ -144,7 +143,7 @@ public sealed class BasicAuthClientAuthenticator : IClientAuthenticator
     private static Iri ExtractKeyId(Actor actor, Iri fallback)
     {
         if (actor.ExtensionData is { } ext
-            && ext.TryGetValue(PublicKeyProperty, out var pk)
+            && ext.TryGetValue(ActivityPubExtensionNames.PublicKey, out var pk)
             && pk.ValueKind == JsonValueKind.Object
             && pk.TryGetProperty("id", out var idElement)
             && idElement.ValueKind == JsonValueKind.String)

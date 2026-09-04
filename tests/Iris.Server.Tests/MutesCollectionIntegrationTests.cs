@@ -95,7 +95,10 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
 
         // The actor document advertises the mutes collection link (via the ActivityStreams extension
         // data, since the library's Person has no typed `mutes` property).
-        Assert.Equal($"https://{BHost}/ap/v1/u/{Bob}/mutes", doc.RootElement.GetProperty("mutes").GetString());
+        Assert.Equal(
+            $"https://{BHost}/ap/v1/u/{Bob}/mutes",
+            doc.RootElement.GetProperty(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Mutes)
+                .GetString());
     }
 
     // --- The mutes collection is an empty OrderedCollection before any mute ----------

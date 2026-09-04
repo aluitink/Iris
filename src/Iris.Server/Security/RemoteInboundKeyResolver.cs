@@ -74,7 +74,7 @@ public sealed class RemoteInboundKeyResolver(
         }
 
         if (actor.ExtensionData is not { } extension
-            || !extension.TryGetValue("publicKey", out var publicKey)
+            || !extension.TryGetValue(ActivityPubExtensionNames.PublicKey, out var publicKey)
             || publicKey.ValueKind != JsonValueKind.Object)
         {
             return null;

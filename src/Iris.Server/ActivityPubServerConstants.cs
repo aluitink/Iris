@@ -1,5 +1,8 @@
 namespace Iris.Server;
 
+using ActivityPubExtensionNames = Iris.Core.ActivityPubExtensionNames;
+using IrisExtensionTerms = Iris.Core.IrisExtensionTerms;
+
 /// <summary>
 /// Wire-format constants for the Iris server (route prefix, meta headers, content types).
 /// </summary>
@@ -28,16 +31,19 @@ public static class ActivityPubServerConstants
 
     /// <summary>
     /// The name of the non-standard extension property that carries the owner-only PEM private key
-    /// on the authenticated actor document (Resolved Decision #2).
+    /// on the authenticated actor document (Resolved Decision #2). Aliased from the canonical
+    /// <c>Iris.Core</c> constant (<see cref="ActivityPubExtensionNames.PrivateKey"/>) so the server's
+    /// render path and the client's authenticator share one source of truth.
     /// </summary>
-    public const string PrivateKeyExtensionName = "privateKey";
+    public const string PrivateKeyExtensionName = ActivityPubExtensionNames.PrivateKey;
 
     /// <summary>
     /// The name of the non-standard extension property that carries the key algorithm label
     /// (<c>rsa</c> / <c>ecdsa-p256</c>) alongside <see cref="PrivateKeyExtensionName"/>
-    /// (Resolved Decision #20).
+    /// (Resolved Decision #20). Aliased from the canonical <c>Iris.Core</c> constant
+    /// (<see cref="ActivityPubExtensionNames.KeyAlgorithm"/>).
     /// </summary>
-    public const string KeyAlgorithmExtensionName = "keyAlgorithm";
+    public const string KeyAlgorithmExtensionName = ActivityPubExtensionNames.KeyAlgorithm;
 
     /// <summary>
     /// The value of <see cref="KeyAlgorithmExtensionName"/> for an RSA key.
@@ -77,23 +83,29 @@ public static class ActivityPubServerConstants
 
     /// <summary>
     /// The <c>iris:capabilities</c> extension property name (Resolved Decision #11).
-    /// The full IRI is <c>{NamespaceIri}capabilities</c>; this is the local term.
+    /// The full IRI is <c>{NamespaceIri}capabilities</c>; this is the local term. Aliased from the
+    /// canonical <c>Iris.Core</c> constant (<see cref="IrisExtensionTerms.Capabilities"/>) so the
+    /// server's render path and the client's readers share one source of truth.
     /// </summary>
-    public const string CapabilitiesTerm = "capabilities";
+    public const string CapabilitiesTerm = IrisExtensionTerms.Capabilities;
 
     /// <summary>
     /// The <c>iris:settings</c> extension property name: the IRI of the actor/community's settings
     /// surface (the AP-native settings change endpoint — an <c>Add</c>/<c>Remove</c> of the actor's
     /// own document carrying a settings flag, published to the outbox). When present, a remote client
     /// can discover the settings surface from the actor document alone (no hardcoded endpoint paths).
-    /// The full IRI is <c>{NamespaceIri}settings</c>.
+    /// The full IRI is <c>{NamespaceIri}settings</c>. Aliased from the canonical <c>Iris.Core</c>
+    /// constant (<see cref="IrisExtensionTerms.Settings"/>).
     /// </summary>
-    public const string SettingsTerm = "settings";
+    public const string SettingsTerm = IrisExtensionTerms.Settings;
 
     /// <summary>
     /// The canonical default <c>iris:</c> namespace base IRI (Resolved Decision #9; Open Question #1
     /// resolved) used when a deployment does not override <see cref="ActivityPubServerOptions.NamespaceIri"/>.
-    /// The base is configurable per-deployment; this is the out-of-the-box default.
+    /// The base is configurable per-deployment; this is the out-of-the-box default. This is the single
+    /// source of truth for the default namespace — <c>Iris.Client</c> aliases it as
+    /// <c>IrisDocumentExtensions.DefaultNamespaceIri</c>, so a client reading a document from a
+    /// default-namespace deployment never needs to know the string.
     /// </summary>
     public const string DefaultCapabilitiesNamespaceIri = "https://iris.example/ns#";
 

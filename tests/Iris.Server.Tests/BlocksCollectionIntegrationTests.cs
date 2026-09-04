@@ -78,7 +78,10 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
 
         // The actor document advertises the blocks collection link (via the ActivityStreams extension
         // data, since the library's Person has no typed `blocks` property).
-        Assert.Equal($"https://{BHost}/ap/v1/u/{Bob}/blocks", doc.RootElement.GetProperty("blocks").GetString());
+        Assert.Equal(
+            $"https://{BHost}/ap/v1/u/{Bob}/blocks",
+            doc.RootElement.GetProperty(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Blocks)
+                .GetString());
     }
 
     // --- The blocks collection is an empty OrderedCollection before any block ----------

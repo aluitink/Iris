@@ -184,7 +184,10 @@ public sealed class FollowFeedIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        Assert.True(doc.RootElement.TryGetProperty("feed", out var feed), "actor doc should advertise a feed extension");
+        Assert.True(
+            doc.RootElement.TryGetProperty(
+                IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Feed, out var feed),
+            "actor doc should advertise a feed extension");
         Assert.Equal($"{_alice.Value}/feed", feed.GetString());
     }
 

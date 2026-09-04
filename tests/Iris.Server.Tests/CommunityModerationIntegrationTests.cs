@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
@@ -89,9 +90,17 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        Assert.Equal($"{_base}/ap/v1/c/{Community}/blocks", doc.RootElement.GetProperty("blocks").GetString());
-        Assert.Equal($"{_base}/ap/v1/c/{Community}/flags", doc.RootElement.GetProperty("flags").GetString());
-        Assert.Equal($"{_base}/ap/v1/c/{Community}/mutes", doc.RootElement.GetProperty("mutes").GetString());
+        // The moderation collection links are Iris extensions, namespaced under the iris: namespace.
+        var ns = IrisDocumentExtensions.DefaultNamespaceIri;
+        Assert.Equal(
+            $"{_base}/ap/v1/c/{Community}/blocks",
+            doc.RootElement.GetProperty(ns + CollectionExtensionNames.Blocks).GetString());
+        Assert.Equal(
+            $"{_base}/ap/v1/c/{Community}/flags",
+            doc.RootElement.GetProperty(ns + CollectionExtensionNames.Flags).GetString());
+        Assert.Equal(
+            $"{_base}/ap/v1/c/{Community}/mutes",
+            doc.RootElement.GetProperty(ns + CollectionExtensionNames.Mutes).GetString());
     }
 
     // --- The moderation collections are empty OrderedCollections before any moderation --
