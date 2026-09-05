@@ -4194,9 +4194,21 @@ public static class ActivityPubServerExtensions
         }
 
         var handle = acct[..at];
+        var accountHost = acct[(at + 1)..];
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var instanceHost = new Uri(baseUrl).Host;
+
+        // RFC 7033: a WebFinger query for an account whose host is not this instance is answered
+        // with a 404, because the account does not exist on this instance. This is the response a
+        // mis-routed (forwarded-to-the-wrong-instance) query gets, and it is what tells a retrying
+        // client (WebFingerClient) that this instance is not the account's home.
+        if (!string.Equals(accountHost, instanceHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.NotFound();
+        }
+
         var actorIri = BuildActorIri(baseUrl, handle);
 
         Iri? resolvedIri = null;
@@ -4221,9 +4233,6 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        // The instance host (for the acct: subject) is derived from the base URL, not the request
-        // host (which may differ, e.g. in tests or behind a proxy).
-        var instanceHost = new Uri(baseUrl).Host;
         // WebFinger response: { subject, links: [{ rel: self, type: activity+json, href: resolvedIri }] }.
         // The href must be a plain string (the Iri struct serializes as an object with Uri/Value/etc.).
         var href = resolvedIri.ToString();

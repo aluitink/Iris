@@ -116,6 +116,79 @@ public class WebFingerClientTests
     }
 
     [Fact]
+    public async Task Resolve_DialBaseFails_AcctHostDiffering_RetriesAccountHost()
+    {
+        // RFC 8410: the dial base is only a reachability hint, not the account's home. When it does
+        // not answer (404 — the instance is not the account's home, per RFC 7033) and the account's
+        // advertised host differs, the client retries the well-known query against the account's own
+        // host and returns its self link.
+        var handler = new FakeHttpHandler(request =>
+            request.RequestUri!.Host == "localhost"
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SelfDocument(ActorIri), Encoding.UTF8, WebFingerClient.WebFingerContentType),
+                });
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        var iri = await client.ResolveActorAsync("bob@b.domain.local", new Uri("http://localhost:8081"));
+
+        Assert.Equal(ActorIri, iri!.Value.Value);
+        // The retry dialed the account's advertised host over the default https scheme.
+        Assert.Equal("https://b.domain.local", handler.LastUri!.GetLeftPart(UriPartial.Authority));
+    }
+
+    [Fact]
+    public async Task Resolve_DialBaseFails_AccountHostUnreachable_ReturnsNull()
+    {
+        // The dial base 404s and the retry to the account's advertised host is unreachable (DNS
+        // failure): discovery fails with null — no exception escapes.
+        var handler = new FakeHttpHandler(request =>
+            request.RequestUri!.Host == "localhost"
+                ? new HttpResponseMessage(HttpStatusCode.NotFound)
+                : throw new HttpRequestException("unreachable"));
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        Assert.Null(await client.ResolveActorAsync("bob@b.domain.local", new Uri("http://localhost:8081")));
+    }
+
+    [Fact]
+    public async Task Resolve_DialBaseSameHostAsAcct_DoesNotRetry()
+    {
+        // The dial base's host IS the account's host (a port-published local instance, e.g. the S1
+        // localhost:8081 scenario): a 404 means the account does not exist here — retrying the same
+        // machine over https is pointless. Exactly one request is made, and null is returned.
+        var handler = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        var iri = await client.ResolveActorAsync("alice@localhost", new Uri("http://localhost:8081"));
+
+        Assert.Null(iri);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal("localhost", handler.LastUri!.Host);
+    }
+
+    [Fact]
+    public async Task Resolve_DialBaseSucceeds_NoRetry()
+    {
+        // When the dial base answers, the account's own host is never dialed.
+        var handler = new FakeHttpHandler(request =>
+            request.RequestUri!.Host == "localhost"
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(SelfDocument(ActorIri), Encoding.UTF8, WebFingerClient.WebFingerContentType),
+                }
+                : new HttpResponseMessage(HttpStatusCode.NotFound));
+        var client = new WebFingerClient(new HttpClient(handler));
+
+        var iri = await client.ResolveActorAsync("bob@b.domain.local", new Uri("http://localhost:8081"));
+
+        Assert.Equal(ActorIri, iri!.Value.Value);
+        Assert.Equal(1, handler.RequestCount);
+        Assert.Equal("localhost", handler.LastUri!.Host);
+    }
+
+    [Fact]
     public async Task Resolve_WithoutDialBaseUri_DialsAddressHostOverScheme()
     {
         // The RFC 8410 norm (no explicit dial base): the well-known URL's authority is the address's

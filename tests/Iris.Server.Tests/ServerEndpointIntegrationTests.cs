@@ -306,6 +306,26 @@ public class ServerEndpointIntegrationTests : IDisposable
     }
 
     [Fact]
+    public async Task WebFinger_NonMatchingHost_Returns404()
+    {
+        // RFC 7033: a query whose account host is not this instance (a request forwarded to the
+        // wrong instance) is answered with a 404 — even for a handle that exists here. The client
+        // (WebFingerClient) relies on this 404 to know the instance is not the account's home and to
+        // retry against the account's advertised host.
+        var response = await _client.GetAsync(
+            $"/ap/v1/.well-known/webfinger?resource=acct:{Handle}@elsewhere.example.com");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WebFinger_NonMatchingHost_BarePath_Returns404()
+    {
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:{Handle}@elsewhere.example.com");
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task WebFinger_BarePath_ResolvesHandleToActorIri()
     {
         // F-30: WebFinger is served at BOTH the route-prefixed path (/ap/v1/.well-known/webfinger,

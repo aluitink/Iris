@@ -28,6 +28,11 @@ public sealed class FakeHttpHandler : HttpMessageHandler
     public Uri? LastUri => LastRequest?.RequestUri;
 
     /// <summary>
+    /// The total number of requests passed to <see cref="SendAsync"/>.
+    /// </summary>
+    public int RequestCount { get; private set; }
+
+    /// <summary>
     /// Initializes a new <see cref="FakeHttpHandler"/> that always returns <paramref name="response"/>.
     /// </summary>
     /// <param name="response">The response to return for every request.</param>
@@ -47,6 +52,7 @@ public sealed class FakeHttpHandler : HttpMessageHandler
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        RequestCount++;
         LastRequest = request;
         LastBody = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(ct);
         return _responder(request);

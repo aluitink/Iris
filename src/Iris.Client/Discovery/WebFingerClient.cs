@@ -139,8 +139,47 @@ public sealed class WebFingerClient : IWebFingerResolver
             authority = $"{(dialScheme ?? "https")}://{hostPart}";
         }
 
+        Iri? iri = await QueryWellKnownAsync(authority, subject, ct).ConfigureAwait(false);
+
+        // The dial base is a client-local reachability concern (a browser reaching a local instance on
+        // a host-published port): it is not the account's home. When it does not answer, RFC 8410
+        // takes over — the account lives on its own host, so retry the well-known query against the
+        // account's advertised host (the resource's own host) before giving up. The two hosts are
+        // compared ignoring the dial base's explicit port, since a port-published local instance
+        // (e.g. localhost:8081) and the account's own host (e.g. localhost) are the same machine.
+        if (iri is null && dialBaseUri is not null)
+        {
+            var accountHost = GetAccountHost(subject);
+            if (accountHost is not null && !SameAuthorityHost(authority, accountHost))
+            {
+                iri = await QueryWellKnownAsync(
+                    $"{(dialScheme ?? "https")}://{accountHost}", subject, ct).ConfigureAwait(false);
+            }
+        }
+
+        return iri;
+    }
+
+    private static bool SameAuthorityHost(string authority, string accountHost)
+    {
+        var host = Uri.TryCreate(authority, UriKind.Absolute, out var uri)
+            ? uri.IdnHost
+            : authority;
+        return string.Equals(host, accountHost, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetAccountHost(string subject)
+    {
+        var value = subject["acct:".Length..];
+        var at = value.LastIndexOf('@');
+        var host = at >= 0 ? value[(at + 1)..] : value;
+        return string.IsNullOrWhiteSpace(host) ? null : host;
+    }
+
+    private async Task<Iri?> QueryWellKnownAsync(string authority, string subject, CancellationToken ct)
+    {
         // The actor IRI returned in the `self` link is authoritative and carries the instance's real
-        // scheme/host; the dial authority above is only what the browser reaches.
+        // scheme/host; the dial authority above is only what the client reaches.
         var wellKnown = $"{authority}/.well-known/webfinger?resource={Uri.EscapeDataString(subject)}";
 
         HttpResponseMessage httpResponse;
@@ -178,8 +217,8 @@ public sealed class WebFingerClient : IWebFingerResolver
 
         var selfLink = response.Links
             .FirstOrDefault(l => string.Equals(l.Rel, "self", StringComparison.OrdinalIgnoreCase)
-                                 && l.Href is not null
-                                 && (l.Type is null || l.Type.Contains("activity", StringComparison.OrdinalIgnoreCase)));
+                                  && l.Href is not null
+                                  && (l.Type is null || l.Type.Contains("activity", StringComparison.OrdinalIgnoreCase)));
 
         return selfLink?.Href is { } href ? new Iri(href) : null;
     }
