@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -29,44 +30,43 @@ namespace Iris.Server.Tests;
 /// client's pipeline <see cref="HttpClient"/> carries no <see cref="HttpClient.BaseAddress"/>, so an
 /// absolute-IRI request would be rejected).
 /// </remarks>
-public sealed class ReplyIntegrationTests : IDisposable
+[Collection("ReplyIntegration")]
+public sealed class ReplyIntegrationTests : IAsyncLifetime
 {
-    private const string Host = "reply.domain.local";
-    private const string Handle = "alice";
-    private static readonly Iri ActorIri = new($"https://{Host}/ap/v1/u/{Handle}");
+    internal const string Host = "reply.domain.local";
+    internal const string Handle = "alice";
+    internal static readonly Iri ActorIri = new($"https://{Host}/ap/v1/u/{Handle}");
     private static readonly Iri ParentIri = new($"{ActorIri}/notes/n1");
     private static readonly Iri Reply1 = new($"{ActorIri}/notes/r1");
     private static readonly Iri Reply2 = new($"{ActorIri}/notes/r2");
     private static readonly Iri Mentioned = new($"https://{Host}/ap/v1/u/bob");
 
-    private readonly TestServer _server;
+    private readonly ReplyIntegrationSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{Host}";
     private readonly Uri _actor = new(ActorIri.Value);
 
-    public ReplyIntegrationTests()
+    public ReplyIntegrationTests(ReplyIntegrationSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence);
-
-        // A self-fetcher resolves alice's key from her own actor document (fetched over the in-process
-        // TestServer) so the SignatureValidationMiddleware validates the signed requests the client
-        // sends (a bare default fetcher uses a real HttpClientHandler, which cannot reach the in-process
-        // server → the signed POST is rejected). Deferred (LazyHandler) because the TestServer does not
-        // yet exist during construction.
-        var keyId = new Iri($"{ActorIri.Value}#key-1");
-        _persistence.Keys.TryGetKey(keyId, out var key);
-        TestServer? self = null;
-        _server = StartServer(_persistence, BuildSelfFetcher(key!, () => self!));
-        self = _server;
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- The replies collection lists the objects that reply to the parent -----------
@@ -214,10 +214,11 @@ public sealed class ReplyIntegrationTests : IDisposable
     /// and a sibling note (n3) with no replies. The parent → reply edges are recorded as the
     /// <see cref="CreateActivityHandler"/> would.
     /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
-        var (_, aliceIri, _) = TestSeeder.SeedPersonWithKey(persistence, Host, Handle);
-        var _ = aliceIri;
+        // Alice's actor is restored with her existing key (the key store is preserved across resets;
+        // her data-store actors are cleared by Reset()). The objects + reply edges are re-seeded.
+        TestSeeder.SeedPersonWithExistingKey(persistence, Host, Handle, new Iri($"{ActorIri.Value}#key-1"));
 
         var actor = new Link { Href = new Uri(ActorIri.Value) };
 
@@ -259,22 +260,13 @@ public sealed class ReplyIntegrationTests : IDisposable
         persistence.Replies.RecordReplyAsync(ParentIri, Reply2).GetAwaiter().GetResult();
     }
 
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence, IActorDocumentFetcher fetcher)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = Host,
-            Handle = Handle,
-            Persistence = persistence,
-            Fetcher = fetcher,
-        });
-
     /// <summary>
     /// An <see cref="IActorDocumentFetcher"/> that reaches the actor's own instance so the
     /// <c>SignatureValidationMiddleware</c> validates a signed inbound activity by resolving the actor's
     /// key from its own actor document (deferred: the TestServer does not exist yet while the server is
     /// being constructed).
     /// </summary>
-    private static IActorDocumentFetcher BuildSelfFetcher(ISigningKey key, Func<TestServer> selfServer)
+    internal static IActorDocumentFetcher BuildSelfFetcher(ISigningKey key, Func<TestServer> selfServer)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -307,7 +299,7 @@ public sealed class ReplyIntegrationTests : IDisposable
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
         return factory.Create(
             new ActivityPubClientOptions { ActorId = ActorIri, EnableRetry = false },
-            new LazyHandler(() => _server.CreateHandler()));
+            new LazyHandler(() => _fixture.Server.CreateHandler()));
     }
 
     /// <summary>
@@ -347,5 +339,46 @@ public sealed class ReplyIntegrationTests : IDisposable
         ILink { Href: { } href } => href.ToString(),
         _ => throw new InvalidOperationException("replies item carries no IRI"),
     };
+}
 
+/// <summary>
+/// Shared-host fixture for <see cref="ReplyIntegrationTests"/> (single instance, reply.domain.local,
+/// actor alice). Seeds alice with a key ONCE (the key store is preserved across per-method resets), so
+/// the self-fetcher's copy of alice's key and the key the client signs with stay the same instance.
+/// The test class resets + re-seeds (actors without regenerating keys, objects, reply edges) before
+/// each method.
+/// </summary>
+public sealed class ReplyIntegrationSharedHost : SharedHostFixture
+{
+    public ReplyIntegrationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // Initial seed generates + stores alice's key (the key store is preserved across resets).
+        var (_, _, _) = TestSeeder.SeedPersonWithKey(persistence, ReplyIntegrationTests.Host, ReplyIntegrationTests.Handle);
+        var keyId = new Iri($"{ReplyIntegrationTests.ActorIri.Value}#key-1");
+        persistence.Keys.TryGetKey(keyId, out var key);
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = ReplyIntegrationTests.Host,
+            Handle = ReplyIntegrationTests.Handle,
+            Persistence = persistence,
+            Fetcher = ReplyIntegrationTests.BuildSelfFetcher(key!, serverRef),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the reply shared-host fixture.
+/// </summary>
+[CollectionDefinition("ReplyIntegration")]
+public sealed class ReplyIntegrationCollection : ICollectionFixture<ReplyIntegrationSharedHost>
+{
 }

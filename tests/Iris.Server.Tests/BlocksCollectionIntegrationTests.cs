@@ -5,6 +5,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -24,47 +25,58 @@ namespace Iris.Server.Tests;
 /// in-process TestServer) and records the edge in its moderation store (bob → carol). Bob's own
 /// <c>/blocks</c> collection is a public read endpoint (no signature needed).
 /// </remarks>
-public sealed class BlocksCollectionIntegrationTests : IDisposable
+[Collection("BlocksCollection")]
+public sealed class BlocksCollectionIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "b.domain.local";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string BHost = "b.domain.local";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
-    private readonly TestServer _server;
+    private readonly BlocksCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
-    private readonly KeyPair _bobKey;
+    private KeyPair _bobKey;
 
-    public BlocksCollectionIntegrationTests()
+    public BlocksCollectionIntegrationTests(BlocksCollectionSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        var bob = TestSeeder.SeedPersonWithKey(_persistence, BHost, Bob);
-        var carol = TestSeeder.SeedPersonWithKey(_persistence, BHost, Carol);
-        _bobActorIri = bob.ActorIri;
-        _carolActorIri = carol.ActorIri;
-        _bobKey = bob.Key;
-
-        // Bob is the instance actor (Handle) and carol is an extra local actor, so carol's inbox is
-        // served by this instance and her key is resolvable (ExtraLocalActors registers her with the
-        // host's IKeyProvider). The fetcher is wired to the in-process TestServer so the inbound key
-        // resolver can fetch bob's actor document to validate the signed Block.
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _persistence,
-            ExtraLocalActors = [carol.ActorIri],
-            Fetcher = BuildSelfFetcher(bob.Key, bob.ActorIri, () => _server!.CreateHandler()),
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
+        _bobKey = null!;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        var keyId = new Iri($"{_bobActorIri.Value}#key-1");
+        _persistence.Keys.TryGetKey(keyId, out var key);
+        _bobKey = (KeyPair)key!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores bob + carol using <see cref="TestSeeder.SeedPersonWithExistingKey"/> — the actors are
+    /// re-seeded (their store is cleared by <c>Reset()</c>) but the keys are <em>not</em> regenerated
+    /// (the key store is preserved across resets), so the self-fetcher's copy of bob's key and the key
+    /// the test signs with stay the same instance.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Carol, new Iri($"https://{BHost}/ap/v1/u/{Carol}#key-1"));
     }
 
     // --- The actor document advertises the blocks collection --------------------------
@@ -103,7 +115,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundBlock_SignedByLocalBlocker_RecordsBlockEdge()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         var statusCode = await client.BlockAsync(_bobActorIri, _carolActorIri);
         Assert.Equal(202, statusCode.StatusCode);
 
@@ -118,7 +130,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundBlock_AppearsInBlockersBlocksCollection()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         await client.BlockAsync(_bobActorIri, _carolActorIri);
 
         // Bob's /blocks collection (a public read endpoint) serves the recorded edge (as a link to
@@ -141,7 +153,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         // A second local actor (dave) is blocked too, so the blocks collection carries two entries.
         var dave = TestSeeder.SeedPersonWithKey(_persistence, BHost, "dave");
 
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         var status1 = await client.BlockAsync(_bobActorIri, _carolActorIri);
         Assert.Equal(202, status1.StatusCode);
         var status2 = await client.BlockAsync(_bobActorIri, dave.ActorIri);
@@ -162,7 +174,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Client_GetBlocksAsync_ReadsBlocksCollection()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         await client.BlockAsync(_bobActorIri, _carolActorIri);
 
         // The client reads bob's blocks collection (via the real collection endpoint) and sees the
@@ -200,7 +212,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
         Assert.Contains(noteIri, before);
 
         // bob blocks carol: the Block (actor = bob, object = carol) is delivered to carol's inbox.
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         await client.BlockAsync(_bobActorIri, _carolActorIri);
 
         // The block edge is applied: carol's content is now excluded from bob's followed feed.
@@ -223,7 +235,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
             Object = [new Note { Id = noteIri, Content = ["carol post"] }],
         });
 
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
 
         // bob blocks carol (202), the edge is recorded, and carol's post drops out of bob's feed.
         // Decision 055: the server mints the Block's id, returned in DeliveryResult.MintedId.
@@ -281,7 +293,7 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildSelfFetcher(KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
+    internal static IActorDocumentFetcher BuildSelfFetcher(KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(authorKey);
@@ -296,5 +308,45 @@ public sealed class BlocksCollectionIntegrationTests : IDisposable
 
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
+}
 
+/// <summary>
+/// Shared-host fixture for <see cref="BlocksCollectionIntegrationTests"/> (single instance,
+/// b.domain.local, Handle=bob, carol as extra local actor). Seeds bob + carol with keys ONCE (the key
+/// store is preserved across per-method resets), so the self-fetcher's copy of bob's key stays valid.
+/// The test class resets + re-seeds the actors (without regenerating keys) before each method.
+/// </summary>
+public sealed class BlocksCollectionSharedHost : SharedHostFixture
+{
+    public BlocksCollectionSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // Initial seed generates + stores the keys (the key store is preserved across resets).
+        var bob = TestSeeder.SeedPersonWithKey(persistence, BlocksCollectionIntegrationTests.BHost, BlocksCollectionIntegrationTests.Bob);
+        var carol = TestSeeder.SeedPersonWithKey(persistence, BlocksCollectionIntegrationTests.BHost, BlocksCollectionIntegrationTests.Carol);
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = BlocksCollectionIntegrationTests.BHost,
+            Handle = BlocksCollectionIntegrationTests.Bob,
+            Persistence = persistence,
+            ExtraLocalActors = [carol.ActorIri],
+            Fetcher = BlocksCollectionIntegrationTests.BuildSelfFetcher(bob.Key, bob.ActorIri, () => serverRef().CreateHandler()),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the blocks-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("BlocksCollection")]
+public sealed class BlocksCollectionCollection : ICollectionFixture<BlocksCollectionSharedHost>
+{
 }

@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -18,67 +19,79 @@ namespace Iris.Server.Tests;
 /// pending request without granting membership). Communities without the flag retain the legacy
 /// auto-grant behavior.
 /// </summary>
-public sealed class CommunityJoinRequestIntegrationTests : IDisposable
+[Collection("CommunityJoinRequest")]
+public sealed class CommunityJoinRequestIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "a.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string Community = "iris";
-    private const string OpenCommunity = "open";
+    internal const string AHost = "a.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string Community = "iris";
+    internal const string OpenCommunity = "open";
 
-    private readonly TestServer _server;
+    private readonly CommunityJoinRequestSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
-    private readonly KeyPair _communityKey;
-    private readonly KeyPair _openCommunityKey;
+    private KeyPair _communityKey;
+    private KeyPair _openCommunityKey;
     private readonly Iri _communityIri;
     private readonly Iri _openCommunityIri;
     private readonly Iri _aliceIri;
     private readonly Iri _bobIri;
-    private readonly KeyPair _aliceKey;
-    private readonly KeyPair _bobKey;
+    private KeyPair _aliceKey;
+    private KeyPair _bobKey;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunityJoinRequestIntegrationTests()
+    public CommunityJoinRequestIntegrationTests(CommunityJoinRequestSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-
-        // A hosts alice and bob (local actors with real signing keys) and two communities:
-        // - iris: a Group with manuallyApprovesMembers set (gated join requests)
-        // - open: a Group without the flag (auto-grant joins)
-        var aliceSeeded = TestSeeder.SeedPersonWithKey(_persistence, AHost, Alice);
-        _aliceKey = aliceSeeded.Key;
-        _aliceIri = aliceSeeded.ActorIri;
-
-        var bobSeeded = TestSeeder.SeedPersonWithKey(_persistence, AHost, Bob);
-        _bobKey = bobSeeded.Key;
-        _bobIri = bobSeeded.ActorIri;
-
-        // Seed the gated community (manuallyApprovesMembers = true).
-        var gated = TestSeeder.SeedCommunityWithKey(_persistence, AHost, Community);
-        _communityKey = gated.Key;
-        _communityIri = gated.CommunityIri;
-        SetManuallyApprovesMembers(_communityIri);
-
-        // Seed the open community (no flag).
-        var open = TestSeeder.SeedCommunityWithKey(_persistence, AHost, OpenCommunity);
-        _openCommunityKey = open.Key;
-        _openCommunityIri = open.CommunityIri;
-
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _persistence,
-            Fetcher = BuildSelfFetcher(_persistence),
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobIri = new Iri($"https://{AHost}/ap/v1/u/{Bob}");
+        _communityIri = new Iri($"https://{AHost}/ap/v1/c/{Community}");
+        _openCommunityIri = new Iri($"https://{AHost}/ap/v1/c/{OpenCommunity}");
+        _aliceKey = null!;
+        _bobKey = null!;
+        _communityKey = null!;
+        _openCommunityKey = null!;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+
+        _persistence.Keys.TryGetKey(new Iri($"{_aliceIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _persistence.Keys.TryGetKey(new Iri($"{_bobIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        _persistence.Keys.TryGetKey(new Iri($"{_communityIri.Value}#key-1"), out var communityKey);
+        _communityKey = (KeyPair)communityKey!;
+        _persistence.Keys.TryGetKey(new Iri($"{_openCommunityIri.Value}#key-1"), out var openCommunityKey);
+        _openCommunityKey = (KeyPair)openCommunityKey!;
+
+        SetManuallyApprovesMembers(_communityIri);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice, bob, and both communities using the existing keys (the key store is preserved
+    /// across resets; the data stores are cleared by <c>Reset()</c>).
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(persistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(persistence, AHost, Bob, new Iri($"https://{AHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(persistence, AHost, Community, new Iri($"https://{AHost}/ap/v1/c/{Community}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(persistence, AHost, OpenCommunity, new Iri($"https://{AHost}/ap/v1/c/{OpenCommunity}#key-1"));
     }
 
     // --- Gated community: Join records a pending request, does NOT grant membership ----
@@ -615,21 +628,22 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
     /// <summary>
     /// Builds a self-referential <see cref="IActorDocumentFetcher"/>: the instance's fetcher reaches its
     /// OWN actor/community documents (so it can resolve the signing key from the actor's document when
-    /// validating a signed activity posted to its own inbox).
+    /// validating a signed activity posted to its own inbox). The fetcher uses a throwaway key (the
+    /// server does not require a signature on GET requests for actor documents).
     /// </summary>
-    private IActorDocumentFetcher BuildSelfFetcher(InMemoryPersistenceProvider persistence)
+    internal static IActorDocumentFetcher BuildSelfFetcher(Iri aliceIri, Func<TestServer> serverRef)
     {
-        var aliceKey = KeyPairGenerator.GenerateRsa(new Iri($"{_aliceIri.Value}#key-fetch"));
+        var aliceKey = KeyPairGenerator.GenerateRsa(new Iri($"{aliceIri.Value}#key-fetch"));
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(aliceKey);
         var keyProvider = new InMemoryKeyProvider(keyStore);
-        keyProvider.RegisterKey(_aliceIri, aliceKey.KeyId);
+        keyProvider.RegisterKey(aliceIri, aliceKey.KeyId);
         var signer = new HttpSignatureSigner(keyStore);
 
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
         var client = factory.Create(
-            new ActivityPubClientOptions { ActorId = _aliceIri, EnableRetry = false },
-            new LazyHandler(() => _server!.CreateHandler()));
+            new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
+            new LazyHandler(() => serverRef().CreateHandler()));
 
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
@@ -672,4 +686,48 @@ public sealed class CommunityJoinRequestIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="CommunityJoinRequestIntegrationTests"/> (single instance,
+/// a.domain.local, Handle=alice). Seeds alice, bob, and two communities (iris gated, open) with keys
+/// ONCE (the key store is preserved across per-method resets), so the keys the test signs with and the
+/// keys the server resolves stay the same instances. The test class resets + re-seeds (actors and
+/// communities without regenerating keys) before each method.
+/// </summary>
+public sealed class CommunityJoinRequestSharedHost : SharedHostFixture
+{
+    public CommunityJoinRequestSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+
+        // Initial seed generates + stores the keys (the key store is preserved across resets).
+        var alice = TestSeeder.SeedPersonWithKey(persistence, CommunityJoinRequestIntegrationTests.AHost, CommunityJoinRequestIntegrationTests.Alice);
+        var bob = TestSeeder.SeedPersonWithKey(persistence, CommunityJoinRequestIntegrationTests.AHost, CommunityJoinRequestIntegrationTests.Bob);
+        var gated = TestSeeder.SeedCommunityWithKey(persistence, CommunityJoinRequestIntegrationTests.AHost, CommunityJoinRequestIntegrationTests.Community);
+        var open = TestSeeder.SeedCommunityWithKey(persistence, CommunityJoinRequestIntegrationTests.AHost, CommunityJoinRequestIntegrationTests.OpenCommunity);
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = CommunityJoinRequestIntegrationTests.AHost,
+            Handle = CommunityJoinRequestIntegrationTests.Alice,
+            Persistence = persistence,
+            Fetcher = CommunityJoinRequestIntegrationTests.BuildSelfFetcher(alice.ActorIri, serverRef),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community-join-request shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityJoinRequest")]
+public sealed class CommunityJoinRequestCollection : ICollectionFixture<CommunityJoinRequestSharedHost>
+{
 }

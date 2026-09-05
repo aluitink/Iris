@@ -5,6 +5,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -27,47 +28,58 @@ namespace Iris.Server.Tests;
 /// <see cref="Block"/> a <see cref="Flag"/> is a report: it does not sever the relationship, so there is
 /// no feed/delivery application — only the edge and the <c>flags</c> collection.
 /// </remarks>
-public sealed class FlagsCollectionIntegrationTests : IDisposable
+[Collection("FlagsCollection")]
+public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "b.domain.local";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string BHost = "b.domain.local";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
-    private readonly TestServer _server;
+    private readonly FlagsCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
-    private readonly KeyPair _bobKey;
+    private KeyPair _bobKey;
 
-    public FlagsCollectionIntegrationTests()
+    public FlagsCollectionIntegrationTests(FlagsCollectionSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        var bob = TestSeeder.SeedPersonWithKey(_persistence, BHost, Bob);
-        var carol = TestSeeder.SeedPersonWithKey(_persistence, BHost, Carol);
-        _bobActorIri = bob.ActorIri;
-        _carolActorIri = carol.ActorIri;
-        _bobKey = bob.Key;
-
-        // Bob is the instance actor (Handle) and carol is an extra local actor, so carol's inbox is
-        // served by this instance and her key is resolvable (ExtraLocalActors registers her with the
-        // host's IKeyProvider). The fetcher is wired to the in-process TestServer so the inbound key
-        // resolver can fetch bob's actor document to validate the signed Flag.
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _persistence,
-            ExtraLocalActors = [carol.ActorIri],
-            Fetcher = BuildSelfFetcher(bob.Key, bob.ActorIri, () => _server!.CreateHandler()),
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
+        _bobKey = null!;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        var keyId = new Iri($"{_bobActorIri.Value}#key-1");
+        _persistence.Keys.TryGetKey(keyId, out var key);
+        _bobKey = (KeyPair)key!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores bob + carol using <see cref="TestSeeder.SeedPersonWithExistingKey"/> — the actors are
+    /// re-seeded (their store is cleared by <c>Reset()</c>) but the keys are <em>not</em> regenerated
+    /// (the key store is preserved across resets), so the self-fetcher's copy of bob's key and the key
+    /// the test signs with stay the same instance.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Carol, new Iri($"https://{BHost}/ap/v1/u/{Carol}#key-1"));
     }
 
     // --- The actor document advertises the flags collection --------------------------
@@ -106,7 +118,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundFlag_SignedByLocalFlagger_RecordsFlagEdge()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         var statusCode = await client.FlagAsync(_bobActorIri, _carolActorIri);
         Assert.Equal(202, statusCode.StatusCode);
 
@@ -121,7 +133,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundFlag_AppearsInFlaggersFlagsCollection()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         await client.FlagAsync(_bobActorIri, _carolActorIri);
 
         // Bob's /flags collection (a public read endpoint) serves the recorded edge (as a link to
@@ -141,7 +153,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Client_GetFlagsAsync_ReadsFlagsCollection()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         await client.FlagAsync(_bobActorIri, _carolActorIri);
 
         // The client reads bob's flags collection (via the real collection endpoint) and sees the
@@ -164,7 +176,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task Unflag_AfterFlag_RemovesEdge()
     {
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
 
         // bob flags carol (202), the edge is recorded, and carol appears in bob's flags.
         // Decision 055: the server mints the Flag's id, returned in DeliveryResult.MintedId.
@@ -199,7 +211,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
             Object = [new Note { Id = noteIri, Content = ["carol post"] }],
         });
 
-        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
+        using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _fixture.Server.CreateHandler());
         Assert.Equal(202, (await client.FlagAsync(_bobActorIri, _carolActorIri)).StatusCode);
 
         // The flag edge is recorded, but carol's content is still in bob's followed feed (a flag does
@@ -246,7 +258,7 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildSelfFetcher(KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
+    internal static IActorDocumentFetcher BuildSelfFetcher(KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(authorKey);
@@ -261,5 +273,44 @@ public sealed class FlagsCollectionIntegrationTests : IDisposable
 
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
+}
 
+/// <summary>
+/// Shared-host fixture for <see cref="FlagsCollectionIntegrationTests"/> (single instance,
+/// b.domain.local, Handle=bob, carol as extra local actor). Seeds bob + carol with keys ONCE (the key
+/// store is preserved across per-method resets), so the self-fetcher's copy of bob's key stays valid.
+/// The test class resets + re-seeds the actors (without regenerating keys) before each method.
+/// </summary>
+public sealed class FlagsCollectionSharedHost : SharedHostFixture
+{
+    public FlagsCollectionSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        var bob = TestSeeder.SeedPersonWithKey(persistence, FlagsCollectionIntegrationTests.BHost, FlagsCollectionIntegrationTests.Bob);
+        var carol = TestSeeder.SeedPersonWithKey(persistence, FlagsCollectionIntegrationTests.BHost, FlagsCollectionIntegrationTests.Carol);
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = FlagsCollectionIntegrationTests.BHost,
+            Handle = FlagsCollectionIntegrationTests.Bob,
+            Persistence = persistence,
+            ExtraLocalActors = [carol.ActorIri],
+            Fetcher = FlagsCollectionIntegrationTests.BuildSelfFetcher(bob.Key, bob.ActorIri, () => serverRef().CreateHandler()),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the flags-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("FlagsCollection")]
+public sealed class FlagsCollectionCollection : ICollectionFixture<FlagsCollectionSharedHost>
+{
 }

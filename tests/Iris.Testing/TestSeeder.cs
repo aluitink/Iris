@@ -120,6 +120,51 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds a <see cref="Person"/> actor whose <c>publicKey</c> extension advertises an
+    /// <em>existing</em> key already present in the provider's key store (looked up by
+    /// <paramref name="keyId"/>), <strong>without</strong> generating or replacing the key. This is the
+    /// re-seed counterpart of <see cref="SeedPersonWithKey"/> for a shared host whose key store is
+    /// preserved across per-method resets: the actor (and its advertised <c>publicKey</c>) is restored
+    /// while the original signing key — and any client/fetcher that already holds it — stays valid.
+    /// Idempotent (re-seeding replaces the actor, not the key).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed (its key store must already hold the key).</param>
+    /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
+    /// <param name="handle">The actor's handle (e.g. <c>alice</c>).</param>
+    /// <param name="keyId">The IRI of the existing key to advertise (<c>{actorIri}#key-1</c>).</param>
+    /// <returns>The actor's IRI.</returns>
+    public static Iri SeedPersonWithExistingKey(
+        InMemoryPersistenceProvider persistence, string host, string handle, Iri keyId)
+    {
+        var actorIriString = $"https://{host}/ap/v1/u/{handle}";
+        var actorIri = new Iri(actorIriString);
+
+        if (!persistence.Keys.TryGetKey(keyId, out var key) || key is null)
+        {
+            throw new InvalidOperationException(
+                $"key {keyId} is not present in the persistence's key store; SeedPersonWithExistingKey " +
+                "does not generate keys — seed one first (e.g. with SeedPersonWithKey).");
+        }
+
+        var actor = new Person
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = actorIriString,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+
+        return actorIri;
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Person"/> actor with <c>manuallyApprovesFollowers</c> set (in the actor's
     /// <c>ExtensionData</c>, the library-untyped property). An inbound follow of such an actor is
     /// <em>not</em> auto-accepted — the operator responds with an explicit
@@ -241,6 +286,46 @@ public static class TestSeeder
         }
 
         return (key, communityIri, keyId);
+    }
+
+    /// <summary>
+    /// Seeds a <see cref="Group"/> community using the <em>existing</em> key in the provider's key store
+    /// (does NOT generate a new key). The community's <c>publicKey</c> extension is populated with the
+    /// existing key's public PEM. Idempotent (re-seeding replaces).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed (its key store must already hold the key).</param>
+    /// <param name="host">The instance hostname (e.g. <c>a.domain.local</c>).</param>
+    /// <param name="name">The community's name/handle (e.g. <c>iris</c>).</param>
+    /// <param name="keyId">The IRI of the existing key to advertise (<c>{communityIri}#key-1</c>).</param>
+    /// <returns>The community's IRI.</returns>
+    public static Iri SeedCommunityWithExistingKey(
+        InMemoryPersistenceProvider persistence, string host, string name, Iri keyId)
+    {
+        var communityIri = new Iri($"https://{host}/ap/v1/c/{name}");
+
+        if (!persistence.Keys.TryGetKey(keyId, out var key) || key is null)
+        {
+            throw new InvalidOperationException(
+                $"key {keyId} is not present in the persistence's key store; SeedCommunityWithExistingKey " +
+                "does not generate keys — seed one first (e.g. with SeedCommunityWithKey).");
+        }
+
+        var community = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = name,
+            Name = [name],
+        };
+        community.ExtensionData ??= new Dictionary<string, JsonElement>();
+        community.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = communityIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
+
+        return communityIri;
     }
 
     /// <summary>
