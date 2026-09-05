@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -46,90 +47,76 @@ namespace Iris.Server.Tests;
 /// authoring instance; each cross-instance hop (A → B for the Follow, B → A for the Reject) is made by that
 /// instance's server, signed as the acting local actor.
 /// </para>
-public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
+[Collection("CrossInstanceRejectPropagation")]
+public sealed class CrossInstanceRejectPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "reject-a.domain.local";
-    private const string BHost = "reject-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string CommunityName = "iris";
+    internal const string AHost = "reject-a.domain.local";
+    internal const string BHost = "reject-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string CommunityName = "iris";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly CrossInstanceRejectPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly HttpClient _bHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
-    private readonly KeyPair _communityKey;
+    private KeyPair _communityKey;
     private readonly Iri _communityIri;
-    private readonly KeyPair _bobKey;
+    private KeyPair _bobKey;
     private readonly Iri _bobActorIri;
 
-    public CrossInstanceRejectPropagationIntegrationTests()
+    public CrossInstanceRejectPropagationIntegrationTests(CrossInstanceRejectPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        // A: the instance actor (alice) is the person follower; the community (iris, C) is a second local
-        // identity with its own key (the community-follower test's follow/reject author).
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-        var aCommunity = TestSeeder.SeedCommunityWithKey(_aPersistence, AHost, CommunityName);
-        _communityKey = aCommunity.Key;
-        _communityIri = aCommunity.CommunityIri;
-
-        // B: the local person (bob) is B's instance actor (keeps B's fetcher routable) and the follow target.
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            // A must sign outbound deliveries as BOTH alice (the instance actor, the person follow) and the
-            // community C (the community follow). Register both identities explicitly at their correct IRIs
-            // (the factory's auto-registration would register the community key under the wrong IRI).
-            IdentityKeys = BuildIdentityForA(_aliceKey, _aliceActorIri, _communityKey, _communityIri),
-            // A's server delivers the signed Follow to bob's inbox on B.
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            // A's fetcher routes by host: alice + iris (A) and bob (B).
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _aliceKey, _aliceActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            // B must sign outbound deliveries as bob (the Reject author). The factory's auto-registration
-            // registers bob's key under bob's IRI (name == Handle), which is correct here, so no override.
-            // B's fetcher routes by host: bob (B) and alice + community C (A). B needs to fetch bob's OWN
-            // document (from B) to validate the signature of bob's Reject, and the follower's document
-            // (from A) to validate the signature of the federated Follow.
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _bobKey, _bobActorIri),
-            // B's server delivers the signed Reject to the follower's inbox on A.
-            DeliveryTransport = () => new LazyHandler(() => _a!.CreateHandler()),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
-        _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _communityIri = new Iri($"https://{AHost}/ap/v1/c/{CommunityName}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
+        _communityKey = null!;
+        _bobKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _bHttp = new HttpClient(fixture.ServerB.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _aPersistence.Keys.TryGetKey(new Iri($"{_communityIri.Value}#key-1"), out var communityKey);
+        _communityKey = (KeyPair)communityKey!;
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
         _bHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + the community iris (on A) and bob (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/{CommunityName}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(aPersistence, AHost, CommunityName, new Iri($"{communityIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
     }
 
     // --- A person on A follows a person on B (federates A → B); B Rejects the follow (publishes a
@@ -154,7 +141,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     {
         // Step 1a: alice publishes Follow(bob) to her outbox on A.
         var follow = BuildFollow(_aliceActorIri, _bobActorIri);
-        using var followRequest = SignedRequest(_a, _aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
+        using var followRequest = SignedRequest(_fixture.ServerA, _aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
         using var followResponse = await _aHttp.SendAsync(followRequest);
         Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
 
@@ -186,7 +173,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
 
         // Step 2a: bob publishes Reject(follow) to his outbox on B (the followed side declines the follow).
         var reject = BuildReject(_bobActorIri, mintedFollowId!.Value);
-        using var rejectRequest = SignedRequest(_b, _bobActorIri, _bobKey, reject, $"/ap/v1/u/{Bob}/outbox");
+        using var rejectRequest = SignedRequest(_fixture.ServerB, _bobActorIri, _bobKey, reject, $"/ap/v1/u/{Bob}/outbox");
         using var rejectResponse = await _bHttp.SendAsync(rejectRequest);
         Assert.Equal(HttpStatusCode.Accepted, rejectResponse.StatusCode);
 
@@ -219,7 +206,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     {
         // Step 1a: the community C publishes Follow(bob) to its outbox on A.
         var follow = BuildFollow(_communityIri, _bobActorIri);
-        using var followRequest = SignedRequest(_a, _communityIri, _communityKey, follow, $"/ap/v1/c/{CommunityName}/outbox");
+        using var followRequest = SignedRequest(_fixture.ServerA, _communityIri, _communityKey, follow, $"/ap/v1/c/{CommunityName}/outbox");
         using var followResponse = await _aHttp.SendAsync(followRequest);
         Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
 
@@ -247,7 +234,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
 
         // Step 2a: bob publishes Reject(follow) to his outbox on B.
         var reject = BuildReject(_bobActorIri, mintedFollowId!.Value);
-        using var rejectRequest = SignedRequest(_b, _bobActorIri, _bobKey, reject, $"/ap/v1/u/{Bob}/outbox");
+        using var rejectRequest = SignedRequest(_fixture.ServerB, _bobActorIri, _bobKey, reject, $"/ap/v1/u/{Bob}/outbox");
         using var rejectResponse = await _bHttp.SendAsync(rejectRequest);
         Assert.Equal(HttpStatusCode.Accepted, rejectResponse.StatusCode);
 
@@ -278,7 +265,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     /// is registered at the community's IRI (not the instance actor's), so the outbound
     /// <c>DeliveryWorker</c> can sign the federated Follow as the community.
     /// </summary>
-    private static IdentityKeys BuildIdentityForA(
+    internal static IdentityKeys BuildIdentityForA(
         KeyPair instanceKey, Iri instanceActorIri, KeyPair communityKey, Iri communityIri)
     {
         var keyStore = new InMemoryKeyStore();
@@ -301,7 +288,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     private HttpRequestMessage SignedRequest(
         TestServer server, Iri actorIri, KeyPair key, Activity activity, string path)
     {
-        var host = server == _a ? AHost : BHost;
+        var host = server == _fixture.ServerA ? AHost : BHost;
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
         using (var client = BuildClient(actorIri, key, capture))
@@ -437,7 +424,7 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -511,4 +498,68 @@ public sealed class CrossInstanceRejectPropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="CrossInstanceRejectPropagationIntegrationTests"/> (A:
+/// reject-a.domain.local alice + iris community, B: reject-b.domain.local bob). Seeds all three
+/// identities with keys ONCE; wires cross-wired delivery + routing fetchers + multi-identity signing
+/// via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class CrossInstanceRejectPropagationSharedHost : SharedTwoHostFixture
+{
+    public CrossInstanceRejectPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, CrossInstanceRejectPropagationIntegrationTests.AHost, CrossInstanceRejectPropagationIntegrationTests.Alice);
+        var aCommunity = TestSeeder.SeedCommunityWithKey(aPersistence, CrossInstanceRejectPropagationIntegrationTests.AHost, CrossInstanceRejectPropagationIntegrationTests.CommunityName);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, CrossInstanceRejectPropagationIntegrationTests.BHost, CrossInstanceRejectPropagationIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+        var aliceIri = new Iri($"https://{CrossInstanceRejectPropagationIntegrationTests.AHost}/ap/v1/u/{CrossInstanceRejectPropagationIntegrationTests.Alice}");
+        var communityIri = new Iri($"https://{CrossInstanceRejectPropagationIntegrationTests.AHost}/ap/v1/c/{CrossInstanceRejectPropagationIntegrationTests.CommunityName}");
+        var bobIri = new Iri($"https://{CrossInstanceRejectPropagationIntegrationTests.BHost}/ap/v1/u/{CrossInstanceRejectPropagationIntegrationTests.Bob}");
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = CrossInstanceRejectPropagationIntegrationTests.AHost,
+            Handle = CrossInstanceRejectPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = CrossInstanceRejectPropagationIntegrationTests.BuildIdentityForA(aSeeded.Key, aliceIri, aCommunity.Key, communityIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new CrossInstanceRejectPropagationIntegrationTests.RoutingFetcher(
+                CrossInstanceRejectPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                CrossInstanceRejectPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aliceIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = CrossInstanceRejectPropagationIntegrationTests.BHost,
+            Handle = CrossInstanceRejectPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            DeliveryTransport = () => new LazyHandler(() => serverARef().CreateHandler()),
+            Fetcher = new CrossInstanceRejectPropagationIntegrationTests.RoutingFetcher(
+                CrossInstanceRejectPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                CrossInstanceRejectPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                bSeeded.Key, bobIri),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the cross-instance-reject-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("CrossInstanceRejectPropagation")]
+public sealed class CrossInstanceRejectPropagationCollection : ICollectionFixture<CrossInstanceRejectPropagationSharedHost>
+{
 }

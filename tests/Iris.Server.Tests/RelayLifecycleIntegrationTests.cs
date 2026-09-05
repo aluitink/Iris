@@ -10,6 +10,7 @@ using Iris.Server.Security;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -47,79 +48,61 @@ namespace Iris.Server.Tests;
 /// not.
 /// </para>
 /// </remarks>
-public sealed class RelayLifecycleIntegrationTests : IDisposable
+[Collection("RelayLifecycle")]
+public sealed class RelayLifecycleIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "relay-lifecycle-b.domain.local";
-    private const string RelayHost = "relay-lifecycle-r.example.com";
-    private const string Bob = "bob";
-    private const string Relay = "relay";
-    private const string Password = "s3cret";
+    internal const string BHost = "relay-lifecycle-b.domain.local";
+    internal const string RelayHost = "relay-lifecycle-r.example.com";
+    internal const string Bob = "bob";
+    internal const string Relay = "relay";
+    internal const string Password = "s3cret";
 
-    private readonly TestServer _b;
-    private readonly TestServer _relay;
+    private readonly RelayLifecycleSharedHost _fixture;
     private readonly HttpClient _bHttp;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly InMemoryPersistenceProvider _relayPersistence;
-    private readonly KeyPair _bobKey;
+    private KeyPair _bobKey;
     private readonly Iri _bobActorIri;
     private readonly Iri _relayActorIri;
 
-    public RelayLifecycleIntegrationTests()
+    public RelayLifecycleIntegrationTests(RelayLifecycleSharedHost fixture)
     {
-        _bPersistence = new InMemoryPersistenceProvider();
-        _relayPersistence = new InMemoryPersistenceProvider();
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-
-        var relaySeeded = TestSeeder.SeedPersonWithKey(_relayPersistence, RelayHost, Relay);
-        _relayActorIri = relaySeeded.ActorIri;
-
-        // B hosts bob; bob authenticates with Basic auth (username = handle, password) for the local
-        // relay subscribe/unsubscribe endpoint. B's outbound delivery routes to the relay's TestServer.
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            IdentityKeys = BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
-            CredentialValidator = new BasicAuthCredentialValidator(
-                (iri, username, password) =>
-                {
-                    var valid = iri == _bobActorIri
-                        && username == Bob
-                        && CryptographicOperations.FixedTimeEquals(
-                            Encoding.UTF8.GetBytes(password),
-                            Encoding.UTF8.GetBytes(Password));
-                    return new ValueTask<bool>(valid);
-                }),
-            DeliveryTransport = () => new LazyHandler(() => _relay!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                RelayHost, new LazyHandler(() => _relay!.CreateHandler()),
-                bSeeded.Key, bSeeded.ActorIri),
-        });
-
-        _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
-
-        // R hosts the relay; its fetcher is wired to B so R validates the fanned-out Create by fetching
-        // B's actor document (bob's key).
-        _relay = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = RelayHost,
-            Handle = Relay,
-            Persistence = _relayPersistence,
-            IdentityKeys = BuildIdentity(relaySeeded.Key, relaySeeded.ActorIri),
-            Fetcher = BuildFetcherFor(RelayHost, Relay, relaySeeded.Key, new LazyHandler(() => _b.CreateHandler())),
-        });
+        _fixture = fixture;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _relayPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _relayActorIri = new Iri($"https://{RelayHost}/ap/v1/u/{Relay}");
+        _bobKey = null!;
+        _bHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_bPersistence, _relayPersistence);
+
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _bHttp.Dispose();
-        _b.Dispose();
-        _relay.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores bob (on B) and the relay (on R) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider bPersistence, InMemoryPersistenceProvider relayPersistence)
+    {
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var relayIri = new Iri($"https://{RelayHost}/ap/v1/u/{Relay}");
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(relayPersistence, RelayHost, Relay, new Iri($"{relayIri.Value}#key-1"));
     }
 
     [Fact]
@@ -295,7 +278,7 @@ public sealed class RelayLifecycleIntegrationTests : IDisposable
             handler);
     }
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -305,7 +288,7 @@ public sealed class RelayLifecycleIntegrationTests : IDisposable
         return new IdentityKeys(keyStore, keyProvider, signer);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -323,7 +306,7 @@ public sealed class RelayLifecycleIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -393,4 +376,77 @@ public sealed class RelayLifecycleIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="RelayLifecycleIntegrationTests"/> (B:
+/// relay-lifecycle-b.domain.local bob, R: relay-lifecycle-r.example.com relay). Seeds bob + the relay
+/// with keys ONCE; wires B's Basic-auth credential validator + cross-wired delivery + routing fetchers
+/// via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class RelayLifecycleSharedHost : SharedTwoHostFixture
+{
+    public RelayLifecycleSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var bPersistence = new InMemoryPersistenceProvider();
+        var relayPersistence = new InMemoryPersistenceProvider();
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, RelayLifecycleIntegrationTests.BHost, RelayLifecycleIntegrationTests.Bob);
+        var relaySeeded = TestSeeder.SeedPersonWithKey(relayPersistence, RelayLifecycleIntegrationTests.RelayHost, RelayLifecycleIntegrationTests.Relay);
+
+        var serverARef = SharedHostFixture.ServerRefFor(bPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(relayPersistence);
+        var bobIri = new Iri($"https://{RelayLifecycleIntegrationTests.BHost}/ap/v1/u/{RelayLifecycleIntegrationTests.Bob}");
+        var relayIri = new Iri($"https://{RelayLifecycleIntegrationTests.RelayHost}/ap/v1/u/{RelayLifecycleIntegrationTests.Relay}");
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = RelayLifecycleIntegrationTests.BHost,
+            Handle = RelayLifecycleIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = RelayLifecycleIntegrationTests.BuildIdentity(bSeeded.Key, bobIri),
+            CredentialValidator = new BasicAuthCredentialValidator(
+                (iri, username, password) =>
+                {
+                    var valid = iri == bobIri
+                        && username == RelayLifecycleIntegrationTests.Bob
+                        && CryptographicOperations.FixedTimeEquals(
+                            Encoding.UTF8.GetBytes(password),
+                            Encoding.UTF8.GetBytes(RelayLifecycleIntegrationTests.Password));
+                    return new ValueTask<bool>(valid);
+                }),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new RelayLifecycleIntegrationTests.RoutingFetcher(
+                RelayLifecycleIntegrationTests.BHost, new LazyHandler(() => serverARef().CreateHandler()),
+                RelayLifecycleIntegrationTests.RelayHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                bSeeded.Key, bobIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = RelayLifecycleIntegrationTests.RelayHost,
+            Handle = RelayLifecycleIntegrationTests.Relay,
+            Persistence = relayPersistence,
+            IdentityKeys = RelayLifecycleIntegrationTests.BuildIdentity(relaySeeded.Key, relayIri),
+            Fetcher = RelayLifecycleIntegrationTests.BuildFetcherFor(
+                RelayLifecycleIntegrationTests.RelayHost,
+                RelayLifecycleIntegrationTests.Relay,
+                relaySeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the relay-lifecycle shared two-host fixture.
+/// </summary>
+[CollectionDefinition("RelayLifecycle")]
+public sealed class RelayLifecycleCollection : ICollectionFixture<RelayLifecycleSharedHost>
+{
 }
