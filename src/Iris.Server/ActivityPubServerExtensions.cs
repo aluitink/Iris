@@ -15,6 +15,7 @@ using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -564,10 +565,74 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Adds the <see cref="SignatureValidationMiddleware"/> to the pipeline. Call this before
-    /// <c>UseRouting</c>/<c>UseEndpoints</c> so inbound ActivityPub requests are signature-validated
-    /// before they reach the endpoints.
+    /// Adds the ActivityPub server services to the service collection, binding <see cref="ActivityPubServerOptions"/>
+    /// from the "Iris" configuration section and all delivery/observability options from their conventional
+    /// sections.
     /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="configuration">The application configuration. Must not be null.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or <paramref name="configuration"/> is null.</exception>
+    public static IServiceCollection AddActivityPubServer(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        var irisSection = configuration.GetSection("Iris");
+        services.AddActivityPubServer(o =>
+        {
+            if (irisSection["BaseUri"] is { } baseUri) o.BaseUri = new Iri(baseUri);
+            if (irisSection["InstanceActorId"] is { } actorId) o.InstanceActorId = new Iri(actorId);
+            if (irisSection["SharedInboxIri"] is { } inbox) o.SharedInboxIri = new Iri(inbox);
+            if (irisSection["InstanceName"] is { } name) o.InstanceName = name;
+            if (irisSection["NamespaceIri"] is { } ns) o.NamespaceIri = new Iri(ns);
+
+            var proxySection = irisSection.GetSection("ProxySettings");
+            if (proxySection.Exists())
+            {
+                var proxy = proxySection.Get<ProxySettings>() ?? new ProxySettings();
+                o.ProxySettings = proxy;
+            }
+
+            var mediaSection = irisSection.GetSection("Media");
+            if (mediaSection.Exists())
+            {
+                var media = mediaSection.Get<MediaOptions>() ?? new MediaOptions();
+                o.Media = media;
+            }
+        });
+
+        var deliverySection = configuration.GetSection("Iris:Delivery");
+        if (deliverySection.Exists())
+        {
+            services.Configure<DeliveryRetryOptions>(deliverySection.GetSection("Retry"));
+            services.Configure<DeliveryWorkerOptions>(deliverySection.GetSection("Worker"));
+            services.Configure<DeliveryRateLimitOptions>(deliverySection.GetSection("RateLimit"));
+            services.Configure<DeliveryCircuitBreakerOptions>(deliverySection.GetSection("CircuitBreaker"));
+        }
+
+        var inboundSection = configuration.GetSection("Iris:Inbound");
+        if (inboundSection.Exists())
+        {
+            services.Configure<InboundRateLimitOptions>(inboundSection.GetSection("RateLimit"));
+        }
+
+        var feedSection = configuration.GetSection("Iris:Feed");
+        if (feedSection.Exists())
+        {
+            services.Configure<FeedOptions>(feedSection);
+        }
+
+        var healthSection = configuration.GetSection("Iris:Health");
+        if (healthSection.Exists())
+        {
+            services.Configure<DeliveryQueueHealthOptions>(healthSection.GetSection("DeliveryQueue"));
+        }
+
+        return services;
+    }
     /// <param name="app">The application builder. Must not be null.</param>
     /// <returns>The application builder, for chaining.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="app"/> is null.</exception>
