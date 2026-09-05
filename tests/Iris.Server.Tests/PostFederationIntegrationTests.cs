@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -29,56 +30,58 @@ namespace Iris.Server.Tests;
 /// transport seam) to route to C's <c>TestServer</c> and signs as alice; C's fetcher is wired to A so C
 /// validates the delivered <see cref="Create"/> by resolving alice's key from A's actor document.
 /// </remarks>
-public sealed class PostFederationIntegrationTests : IDisposable
+[Collection("PostFederation")]
+public sealed class PostFederationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "a.domain.local";
-    private const string CHost = "c.domain.local";
-    private const string Alice = "alice";
-    private const string Erin = "erin";
+    internal const string AHost = "a.domain.local";
+    internal const string CHost = "c.domain.local";
+    internal const string Alice = "alice";
+    internal const string Erin = "erin";
 
-    private readonly TestServer _a;
-    private readonly TestServer _c;
+    private readonly PostFederationSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _cPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _aliceInboxIri;
     private readonly Iri _erinActorIri;
 
-    public PostFederationIntegrationTests()
+    public PostFederationIntegrationTests(PostFederationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _cPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _cPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         _aliceInboxIri = _aliceActorIri.InboxOf();
-
-        var cSeeded = TestSeeder.SeedPersonWithKey(_cPersistence, CHost, Erin);
-        _erinActorIri = cSeeded.ActorIri;
-
-        // The follow edge erin→alice is recorded on A (A is alice's home instance; it owns her follower set).
-        _aPersistence.Follows.RecordFollowAsync(_erinActorIri, _aliceActorIri).GetAwaiter().GetResult();
-
-        // A hosts alice; its outbound delivery worker routes to C (so the federated Create reaches erin's
-        // inbox) and signs as alice (alice's key is registered in A's key provider). The transport is
-        // deferred (Func) because C is created after A (chicken-and-egg).
-        _a = StartAuthorServer(
-            _aPersistence, _aliceKey, _aliceActorIri,
-            targetServer: () => _c!, selfServer: () => _a!);
-
-        // C hosts erin; its fetcher is wired to A so C validates the delivered Create by fetching A's
-        // actor doc (alice's key). A is already created here, so the fetcher can reference it directly.
-        _c = StartServer(
-            CHost, Erin, _cPersistence, cSeeded.Key,
-            fetcher: BuildFetcherFor(CHost, Erin, cSeeded.Key, targetServer: _a));
+        _erinActorIri = new Iri($"https://{CHost}/ap/v1/u/{Erin}");
+        _aliceKey = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _c.Dispose();
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _cPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Restores alice (on A) + erin (on C) with their existing keys and the erin→alice follow edge in
+    /// A's persistence.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider cPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var erinIri = new Iri($"https://{CHost}/ap/v1/u/{Erin}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(cPersistence, CHost, Erin, new Iri($"{erinIri.Value}#key-1"));
+        aPersistence.Follows.RecordFollowAsync(erinIri, aliceIri).GetAwaiter().GetResult();
     }
 
     // --- A local post is federated to the author's remote follower --------------------------
@@ -92,7 +95,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
         // A's server processes the inbound Create: records it in alice's outbox (J-8) and schedules the
         // federated delivery to erin's inbox (J-18), signed as alice. Deliver the Create to A's inbox over
         // the wire via A's own delivery worker (signed as alice) so the full inbound pipeline runs.
-        using var worker = BuildDeliveryWorker(_aliceActorIri, _aliceKey, _a);
+        using var worker = BuildDeliveryWorker(_aliceActorIri, _aliceKey, _fixture.ServerA);
         await worker.Service.DeliverAsync(_aliceInboxIri, create);
         Assert.Equal(1, worker.Queue.Count);
 
@@ -135,7 +138,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
         TestServer? daveServer = null;
         using var a = StartAuthorServer(
             aPersistence, daveSeeded.Key, daveActorIri,
-            targetServer: () => _c, selfServer: () => daveServer!);
+            targetServer: () => _fixture.ServerB, selfServer: () => daveServer!);
         daveServer = a;
         using var worker = BuildDeliveryWorker(daveActorIri, daveSeeded.Key, a);
         var create = BuildCreate(daveActorIri);
@@ -227,7 +230,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
     /// Builds an <see cref="IActorDocumentFetcher"/> whose client (signed as <paramref name="handle"/>)
     /// routes to <paramref name="targetServer"/> — i.e. C's fetcher reaches A's actor documents.
     /// </summary>
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, TestServer targetServer)
     {
         var keyStore = new InMemoryKeyStore();
@@ -252,7 +255,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
     /// inbound <see cref="Create"/> signed by the author (the author's key is resolved by fetching the
     /// author's own actor document from A's own <c>TestServer</c> — deferred, since A is created first).
     /// </summary>
-    private static TestServer StartAuthorServer(
+    internal static TestServer StartAuthorServer(
         InMemoryPersistenceProvider persistence, KeyPair authorKey, Iri authorActorIri,
         Func<TestServer> targetServer, Func<TestServer> selfServer)
     {
@@ -288,7 +291,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
     /// Builds an <see cref="IActorDocumentFetcher"/> that reaches the author's own instance (A) so A can
     /// validate a <see cref="Create"/> signed by the author (resolving the author's key from A's actor doc).
     /// </summary>
-    private static IActorDocumentFetcher BuildSelfFetcher(
+    internal static IActorDocumentFetcher BuildSelfFetcher(
         KeyPair authorKey, Iri authorActorIri, Func<TestServer> selfServer)
     {
         var keyStore = new InMemoryKeyStore();
@@ -317,7 +320,7 @@ public sealed class PostFederationIntegrationTests : IDisposable
     /// instance actor's key (so the host's <see cref="DeliveryWorker"/> can sign) and overriding the
     /// <see cref="IActorDocumentFetcher"/> (for the federation wiring).
     /// </summary>
-    private static TestServer StartServer(
+    internal static TestServer StartServer(
         string host, string handle, InMemoryPersistenceProvider persistence,
         KeyPair instanceKey, IActorDocumentFetcher? fetcher = null)
     {
@@ -362,4 +365,93 @@ public sealed class PostFederationIntegrationTests : IDisposable
             await Task.Delay(50);
         }
     }
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="PostFederationIntegrationTests"/> (A: a.domain.local alice,
+/// B: c.domain.local erin). Seeds alice + erin with keys ONCE; A's outbound delivery routes to B (so the
+/// federated Create reaches erin's inbox), A's fetcher is a self-fetcher (validates the inbound Create
+/// signed by alice); B's fetcher reaches A (validates the delivered Create); the erin→alice follow edge
+/// is recorded in A's persistence.
+/// </summary>
+public sealed class PostFederationSharedHost : SharedTwoHostFixture
+{
+    public PostFederationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var cPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, PostFederationIntegrationTests.AHost, PostFederationIntegrationTests.Alice);
+        var cSeeded = TestSeeder.SeedPersonWithKey(cPersistence, PostFederationIntegrationTests.CHost, PostFederationIntegrationTests.Erin);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(cPersistence);
+
+        var aKeyStore = new InMemoryKeyStore();
+        aKeyStore.PutKey(aSeeded.Key);
+        var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
+        aKeyProvider.RegisterKey(aSeeded.ActorIri, aSeeded.Key.KeyId);
+        var aSigner = new HttpSignatureSigner(aKeyStore);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = PostFederationIntegrationTests.AHost,
+            Handle = PostFederationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = new IdentityKeys(aKeyStore, aKeyProvider, aSigner),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = PostFederationIntegrationTests.BuildSelfFetcher(
+                aSeeded.Key, aSeeded.ActorIri, () => serverARef()),
+        };
+
+        var cKeyStore = new InMemoryKeyStore();
+        cKeyStore.PutKey(cSeeded.Key);
+        var cKeyProvider = new InMemoryKeyProvider(cKeyStore);
+        cKeyProvider.RegisterKey(cSeeded.ActorIri, cSeeded.Key.KeyId);
+        var cSigner = new HttpSignatureSigner(cKeyStore);
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = PostFederationIntegrationTests.CHost,
+            Handle = PostFederationIntegrationTests.Erin,
+            Persistence = cPersistence,
+            IdentityKeys = new IdentityKeys(cKeyStore, cKeyProvider, cSigner),
+            Fetcher = BuildFetcherForLazy(cSeeded.Key, cSeeded.ActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB);
+    }
+
+    /// <summary>
+    /// Builds a fetcher whose client (signed as erin) routes to the (deferred) A's
+    /// <c>TestServer</c> — i.e. C's fetcher reaches A's actor documents (lazily).
+    /// </summary>
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the post-federation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("PostFederation")]
+public sealed class PostFederationCollection : ICollectionFixture<PostFederationSharedHost>
+{
 }
