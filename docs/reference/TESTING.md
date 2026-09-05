@@ -33,6 +33,19 @@ tests/
                                   WebFinger/NodeInfo, cache refresh)
 ```
 
+## Running the suite: fast vs. full
+
+The full `dotnet test` run is the **source of truth** (all tests, including the slow ones), but it is slow — `Iris.Server.Tests` alone is ~900 tests / ~5.5 min, because every test method builds fresh in-process `TestServer` hosts and drives real multi-hop federation deliveries. For the everyday autonomous-loop "is it green?" check, use the **fast** run, which excludes the slow tests (those that wait out a real delivery backoff budget).
+
+| Run | Command | What it does |
+|---|---|---|
+| **Fast** (default for the loop) | `dotnet test --filter "Category!=Slow"` | Excludes tests tagged `Category=Slow` (the ones that wait out real backoff). Everything else runs. |
+| **Full** (source of truth) | `dotnet test` | Runs every test, including the slow ones. Use this for the final green check before a phase closes. |
+
+**How a test is marked slow.** Apply `[Trait(TestCategories.Category, TestCategories.Slow)]` (constants in `Iris.Testing.TestCategories`) to the test method or class. Only mark tests that actually wait on wall-clock time (a non-zero `DeliveryRetryOptions.BaseDelay`, a real multi-second backoff) — a short polling `Task.Delay(50)` used to await an async hop is cheap and stays in the fast run. Currently tagged: `DeliveryDeadLetterIntegrationTests` (waits the full default retry budget) and `DeliveryRetryTests.TransientFailure_WaitsConfiguredBackoff_BetweenRetries` (a real 150ms backoff).
+
+**Honest note on the payoff.** The `Slow` exclusion is a *correct partition* but a *small* time saving (~1s of ~5.5 min): the backoff waits are a tiny fraction of total wall-clock. The real cost is the aggregate of ~900 test methods each building hosts and driving multi-hop deliveries (xunit creates a fresh test-class instance per method). A larger speedup would come from reusing hosts across a class's methods or cutting delivery round-trips — a structural follow-up, not a per-test tag. Until then, treat the fast run as the loop's quick green check and the full run as the authoritative one.
+
 ## Live Mastodon Compatibility Test (deferred — far later)
 
 - **Deferred until instance-to-instance viability is first confirmed** with our own in-process servers. This is a downstream goal, not part of the near-term phases. See [Phase 8](ROADMAP.md#phase-8--live-mastodon-compatibility-test-deferred--after-instance-to-instance-viability).
