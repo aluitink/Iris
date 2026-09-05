@@ -6,6 +6,8 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -39,64 +41,80 @@ namespace Iris.Server.Tests;
 /// is interpreted only on first delivery) is what bounds the propagation: the peer's handling of the
 /// boost records it once and does not re-fan-out the same activity.
 /// </remarks>
-public sealed class AnnouncePropagationIntegrationTests : IDisposable
+[Collection("AnnouncePropagation")]
+public sealed class AnnouncePropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "a.domain.local";
-    private const string BHost = "b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string AHost = "a.domain.local";
+    internal const string BHost = "b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
-    private readonly HttpClient _aHttp;
+    private readonly AnnouncePropagationSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
-    private readonly KeyPair _bobKey;
+    private readonly HttpClient _aHttp;
+    private readonly DeliveryCounter _toB;
+    private readonly DeliveryCounter _toA;
+    private KeyPair _aliceKey;
+    private KeyPair _bobKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
-    private readonly DeliveryCounter _toB = new();
-    private readonly DeliveryCounter _toA = new();
 
-    public AnnouncePropagationIntegrationTests()
+    public AnnouncePropagationIntegrationTests(AnnouncePropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-
-        var cSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Carol);
-        _carolActorIri = cSeeded.ActorIri;
-
-        // bob→alice is recorded on A (A is alice's home; it owns her follower set). carol→bob is recorded
-        // on B (B is bob's home; it owns bob's follower set). This makes carol a local follower of bob on
-        // B, the recipient of the propagated boost.
-        _aPersistence.Follows.RecordFollowAsync(_bobActorIri, _aliceActorIri).GetAwaiter().GetResult();
-        _bPersistence.Follows.RecordFollowAsync(_carolActorIri, _bobActorIri).GetAwaiter().GetResult();
-
-        // A's outbound delivery routes to B (counted by _toB); B's routes to A (counted by _toA). Each
-        // instance's fetcher routes by actor-IRI host so it can validate the peer's signature.
-        _a = StartServer(
-            AHost, Alice, _aPersistence, _aliceKey, _aliceActorIri,
-            peer: () => _b!, counter: _toB, self: () => _a!);
-        _b = StartServer(
-            BHost, Bob, _bPersistence, _bobKey, _bobActorIri,
-            peer: () => _a!, counter: _toA, self: () => _b!);
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _toB = fixture.ToB;
+        _toA = fixture.ToA;
+        _aliceKey = null!;
+        _bobKey = null!;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _b.Dispose();
+        _fixture.Reset();
+        _toB.Reset();
+        _toA.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
+    {
+        _aHttp.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A) + bob + carol (on B) with their existing keys and the bob→alice (on A)
+    /// and carol→bob (on B) follow edges.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Carol, new Iri($"https://{BHost}/ap/v1/u/{Carol}#key-1"));
+
+        aPersistence.Follows.RecordFollowAsync(
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}"),
+            new Iri($"https://{AHost}/ap/v1/u/{Alice}")).GetAwaiter().GetResult();
+        bPersistence.Follows.RecordFollowAsync(
+            new Iri($"https://{BHost}/ap/v1/u/{Carol}"),
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}")).GetAwaiter().GetResult();
     }
 
     // --- A boost of a local note reaches the peer's local follower exactly once ----------------
@@ -122,10 +140,10 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
         // B validated the federated boost and its AnnounceActivityHandler propagated it to carol (bob's
         // local follower) — reusing the same minted id for the propagated copy. Wait for carol's outbox
         // to surface the boost.
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
             (await _bPersistence.Activities.GetOutboxAsync(_carolActorIri))
                 .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
-             timeout: TimeSpan.FromSeconds(30));
+            timeout: TimeSpan.FromSeconds(30));
         // Let any (absent) amplification settle: poll until the outbound delivery counter is stable for
         // 500ms (a healthy bounded system settles in well under the original fixed 3s), bounded by the
         // original 3s budget so an unbounded re-announce still accumulates before the assertion below.
@@ -172,10 +190,10 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
 
         // The boost federated to B (bob's instance) and was propagated to carol (bob's local follower),
         // reusing the same minted id.
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
             (await _bPersistence.Activities.GetOutboxAsync(_carolActorIri))
                 .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
-             timeout: TimeSpan.FromSeconds(30));
+            timeout: TimeSpan.FromSeconds(30));
         // Let any (absent) re-announce settle: poll until the outbound delivery counter is stable for
         // 500ms (a healthy bounded system settles in well under the original fixed 3s), bounded by the
         // original 3s budget so an unbounded re-announce chain still accumulates before the assertion below.
@@ -251,37 +269,6 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
         Assert.True(first is ILink, $"the boost's object should be a Link to {objectIri}, not an embedded copy");
         var link = (ILink)first;
         Assert.Equal(objectIri.Value, link.Href!.AbsoluteUri);
-    }
-
-    /// <summary>
-    /// Starts one instance of the two-instance pair: the local actor host whose outbound delivery worker
-    /// routes (counted) to the peer's <c>TestServer</c> and signs as the local actor, and whose fetcher
-    /// routes by actor-IRI host (self → self, peer → peer) so it can validate the peer's signature.
-    /// </summary>
-    private static TestServer StartServer(
-        string host, string handle, InMemoryPersistenceProvider persistence,
-        KeyPair key, Iri actorIri,
-        Func<TestServer> peer, DeliveryCounter counter, Func<TestServer> self)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(key);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        keyProvider.RegisterKey(actorIri, key.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-
-        var peerHost = host == AHost ? BHost : AHost;
-        var selfHandler = new LazyHandler(() => self().CreateHandler());
-        var peerHandler = new CountingHandler(() => peer().CreateHandler(), counter);
-
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = host,
-            Handle = handle,
-            Persistence = persistence,
-            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
-            DeliveryTransport = () => peerHandler,
-            Fetcher = new RoutingFetcher(host, selfHandler, peerHost, peerHandler, key, actorIri),
-        });
     }
 
     /// <summary>
@@ -373,27 +360,13 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await probe())
-            {
-                return;
-            }
-
-            await Task.Delay(50);
-        }
-    }
-
     // --- Private test doubles --------------------------------------------------------------
 
     /// <summary>
     /// Counts outbound deliveries (total) so a test can assert the number of deliveries of a single
     /// activity is bounded (no re-announce loop), then forwards to a (deferred) inner handler.
     /// </summary>
-    private sealed class CountingHandler : HttpMessageHandler
+    internal sealed class CountingHandler : HttpMessageHandler
     {
         private readonly Func<HttpMessageHandler> _innerFactory;
         private readonly DeliveryCounter _counter;
@@ -450,7 +423,7 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
     /// on the actor IRI's host (each instance's fetcher reaches itself and the peer to validate
     /// signatures and resolve inboxes).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -524,17 +497,132 @@ public sealed class AnnouncePropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Counts outbound deliveries (a simple total), so a test can assert the number of deliveries of a
+/// single activity is bounded (no re-announce loop).
+/// </summary>
+public sealed class DeliveryCounter
+{
+    private int _count;
+
+    /// <summary>Records one outbound delivery.</summary>
+    public void Record() => System.Threading.Interlocked.Increment(ref _count);
+
+    /// <summary>The total number of outbound deliveries recorded so far.</summary>
+    public int Total => System.Threading.Volatile.Read(ref _count);
+
+    /// <summary>Resets the counter to zero (for per-method isolation in a shared fixture).</summary>
+    public void Reset() => System.Threading.Interlocked.Exchange(ref _count, 0);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="AnnouncePropagationIntegrationTests"/> (A: a.domain.local
+/// alice, B: b.domain.local bob + carol). Seeds alice + bob + carol with keys ONCE; A's identity +
+/// RoutingFetcher (A doc from A, B doc from B) + counting delivery to B; B's identity + fetcher
+/// reaches A (validates the federated Announce) + counting delivery to A. The bob→alice follow edge
+/// is on A; the carol→bob follow edge is on B.
+/// </summary>
+public sealed class AnnouncePropagationSharedHost : SharedTwoHostFixture
+{
+    private static readonly Lazy<DeliveryCounter> ToBRef = new(() => new DeliveryCounter());
+    private static readonly Lazy<DeliveryCounter> ToARef = new(() => new DeliveryCounter());
+
+    /// <summary>Counts deliveries from A to B (exposed so the test can assert boundedness).</summary>
+    public DeliveryCounter ToB => ToBRef.Value;
+
+    /// <summary>Counts deliveries from B to A (exposed so the test can assert boundedness).</summary>
+    public DeliveryCounter ToA => ToARef.Value;
+
+    public AnnouncePropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AnnouncePropagationIntegrationTests.AHost, AnnouncePropagationIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, AnnouncePropagationIntegrationTests.BHost, AnnouncePropagationIntegrationTests.Bob);
+        var cSeeded = TestSeeder.SeedPersonWithKey(bPersistence, AnnouncePropagationIntegrationTests.BHost, AnnouncePropagationIntegrationTests.Carol);
+
+        // The bob→alice follow edge is on A (A is alice's home; it owns her follower set).
+        // The carol→bob follow edge is on B (B is bob's home; it owns bob's follower set).
+        aPersistence.Follows.RecordFollowAsync(bSeeded.ActorIri, aSeeded.ActorIri).GetAwaiter().GetResult();
+        bPersistence.Follows.RecordFollowAsync(cSeeded.ActorIri, bSeeded.ActorIri).GetAwaiter().GetResult();
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var aKeyStore = new InMemoryKeyStore();
+        aKeyStore.PutKey(aSeeded.Key);
+        var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
+        aKeyProvider.RegisterKey(aSeeded.ActorIri, aSeeded.Key.KeyId);
+        var aSigner = new HttpSignatureSigner(aKeyStore);
+
+        var bKeyStore = new InMemoryKeyStore();
+        bKeyStore.PutKey(bSeeded.Key);
+        var bKeyProvider = new InMemoryKeyProvider(bKeyStore);
+        bKeyProvider.RegisterKey(bSeeded.ActorIri, bSeeded.Key.KeyId);
+        var bSigner = new HttpSignatureSigner(bKeyStore);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = AnnouncePropagationIntegrationTests.AHost,
+            Handle = AnnouncePropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = new IdentityKeys(aKeyStore, aKeyProvider, aSigner),
+            DeliveryTransport = () => new AnnouncePropagationIntegrationTests.CountingHandler(
+                () => serverBRef().CreateHandler(), ToBRef.Value),
+            Fetcher = new AnnouncePropagationIntegrationTests.RoutingFetcher(
+                AnnouncePropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                AnnouncePropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = AnnouncePropagationIntegrationTests.BHost,
+            Handle = AnnouncePropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = new IdentityKeys(bKeyStore, bKeyProvider, bSigner),
+            DeliveryTransport = () => new AnnouncePropagationIntegrationTests.CountingHandler(
+                () => serverARef().CreateHandler(), ToARef.Value),
+            Fetcher = BuildFetcherForLazy(bSeeded.Key, bSeeded.ActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB);
+    }
 
     /// <summary>
-    /// Counts outbound deliveries (a simple total), so a test can assert the number of deliveries of a
-    /// single activity is bounded (no re-announce loop).
+    /// Builds a fetcher whose client (signed as the actor) routes to the (deferred) target's
+    /// <c>TestServer</c> — i.e. B's fetcher reaches A's actor documents (lazily).
     /// </summary>
-    private sealed class DeliveryCounter
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
     {
-        private int _count;
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
 
-        public void Record() => System.Threading.Interlocked.Increment(ref _count);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
 
-        public int Total => System.Threading.Volatile.Read(ref _count);
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
+}
+
+/// <summary>
+/// xunit collection definition for the announce propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("AnnouncePropagation")]
+public sealed class AnnouncePropagationCollection : ICollectionFixture<AnnouncePropagationSharedHost>
+{
 }
