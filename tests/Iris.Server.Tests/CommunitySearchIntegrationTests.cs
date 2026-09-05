@@ -4,11 +4,8 @@ using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -30,7 +27,8 @@ namespace Iris.Server.Tests;
 /// adds the local-moderation <c>mute</c> capability — a community can mute a member via a non-AP
 /// <c>/local/v1</c> write).
 /// </remarks>
-public sealed class CommunitySearchIntegrationTests : IDisposable
+[Collection("CommunitySearch")]
+public sealed class CommunitySearchIntegrationTests : IAsyncLifetime
 {
     private const string AHost = "a.domain.local";
     private const string Community = "iris";
@@ -38,22 +36,31 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
     private const string Bob = "bob";
     private const string DefaultNamespace = "https://iris.example/ns#";
 
-    private readonly TestServer _server;
+    private readonly CommunitySearchSharedHost _fixture;
     private readonly HttpClient _http;
+    private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunitySearchIntegrationTests()
+    public CommunitySearchIntegrationTests(CommunitySearchSharedHost fixture)
     {
-        var persistence = new InMemoryPersistenceProvider();
-        Seed(persistence);
-        _server = StartServer(persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- Search matches content case-insensitively ---------------------------------
@@ -232,7 +239,7 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
     /// federation, weather), plus a second member-less community <c>empty</c>, via the shared
     /// <see cref="TestSeeder"/>.
     /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
         var communityIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
         var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
@@ -253,12 +260,37 @@ public sealed class CommunitySearchIntegrationTests : IDisposable
         // A member-less community for completeness.
         TestSeeder.SeedCommunity(persistence, AHost, "empty");
     }
+}
 
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+/// <summary>
+/// Shared-host fixture for <see cref="CommunitySearchIntegrationTests"/> (single instance,
+/// a.domain.local). Built once per xunit collection; the test class resets + reseeds before
+/// each method for isolation.
+/// </summary>
+public sealed class CommunitySearchSharedHost : SharedHostFixture
+{
+    public CommunitySearchSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-        });
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = CreatePersistence(),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider CreatePersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        CommunitySearchIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community-search shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunitySearch")]
+public sealed class CommunitySearchCollection : ICollectionFixture<CommunitySearchSharedHost>
+{
 }

@@ -5,6 +5,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -28,27 +29,36 @@ namespace Iris.Server.Tests;
 /// <see cref="CommunityOutboxPublishIntegrationTests"/>; here the endpoint is exercised as a public read
 /// surface (no federation required).
 /// </remarks>
-public sealed class CommunityOutboxCollectionIntegrationTests : IDisposable
+[Collection("CommunityOutboxCollection")]
+public sealed class CommunityOutboxCollectionIntegrationTests : IAsyncLifetime
 {
     private const string AHost = "a.domain.local";
     private const string Community = "iris";
 
-    private readonly TestServer _server;
+    private readonly CommunityOutboxCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider Persistence;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunityOutboxCollectionIntegrationTests()
+    public CommunityOutboxCollectionIntegrationTests(CommunityOutboxCollectionSharedHost fixture)
     {
-        Persistence = new InMemoryPersistenceProvider();
-        _server = StartServer();
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        Persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- Page 1 is an OrderedCollection with the newest-first items ---------------
@@ -194,16 +204,30 @@ public sealed class CommunityOutboxCollectionIntegrationTests : IDisposable
         }
     }
 
-    /// <summary>
-    /// Starts a single-instance <c>TestServer</c> hosting the real community endpoints.
-    /// </summary>
-    private TestServer StartServer()
-    {
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="CommunityOutboxCollectionIntegrationTests"/> (single instance,
+/// a.domain.local, empty persistence — the test methods seed their own community + outbox). Built once
+/// per xunit collection; the test class resets before each method for isolation.
+/// </summary>
+public sealed class CommunityOutboxCollectionSharedHost : SharedHostFixture
+{
+    public CommunityOutboxCollectionSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            Host = AHost,
+            Host = "a.domain.local",
             Handle = "alice",
-            Persistence = Persistence,
-        });
+            Persistence = new InMemoryPersistenceProvider(),
+        })
+    {
     }
+}
+
+/// <summary>
+/// xunit collection definition for the community-outbox-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityOutboxCollection")]
+public sealed class CommunityOutboxCollectionCollection : ICollectionFixture<CommunityOutboxCollectionSharedHost>
+{
 }

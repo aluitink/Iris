@@ -4,6 +4,7 @@ using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -25,39 +26,39 @@ namespace Iris.Server.Tests;
 /// 404. The remote-content half of the feed (content delivered to the community inbox and propagated to a
 /// member's outbox) is covered by <see cref="CommunityFollowingIntegrationTests"/>.
 /// </remarks>
-public sealed class CommunityFeedCorrectnessIntegrationTests : IDisposable
+[Collection("CommunityFeedCorrectness")]
+public sealed class CommunityFeedCorrectnessIntegrationTests : IAsyncLifetime
 {
     private const string AHost = "a.domain.local";
     private const string Community = "iris";
     private const string Alice = "alice";
     private const string Bob = "bob";
 
-    private readonly TestServer _server;
+    private readonly CommunityFeedCorrectnessSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunityFeedCorrectnessIntegrationTests()
-        : this(extraBobPosts: 0)
+    public CommunityFeedCorrectnessIntegrationTests(CommunityFeedCorrectnessSharedHost fixture)
     {
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    /// <summary>
-    /// Constructs the test fixture, optionally seeding <paramref name="extraBobPosts"/> additional posts
-    /// on bob's outbox (added newest-first) to exercise the recency merge across members.
-    /// </summary>
-    private CommunityFeedCorrectnessIntegrationTests(int extraBobPosts)
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence, extraBobPosts);
-        _server = StartServer(_persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- The feed is the newest-first merge of the members' outboxes ---------------
@@ -148,12 +149,11 @@ public sealed class CommunityFeedCorrectnessIntegrationTests : IDisposable
 
     /// <summary>
     /// Seeds: community <c>iris</c> with members alice (2 posts, oldest→newest: GARDEN create-1,
-    /// FEDERAL create-2) and bob (2 + <paramref name="extraBobPosts"/> posts, oldest→newest: weather
-    /// create-1, federation create-2, then create-3…create-(2+n)), via the shared
-    /// <see cref="TestSeeder"/>. Outbox order is insertion order with newest at index 0, so each member's
-    /// outbox is newest-first.
+    /// FEDERAL create-2) and bob (2 posts, oldest→newest: weather create-1, federation create-2), via the
+    /// shared <see cref="TestSeeder"/>. Outbox order is insertion order with newest at index 0, so each
+    /// member's outbox is newest-first.
     /// </summary>
-    private void Seed(InMemoryPersistenceProvider persistence, int extraBobPosts)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
         var communityIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
         var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
@@ -166,21 +166,42 @@ public sealed class CommunityFeedCorrectnessIntegrationTests : IDisposable
         TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
         TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post");
 
-        // bob: 2 + n posts, added oldest→newest (weather create-1, federation create-2, …) so the
-        // outbox is newest first (… create-(2+n), create-2, weather create-1).
+        // bob: 2 posts, added oldest→newest (weather create-1, federation create-2) so the outbox is
+        // newest first (federation create-2, weather create-1).
         TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather");
         TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "about federation");
-        for (var i = 3; i <= 2 + extraBobPosts; i++)
+    }
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="CommunityFeedCorrectnessIntegrationTests"/> (single instance,
+/// a.domain.local). Built once per xunit collection; the test class resets + reseeds before
+/// each method for isolation.
+/// </summary>
+public sealed class CommunityFeedCorrectnessSharedHost : SharedHostFixture
+{
+    public CommunityFeedCorrectnessSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-{i}", $"bob post {i}");
-        }
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = CreatePersistence(),
+        })
+    {
     }
 
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-        });
+    private static InMemoryPersistenceProvider CreatePersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        CommunityFeedCorrectnessIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community-feed-correctness shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityFeedCorrectness")]
+public sealed class CommunityFeedCorrectnessCollection : ICollectionFixture<CommunityFeedCorrectnessSharedHost>
+{
 }
