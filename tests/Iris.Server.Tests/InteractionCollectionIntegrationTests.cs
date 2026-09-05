@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -30,42 +31,42 @@ namespace Iris.Server.Tests;
 /// same in-process <see cref="TestServer"/> the server uses (the same wire path <see cref="ReplyIntegrationTests"/>
 /// uses).
 /// </remarks>
-public sealed class InteractionCollectionIntegrationTests : IDisposable
+[Collection("InteractionCollection")]
+public sealed class InteractionCollectionIntegrationTests : IAsyncLifetime
 {
-    private const string Host = "interaction.domain.local";
-    private const string Handle = "alice";
-    private static readonly Iri ActorIri = new($"https://{Host}/ap/v1/u/{Handle}");
+    internal const string Host = "interaction.domain.local";
+    internal const string Handle = "alice";
+    internal static readonly Iri ActorIri = new($"https://{Host}/ap/v1/u/{Handle}");
     private static readonly Iri BobIri = new($"https://{Host}/ap/v1/u/bob");
     private static readonly Iri CarolIri = new($"https://{Host}/ap/v1/u/carol");
     private static readonly Iri Note1 = new($"{ActorIri}/notes/n1");
     private static readonly Iri Note3 = new($"{ActorIri}/notes/n3");
 
-    private readonly TestServer _server;
+    private readonly InteractionCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{Host}";
 
-    public InteractionCollectionIntegrationTests()
+    public InteractionCollectionIntegrationTests(InteractionCollectionSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence);
-
-        // A self-fetcher resolves alice's key from her own actor document (fetched over the in-process
-        // TestServer) so the SignatureValidationMiddleware validates the signed requests the client
-        // sends (a bare default fetcher uses a real HttpClientHandler, which cannot reach the in-process
-        // server). Deferred (LazyHandler) because the TestServer does not yet exist during construction.
-        var keyId = new Iri($"{ActorIri.Value}#key-1");
-        _persistence.Keys.TryGetKey(keyId, out var key);
-        TestServer? self = null;
-        _server = StartServer(_persistence, BuildSelfFetcher(key!, () => self!));
-        self = _server;
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- The /likes collection lists the object's likers (the like counter) ----------------
@@ -194,7 +195,7 @@ public sealed class InteractionCollectionIntegrationTests : IDisposable
     /// no likers / announcers. The like / announce edges are recorded as the <see cref="LikeActivityHandler"/>
     /// / <see cref="AnnounceActivityHandler"/> would.
     /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
         var (_, aliceIri, _) = TestSeeder.SeedPersonWithKey(persistence, Host, Handle);
         var _ = aliceIri;
@@ -223,22 +224,13 @@ public sealed class InteractionCollectionIntegrationTests : IDisposable
         persistence.Announces.RecordAnnounceAsync(BobIri, Note1).GetAwaiter().GetResult();
     }
 
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence, IActorDocumentFetcher fetcher)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = Host,
-            Handle = Handle,
-            Persistence = persistence,
-            Fetcher = fetcher,
-        });
-
     /// <summary>
     /// An <see cref="IActorDocumentFetcher"/> that reaches the actor's own instance so the
     /// <c>SignatureValidationMiddleware</c> validates a signed inbound activity by resolving the actor's
     /// key from its own actor document (deferred: the TestServer does not exist yet while the server is
     /// being constructed).
     /// </summary>
-    private static IActorDocumentFetcher BuildSelfFetcher(ISigningKey key, Func<TestServer> selfServer)
+    internal static IActorDocumentFetcher BuildSelfFetcher(ISigningKey key, Func<TestServer> selfServer)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -268,7 +260,7 @@ public sealed class InteractionCollectionIntegrationTests : IDisposable
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
         return factory.Create(
             new ActivityPubClientOptions { ActorId = ActorIri, EnableRetry = false },
-            new LazyHandler(() => _server.CreateHandler()));
+            new LazyHandler(() => _fixture.Server.CreateHandler()));
     }
 
     /// <summary>
@@ -297,4 +289,48 @@ public sealed class InteractionCollectionIntegrationTests : IDisposable
         ILink { Href: { } href } => href.ToString(),
         _ => throw new InvalidOperationException("collection item carries no IRI"),
     };
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="InteractionCollectionIntegrationTests"/> (single instance,
+/// interaction.domain.local, actor alice). Builds the self-fetcher with a deferred server reference
+/// (<c>this.Server</c>) so the fetcher's <see cref="LazyHandler"/> factory resolves the host after it is
+/// fully built. Built once per xunit collection; the test class resets + reseeds before each method.
+/// </summary>
+public sealed class InteractionCollectionSharedHost : SharedHostFixture
+{
+    public InteractionCollectionSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        InteractionCollectionIntegrationTests.SeedForFixture(persistence);
+
+        var keyId = new Iri($"{InteractionCollectionIntegrationTests.ActorIri.Value}#key-1");
+        persistence.Keys.TryGetKey(keyId, out var key);
+
+        // Deferred server reference: the TestServer does not exist yet while the server is being
+        // constructed. The LazyHandler defers CreateHandler() until a request, at which point the
+        // SharedHostFixture constructor has registered the server in ServerRegistry.
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = InteractionCollectionIntegrationTests.Host,
+            Handle = InteractionCollectionIntegrationTests.Handle,
+            Persistence = persistence,
+            Fetcher = InteractionCollectionIntegrationTests.BuildSelfFetcher(key!, serverRef),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the interaction-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("InteractionCollection")]
+public sealed class InteractionCollectionCollection : ICollectionFixture<InteractionCollectionSharedHost>
+{
 }
