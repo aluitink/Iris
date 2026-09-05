@@ -28,8 +28,14 @@ namespace Iris.Server.Tests;
 /// <see cref="IActivityPubClient.SearchAsync"/> round-trips against the live endpoint (fetching a single
 /// page and yielding its items).
 /// </remarks>
+[Collection(CollectionName)]
 public sealed class GlobalSearchIntegrationTests : IDisposable
 {
+    /// <summary>The xunit collection that owns this class's shared host fixture (29.3: build the host once
+    /// per collection instead of once per method). The methods here are read-only, so sharing the host's
+    /// seeded persistence is safe.</summary>
+    public const string CollectionName = "GlobalSearchIntegrationTests";
+
     private const string AHost = "a.domain.local";
     private const string Alice = "alice";
     private const string Bob = "bob";
@@ -37,21 +43,17 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
 
     private readonly TestServer _server;
     private readonly HttpClient _http;
-    private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{AHost}";
 
-    public GlobalSearchIntegrationTests()
+    public GlobalSearchIntegrationTests(GlobalSearchSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence);
-        _server = StartServer(_persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _server = fixture.Server;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
     public void Dispose()
     {
         _http.Dispose();
-        _server.Dispose();
     }
 
     // --- Search matches actors AND content case-insensitively -------------------------
@@ -233,6 +235,8 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
     /// only live in the activity store, not the object store, unless delivered through the full inbox
     /// pipeline).
     /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence) => Seed(persistence);
+
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
         TestSeeder.SeedPerson(persistence, AHost, Alice);
@@ -252,12 +256,38 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
             Content = ["a garden post"],
         }).GetAwaiter().GetResult();
     }
+}
 
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+/// <summary>
+/// The collection's shared host (29.3): seeds the persistence once and starts a single-instance
+/// <c>TestServer</c> hosting the real search endpoint. Registered as the collection's
+/// <see cref="SharedHostFixture"/> so it is constructed once per collection (not once per method).
+/// </summary>
+public sealed class GlobalSearchSharedHost : SharedHostFixture
+{
+    public GlobalSearchSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-        });
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = BuildPersistence(),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider BuildPersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        GlobalSearchIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// Collection definition for <see cref="GlobalSearchIntegrationTests"/>: a single shared host built once
+/// per collection (29.3) so the class's read-only methods do not each rebuild the pipeline.
+/// </summary>
+[CollectionDefinition(GlobalSearchIntegrationTests.CollectionName)]
+public sealed class GlobalSearchCollection : ICollectionFixture<GlobalSearchSharedHost>
+{
 }

@@ -26,27 +26,28 @@ namespace Iris.Server.Tests;
 /// asserts ordering, pagination slicing, the <c>next</c>/<c>prev</c> links, the <c>totalItems</c> count,
 /// the <c>Cache-Control</c> header, and the <c>?refresh=true</c> bypass.
 /// </remarks>
+[Collection(CollectionName)]
 public sealed class CollectionEndpointIntegrationTests : IDisposable
 {
+    /// <summary>The xunit collection that owns this class's shared host fixture (29.3: build the host once
+    /// per collection instead of once per method). The methods here are read-only, so sharing the host's
+    /// seeded persistence is safe.</summary>
+    public const string CollectionName = "CollectionEndpointIntegrationTests";
+
     private const string AHost = "a.domain.local";
     private const string Alice = "alice";
 
-    private readonly TestServer _server;
     private readonly HttpClient _http;
     private readonly string _base = $"https://{AHost}";
 
-    public CollectionEndpointIntegrationTests()
+    public CollectionEndpointIntegrationTests(CollectionEndpointSharedHost fixture)
     {
-        var persistence = new InMemoryPersistenceProvider();
-        Seed(persistence);
-        _server = StartServer(persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
     public void Dispose()
     {
         _http.Dispose();
-        _server.Dispose();
     }
 
     // --- Page 1 is an OrderedCollection with its first page of items --------------
@@ -235,6 +236,8 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
     /// Seeds the persistence provider: an actor (alice) with a 5-item outbox (newest-first) and follow
     /// edges (bob, carol → alice; alice → dave).
     /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence) => Seed(persistence);
+
     private static void Seed(InMemoryPersistenceProvider persistence)
     {
         var actorIriString = $"{_Base()}/ap/v1/u/{Alice}";
@@ -269,15 +272,41 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
     }
 
     private static string _Base() => $"https://{AHost}";
+}
 
-    /// <summary>
-    /// Starts a single-instance <c>TestServer</c> hosting the real collection endpoints.
-    /// </summary>
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+/// <summary>
+/// The collection's shared host (29.3): seeds the persistence once and starts a single-instance
+/// <c>TestServer</c> hosting the real collection endpoints. Registered as the collection's
+/// <see cref="SharedHostFixture"/> so it is constructed once per collection (not once per method).
+/// </summary>
+public sealed class CollectionEndpointSharedHost : SharedHostFixture
+{
+    public CollectionEndpointSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-        });
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = BuildPersistence(),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider BuildPersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        Seed(persistence);
+        return persistence;
+    }
+
+    private static void Seed(InMemoryPersistenceProvider persistence)
+        => CollectionEndpointIntegrationTests.SeedForFixture(persistence);
+}
+
+/// <summary>
+/// Collection definition for <see cref="CollectionEndpointIntegrationTests"/>: a single shared host built
+/// once per collection (29.3) so the class's read-only methods do not each rebuild the pipeline.
+/// </summary>
+[CollectionDefinition(CollectionEndpointIntegrationTests.CollectionName)]
+public sealed class CollectionEndpointCollection : ICollectionFixture<CollectionEndpointSharedHost>
+{
 }
