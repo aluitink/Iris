@@ -101,6 +101,52 @@ public sealed class GlobalSearchServiceTests
             results);
     }
 
+    // --- Type filter restricts to a single ActivityStreams type (31.4 directory) ----------
+
+    [Fact]
+    public async Task Search_TypeActor_ReturnsOnlyActors_NoContent()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutActorAsync(persistence, "bob");
+        await PutNoteAsync(persistence, "n1", "hello world");
+
+        var service = new GlobalSearchService(persistence);
+
+        // type="Actor" → only the actor pass runs; the content pass is skipped, so the notes are
+        // excluded even though a no-type search would return them.
+        var byActor = (await service.SearchAsync("Alice", type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(byActor));
+
+        // An empty query with type="Actor" lists all actors (the directory), still no content.
+        var allActors = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(
+            [
+                $"https://{AHost}/ap/v1/u/alice",
+                $"https://{AHost}/ap/v1/u/bob",
+            ],
+            allActors);
+
+        // The type filter is case-insensitive.
+        var lower = (await service.SearchAsync(null, type: "actor")).Select(ToId).ToArray();
+        Assert.Equal(allActors, lower);
+    }
+
+    [Fact]
+    public async Task Search_TypeNote_ReturnsOnlyMatchingContent()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutNoteAsync(persistence, "n1", "garden post");
+
+        var service = new GlobalSearchService(persistence);
+
+        // type="Note" → the actor pass is skipped and the content pass filters to Note items, so the
+        // actor is excluded and the note is returned (content-only surface).
+        var byNote = (await service.SearchAsync("garden", type: "Note")).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice/notes/n1", Assert.Single(byNote));
+    }
+
     // --- A no-match query returns nothing -------------------------------------------------
 
     [Fact]

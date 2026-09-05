@@ -2,20 +2,20 @@
 @using Iris.Client
 @using KristofferStrube.ActivityStreams
 
-<PageTitle>Actors · Iris</PageTitle>
+<PageTitle>Directory · Iris</PageTitle>
 
-<h2>Actors</h2>
+<h2>Directory</h2>
 
 @if (!Session.IsLoggedIn)
 {
     <div class="card">
-        <p class="muted">Log on to an instance to browse its actors.</p>
+        <p class="muted">Log on to an instance to browse its directory.</p>
     </div>
 }
 else
 {
     <div class="card">
-        <label for="query">Search (empty = whole directory)</label>
+        <label for="query">Search the directory (empty = all actors)</label>
         <input id="query" type="text" @bind="Query" placeholder="e.g. alice" />
         <button @onclick="SearchAsync" disabled="@(Busy)">Search</button>
         @if (Busy)
@@ -33,15 +33,15 @@ else
     else if (Results is not null)
     {
         <div class="card">
-            <h3>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "Directory")</h3>
-            <p class="muted">Searched <code>@SearchEndpoint</code></p>
+            <h3>@(Query.Trim().Length > 0 ? $"Actors matching “{Query.Trim()}”" : "All actors")</h3>
+            <p class="muted">Searched the directory at <code>@SearchEndpoint</code></p>
             @if (Results.Count == 0)
             {
-                <p class="muted">No matching actors or content.</p>
+                <p class="muted">No matching actors.</p>
             }
             else
             {
-                <p class="muted">@Results.Count item(s).</p>
+                <p class="muted">@Results.Count actor(s).</p>
                 <ul class="object-list">
                     @foreach (var item in Results)
                     {
@@ -79,7 +79,9 @@ else
             var instanceBase = new Iri($"{baseUri.GetLeftPart(UriPartial.Authority)}/ap/v1");
             SearchEndpoint = instanceBase.SearchOf().Value;
             var results = new List<IObjectOrLink>();
-            await foreach (var item in Session.GetClient().SearchAsync(instanceBase, Query))
+            // The directory searches actors only (not content): pass the type filter so the server
+            // restricts the result to `Actor` items (persons, communities, …) and skips the content pass.
+            await foreach (var item in Session.GetClient().SearchAsync(instanceBase, Query, new SearchOptions { Type = "Actor" }))
             {
                 results.Add(item);
             }

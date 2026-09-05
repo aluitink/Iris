@@ -898,7 +898,9 @@ public interface IActivityPubClient : IDisposable
     /// <param name="query">The search query (a case-insensitive substring). An empty/whitespace query
     /// matches all actors and content objects (the directory / full listing).</param>
     /// <param name="options">Optional enumeration options (<see cref="SearchOptions.Limit"/>,
-    /// <see cref="SearchOptions.BypassCache"/>, <see cref="SearchOptions.Offset"/>).</param>
+    /// <see cref="SearchOptions.BypassCache"/>, <see cref="SearchOptions.Offset"/>,
+    /// <see cref="SearchOptions.Type"/> — the last restricts the result to a single ActivityStreams type,
+    /// e.g. <c>"Actor"</c> for the directory page).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The matching items (actors first, then content objects, each sorted by IRI), as an
     /// <see cref="IObjectOrLink"/> sequence; callers pattern-match. Returns an empty sequence when the

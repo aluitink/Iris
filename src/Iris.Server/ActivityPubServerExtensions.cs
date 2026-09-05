@@ -5387,7 +5387,8 @@ public static class ActivityPubServerExtensions
     {
         var options = optionsAccessor.Value;
         var query = context.Request.Query["q"].ToString();
-        var items = await searchService.SearchAsync(query, ct).ConfigureAwait(false);
+        var type = context.Request.Query["type"].ToString();
+        var items = await searchService.SearchAsync(query, ct, type).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());

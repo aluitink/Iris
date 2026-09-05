@@ -1142,9 +1142,12 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
 
         // The search endpoint is the instance base's `SearchOf` derivation (`/ap/v1/search`) with the
         // query appended — the single source of truth for where global search lives. The q value is
-        // URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric.
+        // URL-encoded (it may contain spaces / non-ASCII); limit/offset are numeric. An optional type
+        // filter (?type, e.g. "Actor") restricts the result to a single ActivityStreams type so the
+        // directory page searches actors only (no content).
         var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
-        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}");
+        var typeSegment = string.IsNullOrWhiteSpace(options?.Type) ? string.Empty : $"&type={Uri.EscapeDataString(options!.Type!)}";
+        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
         var page = await GetObjectAsync(request, ct).ConfigureAwait(false);

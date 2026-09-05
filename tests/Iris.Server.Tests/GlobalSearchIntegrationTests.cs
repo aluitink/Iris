@@ -200,6 +200,41 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
         Assert.Equal(4, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
+    // --- Type filter: ?type=Actor returns only the directory (31.4) ----------------------
+
+    [Fact]
+    public async Task Search_TypeActor_ReturnsOnlyActors_NoContent()
+    {
+        // ?q=ALIC&type=Actor → only actor alice (the note whose content contains "alice" is excluded).
+        // Without the type filter the same query returns alice (actor) + the note (content).
+        var response = await _http.GetAsync($"{_base}/ap/v1/search?q=ALIC&type=Actor&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}", Assert.Single(items));
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    [Fact]
+    public async Task Search_EmptyQueryTypeActor_ReturnsAllActorsThenNoContent()
+    {
+        // Empty query + type=Actor → the whole directory (both actors, IRI-sorted), no content notes.
+        // (The unfiltered empty query returns 4 items — the 2 actors + 2 notes.)
+        var response = await _http.GetAsync($"{_base}/ap/v1/search?type=Actor&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        Assert.Equal(
+            [
+                $"https://{AHost}/ap/v1/u/{Alice}",
+                $"https://{AHost}/ap/v1/u/{Bob}",
+            ],
+            items);
+        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
     // --- Client SearchAsync round-trips against the live endpoint ----------------------
 
     [Fact]
@@ -223,6 +258,30 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
 
         client.Dispose();
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/notes/n-garden", Assert.Single(items));
+    }
+
+    [Fact]
+    public async Task ClientSearchAsync_TypeActor_ReturnsOnlyActors()
+    {
+        // A client search with SearchOptions.Type = "Actor" appends ?type=Actor to the endpoint IRI;
+        // the server restricts the result to actors, so the query "ALIC" yields only actor alice (the
+        // matching content note is excluded).
+        var client = new ActivityPubClient(
+            new HttpClient(_server.CreateHandler(), disposeHandler: false),
+            new ActorCache(),
+            new Iris.Client.Collections.CollectionPageCache());
+
+        var items = new List<string?>();
+        await using (var enumerator = client.SearchAsync(new Iri($"{_base}/ap/v1"), "ALIC", new SearchOptions { Type = "Actor", Limit = 10 }).GetAsyncEnumerator())
+        {
+            while (await enumerator.MoveNextAsync())
+            {
+                items.Add(enumerator.Current is IObject o ? o.Id : null);
+            }
+        }
+
+        client.Dispose();
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}", Assert.Single(items));
     }
 
     // --- Helpers ----------------------------------------------------------------------

@@ -43,9 +43,12 @@ public interface IGlobalSearchService
     /// </summary>
     /// <param name="query">The search query (case-insensitive substring). An empty/whitespace query
     /// matches all actors and content objects.</param>
+    /// <param name="type">An optional item-type filter (case-insensitive). When set (e.g.
+    /// <c>"Actor"</c>), only items of that ActivityStreams type are returned — so the directory searches
+    /// actors only (no content). When null/whitespace, both actors and content are returned.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the matching items (actors first, then content objects, each
     /// sub-list sorted by IRI). Each item is an <see cref="IObjectOrLink"/>; callers pattern-match
     /// (an <see cref="Actor"/> or a content <see cref="IObject"/>).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default);
+    public Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null);
 }

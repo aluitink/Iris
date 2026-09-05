@@ -30,45 +30,69 @@ public sealed class GlobalSearchService : IGlobalSearchService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null)
     {
         var normalized = query?.Trim();
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
+        // A type filter (e.g. "Actor") restricts the result to a single ActivityStreams type so the
+        // directory page searches actors only (no content). The two passes are independent: the actor
+        // pass yields actors (every local actor is an `Actor`), the content pass yields content objects
+        // (never actors). When a filter is present, only the pass whose items can match the type
+        // contributes — "Actor" runs only the actor pass; a non-actor type (e.g. "Note") runs only the
+        // content pass and filters each item by its type.
+        var typeFilter = type?.Trim();
+        var hasType = !string.IsNullOrWhiteSpace(typeFilter);
+        var actorPass = !hasType || string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
+        var contentPass = !hasType || !string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
+
         // The actor (directory) pass: every local actor whose name / preferredUsername / IRI matches.
-        var actors = await _persistence.Actors.ListActorsAsync(ct).ConfigureAwait(false);
         var matchedActors = new List<IObjectOrLink>();
-        foreach (var actor in actors.OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal))
+        if (actorPass)
         {
-            if (!hasQuery
-                || ContainsInStrings(actor.Name, normalized!)
-                || (actor.PreferredUsername is { Length: > 0 } username
-                    && username.Contains(normalized!, StringComparison.OrdinalIgnoreCase))
-                || (actor.Id is { Length: > 0 } id
-                    && id.Contains(normalized!, StringComparison.OrdinalIgnoreCase)))
+            var actors = await _persistence.Actors.ListActorsAsync(ct).ConfigureAwait(false);
+            foreach (var actor in actors.OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal))
             {
-                matchedActors.Add(actor);
+                if (!hasQuery
+                    || ContainsInStrings(actor.Name, normalized!)
+                    || (actor.PreferredUsername is { Length: > 0 } username
+                        && username.Contains(normalized!, StringComparison.OrdinalIgnoreCase))
+                    || (actor.Id is { Length: > 0 } id
+                        && id.Contains(normalized!, StringComparison.OrdinalIgnoreCase)))
+                {
+                    matchedActors.Add(actor);
+                }
             }
         }
 
         // The content pass: every stored content object (not a Tombstone, not an actor) whose content /
         // name matches.
-        var objects = await _persistence.Objects.ListObjectsAsync(ct).ConfigureAwait(false);
         var matchedObjects = new List<IObjectOrLink>();
-        foreach (var obj in objects.OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal))
+        if (contentPass)
         {
-            // A deleted object (Tombstone) has no searchable content; an actor is matched by the actor
-            // pass (skip it here so it is not duplicated).
-            if (obj is Tombstone or Actor)
+            var objects = await _persistence.Objects.ListObjectsAsync(ct).ConfigureAwait(false);
+            foreach (var obj in objects.OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal))
             {
-                continue;
-            }
+                // A deleted object (Tombstone) has no searchable content; an actor is matched by the
+                // actor pass (skip it here so it is not duplicated).
+                if (obj is Tombstone or Actor)
+                {
+                    continue;
+                }
 
-            if (!hasQuery
-                || ContainsInStrings(obj.Content, normalized!)
-                || ContainsInStrings(obj.Name, normalized!))
-            {
-                matchedObjects.Add(obj);
+                // A type filter that is not "Actor" further restricts to items of that ActivityStreams
+                // type (e.g. "Note"); "Actor" never matches a content object.
+                if (hasType && !ItemMatchesType(obj, typeFilter!))
+                {
+                    continue;
+                }
+
+                if (!hasQuery
+                    || ContainsInStrings(obj.Content, normalized!)
+                    || ContainsInStrings(obj.Name, normalized!))
+                {
+                    matchedObjects.Add(obj);
+                }
             }
         }
 
@@ -100,5 +124,24 @@ public sealed class GlobalSearchService : IGlobalSearchService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Returns true when an object's ActivityStreams <c>@type</c> equals <paramref name="type"/>
+    /// (case-insensitive). Used by the type filter to restrict a content pass to a single type (e.g.
+    /// <c>"Note"</c>).
+    /// </summary>
+    private static bool ItemMatchesType(IObject obj, string type)
+    {
+        var actualType = obj.Type;
+        if (actualType is not null &&
+            actualType.Any(t => string.Equals(t, type, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        // Fall back to the concrete CLR type's simple name (e.g. a deserialized <see cref="Note"/> is
+        // "Note") when the object does not carry an explicit `@type` value.
+        return string.Equals(obj.GetType().Name, type, StringComparison.OrdinalIgnoreCase);
     }
 }
