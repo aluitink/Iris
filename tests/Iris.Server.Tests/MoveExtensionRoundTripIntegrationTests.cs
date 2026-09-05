@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -32,60 +33,58 @@ namespace Iris.Server.Tests;
 /// that a <c>GET</c> of the <see cref="Move"/>'s IRI on B returns the extension in the JSON response.
 /// </para>
 /// </remarks>
-public sealed class MoveExtensionRoundTripIntegrationTests : IDisposable
+[Collection("MoveExtensionRoundTrip")]
+public sealed class MoveExtensionRoundTripIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "move-ext-a.domain.local";
-    private const string BHost = "move-ext-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string IrisNamespace = "https://iris.example/ns#";
+    internal const string AHost = "move-ext-a.domain.local";
+    internal const string BHost = "move-ext-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string IrisNamespace = "https://iris.example/ns#";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly MoveExtensionRoundTripSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _oldAliceIri;
     private readonly Iri _bobActorIri;
     private readonly Iri _bobInboxIri;
 
-    public MoveExtensionRoundTripIntegrationTests()
+    public MoveExtensionRoundTripIntegrationTests(MoveExtensionRoundTripSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _oldAliceIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _oldAliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
         _bobInboxIri = _bobActorIri.InboxOf();
-
-        // Bob (on B) follows alice (on A).
-        _bPersistence.Follows.RecordFollowAsync(_bobActorIri, _oldAliceIri).GetAwaiter().GetResult();
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-        });
-
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            Fetcher = BuildFetcherFor(BHost, Bob, bSeeded.Key, _a.CreateHandler()),
-        });
-
+        _aliceKey = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _b.Dispose();
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_oldAliceIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Restores alice (on A) + bob (on B) with their existing keys and the bob→alice follow edge.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+        bPersistence.Follows.RecordFollowAsync(bobIri, aliceIri).GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -105,7 +104,7 @@ public sealed class MoveExtensionRoundTripIntegrationTests : IDisposable
         move.ExtensionData[$"{IrisNamespace}reason"] = JsonSerializer.SerializeToElement("domain migration");
 
         // Deliver the Move to bob's inbox on B (signed as the OLD alice, whose key is on A).
-        using var client = BuildDeliveryClient(_oldAliceIri, _aliceKey, _b.CreateHandler());
+        using var client = BuildDeliveryClient(_oldAliceIri, _aliceKey, _fixture.ServerB.CreateHandler());
         var result = await client.DeliverAsync(_bobInboxIri, move);
         Assert.Equal(202, result.StatusCode);
 
@@ -154,7 +153,7 @@ public sealed class MoveExtensionRoundTripIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -171,4 +170,58 @@ public sealed class MoveExtensionRoundTripIntegrationTests : IDisposable
 
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="MoveExtensionRoundTripIntegrationTests"/> (A:
+/// move-ext-a.domain.local alice, B: move-ext-b.domain.local bob). Seeds alice + bob with keys ONCE; B's
+/// fetcher reaches A (so B validates the Move signed by alice); the bob→alice follow edge is recorded in
+/// B's persistence.
+/// </summary>
+public sealed class MoveExtensionRoundTripSharedHost : SharedTwoHostFixture
+{
+    public MoveExtensionRoundTripSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, MoveExtensionRoundTripIntegrationTests.AHost, MoveExtensionRoundTripIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, MoveExtensionRoundTripIntegrationTests.BHost, MoveExtensionRoundTripIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = MoveExtensionRoundTripIntegrationTests.AHost,
+            Handle = MoveExtensionRoundTripIntegrationTests.Alice,
+            Persistence = aPersistence,
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = MoveExtensionRoundTripIntegrationTests.BHost,
+            Handle = MoveExtensionRoundTripIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = MoveExtensionRoundTripIntegrationTests.BuildFetcherFor(
+                MoveExtensionRoundTripIntegrationTests.BHost,
+                MoveExtensionRoundTripIntegrationTests.Bob,
+                bSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the Move-extension round-trip shared two-host fixture.
+/// </summary>
+[CollectionDefinition("MoveExtensionRoundTrip")]
+public sealed class MoveExtensionRoundTripCollection : ICollectionFixture<MoveExtensionRoundTripSharedHost>
+{
 }

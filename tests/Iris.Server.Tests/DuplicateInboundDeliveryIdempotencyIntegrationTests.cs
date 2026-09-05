@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -48,65 +49,54 @@ namespace Iris.Server.Tests;
 /// follow case routes B's outbound delivery to A's inbox (so B's emitted Accept lands on A) so the
 /// "exactly one Accept" assertion is observable.
 /// </remarks>
-public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDisposable
+[Collection("DuplicateInboundDeliveryIdempotency")]
+public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "dup-a.domain.local";
-    private const string BHost = "dup-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "dup-a.domain.local";
+    internal const string BHost = "dup-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly DuplicateInboundDeliveryIdempotencySharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
 
-    public DuplicateInboundDeliveryIdempotencyIntegrationTests()
+    public DuplicateInboundDeliveryIdempotencyIntegrationTests(DuplicateInboundDeliveryIdempotencySharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            IdentityKeys = BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
-            // A must be able to fetch B's actor document (where bob's public key lives) to validate the
-            // signature of B's emitted Accept (the cross-instance fetcher routes by host).
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                aSeeded.Key),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            IdentityKeys = BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
-            // B's fetcher routes to A's own actor document (where alice's public key lives) so B can
-            // validate the signature of the redelivered activity (signed as alice).
-            Fetcher = BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => _a!.CreateHandler())),
-            // B's outbound delivery (the Accept it emits in response to the Follow) routes to A's inbox,
-            // so B's Accept lands in A's inbox and the "exactly one Accept" assertion is observable.
-            DeliveryTransport = () => new LazyHandler(() => _a!.CreateHandler()),
-        });
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _b.Dispose();
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync() => Task.CompletedTask;
+
+    /// <summary>
+    /// Restores alice (on A) + bob (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
     }
 
     // --- A redelivered Block is recorded exactly once (no error, no duplicate edge) ------------
@@ -129,8 +119,8 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
         // second delivery; the block edge must end up recorded exactly once, and the second delivery
         // must be accepted (no error).
         var inbox = InboxOf(_bobActorIri);
-        var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _b!);
-        var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _b!);
+        var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _fixture.ServerB);
+        var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, block, target: () => _fixture.ServerB);
         // Let the (async) block-edge recording settle: poll until alice's blocker count for bob is
         // stable for 500ms (a healthy system settles in well under the original fixed 4s), bounded by
         // the original 4s budget so a duplicate edge (a non-idempotent regression) still lands before
@@ -178,8 +168,8 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
         // Deliver the SAME Follow to bob's inbox on B twice (simulating a peer redelivery). The follow
         // edge must end up recorded exactly once, and B must emit exactly one Accept to alice.
         var inbox = InboxOf(_bobActorIri);
-        var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _b!);
-        var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _b!);
+        var first = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _fixture.ServerB);
+        var second = await DeliverDirectly(_aliceActorIri, _aliceKey, inbox, follow, target: () => _fixture.ServerB);
         // Let the (async) follow-edge recording settle: poll until alice's follower count for bob is
         // stable for 500ms (a healthy system settles in well under the original fixed 4s), bounded by
         // the original 4s budget so a duplicate edge (a non-idempotent regression) still lands before
@@ -222,7 +212,7 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
 
     // --- Helpers ---------------------------------------------------------------------------
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -232,7 +222,7 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
         return new IdentityKeys(keyStore, keyProvider, signer);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -376,7 +366,7 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
     /// on the actor IRI's host (so an instance can fetch the peer's actor document to validate the
     /// peer's signature).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -452,4 +442,66 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IDispo
             base.Dispose(disposing);
         }
     }
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="DuplicateInboundDeliveryIdempotencyIntegrationTests"/>
+/// (A: dup-a.domain.local alice, B: dup-b.domain.local bob). Seeds alice + bob with keys ONCE; A has a
+/// routing fetcher (fetches B's actor doc to validate B's emitted Accept) + identity; B has identity +
+/// a fetcher to A (validates the redelivered activity signed as alice) + delivery transport to A (B's
+/// Accept lands in A's inbox).
+/// </summary>
+public sealed class DuplicateInboundDeliveryIdempotencySharedHost : SharedTwoHostFixture
+{
+    public DuplicateInboundDeliveryIdempotencySharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, DuplicateInboundDeliveryIdempotencyIntegrationTests.AHost, DuplicateInboundDeliveryIdempotencyIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, DuplicateInboundDeliveryIdempotencyIntegrationTests.BHost, DuplicateInboundDeliveryIdempotencyIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = DuplicateInboundDeliveryIdempotencyIntegrationTests.AHost,
+            Handle = DuplicateInboundDeliveryIdempotencyIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = DuplicateInboundDeliveryIdempotencyIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            Fetcher = new DuplicateInboundDeliveryIdempotencyIntegrationTests.RoutingFetcher(
+                DuplicateInboundDeliveryIdempotencyIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                DuplicateInboundDeliveryIdempotencyIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = DuplicateInboundDeliveryIdempotencyIntegrationTests.BHost,
+            Handle = DuplicateInboundDeliveryIdempotencyIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = DuplicateInboundDeliveryIdempotencyIntegrationTests.BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
+            Fetcher = DuplicateInboundDeliveryIdempotencyIntegrationTests.BuildFetcherFor(
+                DuplicateInboundDeliveryIdempotencyIntegrationTests.AHost,
+                DuplicateInboundDeliveryIdempotencyIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+            DeliveryTransport = () => new LazyHandler(() => serverARef().CreateHandler()),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the duplicate-inbound-delivery idempotency shared two-host fixture.
+/// </summary>
+[CollectionDefinition("DuplicateInboundDeliveryIdempotency")]
+public sealed class DuplicateInboundDeliveryIdempotencyCollection : ICollectionFixture<DuplicateInboundDeliveryIdempotencySharedHost>
+{
 }
