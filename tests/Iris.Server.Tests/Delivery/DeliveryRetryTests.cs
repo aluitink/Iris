@@ -2,6 +2,7 @@ using System.Net;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -171,6 +172,7 @@ public sealed class DeliveryRetryTests
     // --- A transient failure waits the configured backoff before retrying (not zero) -----
 
     [Fact]
+    [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task TransientFailure_WaitsConfiguredBackoff_BetweenRetries()
     {
         // 500, 500, then 200 with a REAL 150ms BaseDelay: the worker must observe two backoff delays

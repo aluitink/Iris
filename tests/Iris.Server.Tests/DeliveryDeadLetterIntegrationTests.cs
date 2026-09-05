@@ -37,6 +37,7 @@ namespace Iris.Server.Tests;
 /// Without the dead-letter store wiring (the worker's <c>DeadLetterAsync</c> path or the shared
 /// singleton), the store would remain empty and the wait for <c>Count == 1</c> would time out.
 /// </remarks>
+[Trait(TestCategories.Category, TestCategories.Slow)]
 public sealed class DeliveryDeadLetterIntegrationTests : IDisposable
 {
     private const string AHost = "a.domain.local";
