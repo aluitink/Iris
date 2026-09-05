@@ -129,8 +129,16 @@ public static partial class SampleServer
         return new WebHostBuilder()
             .ConfigureAppConfiguration(cfg =>
             {
-                // The WebHostBuilder already adds the environment source; the args here are appended so
-                // callers can override the Iris: section from the CLI (e.g. --Iris:Port=8080).
+                // The .NET 10 WebHostBuilder no longer injects the environment-variables source into
+                // context.Configuration by default, so every Iris__* env var (Iris__CorsOrigins,
+                // Iris__Actor, Iris__Advertise*, Iris__PersistenceDirectory, …) is invisible to
+                // ConfigureServices and the server silently falls back to its hard-coded defaults (e.g.
+                // the default CORS allow-list, which is why cross-origin browser log-on from
+                // https://iris.luit.ink was blocked). Add the environment source explicitly so the
+                // container/operator env vars reach the configuration.
+                cfg.AddEnvironmentVariables();
+                // The command-line args are appended AFTER the environment source so callers can
+                // override the Iris: section from the CLI (e.g. --Iris:Port=8080).
                 if (args is { Length: > 0 })
                 {
                     cfg.AddCommandLine(args);
