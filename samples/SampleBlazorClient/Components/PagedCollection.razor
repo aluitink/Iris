@@ -184,7 +184,14 @@
 
     private async Task LoadInitialAsync()
     {
-        Items = [];
+        // Items stays null for the duration of the first fetch so the "Loading…" spinner renders
+        // (Items is null) rather than the empty "No items" state (29.2 visual review): the empty
+        // message is only correct once a page has actually been read, and seeding Items = [] here
+        // made the empty state flash before the fetch completed. EnumerateOnePageAsync initializes
+        // Items on first page arrival (Items ??= []); when the fetch yields no page (an empty
+        // collection), Items stays null and would spin forever — so initialize it here to the empty
+        // state in that case.
+        Items = null;
         HasMore = false;
         LoadError = null;
         _resumeFrom = null;
@@ -195,6 +202,11 @@
         catch (Exception ex)
         {
             LoadError = ex.Message;
+        }
+
+        if (Items is null && LoadError is null)
+        {
+            Items = [];
         }
     }
 

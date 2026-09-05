@@ -4197,7 +4197,10 @@ public static class ActivityPubServerExtensions
             metadata = new
             {
                 name = options.InstanceName ?? "Iris",
-                description = options.InstanceName ?? "An Iris ActivityPub instance",
+                // The description is a neutral one-liner, not a repeat of the name — the explorer's
+                // Instance page renders the description verbatim, so echoing the instance name there
+                // produced a redundant duplicate line (29.2 visual review).
+                description = "An Iris ActivityPub instance",
             },
         };
 

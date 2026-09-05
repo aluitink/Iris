@@ -29,16 +29,12 @@ else
         else
         {
             <table class="kv">
-                <tr><th>Instance</th><td>@(NodeInfo.InstanceName ?? "(unnamed)")</td></tr>
+                <tr><th>Instance</th><td>@InstanceDisplayName</td></tr>
                 <tr><th>Software</th><td>@(NodeInfo.SoftwareName ?? "unknown")@(NodeInfo.SoftwareVersion is { Length: > 0 } v ? $" {v}" : "")</td></tr>
                 <tr><th>Protocols</th><td>@(NodeInfo.Protocols.Count > 0 ? string.Join(", ", NodeInfo.Protocols) : "—")</td></tr>
                 <tr><th>Open registrations</th><td>@(NodeInfo.OpenRegistrations ? "yes" : "no")</td></tr>
                 <tr><th>NodeInfo</th><td>@NodeInfo.Version</td></tr>
             </table>
-            @if (NodeInfo.Description is { Length: > 0 } desc)
-            {
-                <p class="muted">@desc</p>
-            }
             <p class="muted">
                 Logged on as <code>@(Session.ResolvedActorIri?.Value ?? Session.ActorIri?.Value)</code>,
                 dialing <code>@Session.DialBaseUri</code>.
@@ -151,6 +147,28 @@ else
     /// query reaches).
     /// </summary>
     private string DialBaseLabel => Session.DialBaseUri?.ToString() ?? "…";
+
+    /// <summary>
+    /// The instance's display name for the overview table: the NodeInfo name with a leading
+    /// <c>iris-</c> software prefix stripped (the sample composes it as <c>iris-&lt;host&gt;</c>, which
+    /// renders as a redundant <c>iris-iris-&lt;host&gt;</c> when the host already carries the prefix —
+    /// 29.2 visual review). Falls back to the raw name (or "(unnamed)") when absent.
+    /// </summary>
+    private string InstanceDisplayName
+    {
+        get
+        {
+            var name = NodeInfo?.InstanceName;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return "(unnamed)";
+            }
+
+            return name!.StartsWith("iris-", StringComparison.OrdinalIgnoreCase)
+                ? name!["iris-".Length..]
+                : name!;
+        }
+    }
 
     /// <summary>
     /// The detail-page URL for the resolved actor IRI (null until a successful resolve). Kept as a

@@ -132,6 +132,22 @@ input[type="text"], input[type="password"], input[type="url"] {
     color: #e6e9ef;
 }
 
+/* Textareas (compose content, a reply) matched to the text inputs above: full-width, dark, and sized
+   by their rows attribute (no browser-default fixed box) so the compose/reply fields read as the
+   primary input of their card, not a tiny default control (29.2 visual review). */
+textarea {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 6.5rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid #39424e;
+    border-radius: 6px;
+    background: #0e1116;
+    color: #e6e9ef;
+    font: inherit;
+    resize: vertical;
+}
+
 button {
     margin-top: 0.75rem;
     padding: 0.5rem 1rem;

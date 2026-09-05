@@ -15,7 +15,7 @@
                 {
                     <span class="object-handle">@username</span>
                 }
-                @if (ActorName is { Length: > 0 } name)
+                @if (ActorName is { Length: > 0 } name && !NameIsRedundant)
                 {
                     <span class="object-name">@name</span>
                 }
@@ -228,6 +228,30 @@
     /// actor documents (19.8.3).
     /// </summary>
     private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
+
+    /// <summary>
+    /// Whether the actor's <c>name</c> is redundant with its <c>preferredUsername</c> (case-insensitive
+    /// equal) — the seeded actors name themselves by their username, so the name would render as a
+    /// duplicate of the handle on the same line; when redundant the name is omitted (29.2 visual
+    /// review). A distinct name is still shown.
+    /// </summary>
+    private bool NameIsRedundant
+    {
+        get
+        {
+            var actor = Obj as Actor;
+            if (actor is null)
+            {
+                return false;
+            }
+
+            var name = actor.Name?.FirstOrDefault();
+            var username = actor.PreferredUsername;
+            return !string.IsNullOrWhiteSpace(name)
+                && !string.IsNullOrWhiteSpace(username)
+                && name!.Equals(username, StringComparison.OrdinalIgnoreCase);
+        }
+    }
 
     /// <summary>
     /// The actor's <c>icon</c> IRI (the first icon's resolved IRI), when present — rendered as an
