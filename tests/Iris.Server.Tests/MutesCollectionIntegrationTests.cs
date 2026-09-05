@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -30,58 +31,65 @@ namespace Iris.Server.Tests;
 /// from bob's followed feed (a soft exclusion — the follow is kept). Un-muting (<c>?unmute=true</c>)
 /// removes the edge and restores carol's content.
 /// </remarks>
-public sealed class MutesCollectionIntegrationTests : IDisposable
+[Collection("MutesCollection")]
+public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "b.domain.local";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string BHost = "b.domain.local";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
-    private readonly TestServer _server;
+    private readonly MutesCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
-    private readonly IActivityPubClient _client;
-    private readonly ILocalModerationClient _local;
+    private IActivityPubClient _client;
+    private ILocalModerationClient _local;
 
-    public MutesCollectionIntegrationTests()
+    public MutesCollectionIntegrationTests(MutesCollectionSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
         var bob = TestSeeder.SeedPersonWithKey(_persistence, BHost, Bob);
         var carol = TestSeeder.SeedPersonWithKey(_persistence, BHost, Carol);
         _bobActorIri = bob.ActorIri;
         _carolActorIri = carol.ActorIri;
-
-        // A Basic-auth credential validator: bob's credentials are ("bob", "bob-password") for bob's IRI.
-        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
-            ValueTask.FromResult(
-                iri == _bobActorIri && username == Bob && password == "bob-password"));
-
-        // Bob is the instance actor (Handle) and carol is an extra local actor (her inbox is served by
-        // this instance and her key is resolvable). The client is a Basic-authenticated local-moderation
-        // client (a mute is not a signed inbox delivery — it is a Basic-authenticated POST to bob's own
-        // instance). The fetcher is wired to the in-process TestServer (the actor document is readable).
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _persistence,
-            ExtraLocalActors = [carol.ActorIri],
-            CredentialValidator = credentialValidator,
-            Fetcher = BuildSelfFetcher(bob.Key, bob.ActorIri, () => _server!.CreateHandler()),
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
-        _client = BuildLocalClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
-            new ProxyCredentials(Bob, "bob-password"));
-        _local = BuildLocalModerationClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
-            new ProxyCredentials(Bob, "bob-password"));
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
+        _client = null!;
+        _local = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        RebuildClients();
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _client.Dispose();
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
+    }
+
+    private void RebuildClients()
+    {
+        var bobKey = GetBobKey();
+        _client = BuildLocalClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+        _local = BuildLocalModerationClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+    }
+
+    private KeyPair GetBobKey()
+    {
+        var keyId = new Iri($"{_bobActorIri.Value}#key-1");
+        _persistence.Keys.TryGetKey(keyId, out var key);
+        return (KeyPair)key!;
     }
 
     // --- The actor document advertises the mutes collection --------------------------
@@ -314,7 +322,7 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
             new LazyHandler(handlerFactory));
     }
 
-    private static IActorDocumentFetcher BuildSelfFetcher(
+    internal static IActorDocumentFetcher BuildSelfFetcher(
         KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
     {
         var keyStore = new InMemoryKeyStore();
@@ -347,4 +355,64 @@ public sealed class MutesCollectionIntegrationTests : IDisposable
         var authority = new Uri(actorIri.Value).GetLeftPart(UriPartial.Authority);
         return $"{authority}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}";
     }
+
+    /// <summary>
+    /// Seeds the fixture's persistence: bob (the muter, Handle actor) + carol (the muted, extra local
+    /// actor), bob follows carol, carol has a post.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
+        TestSeeder.SeedPersonWithKey(persistence, BHost, Carol);
+    }
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="MutesCollectionIntegrationTests"/> (single instance,
+/// b.domain.local, Handle=bob, carol as extra local actor). Builds the credential validator +
+/// self-fetcher at construction (deterministic IRIs); the test class resets + reseeds + rebuilds
+/// clients before each method.
+/// </summary>
+public sealed class MutesCollectionSharedHost : SharedHostFixture
+{
+    public MutesCollectionSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        MutesCollectionIntegrationTests.SeedForFixture(persistence);
+
+        var bobKeyIri = new Iri($"https://{MutesCollectionIntegrationTests.BHost}/ap/v1/u/{MutesCollectionIntegrationTests.Bob}#key-1");
+        persistence.Keys.TryGetKey(bobKeyIri, out var bobKeyObj);
+        var bobKey = (KeyPair)bobKeyObj!;
+        var bobActorIri = new Iri($"https://{MutesCollectionIntegrationTests.BHost}/ap/v1/u/{MutesCollectionIntegrationTests.Bob}");
+        var carolActorIri = new Iri($"https://{MutesCollectionIntegrationTests.BHost}/ap/v1/u/{MutesCollectionIntegrationTests.Carol}");
+
+        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
+            ValueTask.FromResult(
+                iri == bobActorIri && username == MutesCollectionIntegrationTests.Bob && password == "bob-password"));
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = MutesCollectionIntegrationTests.BHost,
+            Handle = MutesCollectionIntegrationTests.Bob,
+            Persistence = persistence,
+            ExtraLocalActors = [carolActorIri],
+            CredentialValidator = credentialValidator,
+            Fetcher = MutesCollectionIntegrationTests.BuildSelfFetcher(bobKey!, bobActorIri, () => serverRef().CreateHandler()),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the mutes-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("MutesCollection")]
+public sealed class MutesCollectionCollection : ICollectionFixture<MutesCollectionSharedHost>
+{
 }

@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -30,56 +31,59 @@ namespace Iris.Server.Tests;
 /// public read endpoint) serves the edge, and the actor document advertises the <c>star</c> set (pointing
 /// at <c>/relays</c>). Un-subscribing (<c>?unsubscribe=true</c>) removes the edge.
 /// </remarks>
-public sealed class RelaysCollectionIntegrationTests : IDisposable
+[Collection("RelaysCollection")]
+public sealed class RelaysCollectionIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "b.domain.local";
-    private const string Bob = "bob";
-    private const string RelayIri = "https://relay1.example.com";
+    internal const string BHost = "b.domain.local";
+    internal const string Bob = "bob";
+    internal const string RelayIri = "https://relay1.example.com";
 
-    private readonly TestServer _server;
+    private readonly RelaysCollectionSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _bobActorIri;
     private readonly Iri _relayIri;
-    private readonly IActivityPubClient _client;
-    private readonly ILocalModerationClient _local;
+    private IActivityPubClient _client;
+    private ILocalModerationClient _local;
 
-    public RelaysCollectionIntegrationTests()
+    public RelaysCollectionIntegrationTests(RelaysCollectionSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
         var bob = TestSeeder.SeedPersonWithKey(_persistence, BHost, Bob);
         _bobActorIri = bob.ActorIri;
         _relayIri = new Iri(RelayIri);
-
-        // A Basic-auth credential validator: bob's credentials are ("bob", "bob-password") for bob's IRI.
-        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
-            ValueTask.FromResult(
-                iri == _bobActorIri && username == Bob && password == "bob-password"));
-
-        // Bob is the instance actor (Handle). The client is a Basic-authenticated local-decision client
-        // (a relay subscription is not a signed inbox delivery — it is a Basic-authenticated POST to
-        // bob's own instance). The fetcher is wired to the in-process TestServer (the actor document is
-        // readable).
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _persistence,
-            CredentialValidator = credentialValidator,
-            Fetcher = BuildSelfFetcher(bob.Key, bob.ActorIri, () => _server!.CreateHandler()),
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
-        _client = BuildLocalClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
-            new ProxyCredentials(Bob, "bob-password"));
-        _local = BuildLocalModerationClient(_bobActorIri, bob.Key, () => _server.CreateHandler(),
-            new ProxyCredentials(Bob, "bob-password"));
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
+        _client = null!;
+        _local = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        var keyId = new Iri($"{_bobActorIri.Value}#key-1");
+        _persistence.Keys.TryGetKey(keyId, out var key);
+        var bobKey = (KeyPair)key!;
+        _client = BuildLocalClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+        _local = BuildLocalModerationClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
+            new ProxyCredentials(Bob, "bob-password"));
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _client.Dispose();
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
+    }
+
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
     }
 
     // --- The actor document advertises the relays (star) collection ---------------------
@@ -281,7 +285,7 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
             new LazyHandler(handlerFactory));
     }
 
-    private static IActorDocumentFetcher BuildSelfFetcher(
+    internal static IActorDocumentFetcher BuildSelfFetcher(
         KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
     {
         var keyStore = new InMemoryKeyStore();
@@ -314,4 +318,51 @@ public sealed class RelaysCollectionIntegrationTests : IDisposable
         var authority = new Uri(actorIri.Value).GetLeftPart(UriPartial.Authority);
         return $"{authority}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}";
     }
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="RelaysCollectionIntegrationTests"/> (single instance,
+/// b.domain.local, Handle=bob). Built once per xunit collection; the test class resets + reseeds +
+/// rebuilds clients before each method.
+/// </summary>
+public sealed class RelaysCollectionSharedHost : SharedHostFixture
+{
+    public RelaysCollectionSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static ActivityPubHostOptions BuildOptions()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        RelaysCollectionIntegrationTests.SeedForFixture(persistence);
+
+        var bobKeyIri = new Iri($"https://{RelaysCollectionIntegrationTests.BHost}/ap/v1/u/{RelaysCollectionIntegrationTests.Bob}#key-1");
+        persistence.Keys.TryGetKey(bobKeyIri, out var bobKeyObj);
+        var bobKey = (KeyPair)bobKeyObj!;
+        var bobActorIri = new Iri($"https://{RelaysCollectionIntegrationTests.BHost}/ap/v1/u/{RelaysCollectionIntegrationTests.Bob}");
+
+        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
+            ValueTask.FromResult(
+                iri == bobActorIri && username == RelaysCollectionIntegrationTests.Bob && password == "bob-password"));
+
+        var serverRef = SharedHostFixture.ServerRefFor(persistence);
+
+        return new ActivityPubHostOptions
+        {
+            Host = RelaysCollectionIntegrationTests.BHost,
+            Handle = RelaysCollectionIntegrationTests.Bob,
+            Persistence = persistence,
+            CredentialValidator = credentialValidator,
+            Fetcher = RelaysCollectionIntegrationTests.BuildSelfFetcher(bobKey, bobActorIri, () => serverRef().CreateHandler()),
+        };
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the relays-collection shared-host fixture.
+/// </summary>
+[CollectionDefinition("RelaysCollection")]
+public sealed class RelaysCollectionCollection : ICollectionFixture<RelaysCollectionSharedHost>
+{
 }
