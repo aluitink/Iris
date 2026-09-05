@@ -1823,6 +1823,10 @@ public static class ActivityPubServerExtensions
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
+
+                // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
+                // star-subscribed fan-out servers) so they can re-fan the content to the wider federation.
+                await DeliverToRelaysAsync(persistence, delivery, actorIri, activity, ct).ConfigureAwait(false);
             }
             else if (activity is Announce announce)
             {
@@ -1846,6 +1850,9 @@ public static class ActivityPubServerExtensions
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
+
+                // F-06 relay fan-out: deliver the Announce to each of the actor's subscribed relays.
+                await DeliverToRelaysAsync(persistence, delivery, actorIri, activity, ct).ConfigureAwait(false);
             }
             else if (activity is Delete delete)
             {
@@ -3168,6 +3175,33 @@ public static class ActivityPubServerExtensions
         }
 
         return recipients;
+    }
+
+    /// <summary>
+    /// Delivers an outbound activity to each of the actor's subscribed relays (F-06 relay fan-out).
+    /// A relay is a <c>star</c>-subscribed fan-out server (ActivityPub §5.1.3): the actor advertises the
+    /// relays it subscribes to via the <c>star</c> actor property, and its content is delivered to those
+    /// relays so the relays can fan it out to the wider federation. The relays are read from the
+    /// <see cref="IRelayStore"/> (the actor's <c>relays</c> collection); a delivery failure for one relay
+    /// does not suppress delivery to the others (each relay is an independent delivery job).
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IRelayStore"/>).</param>
+    /// <param name="delivery">The delivery service (enqueues the delivery jobs).</param>
+    /// <param name="actorIri">The acting actor (whose relay subscriptions are read).</param>
+    /// <param name="activity">The activity to deliver to each relay.</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task DeliverToRelaysAsync(
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        Iri actorIri,
+        Activity activity,
+        CancellationToken ct)
+    {
+        var relays = await persistence.Relays.GetRelaysAsync(actorIri, ct).ConfigureAwait(false);
+        foreach (var relayIri in relays)
+        {
+            await delivery.DeliverToActorAsync(relayIri, activity, actorIri, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
