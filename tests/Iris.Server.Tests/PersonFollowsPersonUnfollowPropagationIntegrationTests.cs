@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -38,68 +39,60 @@ namespace Iris.Server.Tests;
 /// the signature of the federated Follow/Undo). The client's writes are signed POSTs to alice's outbox
 /// on A; the cross-instance hop (A → B) is made by A's server, signed as alice.
 /// </para>
-public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IDisposable
+[Collection("PersonFollowsPersonUnfollowPropagation")]
+public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "pf-unfollow-a.domain.local";
-    private const string BHost = "pf-unfollow-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "pf-unfollow-a.domain.local";
+    internal const string BHost = "pf-unfollow-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly PersonFollowsPersonUnfollowPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
 
-    public PersonFollowsPersonUnfollowPropagationIntegrationTests()
+    public PersonFollowsPersonUnfollowPropagationIntegrationTests(PersonFollowsPersonUnfollowPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        // A: the local person (alice) is the follower and the instance actor (Handle = alice).
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        // B: the local person (bob) is the follow target.
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            // A signs the outbound Follow/Undo as alice (the follower and the instance actor).
-            IdentityKeys = BuildIdentity(_aliceKey, _aliceActorIri),
-            // A's server delivers the signed Follow/Undo to bob's inbox on B.
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            // A's fetcher routes by host: alice (A) and bob (B).
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _aliceKey, _aliceActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            // B fetches alice's document from A to validate the signature of the federated Follow/Undo
-            // (signed as alice).
-            Fetcher = BuildFetcherFor(AHost, Alice, _aliceKey, new LazyHandler(() => _a!.CreateHandler())),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A) and bob (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
     }
 
     // --- A person-follow of a remote person federates A → B and is recorded in B's follow store; the
@@ -222,7 +215,7 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IDi
     /// Builds A's signing identity: a key store carrying the instance actor's (alice's) key, a provider
     /// registering it at alice's IRI, and a signer.
     /// </summary>
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -302,7 +295,7 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IDi
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -376,7 +369,7 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IDi
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -450,4 +443,63 @@ public sealed class PersonFollowsPersonUnfollowPropagationIntegrationTests : IDi
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="PersonFollowsPersonUnfollowPropagationIntegrationTests"/> (A:
+/// pf-unfollow-a.domain.local alice, B: pf-unfollow-b.domain.local bob). Seeds alice + bob with keys
+/// ONCE; wires cross-wired delivery + routing fetchers via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class PersonFollowsPersonUnfollowPropagationSharedHost : SharedTwoHostFixture
+{
+    public PersonFollowsPersonUnfollowPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, PersonFollowsPersonUnfollowPropagationIntegrationTests.AHost, PersonFollowsPersonUnfollowPropagationIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, PersonFollowsPersonUnfollowPropagationIntegrationTests.BHost, PersonFollowsPersonUnfollowPropagationIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = PersonFollowsPersonUnfollowPropagationIntegrationTests.AHost,
+            Handle = PersonFollowsPersonUnfollowPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = PersonFollowsPersonUnfollowPropagationIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new PersonFollowsPersonUnfollowPropagationIntegrationTests.RoutingFetcher(
+                PersonFollowsPersonUnfollowPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                PersonFollowsPersonUnfollowPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = PersonFollowsPersonUnfollowPropagationIntegrationTests.BHost,
+            Handle = PersonFollowsPersonUnfollowPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = PersonFollowsPersonUnfollowPropagationIntegrationTests.BuildFetcherFor(
+                PersonFollowsPersonUnfollowPropagationIntegrationTests.AHost,
+                PersonFollowsPersonUnfollowPropagationIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the person-unfollow-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("PersonFollowsPersonUnfollowPropagation")]
+public sealed class PersonFollowsPersonUnfollowPropagationCollection : ICollectionFixture<PersonFollowsPersonUnfollowPropagationSharedHost>
+{
 }

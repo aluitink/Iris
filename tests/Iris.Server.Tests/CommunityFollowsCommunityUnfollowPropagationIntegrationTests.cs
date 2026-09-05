@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -45,87 +46,74 @@ namespace Iris.Server.Tests;
 /// of the federated Follow/Undo). The client's writes are signed POSTs to C's outbox on A; the
 /// cross-instance hop (A → B) is made by A's server, signed as the community C.
 /// </para>
-public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests : IDisposable
+[Collection("CommunityFollowsCommunityUnfollowPropagation")]
+public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "cc-unfollow-a.domain.local";
-    private const string BHost = "cc-unfollow-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string CommunityName = "iris";
-    private const string TargetCommunityName = "nebula";
+    internal const string AHost = "cc-unfollow-a.domain.local";
+    internal const string BHost = "cc-unfollow-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string CommunityName = "iris";
+    internal const string TargetCommunityName = "nebula";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly CommunityFollowsCommunityUnfollowPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
-    private readonly KeyPair _communityKey;
+    private KeyPair _communityKey;
     private readonly Iri _communityIri;
-    private readonly KeyPair _bobKey;
     private readonly Iri _bobActorIri;
-    private readonly KeyPair _targetCommunityKey;
     private readonly Iri _targetCommunityIri;
 
-    public CommunityFollowsCommunityUnfollowPropagationIntegrationTests()
+    public CommunityFollowsCommunityUnfollowPropagationIntegrationTests(CommunityFollowsCommunityUnfollowPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        // A: the instance actor (alice) is the host's local actor; the community (iris) is a second local
-        // identity with its own key (the follow/undo are authored + signed as the community C).
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-        var aCommunity = TestSeeder.SeedCommunityWithKey(_aPersistence, AHost, CommunityName);
-        _communityKey = aCommunity.Key;
-        _communityIri = aCommunity.CommunityIri;
-
-        // B: the local person (bob) is B's instance actor (keeps B's fetcher routable); the community
-        // (nebula) is the followed community, a second local identity on B with its own key.
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-        var bCommunity = TestSeeder.SeedCommunityWithKey(_bPersistence, BHost, TargetCommunityName);
-        _targetCommunityKey = bCommunity.Key;
-        _targetCommunityIri = bCommunity.CommunityIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            // A must sign outbound deliveries as BOTH alice (the instance actor) and the community C
-            // (the follow/undo author). The factory's auto-registration would register the community key
-            // under https://A/ap/v1/c/{Handle} (name == Handle), which is wrong here (CommunityName
-            // != Alice), so register both identities explicitly at their correct IRIs.
-            IdentityKeys = BuildIdentityForA(_aliceKey, _aliceActorIri, _communityKey, _communityIri),
-            // A's server delivers the signed Follow/Undo to D's inbox on B.
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            // A's fetcher routes by host: alice + iris (A) and bob + nebula (B).
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _aliceKey, _aliceActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            // B fetches the community C's document from A to validate the signature of the federated
-            // Follow/Undo (signed as the community).
-            Fetcher = BuildFetcherFor(AHost, Alice, _aliceKey, new LazyHandler(() => _a!.CreateHandler())),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _communityIri = new Iri($"https://{AHost}/ap/v1/c/{CommunityName}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _targetCommunityIri = new Iri($"https://{BHost}/ap/v1/c/{TargetCommunityName}");
+        _aliceKey = null!;
+        _communityKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _aPersistence.Keys.TryGetKey(new Iri($"{_communityIri.Value}#key-1"), out var communityKey);
+        _communityKey = (KeyPair)communityKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + iris (on A) and bob + nebula (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/{CommunityName}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var targetIri = new Iri($"https://{BHost}/ap/v1/c/{TargetCommunityName}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(aPersistence, AHost, CommunityName, new Iri($"{communityIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(bPersistence, BHost, TargetCommunityName, new Iri($"{targetIri.Value}#key-1"));
     }
 
     // --- A community-follow of a remote community federates A → B, and the community is recorded in B's
@@ -271,7 +259,7 @@ public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests
     /// key is registered at the community's IRI (not the instance actor's), so the outbound
     /// <c>DeliveryWorker</c> can sign the federated Follow/Undo as the community.
     /// </summary>
-    private static IdentityKeys BuildIdentityForA(
+    internal static IdentityKeys BuildIdentityForA(
         KeyPair instanceKey, Iri instanceActorIri, KeyPair communityKey, Iri communityIri)
     {
         var keyStore = new InMemoryKeyStore();
@@ -354,7 +342,7 @@ public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -428,7 +416,7 @@ public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -502,4 +490,69 @@ public sealed class CommunityFollowsCommunityUnfollowPropagationIntegrationTests
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="CommunityFollowsCommunityUnfollowPropagationIntegrationTests"/>
+/// (A: cc-unfollow-a.domain.local alice + iris community, B: cc-unfollow-b.domain.local bob + nebula
+/// community). Seeds all four identities with keys ONCE; wires cross-wired delivery + routing fetchers +
+/// multi-identity signing via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class CommunityFollowsCommunityUnfollowPropagationSharedHost : SharedTwoHostFixture
+{
+    public CommunityFollowsCommunityUnfollowPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Alice);
+        var aCommunity = TestSeeder.SeedCommunityWithKey(aPersistence, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.CommunityName);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BHost, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Bob);
+        var bCommunity = TestSeeder.SeedCommunityWithKey(bPersistence, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BHost, CommunityFollowsCommunityUnfollowPropagationIntegrationTests.TargetCommunityName);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+        var aliceIri = new Iri($"https://{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost}/ap/v1/u/{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Alice}");
+        var communityIri = new Iri($"https://{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost}/ap/v1/c/{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.CommunityName}");
+        var bobIri = new Iri($"https://{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BHost}/ap/v1/u/{CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Bob}");
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost,
+            Handle = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BuildIdentityForA(aSeeded.Key, aliceIri, aCommunity.Key, communityIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new CommunityFollowsCommunityUnfollowPropagationIntegrationTests.RoutingFetcher(
+                CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aliceIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BHost,
+            Handle = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = CommunityFollowsCommunityUnfollowPropagationIntegrationTests.BuildFetcherFor(
+                CommunityFollowsCommunityUnfollowPropagationIntegrationTests.AHost,
+                CommunityFollowsCommunityUnfollowPropagationIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community→community unfollow-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityFollowsCommunityUnfollowPropagation")]
+public sealed class CommunityFollowsCommunityUnfollowPropagationCollection : ICollectionFixture<CommunityFollowsCommunityUnfollowPropagationSharedHost>
+{
 }
