@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
@@ -59,6 +60,12 @@ public sealed class DeletePropagationService : IDeletePropagationService
         await AddRemoteFollowersAsync(authorIri, targets, ct).ConfigureAwait(false);
 
         await DeliverToTargetsAsync(targets, activity, authorIri, ct).ConfigureAwait(false);
+
+        // F-06 relay fan-out: deliver the Update to each of the author's subscribed relays so their
+        // copies of the object are refreshed (mirrors the Create/Announce relay fan-out on the
+        // outbox-publish path). Only reached for a local author (the home instance) — the handlers
+        // guard the propagation call with actorIsLocal.
+        await DeliverToRelaysAsync(authorIri, activity, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -89,6 +96,12 @@ public sealed class DeletePropagationService : IDeletePropagationService
         }
 
         await DeliverToTargetsAsync(targets, activity, authorIri, ct).ConfigureAwait(false);
+
+        // F-06 relay fan-out: deliver the Delete to each of the author's subscribed relays so their
+        // copies of the object are tombstoned (mirrors the Create/Announce relay fan-out on the
+        // outbox-publish path). Only reached for a local author (the home instance) — the handlers
+        // guard the propagation call with actorIsLocal.
+        await DeliverToRelaysAsync(authorIri, activity, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -130,6 +143,26 @@ public sealed class DeletePropagationService : IDeletePropagationService
         {
             await _delivery
                 .DeliverToActorAsync(targetIri, activity, authorIri, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Delivers the activity to each of the author's subscribed relays (F-06 relay fan-out,
+    /// ActivityPub §5.1.3). A relay is a <c>star</c>-subscribed fan-out server: the author's content
+    /// edits and deletions reach the relays so their copies of the object are kept in sync. The relays
+    /// are read from the <see cref="IRelayStore"/> (the author's <c>relays</c> collection);
+    /// a delivery failure for one relay does not suppress delivery to the others (each relay is an
+    /// independent delivery job). This is the <see cref="Update"/>/<see cref="Delete"/> complement of
+    /// the <see cref="Create"/>/<see cref="Announce"/> relay fan-out on the outbox-publish path.
+    /// </summary>
+    private async Task DeliverToRelaysAsync(Iri authorIri, Activity activity, CancellationToken ct)
+    {
+        var relays = await _persistence.Relays.GetRelaysAsync(authorIri, ct).ConfigureAwait(false);
+        foreach (var relayIri in relays)
+        {
+            await _delivery
+                .DeliverToActorAsync(relayIri, activity, authorIri, ct)
                 .ConfigureAwait(false);
         }
     }
