@@ -1,0 +1,138 @@
+@using Iris.Core.Identity
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+
+@if (ActorObj is { } actor)
+{
+    <div class="actor-profile">
+        @if (IconIri is { } icon)
+        {
+            <span class="actor-profile-avatar">
+                <a href="@icon" title="@icon">
+                    <img src="@icon" alt="avatar" class="object-avatar actor-profile-avatar-img" loading="lazy" />
+                </a>
+            </span>
+        }
+        else
+        {
+            <span class="actor-profile-avatar actor-profile-avatar-fallback" aria-hidden="true">
+                @AvatarFallback
+            </span>
+        }
+
+        <div class="actor-profile-body">
+            @if (PreferredUsername is { Length: > 0 } username)
+            {
+                <span class="actor-profile-handle">@username</span>
+            }
+            @if (Name is { Length: > 0 } name && !NameIsRedundant)
+            {
+                <span class="actor-profile-name">@name</span>
+            }
+            @if (Summary is { Length: > 0 } summary)
+            {
+                <div class="actor-profile-summary">@summary</div>
+            }
+            <div class="actor-profile-iri">
+                <code>@(ActorId ?? actor.Id ?? string.Empty)</code>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <span class="muted">No actor document.</span>
+}
+
+@code {
+    /// <summary>
+    /// The actor document to present (an <see cref="Actor"/>: a person, community, application, …).
+    /// Pattern-matched per the 3rd-Party ActivityStreams rules — never a concrete type. A non-actor
+    /// document (a note) or null renders a muted placeholder (not a profile header).
+    /// </summary>
+    [Parameter]
+    public IObject? Actor { get; set; }
+
+    /// <summary>
+    /// The actor's IRI, for the header's IRI line. Defaults to the document's own <c>id</c>.
+    /// </summary>
+    [Parameter]
+    public string? ActorId { get; set; }
+
+    private Actor? ActorObj => Actor as Actor;
+
+    /// <summary>The actor's <c>preferredUsername</c> (the handle), when present.</summary>
+    private string? PreferredUsername => ActorObj?.PreferredUsername;
+
+    /// <summary>The actor's <c>name</c> (the first entry), when present.</summary>
+    private string? Name => ActorObj?.Name?.FirstOrDefault();
+
+    /// <summary>
+    /// Whether the actor's <c>name</c> is redundant with its <c>preferredUsername</c> (case-insensitive
+    /// equal) — the seeded actors name themselves by their username, so the name would duplicate the
+    /// handle; when redundant it is omitted.
+    /// </summary>
+    private bool NameIsRedundant
+    {
+        get
+        {
+            var actor = ActorObj;
+            if (actor is null)
+            {
+                return false;
+            }
+
+            var name = actor.Name?.FirstOrDefault();
+            var username = actor.PreferredUsername;
+            return !string.IsNullOrWhiteSpace(name)
+                && !string.IsNullOrWhiteSpace(username)
+                && name!.Equals(username, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>The actor's <c>summary</c> (the first entry), when present.</summary>
+    private string? Summary => ActorObj?.Summary?.FirstOrDefault();
+
+    /// <summary>
+    /// The actor's <c>icon</c> IRI (the first icon's resolved IRI), when present — rendered as the
+    /// profile avatar. Mirrors <c>ObjectView</c>'s icon resolution (an <see cref="IObject"/> icon by
+    /// its <c>id</c>, an <see cref="ILink"/> icon by its <c>href</c>).
+    /// </summary>
+    private string? IconIri
+    {
+        get
+        {
+            var actor = ActorObj;
+            if (actor?.Icon is not { } icons)
+            {
+                return null;
+            }
+
+            foreach (var icon in icons)
+            {
+                var iri = icon is IObject { Id: { Length: > 0 } id } ? id
+                    : icon is ILink { Href: { } href } ? href.ToString()
+                    : null;
+                if (iri is not null)
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The avatar fallback glyph (the first character of the name or handle) shown when the actor has
+    /// no icon — a profile-style initial in place of a broken/missing image.
+    /// </summary>
+    private string AvatarFallback
+    {
+        get
+        {
+            var source = !string.IsNullOrWhiteSpace(Name) ? Name! : PreferredUsername;
+            return source is { Length: > 0 } ? source[0].ToString() : "?";
+        }
+    }
+}

@@ -5,9 +5,9 @@
 @using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
 
-<PageTitle>Actor detail · Iris</PageTitle>
+<PageTitle>Actor · Iris</PageTitle>
 
-<h2>Actor detail</h2>
+<h2>Actor</h2>
 
 <BackLink />
 
@@ -35,26 +35,43 @@ else
 
     @if (ActorIri is { } actorIri)
     {
-        <div class="card">
-            <h3>Actor</h3>
-            <ObjectView Item="ActorDoc" />
-            <p class="muted">IRI: <code>@actorIri.Value</code></p>
-        </div>
+        <ActorProfile Actor="ActorDoc" ActorId="actorIri.Value" />
 
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@(ActorIri?.OutboxOf())"
-            Title="Outbox"
-            Description="The activities this actor authored or accepted (their outbox), paged with next-link walking — local or remote. Each item is a navigable object view."
-            EmptyMessage="No items in the outbox." />
+        <nav class="tabs" aria-label="Actor sections">
+            @foreach (var tab in Tabs)
+            {
+                <button class="tab @(tab.Key == ActiveTab ? "active" : null)" @onclick="() => SetActiveTab(tab.Key)" title="@(tab.Title)">
+                    @tab.Title
+                    @if (tab.Badge is { Length: > 0 } badge)
+                    {
+                        <span class="tab-badge">@badge</span>
+                    }
+                </button>
+            }
+        </nav>
 
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@(ActorIri?.LikedOf())"
-            Title="Liked"
-            Description="The objects this actor liked (their <c>liked</c> collection), paged with next-link walking. Each item is a navigable object view (a like is recorded as the liked object)."
-            EmptyMessage="Nothing liked." />
+        @if (ActiveTab is "outbox")
+        {
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@(ActorIri?.OutboxOf())"
+                Title="Outbox"
+                Description="The activities this actor authored or accepted (their outbox), paged with next-link walking — local or remote. Each item is a navigable object view."
+                EmptyMessage="No items in the outbox." />
+        }
 
+        @if (ActiveTab is "liked")
+        {
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@(ActorIri?.LikedOf())"
+                Title="Liked"
+                Description="The objects this actor liked (their <c>liked</c> collection), paged with next-link walking. Each item is a navigable object view (a like is recorded as the liked object)."
+                EmptyMessage="Nothing liked." />
+        }
+
+        @if (ActiveTab is "followers")
+        {
         <div class="card">
             <h3>Followers</h3>
             <p class="muted">
@@ -127,7 +144,10 @@ else
                 }
             }
         </div>
+        }
 
+        @if (ActiveTab is "following")
+        {
         <div class="card">
             <h3>Following</h3>
             <p class="muted">
@@ -184,11 +204,17 @@ else
                 }
             }
         </div>
+        }
 
-        <RawInspector Document="ActorDoc" />
+        @if (ActiveTab is "raw")
+        {
+            <RawInspector Document="ActorDoc" />
+        }
 
         @if (Moderation is { } mod)
         {
+            @if (ActiveTab is "moderation")
+            {
             <div class="card">
                 <h3>Moderation (this actor)</h3>
                 <p class="muted">
@@ -399,6 +425,7 @@ else
                     <div class="error">@RelayError</div>
                 }
             </div>
+            }
         }
     }
 }
@@ -412,6 +439,50 @@ else
     private string? Error { get; set; }
     private Iri? ActorIri { get; set; }
     private IObject? ActorDoc { get; set; }
+
+    // 31.5: the active detail tab (the sections are organized into tabs so the one-long page is
+    // navigable). The key doubles as the @if selector in the markup (a string literal match).
+    private string ActiveTab { get; set; } = "outbox";
+
+    /// <summary>
+    /// A detail tab: its key (the markup's @if selector), its title (the button label), and an optional
+    /// badge (a short count shown on the button — the moderation tab carries the target actor's
+    /// mutes/blocks/flags total).
+    /// </summary>
+    private sealed record Tab(string Key, string Title, string? Badge = null);
+
+    /// <summary>
+    /// The detail tabs, in display order. "raw" (the raw inspector) is always present; "moderation" is
+    /// present only once the target actor's moderation counts have loaded (the section is otherwise
+    /// empty — a remote actor's counts are unknown).
+    /// </summary>
+    private IReadOnlyList<Tab> Tabs
+    {
+        get
+        {
+            var tabs = new List<Tab>
+            {
+                new("outbox", "Outbox"),
+                new("liked", "Liked"),
+                new("followers", "Followers"),
+                new("following", "Following"),
+                new("raw", "Raw"),
+            };
+
+            if (Moderation is { } mod)
+            {
+                tabs.Add(new("moderation", "Moderation", (mod.Mutes + mod.Blocks + mod.Flags).ToString()));
+            }
+
+            return tabs;
+        }
+    }
+
+    /// <summary>
+    /// Selects a detail tab. Switching to the moderation tab when it is not (yet) present (its counts
+    /// have not loaded) falls back to "outbox" rather than leaving an empty pane.
+    /// </summary>
+    private void SetActiveTab(string key) => ActiveTab = key;
 
     /// <summary>
     /// The last deep-link param key (<c>iri:&lt;value&gt;</c> / <c>handle:&lt;value&gt;</c>) that triggered an
@@ -548,6 +619,7 @@ else
         Error = null;
             ActorIri = null;
             ActorDoc = null;
+            ActiveTab = "outbox";
             FollowersItems = null;
             FollowersHasMore = false;
             FollowersError = null;

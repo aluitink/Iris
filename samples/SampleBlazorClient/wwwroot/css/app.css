@@ -421,6 +421,126 @@ a.object-feed-link:hover {
     font-size: 0.85rem;
 }
 
+/* Actor profile header (31.5): a profile-style card at the top of the actor/community detail pages —
+   the actor's icon (avatar) + handle + name + summary + IRI, distinct from the raw object view below.
+   The avatar reuses the object-view image sizing (.object-avatar) but sits in a larger, rounded frame. */
+.actor-profile {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    background: #171c24;
+    border: 1px solid #2a3038;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
+}
+
+.actor-profile-avatar {
+    flex: 0 0 auto;
+    width: 4rem;
+    height: 4rem;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #0e1116;
+    border: 1px solid #2a3038;
+}
+
+.actor-profile-avatar-img {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 0.5rem;
+}
+
+/* The fallback initial when the actor has no icon: a large, muted glyph centered in the frame. */
+.actor-profile-avatar-fallback {
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #8fd3a7;
+}
+
+.actor-profile-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+}
+
+.actor-profile-handle {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: #cdd6e1;
+    word-break: break-all;
+}
+
+.actor-profile-name {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #e6e9ef;
+    word-break: break-all;
+}
+
+.actor-profile-summary {
+    color: #9aa4b2;
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+    line-height: 1.4;
+}
+
+.actor-profile-iri {
+    margin-top: 0.25rem;
+}
+
+.actor-profile-iri code {
+    color: #9aa4b2;
+    font-size: 0.8rem;
+    word-break: break-all;
+}
+
+/* Tabs (31.5): the actor/community detail's section navigation. A horizontal row of tab buttons; the
+   active tab is highlighted, and the corresponding pane is shown (the rest are not rendered). */
+.tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    border-bottom: 1px solid #2a3038;
+    margin-bottom: 1.25rem;
+}
+
+.tab {
+    margin-top: 0;
+    padding: 0.4rem 0.9rem;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: #9aa4b2;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.tab:hover {
+    color: #cdd6e1;
+    background: #12171f;
+}
+
+.tab.active {
+    color: #eafff3;
+    background: #1f6b45;
+    border-color: #2f8f5b;
+}
+
+.tab .tab-badge {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: 0.75rem;
+    background: #2a3038;
+    color: #cdd6e1;
+    font-size: 0.75rem;
+}
+
 .error {
     color: #e79c9c;
     background: #2a1a1a;
