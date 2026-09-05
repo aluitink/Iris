@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -33,61 +34,60 @@ namespace Iris.Server.Tests;
 /// federated Block). The client's write is a single signed POST to A's own outbox; the cross-instance
 /// hop (A → B) is made by A's server, not the client.
 /// </para>
-public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
+[Collection("OutboxPublishServerDelivers")]
+public sealed class OutboxPublishServerDeliversIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "block-a.domain.local";
-    private const string BHost = "block-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "block-a.domain.local";
+    internal const string BHost = "block-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly OutboxPublishServerDeliversSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
 
-    public OutboxPublishServerDeliversIntegrationTests()
+    public OutboxPublishServerDeliversIntegrationTests(OutboxPublishServerDeliversSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            IdentityKeys = BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                aSeeded.Key, aSeeded.ActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            Fetcher = BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => _a!.CreateHandler())),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A) + bob (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
     }
 
     // --- A Block published to the author's outbox is server-delivered to the blocked actor ----
@@ -164,7 +164,7 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
 
     // --- Helpers --------------------------------------------------------------------------
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -244,7 +244,7 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -303,7 +303,7 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -377,4 +377,64 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="OutboxPublishServerDeliversIntegrationTests"/>
+/// (A: block-a.domain.local alice, B: block-b.domain.local bob). Seeds alice + bob with keys ONCE; A has
+/// identity + a routing fetcher (fetches A's and B's actor docs) + delivery transport to B; B has a
+/// fetcher to A (validates the federated Block signed as alice).
+/// </summary>
+public sealed class OutboxPublishServerDeliversSharedHost : SharedTwoHostFixture
+{
+    public OutboxPublishServerDeliversSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, OutboxPublishServerDeliversIntegrationTests.AHost, OutboxPublishServerDeliversIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, OutboxPublishServerDeliversIntegrationTests.BHost, OutboxPublishServerDeliversIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = OutboxPublishServerDeliversIntegrationTests.AHost,
+            Handle = OutboxPublishServerDeliversIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = OutboxPublishServerDeliversIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new OutboxPublishServerDeliversIntegrationTests.RoutingFetcher(
+                OutboxPublishServerDeliversIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                OutboxPublishServerDeliversIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = OutboxPublishServerDeliversIntegrationTests.BHost,
+            Handle = OutboxPublishServerDeliversIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = OutboxPublishServerDeliversIntegrationTests.BuildFetcherFor(
+                OutboxPublishServerDeliversIntegrationTests.AHost,
+                OutboxPublishServerDeliversIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the outbox-publish-server-delivers shared two-host fixture.
+/// </summary>
+[CollectionDefinition("OutboxPublishServerDelivers")]
+public sealed class OutboxPublishServerDeliversCollection : ICollectionFixture<OutboxPublishServerDeliversSharedHost>
+{
 }
