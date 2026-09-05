@@ -1,15 +1,14 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -29,65 +28,72 @@ namespace Iris.Server.Tests;
 /// server-delivers the signed <c>Create</c> to <em>both</em> bob's and carol's inboxes. B and C
 /// validate the signature (fetching A's actor doc for alice's key) and store the <c>Create</c>.
 /// </remarks>
-public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
+[Collection("OutboxCreateFanOut")]
+public sealed class OutboxCreateFanOutIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "a.domain.local";
-    private const string BHost = "b.domain.local";
-    private const string CHost = "c.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string AHost = "a.domain.local";
+    internal const string BHost = "b.domain.local";
+    internal const string CHost = "c.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
-    private readonly TestServer _c;
-    private readonly HttpClient _aHttp;
+    private readonly OutboxCreateFanOutSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly InMemoryPersistenceProvider _cPersistence;
-    private readonly KeyPair _aliceKey;
+    private readonly HttpClient _aHttp;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
 
-    public OutboxCreateFanOutIntegrationTests()
+    public OutboxCreateFanOutIntegrationTests(OutboxCreateFanOutSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-        _cPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        var cSeeded = TestSeeder.SeedPersonWithKey(_cPersistence, CHost, Carol);
-        _carolActorIri = cSeeded.ActorIri;
-
-        // The follow edges bob→alice and carol→alice are recorded on A (A is alice's home instance).
-        _aPersistence.Follows.RecordFollowAsync(_bobActorIri, _aliceActorIri).GetAwaiter().GetResult();
-        _aPersistence.Follows.RecordFollowAsync(_carolActorIri, _aliceActorIri).GetAwaiter().GetResult();
-
-        // A's delivery transport routes to both B and C (a routing handler dispatches on the request's
-        // host header). A's fetcher routes by actor IRI host: alice (A) → A's TestServer, bob (B) →
-        // B's TestServer, carol (C) → C's TestServer. B and C's fetchers are wired to A (to validate
-        // alice's key on the federated Creates).
-        _a = StartAuthorServer(_aPersistence, _aliceKey, _aliceActorIri,
-            bServer: () => _b!, cServer: () => _c!, selfServer: () => _a!);
-        _b = StartServer(BHost, Bob, _bPersistence, bSeeded.Key,
-            fetcher: BuildFetcherFor(BHost, Bob, bSeeded.Key, _a.CreateHandler()));
-        _c = StartServer(CHost, Carol, _cPersistence, cSeeded.Key,
-            fetcher: BuildFetcherFor(CHost, Carol, cSeeded.Key, _a.CreateHandler()));
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _cPersistence = (InMemoryPersistenceProvider)fixture.PersistenceC;
+        _aHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _aliceKey = null!;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{CHost}/ap/v1/u/{Carol}");
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _b.Dispose();
-        _c.Dispose();
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence, _cPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
+    {
+        _aHttp.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A), bob (on B), and carol (on C) with their existing keys and the
+    /// bob→alice + carol→alice follow edges on A.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence, InMemoryPersistenceProvider cPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(cPersistence, CHost, Carol, new Iri($"https://{CHost}/ap/v1/u/{Carol}#key-1"));
+        aPersistence.Follows.RecordFollowAsync(
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}"),
+            new Iri($"https://{AHost}/ap/v1/u/{Alice}")).GetAwaiter().GetResult();
+        aPersistence.Follows.RecordFollowAsync(
+            new Iri($"https://{CHost}/ap/v1/u/{Carol}"),
+            new Iri($"https://{AHost}/ap/v1/u/{Alice}")).GetAwaiter().GetResult();
     }
 
     // --- A post published to the author's outbox is federated to ALL remote followers -------
@@ -97,25 +103,17 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
     {
         var create = BuildCreate(_aliceActorIri);
 
-        // Sign the request as alice (the outbox-publish write surface requires a valid signature from
-        // the acting actor) and POST to A's /ap/v1/u/alice/outbox.
         using var request = SignedRequest(_aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Decision 055: the server mints the Create's id (and the embedded Note's id) and returns the
-        // created Create in the 202 body; learn the minted id to reference it for the assertions below.
         var createIri = await LearnMintedIdAsync(response);
 
-        // A recorded the Create in alice's outbox (the local-surfacing half).
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(_aliceActorIri),
             o => o is IObject { Id: { Length: > 0 } id } && id == createIri.Value);
 
-        // Both B and C validated the federated Create (resolving alice's key from A's actor doc) and
-        // stored it — the post reached BOTH remote followers' instances (the G-1 residual fix: full
-        // fan-out, not just the first follower).
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
                 await _bPersistence.Activities.TryGetActivityAsync(createIri, out _)
                 && await _cPersistence.Activities.TryGetActivityAsync(createIri, out _),
             timeout: TimeSpan.FromSeconds(30));
@@ -135,8 +133,6 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
     [Fact]
     public async Task OutboxPublish_CreateWithNoRemoteFollowers_SurfacesLocallyOnly()
     {
-        // A fresh author (dave) with no followers posts a Create to his outbox; it is recorded in dave's
-        // outbox but nothing is scheduled for delivery (no remote followers).
         var daveSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, "dave");
         var daveActorIri = daveSeeded.ActorIri;
 
@@ -145,15 +141,12 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Decision 055: learn the server-minted Create id from the 202 body.
         var createIri = await LearnMintedIdAsync(response);
 
-        // Surfaced in dave's outbox ...
         Assert.Contains(
             await _aPersistence.Activities.GetOutboxAsync(daveActorIri),
             o => o is IObject { Id: { Length: > 0 } id } && id == createIri.Value);
 
-        // ... and nothing was federated (no followers) — B and C stored nothing.
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(createIri, out _));
         Assert.False(await _cPersistence.Activities.TryGetActivityAsync(createIri, out _));
     }
@@ -163,8 +156,6 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
     [Fact]
     public async Task OutboxPublish_CreateWithBlockedRemoteFollower_SkipsBlocked()
     {
-        // Bob blocks alice (recorded on A). Alice publishes a Create; carol (unblocked) receives it,
-        // but bob (blocked) does not.
         await _aPersistence.Moderation.RecordBlockAsync(_bobActorIri, _aliceActorIri);
 
         var create = BuildCreate(_aliceActorIri);
@@ -172,16 +163,13 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
-        // Decision 055: learn the server-minted Create id from the 202 body.
         var createIri = await LearnMintedIdAsync(response);
 
-        // Carol (unblocked) received the federated Create.
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
             await _cPersistence.Activities.TryGetActivityAsync(createIri, out _),
             timeout: TimeSpan.FromSeconds(10));
         Assert.True(await _cPersistence.Activities.TryGetActivityAsync(createIri, out _));
 
-        // Bob (blocked) did NOT receive the federated Create.
         Assert.False(await _bPersistence.Activities.TryGetActivityAsync(createIri, out _));
     }
 
@@ -193,7 +181,7 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
     /// author's outbox. Uses the client pipeline (via a capture handler) to produce a correctly signed
     /// request, then replays the signed headers onto a fresh request for delivery to A's TestServer.
     /// </summary>
-    private HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string path)
+    private static HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string path)
     {
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
@@ -276,50 +264,12 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private static TestServer StartAuthorServer(
-        InMemoryPersistenceProvider persistence, KeyPair authorKey, Iri authorActorIri,
-        Func<TestServer> bServer, Func<TestServer> cServer, Func<TestServer> selfServer)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(authorKey);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        keyProvider.RegisterKey(authorActorIri, authorKey.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
-            DeliveryTransport = () => new RoutingHandler(BHost, bServer, CHost, cServer),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => selfServer().CreateHandler()),
-                BHost, new LazyHandler(() => bServer().CreateHandler()),
-                CHost, new LazyHandler(() => cServer().CreateHandler()),
-                authorKey, authorActorIri),
-        });
-    }
-
-    private static TestServer StartServer(
-        string host, string handle, InMemoryPersistenceProvider persistence,
-        KeyPair instanceKey, IActorDocumentFetcher? fetcher = null)
-    {
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = host,
-            Handle = handle,
-            Persistence = persistence,
-            Fetcher = fetcher,
-        });
-    }
-
     /// <summary>
     /// An <see cref="HttpMessageHandler"/> that routes to the B or C server based on the request's host
     /// header (A's delivery worker sends to both remote followers' inboxes, which are on different
     /// instances).
     /// </summary>
-    private sealed class RoutingHandler : HttpMessageHandler
+    internal sealed class RoutingHandler : HttpMessageHandler
     {
         private readonly string _bHost;
         private readonly Func<TestServer> _bServer;
@@ -340,8 +290,6 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
             var host = request.RequestUri!.Host;
             var handler = host == _cHost ? _cServer().CreateHandler() : _bServer().CreateHandler();
 
-            // Clone the request (the inner pipeline may retry, and HttpClient forbids sending the same
-            // request message more than once).
             var clone = new HttpRequestMessage(request.Method, request.RequestUri)
             {
                 Version = request.Version,
@@ -369,7 +317,7 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
     /// based on the actor IRI's host (A's fetcher needs to reach A, B, and C to validate alice's own
     /// signature and resolve bob's/carol's inboxes).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -446,9 +394,6 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
 
-    // Decision 055: the client authors the Create WITHOUT an id (and the embedded Note without an id);
-    // the server mints both (the Create's id is returned in the 202 body, learned via
-    // LearnMintedIdAsync).
     private static Create BuildCreate(Iri actorIri) => new()
     {
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
@@ -469,18 +414,115 @@ public sealed class OutboxCreateFanOutIntegrationTests : IDisposable
         Assert.NotNull(created?.Id);
         return new Iri(created!.Id!);
     }
+}
 
-    private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
+/// <summary>
+/// Shared three-host fixture for <see cref="OutboxCreateFanOutIntegrationTests"/> (A: a.domain.local
+/// alice, B: b.domain.local bob, C: c.domain.local carol). Seeds alice + bob + carol with keys ONCE;
+/// A's identity + RoutingFetcher (A/B/C docs) + RoutingHandler delivery to B/C by host; B's and C's
+/// fetchers reach A (validate alice's key). Both bob→alice and carol→alice follow edges are on A.
+/// </summary>
+public sealed class OutboxCreateFanOutSharedHost : SharedThreeHostFixture
+{
+    public OutboxCreateFanOutSharedHost()
+        : base(BuildOptions())
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await probe())
-            {
-                return;
-            }
-
-            await Task.Delay(50);
-        }
     }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B, ActivityPubHostOptions C) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var cPersistence = new InMemoryPersistenceProvider();
+
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, OutboxCreateFanOutIntegrationTests.AHost, OutboxCreateFanOutIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, OutboxCreateFanOutIntegrationTests.BHost, OutboxCreateFanOutIntegrationTests.Bob);
+        var cSeeded = TestSeeder.SeedPersonWithKey(cPersistence, OutboxCreateFanOutIntegrationTests.CHost, OutboxCreateFanOutIntegrationTests.Carol);
+
+        aPersistence.Follows.RecordFollowAsync(bSeeded.ActorIri, aSeeded.ActorIri).GetAwaiter().GetResult();
+        cPersistence.Follows.RecordFollowAsync(bSeeded.ActorIri, aSeeded.ActorIri).GetAwaiter().GetResult();
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+        var serverCRef = SharedHostFixture.ServerRefFor(cPersistence);
+
+        var aKeyStore = new InMemoryKeyStore();
+        aKeyStore.PutKey(aSeeded.Key);
+        var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
+        aKeyProvider.RegisterKey(aSeeded.ActorIri, aSeeded.Key.KeyId);
+        var aSigner = new HttpSignatureSigner(aKeyStore);
+
+        var bKeyStore = new InMemoryKeyStore();
+        bKeyStore.PutKey(bSeeded.Key);
+        var bKeyProvider = new InMemoryKeyProvider(bKeyStore);
+        bKeyProvider.RegisterKey(bSeeded.ActorIri, bSeeded.Key.KeyId);
+        var bSigner = new HttpSignatureSigner(bKeyStore);
+
+        var cKeyStore = new InMemoryKeyStore();
+        cKeyStore.PutKey(cSeeded.Key);
+        var cKeyProvider = new InMemoryKeyProvider(cKeyStore);
+        cKeyProvider.RegisterKey(cSeeded.ActorIri, cSeeded.Key.KeyId);
+        var cSigner = new HttpSignatureSigner(cKeyStore);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = OutboxCreateFanOutIntegrationTests.AHost,
+            Handle = OutboxCreateFanOutIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = new IdentityKeys(aKeyStore, aKeyProvider, aSigner),
+            DeliveryTransport = () => new OutboxCreateFanOutIntegrationTests.RoutingHandler(
+                OutboxCreateFanOutIntegrationTests.BHost, serverBRef,
+                OutboxCreateFanOutIntegrationTests.CHost, serverCRef),
+            Fetcher = new OutboxCreateFanOutIntegrationTests.RoutingFetcher(
+                OutboxCreateFanOutIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                OutboxCreateFanOutIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                OutboxCreateFanOutIntegrationTests.CHost, new LazyHandler(() => serverCRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = OutboxCreateFanOutIntegrationTests.BHost,
+            Handle = OutboxCreateFanOutIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = new IdentityKeys(bKeyStore, bKeyProvider, bSigner),
+            Fetcher = BuildFetcherForLazy(bSeeded.Key, bSeeded.ActorIri, serverARef),
+        };
+
+        var optionsC = new ActivityPubHostOptions
+        {
+            Host = OutboxCreateFanOutIntegrationTests.CHost,
+            Handle = OutboxCreateFanOutIntegrationTests.Carol,
+            Persistence = cPersistence,
+            IdentityKeys = new IdentityKeys(cKeyStore, cKeyProvider, cSigner),
+            Fetcher = BuildFetcherForLazy(cSeeded.Key, cSeeded.ActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB, optionsC);
+    }
+
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the outbox create fan-out shared three-host fixture.
+/// </summary>
+[CollectionDefinition("OutboxCreateFanOut")]
+public sealed class OutboxCreateFanOutCollection : ICollectionFixture<OutboxCreateFanOutSharedHost>
+{
 }
