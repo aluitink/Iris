@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -45,77 +46,68 @@ namespace Iris.Server.Tests;
 /// followers.
 /// </para>
 /// </remarks>
-public sealed class UpdatePropagationIntegrationTests : IDisposable
+[Collection("UpdatePropagation")]
+public sealed class UpdatePropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "update-a.domain.local";
-    private const string BHost = "update-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "update-a.domain.local";
+    internal const string BHost = "update-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly SharedTwoHostFixture _fixture;
     private readonly HttpClient _aHttp;
     private readonly HttpClient _bHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
-    private readonly KeyPair _bobKey;
+    private KeyPair _aliceKey;
+    private KeyPair _bobKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
 
-    public UpdatePropagationIntegrationTests()
+    public UpdatePropagationIntegrationTests(UpdatePropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-
-        // Alice follows bob: the follow edge is recorded on B (bob's home instance) so that B's
-        // GetRemoteNonBlockedFollowersAsync finds alice and delivers the Create/Update to her inbox.
-        _bPersistence.Follows.RecordFollowAsync(_aliceActorIri, _bobActorIri).GetAwaiter().GetResult();
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            IdentityKeys = BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                aSeeded.Key, aSeeded.ActorIri),
-        });
-
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            IdentityKeys = BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _a!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                bSeeded.Key, bSeeded.ActorIri),
-        });
-
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
-        _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
+        _bobKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _bHttp = new HttpClient(fixture.ServerB.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
         _bHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + bob (with their existing keys) and the follow edge (alice→bob on B).
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        bPersistence.Follows.RecordFollowAsync(aliceIri, bobIri).GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -380,7 +372,7 @@ public sealed class UpdatePropagationIntegrationTests : IDisposable
             handler);
     }
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -390,7 +382,7 @@ public sealed class UpdatePropagationIntegrationTests : IDisposable
         return new IdentityKeys(keyStore, keyProvider, signer);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -408,7 +400,7 @@ public sealed class UpdatePropagationIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -478,4 +470,65 @@ public sealed class UpdatePropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="UpdatePropagationIntegrationTests"/> (A: update-a.domain.local
+/// alice, B: update-b.domain.local bob). Seeds alice + bob with keys ONCE (the key stores are preserved
+/// across per-method resets), wires cross-wired delivery transports + routing fetchers via
+/// <see cref="SharedHostFixture.ServerRefFor"/>. The test class resets + re-seeds before each method.
+/// </summary>
+public sealed class UpdatePropagationSharedHost : SharedTwoHostFixture
+{
+    public UpdatePropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, UpdatePropagationIntegrationTests.AHost, UpdatePropagationIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, UpdatePropagationIntegrationTests.BHost, UpdatePropagationIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = UpdatePropagationIntegrationTests.AHost,
+            Handle = UpdatePropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = UpdatePropagationIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new UpdatePropagationIntegrationTests.RoutingFetcher(
+                UpdatePropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                UpdatePropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = UpdatePropagationIntegrationTests.BHost,
+            Handle = UpdatePropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = UpdatePropagationIntegrationTests.BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverARef().CreateHandler()),
+            Fetcher = new UpdatePropagationIntegrationTests.RoutingFetcher(
+                UpdatePropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                UpdatePropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                bSeeded.Key, bSeeded.ActorIri),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the update-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("UpdatePropagation")]
+public sealed class UpdatePropagationCollection : ICollectionFixture<UpdatePropagationSharedHost>
+{
 }
