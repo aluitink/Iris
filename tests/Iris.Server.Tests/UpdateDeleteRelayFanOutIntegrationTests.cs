@@ -7,6 +7,8 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -36,75 +38,62 @@ namespace Iris.Server.Tests;
 /// (tombstoning its stored Note).
 /// </para>
 /// </remarks>
-public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
+[Collection("UpdateDeleteRelayFanOut")]
+public sealed class UpdateDeleteRelayFanOutIntegrationTests : IAsyncLifetime
 {
-    private const string BHost = "update-delete-relay-b.domain.local";
-    private const string RelayHost = "update-delete-relay-r.example.com";
-    private const string Bob = "bob";
-    private const string Relay = "relay";
+    internal const string BHost = "update-delete-relay-b.domain.local";
+    internal const string RelayHost = "update-delete-relay-r.example.com";
+    internal const string Bob = "bob";
+    internal const string Relay = "relay";
 
-    private readonly TestServer _b;
-    private readonly TestServer _relay;
-    private readonly HttpClient _bHttp;
+    private readonly UpdateDeleteRelayFanOutSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly InMemoryPersistenceProvider _relayPersistence;
-    private readonly KeyPair _bobKey;
+    private readonly HttpClient _bHttp;
+    private KeyPair _bobKey;
     private readonly Iri _bobActorIri;
     private readonly Iri _relayActorIri;
 
-    public UpdateDeleteRelayFanOutIntegrationTests()
+    public UpdateDeleteRelayFanOutIntegrationTests(UpdateDeleteRelayFanOutSharedHost fixture)
     {
-        _bPersistence = new InMemoryPersistenceProvider();
-        _relayPersistence = new InMemoryPersistenceProvider();
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-
-        var relaySeeded = TestSeeder.SeedPersonWithKey(_relayPersistence, RelayHost, Relay);
-        _relayActorIri = relaySeeded.ActorIri;
-
-        // bob (on B) has subscribed to the relay: the F-06 subscription edge (recorded in B's relay
-        // store, which is the source DeliverToRelaysAsync reads).
-        _bPersistence.Relays
-            .RecordRelayAsync(_bobActorIri, _relayActorIri)
-            .GetAwaiter().GetResult();
-
-        // B hosts bob; its outbound delivery routes to the relay's TestServer (so the fanned-out
-        // Update/Delete reaches the relay's inbox), signed as bob. B's fetcher resolves the relay's
-        // document from R and bob's document from B.
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            IdentityKeys = BuildIdentity(bSeeded.Key, bSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _relay!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                RelayHost, new LazyHandler(() => _relay!.CreateHandler()),
-                bSeeded.Key, bSeeded.ActorIri),
-        });
-
-        _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
-
-        // R hosts the relay; its fetcher is wired to B so R validates the fanned-out activity by
-        // fetching B's actor document (bob's key).
-        _relay = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = RelayHost,
-            Handle = Relay,
-            Persistence = _relayPersistence,
-            IdentityKeys = BuildIdentity(relaySeeded.Key, relaySeeded.ActorIri),
-            Fetcher = BuildFetcherFor(RelayHost, Relay, relaySeeded.Key, new LazyHandler(() => _b.CreateHandler())),
-        });
+        _fixture = fixture;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _relayPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _bHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _bobKey = null!;
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _relayActorIri = new Iri($"https://{RelayHost}/ap/v1/u/{Relay}");
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_bPersistence, _relayPersistence);
+
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _bHttp.Dispose();
-        _b.Dispose();
-        _relay.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores bob (on B/A) + relay (on R/B) with their existing keys and the bob→relay subscription
+    /// edge in B's relay store.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider bPersistence, InMemoryPersistenceProvider relayPersistence)
+    {
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        var relayIri = new Iri($"https://{RelayHost}/ap/v1/u/{Relay}");
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(relayPersistence, RelayHost, Relay, new Iri($"{relayIri.Value}#key-1"));
+        bPersistence.Relays.RecordRelayAsync(bobIri, relayIri).GetAwaiter().GetResult();
     }
 
     // --- An Update published to the author's outbox is fanned out to the subscribed relay ----------
@@ -361,7 +350,7 @@ public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
         return noteIri!.Value;
     }
 
-    private HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string host, string path)
+    private static HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string host, string path)
     {
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
@@ -427,16 +416,6 @@ public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
             handler);
     }
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(key);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        keyProvider.RegisterKey(actorIri, key.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-        return new IdentityKeys(keyStore, keyProvider, signer);
-    }
-
     private static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
@@ -455,7 +434,12 @@ public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    /// <summary>
+    /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents
+    /// based on the actor IRI's host (B's fetcher needs to reach B and R to validate bob's own
+    /// signature and resolve the relay's inbox).
+    /// </summary>
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -484,6 +468,10 @@ public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
         }
     }
 
+    /// <summary>
+    /// Captures a signed request (its body + headers) instead of forwarding it, so the signed body can be
+    /// replayed through a plain <see cref="HttpClient"/>.
+    /// </summary>
     private sealed class CaptureHandler : HttpMessageHandler
     {
         public CapturedRequest? Captured { get; private set; }
@@ -525,4 +513,96 @@ public sealed class UpdateDeleteRelayFanOutIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="UpdateDeleteRelayFanOutIntegrationTests"/> (A: B host, bob;
+/// B: relay host, relay). Seeds bob + relay with keys ONCE; A's identity + RoutingFetcher (B doc from A,
+/// R doc from B) + delivery to B; B's fetcher reaches A (validates the federated Update/Delete); the
+/// bob→relay subscription edge is recorded in A's relay store.
+/// </summary>
+public sealed class UpdateDeleteRelayFanOutSharedHost : SharedTwoHostFixture
+{
+    public UpdateDeleteRelayFanOutSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var bPersistence = new InMemoryPersistenceProvider();
+        var relayPersistence = new InMemoryPersistenceProvider();
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, UpdateDeleteRelayFanOutIntegrationTests.BHost, UpdateDeleteRelayFanOutIntegrationTests.Bob);
+        var relaySeeded = TestSeeder.SeedPersonWithKey(relayPersistence, UpdateDeleteRelayFanOutIntegrationTests.RelayHost, UpdateDeleteRelayFanOutIntegrationTests.Relay);
+
+        var serverARef = SharedHostFixture.ServerRefFor(bPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(relayPersistence);
+
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(bSeeded.Key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(bSeeded.ActorIri, bSeeded.Key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = UpdateDeleteRelayFanOutIntegrationTests.BHost,
+            Handle = UpdateDeleteRelayFanOutIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new UpdateDeleteRelayFanOutIntegrationTests.RoutingFetcher(
+                UpdateDeleteRelayFanOutIntegrationTests.BHost,
+                new LazyHandler(() => serverARef().CreateHandler()),
+                UpdateDeleteRelayFanOutIntegrationTests.RelayHost,
+                new LazyHandler(() => serverBRef().CreateHandler()),
+                bSeeded.Key, bSeeded.ActorIri),
+        };
+
+        var relayKeyStore = new InMemoryKeyStore();
+        relayKeyStore.PutKey(relaySeeded.Key);
+        var relayKeyProvider = new InMemoryKeyProvider(relayKeyStore);
+        relayKeyProvider.RegisterKey(relaySeeded.ActorIri, relaySeeded.Key.KeyId);
+        var relaySigner = new HttpSignatureSigner(relayKeyStore);
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = UpdateDeleteRelayFanOutIntegrationTests.RelayHost,
+            Handle = UpdateDeleteRelayFanOutIntegrationTests.Relay,
+            Persistence = relayPersistence,
+            IdentityKeys = new IdentityKeys(relayKeyStore, relayKeyProvider, relaySigner),
+            Fetcher = BuildFetcherForLazy(relaySeeded.Key, relaySeeded.ActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB);
+    }
+
+    /// <summary>
+    /// Builds a fetcher whose client (signed as the relay) routes to the (deferred) B's
+    /// <c>TestServer</c> — i.e. the relay's fetcher reaches B's actor documents (lazily).
+    /// </summary>
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the update/delete relay fan-out shared two-host fixture.
+/// </summary>
+[CollectionDefinition("UpdateDeleteRelayFanOut")]
+public sealed class UpdateDeleteRelayFanOutCollection : ICollectionFixture<UpdateDeleteRelayFanOutSharedHost>
+{
 }
