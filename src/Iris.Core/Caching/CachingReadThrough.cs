@@ -47,6 +47,18 @@ public sealed class CachingReadThrough<TValue>
     public bool Invalidate(Iri key) => _cache.Invalidate(key);
 
     /// <summary>
+    /// Removes all entries from the underlying cache (test isolation / teardown).
+    /// Only effective when the underlying cache is a <see cref="MemoryCache{TValue}"/>.
+    /// </summary>
+    public void Clear()
+    {
+        if (_cache is MemoryCache<TValue> memoryCache)
+        {
+            memoryCache.Clear();
+        }
+    }
+
+    /// <summary>
     /// Reads <paramref name="key"/> from the cache, fetching with <paramref name="factory"/> on a miss
     /// (or when <paramref name="bypassCache"/> is set) and storing the result when non-null.
     /// </summary>

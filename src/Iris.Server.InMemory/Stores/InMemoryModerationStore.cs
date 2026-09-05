@@ -24,6 +24,17 @@ public sealed class InMemoryModerationStore : IModerationStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _flags = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _mutes = new();
 
+    /// <summary>
+    /// Removes all moderation edges (blocks, flags, mutes) and reverse indices (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _blocks.Clear();
+        _blockers.Clear();
+        _flags.Clear();
+        _mutes.Clear();
+    }
+
     /// <inheritdoc/>
     public Task RecordBlockAsync(Iri blockerIri, Iri blockedIri, CancellationToken ct = default)
     {

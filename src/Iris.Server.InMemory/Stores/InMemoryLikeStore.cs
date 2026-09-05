@@ -19,6 +19,15 @@ public sealed class InMemoryLikeStore : ILikeStore
     // liked object → set of liker IRIs (the object's `likes` reverse index, decision 056 (d)).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _likedBy = new();
 
+    /// <summary>
+    /// Removes all like edges and reverse indices (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _liked.Clear();
+        _likedBy.Clear();
+    }
+
     /// <inheritdoc/>
     public Task RecordLikeAsync(Iri likerIri, Iri likedObjectIri, CancellationToken ct = default)
     {

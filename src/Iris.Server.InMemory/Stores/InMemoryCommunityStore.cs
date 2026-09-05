@@ -22,6 +22,22 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _mutes = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _joinRequests = new();
 
+    /// <summary>
+    /// Removes all communities, members, follows, followers, moderation edges, and join requests
+    /// (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _communities.Clear();
+        _members.Clear();
+        _follows.Clear();
+        _followers.Clear();
+        _blocks.Clear();
+        _flags.Clear();
+        _mutes.Clear();
+        _joinRequests.Clear();
+    }
+
     /// <inheritdoc/>
     public Task<bool> TryGetCommunityAsync(Iri communityIri, out Group? community, CancellationToken ct = default)
     {

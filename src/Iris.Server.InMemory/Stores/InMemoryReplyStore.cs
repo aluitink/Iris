@@ -14,6 +14,11 @@ public sealed class InMemoryReplyStore : IReplyStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _replies = new();
 
+    /// <summary>
+    /// Removes all reply (thread) edges (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _replies.Clear();
+
     /// <inheritdoc/>
     public Task RecordReplyAsync(Iri parentIri, Iri childIri, CancellationToken ct = default)
     {

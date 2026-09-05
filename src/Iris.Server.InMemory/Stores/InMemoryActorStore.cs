@@ -14,6 +14,11 @@ public sealed class InMemoryActorStore : IActorStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Actor> _actors = new();
 
+    /// <summary>
+    /// Removes all actors (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _actors.Clear();
+
     /// <inheritdoc/>
     public Task<bool> TryGetActorAsync(Iri actorIri, out Actor? actor, CancellationToken ct = default)
     {

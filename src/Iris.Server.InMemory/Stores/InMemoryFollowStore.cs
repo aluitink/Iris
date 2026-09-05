@@ -15,6 +15,15 @@ public sealed class InMemoryFollowStore : IFollowStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _followers = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _following = new();
 
+    /// <summary>
+    /// Removes all follow edges and reverse indices (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _followers.Clear();
+        _following.Clear();
+    }
+
     /// <inheritdoc/>
     public Task RecordFollowAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)
     {

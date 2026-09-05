@@ -16,6 +16,11 @@ public sealed class InMemoryRelayStore : IRelayStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _relays = new();
 
+    /// <summary>
+    /// Removes all relay subscriptions (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _relays.Clear();
+
     /// <inheritdoc/>
     public Task RecordRelayAsync(Iri actorIri, Iri relayIri, CancellationToken ct = default)
     {

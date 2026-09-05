@@ -20,6 +20,15 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
     // announced object → set of announcer IRIs (the object's `shares` reverse index, decision 056 (d)).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _announcedBy = new();
 
+    /// <summary>
+    /// Removes all announce edges and reverse indices (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _announced.Clear();
+        _announcedBy.Clear();
+    }
+
     /// <inheritdoc/>
     public Task RecordAnnounceAsync(Iri announcerIri, Iri announcedObjectIri, CancellationToken ct = default)
     {

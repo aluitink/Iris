@@ -5,11 +5,8 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -29,30 +26,39 @@ namespace Iris.Server.Tests;
 /// policy). The happy-path inbox delivery (a signed activity stored + dispatched) is exercised by the
 /// federation tests; here we assert the endpoint's auth policy and 404.
 /// </remarks>
-public sealed class CommunityEndpointIntegrationTests : IDisposable
+[Collection("CommunityEndpoint")]
+public sealed class CommunityEndpointIntegrationTests : IAsyncLifetime
 {
     private const string AHost = "a.domain.local";
     private const string Community = "iris";
     private const string Alice = "alice";
     private const string Bob = "bob";
 
-    private readonly TestServer _server;
+    private readonly CommunityEndpointSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider Persistence;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunityEndpointIntegrationTests()
+    public CommunityEndpointIntegrationTests(CommunityEndpointSharedHost fixture)
     {
-        Persistence = new InMemoryPersistenceProvider();
-        Seed(Persistence);
-        _server = StartServer(Persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        Persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(Persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- GET /c/{name} is the Group document ------------------------------------
@@ -253,7 +259,7 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
     /// Seeds the persistence provider: a community <c>iris</c> (a <c>Group</c> actor) with two local
     /// members (alice, bob), via the shared <see cref="TestSeeder"/>.
     /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
         var communityIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
         var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
@@ -261,15 +267,37 @@ public sealed class CommunityEndpointIntegrationTests : IDisposable
         TestSeeder.AddMember(persistence, communityIri, aliceIri);
         TestSeeder.AddMember(persistence, communityIri, bobIri);
     }
+}
 
-    /// <summary>
-    /// Starts a single-instance <c>TestServer</c> hosting the real community endpoints.
-    /// </summary>
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
+/// <summary>
+/// Shared-host fixture for <see cref="CommunityEndpointIntegrationTests"/> (single instance,
+/// a.domain.local). Built once per xunit collection; the test class resets + reseeds before
+/// each method for isolation.
+/// </summary>
+public sealed class CommunityEndpointSharedHost : SharedHostFixture
+{
+    public CommunityEndpointSharedHost()
+        : base(new ActivityPubHostOptions
         {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-        });
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = CreatePersistence(),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider CreatePersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        CommunityEndpointIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community-endpoint shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityEndpoint")]
+public sealed class CommunityEndpointCollection : ICollectionFixture<CommunityEndpointSharedHost>
+{
 }

@@ -8,6 +8,7 @@ using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -33,52 +34,43 @@ namespace Iris.Server.Tests;
 /// unauthenticated mute (401); an unknown community (404); and the block/flag collections (recorded via
 /// the store, as a federated Block/Flag would, and read back over the wire).
 /// </remarks>
-public sealed class CommunityModerationIntegrationTests : IDisposable
+[Collection("CommunityModeration")]
+public sealed class CommunityModerationIntegrationTests : IAsyncLifetime
 {
     private const string AHost = "a.domain.local";
     private const string Community = "iris";
     private const string Alice = "alice";
     private const string Bob = "bob";
 
-    private readonly TestServer _server;
+    private static readonly Iri IrisIri = new($"https://{AHost}/ap/v1/c/{Community}");
+    private static readonly Iri AliceIri = new($"https://{AHost}/ap/v1/u/{Alice}");
+    private static readonly Iri BobIri = new($"https://{AHost}/ap/v1/u/{Bob}");
+
+    private readonly CommunityModerationSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
-    private readonly Iri _irisIri;
-    private readonly Iri _aliceIri;
-    private readonly Iri _bobIri;
     private readonly string _base = $"https://{AHost}";
 
-    public CommunityModerationIntegrationTests()
+    public CommunityModerationIntegrationTests(CommunityModerationSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        var aliceIri = TestSeeder.SeedPerson(_persistence, AHost, Alice);
-        var bobIri = TestSeeder.SeedPerson(_persistence, AHost, Bob);
-        _aliceIri = aliceIri;
-        _bobIri = bobIri;
-        _irisIri = TestSeeder.SeedCommunity(_persistence, AHost, Community);
-        TestSeeder.AddMember(_persistence, _irisIri, aliceIri);
-        TestSeeder.AddMember(_persistence, _irisIri, bobIri);
-        TestSeeder.AddCreateActivity(_persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
-        TestSeeder.AddCreateActivity(_persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather");
-
-        // The community operator's credential: ("iris", "iris-password") for the community's IRI.
-        var credentialValidator = new BasicAuthCredentialValidator((iri, username, password) =>
-            ValueTask.FromResult(iri == _irisIri && username == Community && password == "iris-password"));
-
-        _server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _persistence,
-            CredentialValidator = credentialValidator,
-        });
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- The community document advertises the three moderation collections -------------
@@ -128,7 +120,7 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         var read = await _http.GetAsync($"{_base}/ap/v1/c/nobody/mutes");
         Assert.Equal(HttpStatusCode.NotFound, read.StatusCode);
 
-        var write = await MuteAsync("nobody", _bobIri, auth: $"{Community}:iris-password");
+        var write = await MuteAsync("nobody", BobIri, auth: $"{Community}:iris-password");
         Assert.Equal(HttpStatusCode.NotFound, write);
     }
 
@@ -137,13 +129,13 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_Authenticated_RecordsCommunityMuteEdge()
     {
-        var status = await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password");
+        var status = await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password");
         Assert.Equal(HttpStatusCode.NoContent, status);
 
         // The edge is recorded in the community's own moderation sets (not the person store).
-        var mutes = await _persistence.Communities.GetMutesAsync(_irisIri);
-        Assert.Contains(_bobIri, mutes);
-        Assert.DoesNotContain(_aliceIri, mutes);
+        var mutes = await _persistence.Communities.GetMutesAsync(IrisIri);
+        Assert.Contains(BobIri, mutes);
+        Assert.DoesNotContain(AliceIri, mutes);
     }
 
     // --- The community's /mutes collection serves the recorded edge ---------------------
@@ -151,7 +143,7 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_AppearsInCommunityMutesCollection()
     {
-        await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password");
+        await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password");
 
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/mutes");
         response.EnsureSuccessStatusCode();
@@ -161,7 +153,7 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
-        Assert.Equal(_bobIri.Value, items[0]);
+        Assert.Equal(BobIri.Value, items[0]);
     }
 
     // --- A community mute excludes the member's content from the community feed ---------
@@ -170,20 +162,20 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     public async Task Mute_ExcludesMemberContentFromCommunityFeed_WithoutSeveringMembership()
     {
         // Before the mute: bob's post is in the community feed (first read of the page — a cache miss).
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.Contains($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
 
         // Mute bob (204): the edge is recorded, the membership is intact, but bob's content is excluded.
         // The post-mutation feed read uses ?refresh=true to bypass the collection-page cache (19.5.5) and
         // observe the fresh (post-mute) feed.
-        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password"));
-        Assert.Contains(_bobIri, await _persistence.Communities.GetMutesAsync(_irisIri));
-        Assert.True(await _persistence.Communities.IsMemberAsync(_irisIri, _bobIri));
-        Assert.DoesNotContain($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
+        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password"));
+        Assert.Contains(BobIri, await _persistence.Communities.GetMutesAsync(IrisIri));
+        Assert.True(await _persistence.Communities.IsMemberAsync(IrisIri, BobIri));
+        Assert.DoesNotContain($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
 
         // Un-mute bob (?unmute=true, 204): the edge is removed and bob's content returns.
-        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password", unmute: true));
-        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetMutesAsync(_irisIri));
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
+        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password", unmute: true));
+        Assert.DoesNotContain(BobIri, await _persistence.Communities.GetMutesAsync(IrisIri));
+        Assert.Contains($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
     }
 
     // --- A community block excludes the member's content (hard exclusion) ---------------
@@ -194,17 +186,17 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         // A block is recorded in the community's blocks set (as a federated Block of a local member would
         // be). The blocked member's content is excluded from the community feed (the post-mutation read
         // uses ?refresh=true to bypass the collection-page cache, 19.5.5).
-        await _persistence.Communities.AddBlockAsync(_irisIri, _aliceIri);
+        await _persistence.Communities.AddBlockAsync(IrisIri, AliceIri);
 
-        var blocks = await _persistence.Communities.GetBlocksAsync(_irisIri);
-        Assert.Contains(_aliceIri, blocks);
-        Assert.DoesNotContain($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
+        var blocks = await _persistence.Communities.GetBlocksAsync(IrisIri);
+        Assert.Contains(AliceIri, blocks);
+        Assert.DoesNotContain($"{AliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
         // bob's content is unaffected (the block is scoped to alice).
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
+        Assert.Contains($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
 
         // Un-blocking removes the edge and restores alice's content.
-        await _persistence.Communities.RemoveBlockAsync(_irisIri, _aliceIri);
-        Assert.Contains($"{_aliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
+        await _persistence.Communities.RemoveBlockAsync(IrisIri, AliceIri);
+        Assert.Contains($"{AliceIri.Value}/activities/create-1", await FeedActivityIrisAsync(refresh: true));
     }
 
     // --- A community flag does NOT exclude content (a report, not a filter) -------------
@@ -214,10 +206,10 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     {
         // A flag is a moderation report: it is recorded + surfaced in the flags collection, but the
         // flagged member's content is NOT excluded from the community feed (only blocks and mutes filter).
-        await _persistence.Communities.AddFlagAsync(_irisIri, _bobIri);
+        await _persistence.Communities.AddFlagAsync(IrisIri, BobIri);
 
-        var flags = await _persistence.Communities.GetFlagsAsync(_irisIri);
-        Assert.Contains(_bobIri, flags);
+        var flags = await _persistence.Communities.GetFlagsAsync(IrisIri);
+        Assert.Contains(BobIri, flags);
 
         // The flags collection serves the edge over the wire.
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/flags");
@@ -225,10 +217,10 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
-        Assert.Equal(_bobIri.Value, items[0]);
+        Assert.Equal(BobIri.Value, items[0]);
 
         // bob's content is still in the feed (a flag is not a content exclusion).
-        Assert.Contains($"{_bobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
+        Assert.Contains($"{BobIri.Value}/activities/create-1", await FeedActivityIrisAsync());
     }
 
     // --- An unauthenticated community mute is rejected (401) ----------------------------
@@ -236,9 +228,9 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     [Fact]
     public async Task Mute_Unauthenticated_IsRejected()
     {
-        var status = await MuteAsync(Community, _bobIri, auth: null);
+        var status = await MuteAsync(Community, BobIri, auth: null);
         Assert.Equal(HttpStatusCode.Unauthorized, status);
-        Assert.DoesNotContain(_bobIri, await _persistence.Communities.GetMutesAsync(_irisIri));
+        Assert.DoesNotContain(BobIri, await _persistence.Communities.GetMutesAsync(IrisIri));
     }
 
     // --- An un-mute of a non-existent mute is a no-op (204) -----------------------------
@@ -246,9 +238,9 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     [Fact]
     public async Task Unmute_NonExistent_IsNoOp()
     {
-        var status = await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password", unmute: true);
+        var status = await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password", unmute: true);
         Assert.Equal(HttpStatusCode.NoContent, status);
-        Assert.Empty(await _persistence.Communities.GetMutesAsync(_irisIri));
+        Assert.Empty(await _persistence.Communities.GetMutesAsync(IrisIri));
     }
 
     // --- Community moderation is scoped to the community (not the person store) ---------
@@ -258,12 +250,12 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     {
         // A community-scoped mute/block/flag must live in the community's own sets, NOT the person
         // moderation store (which is keyed by an actor IRI). The person store must remain empty.
-        await _persistence.Communities.AddMuteAsync(_irisIri, _bobIri);
-        await _persistence.Communities.AddBlockAsync(_irisIri, _aliceIri);
+        await _persistence.Communities.AddMuteAsync(IrisIri, BobIri);
+        await _persistence.Communities.AddBlockAsync(IrisIri, AliceIri);
 
-        Assert.DoesNotContain(_bobIri, await _persistence.Moderation.GetMutesAsync(_aliceIri));
-        Assert.DoesNotContain(_aliceIri, await _persistence.Moderation.GetBlocksAsync(_aliceIri));
-        Assert.DoesNotContain(_aliceIri, await _persistence.Moderation.GetBlocksAsync(_irisIri));
+        Assert.DoesNotContain(BobIri, await _persistence.Moderation.GetMutesAsync(AliceIri));
+        Assert.DoesNotContain(AliceIri, await _persistence.Moderation.GetBlocksAsync(AliceIri));
+        Assert.DoesNotContain(AliceIri, await _persistence.Moderation.GetBlocksAsync(IrisIri));
     }
 
     // --- The community feed is cached and ?refresh=true bypasses it (19.5.5) -------------
@@ -278,7 +270,7 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         // the cache (re-rendering from the store). The cache also advertises Cache-Control on every
         // response: a plain read is cacheable (max-age=60, stale-while-revalidate=300) and a refresh
         // read is not (no-cache).
-        var bobPost = $"{_bobIri.Value}/activities/create-1";
+        var bobPost = $"{BobIri.Value}/activities/create-1";
 
         // A plain (uncached) first read of the feed is a cache miss: it renders from the store, caches
         // page 1, and advertises the cacheable Cache-Control.
@@ -293,7 +285,7 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
         Assert.Equal("max-age=60, stale-while-revalidate=300", CacheControlOf(second));
 
         // Now mute bob (the store changes), but the cache does NOT know about it.
-        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, _bobIri, auth: $"{Community}:iris-password"));
+        Assert.Equal(HttpStatusCode.NoContent, await MuteAsync(Community, BobIri, auth: $"{Community}:iris-password"));
 
         // A plain third read is still a cache hit within the TTL: it serves the STALE page-1 that was
         // cached before the mute (bob's post is still there), because a plain read never re-renders.
@@ -365,4 +357,57 @@ public sealed class CommunityModerationIntegrationTests : IDisposable
     /// </summary>
     private static string CacheControlOf(HttpResponseMessage response)
         => string.Join(", ", response.Headers.GetValues("Cache-Control") ?? []);
+
+    /// <summary>
+    /// Seeds the persistence provider: a community <c>iris</c> with two local members (alice, bob),
+    /// each with a post, via the shared <see cref="TestSeeder"/>.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
+    {
+        var aliceIri = TestSeeder.SeedPerson(persistence, AHost, Alice);
+        var bobIri = TestSeeder.SeedPerson(persistence, AHost, Bob);
+        var irisIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
+        TestSeeder.AddMember(persistence, irisIri, aliceIri);
+        TestSeeder.AddMember(persistence, irisIri, bobIri);
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather");
+    }
+}
+
+/// <summary>
+/// Shared-host fixture for <see cref="CommunityModerationIntegrationTests"/> (single instance,
+/// a.domain.local, with the community operator's Basic-auth credential). Built once per xunit
+/// collection; the test class resets + reseeds before each method for isolation.
+/// </summary>
+public sealed class CommunityModerationSharedHost : SharedHostFixture
+{
+    public CommunityModerationSharedHost()
+        : base(new ActivityPubHostOptions
+        {
+            Host = "a.domain.local",
+            Handle = "alice",
+            Persistence = CreatePersistence(),
+            CredentialValidator = new BasicAuthCredentialValidator(
+                (iri, username, password) => ValueTask.FromResult(
+                    iri == new Iri("https://a.domain.local/ap/v1/c/iris")
+                    && username == "iris"
+                    && password == "iris-password")),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider CreatePersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        CommunityModerationIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the community-moderation shared-host fixture.
+/// </summary>
+[CollectionDefinition("CommunityModeration")]
+public sealed class CommunityModerationCollection : ICollectionFixture<CommunityModerationSharedHost>
+{
 }

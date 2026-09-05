@@ -60,6 +60,11 @@ public sealed class LocalCollectionPageCache
     public bool Invalidate(Iri key) => _cache.Invalidate(key);
 
     /// <summary>
+    /// Removes all entries from the cache (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _cache.Clear();
+
+    /// <summary>
     /// Gets the cached rendered collection document for <paramref name="key"/>, rendering with
     /// <paramref name="factory"/> on a miss (or when <paramref name="bypassCache"/> is set).
     /// </summary>

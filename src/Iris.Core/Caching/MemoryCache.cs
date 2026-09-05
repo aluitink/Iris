@@ -114,6 +114,19 @@ public sealed class MemoryCache<TValue> : ICache<TValue>
         }
     }
 
+    /// <summary>
+    /// Removes all entries from the cache (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _list.Clear();
+            _lru.Clear();
+            Count = 0;
+        }
+    }
+
     private void RemoveNode(LinkedListNode<(Iri Key, CacheEntry<TValue> Entry)> node)
     {
         _list.Remove(node.Value.Key);

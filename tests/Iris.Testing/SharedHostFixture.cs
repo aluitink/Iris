@@ -1,4 +1,6 @@
+using Iris.Server.InMemory;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Iris.Testing;
 
@@ -12,14 +14,15 @@ namespace Iris.Testing;
 /// </summary>
 /// <remarks>
 /// The host's persistence store is seeded once (via <see cref="ActivityPubHostOptions.Persistence"/>) and
-/// then shared, so the fixture is only correct for
-/// test classes whose methods are read-only or idempotent (they do not assert on absolute collection
-/// counts that a prior method's writes would pollute). A mutating class must reset its persistence per
-/// method (or build its own host) rather than share this one.
+/// then shared. A read-only/idempotent class can share the host as-is. A mutating class (one whose
+/// methods write to persistence and assert on absolute counts) should call <see cref="Reset"/> before
+/// each method (via <c>IAsyncLifetime.InitializeAsync</c>) to clear the persistence + response caches,
+/// then re-seed, so each method starts from a clean, freshly-seeded state.
 /// </remarks>
 public class SharedHostFixture : IDisposable
 {
     private readonly TestServer _server;
+    private readonly LocalCollectionPageCache? _collectionCache;
 
     /// <summary>The shared in-process host, built once for the collection.</summary>
     public TestServer Server { get; }
@@ -35,6 +38,23 @@ public class SharedHostFixture : IDisposable
         _server = ActivityPubHostFactory.Create(options);
         Server = _server;
         Persistence = options.Persistence;
+        _collectionCache = _server.Services.GetService<LocalCollectionPageCache>();
+    }
+
+    /// <summary>
+    /// Clears the host's persisted data (all in-memory stores) and its local collection-page response
+    /// cache, so a mutating test class can start each method from a clean slate. The key store is left
+    /// intact (the host's signing infrastructure depends on it). After calling this, re-seed via
+    /// <see cref="IPersistenceProvider"/> to restore the test's baseline state.
+    /// </summary>
+    public void Reset()
+    {
+        if (Persistence is InMemoryPersistenceProvider inMemory)
+        {
+            inMemory.Reset();
+        }
+
+        _collectionCache?.Clear();
     }
 
     /// <inheritdoc/>

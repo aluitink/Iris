@@ -32,6 +32,16 @@ public sealed class InMemoryMediaStore : IMediaStore
     // same bytes from any source URL are stored once). Never exposed to the client.
     private readonly ConcurrentDictionary<string, string> _hashToMediaId = new();
 
+    /// <summary>
+    /// Removes all media, source-URL index, and content-hash dedupe index (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _media.Clear();
+        _urlToMediaId.Clear();
+        _hashToMediaId.Clear();
+    }
+
     /// <inheritdoc/>
     public Task<Iri> PutAsync(byte[] content, string contentType, string fileName, Iri baseUrl, CancellationToken ct = default)
     {

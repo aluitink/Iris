@@ -14,6 +14,11 @@ public sealed class InMemoryCreateIndex : ICreateIndex
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Iri> _creates = new();
 
+    /// <summary>
+    /// Removes all object → Create index entries (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _creates.Clear();
+
     /// <inheritdoc/>
     public Task RecordAsync(Iri objectIri, Iri createIri, CancellationToken ct = default)
     {

@@ -14,6 +14,11 @@ public sealed class InMemoryObjectStore : IObjectStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, IObject> _objects = new();
 
+    /// <summary>
+    /// Removes all objects (test isolation / teardown).
+    /// </summary>
+    public void Clear() => _objects.Clear();
+
     /// <inheritdoc/>
     public Task<bool> TryGetObjectAsync(Iri objectIri, out IObject? obj, CancellationToken ct = default)
     {

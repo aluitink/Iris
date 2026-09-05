@@ -5,10 +5,8 @@ using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -21,7 +19,8 @@ namespace Iris.Server.Tests;
 /// IRI is the path relative to the route prefix (e.g. the Note at
 /// <c>https://{host}/ap/v1/u/{handle}/notes/n1</c> is served at <c>GET /ap/v1/o/u/{handle}/notes/n1</c>).
 /// </summary>
-public sealed class ObjectEndpointIntegrationTests : IDisposable
+[Collection("ObjectEndpoint")]
+public sealed class ObjectEndpointIntegrationTests : IAsyncLifetime
 {
     private const string Host = "obj.domain.local";
     private const string Handle = "alice";
@@ -29,24 +28,32 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     private static readonly Iri NoteIri = new($"{ActorIri}/notes/n1");
     private static readonly Iri OtherIri = new($"{ActorIri}/notes/n2");
 
-    private readonly TestServer _server;
+    private readonly ObjectEndpointSharedHost _fixture;
     private readonly HttpClient _http;
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly string _base = $"https://{Host}";
     private readonly Uri _actor = new(ActorIri.Value);
 
-    public ObjectEndpointIntegrationTests()
+    public ObjectEndpointIntegrationTests(ObjectEndpointSharedHost fixture)
     {
-        _persistence = new InMemoryPersistenceProvider();
-        Seed(_persistence);
-        _server = StartServer(_persistence);
-        _http = new HttpClient(_server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
+        _fixture = fixture;
+        _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
+        _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false) { BaseAddress = new Uri(_base) };
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_persistence);
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _http.Dispose();
-        _server.Dispose();
+        return Task.CompletedTask;
     }
 
     // --- A stored object is served by its IRI -------------------------------------------
@@ -219,7 +226,7 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
     /// Seeds the instance: a local actor (alice) and two content objects (n1, n2) as a
     /// <see cref="Create"/> would have stored them (in the object store).
     /// </summary>
-    private static void Seed(InMemoryPersistenceProvider persistence)
+    internal static void SeedForFixture(InMemoryPersistenceProvider persistence)
     {
         var actor = new Person
         {
@@ -241,14 +248,6 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
             AttributedTo = [new Link { Href = new Uri(ActorIri.Value) }],
         }).GetAwaiter().GetResult();
     }
-
-    private static TestServer StartServer(InMemoryPersistenceProvider persistence)
-        => ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = Host,
-            Handle = Handle,
-            Persistence = persistence,
-        });
 
     /// <summary>
     /// The object-document path for an object IRI: the IRI's absolute path (the object IRI IS the
@@ -419,5 +418,37 @@ public sealed class ObjectEndpointIntegrationTests : IDisposable
             new LazyHandler(() => selfServer().CreateHandler()));
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
+}
 
+/// <summary>
+/// Shared-host fixture for <see cref="ObjectEndpointIntegrationTests"/> (single instance,
+/// obj.domain.local). Built once per xunit collection; the test class resets + reseeds before
+/// each method for isolation.
+/// </summary>
+public sealed class ObjectEndpointSharedHost : SharedHostFixture
+{
+    public ObjectEndpointSharedHost()
+        : base(new ActivityPubHostOptions
+        {
+            Host = "obj.domain.local",
+            Handle = "alice",
+            Persistence = CreatePersistence(),
+        })
+    {
+    }
+
+    private static InMemoryPersistenceProvider CreatePersistence()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        ObjectEndpointIntegrationTests.SeedForFixture(persistence);
+        return persistence;
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the object-endpoint shared-host fixture.
+/// </summary>
+[CollectionDefinition("ObjectEndpoint")]
+public sealed class ObjectEndpointCollection : ICollectionFixture<ObjectEndpointSharedHost>
+{
 }

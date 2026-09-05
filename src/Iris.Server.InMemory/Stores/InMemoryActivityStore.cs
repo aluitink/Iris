@@ -17,6 +17,16 @@ public sealed class InMemoryActivityStore : IActivityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, List<IObjectOrLink>> _outboxes = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, List<IObjectOrLink>> _inboxes = new();
 
+    /// <summary>
+    /// Removes all activities, outboxes, and inboxes (test isolation / teardown).
+    /// </summary>
+    public void Clear()
+    {
+        _activities.Clear();
+        _outboxes.Clear();
+        _inboxes.Clear();
+    }
+
     /// <inheritdoc/>
     public Task<bool> TryGetActivityAsync(Iri activityIri, out IObject? activity, CancellationToken ct = default)
     {

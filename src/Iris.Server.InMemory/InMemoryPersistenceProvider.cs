@@ -132,4 +132,30 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// The concrete in-memory activity store (for seeding/tests).
     /// </summary>
     public InMemoryActivityStore ActivityStore => _activities;
+
+    /// <summary>
+    /// Clears all persisted data (actors, activities, follows, likes, announces, replies,
+    /// moderation, relays, objects, creates, communities, media) while leaving the key store
+    /// intact, so the host's signing infrastructure keeps working.
+    /// Used by tests that share a single host across methods (per-method reset) and by
+    /// teardown paths.
+    /// </summary>
+    public void Reset()
+    {
+        _actors.Clear();
+        _activities.Clear();
+        _follows.Clear();
+        _likes.Clear();
+        _announces.Clear();
+        _replies.Clear();
+        _moderation.Clear();
+        _relays.Clear();
+        _objects.Clear();
+        _creates.Clear();
+        _communities.Clear();
+        if (_media is InMemoryMediaStore concreteMedia)
+        {
+            concreteMedia.Clear();
+        }
+    }
 }
