@@ -1058,7 +1058,18 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        if (!Iri.TryParse(targetValue, out var target))
+        // The catch-all route value {**target} captures only the PATH of the target IRI — the route
+        // matches the path, and the target's query string (e.g. ?page=2 for a paginated collection) is
+        // carried in the proxy request's OWN query string (context.Request.QueryString), which the route
+        // value excludes. Reconstruct the full target IRI by appending it, or the proxy would always
+        // relay page 1 and a paginated read would loop on the same next link forever (the client's
+        // GetCollectionAsync walks next indefinitely). The fragment is never sent by a client (browsers
+        // strip it), so only the query string needs re-attaching.
+        var fullTarget = context.Request.QueryString.HasValue
+            ? targetValue + context.Request.QueryString.Value
+            : targetValue;
+
+        if (!Iri.TryParse(fullTarget, out var target))
         {
             return Results.BadRequest();
         }

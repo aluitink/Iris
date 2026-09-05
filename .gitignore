@@ -65,3 +65,4 @@ OPENCODE.md
 .tmp-bunit-probe/
 .loop/
 probe_*.txt
+.ui-review/

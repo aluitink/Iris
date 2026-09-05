@@ -42,6 +42,7 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
     private readonly TestServer _a;
     private readonly TestServer _b;
+    private readonly InMemoryPersistenceProvider _bPersistence;
 
     private readonly Iri AliceActorIri;
     private readonly Iri BobActorIri;
@@ -50,6 +51,7 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     {
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
+        _bPersistence = bPersistence;
 
         var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
         var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, BHost, Bob);
@@ -238,6 +240,63 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
             + await response.Content.ReadAsStringAsync());
     }
 
+    // --- The proxied GET forwards the target's query string (29.1 regression) -----------------
+    //
+    // The catch-all route value {**target} captures only the PATH of the target IRI; the target's
+    // query string (?page=2 on a paginated collection) is carried in the proxy request's OWN query
+    // string. Before the 29.1 fix the proxy dropped it and always relayed page 1, so a client walking
+    // `next` links looped on the same page forever (the Community feed's 1080+ duplicated items). This
+    // test seeds 21 activities on bob's outbox (default page size 20 → 2 pages), proxies a GET to
+    // page 2, and asserts the relaid document is page 2 (startIndex 21, holding the oldest activity
+    // only) rather than page 1 (an OrderedCollection, the newest 20). A proxy that drops the query
+    // string would relay page 1 and this assertion fails.
+
+    [Fact]
+    public async Task Proxy_PaginatedGet_ForwardsTargetQueryString_RelaysRequestedPage()
+    {
+        // Seed 21 distinct activities on bob's outbox (insertion order 1..21). The outbox serves
+        // newest-first, so page 1 (default limit 20) = the 20 most recent (items 2..21) and page 2 =
+        // the single oldest (item 1). The oldest activity (id .../creates/001) therefore appears ONLY
+        // on page 2 — a clean marker that "page 2 was relayed, not page 1".
+        for (var i = 1; i <= 21; i++)
+        {
+            TestSeeder.AddCreateActivity(
+                _bPersistence, BobActorIri, $"https://{BHost}/ap/v1/u/bob/creates/{i:000}", $"note {i}");
+        }
+
+        // Proxy a GET to page 2 of bob's outbox. The target's query string (?page=2) rides on the
+        // proxy request's own query string; the route value carries only the outbox path.
+        var response = await ProxyGetAsync(
+            _a,
+            new Iri($"{BobActorIri}/outbox"),
+            query: "?page=2",
+            username: Alice,
+            password: Password);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+
+        // totalItems is 21 (the full collection) regardless of the page — a sanity check that the
+        // relaid document is bob's outbox and not an error/empty document.
+        Assert.Equal(21, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        // The relaid page is page 2: an OrderedCollectionPage with startIndex 21. A proxy that dropped
+        // the query string would relay page 1 (an OrderedCollection, no startIndex) and this fails.
+        Assert.Equal("OrderedCollectionPage", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(21, doc.RootElement.GetProperty("startIndex").GetInt32());
+
+        // Page 2 holds exactly the single oldest item (the unique 21st activity id) — not page 1's
+        // newest 20 items. This is the assertion that distinguishes "page 2 was relayed" from "page 1
+        // was relayed again".
+        var items = doc.RootElement.GetProperty("items");
+        Assert.Equal(1, items.GetArrayLength());
+        var firstItem = items[0];
+        Assert.Equal(
+            "https://" + BHost + "/ap/v1/u/bob/creates/001",
+            firstItem.GetProperty("id").GetString());
+    }
+
     // --- Helpers ----------------------------------------------------------------
 
     private BasicAuthCredentialValidator PermissiveAliceValidator()
@@ -250,12 +309,16 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         });
 
     private static async Task<HttpResponseMessage> ProxyGetAsync(
-        TestServer a, Iri target, string? username, string? password)
+        TestServer a, Iri target, string? username, string? password, string? query = null)
     {
         // Use CreateClient() (the pattern the other integration tests use). A relative path resolves
         // against the client's base address; the TestServer routes on the original (configured) host.
+        // An optional query string (e.g. "?page=2") is appended to the target IRI: the proxy route
+        // value {**target} captures only the path, so the query rides on the proxy request's own query
+        // string — exactly the shape the 29.1 regression test drives.
         var http = a.CreateClient();
-        var request = new HttpRequestMessage(HttpMethod.Post, $"/ap/v1/proxy/{target.Value}");
+        var targetWithQuery = query is not null ? target.Value + query : target.Value;
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/ap/v1/proxy/{targetWithQuery}");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
 
         if (username is not null && password is not null)
