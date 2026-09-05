@@ -51,6 +51,9 @@ public sealed class IrisSettingsExtensionIntegrationTests : IDisposable
                 s.AddActivityPubServer(opts =>
                 {
                     opts.BaseUri = new Iri($"https://{Host}");
+                    // Pin the canonical default iris: namespace (this test asserts against it); Phase 31.8
+                    // would otherwise derive it from BaseUri (https://a.domain.local/ns#).
+                    opts.NamespaceIri = new Iri(ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri);
                     opts.InstanceName = "test-iris";
                 });
                 s.AddInMemoryPersistence();

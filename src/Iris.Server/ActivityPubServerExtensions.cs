@@ -683,6 +683,17 @@ public static class ActivityPubServerExtensions
         // NodeInfo discovery root: GET /ap/v1/.well-known/nodeinfo (links to /nodeinfo/2.0).
         group.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
 
+        // iris: extension namespace document: GET /ns (Phase 31.8). The deployment's iris: extension
+        // namespace base is {BaseUri}/ns# (declared as @vocab in every public actor/community document);
+        // this endpoint hosts the JSON-LD context at the namespace base ({BaseUri}/ns) so the advertised
+        // namespace is resolvable rather than a dangling IRI. Mapped on the ROOT endpoint (NOT the
+        // versioned group) because the namespace base is {BaseUri}/ns# — at the host root, not under the
+        // /ap/v1 versioned prefix. The # is the JSON-LD fragment separator inside the base and is never
+        // sent over HTTP, so the document is served at the literal {BaseUri}/ns. Public and long-cacheable
+        // (the vocabulary is immutable per deployment base URI).
+        endpoints.MapGet($"/{ActivityPubServerConstants.NamespaceRouteSegment}", NamespaceDocumentHandler)
+            .WithName("namespace-document-endpoint");
+
         // Health: GET /ap/v1/health — the observability endpoint (Phase 17.1). Runs every registered
         // IHealthCheck and reports the aggregate status. 200 when every check is healthy (or degraded),
         // 503 when any check is unhealthy. The body is a JSON object { "status": "...", "checks": { name:
@@ -3430,11 +3441,99 @@ public static class ActivityPubServerExtensions
     private const string ActivityStreamsContextIri = "https://www.w3.org/ns/activitystreams";
 
     /// <summary>
-    /// The deployment's <c>iris:</c> extension namespace base IRI (<see cref="ActivityPubServerOptions.NamespaceIri"/>,
-    /// or the canonical default when unset). Full extension keys are <c>base + localTerm</c>.
+    /// The deployment's <c>iris:</c> extension namespace base IRI. When <see cref="ActivityPubServerOptions.NamespaceIri"/>
+    /// is set it is used verbatim (an operator may pin a cross-instance or shared namespace). When it is unset, the
+    /// namespace is <em>derived from the instance's public (advertised) base URI</em> as
+    /// <c>{BaseUri}/ns#</c> (Phase 31.8) — so the namespace lives on the same host as the rest of the
+    /// instance's public IRIs, is unique per instance, and the namespace document is hosted at
+    /// <c>{BaseUri}/ns</c> (the <see cref="ActivityPubServerConstants.NamespaceRouteSegment"/> route). When the
+    /// base URI is also unset (a degenerate host that advertises no public IRIs), the canonical default
+    /// (<see cref="ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri"/>) applies. Full extension keys are
+    /// <c>base + localTerm</c>.
     /// </summary>
     private static string IrisExtensionNamespace(ActivityPubServerOptions options)
-        => options.NamespaceIri?.Value ?? ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
+    {
+        if (options.NamespaceIri is { } configured)
+        {
+            return configured.Value;
+        }
+
+        if (options.BaseUri is { } baseUri)
+        {
+            return $"{baseUri.Value.TrimEnd('/')}/{ActivityPubServerConstants.NamespaceRouteSegment}#";
+        }
+
+        return ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri;
+    }
+
+    /// <summary>
+    /// Builds the JSON-LD context document hosted at the deployment's <c>iris:</c> extension namespace base
+    /// (the <c>GET /ns</c> endpoint, Phase 31.8). This is the document a JSON-LD processor fetches when it
+    /// resolves the namespace base declared as <c>@vocab</c> in a public actor/community document: it
+    /// declares the core ActivityStreams context and lists the <c>iris:</c> extension terms (the
+    /// <see cref="Iris.Core.CollectionExtensionNames"/> collection endpoints and the
+    /// <see cref="Iris.Core.IrisExtensionTerms"/> extensions) as properties of the vocabulary. Hosting it at
+    /// the namespace base is what makes the advertised <c>iris:</c> namespace resolvable rather than a
+    /// dangling IRI (the namespace base is <c>{BaseUri}/ns#</c>, so the document is served at
+    /// <c>{BaseUri}/ns</c>).
+    /// </summary>
+    /// <param name="options">The deployment options (the namespace base is derived from them).</param>
+    private static string BuildNamespaceDocument(ActivityPubServerOptions options)
+    {
+        // The namespace base (e.g. https://a.domain.local/ns#) is the @vocab the documents declare; the
+        // term names in this context are its local part (feed, blocks, ...), each mapping to an IRI-valued
+        // property (the collection endpoints and IRI extensions carry IRIs) or a plain string (the search
+        // query). Declaring them here makes the advertised namespace resolvable.
+        var nsBase = IrisExtensionNamespace(options).TrimEnd('#');
+        var nsId = IrisExtensionNamespace(options);
+
+        var context = new Dictionary<string, object>
+        {
+            ["@vocab"] = ActivityStreamsContextIri,
+            [nsBase] = new Dictionary<string, object>
+            {
+                ["@id"] = nsId,
+                [CollectionExtensionNames.Feed] = "@id",
+                [CollectionExtensionNames.Blocks] = "@id",
+                [CollectionExtensionNames.Flags] = "@id",
+                [CollectionExtensionNames.Mutes] = "@id",
+                [CollectionExtensionNames.Search] = "@id",
+                [CollectionExtensionNames.Star] = "@id",
+                [IrisExtensionTerms.Capabilities] = "@id",
+                [IrisExtensionTerms.Settings] = "@id",
+                [IrisExtensionTerms.SearchQuery] = "string",
+            },
+        };
+
+        // The top-level key must be the literal "@context" (a C# anonymous-type member named @context would
+        // serialize as "context" — the @ escape is stripped — so a dictionary is used for the exact key).
+        var document = new Dictionary<string, object>
+        {
+            ["@context"] = context,
+        };
+        return System.Text.Json.JsonSerializer.Serialize(document);
+    }
+
+    /// <summary>
+    /// The <c>GET /ns</c> handler (Phase 31.8): serves the <c>iris:</c> extension namespace document — the
+    /// JSON-LD context declared as <c>@vocab</c> in every public actor/community document. The namespace
+    /// base is <c>{BaseUri}/ns#</c>, so the document is hosted at <c>{BaseUri}/ns</c> (the fragment is
+    /// dropped when served). It is long-cacheable (the vocabulary is immutable for the lifetime of a
+    /// deployment's base URI). No authentication: a remote JSON-LD processor fetching the context must
+    /// reach it without an ActivityPub signature.
+    /// </summary>
+    /// <param name="optionsAccessor">The deployment options (the namespace base is derived from them).</param>
+    /// <param name="context">The HTTP context (the long-cache header is set on its response).</param>
+    private static IResult NamespaceDocumentHandler(
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        HttpContext context)
+    {
+        var document = BuildNamespaceDocument(optionsAccessor.Value);
+        // The vocabulary is immutable per deployment base URI; let intermediates cache it for a day.
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            "max-age=86400, stale-while-revalidate=604800";
+        return Results.Text(document, "application/ld+json");
+    }
 
     /// <summary>
     /// Adds an IRI-valued extension property under the given full <c>iris:</c> key to a document's

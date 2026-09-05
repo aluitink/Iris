@@ -243,4 +243,12 @@ public static class ActivityPubServerConstants
     /// the versioned prefix, like every other endpoint (Resolved Decision #10).
     /// </summary>
     public const string HealthRouteSegment = "health";
+
+    /// <summary>
+    /// The route segment for the <c>iris:</c> extension namespace document (the <c>GET /ns</c> endpoint,
+    /// Phase 31.8). Mapped as <c>{NamespaceIri-without-#}</c> — i.e. the JSON-LD context the document
+    /// declares as <c>@vocab</c> is hosted at the namespace base, so it is resolvable. The namespace base
+    /// defaults to <c>{BaseUri}/ns#</c>, so the document is served at <c>{BaseUri}/ns</c>.
+    /// </summary>
+    public const string NamespaceRouteSegment = "ns";
 }

@@ -168,9 +168,11 @@ public sealed class SampleServerTests : IDisposable
         var ext = doc.ExtensionData;
         Assert.NotNull(ext);
         Assert.True(ext!.ContainsKey("members"), "community document must carry a members endpoint");
+        // Phase 31.8: the sample derives its iris: namespace from its advertised base URI ({base}/ns#),
+        // so the feed extension key is {base}/ns#feed (not the canonical iris.example default).
         Assert.True(
-            ext.ContainsKey(IrisDocumentExtensions.DefaultNamespaceIri + CollectionExtensionNames.Feed),
-            "community document must carry a feed endpoint (namespaced under iris:)");
+            ext.ContainsKey($"{BaseUri}/{Iris.Server.ActivityPubServerConstants.NamespaceRouteSegment}#{CollectionExtensionNames.Feed}"),
+            "community document must carry a feed endpoint (namespaced under the derived iris: namespace)");
     }
 
     [Fact]

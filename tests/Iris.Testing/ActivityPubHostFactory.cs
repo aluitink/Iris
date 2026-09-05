@@ -71,6 +71,16 @@ public sealed class ActivityPubHostOptions
     public Action<IServiceCollection>? ExtraServices { get; init; }
 
     /// <summary>
+    /// Whether the host pins the canonical out-of-the-box <c>iris:</c> extension namespace
+    /// (<see cref="Iris.Server.ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri"/>) so the many
+    /// integration tests that assert against a known namespace stay stable (Phase 31.8). Defaults to
+    /// <c>true</c>. Set to <c>false</c> to exercise the derived-from-base-URI namespace (the production
+    /// default when <c>NamespaceIri</c> is unset) — used by
+    /// <c>NamespaceDocumentIntegrationTests</c> in <c>Iris.Server.Tests</c>.
+    /// </summary>
+    public bool PinDefaultNamespace { get; init; } = true;
+
+    /// <summary>
     /// Whether to register the local actor's key (and any <see cref="ExtraLocalActors"/> /
     /// <see cref="CommunityKey"/>) with the host's <see cref="IKeyProvider"/> so the outbound
     /// <c>DeliveryWorker</c> can sign. Defaults to <c>true</c>. A test whose server performs no outbound
@@ -126,6 +136,15 @@ public static class ActivityPubHostFactory
                 s.AddActivityPubServer(opts =>
                 {
                     opts.BaseUri = new Iri($"https://{options.Host}");
+                    // Pin the canonical out-of-the-box extension namespace so the (many) integration tests that
+                    // assert against a known iris: namespace stay stable. Phase 31.8's derivation (namespace
+                    // derived from the base URI when NamespaceIri is unset) and the explicit-override path are
+                    // covered by NamespaceDocumentIntegrationTests in Iris.Server.Tests (PinDefaultNamespace =
+                    // false); the SampleServer exercises the derived path end-to-end.
+                    if (options.PinDefaultNamespace)
+                    {
+                        opts.NamespaceIri = new Iri(ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri);
+                    }
                     opts.InstanceName = $"iris-{options.Host}";
                     opts.InstanceActorId = new Iri($"https://{options.Host}/ap/v1/u/{options.Handle}");
                     if (options.ProxySettings is not null)

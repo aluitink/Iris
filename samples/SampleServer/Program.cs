@@ -66,8 +66,41 @@ public static partial class SampleServer
 
     /// <summary>
     /// The <c>iris:</c> namespace base IRI advertised on every seeded actor and community document.
+    /// Phase 31.8: derived from the instance's advertised public base URI as <c>{base}/ns#</c> (the
+    /// namespace lives on the same host as the rest of the instance's public IRIs and is hosted, as a
+    /// resolvable JSON-LD context, at <c>{base}/ns</c>). The host's server derives the same base when
+    /// <c>NamespaceIri</c> is left unset, so this property documents the sample's choice and keeps the
+    /// seeded-document assertions (which build the full extension key) in sync with the wire.
     /// </summary>
-    public static readonly Iri NamespaceIri = new("https://iris.example/ns#");
+    public static Iri NamespaceIri => new($"{ResolveBaseString()}/{Iris.Server.ActivityPubServerConstants.NamespaceRouteSegment}#");
+
+    /// <summary>
+    /// The instance's advertised public base URI as a plain, slash-free string (e.g.
+    /// <c>http://localhost:5000</c>), resolved from the same <c>Iris:</c> configuration the host reads
+    /// in <see cref="ConfigureServices"/> (the <c>Advertise*</c> keys, falling back to the legacy
+    /// <c>HostName</c>/<c>Port</c>/<c>Https</c> keys, defaulting to <c>http://localhost:5000</c>). Shared
+    /// by <see cref="NamespaceIri"/> and the host's base-URI derivation so the namespace and the
+    /// actor/community IRIs are built from one source of truth.
+    /// </summary>
+    internal static string ResolveBaseString()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .Build();
+
+        var legacyHost = configuration["Iris:HostName"] ?? "localhost";
+        var legacyPort = int.TryParse(configuration["Iris:Port"], out var parsedPort) ? parsedPort : 5000;
+        var legacyHttps = bool.TryParse(configuration["Iris:Https"], out var httpsFlag) && httpsFlag;
+
+        var hostName = configuration["Iris:AdvertiseHost"] ?? legacyHost;
+        var port = int.TryParse(configuration["Iris:AdvertisePort"], out var advertisedPort) ? advertisedPort : legacyPort;
+        var useHttps = configuration["Iris:AdvertiseHttps"] is string ah
+            ? bool.TryParse(ah, out var advertisedHttps) && advertisedHttps
+            : legacyHttps;
+        var scheme = useHttps ? "https" : "http";
+
+        return $"{scheme}://{hostName}:{port}";
+    }
 
     /// <summary>
     /// The public-audience link (<c>as:Public</c>) used on every seeded note.
@@ -135,17 +168,9 @@ public static partial class SampleServer
 
         // Advertised host/scheme/port default to the legacy values (Iris:HostName / Iris:Https /
         // Iris:Port) unless the operator overrides them with the Iris:Advertise* keys, which let the
-        // instance expose its IRIs under a public hostname while still listening on http://+:8080.
-        var legacyHost = configuration["Iris:HostName"] ?? "localhost";
-        var legacyPort = int.TryParse(configuration["Iris:Port"], out var parsedPort) ? parsedPort : 5000;
-        var legacyHttps = bool.TryParse(configuration["Iris:Https"], out var httpsFlag) && httpsFlag;
-
-        var hostName = configuration["Iris:AdvertiseHost"] ?? legacyHost;
-        var port = int.TryParse(configuration["Iris:AdvertisePort"], out var advertisedPort) ? advertisedPort : legacyPort;
-        var useHttps = configuration["Iris:AdvertiseHttps"] is string ah
-            ? bool.TryParse(ah, out var advertisedHttps) && advertisedHttps
-            : legacyHttps;
-        var scheme = useHttps ? "https" : "http";
+        // instance expose its IRIs under a public hostname while still listening on http://+:8080. The
+        // base string is resolved from the same configuration the NamespaceIri property reads, so the
+        // namespace, the base URI, and the actor/community IRIs all derive from one source of truth.
         var actorHandle = configuration["Iris:Actor"] ?? "alice";
         // The Uri (and therefore the Iri that wraps it) canonicalizes a host-only base (e.g.
         // http://localhost:5000) to carry a trailing slash (http://localhost:5000/). Interpolating an
@@ -154,7 +179,7 @@ public static partial class SampleServer
         // Iri itself is used wherever an Iri is the expected type (options.BaseUri, the key
         // registration). The seeded actor/community IRIs and the handler's constructed IRIs both derive
         // from the same slash-free base, so they match.
-        var baseString = $"{scheme}://{hostName}:{port}";
+        var baseString = ResolveBaseString();
         var baseUri = new Iri(baseString);
         var actorIri = new Iri($"{baseString}/ap/v1/u/{actorHandle}");
 
@@ -224,8 +249,14 @@ public static partial class SampleServer
         services.AddActivityPubServer(options =>
         {
             options.BaseUri = baseUri;
+            // The instance name is the advertised hostname (the host label of the public base URI).
+            var hostName = Uri.TryCreate(baseString, UriKind.Absolute, out var baseUriObj)
+                ? baseUriObj.Host
+                : baseString;
             options.InstanceName = $"iris-{hostName}";
             options.InstanceActorId = actorIri;
+            // Phase 31.8: the namespace is derived from the advertised base URI ({base}/ns#), so it is
+            // unique per instance and hosted as a resolvable JSON-LD context at {base}/ns (the /ns route).
             options.NamespaceIri = NamespaceIri;
         });
         services.AddInMemoryPersistence();
