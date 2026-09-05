@@ -64,9 +64,10 @@ public sealed class SampleServerPersistenceTests : IDisposable
         var bobIri = new Iri($"{baseString}/ap/v1/u/bob");
         var bobKeyIri = new Iri($"{bobIri}#key-1");
 
-        // First "boot": seed a fresh file-backed store.
+        // First "boot": seed a fresh file-backed store. The remote stand-in (carla) is opted in via the
+        // Iris:Seed:RemoteStandIn switch so the carla-like durability assertion below is exercised.
         var first = new FileBackedPersistenceProvider(dir);
-        SampleServer.SeedSampleData(first, baseString, "alice", actorIri);
+        SampleServer.SeedSampleData(first, baseString, "alice", actorIri, remoteStandIn: true);
         var aliceNoteIri = new Iri($"{actorIri.Value}/notes/1");
         var bobNoteIri = new Iri($"{bobIri.Value}/notes/1");
         var bobReplyIri = new Iri($"{bobIri.Value}/notes/2");
@@ -90,9 +91,9 @@ public sealed class SampleServerPersistenceTests : IDisposable
         between.Dispose();
 
         // Recreation: rebuild the provider over the same directory and re-run the seed (exactly what a
-        // container `down` (no -v) + `up` does).
+        // container `down` (no -v) + `up` does). The remote stand-in stays opted in.
         var second = new FileBackedPersistenceProvider(dir);
-        SampleServer.SeedSampleData(second, baseString, "alice", actorIri);
+        SampleServer.SeedSampleData(second, baseString, "alice", actorIri, remoteStandIn: true);
 
         // Keys are recovered, not re-minted (a signature made before the recreation still verifies).
         Assert.True(second.Keys.TryGetKey(aliceKeyIri, out var recoveredAlice));

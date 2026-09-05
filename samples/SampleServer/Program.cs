@@ -113,7 +113,7 @@ public static partial class SampleServer
             // IServer in .NET 10; UseKestrel registers the Kestrel web server so the host can start.
             .UseKestrel()
             .UseUrls($"http://+:{envPort}")
-            .ConfigureServices(services => ConfigureServices(services))
+            .ConfigureServices((context, services) => ConfigureServices(services, context.Configuration))
             .Configure(app => ConfigureApp(app));
     }
 
@@ -190,7 +190,11 @@ public static partial class SampleServer
         // volume already holds it, and it never touches state created after seeding (a follow made in a
         // prior evaluation turn survives a recreation). It returns the primary actor's key IRI whether
         // the key was minted now or recovered from the volume, so key registration below is uniform.
-        var seed = SeedSampleData(persistence, baseString, actorHandle, actorIri, configuration);
+        // The carla remote stand-in is opt-in (Iris:Seed:RemoteStandIn). Read from the host's
+        // IConfiguration and passed explicitly so an in-process TestServer host that replaces the
+        // default configuration (UseConfiguration) still sees the switch.
+        var remoteStandIn = configuration["Iris:Seed:RemoteStandIn"] == "true";
+        var seed = SeedSampleData(persistence, baseString, actorHandle, actorIri, configuration, remoteStandIn);
 
         // The client-side signer (used by the proxy endpoint to sign as the authenticated actor and by
         // the outbound DeliveryWorker) is not registered by AddActivityPubServer (which wires only the
@@ -299,12 +303,17 @@ public static partial class SampleServer
         if (options.InstanceActorId is { } actorIri)
         {
             var keyProvider = app.ApplicationServices.GetRequiredService<IKeyProvider>();
-            foreach (var (handle, keyIri) in GetSeededKeyIris(actorIri))
+            // carla's key is registered only when the remote stand-in is enabled (the same
+            // Iris:Seed:RemoteStandIn switch that gates her in SeedSampleData).
+            var hostConfig = app.ApplicationServices.GetRequiredService<IConfiguration>();
+            var remoteStandIn = hostConfig["Iris:Seed:RemoteStandIn"] == "true";
+            foreach (var (handle, keyIri) in GetSeededKeyIris(actorIri, remoteStandIn))
             {
                 // The seeded set includes the community (its key is the primary actor's key — the
                 // community signs its own outbound deliveries as the community, so without this
                 // registration the DeliveryWorker dead-letters them with "No signing identity
-                // registered for actor '.../c/iris'" — F-1911-3).
+                // registered for actor '.../c/iris'" — F-1911-3). When the remote stand-in is enabled
+                // it is included too, so the proxy / DeliveryWorker can sign as carla.
                 keyProvider.RegisterKey(ActorIriFor(actorIri, handle), keyIri);
             }
         }
@@ -343,9 +352,15 @@ public static partial class SampleServer
     /// <param name="actorHandle">The primary actor's handle.</param>
     /// <param name="actorIri">The primary actor's IRI.</param>
     /// <param name="configuration">The host's <see cref="IConfiguration"/>; read only for the
-    /// opt-in <c>Iris:DumpKeyTo</c> switch (the key-dump mechanism for the S10 smoke test helper).
+    /// opt-in <c>Iris:DumpKeyTo</c> switch (the key-dump mechanism for the S10 smoke test helper) and
+    /// the opt-in <c>Iris:Seed:RemoteStandIn</c> switch (see <paramref name="remoteStandIn"/>).
     /// Passing <see langword="null"/> (direct library callers that don't host a server) simply
-    /// disables the key dump.</param>
+    /// disables the key dump and the config-driven remote stand-in.</param>
+    /// <param name="remoteStandIn">When <see langword="true"/>, also seed the carla actor on the
+    /// <see cref="RemoteHostName"/> host label (an in-process stand-in for a peer instance) with her
+    /// follow edges, note, and like. Defaults to <see langword="false"/> so the sample's default data
+    /// is one honest instance, not a fake cross-instance graph; the host's
+    /// <c>Iris:Seed:RemoteStandIn</c> config switch (or an explicit <c>true</c>) turns it on.</param>
     /// <returns>The seed metadata (handles and key IRIs) the host uses for credentials and key
     /// registration.</returns>
     public static SeedMetadata SeedSampleData(
@@ -353,11 +368,21 @@ public static partial class SampleServer
         string baseString,
         string actorHandle,
         Iri actorIri,
-        IConfiguration? configuration = null)
+        IConfiguration? configuration = null,
+        bool remoteStandIn = false)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(baseString);
         ArgumentNullException.ThrowIfNull(actorHandle);
+
+        // The carla "remote.example" actor is an in-process stand-in for a peer instance. She makes the
+        // seeded graph look cross-instance even though it is one server, so she is not seeded by
+        // default. An explicit remoteStandIn:true (the tests that exercise her) or the host's
+        // Iris:Seed:RemoteStandIn=true config switch turns her on.
+        if (remoteStandIn == false)
+        {
+            remoteStandIn = configuration?["Iris:Seed:RemoteStandIn"] == "true";
+        }
 
         // The actor IRIs (bob, the community) are derived from the PRIMARY ACTOR's advertised host,
         // not the base string: the base string is what the sample LISTENS on (the container's
@@ -406,10 +431,17 @@ public static partial class SampleServer
         var bobKey = EnsureKey(persistence, bobKeyIri, static _ => KeyPairGenerator.GenerateRsa(_));
         var bob = EnsureActor(persistence, BobHandle, bobIri, bobKeyIri, bobKey);
 
+        // carla is the optional remote stand-in (see remoteStandIn). When disabled she is not created,
+        // so no remote-host actor, follow edge, note, or like is seeded.
         var carlaIri = new Iri($"http://{RemoteHostName}/ap/v1/u/{CarlaHandle}");
         var carlaKeyIri = new Iri($"{carlaIri}#key-1");
-        var carlaKey = EnsureKey(persistence, carlaKeyIri, static id => Ed25519Key.Generate(id));
-        var carla = EnsureActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
+        Person? carla = null;
+        ISigningKey? carlaKey = null;
+        if (remoteStandIn)
+        {
+            carlaKey = EnsureKey(persistence, carlaKeyIri, static id => Ed25519Key.Generate(id));
+            carla = EnsureActor(persistence, CarlaHandle, carlaIri, carlaKeyIri, carlaKey);
+        }
 
         var communityIri = new Iri($"{hostBase}/ap/v1/c/{SampleCommunityName}");
         var community = new Group
@@ -436,16 +468,22 @@ public static partial class SampleServer
         persistence.Communities.PutCommunityAsync(community).GetAwaiter().GetResult();
         persistence.Communities.AddMemberAsync(communityIri, aliceIri).GetAwaiter().GetResult();
         persistence.Communities.AddMemberAsync(communityIri, bobIri).GetAwaiter().GetResult();
-        persistence.Communities.AddFollowAsync(communityIri, carlaIri).GetAwaiter().GetResult();
+        if (remoteStandIn)
+        {
+            persistence.Communities.AddFollowAsync(communityIri, carlaIri).GetAwaiter().GetResult();
+        }
 
-        // Follow edges: alice ↔ bob (mutual, so the community feed federates their content) and
-        // alice ↔ carla (a "cross-instance" pair; carla's content reaches the community via the
-        // community's follow of her). All edge stores are keyed (source, target) — recording an
-        // existing edge is a no-op, so this is safe across recreations.
+        // Follow edges: alice ↔ bob (mutual, so the community feed federates their content). When the
+        // remote stand-in is enabled, alice ↔ carla is a "cross-instance" pair and carla's content
+        // reaches the community via the community's follow of her. All edge stores are keyed (source,
+        // target) — recording an existing edge is a no-op, so this is safe across recreations.
         persistence.Follows.RecordFollowAsync(aliceIri, bobIri).GetAwaiter().GetResult();
         persistence.Follows.RecordFollowAsync(bobIri, aliceIri).GetAwaiter().GetResult();
-        persistence.Follows.RecordFollowAsync(aliceIri, carlaIri).GetAwaiter().GetResult();
-        persistence.Follows.RecordFollowAsync(carlaIri, aliceIri).GetAwaiter().GetResult();
+        if (remoteStandIn)
+        {
+            persistence.Follows.RecordFollowAsync(aliceIri, carlaIri).GetAwaiter().GetResult();
+            persistence.Follows.RecordFollowAsync(carlaIri, aliceIri).GetAwaiter().GetResult();
+        }
 
         // Outbox content: a note per actor, a reply from bob to alice's note, and a like from carla of
         // alice's note (the like exercises the Like activity type and the remote-host actor). Each
@@ -468,13 +506,16 @@ public static partial class SampleServer
         var carlaNote = new Note
         {
             Id = $"{carlaIri.Value}/notes/1",
-            AttributedTo = [carla],
+            AttributedTo = [carla!],
             To = [PublicAudience],
             Content = ["<p>Carla here on the second host — federation is alive.</p>"],
         };
         AddSeededOutboxItem(persistence, aliceIri, aliceNote);
         AddSeededOutboxItem(persistence, bobIri, bobNote);
-        AddSeededOutboxItem(persistence, carlaIri, carlaNote);
+        if (remoteStandIn)
+        {
+            AddSeededOutboxItem(persistence, carlaIri, carlaNote);
+        }
 
         // The outbox holds the activity, but the object document endpoint (GET /ap/v1/{**path}) and
         // global search read the *object store*, not the outbox. Storing each note makes it fetchable
@@ -482,7 +523,10 @@ public static partial class SampleServer
         // object store is keyed by IRI, so re-storing a recreation's copy is a no-op overwrite.
         persistence.Objects.PutObjectAsync(aliceNote).GetAwaiter().GetResult();
         persistence.Objects.PutObjectAsync(bobNote).GetAwaiter().GetResult();
-        persistence.Objects.PutObjectAsync(carlaNote).GetAwaiter().GetResult();
+        if (remoteStandIn)
+        {
+            persistence.Objects.PutObjectAsync(carlaNote).GetAwaiter().GetResult();
+        }
 
         var reply = new Note
         {
@@ -496,24 +540,33 @@ public static partial class SampleServer
         persistence.Objects.PutObjectAsync(reply).GetAwaiter().GetResult();
         persistence.Replies.RecordReplyAsync(new Iri(aliceNote.Id!), new Iri(reply.Id!)).GetAwaiter().GetResult();
 
-        var like = new Like
+        var seedHandles = new List<string> { actorHandle, BobHandle };
+        var seedKeys = new List<(string Handle, Iri KeyIri)>
         {
-            Id = $"{carlaIri.Value}/likes/1",
-            Actor = [new Link { Href = carlaIri.Uri }],
-            Object = [new Link { Href = new Uri(aliceNote.Id!) }],
+            (actorHandle, aliceKeyIri),
+            (BobHandle, bobKeyIri),
         };
-        AddSeededOutboxItem(persistence, carlaIri, like);
-        persistence.Likes.RecordLikeAsync(carlaIri, new Iri(aliceNote.Id!)).GetAwaiter().GetResult();
+        if (remoteStandIn)
+        {
+            seedHandles.Add(CarlaHandle);
+            seedKeys.Add((CarlaHandle, carlaKeyIri));
+        }
 
-        return new SeedMetadata(
-            [actorHandle, BobHandle, CarlaHandle],
-            [
-                (actorHandle, aliceKeyIri),
-                (BobHandle, bobKeyIri),
-                (CarlaHandle, carlaKeyIri),
-            ],
-            communityIri,
-            aliceKeyIri);
+        // The carla like of alice's note only exists when the remote stand-in is seeded (it exercises
+        // the Like activity type and the remote-host actor).
+        if (remoteStandIn)
+        {
+            var like = new Like
+            {
+                Id = $"{carlaIri.Value}/likes/1",
+                Actor = [new Link { Href = carlaIri.Uri }],
+                Object = [new Link { Href = new Uri(aliceNote.Id!) }],
+            };
+            AddSeededOutboxItem(persistence, carlaIri, like);
+            persistence.Likes.RecordLikeAsync(carlaIri, new Iri(aliceNote.Id!)).GetAwaiter().GetResult();
+        }
+
+        return new SeedMetadata(seedHandles, seedKeys, communityIri, aliceKeyIri);
     }
 
     /// <summary>
@@ -615,23 +668,42 @@ public static partial class SampleServer
     /// <see cref="IKeyProvider"/>.
     /// </summary>
     /// <param name="primaryActorIri">The primary actor's IRI (its host and port are reused for bob).</param>
-    /// <returns>The (handle, key IRI) pairs, in seed order: primary, bob, carla, and the community
-    /// (the community's key is the primary actor's key — its <c>publicKey</c> extension points at it).</returns>
-    public static IReadOnlyList<(string Handle, Iri KeyIri)> GetSeededKeyIris(Iri primaryActorIri)
+    /// <param name="remoteStandIn">When <see langword="true"/> (the carla remote stand-in was seeded),
+    /// carla's key is included; otherwise only the local actors (primary, bob) and the community are
+    /// returned.</param>
+    /// <returns>The (handle, key IRI) pairs, in seed order: primary, bob, carla (when
+    /// <paramref name="remoteStandIn"/>) and the community (the community's key is the primary actor's
+    /// key — its <c>publicKey</c> extension points at it).</returns>
+    public static IReadOnlyList<(string Handle, Iri KeyIri)> GetSeededKeyIris(Iri primaryActorIri, bool remoteStandIn)
     {
         var primaryHandle = primaryActorIri.Value[(primaryActorIri.Value.LastIndexOf('/') + 1)..];
         var hostBase = primaryActorIri.Value[..primaryActorIri.Value.IndexOf("/ap/v1/", StringComparison.Ordinal)];
         var bobIri = new Iri($"{hostBase}/ap/v1/u/{BobHandle}");
         var carlaIri = new Iri($"http://{RemoteHostName}/ap/v1/u/{CarlaHandle}");
         var communityIri = new Iri($"{hostBase}/ap/v1/c/{SampleCommunityName}");
-        return
-        [
-            (primaryHandle, new Iri($"{primaryActorIri}#key-1")),
-            (BobHandle, new Iri($"{bobIri}#key-1")),
-            (CarlaHandle, new Iri($"{carlaIri}#key-1")),
-            (SampleCommunityName, new Iri($"{primaryActorIri}#key-1")),
-        ];
+        return remoteStandIn
+            ?
+            [
+                (primaryHandle, new Iri($"{primaryActorIri}#key-1")),
+                (BobHandle, new Iri($"{bobIri}#key-1")),
+                (CarlaHandle, new Iri($"{carlaIri}#key-1")),
+                (SampleCommunityName, new Iri($"{primaryActorIri}#key-1")),
+            ]
+            :
+            [
+                (primaryHandle, new Iri($"{primaryActorIri}#key-1")),
+                (BobHandle, new Iri($"{bobIri}#key-1")),
+                (SampleCommunityName, new Iri($"{primaryActorIri}#key-1")),
+            ];
     }
+
+    /// <summary>
+    /// Returns the seeded (handle, key IRI) pairs for the default sample seed (no remote stand-in).
+    /// </summary>
+    /// <param name="primaryActorIri">The primary actor's IRI.</param>
+    /// <returns>The (handle, key IRI) pairs: primary, bob, and the community.</returns>
+    public static IReadOnlyList<(string Handle, Iri KeyIri)> GetSeededKeyIris(Iri primaryActorIri)
+        => GetSeededKeyIris(primaryActorIri, remoteStandIn: false);
 
     /// <summary>
     /// Builds the actor IRI for a seeded handle, given the primary actor's IRI. The primary and bob

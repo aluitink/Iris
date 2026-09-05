@@ -102,6 +102,7 @@ authoritative value):
 | `Iris:Port` | `5000` | The bind port and the advertised IRI port. |
 | `Iris:Https` | `false` | When `true`, the scheme is `https` (bind + advertised IRI); otherwise `http`. |
 | `Iris:Actor` | `alice` | The primary actor's handle (its IRI is `{base}/ap/v1/u/{handle}` and it is the instance's `InstanceActorId`). |
+| `Iris:Seed:RemoteStandIn` | `false` | When `true`, also seed the **carla** remote-host stand-in (an in-process fake of a peer instance) with her follow edges, note, and like. Off by default so the sample's default data is one honest instance, not a fake cross-instance graph. |
 
 The instance name is derived as `iris-{HostName}` and the namespace IRI is the fixed
 `https://iris.example/ns#`.
@@ -116,15 +117,16 @@ conventions.
 |---|---|---|
 | alice | `{base}/ap/v1/u/alice` | Primary local actor; RSA key; the instance's `InstanceActorId`. |
 | bob | `{base}/ap/v1/u/bob` | Second local actor; RSA key. |
-| carla | `http://remote.example/ap/v1/u/carla` | Remote-host stand-in; **Ed25519** key (exercises the non-RSA load path). Not resolvable by this instance's inbound resolver — she behaves like a true remote actor. |
-| The Iris Community | `{base}/ap/v1/c/iris` | `Group`; members alice + bob; follows carla; advertises `community:feeds` / `community:moderation` capabilities. |
+| carla | `http://remote.example/ap/v1/u/carla` | **Opt-in** remote-host stand-in (only when `Iris:Seed:RemoteStandIn=true`); **Ed25519** key (exercises the non-RSA load path). Not resolvable by this instance's inbound resolver — she behaves like a true remote actor. Off by default: the sample's default data is one honest instance, not a fake cross-instance graph. |
+| The Iris Community | `{base}/ap/v1/c/iris` | `Group`; members alice + bob; (when `RemoteStandIn`) follows carla; advertises `community:feeds` / `community:moderation` capabilities. |
 
-Follow edges: alice ↔ bob (mutual), alice → carla, carla → alice.
+Follow edges: alice ↔ bob (mutual). When `Iris:Seed:RemoteStandIn=true`, also alice → carla and
+carla → alice.
 
-Outbox content: one note per actor, a reply from bob to alice's note (`{bob}/notes/2`, `inReplyTo`
-alice's note), and a like from carla of alice's note (recorded in `ILikeStore`). Together these give
-the community feed, the followed-feed (home timeline), the replies thread, and the `liked`
-collection real data to explore.
+Outbox content: a note per (seeded) actor, a reply from bob to alice's note (`{bob}/notes/2`,
+`inReplyTo` alice's note), and — when the remote stand-in is enabled — a like from carla of alice's
+note (recorded in `ILikeStore`). Together these give the community feed, the followed-feed (home
+timeline), the replies thread, and the `liked` collection real data to explore.
 
 ## How it is tested
 

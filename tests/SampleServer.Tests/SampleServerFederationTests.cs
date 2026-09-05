@@ -6,7 +6,9 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Samples.SampleServer;
 using KristofferStrube.ActivityStreams;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -38,6 +40,15 @@ public sealed class SampleServerFederationTests : IDisposable
     public SampleServerFederationTests()
     {
         var builder = SampleServer.CreateWebHostBuilder();
+        // Opt in to the carla remote stand-in: these tests exercise the seeded remote-actor edges,
+        // note, and like (the "rich seed" of the federation-ready sample). Without the switch the
+        // sample no longer seeds carla, so her edges/content would be absent.
+        builder.UseConfiguration(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Iris:Seed:RemoteStandIn"] = "true",
+            })
+            .Build());
         _server = new TestServer(builder);
         _client = _server.CreateClient();
         _persistence = _server.Services.GetRequiredService<IPersistenceProvider>();
@@ -187,6 +198,26 @@ public sealed class SampleServerFederationTests : IDisposable
         var members = await _persistence.Communities.GetMembersAsync(communityIri);
         Assert.Contains(ActorIri("alice"), members);
         Assert.Contains(ActorIri(SampleServer.BobHandle), members);
+    }
+
+    [Fact]
+    public async Task DefaultSample_DoesNotSeedRemoteStandIn()
+    {
+        // The sample's default data is one honest instance: without Iris:Seed:RemoteStandIn the carla
+        // remote stand-in is not seeded (no actor, no follow edge, no outbox content). Host a fresh
+        // server with the default configuration and assert carla is absent.
+        var defaultServer = new TestServer(SampleServer.CreateWebHostBuilder());
+        using var defaultClient = defaultServer.CreateClient();
+        var defaultPersistence = defaultServer.Services.GetRequiredService<IPersistenceProvider>();
+        var carlaIri = new Iri($"http://{SampleServer.RemoteHostName}/ap/v1/u/{SampleServer.CarlaHandle}");
+
+        Assert.False(await defaultPersistence.Actors.TryGetActorAsync(carlaIri, out _),
+            "the default sample must not seed the carla remote stand-in");
+        Assert.False(await defaultPersistence.Follows.IsFollowingAsync(
+            ActorIri("alice"), carlaIri),
+            "the default sample must not record an alice→carla follow edge");
+        Assert.Empty(await defaultPersistence.Activities.GetOutboxAsync(carlaIri));
+        defaultServer.Dispose();
     }
 
     [Fact]

@@ -6,7 +6,9 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Samples.SampleServer;
 using KristofferStrube.ActivityStreams;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -37,6 +39,14 @@ public sealed class SampleServerCommunitySigningTests : IDisposable
     public SampleServerCommunitySigningTests()
     {
         var builder = SampleServer.CreateWebHostBuilder();
+        // Opt in to the carla remote stand-in: the community-follow round trip below targets carla
+        // (a remote-host actor), which the sample only seeds when Iris:Seed:RemoteStandIn is set.
+        builder.UseConfiguration(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Iris:Seed:RemoteStandIn"] = "true",
+            })
+            .Build());
         _server = new TestServer(builder);
         _client = _server.CreateClient();
         _persistence = _server.Services.GetRequiredService<IPersistenceProvider>();
@@ -61,13 +71,29 @@ public sealed class SampleServerCommunitySigningTests : IDisposable
     public void GetSeededKeyIris_IncludesCommunity_WithPrimaryActorKey()
     {
         var aliceIri = ActorIri("alice");
-        var pairs = SampleServer.GetSeededKeyIris(aliceIri);
+        var pairs = SampleServer.GetSeededKeyIris(aliceIri, remoteStandIn: true);
 
-        // The seeded set is exactly: alice, bob, carla, and the community — the community's key IRI is
-        // the primary actor's key (the community's publicKey extension points at it).
+        // With the remote stand-in enabled, the seeded set is exactly: alice, bob, carla, and the
+        // community — the community's key IRI is the primary actor's key (the community's publicKey
+        // extension points at it).
         var communityEntry = pairs.FirstOrDefault(p => p.Handle == SampleServer.SampleCommunityName);
         Assert.Equal(SampleServer.SampleCommunityName, communityEntry.Handle);
         Assert.Equal(new Iri($"{aliceIri}#key-1"), communityEntry.KeyIri);
+        Assert.Contains(pairs, p => p.Handle == SampleServer.CarlaHandle);
+    }
+
+    [Fact]
+    public void GetSeededKeyIris_Default_ExcludesRemoteStandIn()
+    {
+        // The default sample (no remote stand-in) seeds only the local actors and the community — carla
+        // is absent, so the honest default data carries no fake remote-host identity.
+        var aliceIri = ActorIri("alice");
+        var pairs = SampleServer.GetSeededKeyIris(aliceIri);
+
+        Assert.DoesNotContain(pairs, p => p.Handle == SampleServer.CarlaHandle);
+        Assert.Contains(pairs, p => p.Handle == "alice");
+        Assert.Contains(pairs, p => p.Handle == SampleServer.BobHandle);
+        Assert.Contains(pairs, p => p.Handle == SampleServer.SampleCommunityName);
     }
 
     [Fact]
