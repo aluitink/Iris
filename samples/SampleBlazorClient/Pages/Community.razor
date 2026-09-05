@@ -77,7 +77,7 @@ else
 
         @if (ActiveTab is "following")
         {
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@communityIri.FollowingOf()"
                 Title="Following"
@@ -88,7 +88,7 @@ else
 
         @if (ActiveTab is "followers")
         {
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@communityIri.FollowersOf()"
                 Title="Followers"
@@ -448,7 +448,7 @@ else
                 </p>
             </div>
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@communityIri.MutesOf()"
                 Title="Mutes"
@@ -456,7 +456,7 @@ else
                 EmptyMessage="No mutes recorded."
                 ItemTemplate="@ActorLinkTemplate" />
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@communityIri.BlocksOf()"
                 Title="Blocks"
@@ -464,7 +464,7 @@ else
                 EmptyMessage="No blocks recorded."
                 ItemTemplate="@ActorLinkTemplate" />
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@communityIri.FlagsOf()"
                 Title="Flags"
@@ -655,10 +655,10 @@ else
             Members = members;
 
             // Followers + following are read-only paged collections rendered by the shared
-            // <PagedCollection> (it walks {community}/following and {community}/followers on demand).
+            // <CollectionBrowser> (it walks {community}/following and {community}/followers on demand).
 
             // 21.2.1: the community's moderation collections (mutes/blocks/flags) are read-only paged
-            // collections rendered by the shared <PagedCollection> (they walk {community}/{mutes|blocks|
+            // collections rendered by the shared <CollectionBrowser> (they walk {community}/{mutes|blocks|
             // flags} on demand).
 
             // Inbound follows of this community (actors/communities that follow it), read from its
@@ -769,12 +769,13 @@ else
     // --- 19.8.4: followers + following collections (paged, clickable) -----------------
 
     /// <summary>
-    /// The item renderer for the community's "Following" and "Followers" <c>PagedCollection</c> cards:
-    /// each entry (a link or an object with an <c>id</c>) renders as a link to that actor's detail page,
-    /// showing a short handle (<see cref="HandleOf"/>), or the relay IRI as a <c>&lt;code&gt;</c> when it
-    /// carries no resolvable IRI. Built as a <see cref="RenderFragment{TData}"/> field (not an inline
-    /// lambda attribute — Razor does not reliably parse multi-statement render-fragment attributes) so
-    /// <c>PagedCollection</c> can render custom item markup.
+    /// The item renderer for the community's "Following" / "Followers" and moderation
+    /// <c>CollectionBrowser</c> cards: each entry (a link or an object with an <c>id</c>) renders as a
+    /// link to that actor's detail page, showing a short handle (<see cref="HandleOf"/>), or the relay
+    /// IRI as a <c>&lt;code&gt;</c> when it carries no resolvable IRI. Built as a
+    /// <see cref="RenderFragment{TData}"/> field (not an inline lambda attribute — Razor does not
+    /// reliably parse multi-statement render-fragment attributes) so <c>CollectionBrowser</c> can render
+    /// custom item markup.
     /// </summary>
     private static RenderFragment<IObjectOrLink> ActorLinkTemplate = item => builder =>
     {

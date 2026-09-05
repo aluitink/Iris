@@ -1,0 +1,346 @@
+@using Iris.Client
+@using Iris.Client.Collections
+@using KristofferStrube.ActivityStreams
+
+@if (Client is not null && CollectionIri is not null)
+{
+    <div class="card paged-collection collection-browser">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <h3>@Title</h3>
+        }
+        @if (!string.IsNullOrEmpty(Description))
+        {
+            <p class="muted">@Description</p>
+        }
+        @if (HeaderContent is not null)
+        {
+            @HeaderContent
+        }
+        @if (ShowRefreshButton)
+        {
+            <div class="paged-collection-actions">
+                <button @onclick="RefreshAsync" disabled="@Refreshing">
+                    @(Refreshing ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+        }
+        @if (LoadError is not null)
+        {
+            <div class="error">@LoadError</div>
+        }
+        @if (Items is null)
+        {
+            @if (LoadError is null)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
+        }
+        else
+        {
+            @if (Items.Count == 0 && !HasMore)
+            {
+                <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+            }
+            @if (Items.Count > 0)
+            {
+                <ul class="object-list">
+                    @foreach (var item in Items)
+                    {
+                        <li>
+                            @if (ItemTemplate is not null)
+                            {
+                                @ItemTemplate(item)
+                            }
+                            else
+                            {
+                                @BasicItemTemplate(item)
+                            }
+                            @if (ItemActions is not null)
+                            {
+                                @ItemActions(item)
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (HasMore)
+            {
+                <button @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                @if (LoadingMore)
+                {
+                    <div class="card-loading card-loading-inline">
+                        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                        </svg>
+                        <span class="muted">Loading…</span>
+                    </div>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// The client to dial. When <c>null</c> the component renders nothing and loads nothing (the parent
+    /// gates on a logged-in session).
+    /// </summary>
+    [Parameter]
+    public IActivityPubClient? Client { get; set; }
+
+    /// <summary>
+    /// The IRI of the collection (or of its <c>first</c> page) to enumerate. When <c>null</c> the
+    /// component renders nothing.
+    /// </summary>
+    [Parameter]
+    public Iri? CollectionIri { get; set; }
+
+    /// <summary>
+    /// Optional card title (an <c>&lt;h3&gt;</c>).
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// Optional muted intro paragraph under the title.
+    /// </summary>
+    [Parameter]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Optional extra markup rendered under the title/description (e.g. a management-error line that
+    /// must stay visible).
+    /// </summary>
+    [Parameter]
+    public RenderFragment? HeaderContent { get; set; }
+
+    /// <summary>
+    /// Items fetched per page (<c>CollectionQuery.Limit</c>). When <c>null</c> the server's natural page
+    /// size is used.
+    /// </summary>
+    [Parameter]
+    public int? PageSize { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, page reads bypass the client's page cache (<c>CollectionQuery.BypassCache</c> —
+    /// the <c>?refresh=true</c> path).
+    /// </summary>
+    [Parameter]
+    public bool BypassCache { get; set; }
+
+    /// <summary>
+    /// Renders a single item for a collection type that has a registered per-type rendering (e.g. a
+    /// follower/actor link, a moderation entry, an inbox activity). When <c>null</c> (no template
+    /// registered for the collection's type) the component falls back to the basic item rendering.
+    /// </summary>
+    [Parameter]
+    public RenderFragment<IObjectOrLink>? ItemTemplate { get; set; }
+
+    /// <summary>
+    /// Optional per-item controls rendered after the item's content (e.g. a "Block" button on a
+    /// follower row, a "Remove" button on a member row). Receiving the item, the fragment can resolve
+    /// its IRI and render management actions.
+    /// </summary>
+    [Parameter]
+    public RenderFragment<IObjectOrLink>? ItemActions { get; set; }
+
+    /// <summary>
+    /// The "no items" message (the empty state).
+    /// </summary>
+    [Parameter]
+    public string? EmptyMessage { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, renders a <c>Refresh</c> button that re-fetches the collection's first page
+    /// with the page cache bypassed (the <c>?refresh=true</c> path) — a one-shot bypass that does not
+    /// change <see cref="BypassCache"/>.
+    /// </summary>
+    [Parameter]
+    public bool ShowRefreshButton { get; set; }
+
+    private List<IObjectOrLink>? Items { get; set; }
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
+    private bool Refreshing { get; set; }
+    private string? LoadError { get; set; }
+
+    private bool _bypassNext;
+    private Iri? _resumeFrom;
+    private Iri? _loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
+        {
+            _loadedFor = iri;
+            _ = LoadInitialAsync();
+        }
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        Items = null;
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        if (Items is null && LoadError is null)
+        {
+            Items = [];
+        }
+
+        // The initial load is fired fire-and-forget from OnParametersSet (not an @onclick handler, not
+        // awaited), so Blazor never re-renders after Items is populated — mirror that auto-re-render
+        // here so the initial navigate renders the loaded items without a manual Refresh (31.2).
+        StateHasChanged();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        LoadError = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (Refreshing)
+        {
+            return;
+        }
+
+        Refreshing = true;
+        _bypassNext = true;
+        LoadError = null;
+        try
+        {
+            Items = [];
+            HasMore = false;
+            _resumeFrom = null;
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            Refreshing = false;
+            _bypassNext = false;
+        }
+    }
+
+    private async Task EnumerateOnePageAsync()
+    {
+        if (Client is not { } client)
+        {
+            return;
+        }
+
+        if (_resumeFrom is not { } resumeIri)
+        {
+            if (CollectionIri is not { } firstIri)
+            {
+                return;
+            }
+
+            resumeIri = firstIri;
+        }
+
+        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache || _bypassNext);
+
+        await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
+        {
+            Items ??= [];
+            Items.AddRange(page.Items);
+            HasMore = !page.IsLastPage;
+            _resumeFrom = page.NextPage;
+            break;
+        }
+    }
+
+    /// <summary>
+    /// The basic item rendering used when no <see cref="ItemTemplate"/> is registered for the
+    /// collection's type: an actor renders as a link to its detail page (the short handle), a non-actor
+    /// object as a navigable <c>/object</c> link (its IRI) plus a muted type label; a bare link renders
+    /// its IRI as <c>&lt;code&gt;</c>. Built as a <see cref="RenderFragment{TData}"/> field (not an
+    /// inline lambda attribute — Razor does not reliably parse multi-statement render-fragment
+    /// attributes).
+    /// </summary>
+    private static RenderFragment<IObjectOrLink> BasicItemTemplate = item => builder =>
+    {
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            if (item is Actor)
+            {
+                builder.OpenElement(0, "a");
+                builder.AddAttribute(1, "href", $"/actor?iri={Uri.EscapeDataString(id)}");
+                builder.AddAttribute(2, "title", id);
+                builder.AddContent(3, HandleOf(id));
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(0, "a");
+                builder.AddAttribute(1, "href", $"/object?iri={Uri.EscapeDataString(id)}");
+                builder.AddAttribute(2, "title", id);
+                builder.AddContent(3, id);
+                builder.CloseElement();
+            }
+
+            if (item is IObject { Type: { } typeList } && typeList.FirstOrDefault() is { Length: > 0 } type)
+            {
+                builder.OpenElement(4, "span");
+                builder.AddAttribute(5, "class", "muted");
+                builder.AddContent(6, type);
+                builder.CloseElement();
+            }
+        }
+        else if (item is ILink { Href: { } href })
+        {
+            builder.OpenElement(0, "code");
+            builder.AddContent(1, href.ToString());
+            builder.CloseElement();
+        }
+    };
+
+    /// <summary>
+    /// A short display for an IRI string: the path's last segment (the username) when it looks like an
+    /// actor IRI (<c>…/u/{username}</c>), else the raw IRI.
+    /// </summary>
+    private static string HandleOf(string iri)
+    {
+        var idx = iri.LastIndexOf('/');
+        return idx >= 0 && idx < iri.Length - 1 ? iri[(idx + 1)..] : iri;
+    }
+}

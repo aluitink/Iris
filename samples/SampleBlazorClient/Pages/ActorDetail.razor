@@ -52,158 +52,48 @@ else
 
         @if (ActiveTab is "outbox")
         {
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@(ActorIri?.OutboxOf())"
                 Title="Outbox"
                 Description="The activities this actor authored or accepted (their outbox), paged with next-link walking — local or remote. Each item is a navigable object view."
-                EmptyMessage="No items in the outbox." />
+                EmptyMessage="No items in the outbox."
+                ItemTemplate="@ObjectItemTemplate" />
         }
 
         @if (ActiveTab is "liked")
         {
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@(ActorIri?.LikedOf())"
                 Title="Liked"
                 Description="The objects this actor liked (their <c>liked</c> collection), paged with next-link walking. Each item is a navigable object view (a like is recorded as the liked object)."
-                EmptyMessage="Nothing liked." />
+                EmptyMessage="Nothing liked."
+                ItemTemplate="@ObjectItemTemplate" />
         }
 
         @if (ActiveTab is "followers")
         {
-        <div class="card">
-            <h3>Followers</h3>
-            <p class="muted">
-                Actors that follow <code>@(ActorIri?.Value)</code> (their <c>followers</c> collection), paged with
-                <c>next</c>-link walking. Each item links to the follower's actor detail.
-            </p>
-            @if (FollowersError is not null)
-            {
-                <div class="error">@FollowersError</div>
-            }
-            @if (FollowersItems is null)
-            {
-                <p class="muted">Loading…</p>
-            }
-            else if (FollowersItems.Count == 0 && !FollowersHasMore)
-            {
-                <p class="muted">No followers recorded.</p>
-            }
-            else
-            {
-                @if (FollowersItems.Count > 0)
-                {
-                    <ul class="object-list">
-                        @foreach (var item in FollowersItems)
-                        {
-                            <li>
-                                @if (item is ILink { Href: { } href })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
-                                        @HandleOf(href.ToString())
-                                    </a>
-                                    @if (IsOwnActor && Iri.TryParse(href.ToString(), out var blockTarget))
-                                    {
-                                        <button @onclick="() => BlockFollowerAsync(blockTarget)" disabled="@(FollowersManagementBusy)">Block</button>
-                                    }
-                                }
-                                else if (item is IObject { Id: { Length: > 0 } fid })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
-                                        @HandleOf(fid)
-                                    </a>
-                                    @if (IsOwnActor && Iri.TryParse(fid, out var blockTarget))
-                                    {
-                                        <button @onclick="() => BlockFollowerAsync(blockTarget)" disabled="@(FollowersManagementBusy)">Block</button>
-                                    }
-                                }
-                                else
-                                {
-                                    <code>@RelayIriOf(item)</code>
-                                }
-                            </li>
-                        }
-                    </ul>
-                    @if (FollowersManagementError is not null)
-                    {
-                        <div class="error">@FollowersManagementError</div>
-                    }
-                    @if (FollowersManagementResult is not null)
-                    {
-                        <p class="muted">@FollowersManagementResult</p>
-                    }
-                }
-                @if (FollowersHasMore)
-                {
-                    <button @onclick="LoadMoreFollowersAsync" disabled="@(FollowersLoadingMore)">Load more</button>
-                    @if (FollowersLoadingMore)
-                    {
-                        <span class="muted">Loading…</span>
-                    }
-                }
-            }
-        </div>
+            <CollectionBrowser
+                Client="@Session.GetClient()"
+                CollectionIri="@(ActorIri?.FollowersOf())"
+                Title="Followers"
+                Description="Actors that follow this actor (their followers collection), paged with next-link walking. Each item links to the follower's actor detail."
+                EmptyMessage="No followers recorded."
+                ItemTemplate="@ActorLinkTemplate"
+                ItemActions="@FollowerActionsTemplate"
+                HeaderContent="@FollowerManagementHeader" />
         }
 
         @if (ActiveTab is "following")
         {
-        <div class="card">
-            <h3>Following</h3>
-            <p class="muted">
-                Actors that <code>@(ActorIri?.Value)</code> follows (their <c>following</c> collection), paged with
-                <c>next</c>-link walking. Each item links to the followed actor's detail.
-            </p>
-            @if (FollowingError is not null)
-            {
-                <div class="error">@FollowingError</div>
-            }
-            @if (FollowingItems is null)
-            {
-                <p class="muted">Loading…</p>
-            }
-            else if (FollowingItems.Count == 0 && !FollowingHasMore)
-            {
-                <p class="muted">Not following anyone.</p>
-            }
-            else
-            {
-                @if (FollowingItems.Count > 0)
-                {
-                    <ul class="object-list">
-                        @foreach (var item in FollowingItems)
-                        {
-                            <li>
-                                @if (item is ILink { Href: { } href })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
-                                        @HandleOf(href.ToString())
-                                    </a>
-                                }
-                                else if (item is IObject { Id: { Length: > 0 } fid })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
-                                        @HandleOf(fid)
-                                    </a>
-                                }
-                                else
-                                {
-                                    <code>@RelayIriOf(item)</code>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-                @if (FollowingHasMore)
-                {
-                    <button @onclick="LoadMoreFollowingAsync" disabled="@(FollowingLoadingMore)">Load more</button>
-                    @if (FollowingLoadingMore)
-                    {
-                        <span class="muted">Loading…</span>
-                    }
-                }
-            }
-        </div>
+            <CollectionBrowser
+                Client="@Session.GetClient()"
+                CollectionIri="@(ActorIri?.FollowingOf())"
+                Title="Following"
+                Description="Actors that this actor follows (their following collection), paged with next-link walking. Each item links to the followed actor's detail."
+                EmptyMessage="Not following anyone."
+                ItemTemplate="@ActorLinkTemplate" />
         }
 
         @if (ActiveTab is "raw")
@@ -257,7 +147,7 @@ else
                 </p>
             </div>
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@actorIri.MutesOf()"
                 Title="Mutes"
@@ -265,7 +155,7 @@ else
                 EmptyMessage="No mutes recorded."
                 ItemTemplate="@ActorLinkTemplate" />
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@actorIri.BlocksOf()"
                 Title="Blocks"
@@ -273,7 +163,7 @@ else
                 EmptyMessage="No blocks recorded."
                 ItemTemplate="@ActorLinkTemplate" />
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@actorIri.FlagsOf()"
                 Title="Flags"
@@ -281,7 +171,7 @@ else
                 EmptyMessage="No flags recorded."
                 ItemTemplate="@ActorLinkTemplate" />
 
-            <PagedCollection
+            <CollectionBrowser
                 Client="@Session.GetClient()"
                 CollectionIri="@actorIri.InboxOf()"
                 Title="Inbox"
@@ -492,18 +382,6 @@ else
     /// </summary>
     private string? _lastLoadedParamKey;
 
-    private List<IObjectOrLink>? FollowersItems { get; set; }
-    private bool FollowersHasMore { get; set; }
-    private bool FollowersLoadingMore { get; set; }
-    private string? FollowersError { get; set; }
-    private Iri? _followersResumeFrom;
-
-    private List<IObjectOrLink>? FollowingItems { get; set; }
-    private bool FollowingHasMore { get; set; }
-    private bool FollowingLoadingMore { get; set; }
-    private string? FollowingError { get; set; }
-    private Iri? _followingResumeFrom;
-
     // 21.1.1: followers-list management (block a follower from the list, owner only)
     private bool FollowersManagementBusy { get; set; }
     private string? FollowersManagementError { get; set; }
@@ -620,14 +498,6 @@ else
             ActorIri = null;
             ActorDoc = null;
             ActiveTab = "outbox";
-            FollowersItems = null;
-            FollowersHasMore = false;
-            FollowersError = null;
-            _followersResumeFrom = null;
-            FollowingItems = null;
-            FollowingHasMore = false;
-            FollowingError = null;
-            _followingResumeFrom = null;
             Moderation = null;
             MyModeration = null;
             Relays = null;
@@ -656,9 +526,8 @@ else
             // a UI can offer "continue where you left off" after an instance switch.
             Session.SetNavigableActorIri(actorIri);
 
-            // 19.8.3: load followers + following paged (first page only).
-            await LoadInitialFollowersAsync(actorIri);
-            await LoadInitialFollowingAsync(actorIri);
+            // 19.8.3: followers + following are read-only paged collections rendered by the shared
+            // <CollectionBrowser> (it walks {actor}/followers and {actor}/following on demand, 31.7).
 
             // 22.2 (US-15): the logged-on actor's follow state toward this actor — whether the logged-on
             // actor's `following` collection contains this actor. The authoritative follow-state read
@@ -687,11 +556,11 @@ else
             }
 
             // 21.1.2: the target actor's moderation collections (mutes/blocks/flags) are read-only
-            // paged collections rendered by the shared <PagedCollection> (they walk {actor}/{mutes|
+            // paged collections rendered by the shared <CollectionBrowser> (they walk {actor}/{mutes|
             // blocks|flags} on demand).
 
             // 21.1.3: the actor's inbox (activities delivered to this actor) is a read-only paged
-            // collection rendered by the shared <PagedCollection> (it walks {actor}/inbox on demand).
+            // collection rendered by the shared <CollectionBrowser> (it walks {actor}/inbox on demand).
 
             var relays = new List<string>();
             await foreach (var relay in client.GetRelaysAsync(actorIri))
@@ -732,151 +601,24 @@ else
     }
 
     /// <summary>
-    /// Loads the first page of the actor's followers collection (19.8.3). Mirrors the outbox paged idiom.
+    /// The item renderer for object-valued collections (the outbox / liked <c>CollectionBrowser</c>
+    /// cards): each item renders via <c>&lt;ObjectView /&gt;</c> (the full navigable object rendering).
     /// </summary>
-    private async Task LoadInitialFollowersAsync(Iri actorIri)
+    private static RenderFragment<IObjectOrLink> ObjectItemTemplate = item => builder =>
     {
-        FollowersItems = [];
-        FollowersHasMore = false;
-        FollowersError = null;
-        _followersResumeFrom = null;
-        try
-        {
-            await EnumerateOneFollowersPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            FollowersError = ex.Message;
-        }
-    }
-
-    private async Task LoadMoreFollowersAsync()
-    {
-        if (FollowersLoadingMore || !FollowersHasMore || ActorIri is not { } actorIri)
-        {
-            return;
-        }
-
-        FollowersLoadingMore = true;
-        FollowersError = null;
-        try
-        {
-            await EnumerateOneFollowersPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            FollowersError = ex.Message;
-        }
-        finally
-        {
-            FollowersLoadingMore = false;
-        }
-    }
-
-    private async Task EnumerateOneFollowersPageAsync(Iri actorIri)
-    {
-        var client = Session.GetClient();
-        if (_followersResumeFrom is { } resume)
-        {
-            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
-            {
-                FollowersItems ??= [];
-                FollowersItems.AddRange(page.Items);
-                FollowersHasMore = !page.IsLastPage;
-                _followersResumeFrom = page.NextPage;
-                break;
-            }
-
-            return;
-        }
-
-        await foreach (var page in client.GetCollectionAsync(actorIri.FollowersOf(), null, CancellationToken.None))
-        {
-            FollowersItems ??= [];
-            FollowersItems.AddRange(page.Items);
-            FollowersHasMore = !page.IsLastPage;
-            _followersResumeFrom = page.NextPage;
-            break;
-        }
-    }
+        builder.OpenComponent<ObjectView>(0);
+        builder.AddAttribute(1, nameof(ObjectView.Item), item);
+        builder.CloseComponent();
+    };
 
     /// <summary>
-    /// Loads the first page of the actor's following collection (19.8.3). Mirrors the outbox paged idiom.
-    /// </summary>
-    private async Task LoadInitialFollowingAsync(Iri actorIri)
-    {
-        FollowingItems = [];
-        FollowingHasMore = false;
-        FollowingError = null;
-        _followingResumeFrom = null;
-        try
-        {
-            await EnumerateOneFollowingPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            FollowingError = ex.Message;
-        }
-    }
-
-    private async Task LoadMoreFollowingAsync()
-    {
-        if (FollowingLoadingMore || !FollowingHasMore || ActorIri is not { } actorIri)
-        {
-            return;
-        }
-
-        FollowingLoadingMore = true;
-        FollowingError = null;
-        try
-        {
-            await EnumerateOneFollowingPageAsync(actorIri);
-        }
-        catch (Exception ex)
-        {
-            FollowingError = ex.Message;
-        }
-        finally
-        {
-            FollowingLoadingMore = false;
-        }
-    }
-
-    private async Task EnumerateOneFollowingPageAsync(Iri actorIri)
-    {
-        var client = Session.GetClient();
-        if (_followingResumeFrom is { } resume)
-        {
-            await foreach (var page in client.GetCollectionAsync(resume, null, CancellationToken.None))
-            {
-                FollowingItems ??= [];
-                FollowingItems.AddRange(page.Items);
-                FollowingHasMore = !page.IsLastPage;
-                _followingResumeFrom = page.NextPage;
-                break;
-            }
-
-            return;
-        }
-
-        await foreach (var page in client.GetCollectionAsync(actorIri.FollowingOf(), null, CancellationToken.None))
-        {
-            FollowingItems ??= [];
-            FollowingItems.AddRange(page.Items);
-            FollowingHasMore = !page.IsLastPage;
-            _followingResumeFrom = page.NextPage;
-            break;
-        }
-    }
-
-    /// <summary>
-    /// The item renderer for the target actor's "Mutes" / "Blocks" / "Flags" <c>PagedCollection</c>
-    /// cards: each entry (a link or an object with an <c>id</c>) renders as a link to that actor's
-    /// detail page, showing a short handle (<see cref="HandleOf(string)"/>), or the relay IRI when it
-    /// carries no resolvable IRI. Built as a <see cref="RenderFragment{TData}"/> field (not an inline
-    /// lambda
-    /// attribute — Razor does not reliably parse multi-statement render-fragment attributes) so
-    /// <c>PagedCollection</c> can render custom item markup.
+    /// The item renderer for actor-linked collections (the followers/following and "Mutes" / "Blocks" /
+    /// "Flags" <c>CollectionBrowser</c> cards): each entry (a link or an object with an <c>id</c>) renders
+    /// as a link to that actor's detail page, showing a short handle (<see cref="HandleOf(string)"/>), or
+    /// the relay IRI as a <c>&lt;code&gt;</c> when it carries no resolvable IRI. Built as a
+    /// <see cref="RenderFragment{TData}"/> field (not an inline lambda attribute — Razor does not
+    /// reliably parse multi-statement render-fragment attributes) so <c>CollectionBrowser</c> can render
+    /// custom item markup.
     /// </summary>
     private static RenderFragment<IObjectOrLink> ActorLinkTemplate = item => builder =>
     {
@@ -895,11 +637,67 @@ else
     };
 
     /// <summary>
-    /// The item renderer for the "Inbox" <c>PagedCollection</c>: each delivered activity shows its
+    /// The per-item actions for the followers <c>CollectionBrowser</c>: when the logged-on actor owns the
+    /// viewed actor (21.1.1), a <c>Block</c> button severs the relationship (the owner can't "unfollow"
+    /// a follower in AP — the follower owns the follow edge — but can block them). Closes over the page's
+    /// <see cref="IsOwnActor"/> / <see cref="FollowersManagementBusy"/> / <see cref="BlockFollowerAsync"/>.
+    /// </summary>
+    private RenderFragment<IObjectOrLink> FollowerActionsTemplate => item => builder =>
+    {
+        if (IsOwnActor
+            && RelayIriOf(item) is { Length: > 0 } iri
+            && Iri.TryParse(iri, out var blockTarget))
+        {
+            builder.OpenElement(0, "button");
+            builder.AddAttribute(1, "onclick", EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(
+                this, () => BlockFollowerAsync(blockTarget)));
+            builder.AddAttribute(2, "disabled", FollowersManagementBusy);
+            builder.AddContent(3, "Block");
+            builder.CloseElement();
+        }
+    };
+
+    /// <summary>
+    /// The header line for the followers <c>CollectionBrowser</c>: the management error (an
+    /// <c>&lt;div class="error"&gt;</c>) and the last management result (a muted line), kept visible under
+    /// the list. Closes over <see cref="FollowersManagementError"/> / <see cref="FollowersManagementResult"/>.
+    /// </summary>
+    private RenderFragment? FollowerManagementHeader
+    {
+        get
+        {
+            if (FollowersManagementError is null && FollowersManagementResult is null)
+            {
+                return null;
+            }
+
+            return builder =>
+            {
+                if (FollowersManagementError is { } error)
+                {
+                    builder.OpenElement(0, "div");
+                    builder.AddAttribute(1, "class", "error");
+                    builder.AddContent(2, error);
+                    builder.CloseElement();
+                }
+
+                if (FollowersManagementResult is { } result)
+                {
+                    builder.OpenElement(3, "p");
+                    builder.AddAttribute(4, "class", "muted");
+                    builder.AddContent(5, result);
+                    builder.CloseElement();
+                }
+            };
+        }
+    }
+
+    /// <summary>
+    /// The item renderer for the "Inbox" <c>CollectionBrowser</c>: each delivered activity shows its
     /// ActivityStreams <c>type</c> (muted) and its <c>id</c> (as a <c>&lt;code&gt;</c>), or the relay IRI
     /// when the entry is a bare link. Built as a <see cref="RenderFragment{TData}"/> field (not an
     /// inline lambda attribute — Razor does not reliably parse multi-statement render-fragment
-    /// attributes) so <c>PagedCollection</c> can render custom item markup.
+    /// attributes) so <c>CollectionBrowser</c> can render custom item markup.
     /// </summary>
     private static RenderFragment<IObjectOrLink> InboxItemTemplate = item => builder =>
     {
@@ -926,20 +724,6 @@ else
             builder.CloseElement();
         }
     };
-
-    /// <summary>
-    /// A short display for an actor IRI: the path's last segment (the username) when it looks like an
-    /// actor IRI, else the raw IRI.
-    /// </summary>
-    private static string HandleOf(IObject obj)
-    {
-        if (obj is Actor { PreferredUsername: { Length: > 0 } username })
-        {
-            return username;
-        }
-
-        return obj.Id ?? obj.GetType().Name;
-    }
 
     /// <summary>
     /// A short display for an actor IRI string: the path's last segment (the username) when it looks
