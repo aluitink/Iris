@@ -6,6 +6,8 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -27,59 +29,59 @@ namespace Iris.Server.Tests;
 /// inbox, signed as alice; R validates that delivery (resolving alice's key from A's actor document)
 /// and stores the <see cref="Create"/> in R's activity store.
 /// </remarks>
-public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
+[Collection("OutboxRelayFanOut")]
+public sealed class OutboxRelayFanOutIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "outbox-relay-a.domain.local";
-    private const string RelayHost = "outbox-relay-r.example.com";
-    private const string Alice = "alice";
-    private const string Relay = "relay";
+    internal const string AHost = "outbox-relay-a.domain.local";
+    internal const string RelayHost = "outbox-relay-r.example.com";
+    internal const string Alice = "alice";
+    internal const string Relay = "relay";
 
-    private readonly TestServer _a;
-    private readonly TestServer _relay;
-    private readonly HttpClient _aHttp;
+    private readonly OutboxRelayFanOutSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _relayPersistence;
-    private readonly KeyPair _aliceKey;
-    private readonly Iri _aliceActorIri;
+    private readonly HttpClient _aHttp;
+    private KeyPair _aliceKey;
 
-    public OutboxRelayFanOutIntegrationTests()
+    public OutboxRelayFanOutIntegrationTests(OutboxRelayFanOutSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _relayPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var relaySeeded = TestSeeder.SeedPersonWithKey(_relayPersistence, RelayHost, Relay);
-
-        // alice (on A) has subscribed to the relay: the F-06 subscription edge.
-        _aPersistence.Relays
-            .RecordRelayAsync(aSeeded.ActorIri, relaySeeded.ActorIri)
-            .GetAwaiter().GetResult();
-
-        // A hosts alice; its outbound delivery worker routes to the relay's TestServer (so the fanned-out
-        // Create reaches the relay's inbox) and signs as alice. The transport and the relay-fetcher target
-        // are deferred (Func) because the relay is created after A (chicken-and-egg).
-        _a = StartAuthorServer(
-            _aPersistence, aSeeded.Key, aSeeded.ActorIri,
-            relayServer: () => _relay!, selfServer: () => _a!,
-            relayActorIri: relaySeeded.ActorIri);
-
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
-
-        // R hosts the relay; its fetcher is wired to A so R validates the fanned-out Create by fetching
-        // A's actor document (alice's key).
-        _relay = StartServer(
-            RelayHost, Relay, _relayPersistence, relaySeeded.Key,
-            fetcher: BuildFetcherFor(RelayHost, Relay, relaySeeded.Key, targetServer: _a));
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _relayPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _aliceKey = null!;
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _relayPersistence);
+
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _aPersistence.Keys.TryGetKey(new Iri($"{aliceIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _relay.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A) + relay (on B) with their existing keys and the alice→relay subscription
+    /// edge in A's relay store.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider relayPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var relayIri = new Iri($"https://{RelayHost}/ap/v1/u/{Relay}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(relayPersistence, RelayHost, Relay, new Iri($"{relayIri.Value}#key-1"));
+        aPersistence.Relays.RecordRelayAsync(aliceIri, relayIri).GetAwaiter().GetResult();
     }
 
     // --- A Create published to the author's outbox is fanned out to the subscribed relay --------
@@ -87,9 +89,10 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
     [Fact]
     public async Task OutboxPublish_Create_IsFannedOutToRelay()
     {
+        var aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var create = new Create
         {
-            Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+            Actor = [new Link { Href = new Uri(aliceActorIri.Value) }],
             Object =
             [
                 new Note { Content = ["outbox relay post"] },
@@ -99,7 +102,7 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
         // alice (A) publishes a Create to her own outbox (the outbox-publish write surface). A's
         // outbox-publish handler records it in alice's outbox and fans it out to the relay (F-06),
         // signed as alice. A's delivery service POSTs the Create to the relay's inbox over the wire.
-        using var request = SignedRequest(_aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
+        using var request = SignedRequest(aliceActorIri, _aliceKey, create, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
@@ -125,16 +128,17 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
     [Fact]
     public async Task OutboxPublish_Announce_IsFannedOutToRelay()
     {
+        var aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var noteIri = new Iri($"https://{AHost}/objects/note-{Guid.NewGuid():N}");
         var announce = new Announce
         {
-            Actor = [new Link { Href = new Uri(_aliceActorIri.Value) }],
+            Actor = [new Link { Href = new Uri(aliceActorIri.Value) }],
             Object = [new Link { Href = noteIri.Uri }],
         };
 
         // alice (A) publishes an Announce (boost) to her own outbox. A's outbox-publish handler records
         // it in alice's outbox and fans it out to the relay (F-06), signed as alice.
-        using var request = SignedRequest(_aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
+        using var request = SignedRequest(aliceActorIri, _aliceKey, announce, $"/ap/v1/u/{Alice}/outbox");
         using var response = await _aHttp.SendAsync(request);
         Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
 
@@ -165,7 +169,7 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
         TestServer? bobServer = null;
         using var a = StartAuthorServer(
             bobPersistence, bobSeeded.Key, bobActorIri,
-            relayServer: () => _relay, selfServer: () => bobServer!,
+            relayServer: () => _fixture.ServerB, selfServer: () => bobServer!,
             relayActorIri: new Iri($"https://{RelayHost}/ap/v1/u/{Relay}"));
         bobServer = a;
         using var bobHttp = new HttpClient(a.CreateHandler(), disposeHandler: false);
@@ -320,7 +324,7 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
         }
     }
 
-    private static TestServer StartAuthorServer(
+    internal static TestServer StartAuthorServer(
         InMemoryPersistenceProvider persistence, KeyPair authorKey, Iri authorActorIri,
         Func<TestServer> relayServer, Func<TestServer> selfServer, Iri relayActorIri)
     {
@@ -356,51 +360,12 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
         });
     }
 
-    private static TestServer StartServer(
-        string host, string handle, InMemoryPersistenceProvider persistence, KeyPair key,
-        IActorDocumentFetcher fetcher)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(key);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
-        keyProvider.RegisterKey(actorIri, key.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = host,
-            Handle = handle,
-            Persistence = persistence,
-            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
-            Fetcher = fetcher,
-        });
-    }
-
-    private static IActorDocumentFetcher BuildFetcherFor(
-        string host, string handle, KeyPair key, TestServer targetServer)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(key);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        var actorIri = new Iri($"https://{host}/ap/v1/u/{handle}");
-        keyProvider.RegisterKey(actorIri, key.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-
-        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
-        var client = factory.Create(
-            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
-            targetServer.CreateHandler());
-
-        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
-    }
-
     /// <summary>
     /// An <see cref="IActorDocumentFetcher"/> that delegates the relay's actor IRI to one fetcher (the
     /// relay's document, on the relay's instance) and every other actor to another (the local actor's
     /// document, on the author's own instance).
     /// </summary>
-    private sealed class DelegatingFetcher(
+    internal sealed class DelegatingFetcher(
         Iri relayActorIri, IActorDocumentFetcher relay, IActorDocumentFetcher self)
         : IActorDocumentFetcher
     {
@@ -413,4 +378,103 @@ public sealed class OutboxRelayFanOutIntegrationTests : IDisposable
                 ? _relay.GetActorAsync(actorIri, ct)
                 : _self.GetActorAsync(actorIri, ct);
     }
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="OutboxRelayFanOutIntegrationTests"/> (A: outbox-relay-a.domain.local
+/// alice, B: outbox-relay-r.example.com relay). Seeds alice + relay with keys ONCE; A's outbound delivery
+/// routes to B (the relay's inbox), A's fetcher is a <see cref="OutboxRelayFanOutIntegrationTests.DelegatingFetcher"/>
+/// (relay doc from B, self from A), B's fetcher reaches A (validates the fanned-out Create); the
+/// alice→relay subscription edge is recorded in A's relay store.
+/// </summary>
+public sealed class OutboxRelayFanOutSharedHost : SharedTwoHostFixture
+{
+    public OutboxRelayFanOutSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var relayPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, OutboxRelayFanOutIntegrationTests.AHost, OutboxRelayFanOutIntegrationTests.Alice);
+        var relaySeeded = TestSeeder.SeedPersonWithKey(relayPersistence, OutboxRelayFanOutIntegrationTests.RelayHost, OutboxRelayFanOutIntegrationTests.Relay);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(relayPersistence);
+
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(aSeeded.Key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(aSeeded.ActorIri, aSeeded.Key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var selfClient = factory.Create(
+            new ActivityPubClientOptions { ActorId = aSeeded.ActorIri, EnableRetry = false },
+            new LazyHandler(() => serverARef().CreateHandler()));
+        var relayClient = factory.Create(
+            new ActivityPubClientOptions { ActorId = aSeeded.ActorIri, EnableRetry = false },
+            new LazyHandler(() => serverBRef().CreateHandler()));
+        var relayActorIri = relaySeeded.ActorIri;
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = OutboxRelayFanOutIntegrationTests.AHost,
+            Handle = OutboxRelayFanOutIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new OutboxRelayFanOutIntegrationTests.DelegatingFetcher(
+                relayActorIri,
+                new IrisActorDocumentFetcher(relayClient, new RemoteActorCache()),
+                new IrisActorDocumentFetcher(selfClient, new RemoteActorCache())),
+        };
+
+        var relayKeyStore = new InMemoryKeyStore();
+        relayKeyStore.PutKey(relaySeeded.Key);
+        var relayKeyProvider = new InMemoryKeyProvider(relayKeyStore);
+        relayKeyProvider.RegisterKey(relayActorIri, relaySeeded.Key.KeyId);
+        var relaySigner = new HttpSignatureSigner(relayKeyStore);
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = OutboxRelayFanOutIntegrationTests.RelayHost,
+            Handle = OutboxRelayFanOutIntegrationTests.Relay,
+            Persistence = relayPersistence,
+            IdentityKeys = new IdentityKeys(relayKeyStore, relayKeyProvider, relaySigner),
+            Fetcher = BuildFetcherForLazy(relaySeeded.Key, relayActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB);
+    }
+
+    /// <summary>
+    /// Builds a fetcher whose client (signed as the relay) routes to the (deferred) A's
+    /// <c>TestServer</c> — i.e. the relay's fetcher reaches A's actor documents (lazily).
+    /// </summary>
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the outbox relay fan-out shared two-host fixture.
+/// </summary>
+[CollectionDefinition("OutboxRelayFanOut")]
+public sealed class OutboxRelayFanOutCollection : ICollectionFixture<OutboxRelayFanOutSharedHost>
+{
 }
