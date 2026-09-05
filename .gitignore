@@ -63,6 +63,11 @@ OPENCODE.md
 .probe_tmp2/
 .probe_loop/
 .tmp-bunit-probe/
+.tmp-bunitdump/
+.tmp-bunitpump/
+.tmp-bunitpump2/
+.tmp-bunitpump3/
+.tmp-bunitpump4/
 .loop/
 probe_*.txt
 .ui-review/

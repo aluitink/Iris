@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Razor">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Samples.SampleBlazorClient.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      bUnit component tests for the SampleBlazorClient (Blazor WebAssembly) components: the
+      PagedCollection render-lifecycle behavior (31.2 initial-load re-render) and similar
+      component-level UI invariants that the browser-assisted sample review cannot pin in CI.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="bunit" />
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\samples\SampleBlazorClient\SampleBlazorClient.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Bunit" />
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

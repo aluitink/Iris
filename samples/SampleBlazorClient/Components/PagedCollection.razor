@@ -31,12 +31,19 @@
         }
         @if (Items is null)
         {
-            <div class="card-loading">
-                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                </svg>
-                <span class="muted">Loading…</span>
-            </div>
+            // A failed initial fetch (LoadError set) has no items to show and nothing more to
+            // load — the error line above is the card's content, so no spinner. A fetch that has
+            // not resolved yet (LoadError null) shows the spinner (29.2: the empty state only
+            // renders once a page has actually been read).
+            @if (LoadError is null)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
         }
         else
         {
@@ -208,6 +215,13 @@
         {
             Items = [];
         }
+
+        // 31.2: this load was fired fire-and-forget from OnParametersSet (not an @onclick handler,
+        // not awaited), so Blazor never re-renders after Items is populated — the "Loading…" spinner
+        // (Items == null) stays on screen until the user clicks Refresh (an @onclick handler, which
+        // Blazor auto-re-renders). Mirror that auto-re-render here so the initial navigate renders
+        // the loaded items without a manual Refresh.
+        StateHasChanged();
     }
 
     private async Task LoadMoreAsync()
@@ -237,6 +251,7 @@
     /// Re-fetches the collection's first page with the page cache bypassed (the <c>?refresh=true</c>
     /// path), replacing the current items — a manual refresh that re-reads the server even within the
     /// cache TTL (21.2.2 / 19.5.5). The bypass is one-shot: it does not change <see cref="BypassCache"/>.
+    /// An <c>@onclick</c> handler: Blazor auto-re-renders after it completes (31.2).
     /// </summary>
     private async Task RefreshAsync()
     {

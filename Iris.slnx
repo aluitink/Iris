@@ -20,6 +20,7 @@
     <Project Path="tests/Iris.Server.Tests/Iris.Server.Tests.csproj" />
     <Project Path="tests/Iris.Testing/Iris.Testing.csproj" />
     <Project Path="tests/Iris.WebCrypto.Tests/Iris.WebCrypto.Tests.csproj" />
+    <Project Path="tests/SampleBlazorClient.Tests/SampleBlazorClient.Tests.csproj" />
     <Project Path="tests/SampleServer.Tests/SampleServer.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
