@@ -60,390 +60,423 @@ else
     }
     else if (CommunityIri is { } communityIri)
     {
-        <div class="card">
-            <h3>Community</h3>
-            <ObjectView Item="CommunityDoc" />
-            <p class="muted">IRI: <code>@communityIri.Value</code></p>
-        </div>
+        <ActorProfile Actor="CommunityDoc" ActorId="communityIri.Value" />
 
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@communityIri.FollowingOf()"
-            Title="Following"
-            Description="Actors/communities that this community follows (its following collection), paged with next-link walking. Each item links to the followed actor's detail."
-            EmptyMessage="Not following anyone."
-            ItemTemplate="@ActorLinkTemplate" />
-
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@communityIri.FollowersOf()"
-            Title="Followers"
-            Description="Actors/communities that follow this community (its followers collection), paged with next-link walking. Each item links to the follower's actor detail."
-            EmptyMessage="No followers recorded."
-            ItemTemplate="@ActorLinkTemplate" />
-
-        <div class="card">
-            <h3>Inbound follows</h3>
-            <p class="muted">
-                Follows <em>of</em> <code>@CommunityIri.Value</code> (actors/communities that follow this
-                community), read from the community's outbox. Accept / reject are AP-native: the client
-                authors an <c>Accept</c>/<c>Reject</c> and publishes it to the community's outbox; the
-                instance records the edge and delivers the activity to the follower's inbox.
-            </p>
-            @if (PendingFollows is not null && PendingFollows.Count == 0)
+        <nav class="tabs" aria-label="Community sections">
+            @foreach (var tab in Tabs)
             {
-                <p class="muted">No inbound follows recorded.</p>
-            }
-            @if (PendingFollows is not null)
-            {
-                @foreach (var follow in PendingFollows)
-                {
-                    <div class="pending-follow">
-                        <code>@follow.FollowerIri</code>
-                        <button @onclick="() => AcceptFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Accept</button>
-                        <button @onclick="() => RejectFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Reject</button>
-                        @if (FollowDecisionResult is not null)
-                        {
-                            <span class="muted">Status: <code>@FollowDecisionResult</code></span>
-                        }
-                    </div>
-                }
-            }
-            @if (FollowDecisionBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (FollowDecisionError is not null)
-            {
-                <div class="error">@FollowDecisionError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Pending join requests</h3>
-            <p class="muted">
-                Join requests <em>to</em> <code>@CommunityIri.Value</code> (actors that requested to join
-                this community), read from the community's outbox. Accept / reject are AP-native: the
-                client authors an <c>Accept</c>/<c>Reject</c> referencing the Join activity's IRI and
-                publishes it to the community's outbox; the instance records the membership and delivers
-                the activity to the joiner's inbox.
-            </p>
-            @if (PendingJoins is not null && PendingJoins.Count == 0)
-            {
-                <p class="muted">No pending join requests.</p>
-            }
-            @if (PendingJoins is not null)
-            {
-                @foreach (var join in PendingJoins)
-                {
-                    <div class="pending-join">
-                        <a href="/actor?iri=@Uri.EscapeDataString(join.JoinerIri)" title="@join.JoinerIri">@HandleOf(join.JoinerIri)</a>
-                        <button @onclick="() => AcceptJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Accept</button>
-                        <button @onclick="() => RejectJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Reject</button>
-                        @if (JoinDecisionResult is not null)
-                        {
-                            <span class="muted">Status: <code>@JoinDecisionResult</code></span>
-                        }
-                    </div>
-                }
-            }
-            @if (JoinDecisionBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (JoinDecisionError is not null)
-            {
-                <div class="error">@JoinDecisionError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Moderation</h3>
-            <p class="muted">
-                As <code>@CommunityIri.Value</code> (the community signs with the primary actor's key in
-                the sample deployment). Mute is a local, Basic-authenticated decision (no federation);
-                block / flag are signed writes to the community's own outbox (the instance records the
-                edge and federates to the target's inbox).
-            </p>
-            <label for="mod-target">Target actor IRI</label>
-            <input id="mod-target" type="text" @bind="ModTargetInput"
-                   placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/carla" />
-            <button @onclick="ModMuteAsync" disabled="@(ModBusy)">Mute</button>
-            <button @onclick="ModUnmuteAsync" disabled="@(ModBusy)">Unmute</button>
-            <button @onclick="ModBlockAsync" disabled="@(ModBusy)">Block</button>
-            <button @onclick="ModUnblockAsync" disabled="@(ModBusy)">Unblock</button>
-            <button @onclick="ModFlagAsync" disabled="@(ModBusy)">Flag</button>
-            <button @onclick="ModUnflagAsync" disabled="@(ModBusy)">Unflag</button>
-            @if (ModBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (ModResult is not null)
-            {
-                <p class="muted">Status: <code>@ModResult</code></p>
-            }
-            @if (ModError is not null)
-            {
-                <div class="error">@ModError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Moderation (this community's collections)</h3>
-            <p class="muted">
-                The collections below show who <em>this community</em> has muted, blocked, and flagged
-                (their <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections), paged with <c>next</c>-link
-                walking. Each item links to the moderated actor's detail. No per-item undo buttons: the
-                Decision 055 learned-id model requires the id of the original activity to undo it, which
-                these collections do not carry (they carry actor IRIs, not activity ids). The
-                unmute/unblock/unflag capability is provided by the "Moderation" card above.
-            </p>
-        </div>
-
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@communityIri.MutesOf()"
-            Title="Mutes"
-            Description="Actors this community has muted (its mutes collection), paged with next-link walking. Each item links to the muted actor's detail."
-            EmptyMessage="No mutes recorded."
-            ItemTemplate="@ActorLinkTemplate" />
-
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@communityIri.BlocksOf()"
-            Title="Blocks"
-            Description="Actors this community has blocked (its blocks collection), paged with next-link walking. Each item links to the blocked actor's detail."
-            EmptyMessage="No blocks recorded."
-            ItemTemplate="@ActorLinkTemplate" />
-
-        <PagedCollection
-            Client="@Session.GetClient()"
-            CollectionIri="@communityIri.FlagsOf()"
-            Title="Flags"
-            Description="Actors this community has flagged (its flags collection), paged with next-link walking. Each item links to the flagged actor's detail."
-            EmptyMessage="No flags recorded."
-            ItemTemplate="@ActorLinkTemplate" />
-
-        <div class="card">
-            <h3>Settings</h3>
-            <p class="muted">
-                Community settings (AP-native, change 217): the <c>manuallyApprovesMembers</c> flag
-                controls whether join requests require operator approval (gated) or are auto-granted
-                (open). The flag is read from the community document's <c>ExtensionData</c>; toggling it
-                publishes an <c>Add</c> (enable) or <c>Remove</c> (disable) of the community's own
-                document to the community's outbox.
-            </p>
-            <p>
-                <strong>Require member approval:</strong>
-                @(IsGated ? "Yes (gated)" : "No (open)")
-            </p>
-            <button @onclick="EnableGatingAsync" disabled="@(SettingsBusy || IsGated)">Require approval</button>
-            <button @onclick="DisableGatingAsync" disabled="@(SettingsBusy || !IsGated)">Open (auto-approve)</button>
-            @if (SettingsBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (SettingsResult is not null)
-            {
-                <p class="muted">Status: <code>@SettingsResult</code></p>
-            }
-            @if (SettingsError is not null)
-            {
-                <div class="error">@SettingsError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Follow / unfollow</h3>
-            <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
-            <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
-            <button @onclick="UnfollowAsync" disabled="@(WriteBusy)">Unfollow</button>
-            @if (WriteBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (WriteResult is not null)
-            {
-                <p class="muted">Status: <code>@WriteResult</code></p>
-            }
-            @if (WriteError is not null)
-            {
-                <div class="error">@WriteError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Manage membership</h3>
-            <p class="muted">Add or remove a member by IRI (self-management: the activity's actor is the
-                community, signed as the community — in the sample deployment the community signs with the
-                primary actor's key).</p>
-            <label for="member-iri">Member IRI</label>
-            <input id="member-iri" type="text" @bind="MemberIriInput"
-                   placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/alice" />
-            <button @onclick="AddMemberAsync" disabled="@(MemberBusy)">Add member</button>
-            <button @onclick="RemoveMemberAsync" disabled="@(MemberBusy)">Remove member</button>
-            <button @onclick="RequestJoinAsync" disabled="@(MemberBusy)">Join (as me)</button>
-            @if (MemberBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (MemberResult is not null)
-            {
-                <p class="muted">Status: <code>@MemberResult</code></p>
-            }
-            @if (MemberError is not null)
-            {
-                <div class="error">@MemberError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Peer management</h3>
-            <p class="muted">The community follows or unfollows a specific actor (19.5.3 gap G-3 — the
-                community's outbound follow, signed as the community; in the sample deployment the
-                community signs with the primary actor's key).</p>
-            <label for="peer-iri">Peer actor IRI</label>
-            <input id="peer-iri" type="text" @bind="PeerIriInput"
-                   placeholder="e.g. http://iris-dev2.luit.ink/ap/v1/u/carla" />
-            <button @onclick="PeerFollowAsync" disabled="@(PeerBusy)">Community follows</button>
-            <button @onclick="PeerUnfollowAsync" disabled="@(PeerBusy)">Community unfollows</button>
-            @if (PeerBusy)
-            {
-                <span class="muted">Working…</span>
-            }
-            @if (PeerResult is not null)
-            {
-                <p class="muted">Status: <code>@PeerResult</code></p>
-            }
-            @if (PeerError is not null)
-            {
-                <div class="error">@PeerError</div>
-            }
-        </div>
-
-        <div class="card">
-            <h3>Feed</h3>
-            <p class="muted">
-                The community's unified feed (its <c>feed</c> collection). Each item renders via
-                <c>ObjectView</c>; selecting it (the object link) navigates to the full object detail.
-            </p>
-            <div class="paged-collection-actions">
-                <button @onclick="RefreshFeedAsync" disabled="@(FeedRefreshing || CommunityIri is null)">
-                    @(FeedRefreshing ? "Refreshing…" : "Refresh")
+                <button class="tab @(tab.Key == ActiveTab ? "active" : null)" @onclick="() => SetActiveTab(tab.Key)" title="@(tab.Title)">
+                    @tab.Title
+                    @if (tab.Badge is { Length: > 0 } badge)
+                    {
+                        <span class="tab-badge">@badge</span>
+                    }
                 </button>
-            </div>
-            @if (Feed is not null)
-            {
-                @if (Feed.Count == 0)
+            }
+        </nav>
+
+        @if (ActiveTab is "following")
+        {
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@communityIri.FollowingOf()"
+                Title="Following"
+                Description="Actors/communities that this community follows (its following collection), paged with next-link walking. Each item links to the followed actor's detail."
+                EmptyMessage="Not following anyone."
+                ItemTemplate="@ActorLinkTemplate" />
+        }
+
+        @if (ActiveTab is "followers")
+        {
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@communityIri.FollowersOf()"
+                Title="Followers"
+                Description="Actors/communities that follow this community (its followers collection), paged with next-link walking. Each item links to the follower's actor detail."
+                EmptyMessage="No followers recorded."
+                ItemTemplate="@ActorLinkTemplate" />
+        }
+
+        @if (ActiveTab is "members")
+        {
+            <div class="card">
+                <h3>Members</h3>
+                <p class="muted">
+                    The community's member actors (its <c>members</c> collection), each a clickable link to the
+                    member's actor detail.
+                </p>
+                @if (Members is not null)
                 {
-                    <p class="muted">No feed items.</p>
-                }
-                else
-                {
-                    <p class="muted">@Feed.Count item(s).</p>
-                    <ul class="object-list">
-                        @foreach (var item in Feed)
-                        {
-                            <li>
-                                @if (FeedObjectIri(item) is { } feedIri)
-                                {
-                                    <a href="/object?iri=@Uri.EscapeDataString(feedIri)" class="object-feed-link" title="@feedIri">
+                    @if (Members.Count == 0)
+                    {
+                        <p class="muted">No members.</p>
+                    }
+                    else
+                    {
+                        <p class="muted">@Members.Count member(s).</p>
+                        <ul class="object-list">
+                            @foreach (var item in Members)
+                            {
+                                <li>
+                                    @if (item is ILink { Href: { } href })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
+                                            @HandleOf(href.ToString())
+                                        </a>
+                                    }
+                                    else if (item is IObject { Id: { Length: > 0 } fid })
+                                    {
+                                        <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
+                                            @HandleOf(fid)
+                                        </a>
+                                    }
+                                    else
+                                    {
                                         <ObjectView Item="item" />
-                                    </a>
-                                }
-                                else
-                                {
-                                    <ObjectView Item="item" />
-                                }
-                            </li>
-                        }
-                    </ul>
+                                    }
+                                    @if (MemberIriOf(item) is { } memberIri)
+                                    {
+                                        <button class="member-remove" @onclick="() => RemoveMemberFromListAsync(memberIri)"
+                                                disabled="@MemberBusy" title="Remove this member">
+                                            Remove
+                                        </button>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
                 }
-            }
-        </div>
+            </div>
+        }
 
-        <div class="card">
-            <h3>Members</h3>
-            <p class="muted">
-                The community's member actors (its <c>members</c> collection), each a clickable link to the
-                member's actor detail.
-            </p>
-            @if (Members is not null)
-            {
-                @if (Members.Count == 0)
+        @if (ActiveTab is "feed")
+        {
+            <div class="card">
+                <h3>Feed</h3>
+                <p class="muted">
+                    The community's unified feed (its <c>feed</c> collection). Each item renders via
+                    <c>ObjectView</c>; selecting it (the object link) navigates to the full object detail.
+                </p>
+                <div class="paged-collection-actions">
+                    <button @onclick="RefreshFeedAsync" disabled="@(FeedRefreshing || CommunityIri is null)">
+                        @(FeedRefreshing ? "Refreshing…" : "Refresh")
+                    </button>
+                </div>
+                @if (Feed is not null)
                 {
-                    <p class="muted">No members.</p>
+                    @if (Feed.Count == 0)
+                    {
+                        <p class="muted">No feed items.</p>
+                    }
+                    else
+                    {
+                        <p class="muted">@Feed.Count item(s).</p>
+                        <ul class="object-list">
+                            @foreach (var item in Feed)
+                            {
+                                <li>
+                                    @if (FeedObjectIri(item) is { } feedIri)
+                                    {
+                                        <a href="/object?iri=@Uri.EscapeDataString(feedIri)" class="object-feed-link" title="@feedIri">
+                                            <ObjectView Item="item" />
+                                        </a>
+                                    }
+                                    else
+                                    {
+                                        <ObjectView Item="item" />
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    }
                 }
-                else
-                {
-                    <p class="muted">@Members.Count member(s).</p>
-                    <ul class="object-list">
-                        @foreach (var item in Members)
-                        {
-                            <li>
-                                @if (item is ILink { Href: { } href })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(href.ToString())" title="@href">
-                                        @HandleOf(href.ToString())
-                                    </a>
-                                }
-                                else if (item is IObject { Id: { Length: > 0 } fid })
-                                {
-                                    <a href="/actor?iri=@Uri.EscapeDataString(fid)" title="@fid">
-                                        @HandleOf(fid)
-                                    </a>
-                                }
-                                else
-                                {
-                                    <ObjectView Item="item" />
-                                }
-                                @if (MemberIriOf(item) is { } memberIri)
-                                {
-                                    <button class="member-remove" @onclick="() => RemoveMemberFromListAsync(memberIri)"
-                                            disabled="@MemberBusy" title="Remove this member">
-                                        Remove
-                                    </button>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-            }
-        </div>
+            </div>
+        }
 
-        <div class="card">
-            <h3>Search</h3>
-            <label for="q">Query</label>
-            <input id="q" type="text" @bind="SearchQuery" placeholder="e.g. hello" />
-            <button @onclick="SearchAsync" disabled="@(SearchBusy)">Search</button>
-            @if (SearchBusy)
-            {
-                <span class="muted">Searching…</span>
-            }
-            @if (SearchError is not null)
-            {
-                <div class="error">@SearchError</div>
-            }
-            else if (SearchResults is not null)
-            {
-                @if (SearchResults.Count == 0)
+        @if (ActiveTab is "manage")
+        {
+            <div class="card">
+                <h3>Follow / unfollow</h3>
+                <p class="muted">As <code>@(Session.ActorIri?.Value ?? "…")</code></p>
+                <button @onclick="FollowAsync" disabled="@(WriteBusy)">Follow</button>
+                <button @onclick="UnfollowAsync" disabled="@(WriteBusy)">Unfollow</button>
+                @if (WriteBusy)
                 {
-                    <p class="muted">No matching actors or content.</p>
+                    <span class="muted">Working…</span>
                 }
-                else
+                @if (WriteResult is not null)
                 {
-                    <p class="muted">@SearchResults.Count result(s).</p>
-                    <ul class="object-list">
-                        @foreach (var item in SearchResults)
-                        {
-                            <li><ObjectView Item="item" /></li>
-                        }
-                    </ul>
+                    <p class="muted">Status: <code>@WriteResult</code></p>
                 }
-            }
-        </div>
+                @if (WriteError is not null)
+                {
+                    <div class="error">@WriteError</div>
+                }
+            </div>
 
-        <RawInspector Document="CommunityDoc" Title="Raw inspector" />
+            <div class="card">
+                <h3>Manage membership</h3>
+                <p class="muted">Add or remove a member by IRI (self-management: the activity's actor is the
+                    community, signed as the community — in the sample deployment the community signs with the
+                    primary actor's key).</p>
+                <label for="member-iri">Member IRI</label>
+                <input id="member-iri" type="text" @bind="MemberIriInput"
+                       placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/alice" />
+                <button @onclick="AddMemberAsync" disabled="@(MemberBusy)">Add member</button>
+                <button @onclick="RemoveMemberAsync" disabled="@(MemberBusy)">Remove member</button>
+                <button @onclick="RequestJoinAsync" disabled="@(MemberBusy)">Join (as me)</button>
+                @if (MemberBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (MemberResult is not null)
+                {
+                    <p class="muted">Status: <code>@MemberResult</code></p>
+                }
+                @if (MemberError is not null)
+                {
+                    <div class="error">@MemberError</div>
+                }
+            </div>
+
+            <div class="card">
+                <h3>Peer management</h3>
+                <p class="muted">The community follows or unfollows a specific actor (19.5.3 gap G-3 — the
+                    community's outbound follow, signed as the community; in the sample deployment the
+                    community signs with the primary actor's key).</p>
+                <label for="peer-iri">Peer actor IRI</label>
+                <input id="peer-iri" type="text" @bind="PeerIriInput"
+                       placeholder="e.g. http://iris-dev2.luit.ink/ap/v1/u/carla" />
+                <button @onclick="PeerFollowAsync" disabled="@(PeerBusy)">Community follows</button>
+                <button @onclick="PeerUnfollowAsync" disabled="@(PeerBusy)">Community unfollows</button>
+                @if (PeerBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (PeerResult is not null)
+                {
+                    <p class="muted">Status: <code>@PeerResult</code></p>
+                }
+                @if (PeerError is not null)
+                {
+                    <div class="error">@PeerError</div>
+                }
+            </div>
+
+            <div class="card">
+                <h3>Settings</h3>
+                <p class="muted">
+                    Community settings (AP-native, change 217): the <c>manuallyApprovesMembers</c> flag
+                    controls whether join requests require operator approval (gated) or are auto-granted
+                    (open). The flag is read from the community document's <c>ExtensionData</c>; toggling it
+                    publishes an <c>Add</c> (enable) or <c>Remove</c> (disable) of the community's own
+                    document to the community's outbox.
+                </p>
+                <p>
+                    <strong>Require member approval:</strong>
+                    @(IsGated ? "Yes (gated)" : "No (open)")
+                </p>
+                <button @onclick="EnableGatingAsync" disabled="@(SettingsBusy || IsGated)">Require approval</button>
+                <button @onclick="DisableGatingAsync" disabled="@(SettingsBusy || !IsGated)">Open (auto-approve)</button>
+                @if (SettingsBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (SettingsResult is not null)
+                {
+                    <p class="muted">Status: <code>@SettingsResult</code></p>
+                }
+                @if (SettingsError is not null)
+                {
+                    <div class="error">@SettingsError</div>
+                }
+            </div>
+
+            <div class="card">
+                <h3>Search</h3>
+                <label for="q">Query</label>
+                <input id="q" type="text" @bind="SearchQuery" placeholder="e.g. hello" />
+                <button @onclick="SearchAsync" disabled="@(SearchBusy)">Search</button>
+                @if (SearchBusy)
+                {
+                    <span class="muted">Searching…</span>
+                }
+                @if (SearchError is not null)
+                {
+                    <div class="error">@SearchError</div>
+                }
+                else if (SearchResults is not null)
+                {
+                    @if (SearchResults.Count == 0)
+                    {
+                        <p class="muted">No matching actors or content.</p>
+                    }
+                    else
+                    {
+                        <p class="muted">@SearchResults.Count result(s).</p>
+                        <ul class="object-list">
+                            @foreach (var item in SearchResults)
+                            {
+                                <li><ObjectView Item="item" /></li>
+                            }
+                        </ul>
+                    }
+                }
+            </div>
+        }
+
+        @if (ActiveTab is "requests")
+        {
+            <div class="card">
+                <h3>Inbound follows</h3>
+                <p class="muted">
+                    Follows <em>of</em> <code>@(CommunityIri?.Value ?? string.Empty)</code> (actors/communities that follow this
+                    community), read from the community's outbox. Accept / reject are AP-native: the client
+                    authors an <c>Accept</c>/<c>Reject</c> and publishes it to the community's outbox; the
+                    instance records the edge and delivers the activity to the follower's inbox.
+                </p>
+                @if (PendingFollows is not null && PendingFollows.Count == 0)
+                {
+                    <p class="muted">No inbound follows recorded.</p>
+                }
+                @if (PendingFollows is not null)
+                {
+                    @foreach (var follow in PendingFollows)
+                    {
+                        <div class="pending-follow">
+                            <code>@follow.FollowerIri</code>
+                            <button @onclick="() => AcceptFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Accept</button>
+                            <button @onclick="() => RejectFollowAsync(follow.FollowIri)" disabled="@(FollowDecisionBusy)">Reject</button>
+                            @if (FollowDecisionResult is not null)
+                            {
+                                <span class="muted">Status: <code>@FollowDecisionResult</code></span>
+                            }
+                        </div>
+                    }
+                }
+                @if (FollowDecisionBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (FollowDecisionError is not null)
+                {
+                    <div class="error">@FollowDecisionError</div>
+                }
+            </div>
+
+            <div class="card">
+                <h3>Pending join requests</h3>
+                <p class="muted">
+                    Join requests <em>to</em> <code>@(CommunityIri?.Value ?? string.Empty)</code> (actors that requested to join
+                    this community), read from the community's outbox. Accept / reject are AP-native: the
+                    client authors an <c>Accept</c>/<c>Reject</c> referencing the Join activity's IRI and
+                    publishes it to the community's outbox; the instance records the membership and delivers
+                    the activity to the joiner's inbox.
+                </p>
+                @if (PendingJoins is not null && PendingJoins.Count == 0)
+                {
+                    <p class="muted">No pending join requests.</p>
+                }
+                @if (PendingJoins is not null)
+                {
+                    @foreach (var join in PendingJoins)
+                    {
+                        <div class="pending-join">
+                            <a href="/actor?iri=@Uri.EscapeDataString(join.JoinerIri)" title="@join.JoinerIri">@HandleOf(join.JoinerIri)</a>
+                            <button @onclick="() => AcceptJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Accept</button>
+                            <button @onclick="() => RejectJoinAsync(join.JoinIri)" disabled="@(JoinDecisionBusy)">Reject</button>
+                            @if (JoinDecisionResult is not null)
+                            {
+                                <span class="muted">Status: <code>@JoinDecisionResult</code></span>
+                            }
+                        </div>
+                    }
+                }
+                @if (JoinDecisionBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (JoinDecisionError is not null)
+                {
+                    <div class="error">@JoinDecisionError</div>
+                }
+            </div>
+        }
+
+        @if (ActiveTab is "moderation")
+        {
+            <div class="card">
+                <h3>Moderation</h3>
+                <p class="muted">
+                    As <code>@(CommunityIri?.Value ?? string.Empty)</code> (the community signs with the primary actor's key in
+                    the sample deployment). Mute is a local, Basic-authenticated decision (no federation);
+                    block / flag are signed writes to the community's own outbox (the instance records the
+                    edge and federates to the target's inbox).
+                </p>
+                <label for="mod-target">Target actor IRI</label>
+                <input id="mod-target" type="text" @bind="ModTargetInput"
+                       placeholder="e.g. http://iris-dev1.luit.ink/ap/v1/u/carla" />
+                <button @onclick="ModMuteAsync" disabled="@(ModBusy)">Mute</button>
+                <button @onclick="ModUnmuteAsync" disabled="@(ModBusy)">Unmute</button>
+                <button @onclick="ModBlockAsync" disabled="@(ModBusy)">Block</button>
+                <button @onclick="ModUnblockAsync" disabled="@(ModBusy)">Unblock</button>
+                <button @onclick="ModFlagAsync" disabled="@(ModBusy)">Flag</button>
+                <button @onclick="ModUnflagAsync" disabled="@(ModBusy)">Unflag</button>
+                @if (ModBusy)
+                {
+                    <span class="muted">Working…</span>
+                }
+                @if (ModResult is not null)
+                {
+                    <p class="muted">Status: <code>@ModResult</code></p>
+                }
+                @if (ModError is not null)
+                {
+                    <div class="error">@ModError</div>
+                }
+            </div>
+
+            <div class="card">
+                <h3>Moderation (this community's collections)</h3>
+                <p class="muted">
+                    The collections below show who <em>this community</em> has muted, blocked, and flagged
+                    (their <c>mutes</c>/<c>blocks</c>/<c>flags</c> collections), paged with <c>next</c>-link
+                    walking. Each item links to the moderated actor's detail. No per-item undo buttons: the
+                    Decision 055 learned-id model requires the id of the original activity to undo it, which
+                    these collections do not carry (they carry actor IRIs, not activity ids). The
+                    unmute/unblock/unflag capability is provided by the "Moderation" card above.
+                </p>
+            </div>
+
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@communityIri.MutesOf()"
+                Title="Mutes"
+                Description="Actors this community has muted (its mutes collection), paged with next-link walking. Each item links to the muted actor's detail."
+                EmptyMessage="No mutes recorded."
+                ItemTemplate="@ActorLinkTemplate" />
+
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@communityIri.BlocksOf()"
+                Title="Blocks"
+                Description="Actors this community has blocked (its blocks collection), paged with next-link walking. Each item links to the blocked actor's detail."
+                EmptyMessage="No blocks recorded."
+                ItemTemplate="@ActorLinkTemplate" />
+
+            <PagedCollection
+                Client="@Session.GetClient()"
+                CollectionIri="@communityIri.FlagsOf()"
+                Title="Flags"
+                Description="Actors this community has flagged (its flags collection), paged with next-link walking. Each item links to the flagged actor's detail."
+                EmptyMessage="No flags recorded."
+                ItemTemplate="@ActorLinkTemplate" />
+        }
+
+        @if (ActiveTab is "raw")
+        {
+            <RawInspector Document="CommunityDoc" Title="Raw inspector" />
+        }
     }
 }
 
@@ -456,7 +489,41 @@ else
     private bool Busy { get; set; }
     private bool SearchBusy { get; set; }
     private Iri? CommunityIri { get; set; }
-    private IObjectOrLink? CommunityDoc { get; set; }
+    private IObject? CommunityDoc { get; set; }
+
+    // 31.6: the active detail tab (the one-long community page is organized into tabs, mirroring the
+    // 31.5 actor-detail treatment). The key doubles as the @if selector in the markup (a string
+    // literal match). The community's sections are grouped into: following/followers/members (the
+    // social graph), feed (its unified feed), manage (follow + membership + peer + settings + search),
+    // requests (inbound follows + pending joins), moderation (its mutes/blocks/flags), and raw.
+    private string ActiveTab { get; set; } = "feed";
+
+    /// <summary>
+    /// A community detail tab: its key (the markup's @if selector), its title (the button label), and an
+    /// optional badge (a short count shown on the button).
+    /// </summary>
+    private sealed record Tab(string Key, string Title, string? Badge = null);
+
+    /// <summary>
+    /// The community detail tabs, in display order.
+    /// </summary>
+    private IReadOnlyList<Tab> Tabs =>
+    [
+        new("feed", "Feed"),
+        new("members", "Members"),
+        new("followers", "Followers"),
+        new("following", "Following"),
+        new("manage", "Manage"),
+        new("requests", "Requests"),
+        new("moderation", "Moderation"),
+        new("raw", "Raw"),
+    ];
+
+    /// <summary>
+    /// Selects a community detail tab.
+    /// </summary>
+    private void SetActiveTab(string key) => ActiveTab = key;
+
     private IReadOnlyList<IObjectOrLink>? Feed { get; set; }
     private bool FeedRefreshing { get; set; }
     private IReadOnlyList<IObjectOrLink>? Members { get; set; }
@@ -553,6 +620,7 @@ else
         Feed = null;
         Members = null;
         LoadError = null;
+        ActiveTab = "feed";
         try
         {
             var baseUri = Session.DialBaseUri ?? throw new InvalidOperationException("No dial base URI.");
