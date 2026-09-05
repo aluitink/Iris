@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -48,81 +49,72 @@ namespace Iris.Server.Tests;
 /// signed POSTs to A's own outbox; the cross-instance hop (A → B) is made by A's server, signed as alice.
 /// </para>
 /// </remarks>
-public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
+[Collection("LikeAnnounceUndoPropagation")]
+public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "like-undo-a.domain.local";
-    private const string BHost = "like-undo-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "like-undo-a.domain.local";
+    internal const string BHost = "like-undo-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly LikeAnnounceUndoPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
     private readonly Iri _bobNoteIri;
 
-    public LikeAnnounceUndoPropagationIntegrationTests()
+    public LikeAnnounceUndoPropagationIntegrationTests(LikeAnnounceUndoPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        // bob's Note, stored in B's object store with attributedTo bob, served at its IRI so A can fetch
-        // it over the wire and resolve the author (the 24.1 delivery-target resolution).
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
         _bobNoteIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}/notes/n1");
-        _bPersistence.Objects.PutObjectAsync(new Note
-        {
-            Id = _bobNoteIri.Value,
-            Content = ["a note from bob"],
-            AttributedTo = [new Link { Href = new Uri(_bobActorIri.Value) }],
-        }).GetAwaiter().GetResult();
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            IdentityKeys = BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            // 24.1: A's outbound object fetcher routes to B so A resolves the Note's author (bob).
-            Client = BuildClientTo(aSeeded.ActorIri, aSeeded.Key, new LazyHandler(() => _b!.CreateHandler())),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                aSeeded.Key, aSeeded.ActorIri),
-        });
-        // bob follows alice. In the real federation flow the Follow federates B → A and A records bob in
-        // alice's followers (so A can deliver to bob later); here we record that follow edge directly in
-        // A's persistence (alice's followers include bob) so A's GetRemoteNonBlockedFollowersAsync finds
-        // bob and delivers the Announce to bob's inbox on B. Seeded in the constructor (not the test
-        // method, per xUnit 1031); it only matters for the Announce variant (the Like variant ignores it).
-        _aPersistence.Follows.RecordFollowAsync(_bobActorIri, _aliceActorIri).GetAwaiter().GetResult();
-
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            Fetcher = BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => _a!.CreateHandler())),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _aliceKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + bob (with their existing keys), bob's note on B, and the follow edge (bob→alice on A).
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        var bobIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"{aliceIri.Value}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"{bobIri.Value}#key-1"));
+
+        var noteIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}/notes/n1");
+        bPersistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri.Value,
+            Content = ["a note from bob"],
+            AttributedTo = [new Link { Href = new Uri(bobIri.Value) }],
+        }).GetAwaiter().GetResult();
+
+        aPersistence.Follows.RecordFollowAsync(bobIri, aliceIri).GetAwaiter().GetResult();
     }
 
     // --- An Undo(Like) published to A's outbox federates to B (the object's author's instance) ----
@@ -268,7 +260,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
 
     // --- Helpers --------------------------------------------------------------------------
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -284,7 +276,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
     /// instance). This is the 24.1 outbound object fetcher: A uses it to fetch bob's Note and resolve the
     /// author for the Like/Announce delivery target.
     /// </summary>
-    private static IActivityPubClient BuildClientTo(Iri actorIri, KeyPair key, HttpMessageHandler handler)
+    internal static IActivityPubClient BuildClientTo(Iri actorIri, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -367,7 +359,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -451,7 +443,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -525,4 +517,65 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="LikeAnnounceUndoPropagationIntegrationTests"/> (A:
+/// like-undo-a.domain.local alice, B: like-undo-b.domain.local bob). Seeds alice + bob with keys ONCE
+/// (key stores preserved across resets), bob's note on B, and the follow edge. Wires cross-wired
+/// delivery + routing fetchers + 24.1 object fetcher via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class LikeAnnounceUndoPropagationSharedHost : SharedTwoHostFixture
+{
+    public LikeAnnounceUndoPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, LikeAnnounceUndoPropagationIntegrationTests.AHost, LikeAnnounceUndoPropagationIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, LikeAnnounceUndoPropagationIntegrationTests.BHost, LikeAnnounceUndoPropagationIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = LikeAnnounceUndoPropagationIntegrationTests.AHost,
+            Handle = LikeAnnounceUndoPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = LikeAnnounceUndoPropagationIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Client = LikeAnnounceUndoPropagationIntegrationTests.BuildClientTo(aSeeded.ActorIri, aSeeded.Key, new LazyHandler(() => serverBRef().CreateHandler())),
+            Fetcher = new LikeAnnounceUndoPropagationIntegrationTests.RoutingFetcher(
+                LikeAnnounceUndoPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                LikeAnnounceUndoPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = LikeAnnounceUndoPropagationIntegrationTests.BHost,
+            Handle = LikeAnnounceUndoPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = LikeAnnounceUndoPropagationIntegrationTests.BuildFetcherFor(
+                LikeAnnounceUndoPropagationIntegrationTests.AHost,
+                LikeAnnounceUndoPropagationIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the like/announce-undo-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("LikeAnnounceUndoPropagation")]
+public sealed class LikeAnnounceUndoPropagationCollection : ICollectionFixture<LikeAnnounceUndoPropagationSharedHost>
+{
 }
