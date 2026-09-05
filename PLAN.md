@@ -75,9 +75,7 @@ Iris.slnx
 
 ## Active Slice
 
-**Phase 29 closed.** 29.3 follow-up complete (all 35 federation/mutating classes converted to shared-host fixtures). Full fast suite green (899/899, ~5m). See [docs/changes/258](docs/changes/258-29.3-signature-validation-risky-classes.md) through [docs/changes/271](docs/changes/271-29.3-outbox-create-fanout.md).
-
-**Phase 30 — server production-readiness & hardening** (new, first turn). No active slice yet — 30.1 (configuration surface) is the next item.
+**Phase 30 — server production-readiness & hardening.** 30.1 (configuration surface) complete — `AddActivityPubServer(IServiceCollection, IConfiguration)` binds all options from conventional config sections. Next: 30.2 (health check + readiness probe).
 
 ## Up Next
 
@@ -85,7 +83,7 @@ Short, bounded list — only the next few items, not the whole roadmap. When thi
 
 **Phase 30 — server production-readiness & hardening** (the operational surface: making the server deployable and robust in real conditions, not just in-process tests):
 
-1. 30.1: **configuration surface** — add an `IOptions<ActivityPubHostOptions>`-based configuration binder so a host can be configured from `appsettings.json` / environment variables (host, handle, key path, delivery retry options, cache TTLs) without code. Integration test: build a host from a config section, verify the options are wired through.
+1. ~~30.1: **configuration surface**~~ **COMPLETE** — `AddActivityPubServer(IServiceCollection, IConfiguration)` binds `ActivityPubServerOptions` + all delivery/observability options from `Iris:*` sections. 9 integration tests. → [docs/changes/273](docs/changes/273-30.1-configuration-surface.md)
 2. 30.2: **health check + readiness probe** — expose an `IHealthCheck` that verifies the persistence provider is reachable and the delivery worker is running, plus a readiness gate that reports not-ready until the initial key material is loaded. Integration test: assert the health endpoint reports Healthy after startup and Unhealthy after the persistence provider is faulted.
 3. 30.3: **structured logging + diagnostics** — wire `ILogger<T>` into the delivery worker (per-attempt, per-dead-letter), the signature validator (rejection reason), and the inbox handler (activity type, actor, outcome) so a production deployment has actionable logs without adding a logging package. Integration test: capture logs from a delivery + rejection scenario and assert the structured fields are present.
 
@@ -108,11 +106,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+- 30.1: **configuration surface** — `AddActivityPubServer(IServiceCollection, IConfiguration)` binds `ActivityPubServerOptions` + delivery/inbound/feed/health options from `Iris:*` config sections. 9 integration tests. Full fast suite green (908/908, 6m11s). → [docs/changes/273-30.1-configuration-surface.md](docs/changes/273-30.1-configuration-surface.md)
 - 29.3 (follow-up, partial 17): **1 three-instance federation class** — converted `OutboxCreateFanOutIntegrationTests` (3, A identity + RoutingFetcher + RoutingHandler delivery to B/C by host, B/C fetchers reach A lazy, bob→alice + carol→alice follow edges on A). **All 13 single-instance RISKY + 19 two-instance + 3 three-instance federation classes converted. 29.3 follow-up COMPLETE. Phase 29 closed.** Full fast suite green (899/899, 4m56s). → [docs/changes/271-29.3-outbox-create-fanout.md](docs/changes/271-29.3-outbox-create-fanout.md)
 - 29.3 (follow-up, partial 16): **1 three-instance federation class** — converted `OutboxAudienceMetadataIntegrationTests` (3, A identity + RoutingFetcher + RoutingHandler delivery to B/C by host, B/C fetchers reach A lazy, bob→alice follow edge on A, carol non-follower + parent note on A's object store for reply test). Full fast suite green (899/899, 5m4s). → [docs/changes/270-29.3-outbox-audience-metadata.md](docs/changes/270-29.3-outbox-audience-metadata.md)
 - 29.3 (follow-up, partial 15): **SharedThreeHostFixture + 1 three-instance federation class** — created `SharedThreeHostFixture` (3 hosts, per-method reset, ServerRegistry); converted `OutboxAudienceMatchIntegrationTests` (2). Full fast suite green (899/899, 5m36s). → [docs/changes/269-29.3-outbox-audience-match.md](docs/changes/269-29.3-outbox-audience-match.md)
 - 29.3 (follow-up, partial 14): **1 two-instance federation class** — converted `AnnouncePropagationIntegrationTests` (2, DeliveryCounter via Lazy<T>). Full fast suite green (899/899, 5m). → [docs/changes/268-29.3-announce-propagation.md](docs/changes/268-29.3-announce-propagation.md)
-- 29.3 (follow-up, partial 13): **1 two-instance federation class** — converted `UpdateDeleteRelayFanOutIntegrationTests` (3). Full fast suite green (899/899, 5m12s). → [docs/changes/267-29.3-update-delete-relay-fanout.md](docs/changes/267-29.3-update-delete-relay-fanout.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
