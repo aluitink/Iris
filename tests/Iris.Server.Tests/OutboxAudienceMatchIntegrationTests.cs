@@ -6,6 +6,8 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -28,67 +30,72 @@ namespace Iris.Server.Tests;
 /// <c>to</c> — but delivers nothing to carol's inbox (the non-follower). A second test pins the same
 /// non-follower exclusion for an outbound <see cref="Announce"/> (a boost).
 /// </remarks>
-public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
+[Collection("OutboxAudienceMatch")]
+public sealed class OutboxAudienceMatchIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "a.domain.local";
-    private const string BHost = "b.domain.local";
-    private const string CHost = "c.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string Carol = "carol";
+    internal const string AHost = "a.domain.local";
+    internal const string BHost = "b.domain.local";
+    internal const string CHost = "c.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string Carol = "carol";
 
     /// <summary>The ActivityStreams public collection address (the conventional <c>to</c> for public notes).</summary>
-    private static readonly Iri AsPublic = Iri.Public;
+    internal static readonly Iri AsPublic = Iri.Public;
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
-    private readonly TestServer _c;
-    private readonly HttpClient _aHttp;
+    private readonly OutboxAudienceMatchSharedHost _fixture;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly InMemoryPersistenceProvider _cPersistence;
-    private readonly KeyPair _aliceKey;
+    private readonly HttpClient _aHttp;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
 
-    public OutboxAudienceMatchIntegrationTests()
+    public OutboxAudienceMatchIntegrationTests(OutboxAudienceMatchSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-        _cPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        var cSeeded = TestSeeder.SeedPersonWithKey(_cPersistence, CHost, Carol);
-        _carolActorIri = cSeeded.ActorIri;
-
-        // The follow edge bob→alice is recorded on A (A is alice's home instance). NOTE: carol does NOT
-        // follow alice — carol is a remote non-follower, so she must not receive alice's posts.
-        _aPersistence.Follows.RecordFollowAsync(_bobActorIri, _aliceActorIri).GetAwaiter().GetResult();
-
-        // A's delivery transport routes to B or C by request host header. A's fetcher routes by actor
-        // IRI host: alice (A) → A's TestServer, bob (B) → B's, carol (C) → C's. B and C's fetchers are
-        // wired to A (to validate alice's key on the federated activities).
-        _a = StartAuthorServer(_aPersistence, _aliceKey, _aliceActorIri,
-            bServer: () => _b!, cServer: () => _c!, selfServer: () => _a!);
-        _b = StartServer(BHost, Bob, _bPersistence, bSeeded.Key,
-            fetcher: BuildFetcherFor(BHost, Bob, bSeeded.Key, _a.CreateHandler()));
-        _c = StartServer(CHost, Carol, _cPersistence, cSeeded.Key,
-            fetcher: BuildFetcherFor(CHost, Carol, cSeeded.Key, _a.CreateHandler()));
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _cPersistence = (InMemoryPersistenceProvider)fixture.PersistenceC;
+        _aHttp = new HttpClient(_fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _aliceKey = null!;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{CHost}/ap/v1/u/{Carol}");
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
     {
-        _a.Dispose();
-        _b.Dispose();
-        _c.Dispose();
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence, _cPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
+    {
+        _aHttp.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice (on A), bob (on B), and carol (on C) with their existing keys and the bob→alice
+    /// follow edge on A. NOTE: carol does NOT follow alice — carol is a remote non-follower.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence, InMemoryPersistenceProvider cPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(cPersistence, CHost, Carol, new Iri($"https://{CHost}/ap/v1/u/{Carol}#key-1"));
+        aPersistence.Follows.RecordFollowAsync(
+            new Iri($"https://{BHost}/ap/v1/u/{Bob}"),
+            new Iri($"https://{AHost}/ap/v1/u/{Alice}")).GetAwaiter().GetResult();
     }
 
     // --- A public Create is delivered to the follower (carrying as:Public) and NOT the non-follower ---
@@ -115,7 +122,7 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
             o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // The follower (bob, on B) received the federated Create (signed as alice).
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
             await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(30));
         Assert.True(
@@ -157,7 +164,7 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
             o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value);
 
         // The follower (bob, on B) received the federated Announce (signed as alice).
-        await WaitForAsync(async () =>
+        await TestFederation.WaitForAsync(async () =>
             await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(15));
         Assert.True(
@@ -180,7 +187,7 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
     /// author's outbox. Uses the client pipeline (via a capture handler) to produce a correctly signed
     /// request, then replays the signed headers onto a fresh request for delivery to A's TestServer.
     /// </summary>
-    private HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string path)
+    private static HttpRequestMessage SignedRequest(Iri actorIri, KeyPair key, Activity activity, string path)
     {
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
@@ -263,49 +270,11 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
         return new IrisActorDocumentFetcher(client, new RemoteActorCache());
     }
 
-    private static TestServer StartAuthorServer(
-        InMemoryPersistenceProvider persistence, KeyPair authorKey, Iri authorActorIri,
-        Func<TestServer> bServer, Func<TestServer> cServer, Func<TestServer> selfServer)
-    {
-        var keyStore = new InMemoryKeyStore();
-        keyStore.PutKey(authorKey);
-        var keyProvider = new InMemoryKeyProvider(keyStore);
-        keyProvider.RegisterKey(authorActorIri, authorKey.KeyId);
-        var signer = new HttpSignatureSigner(keyStore);
-
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = persistence,
-            IdentityKeys = new IdentityKeys(keyStore, keyProvider, signer),
-            DeliveryTransport = () => new RoutingHandler(BHost, bServer, CHost, cServer),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => selfServer().CreateHandler()),
-                BHost, new LazyHandler(() => bServer().CreateHandler()),
-                CHost, new LazyHandler(() => cServer().CreateHandler()),
-                authorKey, authorActorIri),
-        });
-    }
-
-    private static TestServer StartServer(
-        string host, string handle, InMemoryPersistenceProvider persistence,
-        KeyPair instanceKey, IActorDocumentFetcher? fetcher = null)
-    {
-        return ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = host,
-            Handle = handle,
-            Persistence = persistence,
-            Fetcher = fetcher,
-        });
-    }
-
     /// <summary>
     /// An <see cref="HttpMessageHandler"/> that routes to the B or C server based on the request's host
     /// header (A's delivery worker sends to the followers' inboxes, which are on different instances).
     /// </summary>
-    private sealed class RoutingHandler : HttpMessageHandler
+    internal sealed class RoutingHandler : HttpMessageHandler
     {
         private readonly string _bHost;
         private readonly Func<TestServer> _bServer;
@@ -355,7 +324,7 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
     /// based on the actor IRI's host (A's fetcher needs to reach A, B, and C to validate alice's own
     /// signature and resolve bob's/carol's inboxes).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -387,8 +356,8 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
     }
 
     /// <summary>
-    /// Captures a signed request (its body + headers) instead of forwarding it, so the signed body can
-    /// be replayed through a plain <see cref="HttpClient"/>.
+    /// Captures a signed request (its body + headers) instead of forwarding it, so the signed body can be
+    /// replayed through a plain <see cref="HttpClient"/>.
     /// </summary>
     private sealed class CaptureHandler : HttpMessageHandler
     {
@@ -502,18 +471,120 @@ public sealed class OutboxAudienceMatchIntegrationTests : IDisposable
 
         return hrefs;
     }
+}
 
-    private static async Task WaitForAsync(Func<Task<bool>> probe, TimeSpan timeout)
+/// <summary>
+/// Shared three-host fixture for <see cref="OutboxAudienceMatchIntegrationTests"/> (A: a.domain.local
+/// alice, B: b.domain.local bob, C: c.domain.local carol). Seeds alice + bob + carol with keys ONCE;
+/// A's identity + RoutingFetcher (A/B/C docs) + routing delivery to B or C by host header; B's and
+/// C's fetchers reach A (validate alice's key on federated activities). The bob→alice follow edge is
+/// on A; carol does NOT follow alice (non-follower).
+/// </summary>
+public sealed class OutboxAudienceMatchSharedHost : SharedThreeHostFixture
+{
+    public OutboxAudienceMatchSharedHost()
+        : base(BuildOptions())
     {
-        var deadline = DateTime.UtcNow + timeout;
-        while (DateTime.UtcNow < deadline)
-        {
-            if (await probe())
-            {
-                return;
-            }
-
-            await Task.Delay(50);
-        }
     }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B, ActivityPubHostOptions C) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var cPersistence = new InMemoryPersistenceProvider();
+
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, OutboxAudienceMatchIntegrationTests.AHost, OutboxAudienceMatchIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, OutboxAudienceMatchIntegrationTests.BHost, OutboxAudienceMatchIntegrationTests.Bob);
+        var cSeeded = TestSeeder.SeedPersonWithKey(cPersistence, OutboxAudienceMatchIntegrationTests.CHost, OutboxAudienceMatchIntegrationTests.Carol);
+
+        // The bob→alice follow edge is on A (A is alice's home). Carol does NOT follow alice.
+        aPersistence.Follows.RecordFollowAsync(bSeeded.ActorIri, aSeeded.ActorIri).GetAwaiter().GetResult();
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+        var serverCRef = SharedHostFixture.ServerRefFor(cPersistence);
+
+        var aKeyStore = new InMemoryKeyStore();
+        aKeyStore.PutKey(aSeeded.Key);
+        var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
+        aKeyProvider.RegisterKey(aSeeded.ActorIri, aSeeded.Key.KeyId);
+        var aSigner = new HttpSignatureSigner(aKeyStore);
+
+        var bKeyStore = new InMemoryKeyStore();
+        bKeyStore.PutKey(bSeeded.Key);
+        var bKeyProvider = new InMemoryKeyProvider(bKeyStore);
+        bKeyProvider.RegisterKey(bSeeded.ActorIri, bSeeded.Key.KeyId);
+        var bSigner = new HttpSignatureSigner(bKeyStore);
+
+        var cKeyStore = new InMemoryKeyStore();
+        cKeyStore.PutKey(cSeeded.Key);
+        var cKeyProvider = new InMemoryKeyProvider(cKeyStore);
+        cKeyProvider.RegisterKey(cSeeded.ActorIri, cSeeded.Key.KeyId);
+        var cSigner = new HttpSignatureSigner(cKeyStore);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = OutboxAudienceMatchIntegrationTests.AHost,
+            Handle = OutboxAudienceMatchIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = new IdentityKeys(aKeyStore, aKeyProvider, aSigner),
+            DeliveryTransport = () => new OutboxAudienceMatchIntegrationTests.RoutingHandler(
+                OutboxAudienceMatchIntegrationTests.BHost, serverBRef,
+                OutboxAudienceMatchIntegrationTests.CHost, serverCRef),
+            Fetcher = new OutboxAudienceMatchIntegrationTests.RoutingFetcher(
+                OutboxAudienceMatchIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                OutboxAudienceMatchIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                OutboxAudienceMatchIntegrationTests.CHost, new LazyHandler(() => serverCRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = OutboxAudienceMatchIntegrationTests.BHost,
+            Handle = OutboxAudienceMatchIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = new IdentityKeys(bKeyStore, bKeyProvider, bSigner),
+            Fetcher = BuildFetcherForLazy(bSeeded.Key, bSeeded.ActorIri, serverARef),
+        };
+
+        var optionsC = new ActivityPubHostOptions
+        {
+            Host = OutboxAudienceMatchIntegrationTests.CHost,
+            Handle = OutboxAudienceMatchIntegrationTests.Carol,
+            Persistence = cPersistence,
+            IdentityKeys = new IdentityKeys(cKeyStore, cKeyProvider, cSigner),
+            Fetcher = BuildFetcherForLazy(cSeeded.Key, cSeeded.ActorIri, serverARef),
+        };
+
+        return (optionsA, optionsB, optionsC);
+    }
+
+    /// <summary>
+    /// Builds a fetcher whose client (signed as the actor) routes to the (deferred) target's
+    /// <c>TestServer</c> — i.e. B's/C's fetcher reaches A's actor documents (lazily).
+    /// </summary>
+    private static IActorDocumentFetcher BuildFetcherForLazy(
+        KeyPair key, Iri actorIri, Func<TestServer> targetServer)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(() => targetServer().CreateHandler()));
+
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the outbox audience match shared three-host fixture.
+/// </summary>
+[CollectionDefinition("OutboxAudienceMatch")]
+public sealed class OutboxAudienceMatchCollection : ICollectionFixture<OutboxAudienceMatchSharedHost>
+{
 }
