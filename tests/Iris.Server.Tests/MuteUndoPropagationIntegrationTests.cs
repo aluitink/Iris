@@ -7,6 +7,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -42,61 +43,58 @@ namespace Iris.Server.Tests;
 /// of the federated Mute/Undo). The client's writes are signed POSTs to A's own outbox; the cross-instance
 /// hop (A → B) is made by A's server, signed as alice.
 /// </para>
-public sealed class MuteUndoPropagationIntegrationTests : IDisposable
+[Collection("MuteUndoPropagation")]
+public sealed class MuteUndoPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "mute-a.domain.local";
-    private const string BHost = "mute-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
+    internal const string AHost = "mute-a.domain.local";
+    internal const string BHost = "mute-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly MuteUndoPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
     private readonly Iri _bobActorIri;
 
-    public MuteUndoPropagationIntegrationTests()
+    public MuteUndoPropagationIntegrationTests(MuteUndoPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobActorIri = bSeeded.ActorIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            IdentityKeys = BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                aSeeded.Key, aSeeded.ActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            Fetcher = BuildFetcherFor(AHost, Alice, aSeeded.Key, new LazyHandler(() => _a!.CreateHandler())),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _aliceKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + bob (with their existing keys).
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
     }
 
     // --- A Mute published to A's outbox is server-delivered to B, and B records its edge; an Undo(Mute)
@@ -175,7 +173,7 @@ public sealed class MuteUndoPropagationIntegrationTests : IDisposable
 
     // --- Helpers --------------------------------------------------------------------------
 
-    private static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
+    internal static IdentityKeys BuildIdentity(KeyPair key, Iri actorIri)
     {
         var keyStore = new InMemoryKeyStore();
         keyStore.PutKey(key);
@@ -255,7 +253,7 @@ public sealed class MuteUndoPropagationIntegrationTests : IDisposable
             handler);
     }
 
-    private static IActorDocumentFetcher BuildFetcherFor(
+    internal static IActorDocumentFetcher BuildFetcherFor(
         string host, string handle, KeyPair key, HttpMessageHandler handler)
     {
         var keyStore = new InMemoryKeyStore();
@@ -329,7 +327,7 @@ public sealed class MuteUndoPropagationIntegrationTests : IDisposable
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -403,4 +401,63 @@ public sealed class MuteUndoPropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="MuteUndoPropagationIntegrationTests"/> (A: mute-a.domain.local
+/// alice, B: mute-b.domain.local bob). Seeds alice + bob with keys ONCE; wires cross-wired delivery +
+/// routing fetchers via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class MuteUndoPropagationSharedHost : SharedTwoHostFixture
+{
+    public MuteUndoPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, MuteUndoPropagationIntegrationTests.AHost, MuteUndoPropagationIntegrationTests.Alice);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, MuteUndoPropagationIntegrationTests.BHost, MuteUndoPropagationIntegrationTests.Bob);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = MuteUndoPropagationIntegrationTests.AHost,
+            Handle = MuteUndoPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = MuteUndoPropagationIntegrationTests.BuildIdentity(aSeeded.Key, aSeeded.ActorIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new MuteUndoPropagationIntegrationTests.RoutingFetcher(
+                MuteUndoPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                MuteUndoPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aSeeded.ActorIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = MuteUndoPropagationIntegrationTests.BHost,
+            Handle = MuteUndoPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            Fetcher = MuteUndoPropagationIntegrationTests.BuildFetcherFor(
+                MuteUndoPropagationIntegrationTests.AHost,
+                MuteUndoPropagationIntegrationTests.Alice,
+                aSeeded.Key,
+                new LazyHandler(() => serverARef().CreateHandler())),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the mute-undo-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("MuteUndoPropagation")]
+public sealed class MuteUndoPropagationCollection : ICollectionFixture<MuteUndoPropagationSharedHost>
+{
 }

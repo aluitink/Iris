@@ -6,6 +6,7 @@ using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Xunit;
 
 namespace Iris.Server.Tests;
 
@@ -50,97 +51,81 @@ namespace Iris.Server.Tests;
 /// worker delivers it to the follower's inbox on A); B's fetcher routes by actor-IRI host (bob/lumen → B,
 /// alice/iris → A) so B can resolve the follower's inbox when delivering the Accept.
 /// </para>
-public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
+[Collection("CrossInstanceAcceptPropagation")]
+public sealed class CrossInstanceAcceptPropagationIntegrationTests : IAsyncLifetime
 {
-    private const string AHost = "accept-a.domain.local";
-    private const string BHost = "accept-b.domain.local";
-    private const string Alice = "alice";
-    private const string Bob = "bob";
-    private const string Iris = "iris";
-    private const string Lumen = "lumen";
+    internal const string AHost = "accept-a.domain.local";
+    internal const string BHost = "accept-b.domain.local";
+    internal const string Alice = "alice";
+    internal const string Bob = "bob";
+    internal const string Iris = "iris";
+    internal const string Lumen = "lumen";
 
-    private readonly TestServer _a;
-    private readonly TestServer _b;
+    private readonly CrossInstanceAcceptPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
     private readonly HttpClient _bHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
-    private readonly KeyPair _aliceKey;
+    private KeyPair _aliceKey;
     private readonly Iri _aliceActorIri;
-    private readonly KeyPair _irisKey;
+    private KeyPair _irisKey;
     private readonly Iri _irisCommunityIri;
-    private readonly KeyPair _bobKey;
+    private KeyPair _bobKey;
     private readonly Iri _bobActorIri;
-    private readonly KeyPair _lumenKey;
+    private KeyPair _lumenKey;
     private readonly Iri _lumenCommunityIri;
 
-    public CrossInstanceAcceptPropagationIntegrationTests()
+    public CrossInstanceAcceptPropagationIntegrationTests(CrossInstanceAcceptPropagationSharedHost fixture)
     {
-        _aPersistence = new InMemoryPersistenceProvider();
-        _bPersistence = new InMemoryPersistenceProvider();
-
-        // A: the instance actor (alice) is the person follower; the community (iris) is a second local
-        // identity with its own key (the community-follower test's follow author).
-        var aSeeded = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
-        _aliceKey = aSeeded.Key;
-        _aliceActorIri = aSeeded.ActorIri;
-        var aCommunity = TestSeeder.SeedCommunityWithKey(_aPersistence, AHost, Iris);
-        _irisKey = aCommunity.Key;
-        _irisCommunityIri = aCommunity.CommunityIri;
-
-        // B: the local person (bob) is the person follow target; the community (lumen) is the community
-        // follow target.
-        var bSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
-        _bobKey = bSeeded.Key;
-        _bobActorIri = bSeeded.ActorIri;
-        var bCommunity = TestSeeder.SeedCommunityWithKey(_bPersistence, BHost, Lumen);
-        _lumenKey = bCommunity.Key;
-        _lumenCommunityIri = bCommunity.CommunityIri;
-
-        _a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = AHost,
-            Handle = Alice,
-            Persistence = _aPersistence,
-            // A must sign outbound deliveries as BOTH alice (the person follow) and the community iris (the
-            // community follow). Register both identities explicitly at their correct IRIs.
-            IdentityKeys = BuildIdentityForA(_aliceKey, _aliceActorIri, _irisKey, _irisCommunityIri),
-            // A's server delivers the signed Follow to bob's/lumen's inbox on B (the outbound follow hop).
-            DeliveryTransport = () => new LazyHandler(() => _b!.CreateHandler()),
-            // A's fetcher routes by host: alice + iris (A) and bob + lumen (B).
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _aliceKey, _aliceActorIri),
-        });
-        _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
-        {
-            Host = BHost,
-            Handle = Bob,
-            Persistence = _bPersistence,
-            // B must sign outbound deliveries as bob (the person accept author) and lumen (the community
-            // accept author). Register both identities explicitly at their correct IRIs.
-            IdentityKeys = BuildIdentityForB(_bobKey, _bobActorIri, _lumenKey, _lumenCommunityIri),
-            // B's server delivers the signed Accept to the follower's inbox on A (the accept hop) — emitted
-            // by B's FollowActivityHandler and sent by B's delivery worker.
-            DeliveryTransport = () => new LazyHandler(() => _a!.CreateHandler()),
-            // B's fetcher routes by host: bob + lumen (B) and alice + iris (A) — so B can resolve the
-            // follower's inbox when delivering the Accept back to A.
-            Fetcher = new RoutingFetcher(
-                AHost, new LazyHandler(() => _a!.CreateHandler()),
-                BHost, new LazyHandler(() => _b!.CreateHandler()),
-                _bobKey, _bobActorIri),
-        });
-        _aHttp = new HttpClient(_a.CreateHandler(), disposeHandler: false);
-        _bHttp = new HttpClient(_b.CreateHandler(), disposeHandler: false);
+        _fixture = fixture;
+        _aPersistence = (InMemoryPersistenceProvider)fixture.PersistenceA;
+        _bPersistence = (InMemoryPersistenceProvider)fixture.PersistenceB;
+        _aliceActorIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
+        _irisCommunityIri = new Iri($"https://{AHost}/ap/v1/c/{Iris}");
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _lumenCommunityIri = new Iri($"https://{BHost}/ap/v1/c/{Lumen}");
+        _aliceKey = null!;
+        _irisKey = null!;
+        _bobKey = null!;
+        _lumenKey = null!;
+        _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _bHttp = new HttpClient(fixture.ServerB.CreateHandler(), disposeHandler: false);
     }
 
-    public void Dispose()
+    /// <inheritdoc/>
+    public Task InitializeAsync()
+    {
+        _fixture.Reset();
+        SeedForFixture(_aPersistence, _bPersistence);
+
+        _aPersistence.Keys.TryGetKey(new Iri($"{_aliceActorIri.Value}#key-1"), out var aliceKey);
+        _aliceKey = (KeyPair)aliceKey!;
+        _aPersistence.Keys.TryGetKey(new Iri($"{_irisCommunityIri.Value}#key-1"), out var irisKey);
+        _irisKey = (KeyPair)irisKey!;
+        _bPersistence.Keys.TryGetKey(new Iri($"{_bobActorIri.Value}#key-1"), out var bobKey);
+        _bobKey = (KeyPair)bobKey!;
+        _bPersistence.Keys.TryGetKey(new Iri($"{_lumenCommunityIri.Value}#key-1"), out var lumenKey);
+        _lumenKey = (KeyPair)lumenKey!;
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc/>
+    public Task DisposeAsync()
     {
         _aHttp.Dispose();
         _bHttp.Dispose();
-        _a.Dispose();
-        _b.Dispose();
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Restores alice + iris (on A) and bob + lumen (on B) with their existing keys.
+    /// </summary>
+    internal static void SeedForFixture(InMemoryPersistenceProvider aPersistence, InMemoryPersistenceProvider bPersistence)
+    {
+        TestSeeder.SeedPersonWithExistingKey(aPersistence, AHost, Alice, new Iri($"https://{AHost}/ap/v1/u/{Alice}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(aPersistence, AHost, Iris, new Iri($"https://{AHost}/ap/v1/c/{Iris}#key-1"));
+        TestSeeder.SeedPersonWithExistingKey(bPersistence, BHost, Bob, new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1"));
+        TestSeeder.SeedCommunityWithExistingKey(bPersistence, BHost, Lumen, new Iri($"https://{BHost}/ap/v1/c/{Lumen}#key-1"));
     }
 
     // --- A person on A follows a person on B (federates A → B); B auto-accepts (its FollowActivityHandler
@@ -152,7 +137,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     {
         // Step 1a: alice publishes Follow(bob) to her outbox on A.
         var follow = BuildFollow(_aliceActorIri, _bobActorIri);
-        using var followRequest = SignedRequest(_a, _aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
+        using var followRequest = SignedRequest(_fixture.ServerA, _aliceActorIri, _aliceKey, follow, $"/ap/v1/u/{Alice}/outbox");
         using var followResponse = await _aHttp.SendAsync(followRequest);
         Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
 
@@ -206,7 +191,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     {
         // Step 1a: the community iris publishes Follow(lumen) to its outbox on A.
         var follow = BuildFollow(_irisCommunityIri, _lumenCommunityIri);
-        using var followRequest = SignedRequest(_a, _irisCommunityIri, _irisKey, follow, $"/ap/v1/c/{Iris}/outbox");
+        using var followRequest = SignedRequest(_fixture.ServerA, _irisCommunityIri, _irisKey, follow, $"/ap/v1/c/{Iris}/outbox");
         using var followResponse = await _aHttp.SendAsync(followRequest);
         Assert.Equal(HttpStatusCode.Accepted, followResponse.StatusCode);
 
@@ -255,7 +240,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     /// is registered at the community's IRI (not the instance actor's), so the outbound
     /// <c>DeliveryWorker</c> can sign the federated Follow as the community.
     /// </summary>
-    private static IdentityKeys BuildIdentityForA(
+    internal static IdentityKeys BuildIdentityForA(
         KeyPair instanceKey, Iri instanceActorIri, KeyPair communityKey, Iri communityIri)
     {
         var keyStore = new InMemoryKeyStore();
@@ -273,7 +258,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     /// the community's key (lumen), a provider registering both at their correct IRIs, and a signer — so
     /// B's delivery worker can sign the auto-Accept as bob (person) or lumen (community).
     /// </summary>
-    private static IdentityKeys BuildIdentityForB(
+    internal static IdentityKeys BuildIdentityForB(
         KeyPair instanceKey, Iri instanceActorIri, KeyPair communityKey, Iri communityIri)
     {
         var keyStore = new InMemoryKeyStore();
@@ -296,7 +281,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     private HttpRequestMessage SignedRequest(
         TestServer server, Iri actorIri, KeyPair key, Activity activity, string path)
     {
-        var host = server == _a ? AHost : BHost;
+        var host = server == _fixture.ServerA ? AHost : BHost;
         var json = ActivityJson.Serialize(activity);
         var capture = new CaptureHandler();
         using (var client = BuildClient(actorIri, key, capture))
@@ -452,7 +437,7 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     /// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance's actor documents based
     /// on the actor IRI's host (A's fetcher needs to reach A and B; B's fetcher needs to reach B and A).
     /// </summary>
-    private sealed class RoutingFetcher : IActorDocumentFetcher
+    internal sealed class RoutingFetcher : IActorDocumentFetcher
     {
         private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
 
@@ -526,4 +511,71 @@ public sealed class CrossInstanceAcceptPropagationIntegrationTests : IDisposable
     }
 
     private sealed record CapturedRequest(byte[] Body, Dictionary<string, List<string>> Headers);
+}
+
+/// <summary>
+/// Shared two-host fixture for <see cref="CrossInstanceAcceptPropagationIntegrationTests"/> (A:
+/// accept-a.domain.local alice + iris community, B: accept-b.domain.local bob + lumen community).
+/// Seeds all four identities with keys ONCE; wires cross-wired delivery + routing fetchers +
+/// multi-identity signing via <see cref="SharedHostFixture.ServerRefFor"/>.
+/// </summary>
+public sealed class CrossInstanceAcceptPropagationSharedHost : SharedTwoHostFixture
+{
+    public CrossInstanceAcceptPropagationSharedHost()
+        : base(BuildOptions())
+    {
+    }
+
+    private static (ActivityPubHostOptions A, ActivityPubHostOptions B) BuildOptions()
+    {
+        var aPersistence = new InMemoryPersistenceProvider();
+        var bPersistence = new InMemoryPersistenceProvider();
+        var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, CrossInstanceAcceptPropagationIntegrationTests.AHost, CrossInstanceAcceptPropagationIntegrationTests.Alice);
+        var aCommunity = TestSeeder.SeedCommunityWithKey(aPersistence, CrossInstanceAcceptPropagationIntegrationTests.AHost, CrossInstanceAcceptPropagationIntegrationTests.Iris);
+        var bSeeded = TestSeeder.SeedPersonWithKey(bPersistence, CrossInstanceAcceptPropagationIntegrationTests.BHost, CrossInstanceAcceptPropagationIntegrationTests.Bob);
+        var bCommunity = TestSeeder.SeedCommunityWithKey(bPersistence, CrossInstanceAcceptPropagationIntegrationTests.BHost, CrossInstanceAcceptPropagationIntegrationTests.Lumen);
+
+        var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
+        var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
+        var aliceIri = new Iri($"https://{CrossInstanceAcceptPropagationIntegrationTests.AHost}/ap/v1/u/{CrossInstanceAcceptPropagationIntegrationTests.Alice}");
+        var irisIri = new Iri($"https://{CrossInstanceAcceptPropagationIntegrationTests.AHost}/ap/v1/c/{CrossInstanceAcceptPropagationIntegrationTests.Iris}");
+        var bobIri = new Iri($"https://{CrossInstanceAcceptPropagationIntegrationTests.BHost}/ap/v1/u/{CrossInstanceAcceptPropagationIntegrationTests.Bob}");
+        var lumenIri = new Iri($"https://{CrossInstanceAcceptPropagationIntegrationTests.BHost}/ap/v1/c/{CrossInstanceAcceptPropagationIntegrationTests.Lumen}");
+
+        var optionsA = new ActivityPubHostOptions
+        {
+            Host = CrossInstanceAcceptPropagationIntegrationTests.AHost,
+            Handle = CrossInstanceAcceptPropagationIntegrationTests.Alice,
+            Persistence = aPersistence,
+            IdentityKeys = CrossInstanceAcceptPropagationIntegrationTests.BuildIdentityForA(aSeeded.Key, aliceIri, aCommunity.Key, irisIri),
+            DeliveryTransport = () => new LazyHandler(() => serverBRef().CreateHandler()),
+            Fetcher = new CrossInstanceAcceptPropagationIntegrationTests.RoutingFetcher(
+                CrossInstanceAcceptPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                CrossInstanceAcceptPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                aSeeded.Key, aliceIri),
+        };
+
+        var optionsB = new ActivityPubHostOptions
+        {
+            Host = CrossInstanceAcceptPropagationIntegrationTests.BHost,
+            Handle = CrossInstanceAcceptPropagationIntegrationTests.Bob,
+            Persistence = bPersistence,
+            IdentityKeys = CrossInstanceAcceptPropagationIntegrationTests.BuildIdentityForB(bSeeded.Key, bobIri, bCommunity.Key, lumenIri),
+            DeliveryTransport = () => new LazyHandler(() => serverARef().CreateHandler()),
+            Fetcher = new CrossInstanceAcceptPropagationIntegrationTests.RoutingFetcher(
+                CrossInstanceAcceptPropagationIntegrationTests.AHost, new LazyHandler(() => serverARef().CreateHandler()),
+                CrossInstanceAcceptPropagationIntegrationTests.BHost, new LazyHandler(() => serverBRef().CreateHandler()),
+                bSeeded.Key, bobIri),
+        };
+
+        return (optionsA, optionsB);
+    }
+}
+
+/// <summary>
+/// xunit collection definition for the cross-instance-accept-propagation shared two-host fixture.
+/// </summary>
+[CollectionDefinition("CrossInstanceAcceptPropagation")]
+public sealed class CrossInstanceAcceptPropagationCollection : ICollectionFixture<CrossInstanceAcceptPropagationSharedHost>
+{
 }
