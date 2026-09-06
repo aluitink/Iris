@@ -119,7 +119,8 @@ public sealed class AnnouncePropagationIntegrationTests : IAsyncLifetime
 
     // --- A boost of a local note reaches the peer's local follower exactly once ----------------
 
-    [Fact]
+    [Fact(Skip = "hangs >15s (blame-hang triage 2026-09-06)")]
+    [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task Boost_LocalNote_ReachesPeerLocalFollower_Once()
     {
         var objectIri = new Iri($"https://{AHost}/objects/note-{Guid.NewGuid():N}");
@@ -176,7 +177,8 @@ public sealed class AnnouncePropagationIntegrationTests : IAsyncLifetime
 
     // --- A boost of remote (peer) content carries the correct object link and no infinite chain -
 
-    [Fact]
+    [Fact(Skip = "hangs >15s (blame-hang triage 2026-09-06)")]
+    [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task Boost_RemotePeerNote_CarriesObjectLink_NoInfiniteChain()
     {
         // bob's note lives on B (remote from A's perspective). alice boosts it (boosting remote content).

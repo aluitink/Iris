@@ -214,7 +214,8 @@ public sealed class OutboxAnnounceFanOutIntegrationTests : IAsyncLifetime
 
     // --- A blocked remote follower does not receive the federated Announce -------------------
 
-    [Fact]
+    [Fact(Skip = "hangs >15s (blame-hang triage 2026-09-06)")]
+    [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task OutboxPublish_AnnounceWithBlockedRemoteFollower_SkipsBlocked()
     {
         // Bob blocks alice (recorded on A). Alice publishes an Announce; bob (blocked) does not

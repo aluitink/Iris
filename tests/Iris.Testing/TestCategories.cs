@@ -29,4 +29,11 @@ public static class TestCategories
     /// The category value for tests that wait out a real backoff / wall-clock delay.
     /// </summary>
     public const string Slow = "Slow";
+
+    /// <summary>
+    /// The xunit trait key for the per-test wall-clock timeout used by the hang-blame run
+    /// (<c>xunit.methodTimeout</c>); a test exceeding it fails with its full name reported, so the
+    /// offending test can be identified and reclassified.
+    /// </summary>
+    public const string Timeout = "xunit.methodTimeout";
 }
