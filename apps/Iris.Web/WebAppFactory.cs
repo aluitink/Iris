@@ -159,6 +159,18 @@ public static class WebAppFactory
             });
         builder.Services.AddAuthorization();
 
+        // 7a. Signing-identity resolution that outlives the in-process key provider (slice 33.3). The
+        // server's default IKeyProvider is an InMemoryKeyProvider that only knows actors registered with
+        // it — at startup (the seed) or at request time (a freshly provisioned local actor). A local
+        // actor whose key was written to the durable store by a different path (e.g. admin-assisted
+        // provisioning) would otherwise be un-signable until a restart. This delegating provider falls
+        // back to resolving the actor's key from the (durable) IKeyStore by the well-known {actor}#key-1
+        // convention, so any local actor is signable on demand. Registered after AddActivityPubServer so
+        // this hard AddSingleton wins over its TryAddSingleton<IKeyProvider, InMemoryKeyProvider>.
+        builder.Services.AddSingleton<IKeyProvider>(sp => new DelegatingKeyProvider(
+            new InMemoryKeyProvider(sp.GetRequiredService<IKeyStore>()),
+            sp.GetRequiredService<IKeyStore>()));
+
         // The account + actor-provisioning services (the "bootstrap mechanism").
         builder.Services.TryAddSingleton<PasswordHasher>();
         builder.Services.TryAddSingleton<ILoginRateLimiter>(

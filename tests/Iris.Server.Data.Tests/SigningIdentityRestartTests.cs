@@ -147,4 +147,38 @@ public sealed class SigningIdentityRestartTests : IClassFixture<PostgresFixture>
         Assert.True(second.KeyProvider.TryGetIdentity(userActor, out var identity));
         Assert.Equal(userKey, identity!.KeyId);
     }
+
+    [Fact]
+    public async Task LocallyProvisionedActor_IsSignableWithoutRestart()
+    {
+        // The 33.3 scenario: an admin-provisioned (or otherwise created) local actor whose key is written
+        // to the durable store but is NOT registered with the app's in-process key provider. Before 33.3
+        // such an actor could not sign (the SigningHandler threw "No signing identity registered for
+        // actor '<actor>'") until a restart. Now the delegating IKeyProvider falls back to the durable
+        // key store by the well-known {actor}#key-1 convention, so the actor is signable on demand.
+        var first = BootApp(_fixture.ConnectionString);
+        var options = first.Services.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+        Iri baseUri = options.BaseUri ?? new Iri("http://localhost");
+
+        // Provision into the durable store via a THROWAWAY in-memory provider (not the app's). So the
+        // app's in-process provider has no registration for this actor — exactly the gap 33.3 closes.
+        var throwaway = new InMemoryKeyProvider(first.Keys);
+        var provisioner = new ActorProvisioner(first.Persistence, first.Keys, throwaway, baseUri);
+        var actor = await provisioner.ProvisionAsync("andrew", "Andrew");
+        var keyIri = new Iri($"{actor}#key-1");
+
+        // The key is in the durable store, but NOT in the app's in-process provider's fast path.
+        Assert.True(first.Keys.TryGetKey(keyIri, out _));
+
+        // The app's IKeyProvider (a DelegatingKeyProvider) resolves it via the store fallback.
+        Assert.True(first.KeyProvider.TryGetIdentity(actor, out var identity));
+        Assert.Equal(keyIri, identity!.KeyId);
+
+        // And it can actually sign (the key round-trips through the durable store).
+        var metadata = new HttpRequestMetadata(
+            "POST", "/ap/v1/u/remote/inbox", "iris.luit.ink", "Thu, 01 Jan 2026 00:00:00 GMT",
+            "application/activity+json", new byte[] { 1, 2, 3 }, new Dictionary<string, string>());
+        var header = new HttpSignatureSigner(first.Keys).Sign(metadata, identity, SigningProfile.ServerToServer);
+        Assert.Contains(keyIri.Value, header);
+    }
 }
