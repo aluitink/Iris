@@ -54,6 +54,11 @@ services:
       # (WebAppFactory.DefaultMaxRequestBodySize); set to raise it for a legitimate large-payload case.
       # Maps to Iris:MaxRequestBodySize (bytes).
       Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
+      # CORS (slice 33.5): the app is same-origin-only by default (no cross-origin access). Set to a
+      # comma-separated allow-list of origins (e.g. https://app.example.org) to grant a non-UI API
+      # consumer cross-origin access to the instance's API. Never AllowAnyOrigin. Blank -> same-origin-only.
+      # Maps to Iris:Cors:Origins.
+      Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
       # The media volume is mounted for the (future) local-disk media backend; unused until that feature
       # lands. The Media__* config section is not read by Iris.Web yet (no dead env vars are set).
       ASPNETCORE_ENVIRONMENT: Production

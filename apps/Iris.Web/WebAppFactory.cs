@@ -13,14 +13,16 @@ using Iris.Server.Stores;
 using Iris.Web.Accounts;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Web;
 
@@ -80,6 +82,24 @@ public static class WebAppFactory
     /// <see cref="DefaultMaxRequestBodySize"/>). Bound from <c>Iris:MaxRequestBodySize</c>.
     /// </summary>
     public const string MaxRequestBodySizeConfigKey = "Iris:MaxRequestBodySize";
+
+    /// <summary>
+    /// The name of the CORS policy registered when an operator opts into cross-origin access (slice
+    /// 33.5). The policy allows only the origins listed in <see cref="CorsOriginsConfigKey"/> — never
+    /// <c>AllowAnyOrigin</c>. When no origins are configured, no policy is registered and no CORS
+    /// middleware runs, so the app is same-origin-only by default (the safe default for a public
+    /// instance).
+    /// </summary>
+    public const string CorsPolicyName = "iris-api";
+
+    /// <summary>
+    /// The configuration key for the comma-separated list of origins allowed cross-origin access to the
+    /// instance's API (slice 33.5). Bound from <c>Iris:Cors:Origins</c> (env
+    /// <c>IRIS_CORS_ORIGINS</c>). Empty/unset → same-origin-only (no cross-origin access); each listed
+    /// origin (a scheme+host, e.g. <c>https://app.example.org</c>) is granted access via the
+    /// <see cref="CorsPolicyName"/> policy.
+    /// </summary>
+    public const string CorsOriginsConfigKey = "Iris:Cors:Origins";
 
     /// <summary>
     /// Wires the services (Blazor, ActivityPub server, in-memory persistence, seeded actor, key
@@ -220,6 +240,31 @@ public static class WebAppFactory
                 options.Limits.MaxRequestBodySize = maxBody;
             });
         }
+
+        // 9. CORS (slice 33.5): same-origin-only by default, opt-in for a non-UI API consumer. The
+        // Blazor UI is same-origin and needs no CORS. A third-party app that wants to call this
+        // instance's API from a different origin must be granted access explicitly: the operator sets
+        // Iris:Cors:Origins (env IRIS_CORS_ORIGINS) to a comma-separated allow-list, and a named policy
+        // (CorsPolicyName) is registered that allows ONLY those origins — never AllowAnyOrigin, and with
+        // credentials so a cookie-authenticated cross-origin consumer can work. When the allow-list is
+        // empty/unset, NO policy is registered and no CORS middleware runs, so the app is
+        // same-origin-only by default (the safe default for a public instance — a cross-origin
+        // preflight/GET simply gets no Access-Control-Allow-Origin header and the browser blocks it).
+        // ConfigurePipeline applies app.UseCors(CorsPolicyName) only when the policy is registered.
+        var corsOriginsRaw = builder.Configuration[CorsOriginsConfigKey];
+        var corsOrigins = (corsOriginsRaw ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (corsOrigins.Length > 0)
+        {
+            builder.Services.AddCors(options =>
+            {
+                options.AddPolicy(CorsPolicyName, policy => policy
+                    .WithOrigins(corsOrigins)
+                    .AllowCredentials()
+                    .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                    .WithHeaders("Content-Type", "Authorization", "Signature", "Host"));
+            });
+        }
     }
 
     /// <summary>
@@ -265,6 +310,16 @@ public static class WebAppFactory
     public static void ConfigurePipeline(WebApplication app, string baseNoSlash)
     {
         app.UseRouting();
+        // CORS (slice 33.5): applied only when an operator opted in via Iris:Cors:Origins (the
+        // CorsPolicyName policy is registered in ConfigureServices only in that case). When no origins are
+        // configured there is no policy, so this is skipped and the app stays same-origin-only by
+        // default. Placed after UseRouting (so the policy can match endpoints) and before auth, so a
+        // cross-origin preflight (OPTIONS) is answered before the signature/cookie gate.
+        var corsOptions = app.Services.GetRequiredService<IOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>>().Value;
+        if (corsOptions.GetPolicy(CorsPolicyName) is not null)
+        {
+            app.UseCors(CorsPolicyName);
+        }
         // Forwarded headers (X-Forwarded-Proto / X-Forwarded-For / X-Forwarded-Host), so the app sees the
         // client's real scheme + host when it sits behind a TLS-terminating reverse proxy (e.g. the
         // https://iris.luit.ink proxy → host 8088, see production-app-deployment.md §5). Without it the
