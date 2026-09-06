@@ -245,6 +245,16 @@ public static class ActivityPubServerConstants
     public const string HealthRouteSegment = "health";
 
     /// <summary>
+    /// The route segment for the readiness probe (the <c>GET /ap/v1/ready</c> endpoint, Phase 30.2).
+    /// Mapped as <c>{RoutePrefix}/ready</c> — under the versioned prefix, like the health endpoint. It
+    /// reports whether the instance has finished loading its signing key material and started its delivery
+    /// worker: <c>200 {"ready": true}</c> when ready, <c>503 {"ready": false}</c> otherwise. A load
+    /// balancer / orchestrator gates traffic on this (readiness) rather than the liveness <c>/health</c>
+    /// endpoint, so requests are not routed to an instance that has not yet loaded its keys.
+    /// </summary>
+    public const string ReadyRouteSegment = "ready";
+
+    /// <summary>
     /// The route segment for the <c>iris:</c> extension namespace document (the <c>GET /ns</c> endpoint,
     /// Phase 31.8). Mapped as <c>{NamespaceIri-without-#}</c> — i.e. the JSON-LD context the document
     /// declares as <c>@vocab</c> is hosted at the namespace base, so it is resolvable. The namespace base

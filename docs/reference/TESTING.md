@@ -46,6 +46,8 @@ The full `dotnet test` run is the **source of truth** (all tests, including the 
 
 **Honest note on the payoff.** The `Slow` exclusion is a *correct partition* but a *small* time saving (~1s of ~5.5 min): the backoff waits are a tiny fraction of total wall-clock. The real cost is the aggregate of ~900 test methods each building hosts and driving multi-hop deliveries (xunit creates a fresh test-class instance per method). A larger speedup would come from reusing hosts across a class's methods or cutting delivery round-trips — a structural follow-up, not a per-test tag. Until then, treat the fast run as the loop's quick green check and the full run as the authoritative one.
 
+**Pending reclassification (requested 2026-09-06).** On the **next full `dotnet test` run**, reclassify any test method that takes longer than **5 seconds** as `Slow` (add `[Trait(TestCategories.Category, TestCategories.Slow)]`). This broadens the current wall-clock-backoff-only rule to a measured threshold: it will catch slow tests whose cost is host startup / multi-hop delivery rather than an explicit backoff wait. Record the newly-tagged tests + the resulting fast-vs-full split in the change doc for that run.
+
 ## Live Mastodon Compatibility Test (deferred — far later)
 
 - **Deferred until instance-to-instance viability is first confirmed** with our own in-process servers. This is a downstream goal, not part of the near-term phases. See [Phase 8](ROADMAP.md#phase-8--live-mastodon-compatibility-test-deferred--after-instance-to-instance-viability).

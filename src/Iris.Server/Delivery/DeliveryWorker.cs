@@ -83,6 +83,12 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
     private readonly IDeliveryCircuitBreaker? _circuitBreaker;
 
+    // 30.2: set (atomically, once) when ExecuteAsync begins its pump loop, so the readiness probe can
+    // confirm the delivery worker is actually running — not merely registered. Read by the
+    // DeliveryWorkerHealthCheck via IsRunning; a volatile write/reads pair keeps the flag visible across
+    // the background-service thread and the health-check thread without a lock.
+    private volatile bool _running;
+
     /// <summary>
     /// Initializes a new <see cref="DeliveryWorker"/>.
     /// </summary>
@@ -187,6 +193,15 @@ public sealed class DeliveryWorker : BackgroundService
         _circuitBreaker = circuitBreaker;
     }
 
+    /// <summary>
+    /// Whether the worker has begun pumping the delivery queue (i.e. its
+    /// <see cref="BackgroundService.ExecuteAsync(CancellationToken)"/> loop has started and an instance
+    /// actor is configured). The readiness probe uses this to confirm outbound delivery is live, not just
+    /// that the hosted service is registered. False until the pump starts; it never reverts (a worker that
+    /// started and later drains is still "running" in the readiness sense — the process is up and healthy).
+    /// </summary>
+    public bool IsRunning => _running;
+
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -197,6 +212,11 @@ public sealed class DeliveryWorker : BackgroundService
                 "enqueued but never delivered. Set ActivityPubServerOptions.InstanceActorId to enable outbound delivery.");
             return;
         }
+
+        // 30.2: mark the worker running now that the pump is live (the instance actor is configured and the
+        // signed delivery client has been built). The readiness probe reads this to confirm outbound
+        // delivery is operational.
+        _running = true;
 
         // One signed client for the lifetime of the worker (signed as the instance actor).
         using var client = _clientFactory.Create(

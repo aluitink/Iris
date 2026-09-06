@@ -523,6 +523,18 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<DeliveryQueueHealthOptions>(_ => new DeliveryQueueHealthOptions());
         services.AddSingleton<IHealthCheck, InstanceHealthCheck>();
         services.AddSingleton<IHealthCheck, DeliveryQueueHealthCheck>();
+        // 30.2: persistence reachability (a real read against the actor store — the seam a file/DB-backed
+        // IPersistenceProvider backs) and delivery-worker liveness (the worker is registered untyped, so
+        // this check locates it among the IHostedServices and reads IsRunning). Both resolve through
+        // IEnumerable<IHealthCheck> at the GET /ap/v1/health endpoint.
+        services.AddSingleton<IHealthCheck, PersistenceHealthCheck>();
+        services.AddSingleton<IHealthCheck, DeliveryWorkerHealthCheck>();
+
+        // 30.2: readiness gate. Ready once the instance actor's signing key is registered + resolvable
+        // (a freshly-started instance is not ready until its key material is loaded). The GET /ap/v1/ready
+        // probe reports IReadinessGate.IsReadyAsync; a host that loads keys asynchronously may bind its own
+        // IReadinessGate (TryAdd — an extra/override registration wins).
+        services.TryAddSingleton<IReadinessGate, DefaultReadinessGate>();
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
@@ -556,10 +568,15 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<IWebFingerResolver>(sp => sp.GetRequiredService<WebFingerClient>());
         services.TryAddSingleton<IAccountResolver, WebFingerAccountResolver>();
 
-        // NOTE: IPersistenceProvider is a seam — it is registered by the persistence package
-        // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer
-        // does NOT register a concrete persistence provider, keeping Iris.Server free of a dependency
-        // on any specific persistence implementation.
+        // IPersistenceProvider is a seam — a concrete provider is registered by the persistence package
+        // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer does
+        // NOT register a concrete provider, keeping Iris.Server free of a dependency on any specific
+        // persistence implementation. The TryAddSingleton FACTORY below (resolving the provider from the
+        // IServiceProvider) only runs when no concrete registration exists, so it never shadows one — a
+        // test/host that later binds AddSingleton<IPersistenceProvider>(a concrete instance) wins, and this
+        // factory then returns that same instance. It exists so the 30.2 PersistenceHealthCheck can resolve
+        // the provider from DI (it reads IPersistenceProvider.Actors, not a concrete IActorStore).
+        services.TryAddSingleton<IPersistenceProvider>(sp => sp.GetRequiredService<IPersistenceProvider>());
 
         return services;
     }
@@ -700,6 +717,13 @@ public static class ActivityPubServerExtensions
         // { "status": "...", "description": "..." } } }. No authentication: a load balancer / orchestrator
         // health probe must reach it without an ActivityPub signature.
         group.MapGet($"/{ActivityPubServerConstants.HealthRouteSegment}", HealthHandler);
+
+        // Readiness: GET /ap/v1/ready — the readiness probe (Phase 30.2). Reports whether the instance has
+        // finished loading its key material and is ready to receive traffic (IReadinessGate). 200
+        // { "ready": true } when ready; 503 { "ready": false } otherwise. No authentication: a load
+        // balancer / orchestrator readiness probe must reach it without an ActivityPub signature. Distinct
+        // from GET /ap/v1/health (liveness): an instance can be up but not yet ready.
+        group.MapGet($"/{ActivityPubServerConstants.ReadyRouteSegment}", ReadyHandler);
 
         // Media serve (Phase 20.4 (a)): GET /ap/v1/media/{id} — serves a stored note attachment (an image
         // or document) by its same-origin media IRI. Public (the browser's <img>/<a> loads it), and
@@ -4473,6 +4497,25 @@ public static class ActivityPubServerExtensions
         var status = overall == HealthStatus.Unhealthy ? StatusCodes.Status503ServiceUnavailable : StatusCodes.Status200OK;
         return Results.Content(
             System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            status);
+    }
+
+    /// <summary>
+    /// Handles GET /ap/v1/ready — the readiness probe (Phase 30.2). Reports whether the instance is ready
+    /// to receive traffic (<see cref="Observability.IReadinessGate.IsReadyAsync"/>). Returns
+    /// <c>200 { "ready": true }</c> when ready and <c>503 { "ready": false }</c> otherwise. No
+    /// authentication (a load balancer / orchestrator probe reaches it without an ActivityPub signature).
+    /// </summary>
+    private static async Task<IResult> ReadyHandler(
+        Observability.IReadinessGate readiness,
+        CancellationToken ct)
+    {
+        var ready = await readiness.IsReadyAsync(ct).ConfigureAwait(false);
+        var status = ready ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable;
+        return Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(new { ready }),
             "application/json",
             System.Text.Encoding.UTF8,
             status);

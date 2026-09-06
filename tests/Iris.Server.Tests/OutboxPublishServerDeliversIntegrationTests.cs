@@ -99,6 +99,7 @@ public sealed class OutboxPublishServerDeliversIntegrationTests : IAsyncLifetime
     // signature gate and never recorded).
 
     [Fact]
+
     public async Task OutboxPublish_Block_ServerDeliversToBlockedActorInbox_SignedAsActingActor()
     {
         var block = BuildBlock(_aliceActorIri, _bobActorIri);
