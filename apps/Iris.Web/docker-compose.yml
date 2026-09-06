@@ -49,6 +49,11 @@ services:
       # (never bound by AddActivityPubServer's ActivityPubServerOptions, which owns Iris:*).
       App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
       App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
+      # Inbound request-body cap (slice 33.4): bounds the memory an unauthenticated inbox POST can force
+      # the app to buffer (a DoS vector for a public instance). Unset -> the app's 1 MiB default
+      # (WebAppFactory.DefaultMaxRequestBodySize); set to raise it for a legitimate large-payload case.
+      # Maps to Iris:MaxRequestBodySize (bytes).
+      Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
       # The media volume is mounted for the (future) local-disk media backend; unused until that feature
       # lands. The Media__* config section is not read by Iris.Web yet (no dead env vars are set).
       ASPNETCORE_ENVIRONMENT: Production

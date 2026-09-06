@@ -64,6 +64,24 @@ public static class WebAppFactory
     public const int DefaultPort = 8088;
 
     /// <summary>
+    /// The default cap on an inbound HTTP request body, in bytes (1 MiB). ActivityPub federation
+    /// payloads (an activity JSON document) are small — well under a few tens of KB in practice — so a
+    /// 1 MiB ceiling is generous for legitimate traffic. It exists to bound the memory an
+    /// **unauthenticated** inbound <c>POST /ap/v1/u/{handle}/inbox</c> can force the app to buffer:
+    /// without it, Kestrel's default (no request-body limit) lets a malicious peer stream an
+    /// arbitrarily large body into memory (a denial-of-service vector for a public instance). An
+    /// operator raises it via <c>Iris:MaxRequestBodySize</c> (env <c>IRIS_MAX_REQUEST_BODY_SIZE</c>) if
+    /// a legitimate use case (e.g. very large embedded media on an activity) requires it.
+    /// </summary>
+    public const long DefaultMaxRequestBodySize = 1024L * 1024L;
+
+    /// <summary>
+    /// The configuration key for the inbound request-body size cap (see
+    /// <see cref="DefaultMaxRequestBodySize"/>). Bound from <c>Iris:MaxRequestBodySize</c>.
+    /// </summary>
+    public const string MaxRequestBodySizeConfigKey = "Iris:MaxRequestBodySize";
+
+    /// <summary>
     /// Wires the services (Blazor, ActivityPub server, in-memory persistence, seeded actor, key
     /// registration) onto <paramref name="builder"/>'s service collection.
     /// </summary>
@@ -184,6 +202,24 @@ public static class WebAppFactory
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
         builder.Services.AddScoped<IActorSessionAccessor, ActorSessionAccessor>();
+
+        // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
+        // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
+        // so a malicious peer streaming a very large body into the inbox would allocate memory with no
+        // ceiling. Cap it at DefaultMaxRequestBodySize (1 MiB — generous for an activity JSON document)
+        // unless an operator raises it via Iris:MaxRequestBodySize (env IRIS_MAX_REQUEST_BODY_SIZE). A
+        // request whose body exceeds the cap is rejected by Kestrel before the pipeline runs (413).
+        // Applied only to Kestrel (the production server); it is a no-op for the TestServer host the
+        // integration tests use, so existing tests that POST large bodies are unaffected.
+        var maxBodyRaw = builder.Configuration[MaxRequestBodySizeConfigKey];
+        var maxBody = long.TryParse(maxBodyRaw, out var parsed) && parsed > 0 ? parsed : DefaultMaxRequestBodySize;
+        if (maxBody > 0)
+        {
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                options.Limits.MaxRequestBodySize = maxBody;
+            });
+        }
     }
 
     /// <summary>
