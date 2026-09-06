@@ -207,6 +207,14 @@ public static class WebAppFactory
     public static void ConfigurePipeline(WebApplication app, string baseNoSlash)
     {
         app.UseRouting();
+        // Forwarded headers (X-Forwarded-Proto / X-Forwarded-For / X-Forwarded-Host), so the app sees the
+        // client's real scheme + host when it sits behind a TLS-terminating reverse proxy (e.g. the
+        // https://iris.luit.ink proxy → host 8088, see production-app-deployment.md §5). Without it the
+        // app would see plain `http` and the auth cookie's Secure flag / any scheme-dependent redirect
+        // would be wrong. It is part of the ASP.NET Core shared framework (Microsoft.AspNetCore.HttpOverrides)
+        // — no extra package. It must run before UseAuthentication so the cookie + redirects see the real
+        // scheme. When not behind a proxy the headers are absent and this is a no-op.
+        app.UseForwardedHeaders();
         app.UseAntiforgery();
         // Inbound federation signature validation (a signed POST to a local inbox is verified; unsigned
         // inbox POSTs are rejected 401 by the inbox handler).

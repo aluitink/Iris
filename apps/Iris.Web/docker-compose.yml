@@ -1,0 +1,83 @@
+# Production Iris.Web stack — the deployable social platform (docs/plans/production-app-deployment.md).
+#
+# One app container (API + UI in one process) + a Postgres database + a media volume. The app is
+# published on host port 8088 (WEB_PORT) so it takes over the existing https://iris.luit.ink
+# reverse-proxy target with no reconfiguration (docs/plans/production-app-overview.md §2).
+#
+# This is a SEPARATE stack from the sample federation harness (samples/docker-compose.yml) — the two
+# serve different purposes and do not share a network namespace by default.
+#
+# Configuration is .env-driven (a committed .env.example documents every variable; the real .env is
+# git-ignored). Bring up / down:
+#   docker compose -f apps/Iris.Web/docker-compose.yml up --build -d
+#   docker compose -f apps/Iris.Web/docker-compose.yml down        # preserves data (named volumes)
+#   docker compose -f apps/Iris.Web/docker-compose.yml down -v     # full reset (wipes data)
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iris}
+      POSTGRES_USER: ${POSTGRES_USER:-iris}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in apps/Iris.Web/.env}
+    volumes:
+      # The single most important volume: losing it loses every account, actor, post, and relationship.
+      - iris-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iris} -d ${POSTGRES_DB:-iris}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+    # No host port is published for Postgres — it is only reachable from iris-web on the internal
+    # network. (Publishing 5432 to the host would expose the DB to the network.)
+
+  iris-web:
+    build:
+      context: ../..
+      dockerfile: apps/Iris.Web/Dockerfile
+    environment:
+      # The app binds in-container port 8080 (the Dockerfile's ASPNETCORE_URLS); the advertised public
+      # base URI is what the app tells the fediverse / browsers it is reachable at. Default is the real
+      # public FQDN (https://iris.luit.ink) — the reverse proxy forwards to host 8088.
+      Iris__AdvertiseBase: ${IRIS_ADVERTISE_BASE:-https://iris.luit.ink}
+      # A connection string is present -> EF Core (PostgreSQL) persistence; absent -> in-memory.
+      # Assembled from the POSTGRES_* vars (Host=db is the compose service name on the internal network).
+      ConnectionStrings__Iris: "Host=db;Port=5432;Database=${POSTGRES_DB:-iris};Username=${POSTGRES_USER:-iris};Password=${POSTGRES_PASSWORD}"
+      # Admin bootstrap (docs/plans/production-app-authentication.md §6): if set, the first admin account
+      # is provisioned idempotently at boot. Unset -> no admin is created. App:* is Iris.Web's own section
+      # (never bound by AddActivityPubServer's ActivityPubServerOptions, which owns Iris:*).
+      App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
+      App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
+      # The media volume is mounted for the (future) local-disk media backend; unused until that feature
+      # lands. The Media__* config section is not read by Iris.Web yet (no dead env vars are set).
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this
+      # host's port 8088. Publishing iris-web on 8088 means no reverse-proxy change is needed.
+      - "${WEB_PORT:-8088}:8080"
+    volumes:
+      - iris-media-data:/data/media
+    healthcheck:
+      # The base aspnet image has no curl, so this is a pure TCP-connect probe on the bind port (the
+      # same pattern the sample stack uses for its servers). A successful connect means Kestrel is
+      # listening. NOTE: it must NOT read from the socket after connecting — an HTTP server sends nothing
+      # until it receives a request, so `head -c1 <&3` would block forever and the probe would always time
+      # out. Opening the /dev/tcp fd and letting it close on subshell exit is enough (connect rc 0 = up).
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+networks:
+  iris-web-net:
+    driver: bridge
+
+volumes:
+  iris-db-data:
+  iris-media-data:

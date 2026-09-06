@@ -72,10 +72,16 @@ public static class EntityFrameworkPersistenceExtensions
         // The local browser-session account store (EF Core).
         services.TryAddSingleton<IUserAccountStore, EfUserAccountStore>();
 
-        // The aggregate provider. Registered as a singleton factory (not the recursive
-        // IPersistenceProvider fallback factory that AddActivityPubServer registers) so it always
-        // resolves without triggering that fallback's deadlock path in a synchronous startup context.
-        services.TryAddSingleton<IPersistenceProvider>(sp => new EntityFrameworkPersistenceProvider(
+        // The aggregate provider. This MUST be a hard AddSingleton (not TryAddSingleton):
+        // AddActivityPubServer registers a recursive fallback factory for IPersistenceProvider
+        // (sp => sp.GetRequiredService<IPersistenceProvider>()) via TryAddSingleton, which becomes the
+        // first binding. A TryAddSingleton here would be a no-op (the service is already registered by
+        // that fallback), leaving the recursive factory as the sole binding — resolving it then recurses
+        // infinitely (StackGuard deadlock) the first time anything resolves IPersistenceProvider (e.g. the
+        // startup migration / seed). A hard AddSingleton adds a second binding; for singletons the LAST
+        // registration wins, so this factory overrides the fallback and resolves cleanly. (The in-memory
+        // path is safe because WebAppFactory binds it with a hard AddSingleton too.)
+        services.AddSingleton<IPersistenceProvider>(sp => new EntityFrameworkPersistenceProvider(
             sp.GetRequiredService<EfActorStore>(),
             sp.GetRequiredService<EfActivityStore>(),
             sp.GetRequiredService<EfFollowStore>(),
