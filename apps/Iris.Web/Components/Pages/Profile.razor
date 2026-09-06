@@ -1,0 +1,112 @@
+@page "/profile"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Profile · Iris</PageTitle>
+
+<h2>Your profile</h2>
+
+@if (LoadError is not null)
+{
+    <div class="error">@LoadError</div>
+}
+else
+{
+    @if (ActorDoc is not null)
+    {
+        <ActorProfile Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" />
+    }
+    else
+    {
+        <div class="card profile-loading">
+            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+            </svg>
+            <span class="muted">Loading your profile…</span>
+        </div>
+    }
+
+    <PagedCollection
+        @key="@OutboxKey"
+        Client="@OutboxClient"
+        CollectionIri="@OutboxIri"
+        Title="Your posts"
+        Description="The activities you authored (your outbox), newest first — a Create for each note you post, plus any follows you've made. Paged with next-link walking."
+        PageSize="5"
+        ShowRefreshButton="true"
+        EmptyMessage="You haven't posted anything yet. Compose a note to get started." />
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// A stable <c>@key</c> for the outbox's <c>PagedCollection</c>. The profile outbox is a single,
+    /// fixed collection (the session actor's outbox), so the key is a constant — it exists only so the
+    /// <c>PagedCollection</c> has a key to key on.
+    /// </summary>
+    private const string OutboxKey = "profile-outbox";
+
+    /// <summary>The actor document (the session actor's own profile), once loaded.</summary>
+    private IObject? ActorDoc { get; set; }
+
+    /// <summary>The error message from loading the actor document, when present.</summary>
+    private string? LoadError { get; set; }
+
+    /// <summary>
+    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out. The page is
+    /// <c>[Authorize]</c>-gated, so in practice this is always set on a rendered (circuit) request.
+    /// </summary>
+    private IActivityPubClient? OutboxClient => Session.Client;
+
+    /// <summary>
+    /// The outbox collection IRI (the session actor's <c>{actor}/outbox</c>), or <c>null</c> when signed
+    /// out. Derived via <see cref="IriExtensions.OutboxOf(Iri)"/>.
+    /// </summary>
+    private Iri? OutboxIri
+        => Session.ActorId is { } actor ? actor.OutboxOf() : null;
+
+    /// <summary>
+    /// Loads the session actor's own profile document (via the typed <c>GetActorAsync</c> — a
+    /// non-actor IRI would yield null, but this is always the session actor). Fired fire-and-forget
+    /// from <see cref="OnParametersSet"/> and ends with <c>StateHasChanged()</c> so the initial
+    /// navigate renders the loaded profile without a manual refresh (the same auto-re-render the
+    /// <c>PagedCollection</c> relies on).
+    /// </summary>
+    protected override void OnParametersSet()
+    {
+        if (Session.Client is { } client
+            && Session.ActorId is { } actorId
+            && ActorDoc is null
+            && LoadError is null)
+        {
+            _ = LoadActorAsync(client, actorId);
+        }
+    }
+
+    private async Task LoadActorAsync(IActivityPubClient client, Iri actorId)
+    {
+        try
+        {
+            var actor = await client.GetActorAsync(actorId, CancellationToken.None);
+            if (actor is not null)
+            {
+                ActorDoc = actor;
+            }
+            else
+            {
+                LoadError = "Your actor document could not be loaded.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+}

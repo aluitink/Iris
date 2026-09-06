@@ -1,0 +1,141 @@
+@page "/compose"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Compose · Iris</PageTitle>
+
+<h2>Compose</h2>
+
+<p class="muted">
+    Posting as <code>@(Session.ActorId?.Value ?? "…")</code>
+</p>
+
+<div class="card compose-card">
+    <label for="compose-content">Content</label>
+    <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
+              placeholder="What's on your mind?"></textarea>
+    <p class="muted compose-hint">
+        A note addressed to the public — it lands in your outbox and appears in your followers'
+        timelines.
+    </p>
+
+    <div class="compose-actions">
+        <button @onclick="PostAsync" disabled="@Busy">
+            @(Busy ? "Posting…" : "Post note")
+        </button>
+        @if (Posted)
+        {
+            <a class="button button--secondary" href="/profile">View your posts →</a>
+        }
+    </div>
+
+    @if (Result is not null)
+    {
+        <p class="muted compose-result">
+            @Result
+            @if (PostedIri is not null)
+            {
+                <code class="compose-result-iri">@PostedIri</code>
+            }
+        </p>
+    }
+    @if (Error is not null)
+    {
+        <div class="error">@Error</div>
+    }
+</div>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// The note text the user is composing. Cleared on a successful post.
+    /// </summary>
+    private string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Whether a post is in flight — disables the button and shows the "Posting…" state.
+    /// </summary>
+    private bool Busy { get; set; }
+
+    /// <summary>
+    /// Whether the last post succeeded — when true the "View your posts" link is shown (a quick path
+    /// to the profile's outbox, where the just-posted note now lives).
+    /// </summary>
+    private bool Posted { get; set; }
+
+    /// <summary>
+    /// The IRI the server minted for the posted <c>Create</c> (from <see cref="DeliveryResult.MintedId"/>),
+    /// shown after a successful post so the user can see what was created.
+    /// </summary>
+    private string? PostedIri { get; set; }
+
+    /// <summary>
+    /// A human-readable status line for the last post (e.g. the HTTP status), when present.
+    /// </summary>
+    private string? Result { get; set; }
+
+    /// <summary>
+    /// The error message from the last post, when present.
+    /// </summary>
+    private string? Error { get; set; }
+
+    /// <summary>
+    /// The ActivityStreams public collection address (the conventional <c>to</c> for public notes) —
+    /// a note addressed to the public is delivered to the actor's followers' timelines (F-14).
+    /// </summary>
+    private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
+
+    /// <summary>
+    /// Posts the composed note as the signed-in actor. The note is built with a <c>to</c> of the
+    /// ActivityStreams <c>as:Public</c> collection (a public note), so it is fanned out to the
+    /// actor's followers' feeds as well as stored in the actor's outbox. The write goes through the
+    /// session's <see cref="IActivityPubClient"/> (<c>PostNoteAsync</c> → publish to the actor's own
+    /// outbox, signed by the session's signing key) — the one sanctioned path from the UI into
+    /// ActivityPub state. Pass 1 (functionality): a plain text note; content warnings, media
+    /// attachments, and reply threading are later experience-pass items (F-28 / F-11 / F-12).
+    /// </summary>
+    private async Task PostAsync()
+    {
+        if (Session.ActorId is not { } actorId
+            || Session.Client is not { } client
+            || string.IsNullOrWhiteSpace(Content)
+            || Busy)
+        {
+            return;
+        }
+
+        Busy = true;
+        Posted = false;
+        PostedIri = null;
+        Result = null;
+        Error = null;
+        try
+        {
+            var result = await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
+            if (result.IsSuccess)
+            {
+                Posted = true;
+                Result = $"Posted (HTTP {result.StatusCode}).";
+                PostedIri = result.MintedId;
+                // A posted note is consumed; clear the composer so the next note starts fresh.
+                Content = string.Empty;
+            }
+            else
+            {
+                Result = $"Post failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}
