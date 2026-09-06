@@ -35,6 +35,13 @@ IRIS_ADMIN_PASSWORD=
 # ---- CORS (only relevant for a non-UI API consumer; same-origin UI needs none) ----
 IRIS_CORS_ORIGINS=
 
+# ---- Inbound request-body cap (slice 33.4) ----
+# Bounds the memory an unauthenticated inbound federation POST can force the app to buffer (a
+# denial-of-service vector for a public instance). Leave blank for the app's default (1 MiB — generous
+# for an ActivityPub activity JSON document). Set to a larger byte count only if a legitimate use case
+# requires it. Maps to Iris:MaxRequestBodySize (Kestrel Limits.MaxRequestBodySize).
+IRIS_MAX_REQUEST_BODY_SIZE=
+
 # ---- Ports published to the host ----
 # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this
 # host's port 8088 (previously the sample stack's iris-ui; see production-app-overview.md §2 and
@@ -73,9 +80,11 @@ services:
       Iris__InstanceName: ${IRIS_INSTANCE_NAME:-my-iris}
       # App:* is Iris.Web's own section (never bound by AddActivityPubServer's ActivityPubServerOptions) —
       # admin bootstrap is a host-app concern, not an Iris:* library option (see production-app-authentication.md §6).
-      App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
-      App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
-      Media__Backend: ${MEDIA_BACKEND:-Local}
+       App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
+       App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
+       # Inbound request-body cap (slice 33.4); blank -> the app's 1 MiB default.
+       Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
+       Media__Backend: ${MEDIA_BACKEND:-Local}
       Media__S3__Endpoint: ${MEDIA_S3_ENDPOINT:-}
       Media__S3__Bucket: ${MEDIA_S3_BUCKET:-}
       Media__S3__AccessKey: ${MEDIA_S3_ACCESS_KEY:-}
