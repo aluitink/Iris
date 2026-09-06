@@ -32,7 +32,13 @@ MEDIA_S3_SECRET_KEY=
 IRIS_ADMIN_USERNAME=
 IRIS_ADMIN_PASSWORD=
 
-# ---- CORS (only relevant for a non-UI API consumer; same-origin UI needs none) ----
+# ---- CORS (slice 33.5; only relevant for a non-UI API consumer; the same-origin UI needs none) ----
+# The app is same-origin-only by default: leave blank and no CORS middleware runs, so a cross-origin
+# request gets no Access-Control-Allow-Origin header (the browser blocks it). Set to a comma-separated
+# allow-list of origins (e.g. https://app.example.org,https://other.example.org) to grant a non-UI API
+# consumer cross-origin access to the instance's API. The allow-list is strict — only the listed origins
+# are allowed (never AllowAnyOrigin) — and credentials + the API's methods/headers are enabled. Maps to
+# Iris:Cors:Origins.
 IRIS_CORS_ORIGINS=
 
 # ---- Inbound request-body cap (slice 33.4) ----
@@ -82,9 +88,12 @@ services:
       # admin bootstrap is a host-app concern, not an Iris:* library option (see production-app-authentication.md §6).
        App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
        App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
-       # Inbound request-body cap (slice 33.4); blank -> the app's 1 MiB default.
-       Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
-       Media__Backend: ${MEDIA_BACKEND:-Local}
+        # Inbound request-body cap (slice 33.4); blank -> the app's 1 MiB default.
+        Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
+        # CORS (slice 33.5); blank -> same-origin-only (no CORS middleware). Set to a comma-separated
+        # allow-list of origins to grant a non-UI API consumer cross-origin access (never AllowAnyOrigin).
+        Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
+        Media__Backend: ${MEDIA_BACKEND:-Local}
       Media__S3__Endpoint: ${MEDIA_S3_ENDPOINT:-}
       Media__S3__Bucket: ${MEDIA_S3_BUCKET:-}
       Media__S3__AccessKey: ${MEDIA_S3_ACCESS_KEY:-}
