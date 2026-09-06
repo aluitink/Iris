@@ -1,16 +1,35 @@
 @page "/"
+@using Microsoft.AspNetCore.Components.Authorization
 
 <PageTitle>Iris</PageTitle>
 
-<div class="card home-card">
-    <h1>Iris</h1>
-    <p class="muted">
-        The Iris production social platform is being built. The ActivityPub server is live in this
-        process — federation, WebFinger, and the actor/inbox/outbox endpoints are served alongside this
-        page.
-    </p>
-    <p class="muted">
-        The product screens (registration, timeline, communities, notifications, moderation, search)
-        arrive in the following slices.
-    </p>
-</div>
+<h1>Iris</h1>
+<p class="muted">An ActivityPub social platform — follow people you know and read their notes in one feed.</p>
+
+<AuthorizeView>
+    <Authorized>
+        <p>
+            You're signed in.
+            <a class="button" href="/home">Go to your timeline →</a>
+        </p>
+        <p class="muted">
+            <a href="/notifications">Notifications</a> ·
+            <a href="/directory">Directory</a> ·
+            <a href="/profile">Profile</a> ·
+            <a href="/search">Search</a>
+        </p>
+    </Authorized>
+    <NotAuthorized>
+        <div class="card">
+            <h2>Welcome to Iris</h2>
+            <p class="muted">
+                Sign in to follow people, read your timeline, and post notes — or create a new
+                account to join.
+            </p>
+            <p>
+                <a class="button" href="/login">Sign in</a>
+                <a class="button button--secondary" href="/register">Create an account</a>
+            </p>
+        </div>
+    </NotAuthorized>
+</AuthorizeView>

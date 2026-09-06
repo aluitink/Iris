@@ -1,0 +1,308 @@
+@using Iris.Client
+@using Iris.Client.Collections
+@using KristofferStrube.ActivityStreams
+
+@if (Client is not null && CollectionIri is not null)
+{
+    <div class="card paged-collection">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <h3>@Title</h3>
+        }
+        @if (!string.IsNullOrEmpty(Description))
+        {
+            <p class="muted">@Description</p>
+        }
+        @if (HeaderContent is not null)
+        {
+            @HeaderContent
+        }
+        @if (ShowRefreshButton)
+        {
+            <div class="paged-collection-actions">
+                <button @onclick="RefreshAsync" disabled="@Refreshing">
+                    @(Refreshing ? "Refreshing…" : "Refresh")
+                </button>
+            </div>
+        }
+        @if (LoadError is not null)
+        {
+            <div class="error">@LoadError</div>
+        }
+        @if (Items is null)
+        {
+            @if (LoadError is null)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
+        }
+        else
+        {
+            @if (Items.Count == 0 && !HasMore)
+            {
+                <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+            }
+            @if (Items.Count > 0)
+            {
+                <ul class="object-list">
+                    @foreach (var item in Items)
+                    {
+                        <li>
+                            @if (ItemTemplate is not null)
+                            {
+                                @ItemTemplate(item)
+                            }
+                            else
+                            {
+                                <ObjectView Item="item" />
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+            @if (HasMore)
+            {
+                <button @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                @if (LoadingMore)
+                {
+                    <div class="card-loading card-loading-inline">
+                        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                        </svg>
+                        <span class="muted">Loading…</span>
+                    </div>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// The client to dial. When <c>null</c> the component renders nothing and loads nothing (the parent
+    /// gates on a signed-in session).
+    /// </summary>
+    [Parameter]
+    public IActivityPubClient? Client { get; set; }
+
+    /// <summary>
+    /// The IRI of the collection (or of its <c>first</c> page) to enumerate. When <c>null</c> the
+    /// component renders nothing.
+    /// </summary>
+    [Parameter]
+    public Iri? CollectionIri { get; set; }
+
+    /// <summary>
+    /// Optional card title (an <c>&lt;h3&gt;</c>).
+    /// </summary>
+    [Parameter]
+    public string? Title { get; set; }
+
+    /// <summary>
+    /// Optional muted intro paragraph under the title.
+    /// </summary>
+    [Parameter]
+    public string? Description { get; set; }
+
+    /// <summary>
+    /// Optional extra markup rendered under the title/description.
+    /// </summary>
+    [Parameter]
+    public RenderFragment? HeaderContent { get; set; }
+
+    /// <summary>
+    /// Items fetched per page (<c>CollectionQuery.Limit</c>). When <c>null</c> the server's natural page
+    /// size is used.
+    /// </summary>
+    [Parameter]
+    public int? PageSize { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, page reads bypass the client's page cache (<c>CollectionQuery.BypassCache</c> —
+    /// the <c>?refresh=true</c> path).
+    /// </summary>
+    [Parameter]
+    public bool BypassCache { get; set; }
+
+    /// <summary>
+    /// Renders a single item. Defaults to <c>&lt;ObjectView Item="…" /&gt;</c>; a page may override it to
+    /// render, e.g., a follower/actor link.
+    /// </summary>
+    [Parameter]
+    public RenderFragment<IObjectOrLink>? ItemTemplate { get; set; }
+
+    /// <summary>
+    /// The "no items" message (the empty state).
+    /// </summary>
+    [Parameter]
+    public string? EmptyMessage { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, renders a <c>Refresh</c> button that re-fetches the collection's first page
+    /// with the page cache bypassed (the <c>?refresh=true</c> path) — a one-shot bypass that does not
+    /// change <see cref="BypassCache"/>. Used by the feed cards so a manual refresh re-reads the server
+    /// even within the cache TTL.
+    /// </summary>
+    [Parameter]
+    public bool ShowRefreshButton { get; set; }
+
+    private List<IObjectOrLink>? Items { get; set; }
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
+    private bool Refreshing { get; set; }
+    private string? LoadError { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, the next fetch bypasses the page cache (the one-shot <c>?refresh=true</c> from
+    /// <see cref="RefreshAsync"/>). Reset after the first page of the refresh.
+    /// </summary>
+    private bool _bypassNext;
+
+    /// <summary>
+    /// The enumeration position: the page IRI to resume from (<c>null</c> = start at the collection's
+    /// first page).
+    /// </summary>
+    private Iri? _resumeFrom;
+
+    /// <summary>
+    /// The <see cref="CollectionIri"/> value this card last loaded for, so a new collection (a new
+    /// actor/community) triggers a fresh first-page load.
+    /// </summary>
+    private Iri? _loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
+        {
+            _loadedFor = iri;
+            _ = LoadInitialAsync();
+        }
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        // Items stays null for the duration of the first fetch so the "Loading…" spinner renders
+        // (Items is null) rather than the empty "No items" state: the empty message is only correct
+        // once a page has actually been read. EnumerateOnePageAsync initializes Items on first page
+        // arrival (Items ??= []); when the fetch yields no page (an empty collection), Items stays null
+        // and would spin forever — so initialize it here to the empty state in that case.
+        Items = null;
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+
+        if (Items is null && LoadError is null)
+        {
+            Items = [];
+        }
+
+        // This load was fired fire-and-forget from OnParametersSet (not an @onclick handler, not
+        // awaited), so Blazor never re-renders after Items is populated — the "Loading…" spinner
+        // (Items == null) stays on screen until the user clicks Refresh (an @onclick handler, which
+        // Blazor auto-re-renders). Mirror that auto-re-render here so the initial navigate renders the
+        // loaded items without a manual Refresh.
+        StateHasChanged();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        LoadError = null;
+        try
+        {
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    /// <summary>
+    /// Re-fetches the collection's first page with the page cache bypassed (the <c>?refresh=true</c>
+    /// path), replacing the current items — a manual refresh that re-reads the server even within the
+    /// cache TTL. An <c>@onclick</c> handler: Blazor auto-re-renders after it completes.
+    /// </summary>
+    private async Task RefreshAsync()
+    {
+        if (Refreshing)
+        {
+            return;
+        }
+
+        Refreshing = true;
+        _bypassNext = true;
+        LoadError = null;
+        try
+        {
+            Items = [];
+            HasMore = false;
+            _resumeFrom = null;
+            await EnumerateOnePageAsync();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+        finally
+        {
+            Refreshing = false;
+            _bypassNext = false;
+        }
+    }
+
+    /// <summary>
+    /// Fetches one page (resuming from <see cref="_resumeFrom"/> when set, else from the collection's
+    /// first page) and appends its items — one server page per "Load more" click.
+    /// </summary>
+    private async Task EnumerateOnePageAsync()
+    {
+        if (Client is not { } client)
+        {
+            return;
+        }
+
+        if (_resumeFrom is not { } resumeIri)
+        {
+            if (CollectionIri is not { } firstIri)
+            {
+                return;
+            }
+
+            resumeIri = firstIri;
+        }
+
+        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache || _bypassNext);
+
+        await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
+        {
+            Items ??= [];
+            Items.AddRange(page.Items);
+            HasMore = !page.IsLastPage;
+            _resumeFrom = page.NextPage;
+            break;
+        }
+    }
+}

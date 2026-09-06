@@ -1,0 +1,46 @@
+@page "/home"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+
+<PageTitle>Home · Iris</PageTitle>
+
+<h2>Home timeline</h2>
+
+<PagedCollection
+    @key="@FeedKey"
+    Client="@FeedClient"
+    CollectionIri="@FeedIri"
+    Title="Home timeline"
+    Description="The union of the actors you follow (and the communities you join), newest first, de-duplicated — paged with next-link walking."
+    PageSize="5"
+    ShowRefreshButton="true"
+    EmptyMessage="No posts in your timeline yet. Follow an actor or join a community to populate it." />
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// A stable <c>@key</c> for the feed's <c>PagedCollection</c>. The home timeline is a single,
+    /// fixed collection (the session actor's followed feed), so the key is a constant — it exists only
+    /// so the <c>PagedCollection</c> has a key to key on (its internal state is otherwise stable).
+    /// </summary>
+    private const string FeedKey = "home-feed";
+
+    /// <summary>
+    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out. The page is
+    /// <c>[Authorize]</c>-gated, so in practice this is always set on a rendered (circuit) request;
+    /// <c>null</c> only occurs on the static prerender of a signed-out request (which the auth
+    /// middleware redirects to <c>/login</c> before the circuit boots).
+    /// </summary>
+    private IActivityPubClient? FeedClient => Session.Client;
+
+    /// <summary>
+    /// The followed-feed collection IRI (the session actor's <c>{actor}/feed</c>), or <c>null</c> when
+    /// signed out. Derived via <see cref="IriExtensions.FeedOf(Iri)"/>.
+    /// </summary>
+    private Iri? FeedIri
+        => Session.ActorId is { } actor ? actor.FeedOf() : null;
+}
