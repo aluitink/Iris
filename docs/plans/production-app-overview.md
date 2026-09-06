@@ -116,7 +116,7 @@ None of these live under `samples/` — they are real, production-facing project
 
 Record substantial decisions here (or in [docs/decisions/](../decisions/README.md) if they meet that bar) as they're made, so later turns don't re-litigate them:
 
-- *(none yet — first decisions will likely be: exact persistence technology choice, exact project folder layout, CSS approach for the UI)*
+- **32.0 — the `https://iris.luit.ink` 8088 outage tradeoff (accepted).** Step 0 dropped the sample `iris-ui` service's `8088:8090` host mapping so the production app (step 5, Deployment) can publish `iris-web` on `8088` and take over the existing reverse-proxy target with no reconfiguration. From this turn until step 5 stands up `iris-web`, **nothing listens on host port 8088** — the public URL is down. This is a deliberate, accepted choice: there is no real traffic or users on that URL yet, and restoring a placeholder (e.g. re-publishing `iris-ui` on 8088) would just re-create the squat the relocation exists to remove. The sample UI stays reachable at `http://localhost:8090` for local smoke-testing and manual review. Recorded at the start of slice 32.0's implementation turn (2026-09-06), per §6 step (g).
 
 ## 10. Reading map
 
