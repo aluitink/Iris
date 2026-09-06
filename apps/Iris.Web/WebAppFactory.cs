@@ -6,6 +6,7 @@ using Iris.Core.Signing;
 using Iris.Server;
 using Iris.Server.Data;
 using Iris.Server.Data.Accounts;
+using Iris.Server.Data.Stores;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Server.Stores;
@@ -103,21 +104,30 @@ public static class WebAppFactory
 
         // 3. Persistence: the EF Core (PostgreSQL) provider when a connection string is configured
         //    (Iris:ConnectionString), otherwise the in-memory provider (the slice 32.1 default, and the
-        //    default for the integration tests). Both bind the same IPersistenceProvider seam. A shared
-        //    IKeyStore singleton is the seed target; the signer and the provider's Keys both use it.
-        var keyStore = new InMemoryKeyStore();
-        builder.Services.AddSingleton<IKeyStore>(keyStore);
-        builder.Services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(keyStore));
+        //    default for the integration tests). Both bind the same IPersistenceProvider seam.
+        //
+        // The IKeyStore is the seed/provisioning target and what the signer signs with. Under EF it is
+        // bound to the durable EfKeyStore (so a local actor's signing key survives a restart — slice
+        // 33.2); under in-memory it is a fresh InMemoryKeyStore (the default, ephemeral by design). The
+        // signer is wired to the SAME IKeyStore instance so it signs with whatever key is registered.
         if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Iris") ?? builder.Configuration["Iris:ConnectionString"]))
         {
             // In-memory (the default): bind the concrete instance so resolving IPersistenceProvider
             // returns it verbatim and never triggers AddActivityPubServer's fallback factory.
             builder.Services.AddSingleton<IPersistenceProvider>(new InMemoryPersistenceProvider());
+            var keyStore = new InMemoryKeyStore();
+            builder.Services.AddSingleton<IKeyStore>(keyStore);
+            builder.Services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(keyStore));
         }
         else
         {
             // EF Core (PostgreSQL): registered by AddEntityFrameworkPersistence (instance binding).
             builder.Services.AddEntityFrameworkPersistence(builder.Configuration);
+            // The durable key store: IKeyStore IS the EfKeyStore (the same object the provider's Keys
+            // uses), so a PutKey persists the private key to Postgres and a restart reads it back.
+            // The signer resolves it lazily so the single EfKeyStore instance is shared.
+            builder.Services.AddSingleton<ISignatureSigner>(sp => new HttpSignatureSigner(sp.GetRequiredService<IKeyStore>()));
+            builder.Services.AddSingleton<IKeyStore>(sp => sp.GetRequiredService<EfKeyStore>());
         }
 
         // 6. Owner credential validation. AddActivityPubServer registers a no-op default (which denies
@@ -327,6 +337,38 @@ public static class WebAppFactory
             services, configuration, new Iri(baseString),
             services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AdminBootstrapper>>());
         bootstrapper.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+        // Re-register every local account's signing key with the server's key provider (slice 33.2). The
+        // key *store* is durable (EF) so each key survives a restart, but the in-process key *provider*
+        // (actor→key mapping) is not — so after a restart the registered user actors (and the admin)
+        // would otherwise be unable to sign outbound federation. Runs after the admin bootstrap so the
+        // just-provisioned admin's key is registered too.
+        RestoreLocalSigningKeys(services);
+    }
+
+    /// <summary>
+    /// Re-registers each local account's signing key with the server's <see cref="IKeyProvider"/>, so a
+    /// local actor can sign outbound federation after a restart (slice 33.2). The keys themselves live
+    /// in the (durable) <see cref="IKeyStore"/>; only the actor→key-IRI mapping in the in-process
+    /// <see cref="IKeyProvider"/> is lost on restart, so this pass rebuilds it from the persisted
+    /// accounts. No-op for accounts whose key is not present in the key store.
+    /// </summary>
+    /// <param name="services">The application service provider.</param>
+    public static void RestoreLocalSigningKeys(IServiceProvider services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        var keyStore = services.GetRequiredService<IKeyStore>();
+        var keyProvider = services.GetRequiredService<IKeyProvider>();
+        var accounts = services.GetRequiredService<IUserAccountStore>().GetAllAsync(CancellationToken.None).GetAwaiter().GetResult();
+        foreach (var account in accounts)
+        {
+            // The key IRI follows the same convention ActorProvisioner / SeedActor use: {actor}#key-1.
+            var keyIri = new Iri($"{account.ActorId}#key-1");
+            if (keyStore.TryGetKey(keyIri, out _))
+            {
+                keyProvider.RegisterKey(account.ActorId, keyIri);
+            }
+        }
     }
 
     /// <summary>
@@ -361,11 +403,14 @@ public static class WebAppFactory
 
     /// <summary>
     /// Seeds a local <see cref="Person"/> actor (with an RSA signing key, served as
-    /// <c>publicKeyPem</c> in its document) under the given IRI/handle. Idempotent by IRI (re-seeding
-    /// replaces the actor and re-mints the key).
+    /// <c>publicKeyPem</c> in its document) under the given IRI/handle. Idempotent by IRI: the actor
+    /// document is re-stored, but the signing key is **reused** when one is already present in the key
+    /// store (slice 33.2) — so a restart with a durable key store keeps the *same* key (and thus the
+    /// same public key in the actor document), rather than minting a new one each boot. A fresh
+    /// deployment (no key yet) mints one.
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>
-    /// <param name="keyStore">The key store the seeded signing key is written to.</param>
+    /// <param name="keyStore">The key store the seeded signing key is read from / written to.</param>
     /// <param name="actorIri">The actor's IRI (<c>{base}/ap/v1/u/{handle}</c>).</param>
     /// <param name="handle">The actor's preferred username.</param>
     internal static void SeedActor(IPersistenceProvider persistence, IKeyStore keyStore, Iri actorIri, string handle)
@@ -373,7 +418,11 @@ public static class WebAppFactory
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(keyStore);
         var keyIri = new Iri($"{actorIri}#key-1");
-        var key = KeyPairGenerator.GenerateRsa(keyIri);
+        // Reuse the persisted key when present (restart) so the actor's public key is stable; otherwise
+        // mint a fresh RSA key (first boot). PutKey is a no-op refresh for a reused key.
+        var key = keyStore.TryGetKey(keyIri, out var existing) && existing is not null
+            ? existing
+            : KeyPairGenerator.GenerateRsa(keyIri);
         keyStore.PutKey(key);
 
         var actor = new Person

@@ -49,4 +49,11 @@ public interface IUserAccountStore
     /// bootstrapper (which is idempotent — it never creates a second admin once one exists).
     /// </summary>
     Task<bool> AnyAdminExistsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns every account. Used at startup to re-register each local actor's signing key with the
+    /// server's key provider (the key store is durable; the in-process key-provider registration is
+    /// not), so a local actor can sign outbound federation after a restart.
+    /// </summary>
+    Task<IReadOnlyCollection<UserAccount>> GetAllAsync(CancellationToken ct = default);
 }

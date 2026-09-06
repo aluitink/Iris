@@ -101,6 +101,15 @@ public sealed class EfUserAccountStore : IUserAccountStore
             e => e.Role == UserRole.Admin.ToString(), ct).ConfigureAwait(false);
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyCollection<UserAccount>> GetAllAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entities = await db.Set<UserAccountEntity>().AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        return entities.Select(ToModel).ToList();
+    }
+
     private static UserAccountEntity ToEntity(UserAccount account) => new()
     {
         Id = account.Id,

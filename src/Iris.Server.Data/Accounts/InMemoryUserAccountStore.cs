@@ -91,6 +91,14 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         }
     }
 
+    public Task<IReadOnlyCollection<UserAccount>> GetAllAsync(CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult<IReadOnlyCollection<UserAccount>>(_accounts.Values.Select(clone).ToList());
+        }
+    }
+
     // A defensive clone so callers cannot mutate the stored account by holding onto the returned reference.
     private static UserAccount clone(UserAccount account) => new()
     {

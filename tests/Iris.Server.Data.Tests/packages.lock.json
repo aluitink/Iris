@@ -297,6 +297,12 @@
           "Iris.Core": "[1.0.0, )"
         }
       },
+      "iris.client.extensions": {
+        "type": "Project",
+        "dependencies": {
+          "Iris.Client": "[1.0.0, )"
+        }
+      },
       "iris.core": {
         "type": "Project",
         "dependencies": {
@@ -318,6 +324,21 @@
           "Iris.Server": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.0, )"
+        }
+      },
+      "iris.server.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Iris.Server": "[1.0.0, )"
+        }
+      },
+      "iris.web": {
+        "type": "Project",
+        "dependencies": {
+          "Iris.Client.Extensions": "[1.0.0, )",
+          "Iris.Server": "[1.0.0, )",
+          "Iris.Server.Data": "[1.0.0, )",
+          "Iris.Server.InMemory": "[1.0.0, )"
         }
       },
       "BouncyCastle.Cryptography": {

@@ -23,6 +23,9 @@
     <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.csproj" />
     <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
     <ProjectReference Include="..\..\src\Iris.Server.Data\Iris.Server.Data.csproj" />
+    <!-- The 33.2 restart test boots the real Iris.Web composition root (WebAppFactory) in-process
+         against a Testcontainers Postgres, so it references the app project. -->
+    <ProjectReference Include="..\..\apps\Iris.Web\Iris.Web.csproj" />
   </ItemGroup>
 
 </Project>
