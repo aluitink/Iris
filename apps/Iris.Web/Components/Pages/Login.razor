@@ -1,0 +1,43 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components
+@inject NavigationManager Navigation
+
+<PageTitle>Sign in — Iris</PageTitle>
+
+<h1>Sign in</h1>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+<form method="post" action="/login">
+    <AntiforgeryToken />
+    <div class="field">
+        <label for="handle">Handle</label>
+        <div class="handle-row">
+            <span class="handle-prefix">@_handlePrefix</span>
+            <input id="handle" name="handle" type="text" class="input" autocomplete="username" />
+        </div>
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="input" autocomplete="current-password" />
+    </div>
+    <button type="submit" class="btn">Sign in</button>
+</form>
+
+<p class="muted">New here? <a href="/register">Create an account</a>.</p>
+
+@code {
+    private string? _error;
+    private string _handlePrefix = "@";
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        var values = query.TryGetValue("error", out var raw) && raw.Count > 0 ? raw[0] : null;
+        _error = string.IsNullOrEmpty(values) ? null : values;
+    }
+}

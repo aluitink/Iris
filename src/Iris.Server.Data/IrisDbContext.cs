@@ -38,6 +38,7 @@ public sealed class IrisDbContext : DbContext
         ConfigureEdge(modelBuilder);
         ConfigureCreateIndex(modelBuilder);
         ConfigureMedia(modelBuilder);
+        ConfigureUserAccount(modelBuilder);
     }
 
     /// <summary>
@@ -149,6 +150,26 @@ public sealed class IrisDbContext : DbContext
             entity.HasKey(e => e.ObjectId);
             entity.Property(e => e.ObjectId).HasMaxLength(1024);
             entity.Property(e => e.CreateActivityId).HasMaxLength(1024);
+        });
+    }
+
+    /// <summary>
+    /// Configures the local account entity. The username has a unique index (compared case-insensitively
+    /// at the store layer, not by the index — the index is on the raw value); the linked actor IRI is
+    /// indexed so an account can be found by the actor it is bound to.
+    /// </summary>
+    private static void ConfigureUserAccount(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserAccountEntity>(entity =>
+        {
+            entity.ToTable("UserAccounts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Username).HasMaxLength(255);
+            entity.Property(e => e.PasswordHash).HasMaxLength(512);
+            entity.Property(e => e.Role).HasMaxLength(16);
+            entity.Property(e => e.ActorIri).HasMaxLength(1024);
+            entity.HasIndex(e => e.Username).IsUnique();
+            entity.HasIndex(e => e.ActorIri);
         });
     }
 

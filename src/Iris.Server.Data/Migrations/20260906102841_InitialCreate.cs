@@ -126,6 +126,23 @@ namespace Iris.Server.Data.Migrations
                     table.PrimaryKey("PK_Objects", x => x.Id);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "UserAccounts",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    Username = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    PasswordHash = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                    Role = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    ActorIri = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
+                    NotificationsReadAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_UserAccounts", x => x.Id);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_Activities_ActivityType",
                 table: "Activities",
@@ -156,6 +173,17 @@ namespace Iris.Server.Data.Migrations
                 name: "IX_Objects_AttributedTo",
                 table: "Objects",
                 column: "AttributedTo");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserAccounts_ActorIri",
+                table: "UserAccounts",
+                column: "ActorIri");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_UserAccounts_Username",
+                table: "UserAccounts",
+                column: "Username",
+                unique: true);
         }
 
         /// <inheritdoc />
@@ -184,6 +212,9 @@ namespace Iris.Server.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "Objects");
+
+            migrationBuilder.DropTable(
+                name: "UserAccounts");
         }
     }
 }

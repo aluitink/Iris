@@ -1,3 +1,4 @@
+using Iris.Server.Data.Accounts;
 using Iris.Server.Data.Stores;
 using Iris.Server.Stores;
 using Microsoft.EntityFrameworkCore;
@@ -67,6 +68,9 @@ public static class EntityFrameworkPersistenceExtensions
             sp.GetRequiredService<IDbContextFactory<IrisDbContext>>(),
             sp.GetRequiredService<EdgeStore>(),
             blobDir));
+
+        // The local browser-session account store (EF Core).
+        services.TryAddSingleton<IUserAccountStore, EfUserAccountStore>();
 
         // The aggregate provider. Registered as a singleton factory (not the recursive
         // IPersistenceProvider fallback factory that AddActivityPubServer registers) so it always

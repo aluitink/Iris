@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Iris.Server.Data.Migrations
 {
     [DbContext(typeof(IrisDbContext))]
-    [Migration("20260906052619_InitialCreate")]
+    [Migration("20260906102841_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -224,6 +224,48 @@ namespace Iris.Server.Data.Migrations
                     b.HasIndex("AttributedTo");
 
                     b.ToTable("Objects", (string)null);
+                });
+
+            modelBuilder.Entity("Iris.Server.Data.Entities.UserAccountEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ActorIri")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("NotificationsReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PasswordHash")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorIri");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
+
+                    b.ToTable("UserAccounts", (string)null);
                 });
 #pragma warning restore 612, 618
         }

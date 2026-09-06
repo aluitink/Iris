@@ -1,0 +1,49 @@
+@page "/register"
+@using Microsoft.AspNetCore.Components
+@inject NavigationManager Navigation
+
+<PageTitle>Register — Iris</PageTitle>
+
+<h1>Create your account</h1>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+<form method="post" action="/register">
+    <AntiforgeryToken />
+    <div class="field">
+        <label for="handle">Handle</label>
+        <div class="handle-row">
+            <span class="handle-prefix">@_handlePrefix</span>
+            <input id="handle" name="handle" type="text" class="input" autocomplete="username" />
+        </div>
+        <p class="muted">2–32 characters: letters, digits, or hyphens. No leading/trailing hyphen.</p>
+    </div>
+    <div class="field">
+        <label for="display">Display name (optional)</label>
+        <input id="display" name="displayName" type="text" class="input" autocomplete="name" />
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="input" autocomplete="new-password" />
+        <p class="muted">At least 8 characters.</p>
+    </div>
+    <button type="submit" class="btn">Create account</button>
+</form>
+
+<p class="muted">Already have an account? <a href="/login">Sign in</a>.</p>
+
+@code {
+    private string? _error;
+    private string _handlePrefix = "@";
+
+    protected override void OnInitialized()
+    {
+        var uri = new Uri(Navigation.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        var values = query.TryGetValue("error", out var raw) && raw.Count > 0 ? raw[0] : null;
+        _error = string.IsNullOrEmpty(values) ? null : values;
+    }
+}

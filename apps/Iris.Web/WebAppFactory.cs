@@ -5,10 +5,15 @@ using Iris.Core.Identity;
 using Iris.Core.Signing;
 using Iris.Server;
 using Iris.Server.Data;
+using Iris.Server.Data.Accounts;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Server.Stores;
+using Iris.Web.Accounts;
 using KristofferStrube.ActivityStreams;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Configuration;
@@ -127,6 +132,36 @@ public static class WebAppFactory
                     && password == SeedHandle;
                 return new ValueTask<bool>(valid);
             }));
+
+        // 7. Local auth (slice 32.3). Cookie authentication for the browser session + the account/
+        //    actor services. The in-memory account store is the default; the EF path registers its own
+        //    IUserAccountStore via AddEntityFrameworkPersistence (registered later, so it wins for the
+        //    EF provider — the in-memory one is only used when the EF provider is not registered).
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
+            .AddCookie(options =>
+            {
+                options.Cookie.Name = "iris.auth";
+                options.LoginPath = "/login";
+                options.LogoutPath = "/logout";
+                options.ExpireTimeSpan = TimeSpan.FromDays(14);
+                options.SlidingExpiration = true;
+            });
+        builder.Services.AddAuthorization();
+
+        // The account + actor-provisioning services (the "bootstrap mechanism").
+        builder.Services.TryAddSingleton<PasswordHasher>();
+        builder.Services.TryAddSingleton<ILoginRateLimiter>(
+            new SlidingWindowLoginRateLimiter(maxAttempts: 5, window: TimeSpan.FromMinutes(15)));
+        builder.Services.AddSingleton<ActorProvisioner>(sp => new ActorProvisioner(
+            sp.GetRequiredService<IPersistenceProvider>(),
+            sp.GetRequiredService<IKeyStore>(),
+            sp.GetRequiredService<IKeyProvider>(),
+            baseUri));
+        builder.Services.TryAddSingleton<IUserAccountStore, InMemoryUserAccountStore>();
+        builder.Services.AddSingleton<RegistrationService>();
+        builder.Services.AddSingleton<LoginService>();
+        builder.Services.AddScoped<IActorSessionAccessor, ActorSessionAccessor>();
     }
 
     /// <summary>
@@ -155,17 +190,104 @@ public static class WebAppFactory
         // register its key.
         InitializePersistence(app.Services, builder.Configuration, baseNoSlash);
 
+        ConfigurePipeline(app, baseNoSlash);
+        return app;
+    }
+
+    /// <summary>
+    /// Applies the full middleware + endpoint pipeline (routing, antiforgery, signature validation,
+    /// cookie auth, the Blazor Web App, static assets, the local-auth endpoints, and the ActivityPub
+    /// endpoints) to a built <see cref="WebApplication"/>. The integration tests reproduce this
+    /// pipeline on a <c>TestServer</c> (see <c>LocalAuthIntegrationTests</c>) so the exact production
+    /// behavior — including the <c>/register</c>/<c>/login</c>/<c>/logout</c> auth endpoints and cookie
+    /// auth — is exercised in-process.
+    /// </summary>
+    /// <param name="app">The built application.</param>
+    /// <param name="baseNoSlash">The advertised public base URI (slash-free).</param>
+    public static void ConfigurePipeline(WebApplication app, string baseNoSlash)
+    {
         app.UseRouting();
         app.UseAntiforgery();
         // Inbound federation signature validation (a signed POST to a local inbox is verified; unsigned
         // inbox POSTs are rejected 401 by the inbox handler).
         app.UseSignatureValidation();
-        // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
-        app.MapActivityPubEndpoints();
+        // Cookie authentication + authorization (the local-account auth scheme).
+        app.UseAuthentication();
+        app.UseAuthorization();
         // The Blazor Web App (the product UI; serves / and the static assets).
         app.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
+        // The Blazor framework files (_framework/blazor.web.js) + the app's static assets (wwwroot,
+        // e.g. css/app.css) — served via the static web assets endpoint (required for the interactive
+        // circuit to boot; without it the page renders but the JS cannot load).
+        app.UseStaticFiles();
+        app.MapStaticAssets();
+        // The local-account auth endpoints (see <see cref="MapAuthEndpoints"/>). The interactive Blazor
+        // circuit cannot set cookies (read-only response headers), so sign-in/out happen here in plain
+        // HTTP requests.
+        MapAuthEndpoints(app);
 
-        return app;
+        // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
+        app.MapActivityPubEndpoints();
+    }
+
+    /// <summary>
+    /// Maps the local-account auth endpoints: <c>POST /register</c> (handle + password),
+    /// <c>POST /login</c> (handle + password), and <c>POST /logout</c>. Each runs in a real HTTP
+    /// request (writable response) so it can set the auth cookie via <c>SignInAsync</c> /
+    /// <c>SignOutAsync</c>, then redirects to the home page. The matching <c>GET</c> routes are
+    /// served by the Razor pages (the forms). These are the only way a local account signs in —
+    /// the interactive Blazor circuit cannot set cookies.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder (a <see cref="WebApplication"/>, or the
+    /// builder from <c>UseEndpoints</c> in a <c>TestServer</c> pipeline).</param>
+    public static void MapAuthEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/register", async (
+            [FromForm] string? handle,
+            [FromForm] string? password,
+            [FromForm] string? displayName,
+            RegistrationService registration,
+            HttpContext ctx) =>
+        {
+            var result = await registration.RegisterAsync(handle, password ?? string.Empty,
+                string.IsNullOrWhiteSpace(displayName) ? null : displayName);
+            if (!result.Succeeded)
+            {
+                // Redirect back with the error in the query (the page reads it and displays it).
+                return Results.Redirect($"/register?error={Uri.EscapeDataString(result.Error!)}");
+            }
+            await ctx.SignInAsync(
+                Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme,
+                new System.Security.Claims.ClaimsPrincipal(Iris.Web.Accounts.ClaimsFactory.CreateIdentity(result.Account!)),
+                new Microsoft.AspNetCore.Authentication.AuthenticationProperties { IsPersistent = true });
+            return Results.Redirect("/");
+        });
+
+        endpoints.MapPost("/login", async (
+            [FromForm] string? handle,
+            [FromForm] string? password,
+            LoginService login,
+            HttpContext ctx) =>
+        {
+            var remoteIp = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            var result = await login.LoginAsync(handle, password ?? string.Empty, remoteIp);
+            if (!result.Succeeded)
+            {
+                return Results.Redirect($"/login?error={Uri.EscapeDataString(result.Error!)}");
+            }
+            await ctx.SignInAsync(
+                Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme,
+                new System.Security.Claims.ClaimsPrincipal(Iris.Web.Accounts.ClaimsFactory.CreateIdentity(result.Account!)),
+                new Microsoft.AspNetCore.Authentication.AuthenticationProperties { IsPersistent = true });
+            return Results.Redirect("/");
+        });
+
+        endpoints.MapGet("/logout", async (HttpContext ctx) =>
+        {
+            await ctx.SignOutAsync(
+                Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
+            return Results.Redirect("/login");
+        });
     }
 
     /// <summary>
@@ -189,6 +311,14 @@ public static class WebAppFactory
         SeedActor(persistence, keyStore, new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}"), SeedHandle);
         // Register the seeded actor's key so the proxy / DeliveryWorker can sign as it.
         RegisterSeedKey(services, baseNoSlash);
+
+        // Bootstrap the first admin (idempotent; no-op unless App:Admin:Username/Password are set). This
+        // runs here — after the migration + seed, once persistence is ready — rather than as an
+        // IHostedService (which would run at Build(), before the EF migration creates the tables).
+        var bootstrapper = new AdminBootstrapper(
+            services, configuration, new Iri(baseString),
+            services.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AdminBootstrapper>>());
+        bootstrapper.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
     }
 
     /// <summary>
