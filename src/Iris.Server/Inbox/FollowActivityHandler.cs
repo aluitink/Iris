@@ -1,6 +1,7 @@
 using Iris.Core;
 using Iris.Server.Identity;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -54,12 +55,15 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     /// interpreted only when the recipient is local).</param>
     /// <param name="idMinter">The server-side id authority (mints the id of the <c>Accept</c> the handler
     /// authors in response to an inbound follow — decision 055).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FollowActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
         ILocalActorResolver localActors,
-        IdMinter idMinter)
+        IdMinter idMinter,
+        ILogger<FollowActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);

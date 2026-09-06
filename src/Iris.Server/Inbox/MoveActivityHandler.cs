@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -51,13 +52,16 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
     /// next resolution fetches the new key). May be <see langword="null"/> (no cache to clear).</param>
     /// <param name="remoteActors">The outbound remote-actor cache (invalidated for the moving actor so the
     /// next fetch retrieves the new actor document). May be <see langword="null"/>.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localCommunities"/> is null.</exception>
     public MoveActivityHandler(
         IPersistenceProvider persistence,
         IReadOnlyCollection<Iri> localCommunities,
         RemoteKeyCache? remoteKeys = null,
-        RemoteActorCache? remoteActors = null)
+        RemoteActorCache? remoteActors = null,
+        ILogger<MoveActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localCommunities);

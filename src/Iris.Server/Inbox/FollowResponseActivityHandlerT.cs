@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -18,7 +19,8 @@ public abstract class FollowResponseActivityHandler<TActivity> : ActivityHandler
 
     protected IPersistenceProvider Persistence => _persistence;
 
-    protected FollowResponseActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    protected FollowResponseActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

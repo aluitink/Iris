@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -70,9 +71,11 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
     /// <param name="persistence">The persistence provider (provides the <see cref="IFollowStore"/>,
     /// <see cref="IActivityStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether an actor IRI is a local person.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localActors"/> is null.</exception>
-    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<UndoActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

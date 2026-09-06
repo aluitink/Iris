@@ -1,4 +1,7 @@
+using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Iris.Server.Inbox;
 
@@ -21,19 +24,26 @@ namespace Iris.Server.Inbox;
 public sealed class InboxProcessor : IInboxProcessor
 {
     private readonly IPersistenceProvider _persistence;
+    private readonly ILogger<InboxProcessor> _logger;
 
     /// <summary>
     /// Initializes a new <see cref="InboxProcessor"/>.
     /// </summary>
     /// <param name="persistence">The persistence provider (stores the activity).</param>
     /// <param name="handlers">The activity handlers to dispatch to.</param>
+    /// <param name="logger">The logger (records received-activity and dispatch-outcome diagnostics).
+    /// May be null (a no-op logger is used).</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or <paramref name="handlers"/> is null.</exception>
-    public InboxProcessor(IPersistenceProvider persistence, IEnumerable<IActivityHandler> handlers)
+    public InboxProcessor(
+        IPersistenceProvider persistence,
+        IEnumerable<IActivityHandler> handlers,
+        ILogger<InboxProcessor>? logger = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(handlers);
 
         _persistence = persistence;
+        _logger = logger ?? NullLogger<InboxProcessor>.Instance;
         Handlers = handlers.ToList();
     }
 
@@ -44,6 +54,18 @@ public sealed class InboxProcessor : IInboxProcessor
     public async Task ProcessAsync(InboxDelivery delivery, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(delivery);
+
+        var activityType = delivery.Activity.GetType().Name;
+        var activityId = delivery.Activity.Id;
+        var actorIri = delivery.Activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        var recipient = delivery.RecipientIri;
+
+        _logger.LogInformation(
+            "Inbox received {ActivityType} {ActivityId} from {Actor} to {Recipient}",
+            activityType,
+            activityId,
+            actorIri,
+            recipient);
 
         // The processor is the single owner of "receive an activity". Idempotent, at-least-once delivery
         // (C-07): store the activity add-if-absent so it can be re-read, and — when this is a re-delivery
@@ -59,6 +81,11 @@ public sealed class InboxProcessor : IInboxProcessor
 
         if (!firstDelivery)
         {
+            _logger.LogInformation(
+                "Inbox re-delivery of {ActivityType} {ActivityId} (already stored); skipping dispatch to {Recipient}",
+                activityType,
+                activityId,
+                recipient);
             return;
         }
 
@@ -67,17 +94,45 @@ public sealed class InboxProcessor : IInboxProcessor
         // Gated on firstDelivery so a re-delivered (duplicate) activity does not duplicate the inbox entry
         // — the same loop-safety guard that prevents re-fan-out.
         await _persistence.Activities
-            .AddToInboxAsync(delivery.RecipientIri, delivery.Activity, ct)
+            .AddToInboxAsync(recipient, delivery.Activity, ct)
             .ConfigureAwait(false);
 
         var handler = FindHandler(delivery.Activity);
         if (handler is null)
         {
             // No registered handler for this activity type: it is stored, but nothing is dispatched.
+            _logger.LogInformation(
+                "Inbox stored {ActivityType} {ActivityId} but no handler is registered; nothing dispatched to {Recipient}",
+                activityType,
+                activityId,
+                recipient);
             return;
         }
 
-        await handler.DispatchAsync(delivery, delivery.Activity, ct).ConfigureAwait(false);
+        var handlerName = handler.GetType().Name;
+        try
+        {
+            await handler.DispatchAsync(delivery, delivery.Activity, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Inbox handler {Handler} failed for {ActivityType} {ActivityId} to {Recipient}",
+                handlerName,
+                activityType,
+                activityId,
+                recipient);
+            throw;
+        }
+
+        _logger.LogInformation(
+            "Inbox dispatched {ActivityType} {ActivityId} to {Handler} (actor {Actor}, recipient {Recipient}) — ok",
+            activityType,
+            activityId,
+            handlerName,
+            actorIri,
+            recipient);
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -60,11 +61,14 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
     /// <param name="localActors">Resolves whether the deleting actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Delete"/> to the
     /// remote actors that need the tombstone, the federated half of F-03).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public DeleteActivityHandler(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
-        IDeletePropagationService propagation)
+        IDeletePropagationService propagation,
+        ILogger<DeleteActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

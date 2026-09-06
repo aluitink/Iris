@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -41,9 +42,10 @@ public sealed class AcceptActivityHandler : FollowResponseActivityHandler<Accept
     /// <param name="persistence">The persistence provider (provides the <see cref="IFollowStore"/>,
     /// <see cref="IActivityStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether the recipient is a local person.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
-    public AcceptActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
-        : base(persistence, localActors)
+    public AcceptActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<AcceptActivityHandler>? logger = null)
+        : base(persistence, localActors, logger)
     {
         _persistence = persistence;
     }

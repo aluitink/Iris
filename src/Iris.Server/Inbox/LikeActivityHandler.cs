@@ -1,6 +1,7 @@
 using Iris.Core;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -50,8 +51,10 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
     /// <param name="persistence">The persistence provider (provides the <see cref="ILikeStore"/>,
     /// <see cref="IObjectStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether the recipient is a local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
-    public LikeActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    public LikeActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<LikeActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

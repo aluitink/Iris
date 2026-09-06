@@ -170,7 +170,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IInboundKeyResolver>(),
             sp.GetRequiredService<ISignatureVerifier>(),
             sp.GetService<RemoteKeyCache>(),
-            sp.GetService<RemoteActorCache>()));
+            sp.GetService<RemoteActorCache>(),
+            sp.GetRequiredService<ILogger<HttpSignatureValidator>>()));
         services.TryAddSingleton<IActorDocumentFetcher>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
@@ -345,7 +346,10 @@ public static class ActivityPubServerExtensions
             var remoteActors = sp.GetService<RemoteActorCache>();
             return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors);
         });
-        services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
+        services.TryAddSingleton<IInboxProcessor>(sp => new InboxProcessor(
+            sp.GetRequiredService<IPersistenceProvider>(),
+            sp.GetRequiredService<IEnumerable<IActivityHandler>>(),
+            sp.GetRequiredService<ILogger<InboxProcessor>>()));
 
         // Object Update/Delete propagation (the federated half of F-02/F-03): schedules an object's
         // Update/Delete to the remote actors that hold a copy (the author's remote followers, the

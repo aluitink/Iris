@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Iris.Core;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Iris.Server.Security;
 
@@ -32,7 +34,8 @@ public sealed class HttpSignatureValidator(
     IInboundKeyResolver keyResolver,
     ISignatureVerifier verifier,
     RemoteKeyCache? remoteKeyCache = null,
-    RemoteActorCache? remoteActorCache = null) : ISignatureValidator
+    RemoteActorCache? remoteActorCache = null,
+    ILogger<HttpSignatureValidator>? logger = null) : ISignatureValidator
 {
     private readonly IInboundKeyResolver _keyResolver = keyResolver
         ?? throw new ArgumentNullException(nameof(keyResolver));
@@ -40,6 +43,7 @@ public sealed class HttpSignatureValidator(
         ?? throw new ArgumentNullException(nameof(verifier));
     private readonly RemoteKeyCache? _keyCache = remoteKeyCache;
     private readonly RemoteActorCache? _actorCache = remoteActorCache;
+    private readonly ILogger<HttpSignatureValidator> _logger = logger ?? NullLogger<HttpSignatureValidator>.Instance;
 
     /// <inheritdoc/>
     public async ValueTask<SignatureValidationResult?> ValidateAsync(HttpContext context, CancellationToken ct = default)
@@ -68,11 +72,20 @@ public sealed class HttpSignatureValidator(
         // Parse the header to get the keyId; if it's malformed, the signature is invalid.
         if (!SignatureHeader.TryParse(signatureHeader, out var header) || header is null)
         {
+            _logger.LogWarning(
+                "Signature rejected: malformed Signature header on {Method} {Path}",
+                context.Request.Method,
+                context.Request.Path);
             return new SignatureValidationResult(false, default, ExtractActorIri(body));
         }
 
         if (!Iri.TryParse(header.KeyId, out var keyId))
         {
+            _logger.LogWarning(
+                "Signature rejected: unparseable keyId '{KeyId}' on {Method} {Path}",
+                header.KeyId,
+                context.Request.Method,
+                context.Request.Path);
             return new SignatureValidationResult(false, default, ExtractActorIri(body));
         }
 
@@ -91,6 +104,11 @@ public sealed class HttpSignatureValidator(
 
         if (key is null)
         {
+            _logger.LogWarning(
+                "Signature rejected: could not resolve public key for keyId {KeyId} on {Method} {Path}",
+                keyId,
+                context.Request.Method,
+                context.Request.Path);
             return new SignatureValidationResult(false, keyId, ExtractActorIri(body));
         }
 
@@ -128,6 +146,15 @@ public sealed class HttpSignatureValidator(
             {
                 isValid = VerifyAndDispose(key, metadata, signatureHeader);
             }
+        }
+
+        if (!isValid)
+        {
+            _logger.LogWarning(
+                "Signature rejected: cryptographic verification failed for keyId {KeyId} on {Method} {Path}",
+                keyId,
+                context.Request.Method,
+                context.Request.Path);
         }
 
         return new SignatureValidationResult(isValid, keyId, ExtractActorIri(body));

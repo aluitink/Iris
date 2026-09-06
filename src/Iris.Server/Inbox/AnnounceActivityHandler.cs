@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -70,11 +71,14 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
     /// local follower's inbox).</param>
     /// <param name="localActors">Resolves whether the recipient (and each candidate follower) is a
     /// local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public AnnounceActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
-        ILocalActorResolver localActors)
+        ILocalActorResolver localActors,
+        ILogger<AnnounceActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);

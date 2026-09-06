@@ -1,6 +1,7 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -51,11 +52,14 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     /// <param name="localActors">Resolves whether the updating actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Update"/> to the
     /// author's remote followers, the federated half of F-02).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public UpdateActivityHandler(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
-        IDeletePropagationService propagation)
+        IDeletePropagationService propagation,
+        ILogger<UpdateActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

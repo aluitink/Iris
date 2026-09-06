@@ -1,6 +1,7 @@
 using Iris.Core;
 using Iris.Server.Media;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Inbox;
@@ -84,13 +85,16 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// attachments, Phase 20.4 (d); a no-op when eager-warm is disabled).</param>
     /// <param name="options">The server options (the instance base IRI, used to classify an attachment
     /// as same-origin when warming).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
         ILocalActorResolver localActors,
         IMediaWarmer mediaWarmer,
-        IOptions<ActivityPubServerOptions> options)
+        IOptions<ActivityPubServerOptions> options,
+        ILogger<CreateActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
