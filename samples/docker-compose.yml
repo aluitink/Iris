@@ -2,7 +2,7 @@
 # "server explorer" on an internal Docker network, exercising cross-container federation over genuine
 # network I/O (not in-process TestServer).
 #
-# Topology (see docs/DEPLOYMENT.md):
+# Topology (see docs/reference/DEPLOYMENT.md):
 #   iris-a  → iris-a:8080   actor alice / community iris   (the "home" instance)
 #   iris-b  → iris-b:8080   actor alice / community iris   (the "remote" instance)
 #   iris-ui → iris-ui:8090  the Blazor WebAssembly server-explorer (static site on an ASP.NET Core static-file host)
@@ -25,14 +25,14 @@
 # (SAMPLE_PLAN §4.4) pre-fills a known base URL. The iris-ui service itself only needs to serve the
 # static WASM site; it reaches nothing at runtime (all ActivityPub I/O is browser → server).
 #
-# Run:    docker compose -f docker-compose.yml up --build -d
+# Run:    docker compose -f samples/docker-compose.yml up --build -d
 # Smoke:  ./scripts/docker-smoke-test.sh
-# Tear:   docker compose -f docker-compose.yml down
+# Tear:   docker compose -f samples/docker-compose.yml down
 
 services:
   iris-a:
     build:
-      context: .
+      context: ..
       dockerfile: samples/SampleServer/Dockerfile
     container_name: iris-a
     hostname: iris-a
@@ -89,7 +89,7 @@ services:
 
   iris-b:
     build:
-      context: .
+      context: ..
       dockerfile: samples/SampleServer/Dockerfile
     container_name: iris-b
     hostname: iris-b
@@ -134,16 +134,17 @@ services:
     # only serves the WASM site. Routable as `iris-ui` on the internal network and published to the
     # host on 8090 for the smoke test / manual use.
     build:
-      context: .
+      context: ..
       dockerfile: samples/SampleBlazorClient/Dockerfile
     container_name: iris-ui
     hostname: iris-ui
     ports:
+      # Published to the host on 8090 for the smoke test / manual use. The old 8088:8090 mapping is
+      # intentionally dropped (Phase 32): 8088 is now the production app's published port for
+      # https://iris.luit.ink (see docs/plans/production-app-overview.md §2) — the sample UI no longer
+      # squats on it. Until the real iris-web stack (Phase 32 step 5, Deployment) stands up, host port
+      # 8088 has nothing listening on it; that is an accepted, deliberate tradeoff.
       - "8090:8090"
-      # The public reverse proxy (iris.luit.ink) forwards https → this host-published port, so the
-      # explorer UI is reachable at https://iris.luit.ink for the browser to log on + compose over
-      # https (the local 8090 mapping stays for the in-network smoke test).
-      - "8088:8090"
     healthcheck:
       # A TCP connect to the static host's port (the aspnet base image has no curl/wget); a successful
       # connect means the Kestrel web server is listening (the same liveness probe as iris-a/iris-b).

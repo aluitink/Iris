@@ -11,7 +11,7 @@
 
 ## 0. Environment + ground rules
 
-- **Stack**: `docker compose -f docker-compose.yml up --build -d` → `iris-a` (iris-dev1, alice),
+- **Stack**: `docker compose -f samples/docker-compose.yml up --build -d` → `iris-a` (iris-dev1, alice),
   `iris-b` (iris-dev2, alice), `iris-ui` (the Blazor explorer). Health: `docker compose ps`.
 - **Public FQDNs** (external reverse proxy → our listening ports; we only need to be up):
   - iris-a / dev1: `https://iris-dev1.luit.ink` → local 8081

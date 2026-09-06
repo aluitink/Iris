@@ -28,7 +28,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+COMPOSE_FILE="$REPO_ROOT/samples/docker-compose.yml"
 SIGNER_DIR="$REPO_ROOT/tools/IrisSigner"
 
 log() { printf '[smoke] %s\n' "$*"; }

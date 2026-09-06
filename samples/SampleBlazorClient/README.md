@@ -30,7 +30,7 @@ makes no outbound calls of its own.
 The explorer is served by the `iris-ui` service of the sample Docker stack (Deliverable A):
 
 ```sh
-docker compose -f docker-compose.yml up --build -d     # iris-a → host:8081, iris-b → host:8082, iris-ui → host:8090
+docker compose -f samples/docker-compose.yml up --build -d     # iris-a → host:8081, iris-b → host:8082, iris-ui → host:8090
 # in a browser, open http://localhost:8090
 ```
 

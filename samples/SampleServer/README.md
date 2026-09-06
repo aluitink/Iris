@@ -29,9 +29,9 @@ dotnet run --project samples/SampleServer --Iris:Port=8080 --Iris:Actor=alice
 **Docker stack (two instances on `iris-net`):**
 
 ```sh
-docker compose -f docker-compose.yml up --build -d   # iris-a → host:8081, iris-b → host:8082
-./scripts/docker-smoke-test.sh                        # health + cross-container WebFinger + signed follow
-docker compose -f docker-compose.yml down
+docker compose -f samples/docker-compose.yml up --build -d   # iris-a → host:8081, iris-b → host:8082
+./scripts/docker-smoke-test.sh                               # health + cross-container WebFinger + signed follow
+docker compose -f samples/docker-compose.yml down
 ```
 
 **Logon credential:** every seeded actor authenticates with the shared sample password — the handle

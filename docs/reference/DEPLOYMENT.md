@@ -51,14 +51,14 @@ unit/integration tests).
 | `samples/SampleServer/Dockerfile` | Multi-stage build (SDK → aspnet runtime). Context = repo root. |
 | `samples/SampleBlazorClient/Dockerfile` | Multi-stage build (SDK → aspnet static-file host). Context = repo root; the WASM app is static, so a minimal ASP.NET Core static-file host (the dedicated `samples/IrisStaticHost` project) serves the published `wwwroot` on `8090`. |
 | `.dockerignore` | Keeps the build context lean (excludes bin/obj, tests, docs, scratch). Both sample projects' sources are included (both Dockerfiles build from the root context). |
-| `docker-compose.yml` | Two `SampleServer` instances + the `iris-ui` explorer on `iris-net`, health checks, host port mappings. |
+| `samples/docker-compose.yml` | Two `SampleServer` instances + the `iris-ui` explorer on `iris-net`, health checks, host port mappings. (Relocated from the repo root in Phase 32 step 0 — the root is now reserved for the production app.) |
 | `scripts/docker-smoke-test.sh` | Boots the stack, waits for health, asserts cross-container WebFinger reachability. |
 
 ## Running
 
 ```bash
 # Boot the two-instance stack (builds the image first):
-docker compose -f docker-compose.yml up --build -d
+docker compose -f samples/docker-compose.yml up --build -d
 
 # Wait for health (each instance's TCP port 8080 must accept connections):
 docker inspect --format '{{.State.Health.Status}}' iris-a   # → healthy
@@ -75,7 +75,7 @@ curl "http://localhost:8090/"                       # → the WASM index.html (H
 #   address alice@iris-b  →  base http://localhost:8082   (instance iris-b)
 
 # Tear down:
-docker compose -f docker-compose.yml down --remove-orphans
+docker compose -f samples/docker-compose.yml down --remove-orphans
 ```
 
 ## Smoke test
