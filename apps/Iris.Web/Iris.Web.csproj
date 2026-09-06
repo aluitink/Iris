@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Web</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      The Iris production social platform app: a single ASP.NET Core Blazor Web App that hosts the
+      ActivityPub server (Iris.Server, unchanged), production persistence, local auth, and the product
+      UI in one process. Slice 32.1 stands it up as a bare host (in-memory persistence) that boots the
+      library's endpoints and serves a minimal landing page.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iris.Client.Extensions\Iris.Client.Extensions.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server.InMemory\Iris.Server.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Web.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <!-- TestServer(IWebHostBuilder) is the established in-process hosting seam (matches Iris.Server.Tests /
+         Iris.Testing). IWebHostBuilder is obsolete in .NET 10; suppress the specific deprecation codes for
+         this test project only, as the other test projects do. -->
+    <NoWarn>$(NoWarn);ASPDEPR004;ASPDEPR008</NoWarn>
+    <Description>
+      Integration tests for the Iris.Web production host (the backend/API surface, per the library's
+      integration-first convention): the federation routes (WebFinger, actor document, inbox, outbox,
+      NodeInfo) served through the Blazor Web App's host, plus a check that the Blazor landing page is
+      served. The UI/component layer is verified with Playwright MCP (no bUnit project yet, by design).
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\apps\Iris.Web\Iris.Web.csproj" />
+  </ItemGroup>
+
+</Project>

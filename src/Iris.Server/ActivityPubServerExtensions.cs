@@ -4411,6 +4411,10 @@ public static class ActivityPubServerExtensions
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the NodeInfo discovery link.");
+        // BaseUri.Value is the absolute wire form and ends in a slash for a bare host (e.g.
+        // "https://host/"); trim it so appending the route prefix yields a single-slash link rather
+        // than "https://host//ap/v1/nodeinfo/2.0".
+        var trimmedBase = baseUrl.TrimEnd('/');
         var link = new
         {
             links = new[]
@@ -4419,7 +4423,7 @@ public static class ActivityPubServerExtensions
                 {
                     rel = "http://nodeinfo.dpl.dev/ns/1.0/nodeinfo",
                     version = "2.0",
-                    href = $"{baseUrl}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
+                    href = $"{trimmedBase}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
                 },
             },
         };
