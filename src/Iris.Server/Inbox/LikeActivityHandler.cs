@@ -1,22 +1,29 @@
 using Iris.Core;
+using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Inbox;
 
 /// <summary>
-/// Handles inbound <see cref="Like"/> activities: records the like edge when the liker is a local
-/// actor (so the actor's <c>liked</c> collection can be served), and — when the recipient is a local
-/// community — records the like in each of the community's local members' outboxes (so the like
-/// appears in the community feed, mirroring the <see cref="CommunityInboxActivityHandler"/>).
+/// Handles inbound <see cref="Like"/> activities: records the like edge when the <em>liked object</em>
+/// is stored locally (so the object's <c>/likes</c> collection and like count are served, regardless of
+/// whether the liker is local or remote), and — when the recipient is a local community — records the
+/// like in each of the community's local members' outboxes (so the like appears in the community feed,
+/// mirroring the <see cref="CommunityInboxActivityHandler"/>).
 /// </summary>
 /// <remarks>
 /// An inbound <c>Like</c> is an actor endorsing (liking) an object. The handler interprets two cases:
 /// <list type="number">
-/// <item><strong>Local liker.</strong> When the activity's <c>actor</c> (the liker) is a <em>local</em>
-/// actor, the directed like edge <c>liker → object</c> is recorded in the <see cref="ILikeStore"/> so
-/// the liker's <c>liked</c> collection (served at <c>GET /ap/v1/u/{handle}/liked</c>) lists the liked
-/// object. This is independent of the recipient: a local actor's like of a remote object is recorded
-/// regardless of which inbox it was delivered to.</item>
+/// <item><strong>Local liked object.</strong> When the activity's <c>object</c> is a content object
+/// stored in this instance's <see cref="IObjectStore"/> (a <em>local</em> object), the directed like
+/// edge <c>liker → object</c> is recorded in the <see cref="ILikeStore"/> so the object's <c>/likes</c>
+/// collection (served at <c>GET {object-irI}/likes</c>) lists the like activity and the object's
+/// <c>likeCount</c> reflects it. This is independent of the liker's locality: a <em>remote</em> actor's
+/// like of a local object is recorded (the remote actor's like is the object's like, surfaced on the
+/// object's own collection), as is a local actor's like of a local object. A like of a <em>remote</em>
+/// object (not stored locally) is not recorded here: the edge is recorded on the object's <em>author's</em>
+/// home instance instead (the object's <c>liked</c> collection is home-instance-local), so recording it
+/// here would duplicate the edge.</item>
 /// <item><strong>Local community recipient.</strong> When the recipient is a local community (the like
 /// was delivered to the community's inbox), the like is recorded in each of the community's local
 /// members' outboxes (delegating to <see cref="CommunityContentRecorder.RecordToMembersAsync"/>, the
@@ -29,9 +36,8 @@ namespace Iris.Server.Inbox;
 /// </remarks>
 /// <para>
 /// A malformed like (no resolvable actor or no resolvable object) is stored (by the processor) but
-/// interpreted as a no-op: nothing is recorded. A remote liker whose like arrives in a local actor's
-/// inbox is not recorded in the local actor's <c>liked</c> collection (the <c>liked</c> collection
-/// lists objects <em>this</em> actor liked, not objects others liked of this actor).
+/// interpreted as a no-op: nothing is recorded. A like of a remote object is recorded on the object's
+/// author's home instance (the liker's own <c>liked</c> collection there), not here.
 /// </para>
 public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
 {
@@ -41,9 +47,9 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
     /// <summary>
     /// Initializes a new <see cref="LikeActivityHandler"/>.
     /// </summary>
-    /// <param name="persistence">The persistence provider (provides the <see cref="ILikeStore"/> and
-    /// <see cref="ICommunityStore"/>).</param>
-    /// <param name="localActors">Resolves whether the liker (and the recipient) is a local actor.</param>
+    /// <param name="persistence">The persistence provider (provides the <see cref="ILikeStore"/>,
+    /// <see cref="IObjectStore"/>, and <see cref="ICommunityStore"/>).</param>
+    /// <param name="localActors">Resolves whether the recipient is a local actor.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public LikeActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
     {
@@ -76,10 +82,14 @@ public sealed class LikeActivityHandler : ActivityHandlerBase<Like>
             return;
         }
 
-        // (1) Local liker: record the like edge so the liker's `liked` collection lists the object. This
-        // is independent of the recipient — a local actor's like of a remote object is recorded regardless
-        // of which inbox the like was delivered to.
-        if (await _localActors.IsLocalActorAsync(likerIri.Value, ct).ConfigureAwait(false))
+        // (1) Local liked object: record the like edge so the object's `/likes` collection and like
+        // count reflect the like. This is independent of the liker's locality — a remote actor's like of
+        // a local object is recorded here (the remote actor's like is the object's like, surfaced on the
+        // object's own collection), as is a local actor's like of a local object. A like of a remote
+        // object (not stored locally) is not recorded here: the edge is recorded on the object's author's
+        // home instance instead (the object's `liked` collection is home-instance-local), so recording it
+        // here would duplicate the edge.
+        if (await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out _, ct).ConfigureAwait(false))
         {
             await _persistence.Likes
                 .RecordLikeAsync(likerIri.Value, objectIri.Value, ct)

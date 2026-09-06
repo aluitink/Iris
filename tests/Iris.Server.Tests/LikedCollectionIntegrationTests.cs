@@ -91,7 +91,11 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundLike_SignedByLocalActor_RecordsInLikedCollection()
     {
-        var objectIri = new Iri("https://a.domain.local/ap/v1/o/note-1");
+        // A local actor's like of a LOCAL object (stored in this instance's object store) records the
+        // like edge (31.10: the edge is recorded when the object is local). The object is seeded here so
+        // the instance stores it (a local note bob authored).
+        var objectIri = new Iri($"{_base}/ap/v1/u/{Bob}/notes/n1");
+        SeedLocalNote(objectIri);
         var like = BuildLike(_bobActorIri, objectIri);
 
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
@@ -124,8 +128,12 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
     [Fact]
     public async Task InboundLike_TwoLikes_BothInLikedCollection()
     {
-        var object1 = new Iri("https://a.domain.local/ap/v1/o/note-1");
-        var object2 = new Iri("https://a.domain.local/ap/v1/o/note-2");
+        // Both objects are local (stored in this instance's object store), so both like edges are
+        // recorded (31.10: the edge is recorded when the object is local).
+        var object1 = new Iri($"{_base}/ap/v1/u/{Bob}/notes/n1");
+        var object2 = new Iri($"{_base}/ap/v1/u/{Bob}/notes/n2");
+        SeedLocalNote(object1);
+        SeedLocalNote(object2);
 
         using var client = BuildDeliveryClient(_bobActorIri, _bobKey, _server.CreateHandler());
 
@@ -189,4 +197,18 @@ public sealed class LikedCollectionIntegrationTests : IDisposable
         Object = [new Link { Href = new Uri(objectIri.Value) }],
     };
 
-}
+    /// <summary>
+    /// Seeds a local <see cref="Note"/> into the instance's object store under the given IRI, so the
+    /// object is local to this instance (31.10: a like of a local object records the like edge).
+    /// </summary>
+    private void SeedLocalNote(Iri noteIri)
+    {
+        _persistence.Objects.PutObjectAsync(new Note
+        {
+            Id = noteIri.Value,
+            Content = ["a local note"],
+            AttributedTo = [new Link { Href = new Uri(_bobActorIri.Value) }],
+        }).GetAwaiter().GetResult();
+    }
+
+    }

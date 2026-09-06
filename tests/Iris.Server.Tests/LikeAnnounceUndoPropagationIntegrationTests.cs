@@ -11,12 +11,12 @@ using Xunit;
 namespace Iris.Server.Tests;
 
 /// <summary>
-/// Phase 24.1 integration test: cross-instance <em>like / announce</em> undo propagation. This is the
-/// inverse of the outbound half (a local actor on A likes / announces a remote actor's object on B). Here
-/// the actor on A <em>reverses</em> the like / announce: it publishes an <see cref="Undo"/> (of a Like, or
-/// of an Announce) to its <em>own</em> outbox, and the server delivers the Undo to the object's author's
-/// inbox on B; B's <see cref="Iris.Server.Inbox.UndoActivityHandler"/> resolves the original activity from
-/// its activity store and <em>removes</em> the recorded edge.
+/// Phase 24.1 / 31.10 integration test: cross-instance <em>like / announce</em> undo propagation. This is
+/// the inverse of the outbound half (a local actor on A likes / announces a remote actor's object on B).
+/// Here the actor on A <em>reverses</em> the like / announce: it publishes an <see cref="Undo"/> (of a
+/// Like, or of an Announce) to its <em>own</em> outbox, and the server delivers the Undo to the object's
+/// author's inbox on B; B's <see cref="Iris.Server.Inbox.UndoActivityHandler"/> resolves the original
+/// activity from its activity store and <em>removes</em> the recorded edge.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -59,6 +59,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
 
     private readonly LikeAnnounceUndoPropagationSharedHost _fixture;
     private readonly HttpClient _aHttp;
+    private readonly HttpClient _bHttp;
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private KeyPair _aliceKey;
@@ -76,6 +77,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
         _bobNoteIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}/notes/n1");
         _aliceKey = null!;
         _aHttp = new HttpClient(fixture.ServerA.CreateHandler(), disposeHandler: false);
+        _bHttp = new HttpClient(fixture.ServerB.CreateHandler(), disposeHandler: false);
     }
 
     /// <inheritdoc/>
@@ -93,6 +95,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
     public Task DisposeAsync()
     {
         _aHttp.Dispose();
+        _bHttp.Dispose();
         return Task.CompletedTask;
     }
 
@@ -119,18 +122,18 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
 
     // --- An Undo(Like) published to A's outbox federates to B (the object's author's instance) ----
     //
-    // A like edge is recorded on the <em>liker's home instance</em>: A (alice's home) records the
-    // alice → note edge on publish; B does <em>not</em> record a like edge (the liker is remote to B —
-    // LikeActivityHandler records only when the liker is local). The cross-instance invariant for a Like
-    // is therefore <em>activity delivery</em> (not edge removal on B): A must deliver the Like — and its
-    // Undo — to the object's author's inbox (bob's inbox on B), resolved by A fetching bob's Note over the
-    // wire (24.1). Without that resolution the delivery would fall back to the Note IRI, whose /inbox does
-    // not exist, and B would never receive the activity. B's InboxProcessor stores every inbound activity
-    // (the copy the Undo's resolution depends on), so the under-test assertion is that B stored the Like
-    // (step 1) and B stored the Undo (step 2), while A records then removes its own like edge.
+    // A like edge is recorded on the <em>object's home instance</em> (the instance that stores the object):
+    // A (alice's home) records the alice → note edge on publish (the outbox-publish handler records the
+    // local edge), and B (the note's author's home, which stores the note) records the alice → note edge on
+    // inbound (the note is local to B — 31.10). The cross-instance invariant is that A delivers the Like —
+    // and its Undo — to the object's author's inbox (bob's inbox on B), resolved by A fetching bob's Note
+    // over the wire (24.1). Without that resolution the delivery would fall back to the Note IRI, whose
+    // /inbox does not exist, and B would never receive the activity. The under-test assertions are that B
+    // recorded the like edge (step 1, surfaced on the note's /likes collection), and that the Undo removes
+    // the edge on B (step 2), while A records then removes its own like edge.
 
     [Fact]
-    public async Task UndoLike_ServerDeliversToRemote_StoredOnRemoteInstance()
+    public async Task UndoLike_ServerDeliversToRemote_RecordsAndRemovesEdgeOnRemoteInstance()
     {
         // Step 1a: publish the Like (of bob's Note) to A's own outbox.
         var like = BuildLike(_aliceActorIri, _bobNoteIri);
@@ -149,15 +152,33 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
             await _aPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
             "A should record its own alice → note like edge on publish.");
 
-        // Step 1b: B stored the Like activity — the Like federated (A resolved bob as the author and
-        // delivered to bob's inbox) and was validated. B does not record a like edge (the liker is remote
-        // to B); the under-test invariant is that the activity reached B (the 24.1 delivery-target fix).
+        // Step 1b: B stored the Like activity AND recorded the like edge — the Like federated (A resolved
+        // bob as the author and delivered to bob's inbox) and was validated, and because the note is local
+        // to B (stored in B's object store), B's LikeActivityHandler records the alice → note edge (31.10).
+        // The edge is surfaced on the note's /likes collection (the object's like count).
         await WaitForAsync(
-            () => _bPersistence.Activities.TryGetActivityAsync(mintedLikeId!.Value, out _),
+            async () => await _bPersistence.Activities.TryGetActivityAsync(mintedLikeId!.Value, out _)
+                && await _bPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
             timeout: TimeSpan.FromSeconds(30));
         Assert.True(
             await _bPersistence.Activities.TryGetActivityAsync(mintedLikeId!.Value, out _),
             "B should have stored the Like activity after A delivered the signed Like to bob's inbox.");
+        Assert.True(
+            await _bPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
+            "B should record the alice → note like edge (the note is local to B).");
+        // B's reverse index lists alice as a liker of the note.
+        Assert.Contains(_aliceActorIri, await _bPersistence.Likes.GetLikersAsync(_bobNoteIri));
+
+        // The edge is surfaced over the wire: the note's /likes collection (on B, where the note lives)
+        // carries one item.
+        using var likesResponse = await _bHttp.GetAsync($"{_bobNoteIri.Value}/likes");
+        Assert.Equal(HttpStatusCode.OK, likesResponse.StatusCode);
+        var likesJson = await likesResponse.Content.ReadAsStringAsync();
+        var likesCollection = ActivityJson.Deserialize<OrderedCollection>(likesJson);
+        Assert.NotNull(likesCollection);
+        Assert.True(
+            likesCollection!.TotalItems == 1,
+            "The note's /likes collection should list the one recorded like.");
 
         // Step 2a: publish the Undo (of the Like) to A's own outbox.
         var undo = BuildUndo(_aliceActorIri, mintedLikeId!.Value);
@@ -165,8 +186,7 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
         using var undoResponse = await _aHttp.SendAsync(undoRequest);
         Assert.Equal(HttpStatusCode.Accepted, undoResponse.StatusCode);
 
-        // Step 2b: A removed its local edge (the outbox-publish handler's Undo branch) — the like edge is
-        // home-instance-local, so the reversible half lives on A.
+        // Step 2b: A removed its local edge (the outbox-publish handler's Undo branch).
         await WaitForAsync(
             async () => !await _aPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
             timeout: TimeSpan.FromSeconds(30));
@@ -174,18 +194,23 @@ public sealed class LikeAnnounceUndoPropagationIntegrationTests : IAsyncLifetime
             await _aPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
             "A should remove its local alice → note like edge when it publishes the Undo.");
 
-        // Step 2c: B stored the Undo activity — the cross-instance half. A resolved bob as the author and
-        // delivered the signed Undo to bob's inbox on B; B's InboxProcessor stored it (B's UndoActivityHandler
-        // resolved the original Like from B's activity store — a no-op on B's edge, since B recorded none,
-        // but the delivery + storage is the invariant).
+        // Step 2c: B removed its edge — the cross-instance half. A resolved bob as the author and delivered
+        // the signed Undo to bob's inbox on B; B's UndoActivityHandler resolved the original Like from B's
+        // activity store and removed the alice → note edge (the note is local to B, so the edge is removed).
         var mintedUndoId = await LearnMintedIdAsync(undoResponse);
         Assert.True(mintedUndoId is not null, "A should have returned the minted Undo id in the 2xx body.");
         await WaitForAsync(
-            () => _bPersistence.Activities.TryGetActivityAsync(mintedUndoId!.Value, out _),
+            async () => await _bPersistence.Activities.TryGetActivityAsync(mintedUndoId!.Value, out _)
+                && !await _bPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
             timeout: TimeSpan.FromSeconds(30));
         Assert.True(
             await _bPersistence.Activities.TryGetActivityAsync(mintedUndoId!.Value, out _),
             "B should have stored the Undo activity after A's server delivered the signed Undo to bob's inbox.");
+        Assert.False(
+            await _bPersistence.Likes.HasLikedAsync(_aliceActorIri, _bobNoteIri),
+            "B should remove the alice → note like edge when it receives the Undo.");
+        // The reverse index no longer lists alice as a liker of the note.
+        Assert.DoesNotContain(_aliceActorIri, await _bPersistence.Likes.GetLikersAsync(_bobNoteIri));
     }
 
     // --- An Undo(Announce) published to A's outbox is server-delivered to B, and B removes its edge ----
