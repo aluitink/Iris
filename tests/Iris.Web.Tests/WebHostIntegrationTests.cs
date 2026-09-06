@@ -65,10 +65,13 @@ public class WebHostIntegrationTests : IDisposable
                     endpoints.MapActivityPubEndpoints();
                     endpoints.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
                 });
-                WebAppFactory.RegisterSeedKey(webApp.ApplicationServices, Base);
             });
 
         _server = new TestServer(webHostBuilder);
+        // Seed + key registration run AFTER the host has started (outside the synchronous Configure
+        // delegate, which would deadlock resolving a singleton whose factory awaits an async startup
+        // service on the captured sync context).
+        WebAppFactory.InitializePersistence(_server.Services, builder.Configuration, Base);
         _client = _server.CreateClient();
     }
 

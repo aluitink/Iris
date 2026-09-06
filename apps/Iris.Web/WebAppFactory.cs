@@ -4,12 +4,14 @@ using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Core.Signing;
 using Iris.Server;
+using Iris.Server.Data;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Components;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -94,21 +96,24 @@ public static class WebAppFactory
             options.NamespaceIri = new Iri($"{baseNoSlash}/{ActivityPubServerConstants.NamespaceRouteSegment}#");
         });
 
-        // 3. In-memory persistence (the slice 32.1 default; 32.2 swaps in the EF Core provider behind
-        //    the same IPersistenceProvider seam).
-        builder.Services.AddInMemoryPersistence();
-
-        // 4. The single seeded local actor: a Person with an RSA signing key (publicKeyPem in its
-        //    document, so a remote resolver can verify signatures), the server's instance actor.
-        var persistence = new InMemoryPersistenceProvider();
-        SeedActor(persistence, actorIri, SeedHandle);
-        builder.Services.AddSingleton<IPersistenceProvider>(persistence);
-        builder.Services.AddSingleton<IKeyStore>(persistence.Keys);
-
-        // 5. The client-side signer (proxy endpoint + outbound DeliveryWorker) is not registered by
-        //    AddActivityPubServer (which wires only the inbound verifier); register it over the seeded
-        //    key store so the seeded actor can sign.
-        builder.Services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(persistence.Keys));
+        // 3. Persistence: the EF Core (PostgreSQL) provider when a connection string is configured
+        //    (Iris:ConnectionString), otherwise the in-memory provider (the slice 32.1 default, and the
+        //    default for the integration tests). Both bind the same IPersistenceProvider seam. A shared
+        //    IKeyStore singleton is the seed target; the signer and the provider's Keys both use it.
+        var keyStore = new InMemoryKeyStore();
+        builder.Services.AddSingleton<IKeyStore>(keyStore);
+        builder.Services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(keyStore));
+        if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Iris") ?? builder.Configuration["Iris:ConnectionString"]))
+        {
+            // In-memory (the default): bind the concrete instance so resolving IPersistenceProvider
+            // returns it verbatim and never triggers AddActivityPubServer's fallback factory.
+            builder.Services.AddSingleton<IPersistenceProvider>(new InMemoryPersistenceProvider());
+        }
+        else
+        {
+            // EF Core (PostgreSQL): registered by AddEntityFrameworkPersistence (instance binding).
+            builder.Services.AddEntityFrameworkPersistence(builder.Configuration);
+        }
 
         // 6. Owner credential validation. AddActivityPubServer registers a no-op default (which denies
         //    every Basic-auth read); replace it so the seeded actor can read its owner-only surfaces
@@ -146,6 +151,10 @@ public static class WebAppFactory
         var baseNoSlash = new Iri(baseString).Value.TrimEnd('/');
         var app = builder.Build();
 
+        // Migrate the database (EF only; no-op for in-memory), seed the single local actor, and
+        // register its key.
+        InitializePersistence(app.Services, builder.Configuration, baseNoSlash);
+
         app.UseRouting();
         app.UseAntiforgery();
         // Inbound federation signature validation (a signed POST to a local inbox is verified; unsigned
@@ -156,10 +165,30 @@ public static class WebAppFactory
         // The Blazor Web App (the product UI; serves / and the static assets).
         app.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
 
-        // Register the seeded actor's key so the proxy / DeliveryWorker can sign as it.
-        RegisterSeedKey(app.Services, baseNoSlash);
-
         return app;
+    }
+
+    /// <summary>
+    /// Migrates the database (EF provider only; a no-op for the in-memory provider), seeds the single
+    /// local actor (writing its signing key to the registered <see cref="IKeyStore"/>), and registers
+    /// that key with the server's <see cref="IKeyProvider"/>. Called by <see cref="BuildApp"/> and by
+    /// the integration-test host (which re-runs the endpoint pipeline over the same service collection).
+    /// </summary>
+    /// <param name="services">The application service provider (from a built app or test host).</param>
+    /// <param name="configuration">The application configuration (for the EF connection string).</param>
+    /// <param name="baseString">The advertised public base URI (slash-free).</param>
+    public static void InitializePersistence(IServiceProvider services, IConfiguration configuration, string baseString)
+    {
+        var baseNoSlash = new Iri(baseString).Value.TrimEnd('/');
+        var persistence = services.GetRequiredService<IPersistenceProvider>();
+        var keyStore = services.GetRequiredService<IKeyStore>();
+        if (persistence is EntityFrameworkPersistenceProvider)
+        {
+            persistence.EnsureCreatedAsync(configuration).GetAwaiter().GetResult();
+        }
+        SeedActor(persistence, keyStore, new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}"), SeedHandle);
+        // Register the seeded actor's key so the proxy / DeliveryWorker can sign as it.
+        RegisterSeedKey(services, baseNoSlash);
     }
 
     /// <summary>
@@ -198,14 +227,16 @@ public static class WebAppFactory
     /// replaces the actor and re-mints the key).
     /// </summary>
     /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="keyStore">The key store the seeded signing key is written to.</param>
     /// <param name="actorIri">The actor's IRI (<c>{base}/ap/v1/u/{handle}</c>).</param>
     /// <param name="handle">The actor's preferred username.</param>
-    internal static void SeedActor(InMemoryPersistenceProvider persistence, Iri actorIri, string handle)
+    internal static void SeedActor(IPersistenceProvider persistence, IKeyStore keyStore, Iri actorIri, string handle)
     {
         ArgumentNullException.ThrowIfNull(persistence);
+        ArgumentNullException.ThrowIfNull(keyStore);
         var keyIri = new Iri($"{actorIri}#key-1");
         var key = KeyPairGenerator.GenerateRsa(keyIri);
-        persistence.Keys.PutKey(key);
+        keyStore.PutKey(key);
 
         var actor = new Person
         {

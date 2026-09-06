@@ -9,8 +9,10 @@
     <PackageVersion Include="KristofferStrube.ActivityStreams" Version="0.2.4" />
     <!-- Managed Ed25519 (RFC 8032) for ActivityPub signatures. The BCL has no Ed25519 type on this
          runtime (MLDsa is Windows/CNG-only and reports IsSupported=false), so Ed25519 — the default
-         algorithm Pleroma and several modern servers use — is provided by BouncyCastle. -->
-    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.4.0" />
+         algorithm Pleroma and several modern servers use — is provided by BouncyCastle. Pinned to 2.7.0
+         (a patch-level bump from 2.4.0) so it satisfies the transitive floor Testcontainers 4.14.0 pulls
+         in via SSH.NET (NU1109); the Iris.Core Ed25519 surface is unaffected. -->
+    <PackageVersion Include="BouncyCastle.Cryptography" Version="2.7.0" />
     <!-- ASP.NET Core (framework reference surface for Iris.Server). -->
     <PackageVersion Include="Microsoft.AspNetCore.App" Version="10.0.0" />
     <!-- In-process TestServer for integration tests (not part of the shared framework). -->
@@ -33,6 +35,14 @@
           the emitted <a href> values). Pinned to the 2.x line (a clean net10.0 target + AngleSharp 1.7.0,
           no known vulnerability). -->
     <PackageVersion Include="bunit" Version="2.9.0" />
+    <!-- EF Core (the production persistence provider, Phase 32 step 2). The provider project
+         (Iris.Server.Data) targets net10.0, so the 10.0.x EF Core line is required. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.0" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+    <!-- Testcontainers: spin up a real PostgreSQL for Iris.Server.Data integration tests. 4.14.0 (the
+         latest) is required — older 4.x lines pull a vulnerable transitive SSH.NET (NU1903). -->
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.14.0" />
   </ItemGroup>
 
 </Project>
