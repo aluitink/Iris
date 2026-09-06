@@ -5833,80 +5833,71 @@ public static class ActivityPubServerExtensions
         var searchQueryTerm = $"{namespaceBase}{IrisExtensionTerms.SearchQuery}";
         var nextOffset = start + limit;
         var prevOffset = Math.Max(0, start - limit);
+        var nextIri = nextOffset < total ? $"{collectionIri.Value}/?offset={nextOffset}&limit={limit}" : null;
 
-        if (start == 0)
+        // Hand-write the page document (instead of letting the library's OrderedCollection/
+        // OrderedCollectionPage + ActivityJson.Serialize render it) so `items` is ALWAYS a JSON array —
+        // including the single-item and empty cases. The library's one-or-multiple items converter
+        // would otherwise collapse a one-item result set to a bare object, which a client that reads
+        // `items` as an array (e.g. the ActivityPub client's SearchAsync) cannot iterate. This mirrors
+        // the always-array items serialization SerializeCollectionPage already uses for the stable
+        // local collections (outbox/feed/followers/following).
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
         {
-            // The first page (offset 0) is the collection document itself: it carries its own items and a
-            // self-referencing `first` link. An `OrderedCollection` has no `next` property, so a
-            // next-page link is recorded as the standard AS `next` extension (matching the page-2+
-            // `next` so a reader can walk from page 1 onward).
-            var collection = new OrderedCollection
-            {
-                Id = collectionIri.Value,
-                Items = [.. slice],
-                First = new Link { Href = new Uri(collectionIri.Value) },
-                TotalItems = (uint)total,
-            };
+            writer.WriteStartObject();
 
-            if (nextOffset < total)
+            // `items` is always a JSON array — including the single-item and empty cases.
+            writer.WritePropertyName("items");
+            writer.WriteStartArray();
+            foreach (var item in slice)
             {
-                AddExtension(collection, "next", $"{collectionIri.Value}/?offset={nextOffset}&limit={limit}");
+                // Serialize through the polymorphic IObjectOrLink type (not the concrete runtime type)
+                // so a Link item renders as a bare IRI string and an object item renders as a full JSON
+                // object — the same wire shape the library's one-or-multiple items converter produces,
+                // just always inside an array.
+                System.Text.Json.JsonSerializer.Serialize(writer, item, typeof(IObjectOrLink), ActivityJson.Options);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("totalItems");
+            writer.WriteNumberValue(total);
+
+            if (start == 0)
+            {
+                // The first page (offset 0) is the collection document itself: it carries its own items
+                // and a self-referencing `first` link. An `OrderedCollection` has no `next` property, so
+                // a next-page link is recorded as the standard AS `next` (matching the page-2+ `next` so
+                // a reader can walk from page 1 onward).
+                writer.WriteString("first", collectionIri.Value);
+            }
+            else
+            {
+                writer.WriteString("partOf", collectionIri.Value);
+                writer.WritePropertyName("startIndex");
+                writer.WriteNumberValue(start);
+                writer.WriteString("prev", $"{collectionIri.Value}/?offset={prevOffset}&limit={limit}");
+            }
+
+            if (nextIri is not null)
+            {
+                writer.WriteString("next", nextIri);
             }
 
             if (hasQuery)
             {
-                AddSearchQueryExtension(collection, searchQueryTerm, query!);
+                writer.WriteString(searchQueryTerm, query!.Trim());
             }
 
-            return ActivityJson.Serialize(collection);
+            writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
+            writer.WriteString("id", start == 0 ? collectionIri.Value : $"{collectionIri.Value}/?offset={offset}&limit={limit}");
+            writer.WriteString("type", start == 0 ? "OrderedCollection" : "OrderedCollectionPage");
+
+            writer.WriteEndObject();
         }
 
-        var pageDoc = new OrderedCollectionPage
-        {
-            Id = $"{collectionIri.Value}/?offset={offset}&limit={limit}",
-            PartOf = new Link { Href = new Uri(collectionIri.Value) },
-            Items = [.. slice],
-            StartIndex = (uint)start,
-            TotalItems = (uint)total,
-        };
-
-        pageDoc.Prev = new Link { Href = new Uri($"{collectionIri.Value}/?offset={prevOffset}&limit={limit}") };
-        if (nextOffset < total)
-        {
-            pageDoc.Next = new Link { Href = new Uri($"{collectionIri.Value}/?offset={nextOffset}&limit={limit}") };
-        }
-
-        if (hasQuery)
-        {
-            AddSearchQueryExtension(pageDoc, searchQueryTerm, query!);
-        }
-
-        return ActivityJson.Serialize(pageDoc);
-    }
-
-    /// <summary>
-    /// Records the <c>iris:searchQuery</c> extension (the search query) on a collection page document.
-    /// </summary>
-    private static void AddSearchQueryExtension(
-        KristofferStrube.ActivityStreams.Object document,
-        string searchQueryTerm,
-        string query)
-    {
-        AddExtension(document, searchQueryTerm, query.Trim());
-    }
-
-    /// <summary>
-    /// Records a scalar or link value under a term in a document's extension data (creating the
-    /// dictionary when absent).
-    /// </summary>
-    private static void AddExtension(
-        KristofferStrube.ActivityStreams.Object document,
-        string term,
-        object? value)
-    {
-        var ext = document.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
-        ext[term] = System.Text.Json.JsonSerializer.SerializeToElement(value);
-        document.ExtensionData = ext;
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>

@@ -1,0 +1,125 @@
+@using Iris.Core
+@using Iris.Core.Identity
+@using KristofferStrube.ActivityStreams
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+<div class="notification-row">
+    @if (Item is Activity activity)
+    {
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        var objectIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+        var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
+
+        <div class="notification-head">
+            <span class="notification-verb">@VerbFor(activity)</span>
+            @if (actorIri is { } performer)
+            {
+                <span class="notification-actor">
+                    <a href="@ActorHref(performer)" title="@performer" class="object-actor">@HandleOf(performer)</a>
+                </span>
+            }
+            @if (Published is { } published)
+            {
+                <span class="notification-time" title="@published.ToString("o")">@published.ToLocalTime().ToString("g")</span>
+            }
+        </div>
+        <div class="notification-target">
+            @if (objectIri is { } target)
+            {
+                <a href="@ObjectHref(target)" title="@target" class="object-iri">@target</a>
+            }
+            else if (targetIri is { } t)
+            {
+                <a href="@ActorHref(t)" title="@t" class="object-actor">@HandleOf(t)</a>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="notification-row unknown"><span class="object-type">Unknown</span></div>
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The inbox activity (or link) to classify. Pattern-matched into <see cref="IObject"/> per the
+    /// 3rd-Party ActivityStreams rules — never a concrete type.
+    /// </summary>
+    [Parameter]
+    public IObjectOrLink? Item { get; set; }
+
+    /// <summary>
+    /// The signed-in actor's own IRI (to recognize self-referential items such as one's own follow
+    /// confirmations), or null.
+    /// </summary>
+    [Parameter]
+    public Iri? SelfId { get; set; }
+
+    private Activity? Activity => Item as Activity;
+
+    /// <summary>
+    /// The activity's <c>published</c> timestamp, when present.
+    /// </summary>
+    private DateTime? Published => Activity?.Published;
+
+    /// <summary>
+    /// The human-readable verb for the activity type: a follow request, an accepted follow, a like, a
+    /// boost, a reply, a mention, or a generic “posted” for other activity types (e.g. a plain
+    /// <c>Create</c> of a note that was not a reply/mention). The classification is a client-side
+    /// projection over the inbox read (the MVP model — see docs/plans/production-app-feature-set.md
+    /// §Notifications).
+    /// </summary>
+    private string VerbFor(Activity activity)
+    {
+        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
+        switch (type)
+        {
+            case "Follow":
+                // A Follow is either an accepted follow (the actor now follows you) or, for a local
+                // follow you initiated, its own record. The MVP renders it as “follows you”.
+                return "follows you";
+            case "Accept":
+                // An Accept whose object is a Follow is the confirmation of a follow request.
+                return IsFollowConfirmation(activity) ? "accepted your follow request" : "accepted";
+            case "Like":
+                return "liked your post";
+            case "Announce":
+                return "boosted your post";
+            case "Mention":
+                return "mentioned you";
+            case "Create":
+                // A Create in the inbox is a reply to one of your posts (the note's inReplyTo is your
+                // object) or a new note addressed to you.
+                return "replied to you";
+            case "Undo":
+                return "undid";
+            default:
+                return type.Length > 0 ? type.ToLowerInvariant() + "ed" : "notified";
+        }
+    }
+
+    /// <summary>
+    /// Whether an <c>Accept</c> is confirming a <c>Follow</c> (its <c>object</c> is a Follow activity),
+    /// as opposed to a plain accept of some other object.
+    /// </summary>
+    private static bool IsFollowConfirmation(Activity activity)
+    {
+        var nested = activity.Object?.FirstOrDefault() as Activity;
+        return nested?.Type?.FirstOrDefault() == "Follow";
+    }
+
+    private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
+
+    private static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";
+
+    /// <summary>
+    /// A short display for an actor IRI: the path's last segment (the username) when it looks like a
+    /// user IRI (<c>/ap/v1/u/{user}</c>), else the full IRI. Mirrors <c>ObjectView.HandleOf</c>.
+    /// </summary>
+    private static string HandleOf(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var last = path.Split('/').LastOrDefault();
+        return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
+    }
+}

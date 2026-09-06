@@ -562,3 +562,64 @@ ul.object-list li {
     font-size: 0.8rem;
     word-break: break-all;
 }
+
+/* --- Search page --- */
+
+.search-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.25rem;
+}
+
+.search-controls input[type="text"] {
+    flex: 1 1 18rem;
+}
+
+.search-actors-only {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+    white-space: nowrap;
+}
+
+/* --- Notifications page --- */
+
+.notification-row {
+    display: grid;
+    gap: 0.15rem;
+    padding: 0.35rem 0;
+    border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+}
+
+.notification-row:last-child {
+    border-bottom: none;
+}
+
+.notification-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.notification-verb {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.notification-time {
+    color: var(--muted);
+    font-size: 0.8rem;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.notification-target {
+    color: var(--muted);
+    font-size: 0.85rem;
+    word-break: break-all;
+}

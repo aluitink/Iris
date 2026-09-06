@@ -1,0 +1,70 @@
+@page "/notifications"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Notifications · Iris</PageTitle>
+
+<h2>Notifications</h2>
+
+<p class="muted">
+    A unified “what happened to me” feed: the activities in your inbox (follows, follow requests,
+    likes, boosts, replies, mentions), newest first — paged with next-link walking.
+</p>
+
+<PagedCollection
+    @key="@InboxKey"
+    Client="@Client"
+    CollectionIri="@InboxIri"
+    Title="Your notifications"
+    Description="The activities addressed to you (your inbox), classified by type, newest first."
+    PageSize="10"
+    ShowRefreshButton="true"
+    EmptyMessage="Nothing for you yet. When someone follows you, likes, boosts, replies to, or mentions you, it shows up here."
+    ItemTemplate="@ItemTemplate" />
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// A stable <c>@key</c> for the inbox's <c>PagedCollection</c> (the notifications list is a single,
+    /// fixed collection — the session actor's inbox — so the key is a constant).
+    /// </summary>
+    private const string InboxKey = "inbox";
+
+    /// <summary>
+    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out.
+    /// </summary>
+    private IActivityPubClient? Client => Session.Client;
+
+    /// <summary>
+    /// The session actor's own IRI (used to recognize self-referential items), or <c>null</c> when
+    /// signed out.
+    /// </summary>
+    private Iri? SelfIri => Session.ActorId;
+
+    /// <summary>
+    /// The inbox collection IRI (the session actor's <c>{actor}/inbox</c>), or <c>null</c> when signed
+    /// out. Derived via <see cref="IriExtensions.InboxOf(Iri)"/>.
+    /// </summary>
+    private Iri? InboxIri
+        => Session.ActorId is { } actor ? actor.InboxOf() : null;
+
+    /// <summary>
+    /// The per-item template for the notifications list: renders each inbox activity as a
+    /// <see cref="NotificationRow"/> (the classified "who did what" line). Built as a
+    /// <see cref="RenderFragment{T}"/> (a delegate), since a <c>RenderFragment&lt;T&gt;</c> child-element
+    /// does not bind <c>T</c> the way a non-generic <c>RenderFragment</c> does.
+    /// </summary>
+    private RenderFragment<IObjectOrLink> ItemTemplate
+        => item => builder =>
+        {
+            builder.OpenComponent<NotificationRow>(0);
+            builder.AddComponentParameter(1, nameof(NotificationRow.Item), item);
+            builder.AddComponentParameter(2, nameof(NotificationRow.SelfId), SelfIri);
+            builder.CloseComponent();
+        };
+}
