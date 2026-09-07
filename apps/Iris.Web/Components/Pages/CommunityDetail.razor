@@ -76,6 +76,13 @@ else
                     <textarea id="edit-community-summary" @bind="EditSummary" rows="3" maxlength="500"
                               placeholder="What is this community about?"></textarea>
                 </div>
+                <div class="form-group form-group--checkbox">
+                    <label for="edit-community-approve-members">
+                        <input id="edit-community-approve-members" type="checkbox" @bind="EditApproveMembers" />
+                        Require approval for join requests
+                    </label>
+                    <p class="muted">When enabled, actors must be explicitly approved before they can join.</p>
+                </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary" disabled="@IsSavingCommunity">
                         @if (IsSavingCommunity) { <span>Saving…</span> } else { <span>Save</span> }
@@ -183,6 +190,8 @@ else
     private string? CommunitySaveError { get; set; }
     private string EditName { get; set; } = string.Empty;
     private string EditSummary { get; set; } = string.Empty;
+    private bool EditApproveMembers { get; set; }
+    private bool OriginalApproveMembers { get; set; }
 
     private bool IsSelf
         => Session.ActorId is { } me && CommunityDoc?.Id is { } id && me.Value == id;
@@ -371,6 +380,8 @@ else
         {
             EditName = group.Name?.FirstOrDefault() ?? string.Empty;
             EditSummary = group.Summary?.FirstOrDefault() ?? string.Empty;
+            EditApproveMembers = group.GetManuallyApprovesMembers() ?? false;
+            OriginalApproveMembers = EditApproveMembers;
         }
 
         IsEditingCommunity = true;
@@ -405,17 +416,26 @@ else
             };
 
             var result = await client.UpdateActorAsync(communityIri, updated);
-            if (result.IsSuccess)
-            {
-                IsEditingCommunity = false;
-                Ui.InvalidateActor(communityIri);
-                CommunityDoc = null;
-                await LoadCommunityAsync(communityIri);
-            }
-            else
+            if (!result.IsSuccess)
             {
                 CommunitySaveError = $"Update failed (HTTP {result.StatusCode}).";
+                return;
             }
+
+            if (EditApproveMembers != OriginalApproveMembers)
+            {
+                var flagResult = await client.SetManuallyApprovesMembersAsync(communityIri, EditApproveMembers);
+                if (!flagResult.IsSuccess)
+                {
+                    CommunitySaveError = $"Failed to update approval setting (HTTP {flagResult.StatusCode}).";
+                    return;
+                }
+            }
+
+            IsEditingCommunity = false;
+            Ui.InvalidateActor(communityIri);
+            CommunityDoc = null;
+            await LoadCommunityAsync(communityIri);
         }
         catch (Exception ex)
         {

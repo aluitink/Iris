@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\apps\Iris.Web\Iris.Web.csproj" />
+    <ProjectReference Include="..\Iris.Testing\Iris.Testing.csproj" />
   </ItemGroup>
 
 </Project>

@@ -242,6 +242,19 @@
           "Iris.Server": "[1.0.0, )"
         }
       },
+      "iris.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Iris.Core": "[1.0.0, )",
+          "Iris.Server": "[1.0.0, )",
+          "Iris.Server.InMemory": "[1.0.0, )",
+          "Microsoft.AspNetCore.TestHost": "[10.0.0, )",
+          "Microsoft.NET.Test.Sdk": "[17.14.1, )",
+          "coverlet.collector": "[6.0.4, )",
+          "xunit": "[2.9.3, )",
+          "xunit.runner.visualstudio": "[3.1.4, )"
+        }
+      },
       "iris.web": {
         "type": "Project",
         "dependencies": {
@@ -256,6 +269,12 @@
         "requested": "[2.7.0, )",
         "resolved": "2.7.0",
         "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
+      },
+      "coverlet.collector": {
+        "type": "CentralTransitive",
+        "requested": "[6.0.4, )",
+        "resolved": "6.0.4",
+        "contentHash": "lkhqpF8Pu2Y7IiN7OntbsTtdbpR1syMsm2F3IgX6ootA4ffRqWL5jF7XipHuZQTdVuWG/gVAAcf8mjk8Tz0xPg=="
       },
       "KristofferStrube.ActivityStreams": {
         "type": "CentralTransitive",
