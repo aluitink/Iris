@@ -85,6 +85,12 @@ Iris.slnx
 
 **Phase 43 — Per-user moderation & follow-request queue (COMPLETE).** 43.1–43.3 all COMPLETE.
 
+**Phase 44 — Post content completeness (ACTIVE):**
+
+1. ~~**44.1: Content warning / sensitive flag on compose (F-28)**~~ **COMPLETE** — "Content warning" checkbox + summary input on Compose (Note posts); the Note path builds the note via `ComposeNote.Build` (sensitive + summary + to) and posts it via the `PostNoteAsync(Note)` overload; the feed's existing reveal toggle renders it. 4 integration tests. → [docs/changes/336](docs/changes/336-44.1-content-warning-compose.md)
+2. **44.2: Edit own post (F-02)** — an "Edit" action on own notes (object detail + compose pre-fill) that updates the note's content; client `UpdateNoteAsync` (an `Update` activity) if not present, or reuse the existing update path; server handles `Update` on a note object. 5+ integration tests.
+3. **44.3: Media attachment (image) on compose** — file upload via `IMediaClient` (Phase 20.4a) → same-origin media IRI; `ComposeNote.Build`/note `attachment` carries an `Image`; feed renders the image. Depends on media storage being wired in the app.
+
 ## Active Slice
 
 **Phase 34 — UI polish & engagement (autonomous loop).** This is an open-ended, growing workstream. Each iteration: (1) pick the next item below, (2) implement it, (3) build + Docker rebuild + verify via Playwright, (4) run existing tests (must be green), (5) visual-review all pages, (6) add new items discovered during the review, (7) update this file. The item list below is the **living backlog** — it grows with each iteration.
@@ -185,6 +191,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
   - 41.3: **Community membership requests (admin UI)** (Phase 41) — "Requests" tab (creator only): lists pending join requests; Accept/Reject buttons; `GET /local/v1/c/{name}/requests` + `POST .../accept/{**actorIri}` + `POST .../reject/{**actorIri}`; `ILocalModerationClient` join-request methods; 10 integration tests.
   - 41.2: **Profile engagement tabs** (Phase 41) — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests.
   - 41.1: **Notification read-state + unread badge** (Phase 41) — "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
+  - 44.1: **Content warning / sensitive flag on compose** (Phase 44) — CW checkbox + summary on Compose (Note posts); note built via `ComposeNote.Build` (sensitive + summary); feed reveal toggle already renders it; 4 integration tests.
   - 43.3: **Moderation on actor detail** (Phase 43) — `ModerationActions` (Block/Report via `IActivityPubClient`, Mute via `ILocalModerationClient`, Undo state from blocks/mutes collections) + community join-request "Requests" tab; 8 integration tests.
   - 43.2: **Follow-request queue (person)** (Phase 43) — "Requests" tab on `/profile` (when `manuallyApprovesFollowers` on); pending Follows from outbox; Accept/Reject; 5 integration tests.
   - 43.1: **Moderation actions on posts** (Phase 43) — "⋯" dropdown on `EngagementBar` (author ≠ self); Block/Flag via signed outbox, Mute via local Basic-auth; 6 integration tests.
