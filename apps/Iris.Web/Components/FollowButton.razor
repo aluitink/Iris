@@ -100,7 +100,8 @@
         {
             if (IsFollowing)
             {
-                if (_followActivityIri is { Length: > 0 } followIri)
+                var followIri = _followActivityIri ?? await Ui.GetFollowActivityIriAsync(new Iri(targetId));
+                if (followIri is { Length: > 0 })
                 {
                     await client.UndoFollowAsync(me, new Iri(followIri));
                     IsFollowing = false;

@@ -91,6 +91,40 @@ public sealed class UiContext
     }
 
     /// <summary>
+    /// Finds the server-minted IRI of the <c>Follow</c> activity the signed-in actor sent to
+    /// <paramref name="targetIri"/> by scanning the actor's outbox. Returns null when no such
+    /// activity is found or the outbox cannot be read.
+    /// </summary>
+    public async Task<string?> GetFollowActivityIriAsync(Iri targetIri)
+    {
+        if (_session.ActorId is not { } me || _session.Client is not { } client)
+        {
+            return null;
+        }
+
+        try
+        {
+            await foreach (var item in client.GetCollectionItemsAsync(me.OutboxOf()))
+            {
+                if (item is Follow follow && follow.Id is { Length: > 0 } id)
+                {
+                    var target = follow.Object?.FirstOrDefault()?.ResolveObjectIri();
+                    if (target is not null && target == targetIri)
+                    {
+                        return id;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: return null.
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Invalidates the cached following set for the signed-in actor (call after a follow/unfollow
     /// so the next <see cref="IsFollowingAsync"/> re-reads the server).
     /// </summary>
