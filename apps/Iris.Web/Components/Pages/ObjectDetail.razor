@@ -43,6 +43,35 @@ else
             </div>
         }
     </div>
+
+    @if (ShowRepliesSection)
+    {
+        <div class="card replies-section">
+            <h3>Replies</h3>
+            @if (RepliesLoading)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading replies…</span>
+                </div>
+            }
+            else if (Replies is { Count: > 0 })
+            {
+                <ul class="object-list">
+                    @foreach (var reply in Replies)
+                    {
+                        <li><ObjectView Item="reply" /></li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="muted">No replies yet.</p>
+            }
+        </div>
+    }
 }
 
 @code {
@@ -56,6 +85,8 @@ else
 
     private IObject? ObjectDoc { get; set; }
     private string? LoadError { get; set; }
+    private bool RepliesLoading { get; set; }
+    private List<IObject?> Replies { get; set; } = [];
 
     private string PageHeading
     {
@@ -111,6 +142,11 @@ else
         }
     }
 
+    /// <summary>
+    /// Whether the replies section should be rendered (the object is a content object, not an actor).
+    /// </summary>
+    private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor;
+
     protected override async Task OnParametersSetAsync()
     {
         if (Client is not { } client || ObjectIri is not { } iri || LoadError is not null)
@@ -139,5 +175,52 @@ else
         {
             LoadError = ex.Message;
         }
+
+        if (ObjectDoc is not null && ObjectDoc is not Actor)
+        {
+            await LoadRepliesAsync(client, iri);
+        }
+    }
+
+    private async Task LoadRepliesAsync(IActivityPubClient client, Iri iri)
+    {
+        RepliesLoading = true;
+        try
+        {
+            var resolved = new List<IObject?>();
+            await foreach (var item in client.GetRepliesAsync(iri, new CollectionQuery { Limit = 20 }, CancellationToken.None))
+            {
+                var replyIri = item.ResolveObjectIri();
+                if (replyIri is not { } ri)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var replyObj = await client.GetObjectAsync(ri, CancellationToken.None);
+                    if (replyObj is not null)
+                    {
+                        resolved.Add(replyObj);
+                    }
+                }
+                catch
+                {
+                    // Skip unresolvable replies (404, network error, etc.).
+                }
+            }
+
+            Replies = resolved;
+        }
+        catch
+        {
+            // Non-fatal: the object still renders; replies simply won't show.
+        }
+        finally
+        {
+            RepliesLoading = false;
+        }
+
+        StateHasChanged();
     }
 }

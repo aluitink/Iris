@@ -754,6 +754,33 @@ ul.object-list li {
     border-top: 1px solid var(--border);
 }
 
+.replies-section {
+    margin-top: 1rem;
+}
+
+.replies-section h3 {
+    margin: 0 0 0.75rem;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.replies-section .object-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.replies-section .object-item {
+    padding: 0.75rem 1rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
 .compose-reply-to {
     margin: 0 0 0.75rem;
     padding: 0.5rem 0.75rem;
