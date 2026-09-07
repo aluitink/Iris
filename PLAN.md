@@ -108,7 +108,7 @@ Iris.slnx
 12. ~~34.25: **Empty states**~~ **COMPLETE** — added `PagedCollection.EmptyContent` RenderFragment parameter. Home timeline, notifications, and search now show inline SVG icons + friendly messages. Home timeline empty state includes a "Browse the directory →" link. Verified live.
 13. ~~34.26: **Loading states**~~ **COMPLETE (verification; no code change)** — all pages already have loading spinners: object detail (`card-loading` + spinner), actor detail (`profile-loading` + spinner when `ActorDoc is null`), directory (`card-loading` + spinner when `Busy`), search (`card-loading` + spinner when `Busy`), and `PagedCollection` (spinner during initial fetch + "Load more" button). Verified in code.
 14. ~~34.27: **Post card spacing & separators**~~ **COMPLETE** — `ul.object-list li` padding 0.75rem 1rem, margin-bottom 0.75rem, border-radius 8px; `.object-item` gap 0.25rem. More breathing room between cards. Verified live.
-15. **34.28: Object detail — show like count + boost count** — the object detail page shows the note but no engagement metrics. Fetch the `/likes` and `/announcements` collections (or use the `Replies`/`Likes` properties on the object) and show "N likes · M boosts" under the note.
+15. ~~34.28: **Object detail — show like count + boost count**~~ **COMPLETE** — `ObjectDetail.razor` fetches `/likes` and `/shares` collections via `GetLikesAsync`/`GetSharesAsync`; shows "N likes · M boosts" under the note when counts > 0. Verified live (no likes/boosts yet, so text correctly hidden).
 16. **34.29: Favicon + meta tags** — the app has no favicon (browser tab shows a generic icon). Add a simple SVG favicon (e.g. a stylized "I" or an iris flower). Add `<meta name="description">` for the landing page.
 17. **34.30: Responsive nav** — on narrow viewports the nav bar wraps awkwardly. Add a simple mobile-friendly layout: the nav links collapse into a horizontal scroll or a hamburger menu.
 18. **34.31: Color & typography refinement** — the current palette (dark bg, blue accent) works but feels flat. Consider: slightly warmer background, better font weight hierarchy (the page `<h2>` and card text are similar weight), and a subtle accent color for interactive elements beyond just blue.
@@ -149,11 +149,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 34.28: **Object detail — show like count + boost count** (Phase 34) — `ObjectDetail.razor` fetches `/likes` and `/shares` via `GetLikesAsync`/`GetSharesAsync`; shows "N likes · M boosts" when counts > 0. Verified live.
  - 34.27: **Post card spacing & separators** (Phase 34) — `ul.object-list li` padding 0.75rem 1rem, margin-bottom 0.75rem, border-radius 8px; `.object-item` gap 0.25rem. More breathing room between cards. Verified live.
  - 34.26: **Loading states** (Phase 34) — verified: all pages already have loading spinners (object detail, actor detail, directory, search, PagedCollection). No code change needed.
  - 34.25: **Empty states with icons** (Phase 34) — `PagedCollection.EmptyContent` RenderFragment; home/notifications/search show SVG icons + friendly messages; home has "Browse the directory →" link. Verified live.
  - 34.24: **Avatar consistency** (Phase 34) — `.actor-profile-avatar` + `.actor-profile-avatar-img` now circular (border-radius: 50%). Both profile and actor detail show 64px circular avatars. Verified live.
- - 34.23: **Landing page hero** (Phase 34) — removed card + redundant heading; signed-out landing now shows a centered hero with accent-colored title + tagline + buttons. Verified live.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

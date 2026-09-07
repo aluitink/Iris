@@ -57,3 +57,4 @@
     - **34.20 — follow/unfollow cross-page round-trip fix (Phase 34):** `UiContext.GetFollowActivityIriAsync` scans the outbox for the Follow activity; `FollowButton` falls back to it when `_followActivityIri` is null. Cross-page unfollow now works. Verified live.
     - **34.21 — home timeline shows followed actors' posts (Phase 34):** verified: following andrew from the directory populates `/home` with his posts. No code change needed.
     - **34.22 — compose reply context preview (Phase 34):** `Compose.razor` fetches the parent note on load; shows author handle + truncated content (200 chars) in a styled blockquote. Verified live.
+    - **34.23 — landing page hero (Phase 34):** removed card + redundant heading; signed-out landing now shows a centered hero with accent-colored title + tagline + buttons. Verified live.
