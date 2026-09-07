@@ -3895,6 +3895,13 @@ public static class ActivityPubServerExtensions
         // The activity's own id (the client no longer sends it).
         activity.Id = idMinter.Mint(actorIri, activity).Value;
 
+        // The activity's published timestamp: the client does not send it, so the server assigns the
+        // current UTC time. This makes timestamps visible on timeline cards + notifications.
+        if (activity.Published is null)
+        {
+            activity.Published = DateTime.UtcNow;
+        }
+
         // A Create (or other activity) may embed a full object (a Note, a Group) whose id the client no
         // longer sends either. Mint it under the object's own namespace. A reference-carrying activity
         // (Follow/Undo/Accept/…) has only a link as its object, so there is nothing to mint here.
@@ -3915,6 +3922,14 @@ public static class ActivityPubServerExtensions
                 {
                     var mintedId = idMinter.Mint(actorIri, embedded).Value;
                     embedded.Id = mintedId;
+
+                    // Set the embedded object's published timestamp when absent (the note's own
+                    // publication time, visible on the object detail + timeline cards).
+                    if (embedded.Published is null)
+                    {
+                        embedded.Published = DateTime.UtcNow;
+                    }
+
                     mintedItems.Add(embedded);
                 }
                 else

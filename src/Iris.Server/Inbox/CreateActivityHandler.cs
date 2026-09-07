@@ -214,6 +214,11 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         var embedded = activity.ExtractEmbeddedObject();
         if (embedded is not null)
         {
+            if (embedded.Published is null)
+            {
+                embedded.Published = activity.Published ?? DateTime.UtcNow;
+            }
+
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
 
             // Phase 20.4 (d): eager-warm the stored object's cross-origin media attachments (best-effort;

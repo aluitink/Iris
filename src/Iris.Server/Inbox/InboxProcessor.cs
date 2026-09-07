@@ -67,6 +67,13 @@ public sealed class InboxProcessor : IInboxProcessor
             actorIri,
             recipient);
 
+        // Fallback: if the remote server did not include a published timestamp, assign the current time
+        // so the activity has a usable timestamp for display (timeline cards, notifications).
+        if (delivery.Activity.Published is null)
+        {
+            delivery.Activity.Published = DateTime.UtcNow;
+        }
+
         // The processor is the single owner of "receive an activity". Idempotent, at-least-once delivery
         // (C-07): store the activity add-if-absent so it can be re-read, and — when this is a re-delivery
         // (the IRI is already stored) — do NOT re-dispatch it to a handler. Re-dispatching a received
