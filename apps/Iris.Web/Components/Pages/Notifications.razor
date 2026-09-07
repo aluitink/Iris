@@ -7,10 +7,15 @@
 
 <PageTitle>Notifications · Iris</PageTitle>
 
-<h2>Notifications</h2>
+<div class="page-header-row">
+    <h2>Notifications</h2>
+    <button class="btn btn--secondary" @onclick="OnMarkAllReadAsync" disabled="@_markingRead">
+        @(_markingRead ? "Marking…" : "Mark all as read")
+    </button>
+</div>
 
 <p class="muted">
-    A unified “what happened to me” feed: the activities in your inbox (follows, follow requests,
+    A unified "what happened to me" feed: the activities in your inbox (follows, follow requests,
     likes, boosts, replies, mentions), newest first — paged with next-link walking.
 </p>
 
@@ -36,6 +41,24 @@
 @code {
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private NotificationService NotificationService { get; set; } = default!;
+
+    private bool _markingRead;
+
+    private async Task OnMarkAllReadAsync()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _markingRead = true;
+        await NotificationService.MarkAllReadAsync(uid);
+        _markingRead = false;
+        StateHasChanged();
+    }
 
     /// <summary>
     /// A stable <c>@key</c> for the inbox's <c>PagedCollection</c> (the notifications list is a single,

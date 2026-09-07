@@ -1198,4 +1198,31 @@ ul.object-list li {
     font-size: 0.9rem;
 }
 
+.page-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.page-header-row h2 {
+    margin: 0;
+}
+
+.nav-badge {
+    display: inline-block;
+    min-width: 1.35rem;
+    padding: 0 0.35rem;
+    margin-left: 0.3rem;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #0f1115;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.35rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
 

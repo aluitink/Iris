@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text.Json;
 using Iris.Client.Auth;
 using Iris.Core;
@@ -247,6 +248,7 @@ public static class WebAppFactory
         builder.Services.AddSingleton<LoginService>();
         builder.Services.AddScoped<IActorSessionAccessor, ActorSessionAccessor>();
         builder.Services.AddScoped<Iris.Web.Ui.UiContext>();
+        builder.Services.AddScoped<NotificationService>();
 
         // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
         // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
@@ -396,6 +398,7 @@ public static class WebAppFactory
         // circuit cannot set cookies (read-only response headers), so sign-in/out happen here in plain
         // HTTP requests.
         MapAuthEndpoints(app);
+        MapNotificationEndpoints(app);
 
         // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
         app.MapActivityPubEndpoints();
@@ -459,6 +462,95 @@ public static class WebAppFactory
                 Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.Redirect("/login");
         });
+    }
+
+    /// <summary>
+    /// Maps the notification read-state endpoints: <c>POST /local/v1/notifications/read</c> (marks all
+    /// notifications as read) and <c>GET /local/v1/notifications/unread-count</c> (returns the number of
+    /// inbox items newer than the account's <c>NotificationsReadAt</c> cursor). Both are
+    /// <c>[Authorize]</c>-gated (cookie auth) and resolve the signed-in user's account via the
+    /// <c>sub</c> claim.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder.</param>
+    public static void MapNotificationEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/local/v1/notifications/read", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            await accounts.UpdateNotificationsReadAtAsync(account.Id, now, ct);
+
+            // Count unread (for the response body, so the client can update its badge without a second call).
+            var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
+            var unread = CountUnread(inbox, now);
+            return Results.Json(new { unread });
+        }).RequireAuthorization();
+
+        endpoints.MapGet("/local/v1/notifications/unread-count", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
+            var unread = CountUnread(inbox, account.NotificationsReadAt);
+            return Results.Json(new { unread });
+        }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Counts inbox items whose <c>Published</c> timestamp is strictly after the given read cursor.
+    /// When the cursor is null (never read), all items are unread.
+    /// </summary>
+    internal static int CountUnread(IReadOnlyList<IObjectOrLink> inbox, DateTimeOffset? readAt)
+    {
+        if (inbox.Count == 0)
+        {
+            return 0;
+        }
+
+        if (readAt is null)
+        {
+            return inbox.Count;
+        }
+
+        var count = 0;
+        foreach (var item in inbox)
+        {
+            if (item is Activity { Published: not null } act && act.Published > readAt.Value.DateTime)
+            {
+                count++;
+            }
+        }
+
+        return count;
     }
 
     /// <summary>
