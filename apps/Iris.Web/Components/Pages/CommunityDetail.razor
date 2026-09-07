@@ -415,7 +415,69 @@ else
         ActiveTab = tab;
     }
 
-    private RenderFragment<IObjectOrLink> MemberTemplate = member => @<text>
-        <a href="@($"/actor?iri={Uri.EscapeDataString(MemberHref(member))}")" class="object-actor-handle">@MemberName(member)</a>
-    </text>;
+    private RenderFragment<IObjectOrLink> MemberTemplate
+    {
+        get
+        {
+            return member => @<div class="member-row">
+                <a href="@($"/actor?iri={Uri.EscapeDataString(MemberHref(member))}")" class="object-actor-handle">@MemberName(member)</a>
+                @if (IsCreator && MemberHref(member) != Session.ActorId?.Value)
+                {
+                    <button class="btn btn-small btn-danger" @onclick="() => RemoveMemberAsync(member)" disabled="@IsRemovingMember">
+                        @(IsRemovingMember ? "Removing…" : "Remove")
+                    </button>
+                }
+                @if (MemberRemoveError is not null)
+                {
+                    <span class="error">@MemberRemoveError</span>
+                }
+            </div>;
+        }
+    }
+
+    private bool IsRemovingMember { get; set; }
+    private string? MemberRemoveError { get; set; }
+
+    private async Task RemoveMemberAsync(IObjectOrLink member)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        var memberIriStr = MemberHref(member);
+        if (string.IsNullOrEmpty(memberIriStr))
+        {
+            return;
+        }
+
+        var memberIri = new Iri(memberIriStr);
+        IsRemovingMember = true;
+        MemberRemoveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RemoveCommunityMemberAsync(communityIri, memberIri);
+            if (result.IsSuccess)
+            {
+                Ui.InvalidateMembership(communityIri);
+                _ = LoadMemberCountAsync(communityIri);
+            }
+            else
+            {
+                MemberRemoveError = $"Removal failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            MemberRemoveError = ex.Message;
+        }
+        finally
+        {
+            IsRemovingMember = false;
+            StateHasChanged();
+        }
+    }
 }

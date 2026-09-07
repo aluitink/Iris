@@ -1015,6 +1015,12 @@ public static class ActivityPubServerExtensions
         // of the actor being muted.
         localGroup.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
 
+        // Local member removal (community): POST /local/v1/c/{name}/members/remove/{**target} — the
+        // community's creator (a local person) removes a member from the community. The person's IRI is
+        // the credential seam (IActorCredentialValidator); the server verifies the person is the
+        // community's creator (via the Group's AttributedTo) before removing the membership edge.
+        localGroup.MapPost("/c/{name}/members/remove/{**target}", CommunityRemoveMemberHandler).WithName("community-remove-member-endpoint");
+
         // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
         // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
         // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
@@ -5555,6 +5561,120 @@ public static class ActivityPubServerExtensions
         InvalidateLocalCollectionPage(collectionCache, communityIri, "mutes");
 
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator, for
+    /// <c>POST /local/v1/c/{name}/members/{**target}/remove</c>.
+    /// </summary>
+    /// <remarks>
+    /// The requesting person (Basic auth) must be the community's creator (the Group's
+    /// <c>attributedTo</c> includes the person's IRI). The member's IRI is the catch-all
+    /// <c>{target}</c> segment. The membership edge is removed and the members collection
+    /// page cache is invalidated so the next read reflects the removal.
+    /// </remarks>
+    private static async Task<IResult> CommunityRemoveMemberHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The community must exist.
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Resolve the member IRI from the catch-all route value.
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var memberIri))
+        {
+            return Results.BadRequest();
+        }
+
+        // The member must actually be a member (a no-op removal of a non-member is 404).
+        if (!await persistence.Communities.IsMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // Authenticate the requesting person (Basic auth) and verify they are the community's
+        // creator. The Group's AttributedTo identifies the creator; the credential validator
+        // validates the Basic-auth credentials against a specific actor IRI. We try each
+        // AttributedTo IRI until one validates.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var attributedTo = community.AttributedTo;
+        if (attributedTo is null || !attributedTo.Any())
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var creatorValidated = false;
+        foreach (var attr in attributedTo)
+        {
+            var attrIri = attr.ResolveObjectIri();
+            if (attrIri is not { } iri)
+            {
+                continue;
+            }
+
+            var handle = ExtractHandleFromIri(iri);
+            if (handle is null)
+            {
+                continue;
+            }
+
+            var personIri = BuildActorIri(baseUrl, handle);
+            if (await credentialValidator.TryValidateAsync(personIri, authorization, ct).ConfigureAwait(false) is not null)
+            {
+                creatorValidated = true;
+                break;
+            }
+        }
+
+        if (!creatorValidated)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        // Remove the membership edge.
+        await persistence.Communities.RemoveMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false);
+
+        // Invalidate the members collection page cache so the next read reflects the removal.
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Extracts the handle (the final path segment) from a person or community IRI.
+    /// </summary>
+    private static string? ExtractHandleFromIri(Iri iri)
+    {
+        var value = iri.Value;
+        var lastSlash = value.LastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == value.Length - 1)
+        {
+            return null;
+        }
+
+        var handle = value[(lastSlash + 1)..];
+        return string.IsNullOrEmpty(handle) ? null : handle;
     }
 
     /// <summary>

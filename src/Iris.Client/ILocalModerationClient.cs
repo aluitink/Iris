@@ -118,4 +118,31 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/members/remove/{memberId}</c>) that removes the membership edge.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) from which the member is removed.</param>
+    /// <param name="memberId">The IRI of the member actor to remove.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The request is authenticated by Basic auth (the community creator's credentials, supplied at
+    /// construction). The server verifies the authenticated person is the community's creator
+    /// (via the Group's <c>attributedTo</c>) before removing the membership edge.
+    /// </remarks>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator, with explicit
+    /// Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) from which the member is removed.</param>
+    /// <param name="memberId">The IRI of the member actor to remove.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, ProxyCredentials credentials, CancellationToken ct = default);
 }

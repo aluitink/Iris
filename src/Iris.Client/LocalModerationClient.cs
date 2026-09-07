@@ -68,6 +68,86 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials, ct);
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
+        => LocalCommunityMemberRemoveAsync(communityId, memberId, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityMemberRemoveAsync(communityId, memberId, credentials, ct);
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated community member removal:
+    /// <c>POST /local/v1/c/{name}/members/remove/{memberId}</c>. The community's IRI is used to
+    /// derive the route; the credentials are the community creator's.
+    /// </summary>
+    private Task<DeliveryResult> LocalCommunityMemberRemoveAsync(
+        Iri communityId,
+        Iri memberId,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        // Build the local request URI: /local/v1/c/{name}/members/remove/{memberId}
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/members/remove/{memberId.Value.TrimStart('/')}");
+
+        // Reuse the LocalDecisionAsync pattern but with a fixed path (no remove query).
+        var configured = _localAuth;
+        LocalAuthHandler handler;
+        bool ownsHandler;
+        if (credentials is not null && configured is null)
+        {
+            handler = new LocalAuthHandler(credentials, new HttpClientHandler());
+            ownsHandler = true;
+        }
+        else if (credentials is not null)
+        {
+            handler = new LocalAuthHandler(credentials, configured!);
+            ownsHandler = false;
+        }
+        else if (configured is not null)
+        {
+            handler = configured;
+            ownsHandler = false;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Community member removal requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+        }
+
+        return SendLocalPostAsync(handler, requestUri, ownsHandler, ct);
+    }
+
+    /// <summary>
+    /// Sends a body-less Basic-authenticated POST through the given handler and returns the result.
+    /// </summary>
+    private static async Task<DeliveryResult> SendLocalPostAsync(
+        LocalAuthHandler handler,
+        Uri requestUri,
+        bool ownsHandler,
+        CancellationToken ct)
+    {
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
     /// <summary>
     /// Performs a local, Basic-authenticated moderation decision (a mute or a relay subscription).
     /// </summary>

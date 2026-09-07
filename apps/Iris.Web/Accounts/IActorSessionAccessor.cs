@@ -62,6 +62,12 @@ public interface IActorSessionAccessor
     /// for the circuit's lifetime). Null when signed out.
     /// </summary>
     IActivityPubClient? Client { get; }
+
+    /// <summary>
+    /// An <see cref="ILocalModerationClient"/> bound to the signed-in user's actor (lazily created,
+    /// cached for the circuit's lifetime). Null when signed out.
+    /// </summary>
+    ILocalModerationClient? LocalModeration { get; }
 }
 
 /// <summary>
@@ -76,6 +82,7 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     private readonly IActivityPubClientFactory _clientFactory;
     private AuthenticationState? _state;
     private IActivityPubClient? _client;
+    private ILocalModerationClient? _localModeration;
 
     /// <summary>
     /// Initializes the accessor.
@@ -168,6 +175,32 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
 
             _client = _clientFactory.Create(new ActivityPubClientOptions { ActorId = actorId }, new HttpClientHandler());
             return _client;
+        }
+    }
+
+    /// <inheritdoc/>
+    public ILocalModerationClient? LocalModeration
+    {
+        get
+        {
+            if (!IsSignedIn)
+            {
+                return null;
+            }
+
+            if (_localModeration is not null)
+            {
+                return _localModeration;
+            }
+
+            var actorId = ActorId;
+            if (actorId is null)
+            {
+                return null;
+            }
+
+            _localModeration = _clientFactory.CreateLocalModerationClient(new ActivityPubClientOptions { ActorId = actorId }, new HttpClientHandler());
+            return _localModeration;
         }
     }
 }
