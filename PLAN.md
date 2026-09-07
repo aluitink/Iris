@@ -79,7 +79,7 @@ Iris.slnx
 
 **Phase 40 — Community management polish (COMPLETE).** 40.1–40.3 all COMPLETE.
 
-**Phase 41 — Notifications & engagement polish (ACTIVE).** 41.1 COMPLETE. 41.2–41.3 pending.
+**Phase 41 — Notifications & engagement polish (ACTIVE).** 41.1–41.2 COMPLETE. 41.3 pending.
 
 ## Active Slice
 
@@ -142,7 +142,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 **Phase 41 — Notifications & engagement polish (ACTIVE):**
 
 1. ~~**41.1: Notification read-state + unread badge**~~ **COMPLETE** — "Mark all as read" button on `/notifications` sets `NotificationsReadAt`; nav badge shows unread count (60s poll); server endpoints + in-process `NotificationService`; 7 integration tests. → [docs/changes/327](docs/changes/327-41.1-notification-read-state-and-badge.md)
-2. **41.2: Profile — show engagement received** — `/profile` gains a "Replies" tab (posts that reply to your notes) and "Likes" tab (likes on your notes), alongside the existing "Your posts" tab. Uses the existing `/replies` and `/likes` reverse-index collections per object, aggregated client-side across the user's outbox posts.
+2. ~~**41.2: Profile — show engagement received**~~ **COMPLETE** — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests. → [docs/changes/328](docs/changes/328-41.2-profile-engagement-tabs.md)
 3. **41.3: Community membership requests (admin UI)** — community detail "Requests" tab (already present in the tab bar) becomes functional: lists pending join requests (Follow activities targeting the community in the inbox that haven't been Accept/Reject'd), with Accept/Reject buttons. Server: `POST /local/v1/c/{name}/requests/{**requestIri}/accept` + `/reject` (creator-only, mirrors the member-removal pattern from 40.2).
 
 *(Phases 32–40 are complete — see docs/changes/ for details.)*
@@ -172,11 +172,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 41.2: **Profile engagement tabs** (Phase 41) — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests.
   - 41.1: **Notification read-state + unread badge** (Phase 41) — "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
   - 40.3: **Community feed shows only member posts** (Phase 40) — feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
   - 40.2: **Community member management** (Phase 40) — "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
   - 40.1: **Community settings/edit** (Phase 40) — "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
-  - 39.3: **Settings page** (Phase 39) — `/settings` with Account, Password, Communities tabs; nav link.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

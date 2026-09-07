@@ -86,3 +86,4 @@
       - **40.2 — community member management (Phase 40):** "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
       - **40.3 — community feed shows only member posts (Phase 40):** feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
       - **41.1 — notification read-state + unread badge (Phase 41):** "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
+      - **41.2 — profile engagement tabs (Phase 41):** `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests.
