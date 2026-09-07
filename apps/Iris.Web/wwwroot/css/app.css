@@ -222,21 +222,21 @@ input[type="url"] {
 ul.object-list {
     list-style: none;
     padding: 0;
-    margin: 0.5rem 0 0;
+    margin: 0.75rem 0 0;
 }
 
 ul.object-list li {
-    padding: 0.5rem 0.6rem;
+    padding: 0.75rem 1rem;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    margin-bottom: 0.5rem;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
     background: #12171f;
 }
 
 .object-item {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: 0.25rem;
 }
 
 .object-header {
