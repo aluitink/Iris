@@ -64,3 +64,4 @@
     - **34.27 — post card spacing & separators (Phase 34):** `ul.object-list li` padding 0.75rem 1rem, margin-bottom 0.75rem, border-radius 8px; `.object-item` gap 0.25rem. More breathing room between cards. Verified live.
     - **34.28 — object detail like/boost count (Phase 34):** `ObjectDetail.razor` fetches `/likes` + `/shares` via `GetLikesAsync`/`GetSharesAsync`; shows "N likes · M boosts" when counts > 0. Verified live.
     - **34.29 — favicon + meta tags (Phase 34):** added `favicon.svg` + `<link rel="icon">` + `<meta name="description">` in `App.razor` head. Verified live.
+    - **34.31 — color & typography refinement (Phase 34):** warmer bg, heading hierarchy, `--accent-warm`, line-height 1.6, brand 1.3rem. Verified live.

@@ -118,8 +118,8 @@ Iris.slnx
 **Phase 35 — Timeline actions & content completeness:**
 
 21. ~~35.1: **Server — set `published` timestamp on outbox-published activities**~~ **COMPLETE** — `MintActivityIds` sets `activity.Published = DateTime.UtcNow` when absent + sets `Published` on embedded Create objects. `InboxProcessor` sets fallback on inbound activities. `CreateActivityHandler.StoreEmbeddedObjectAsync` sets object `Published` from activity's time. New posts show "just now" / relative time. Verified live.
-22. **35.2: Timeline cards — show relative timestamps** — once `published` is set by the server, verify that `ObjectView`'s existing `<time>` elements render correctly. Fix any rendering issues. Ensure relative time ("2m ago", "1h ago", "3d ago") is user-friendly.
-23. **35.3: Home timeline — filter out social activities (Follow, Accept, Reject)** — the home feed should only show content (Create with Note, Announce), not social activities like Follow. `FeedService.BuildFeedAsync` or the `PagedCollection` rendering should filter to content-only items. Follow/Accept/Reject belong in notifications only.
+22. **35.2: Timeline cards — show relative timestamps** — verified as part of 35.1: new posts show "just now" with ISO 8601 in `<time title>`. Existing posts (pre-35.1) lack timestamps — expected, no migration. Marked COMPLETE.
+23. ~~35.3: **Home timeline — filter out social activities (Follow, Accept, Reject)**~~ **COMPLETE** — `PagedCollection` gains an optional `ItemFilter` predicate; `HomeTimeline` passes `IsContentItem` (only Create(Note/Article) + Announce render). Server feed API unchanged. Verified live: Follow activity no longer appears in home feed.
 24. **35.4: Timeline cards — inline engagement actions (like, boost, reply)** — add a compact action bar under each post card in the timeline: like (heart), boost (repost), reply (arrow) buttons. Clicking like/boost calls the existing `LikeAsync`/`AnnounceAsync` client methods. Reply links to `/compose?replyTo={iri}`. Actions should be optimistic (update immediately, revert on failure).
 25. **35.5: Object detail — delete own posts** — add a "Delete" button on the object detail page when viewing your own note. Calls the existing `DeleteAsync` client method. Shows a confirmation dialog. After deletion, redirects to home.
 26. **35.6: Compose — character count + content type** — add a character counter below the textarea (e.g. "245/500"). Add a content type selector (Note, Article, Question) that affects the ActivityStreams `type` or `contentType`.
@@ -158,11 +158,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
- - 35.1: **Server — published timestamps** (Phase 35) — `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published` on activities + embedded objects when absent. New posts show relative time ("just now", "2m ago"). Verified live.
- - 34.33: **Re-evaluate and generate new work** (Phase 34) — systematic UI review of all pages; identified gaps. Generated Phase 35 (Timeline actions & content completeness) with 6 items.
- - 34.32: **Object detail — show the full thread** (Phase 34) — fetches parent via `GetParentIri()`; shows "In reply to [author]" + truncated parent content in a blockquote card. Verified live.
- - 34.31: **Color & typography refinement** (Phase 34) — warmer bg, explicit heading hierarchy, `--accent-warm` for interactive elements, line-height 1.6, brand 1.3rem. Verified live.
- - 34.30: **Responsive nav** (Phase 34) — `@media (max-width: 640px)`: `.main-nav` horizontal scroll; `.main-header` wraps. Verified at 375px and 1024px.
+ - 35.3: **Home timeline — content-only filter** (Phase 35) — `PagedCollection` gains `ItemFilter` predicate; `HomeTimeline` filters to Create(Note/Article) + Announce only. Follow/Accept/Like excluded. Verified live.
+ - 35.2: **Timeline cards — relative timestamps** (Phase 35) — verified: new posts show "just now" / relative time via 35.1's `Published` fix. No additional code needed.
+ - 35.1: **Server — published timestamps** (Phase 35) — `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published` on activities + embedded objects when absent. New posts show relative time. Verified live.
+ - 34.33: **Re-evaluate and generate new work** (Phase 34) — systematic UI review; generated Phase 35 with 6 items.
+ - 34.32: **Object detail — show the full thread** (Phase 34) — fetches parent via `GetParentIri()`; shows "In reply to [author]" + truncated parent content. Verified live.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
