@@ -13,8 +13,18 @@
     Client="@FeedClient"
     CollectionIri="@FeedIri"
     PageSize="5"
-    ShowRefreshButton="true"
-    EmptyMessage="No posts in your timeline yet. Follow an actor or join a community to populate it." />
+    ShowRefreshButton="true">
+    <EmptyContent>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <p>Your timeline is empty.</p>
+            <p>Follow people to see their posts here.</p>
+            <a href="/directory">Browse the directory →</a>
+        </div>
+    </EmptyContent>
+</PagedCollection>
 
 @code {
     [Inject]

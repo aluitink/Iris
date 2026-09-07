@@ -838,4 +838,32 @@ ul.object-list li {
     margin: 0;
 }
 
+/* 34.25: empty states — centered icon + message + optional action link. */
+.empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--muted);
+}
+
+.empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 0.75rem;
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0 0 0.5rem;
+}
+
+.empty-state a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+.empty-state a:hover {
+    text-decoration: underline;
+}
+
 

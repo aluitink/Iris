@@ -45,7 +45,14 @@
         {
             @if (Items.Count == 0 && !HasMore)
             {
-                <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+                @if (EmptyContent is not null)
+                {
+                    <div class="empty-state">@EmptyContent</div>
+                }
+                else
+                {
+                    <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+                }
             }
             @if (Items.Count > 0)
             {
@@ -141,6 +148,13 @@
     /// </summary>
     [Parameter]
     public string? EmptyMessage { get; set; }
+
+    /// <summary>
+    /// Optional rich empty-state content (icon + message + action link). When provided, replaces
+    /// the plain <see cref="EmptyMessage"/> text.
+    /// </summary>
+    [Parameter]
+    public RenderFragment? EmptyContent { get; set; }
 
     /// <summary>
     /// When <c>true</c>, renders a <c>Refresh</c> button that re-fetches the collection's first page
