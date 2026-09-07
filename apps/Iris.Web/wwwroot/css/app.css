@@ -812,4 +812,30 @@ ul.object-list li {
     line-height: 1.4;
 }
 
+/* 34.23: signed-out landing hero — replaces the old h1 + card with a clean centered block. */
+.landing-hero {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.landing-title {
+    margin: 0 0 0.5rem;
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.landing-tagline {
+    margin: 0 0 1.5rem;
+    color: var(--muted);
+    font-size: 1rem;
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.landing-actions {
+    margin: 0;
+}
+
 

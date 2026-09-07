@@ -3,9 +3,6 @@
 
 <PageTitle>Iris</PageTitle>
 
-<h1>Iris</h1>
-<p class="muted">An ActivityPub social platform — follow people you know and read their notes in one feed.</p>
-
 <AuthorizeView>
     <Authorized>
         <p>
@@ -20,13 +17,12 @@
         </p>
     </Authorized>
     <NotAuthorized>
-        <div class="card">
-            <h2>Welcome to Iris</h2>
-            <p class="muted">
-                Sign in to follow people, read your timeline, and post notes — or create a new
-                account to join.
+        <div class="landing-hero">
+            <h1 class="landing-title">Iris</h1>
+            <p class="landing-tagline">
+                An ActivityPub social platform — follow people you know and read their notes in one feed.
             </p>
-            <p>
+            <p class="landing-actions">
                 <a class="button" href="/login">Sign in</a>
                 <a class="button button--secondary" href="/register">Create an account</a>
             </p>
