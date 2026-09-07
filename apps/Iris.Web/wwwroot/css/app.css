@@ -1150,4 +1150,32 @@ ul.object-list li {
     cursor: not-allowed;
 }
 
+.community-detail-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.community-detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-shrink: 0;
+}
+
+.community-member-count {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.community-loading {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 2rem;
+}
+
 

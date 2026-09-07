@@ -1,0 +1,275 @@
+@page "/community"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using Iris.Web.Ui
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>@PageHeading · Iris</PageTitle>
+
+<h2>@PageHeading</h2>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to view communities.</p></div>
+}
+else if (string.IsNullOrEmpty(IriParam))
+{
+    <div class="card"><p class="muted">No community specified. Use the directory to find communities.</p></div>
+}
+else if (LoadError is not null)
+{
+    <div class="card"><div class="error">@LoadError</div></div>
+}
+else if (CommunityDoc is null)
+{
+    <div class="card community-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading community…</span>
+    </div>
+}
+else
+{
+    <div class="community-detail-header">
+        <ActorProfile Actor="CommunityDoc" ActorId="@(CommunityDoc.Id)" />
+        <div class="community-detail-actions">
+            @if (IsSelf)
+            {
+                <p class="muted">This is your community.</p>
+            }
+            else
+            {
+                <FollowButton TargetActor="CommunityDoc" />
+            }
+            @if (MemberCount is { } mc)
+            {
+                <span class="community-member-count">@mc member@(mc == 1 ? string.Empty : "s")</span>
+            }
+        </div>
+    </div>
+
+    <div class="tab-bar">
+        <a href="#feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
+        <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
+    </div>
+
+    @if (ActiveTab == "feed")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="FeedIri"
+            Title="Community Feed"
+            Description="Posts from this community's members."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No posts in this community yet." />
+    }
+    else if (ActiveTab == "members")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="MembersIri"
+            Title="Members"
+            Description="Actors who are members of this community."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No members yet."
+            ItemTemplate="@MemberTemplate" />
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "iri")]
+    public string? IriParam { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private IObject? CommunityDoc { get; set; }
+    private string? LoadError { get; set; }
+    private string ActiveTab { get; set; } = "feed";
+    private int? MemberCount { get; set; }
+
+    private bool IsSelf
+        => Session.ActorId is { } me && CommunityDoc?.Id is { } id && me.Value == id;
+
+    private string PageHeading
+    {
+        get
+        {
+            if (CommunityDoc is Group group)
+            {
+                var name = group.Name?.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+
+            if (CommunityDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return px;
+            }
+
+            return "Community";
+        }
+    }
+
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(IriParam) || !Iri.TryParse(IriParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    private Iri? FeedIri => CommunityIri?.FeedOf();
+    private Iri? MembersIri => CommunityIri is { } iri ? AppendSegment(iri, "members") : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CommunityIri is not { } iri || LoadError is not null)
+        {
+            return;
+        }
+
+        if (CommunityDoc is not null && CommunityDoc.Id == iri.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is not null)
+            {
+                CommunityDoc = obj;
+                _ = LoadMemberCountAsync(iri);
+            }
+            else
+            {
+                LoadError = "Community not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task LoadMemberCountAsync(Iri communityIri)
+    {
+        var client = Client;
+        if (client is null)
+        {
+            return;
+        }
+
+        var membersIri = AppendSegment(communityIri, "members");
+        try
+        {
+            MemberCount = await GetFirstPageTotalAsync(client, membersIri);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Best-effort: a failure to fetch the count should not break the page.
+        }
+    }
+
+    private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri collectionIri, CancellationToken ct = default)
+    {
+        await foreach (var page in client.GetCollectionAsync(collectionIri, ct: ct))
+        {
+            return page.TotalItems;
+        }
+
+        return null;
+    }
+
+    private static Iri AppendSegment(Iri iri, string segment)
+    {
+        var baseUri = iri.Uri;
+        var builder = new UriBuilder(baseUri);
+        var path = builder.Path;
+        if (path.Length == 0 || !path.EndsWith('/'))
+        {
+            path += "/";
+        }
+
+        builder.Path = path + segment;
+        return new Iri(builder.Uri);
+    }
+
+    private static string MemberHref(IObjectOrLink item)
+    {
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            return id;
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            return href.ToString();
+        }
+
+        return string.Empty;
+    }
+
+    private static string MemberName(IObjectOrLink item)
+    {
+        if (item is Actor { PreferredUsername: { Length: > 0 } px })
+        {
+            return px;
+        }
+
+        if (item is IObject { Name: { } names } && names.Any())
+        {
+            return names.FirstOrDefault() ?? "Unknown";
+        }
+
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            try
+            {
+                var uri = new Uri(id);
+                var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                return segments.Length > 0 ? segments[^1] : "Unknown";
+            }
+            catch
+            {
+                return "Unknown";
+            }
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            var last = href.Segments.LastOrDefault()?.TrimEnd('/');
+            return string.IsNullOrEmpty(last) ? "Unknown" : last!;
+        }
+
+        return "Unknown";
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+    }
+
+    private RenderFragment<IObjectOrLink> MemberTemplate = member => @<text>
+        <a href="@($"/actor?iri={Uri.EscapeDataString(MemberHref(member))}")" class="object-actor-handle">@MemberName(member)</a>
+    </text>;
+}

@@ -61,7 +61,7 @@ else
 
                     <div class="directory-item">
                         <div class="directory-item-body">
-                            <a href="@ActorHref(iri)" class="object-actor-handle">@name</a>
+                            <a href="@CommunityHref(iri)" class="object-actor-handle">@name</a>
                             @if (handle is { Length: > 0 })
                             {
                                 <span class="muted" style="font-size: 0.85rem;">@handle</span>
@@ -156,8 +156,8 @@ else
         }
     }
 
-    private static string? ActorHref(string? iri)
-        => iri is not null ? $"/actor?iri={Uri.EscapeDataString(iri)}" : null;
+    private static string? CommunityHref(string? iri)
+        => iri is not null ? $"/community?iri={Uri.EscapeDataString(iri)}" : null;
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max] + "…";

@@ -136,7 +136,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 **Phase 38 — Communities & settings (ACTIVE):**
 
 1. ~~**38.1: Community directory**~~ **COMPLETE** — `/communities` page lists all local communities (Groups) via the search endpoint + client-side filter. Empty state when none exist. Nav link added.
-2. **38.2: Community detail page** — `/community?iri=…` showing the community's header (avatar, name, description, member count), feed tab, members tab, and a "Join"/"Leave" button.
+2. ~~**38.2: Community detail page**~~ **COMPLETE** — `/community?iri=…` shows the community's header (avatar, name, description, member count), Feed tab (community feed via `PagedCollection`), Members tab, and Follow button. Communities directory links to this page.
 3. **38.3: Post to community** — compose form that targets a community (sets `AttributedTo` to the community, `To` to community followers + public).
 
 *(Phases 32–37 are complete — see the Recently Completed section and docs/changes/ for details.)*
@@ -166,11 +166,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 38.2: **Community detail page** (Phase 38) — `/community?iri=…` with header (avatar, name, description, member count), Feed + Members tabs, Follow button.
   - 38.1: **Community directory** (Phase 38) — `/communities` page lists local Groups via search + client-side filter; empty state; nav link.
   - 37.5: **Compose nested reply thread context** (Phase 37) — when replying to a reply, fetches + shows the thread root (author + truncated content) in a styled block.
   - 37.4: **Notification type icons** (Phase 37) — distinct SVG icons (heart, boost, user, check, cross, pen, undo, bell) before the verb in `NotificationRow`.
   - 37.3: **UI profile edit form** (Phase 37) — EditProfileForm component (name + bio) on `/profile`; calls `UpdateActorAsync`; cache invalidation + reload.
-  - 37.2: **Client `UpdateActorAsync`** (Phase 37) — builds `Update` with updated `Person`, POSTs to actor outbox.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
