@@ -61,3 +61,4 @@
     - **34.24 — avatar consistency (Phase 34):** `.actor-profile-avatar` + `.actor-profile-avatar-img` now circular (border-radius: 50%). Both profile and actor detail show 64px circular avatars. Verified live.
     - **34.25 — empty states with icons (Phase 34):** `PagedCollection.EmptyContent` RenderFragment; home/notifications/search show SVG icons + friendly messages; home has "Browse the directory →" link. Verified live.
     - **34.26 — loading states (Phase 34):** verified: all pages already have loading spinners (object detail, actor detail, directory, search, PagedCollection). No code change needed.
+    - **34.27 — post card spacing & separators (Phase 34):** `ul.object-list li` padding 0.75rem 1rem, margin-bottom 0.75rem, border-radius 8px; `.object-item` gap 0.25rem. More breathing room between cards. Verified live.
