@@ -141,13 +141,15 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 42 — Community settings & instance admin (ACTIVE):**
+**Phase 42 — Community settings & instance admin (COMPLETE):**
 
 1. ~~**42.1: Community "manuallyApprovesMembers" toggle**~~ **COMPLETE** — community edit form checkbox ("Require approval for join requests"); on save calls `SetManuallyApprovesMembersAsync` when the flag changed; reads state via `GetManuallyApprovesMembers`; 5 integration tests. → [docs/changes/330](docs/changes/330-42.1-community-approve-members-toggle.md)
 2. ~~**42.2: Person "manuallyApprovesFollowers" toggle**~~ **COMPLETE** — profile edit form checkbox ("Require approval for follow requests"); on save calls `SetManuallyApprovesFollowersAsync` when the flag changed; reads state via `GetManuallyApprovesFollowers`; 5 integration tests. → [docs/changes/331](docs/changes/331-42.2-profile-approve-followers-toggle.md)
 3. ~~**42.3: Instance admin — user list**~~ **COMPLETE** — `/admin/users` page (admin-only, "Admin" policy); lists all local accounts (handle, role badge, created date); reads `IUserAccountStore.GetAllAsync()` in-process; 5 integration tests. → [docs/changes/332](docs/changes/332-42.3-admin-user-list.md)
 
-*(Phases 32–41 are complete — see docs/changes/ for details.)*
+**Phase 43 — (TBD):** Next phase to be selected from the feature matrix / backlog.
+
+*(Phases 32–42 are complete — see docs/changes/ for details.)*
 
 
 
