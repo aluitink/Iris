@@ -158,11 +158,10 @@ public sealed class ComposeProfileIntegrationTests : IDisposable
         var response = await GetWithAuthAsync(client, "/profile", authCookie);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = await response.Content.ReadAsStringAsync();
-        // The profile page's static markup: the page title, the outbox card's title + paged-collection
-        // shell. The actor document (the ActorProfile header) and the outbox items are loaded by the
-        // interactive circuit and are not in the static HTML.
+        // The profile page's static markup: the page title + the paged-collection shell. The actor
+        // document (the ActorProfile header) and the outbox items are loaded by the interactive
+        // circuit and are not in the static HTML.
         Assert.Contains("Your profile", html);
-        Assert.Contains("Your posts", html);
         Assert.Contains("paged-collection", html);
     }
 

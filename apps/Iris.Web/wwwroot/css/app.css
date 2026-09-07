@@ -575,6 +575,18 @@ ul.object-list li {
     word-break: break-all;
 }
 
+.actor-profile-handle-link {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.actor-profile-handle-link:hover {
+    color: var(--accent);
+}
+
 .actor-profile-name {
     font-size: 1rem;
     font-weight: 500;

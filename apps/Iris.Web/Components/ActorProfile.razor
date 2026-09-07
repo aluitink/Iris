@@ -23,7 +23,11 @@
         <div class="actor-profile-body">
             @if (PreferredUsername is { Length: > 0 } username)
             {
-                <span class="actor-profile-handle">@username</span>
+                <a href="@ActorHref" title="@(ActorId ?? actor.Id ?? string.Empty)" class="actor-profile-handle-link">@username</a>
+            }
+            else
+            {
+                <span class="actor-profile-handle">@actor.Id</span>
             }
             @if (Name is { Length: > 0 } name && !NameIsRedundant)
             {
@@ -33,9 +37,6 @@
             {
                 <div class="actor-profile-summary">@summary</div>
             }
-            <div class="actor-profile-iri">
-                <code>@(ActorId ?? actor.Id ?? string.Empty)</code>
-            </div>
         </div>
     </div>
 }
@@ -60,6 +61,12 @@ else
     public string? ActorId { get; set; }
 
     private Actor? ActorObj => Actor as Actor;
+
+    /// <summary>The actor's IRI as a string (for the handle link's href + tooltip).</summary>
+    private string ActorIdValue => ActorId ?? ActorObj?.Id ?? string.Empty;
+
+    /// <summary>The actor detail page URL for the handle link.</summary>
+    private string ActorHref => ActorIdValue.Length > 0 ? $"/actor?iri={Uri.EscapeDataString(ActorIdValue)}" : "/directory";
 
     /// <summary>The actor's <c>preferredUsername</c> (the handle), when present.</summary>
     private string? PreferredUsername => ActorObj?.PreferredUsername;

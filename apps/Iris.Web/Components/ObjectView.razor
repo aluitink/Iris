@@ -100,10 +100,6 @@
             {
                 <span class="object-name">@name</span>
             }
-            @if (actor.Id is { Length: > 0 } iri)
-            {
-                <a href="@ActorHref(new Iri(iri))" title="@iri" class="object-iri">@iri</a>
-            }
         </div>
     }
     else if (Item is IObject { Id: { Length: > 0 } id } obj)
