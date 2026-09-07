@@ -111,7 +111,7 @@ Iris.slnx
 15. ~~34.28: **Object detail — show like count + boost count**~~ **COMPLETE** — `ObjectDetail.razor` fetches `/likes` and `/shares` collections via `GetLikesAsync`/`GetSharesAsync`; shows "N likes · M boosts" under the note when counts > 0. Verified live (no likes/boosts yet, so text correctly hidden).
 16. ~~34.29: **Favicon + meta tags**~~ **COMPLETE** — added `favicon.svg` (stylized iris flower in app accent color) + `<link rel="icon">` + `<meta name="description">` in `App.razor` head. Verified live: favicon served at `/favicon.svg` (200), meta present in HTML.
 17. ~~34.30: **Responsive nav**~~ **COMPLETE** — `@media (max-width: 640px)`: `.main-nav` becomes `flex-wrap: nowrap; overflow-x: auto` (horizontal scroll, no scrollbar); `.main-header` allows wrapping (brand on its own line). Verified at 375px and 1024px.
-18. **34.31: Color & typography refinement** — the current palette (dark bg, blue accent) works but feels flat. Consider: slightly warmer background, better font weight hierarchy (the page `<h2>` and card text are similar weight), and a subtle accent color for interactive elements beyond just blue.
+18. ~~34.31: **Color & typography refinement**~~ **COMPLETE** — warmer bg (`#111318`), explicit `h1`/`h2`/`h3` hierarchy (1.6/1.35/1.1rem, 700/700/600 weight), `--accent-warm` for links/nav-hover/brand, line-height 1.6, brand 1.3rem with tighter tracking. Verified live.
 19. **34.32: Object detail — show the full thread** — when viewing a reply, show the parent note above it (a "In reply to …" blockquote with the parent's content), so the user has context without navigating away.
 20. **34.33: Re-evealuate and generate new work** — when finished - review the entire project, create multiple identities and generate content to get an understanding of the look and feel of everything. Visually inspect and generate new phases of improvements/refinements to continue to work on. Review for user experience and what someone would expect to see. Reflect on some of the implementation in the sample UI exporler we built to test our server features if you are running out of ideas on what to implement (That project was quick and dirty, we want to take our time with this one).
 ### Recently completed this session (34.1–34.14)
@@ -149,11 +149,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 34.31: **Color & typography refinement** (Phase 34) — warmer bg, explicit heading hierarchy, `--accent-warm` for interactive elements, line-height 1.6, brand 1.3rem. Verified live.
  - 34.30: **Responsive nav** (Phase 34) — `@media (max-width: 640px)`: `.main-nav` becomes horizontal scroll (no wrap, no scrollbar); `.main-header` allows wrapping. Verified at 375px and 1024px.
  - 34.29: **Favicon + meta tags** (Phase 34) — added `favicon.svg` (stylized iris flower) + `<link rel="icon">` + `<meta name="description">` in `App.razor` head. Verified live.
  - 34.28: **Object detail — show like count + boost count** (Phase 34) — `ObjectDetail.razor` fetches `/likes` and `/shares` via `GetLikesAsync`/`GetSharesAsync`; shows "N likes · M boosts" when counts > 0. Verified live.
  - 34.27: **Post card spacing & separators** (Phase 34) — `ul.object-list li` padding 0.75rem 1rem, margin-bottom 0.75rem, border-radius 8px; `.object-item` gap 0.25rem. More breathing room between cards. Verified live.
- - 34.26: **Loading states** (Phase 34) — verified: all pages already have loading spinners (object detail, actor detail, directory, search, PagedCollection). No code change needed.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
