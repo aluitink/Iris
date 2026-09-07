@@ -83,6 +83,8 @@ Iris.slnx
 
 **Phase 42 — Community settings & instance admin (COMPLETE).** 42.1–42.3 all COMPLETE.
 
+**Phase 43 — Per-user moderation & follow-request queue (COMPLETE).** 43.1–43.3 all COMPLETE.
+
 ## Active Slice
 
 **Phase 34 — UI polish & engagement (autonomous loop).** This is an open-ended, growing workstream. Each iteration: (1) pick the next item below, (2) implement it, (3) build + Docker rebuild + verify via Playwright, (4) run existing tests (must be green), (5) visual-review all pages, (6) add new items discovered during the review, (7) update this file. The item list below is the **living backlog** — it grows with each iteration.
@@ -183,8 +185,10 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
   - 41.3: **Community membership requests (admin UI)** (Phase 41) — "Requests" tab (creator only): lists pending join requests; Accept/Reject buttons; `GET /local/v1/c/{name}/requests` + `POST .../accept/{**actorIri}` + `POST .../reject/{**actorIri}`; `ILocalModerationClient` join-request methods; 10 integration tests.
   - 41.2: **Profile engagement tabs** (Phase 41) — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests.
   - 41.1: **Notification read-state + unread badge** (Phase 41) — "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
-  - 40.3: **Community feed shows only member posts** (Phase 40) — feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
-  - 40.2: **Community member management** (Phase 40) — "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
+  - 43.3: **Moderation on actor detail** (Phase 43) — `ModerationActions` (Block/Report via `IActivityPubClient`, Mute via `ILocalModerationClient`, Undo state from blocks/mutes collections) + community join-request "Requests" tab; 8 integration tests.
+  - 43.2: **Follow-request queue (person)** (Phase 43) — "Requests" tab on `/profile` (when `manuallyApprovesFollowers` on); pending Follows from outbox; Accept/Reject; 5 integration tests.
+  - 43.1: **Moderation actions on posts** (Phase 43) — "⋯" dropdown on `EngagementBar` (author ≠ self); Block/Flag via signed outbox, Mute via local Basic-auth; 6 integration tests.
+  - 42.3: **Instance admin — user list** (Phase 42) — `/admin/users` page (admin-only); lists local accounts; 5 integration tests.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
