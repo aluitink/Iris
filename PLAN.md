@@ -79,6 +79,8 @@ Iris.slnx
 
 **Phase 40 — Community management polish (COMPLETE).** 40.1–40.3 all COMPLETE.
 
+**Phase 41 — Notifications & engagement polish (ACTIVE).** 41.1 COMPLETE. 41.2–41.3 pending.
+
 ## Active Slice
 
 **Phase 34 — UI polish & engagement (autonomous loop).** This is an open-ended, growing workstream. Each iteration: (1) pick the next item below, (2) implement it, (3) build + Docker rebuild + verify via Playwright, (4) run existing tests (must be green), (5) visual-review all pages, (6) add new items discovered during the review, (7) update this file. The item list below is the **living backlog** — it grows with each iteration.
@@ -137,25 +139,13 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 38 — Communities & settings (ACTIVE):**
+**Phase 41 — Notifications & engagement polish (ACTIVE):**
 
-1. ~~**38.1: Community directory**~~ **COMPLETE** — `/communities` page lists all local communities (Groups) via the search endpoint + client-side filter. Empty state when none exist. Nav link added.
-2. ~~**38.2: Community detail page**~~ **COMPLETE** — `/community?iri=…` shows the community's header (avatar, name, description, member count), Feed tab (community feed via `PagedCollection`), Members tab, and Follow button. Communities directory links to this page.
-3. ~~**38.3: Post to community**~~ **COMPLETE** — `Compose.razor` accepts `?community=` query param; shows "Posting to {name}" context; builds a Note with `AttributedTo` = [actor, community] and `To` = [community followers, as:Public]; "Post to community" button on community detail page.
+1. ~~**41.1: Notification read-state + unread badge**~~ **COMPLETE** — "Mark all as read" button on `/notifications` sets `NotificationsReadAt`; nav badge shows unread count (60s poll); server endpoints + in-process `NotificationService`; 7 integration tests. → [docs/changes/327](docs/changes/327-41.1-notification-read-state-and-badge.md)
+2. **41.2: Profile — show engagement received** — `/profile` gains a "Replies" tab (posts that reply to your notes) and "Likes" tab (likes on your notes), alongside the existing "Your posts" tab. Uses the existing `/replies` and `/likes` reverse-index collections per object, aggregated client-side across the user's outbox posts.
+3. **41.3: Community membership requests (admin UI)** — community detail "Requests" tab (already present in the tab bar) becomes functional: lists pending join requests (Follow activities targeting the community in the inbox that haven't been Accept/Reject'd), with Accept/Reject buttons. Server: `POST /local/v1/c/{name}/requests/{**requestIri}/accept` + `/reject` (creator-only, mirrors the member-removal pattern from 40.2).
 
-**Phase 39 — Community management & settings (COMPLETE):**
-
-1. ~~**39.1: Community join/leave**~~ **COMPLETE** — `JoinButton.razor` on community detail; `RequestJoinAsync`/`RequestLeaveAsync` deliver `Join`/`Leave` to community inbox; `UiContext.IsMemberAsync` reads `/members` with `BypassCache`; membership edge in `Edges` table. → [docs/changes/321](docs/changes/321-39.1-community-join-leave.md)
-2. ~~**39.2: Community create**~~ **COMPLETE** — "Create community" form (name, handle, description) on `/communities`; calls `CreateCommunityAsync`; server materializes the community via outbox-publish. → [docs/changes/322](docs/changes/322-39.2-community-create.md)
-3. ~~**39.3: Settings page**~~ **COMPLETE** — `/settings` with Account (profile + edit link), Password (placeholder), Communities (member list) tabs; nav link added. → [docs/changes/323](docs/changes/323-39.3-settings-page.md)
-
-**Phase 40 — Community management polish (ACTIVE):**
-
-1. ~~**40.1: Community settings/edit**~~ **COMPLETE** — "Edit community" form on community detail page (name, description) for the community creator (detected via `AttributedTo`); `UpdateActorAsync` generalized from `Person` to `Actor`; server handles `Update` on community outbox + inbox. → [docs/changes/324](docs/changes/324-40.1-community-edit.md)
-2. ~~**40.2: Community member management**~~ **COMPLETE** — "Remove" button per member row on the Members tab (creator only); new local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; server verifies the requester is the creator via `AttributedTo`; 5 integration tests. → [docs/changes/325](docs/changes/325-40.2-community-member-removal.md)
-3. ~~**40.3: Community feed shows only member posts**~~ **COMPLETE** — community feed filters to posts where the community is in `AttributedTo` (community-tagged posts); `CommunityFeedService.IsCommunityTagged` + `CommunityContentRecorder.TagActivityForCommunity` tag notes at record-time; 2 new integration tests; all existing community feed tests updated. → [docs/changes/326](docs/changes/326-40.3-community-feed-filter.md)
-
-*(Phases 32–39 are complete — see the Recently Completed section and docs/changes/ for details.)*
+*(Phases 32–40 are complete — see docs/changes/ for details.)*
 
 
 
@@ -182,11 +172,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 41.1: **Notification read-state + unread badge** (Phase 41) — "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
   - 40.3: **Community feed shows only member posts** (Phase 40) — feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
   - 40.2: **Community member management** (Phase 40) — "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
   - 40.1: **Community settings/edit** (Phase 40) — "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
   - 39.3: **Settings page** (Phase 39) — `/settings` with Account, Password, Communities tabs; nav link.
-  - 39.2: **Community create** (Phase 39) — "Create community" form on `/communities`; `CreateCommunityAsync` with `description` param.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

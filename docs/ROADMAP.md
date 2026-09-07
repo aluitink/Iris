@@ -85,3 +85,4 @@
       - **40.1 — community settings/edit (Phase 40):** "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
       - **40.2 — community member management (Phase 40):** "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
       - **40.3 — community feed shows only member posts (Phase 40):** feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
+      - **41.1 — notification read-state + unread badge (Phase 41):** "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
