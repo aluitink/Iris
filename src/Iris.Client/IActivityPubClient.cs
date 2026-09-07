@@ -360,6 +360,32 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
 
     /// <summary>
+    /// Updates an actor's own profile (name, summary, and/or icon) as <paramref name="actorId"/>:
+    /// builds an <see cref="KristofferStrube.ActivityStreams.Update"/> whose embedded
+    /// <see cref="Person"/> carries the updated fields and publishes it through the signed pipeline
+    /// to the actor's own outbox. The server's <c>UpdateActivityHandler</c> merges the mutable fields
+    /// into the stored actor (preserving the signing key) and propagates the update to remote
+    /// followers. This is the client's one-call "edit profile" (the caller supplies the updated
+    /// <see cref="Person"/> — the <see cref="KristofferStrube.ActivityStreams.Update"/> and the
+    /// delivery target are derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose profile is being updated (must match the
+    /// client's signing identity so the request is signed as that actor).</param>
+    /// <param name="updatedActor">The updated <see cref="Person"/> carrying the new name, summary,
+    /// and/or icon. Only the fields present on this object are merged into the stored actor; fields
+    /// left null/empty are unchanged.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the
+    /// response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Update"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the actor's own outbox) and is signed by the pipeline. The embedded <see cref="Person"/> must
+    /// carry the actor's IRI as its <c>id</c> so the server can match it to the stored actor. A
+    /// <c>202</c> means the outbox accepted the update.
+    /// </remarks>
+    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default);
+
+    /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
     /// <see cref="KristofferStrube.ActivityStreams.Block"/> activity (actor = <paramref name="actorId"/>,
     /// object = <paramref name="targetId"/>) and publishes it through the signed pipeline to

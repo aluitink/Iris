@@ -71,7 +71,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 37 — Profile editing & remaining UI gaps (ACTIVE, 37.2–37.5).** 37.1 COMPLETE (server actor-update handler). Phase 36 COMPLETE (36.1–36.6). Phase 35 COMPLETE (35.1–35.6). **Next: 37.2 — client `UpdateActorAsync` method.**
+**Phase 37 — Profile editing & remaining UI gaps (ACTIVE, 37.3–37.5).** 37.1 + 37.2 COMPLETE. Phase 36 COMPLETE. Phase 35 COMPLETE. **Next: 37.3 — UI profile edit form.**
 
 ## Active Slice
 
@@ -134,7 +134,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 **Phase 37 — Profile editing & remaining UI gaps (ACTIVE):**
 
 1. ~~**37.1: Server — extend `UpdateActivityHandler` for actor updates**~~ **COMPLETE** — handler now detects actor self-updates (embedded `Actor` whose IRI matches the updating actor), merges mutable fields (name, summary, icon, endpoints) into the stored actor via `IActorStore`, preserves `publicKey`/`ExtensionData`, and propagates to remote followers. 4 new unit tests. 937 Server tests pass.
-2. **37.2: Client — `UpdateActorAsync`** — new method on `IActivityPubClient` that constructs an `Update` activity with the actor's updated `Person` (name, summary) and POSTs it to the actor's outbox. Add tests.
+2. ~~**37.2: Client — `UpdateActorAsync`**~~ **COMPLETE** — new method on `IActivityPubClient` builds an `Update` with the actor's updated `Person` and POSTs to the actor's outbox. 2 new tests. 154 Client tests pass.
 3. **37.3: UI — profile edit form** — "Edit profile" button on the profile page → inline form with name + summary fields → calls `UpdateActorAsync` → refreshes the profile. No new automated UI tests (Phase 34–36 policy); verify via Playwright.
 4. **37.4: Notification type icons** — distinguish likes, follows, replies, mentions in the notifications list with small SVG icons.
 5. **37.5: Compose — nested reply thread context** — when replying to a reply, show the parent's parent (the thread root) in the reply context preview.
@@ -166,11 +166,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 37.2: **Client `UpdateActorAsync`** (Phase 37) — builds `Update` with updated `Person`, POSTs to actor outbox.
   - 37.1: **Server actor-update handler** (Phase 37) — `UpdateActivityHandler` handles actor self-updates; merges into `IActorStore`, preserves `publicKey`, propagates to followers.
   - 36.5: **Directory — actor summary** (Phase 36) — `ObjectView` Actor branch renders `Summary` when present.
   - 36.4: **Actor detail — follower/following count badges** (Phase 36) — tab labels show "(N)" from collection `totalItems`.
   - 36.1: **Systematic UI review** (Phase 36) — all 11 pages reviewed; Phase 36 backlog generated (36.2–36.6).
-  - 35.6: **Compose — character count + content type** (Phase 35) — "N/500" counter + Note/Article dropdown.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

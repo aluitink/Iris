@@ -357,4 +357,51 @@ public class ActivityPubClientTests
         // The raw delivery status is surfaced so the caller can react (e.g. 400 malformed post).
         Assert.Equal(400, result.StatusCode);
     }
+
+    // --- UpdateActorAsync (37.2): the client's one-call "edit profile" --------------------
+
+    [Fact]
+    public async Task UpdateActorAsync_PostsUpdateToActorOutbox_WithEmbeddedPerson()
+    {
+        var fake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actor = new Iri("https://a.domain.local/u/alice");
+        var updated = new Person
+        {
+            Id = actor.Value,
+            Name = ["Alice Smith"],
+            Summary = ["Hello, world!"],
+        };
+        var result = await client.UpdateActorAsync(actor, updated);
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.Equal(HttpMethod.Post, fake.LastRequest!.Method);
+        Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Update", root.GetProperty("type").GetString());
+        Assert.Equal(actor.Value, root.GetProperty("actor").GetString());
+        var person = root.GetProperty("object");
+        Assert.Equal("Person", person.GetProperty("type").GetString());
+        Assert.Equal(actor.Value, person.GetProperty("id").GetString());
+        Assert.Equal("Alice Smith", person.GetProperty("name").GetString());
+        Assert.Equal("Hello, world!", person.GetProperty("summary").GetString());
+    }
+
+    [Fact]
+    public async Task UpdateActorAsync_ServerReturnsBadRequest_PropagatesStatusCode()
+    {
+        var fake = new FakeHttpHandler(new HttpResponseMessage(HttpStatusCode.BadRequest));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var actor = new Iri("https://a.domain.local/u/alice");
+        var updated = new Person { Id = actor.Value, Name = ["Test"] };
+        var result = await client.UpdateActorAsync(actor, updated);
+
+        Assert.Equal(400, result.StatusCode);
+        Assert.False(result.IsSuccess);
+    }
 }

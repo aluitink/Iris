@@ -106,6 +106,9 @@ public class CollectionBrowserTests
         public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 

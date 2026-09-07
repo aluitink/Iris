@@ -549,6 +549,26 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return DeliverAsync(actorId.OutboxOf(), delete, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)
+    {
+        // An actor updating their own profile: the Update carries the actor's updated Person document
+        // (with the actor's IRI as the id) and is published to the actor's own outbox. The server's
+        // UpdateActivityHandler detects the actor self-update (embedded Actor whose IRI matches the
+        // updating actor), merges the mutable fields into the stored actor (preserving the signing
+        // key), and propagates the update to remote followers.
+        //
+        // Decision 055: the client sends only the Update's shape (actor + embedded object); the
+        // server mints the Update's id and returns it in the 2xx body.
+        var update = new KristofferStrube.ActivityStreams.Update
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [updatedActor],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), update, ct);
+    }
+
     /// <summary>
     /// Extracts the deterministic IRI suffix (the final path segment) from an object IRI so a stable,
     /// unique-per-object activity IRI can be minted (a delete at

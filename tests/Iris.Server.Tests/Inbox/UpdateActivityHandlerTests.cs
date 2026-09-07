@@ -436,7 +436,7 @@ public sealed class UpdateActivityHandlerTests
         AttributedTo = [new Link { Href = new Uri(LocalPerson.Value) }],
     };
 
-    private static Update BuildUpdate(Iri actorIri, Note objectToUpdate) => new()
+    private static Update BuildUpdate(Iri actorIri, IObject objectToUpdate) => new()
     {
         Id = $"{actorIri}/updates/{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
