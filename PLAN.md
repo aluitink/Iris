@@ -77,7 +77,7 @@ Iris.slnx
 
 **Phase 39 — Community management & settings (COMPLETE).** 39.1–39.3 all COMPLETE.
 
-**Phase 40 — Community management polish (ACTIVE).** 40.1–40.2 COMPLETE; 40.3 pending.
+**Phase 40 — Community management polish (COMPLETE).** 40.1–40.3 all COMPLETE.
 
 ## Active Slice
 
@@ -153,7 +153,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 
 1. ~~**40.1: Community settings/edit**~~ **COMPLETE** — "Edit community" form on community detail page (name, description) for the community creator (detected via `AttributedTo`); `UpdateActorAsync` generalized from `Person` to `Actor`; server handles `Update` on community outbox + inbox. → [docs/changes/324](docs/changes/324-40.1-community-edit.md)
 2. ~~**40.2: Community member management**~~ **COMPLETE** — "Remove" button per member row on the Members tab (creator only); new local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; server verifies the requester is the creator via `AttributedTo`; 5 integration tests. → [docs/changes/325](docs/changes/325-40.2-community-member-removal.md)
-3. **40.3: Community feed shows only member posts** — community feed should filter to posts where the community is in `AttributedTo` (community-tagged posts), not all member outbox posts.
+3. ~~**40.3: Community feed shows only member posts**~~ **COMPLETE** — community feed filters to posts where the community is in `AttributedTo` (community-tagged posts); `CommunityFeedService.IsCommunityTagged` + `CommunityContentRecorder.TagActivityForCommunity` tag notes at record-time; 2 new integration tests; all existing community feed tests updated. → [docs/changes/326](docs/changes/326-40.3-community-feed-filter.md)
 
 *(Phases 32–39 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
@@ -182,11 +182,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 40.3: **Community feed shows only member posts** (Phase 40) — feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
   - 40.2: **Community member management** (Phase 40) — "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
   - 40.1: **Community settings/edit** (Phase 40) — "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
   - 39.3: **Settings page** (Phase 39) — `/settings` with Account, Password, Communities tabs; nav link.
   - 39.2: **Community create** (Phase 39) — "Create community" form on `/communities`; `CreateCommunityAsync` with `description` param.
-  - 39.1: **Community join/leave** (Phase 39) — `JoinButton.razor`; `RequestJoinAsync`/`RequestLeaveAsync`; membership edge in `Edges` table.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

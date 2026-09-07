@@ -79,3 +79,9 @@
       - **36.1 — systematic UI review (Phase 36):** all 11 pages reviewed; Phase 36 backlog generated (36.2–36.6).
       - **37.3 — UI profile edit form (Phase 37):** EditProfileForm component (name + bio) on `/profile`; calls `UpdateActorAsync`; cache invalidation + reload.
       - **38.1 — community directory (Phase 38):** `/communities` page lists local Groups via search + client-side filter; empty state; nav link.
+      - **39.1 — community join/leave (Phase 39):** `JoinButton.razor`; `RequestJoinAsync`/`RequestLeaveAsync`; membership edge in `Edges` table.
+      - **39.2 — community create (Phase 39):** "Create community" form on `/communities`; `CreateCommunityAsync` with `description` param.
+      - **39.3 — settings page (Phase 39):** `/settings` with Account, Password, Communities tabs; nav link.
+      - **40.1 — community settings/edit (Phase 40):** "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
+      - **40.2 — community member management (Phase 40):** "Remove" button per member (creator only); local endpoint `POST /local/v1/c/{name}/members/remove/{**target}`; 5 integration tests.
+      - **40.3 — community feed shows only member posts (Phase 40):** feed filters to community-tagged posts (`AttributedTo`); tag-at-record-time via `TagActivityForCommunity`; 2 new integration tests.
