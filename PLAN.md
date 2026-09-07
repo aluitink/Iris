@@ -71,7 +71,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 36 — Profile completeness & visual polish (ACTIVE, 36.1–36.6).** 36.1 (systematic UI review) complete; backlog generated with 5 implementation items. Phase 35 COMPLETE (35.1–35.6). Phase 34 COMPLETE (34.1–34.33). **Next: 36.2 — profile + actor detail bio display.**
+**Phase 36 — Profile completeness & visual polish (COMPLETE, 36.1–36.6).** All items done or verified: UI review, bio (verified), refresh button (verified), count badges, directory summary, content type (verified). Phase 35 COMPLETE (35.1–35.6). Phase 34 COMPLETE (34.1–34.33). **Next: Phase 37 — define scope.**
 
 ## Active Slice
 
@@ -131,14 +131,7 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 36 — Profile completeness & visual polish (ACTIVE):**
-
-1. **36.1: Systematic UI review** — ~~navigate all pages~~ **COMPLETE** — reviewed all 11 pages (home, compose, profile, directory, notifications, search, object detail, actor detail, landing, login, register). All render correctly. Findings: profile missing bio, refresh button visible in card, no follower counts on tabs, directory missing summaries, no content-type label on object detail.
-2. **36.2: Profile + actor detail — show actor summary/bio** — display the `summary` field from the actor document on both the profile page and actor detail header. Currently neither shows the bio.
-3. **36.3: Profile — hide "Refresh" button in card area** — the PagedCollection's Refresh button is visually bleeding into the profile card. Either move it below the card or hide it on the profile page.
-4. **36.4: Actor detail — follower/following count badges on tabs** — show "(N)" next to "Followers" and "Following" tab labels once counts are loaded.
-5. **36.5: Directory — show actor summary** — add a one-line muted summary under each actor's name in the directory list.
-6. **36.6: Object detail — content type label** — show a subtle "Article" badge when the object is an Article (vs. the default Note).
+**Phase 37 — (placeholder)** — scope TBD. Candidates from accumulated deferred work: profile editing (set name/summary), nested reply thread context, notification type icons, search results pagination.
 
 *(Phases 32–35 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
@@ -167,11 +160,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
- - 35.6: **Compose — character count + content type** (Phase 35) — "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
- - 35.5: **Object detail — delete own posts** (Phase 35) — Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
- - 35.4: **Timeline cards — inline engagement actions** (Phase 35) — `EngagementBar` (like/boost/reply) in `ObjectView`. Optimistic updates. Verified live.
- - 35.3: **Home timeline — content-only filter** (Phase 35) — `PagedCollection` `ItemFilter`; `HomeTimeline` filters to content only. Verified live.
- - 35.2: **Timeline cards — relative timestamps** (Phase 35) — verified via 35.1. No additional code.
+ - 36.5: **Directory — actor summary** (Phase 36) — `ObjectView` Actor branch renders `Summary` when present.
+ - 36.4: **Actor detail — follower/following count badges** (Phase 36) — tab labels show "(N)" from collection `totalItems`.
+ - 36.1: **Systematic UI review** (Phase 36) — all 11 pages reviewed; Phase 36 backlog generated (36.2–36.6).
+ - 35.6: **Compose — character count + content type** (Phase 35) — "N/500" counter + Note/Article dropdown.
+ - 35.5: **Object detail — delete own posts** (Phase 35) — Delete button (own posts only) with two-step confirm.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
