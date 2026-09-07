@@ -1342,6 +1342,31 @@ ul.object-list li {
     margin-left: 0.5rem;
 }
 
+.compose-sensitive-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.85rem;
+    color: var(--text-muted, #9aa4b2);
+    cursor: pointer;
+    user-select: none;
+}
+
+.compose-sensitive-toggle input[type="checkbox"] {
+    accent-color: var(--accent, #7c6cf0);
+}
+
+.compose-sensitive-summary {
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--border, #2a2f3a);
+    border-radius: 6px;
+    background: var(--bg-elevated, #1a1d24);
+    color: var(--text, #e6e9ef);
+    font-size: 0.85rem;
+}
+
 .btn-sm {
     padding: 0.25rem 0.6rem;
     font-size: 0.8rem;

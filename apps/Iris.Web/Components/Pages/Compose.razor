@@ -1,6 +1,7 @@
 @page "/compose"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Core.Compose
 @using Iris.Core.Identity
 @using Iris.Web.Accounts
 @using KristofferStrube.ActivityStreams
@@ -58,6 +59,18 @@
                 <option value="Note">Note</option>
                 <option value="Article">Article (long-form)</option>
             </select>
+        }
+        @if (ReplyToIri is null && CommunityIri is null)
+        {
+            <label class="compose-sensitive-toggle">
+                <input type="checkbox" @bind="IsSensitive" disabled="@Busy" />
+                Content warning
+            </label>
+            @if (IsSensitive)
+            {
+                <input class="compose-sensitive-summary" type="text" @bind="SensitiveSummary"
+                       placeholder="Warning summary (shown before revealing)" maxlength="200" disabled="@Busy" />
+            }
         }
     </div>
     <p class="muted compose-hint">
@@ -340,6 +353,20 @@
     /// </summary>
     private string ContentType { get; set; } = "Note";
 
+    /// <summary>
+    /// Whether the composed note is flagged content-sensitive (the ActivityStreams <c>sensitive</c> term).
+    /// The feed renders such notes behind a notice + reveal toggle. Applies to Note posts only (the
+    /// Article/reply/community paths don't set it).
+    /// </summary>
+    private bool IsSensitive { get; set; }
+
+    /// <summary>
+    /// The sensitivity summary (the ActivityStreams <c>summary</c> term) — the short warning text the feed
+    /// shows in place of the note's content until the viewer reveals it. Read only when
+    /// <see cref="IsSensitive"/> is set.
+    /// </summary>
+    private string SensitiveSummary { get; set; } = string.Empty;
+
     private const int MaxChars = 500;
 
     /// <summary>
@@ -430,7 +457,8 @@
             }
             else
             {
-                result = await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
+                var note = ComposeNote.Build(actorId, Content.Trim(), sensitive: IsSensitive, summary: SensitiveSummary, to: [AsPublic]);
+                result = await client.PostNoteAsync(actorId, note);
             }
 
             if (result.IsSuccess)
@@ -439,6 +467,8 @@
                 Result = $"Posted (HTTP {result.StatusCode}).";
                 PostedIri = result.MintedId;
                 Content = string.Empty;
+                IsSensitive = false;
+                SensitiveSummary = string.Empty;
             }
             else
             {
