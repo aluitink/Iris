@@ -36,6 +36,24 @@
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
         </a>
+        @if (CanModerate)
+        {
+            <div class="engagement-more" @onclick="() => _showModeration = !_showModeration">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                </svg>
+                @if (_showModeration)
+                {
+                    <div class="engagement-menu" @onclick:stopPropagation>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => BlockAsync()">Block</button>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => MuteAsync()">Mute</button>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => FlagAsync()">Report</button>
+                    </div>
+                }
+            </div>
+        }
     </div>
 }
 
@@ -49,13 +67,24 @@
     [Parameter]
     public Iri? ObjectIri { get; set; }
 
+    /// <summary>
+    /// The IRI of the post's author (the moderation target). When null or equal to the
+    /// signed-in user's actor, the moderation menu is hidden.
+    /// </summary>
+    [Parameter]
+    public Iri? AuthorIri { get; set; }
+
     private int _likeCount;
     private int _boostCount;
     private bool _liked;
     private bool _boosted;
     private bool _busy;
+    private bool _showModeration;
     private Iri? _likeIri;
     private Iri? _announceIri;
+
+    private bool CanModerate
+        => AuthorIri is { } author && Session.ActorId is { } me && author != me;
 
     private async Task ToggleLikeAsync(Iri iri)
     {
@@ -126,6 +155,63 @@
         catch
         {
             // Revert on failure.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task BlockAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await client.BlockAsync(me, target);
+            _showModeration = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MuteAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.LocalModeration is not { } mod || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await mod.MuteAsync(me, target);
+            _showModeration = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task FlagAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await client.FlagAsync(me, target);
+            _showModeration = false;
         }
         finally
         {

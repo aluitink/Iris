@@ -19,7 +19,7 @@
                 </a>
                 @if (IsContentCreate)
                 {
-                    <EngagementBar ObjectIri="@objIri" />
+                    <EngagementBar ObjectIri="@objIri" AuthorIri="ActivityActorIri" />
                 }
             }
             else if (ActivityEmbeddedObject is not null)
@@ -27,7 +27,7 @@
                 <div class="object-content">@ActivityContent</div>
                 @if (IsContentCreate && CreatedObjectIri is { } embeddedIri)
                 {
-                    <EngagementBar ObjectIri="@embeddedIri" />
+                    <EngagementBar ObjectIri="@embeddedIri" AuthorIri="ActivityActorIri" />
                 }
             }
             else
