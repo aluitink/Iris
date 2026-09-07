@@ -1372,4 +1372,25 @@ ul.object-list li {
     font-size: 0.8rem;
 }
 
+.object-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.object-edit label {
+    font-size: 0.85rem;
+    color: var(--text-muted, #9aa4b2);
+}
+
+.object-edit .compose-content {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.object-edit-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
 

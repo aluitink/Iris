@@ -591,6 +591,28 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         return DeliverAsync(actorId.OutboxOf(), update, ct);
     }
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(updatedNote);
+
+        // A note edit: the Update carries the updated note (with the note's IRI as the id) and is
+        // published to the author's own outbox. The server's UpdateActivityHandler refreshes the stored
+        // object in place (so a later GET serves the new content) and propagates the update to remote
+        // followers (the federated half of F-02).
+        //
+        // Decision 055: the client sends only the Update's shape (actor + embedded object); the server
+        // mints the Update's id and returns it in the 2xx body. The embedded note's id is the note's IRI
+        // (learned when it was posted) — the server matches on it, and a mismatch is a no-op.
+        var update = new KristofferStrube.ActivityStreams.Update
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [updatedNote],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), update, ct);
+    }
+
     /// <summary>
     /// Extracts the deterministic IRI suffix (the final path segment) from an object IRI so a stable,
     /// unique-per-object activity IRI can be minted (a delete at
