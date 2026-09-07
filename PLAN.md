@@ -96,7 +96,7 @@ Iris.slnx
 3. ~~34.15: **Directory — hide raw IRI**~~ **COMPLETE** — `ActorProfile` handle is now a clickable link to `/actor?iri=…` with the IRI in a `title` tooltip; the visible IRI `<code>` line removed. `ObjectView` Actor branch: removed the redundant IRI link. Verified live: directory, actor detail, profile all show clean handles with no raw IRIs.
 4. ~~34.16: **Remove duplicate card headings**~~ **COMPLETE** — removed `Title` + `Description` from `PagedCollection` on Home (`Home timeline`), Notifications (`Your notifications`), and Profile (`Your posts`). Each page now has a single `<h2>` heading. Verified live.
 5. ~~34.18: **Pagination / "Load more"**~~ **COMPLETE (already implemented)** — `PagedCollection` already has a "Load more" button (line 70) that fetches the next page via `LoadMoreAsync` and appends items. No change needed.
-6. **34.19: Show replies on object detail** — the object detail page shows the note but not its replies. Use `GetRepliesAsync` (already in the client) to fetch and render the replies collection under the note. Each reply should use `ObjectView` for consistent rendering.
+6. ~~34.19: **Show replies on object detail**~~ **COMPLETE** — `ObjectDetail.razor` fetches the replies collection via `GetRepliesAsync` after loading the object, resolves each reply IRI to a full object via `GetObjectAsync`, and renders them in a dedicated "Replies" card using `ObjectView`. Actor objects skip the section. Unresolvable replies are silently skipped. Verified live: parent note shows its reply; a note with no replies shows "No replies yet." Full fast suite green (1,599 passed).
 7. **34.20: Follow/unfollow from actor detail + directory** — the Follow button exists on directory and actor detail, but verify the full round-trip: follow → button changes to "Unfollow" → unfollow → button changes back. Test with two accounts (alice follows bob, then unfollows).
 8. **34.21: Home timeline shows followed actors' posts** — follow an actor (e.g. andrew) from the directory, then verify the home timeline shows andrew's posts. If the feed is empty after following, investigate the feed service.
 9. **34.22: Compose — reply context preview** — when composing a reply (`?replyTo=…`), show a truncated preview of the parent note's content (not just the ULID). Fetch the parent note's content and display it in a muted block above the textarea.
@@ -149,11 +149,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 34.19: **Show replies on object detail** (Phase 34) — `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live. Full test suite green (1,599 passed).
  - 34.15–16: **Hide raw IRI + remove duplicate card headings** (Phase 34) — `ActorProfile` handle → clickable link with IRI tooltip (visible IRI removed); `ObjectView` Actor branch IRI removed; `PagedCollection` Title/Description removed from Home, Notifications, Profile. Verified live. Full test suite green (1,599 passed).
  - 34.13: **Reply flow** (Phase 34) — `Compose.razor` accepts `?replyTo=`; "Reply" heading + context; `PostReplyAsync`. `ObjectDetail.razor` "Reply" button. Verified live (202). Full test suite green.
  - 34.14: **Object detail cleanup** (Phase 34) — removed redundant "NOTE" label; `.object-detail` hero CSS. Verified live. Full test suite green.
  - 34.11–12: **Relative timestamps + clickable posts + object heading** (Phase 34) — `TimeFormatting.Relative()`, post content links to `/object?iri=…`, dynamic `ObjectDetail` heading. Verified live. Full test suite green.
- - 34.10: **Post card visual hierarchy + actor page heading** (Phase 34) — `.object-header` row, actor page shows `preferredUsername`. Verified live. Full test suite green.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
