@@ -71,7 +71,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 35 — Timeline actions & content completeness (COMPLETE, 35.1–35.6).** All six items done: published timestamps, relative time display, home timeline content filter, inline engagement actions (like/boost/reply), delete own posts, and compose character count + content type. Phase 34 (UI polish & engagement) COMPLETE (34.1–34.33). **Next: Phase 36 — define scope via systematic UI review.**
+**Phase 36 — Profile completeness & visual polish (ACTIVE, 36.1–36.6).** 36.1 (systematic UI review) complete; backlog generated with 5 implementation items. Phase 35 COMPLETE (35.1–35.6). Phase 34 COMPLETE (34.1–34.33). **Next: 36.2 — profile + actor detail bio display.**
 
 ## Active Slice
 
@@ -131,10 +131,14 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 36 — UI review & next iteration (ACTIVE):**
+**Phase 36 — Profile completeness & visual polish (ACTIVE):**
 
-1. **36.1: Systematic UI review** — navigate all pages (home, compose, profile, directory, notifications, search, object detail, actor detail, landing, community) as alice; identify remaining gaps, inconsistencies, and polish opportunities. Generate Phase 36 backlog from findings.
-2. **36.2: Address top findings** — implement the highest-priority items from the 36.1 review.
+1. **36.1: Systematic UI review** — ~~navigate all pages~~ **COMPLETE** — reviewed all 11 pages (home, compose, profile, directory, notifications, search, object detail, actor detail, landing, login, register). All render correctly. Findings: profile missing bio, refresh button visible in card, no follower counts on tabs, directory missing summaries, no content-type label on object detail.
+2. **36.2: Profile + actor detail — show actor summary/bio** — display the `summary` field from the actor document on both the profile page and actor detail header. Currently neither shows the bio.
+3. **36.3: Profile — hide "Refresh" button in card area** — the PagedCollection's Refresh button is visually bleeding into the profile card. Either move it below the card or hide it on the profile page.
+4. **36.4: Actor detail — follower/following count badges on tabs** — show "(N)" next to "Followers" and "Following" tab labels once counts are loaded.
+5. **36.5: Directory — show actor summary** — add a one-line muted summary under each actor's name in the directory list.
+6. **36.6: Object detail — content type label** — show a subtle "Article" badge when the object is an Article (vs. the default Note).
 
 *(Phases 32–35 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
