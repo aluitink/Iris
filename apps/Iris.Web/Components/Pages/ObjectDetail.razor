@@ -32,10 +32,14 @@ else if (ObjectDoc is null)
         <span class="muted">Loading object…</span>
     </div>
 }
-else
+    else
 {
     <div class="card object-detail">
         <ObjectView Item="ObjectDoc" />
+        @if (EngagementText is not null)
+        {
+            <div class="object-detail-engagement">@EngagementText</div>
+        }
         @if (ReplyHref is not null)
         {
             <div class="object-detail-actions">
@@ -87,6 +91,32 @@ else
     private string? LoadError { get; set; }
     private bool RepliesLoading { get; set; }
     private List<IObject?> Replies { get; set; } = [];
+    private int LikeCount { get; set; }
+    private int BoostCount { get; set; }
+
+    private string? EngagementText
+    {
+        get
+        {
+            if (LikeCount == 0 && BoostCount == 0)
+            {
+                return null;
+            }
+
+            var parts = new List<string>();
+            if (LikeCount > 0)
+            {
+                parts.Add($"{LikeCount} like{(LikeCount == 1 ? "" : "s")}");
+            }
+
+            if (BoostCount > 0)
+            {
+                parts.Add($"{BoostCount} boost{(BoostCount == 1 ? "" : "s")}");
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
 
     private string PageHeading
     {
@@ -179,6 +209,7 @@ else
         if (ObjectDoc is not null && ObjectDoc is not Actor)
         {
             await LoadRepliesAsync(client, iri);
+            await LoadEngagementAsync(client, iri);
         }
     }
 
@@ -222,5 +253,30 @@ else
         }
 
         StateHasChanged();
+    }
+
+    private async Task LoadEngagementAsync(IActivityPubClient client, Iri iri)
+    {
+        try
+        {
+            int likes = 0;
+            await foreach (var _ in client.GetLikesAsync(iri, new CollectionQuery { Limit = 100 }, CancellationToken.None))
+            {
+                likes++;
+            }
+
+            int boosts = 0;
+            await foreach (var _ in client.GetSharesAsync(iri, new CollectionQuery { Limit = 100 }, CancellationToken.None))
+            {
+                boosts++;
+            }
+
+            LikeCount = likes;
+            BoostCount = boosts;
+        }
+        catch
+        {
+            // Non-fatal: engagement counts simply won't show.
+        }
     }
 }
