@@ -34,6 +34,16 @@ else if (ObjectDoc is null)
 }
     else
 {
+    @if (ParentDoc is not null && ParentHref is not null)
+    {
+        <div class="card object-parent-context">
+            <div class="object-parent-label">
+                In reply to <a href="@ParentHref">@ParentAuthor</a>
+            </div>
+            <div class="object-parent-content">@ParentPreview</div>
+        </div>
+    }
+
     <div class="card object-detail">
         <ObjectView Item="ObjectDoc" />
         @if (EngagementText is not null)
@@ -88,6 +98,7 @@ else if (ObjectDoc is null)
     private IActivityPubClient? Client => Session.Client;
 
     private IObject? ObjectDoc { get; set; }
+    private IObject? ParentDoc { get; set; }
     private string? LoadError { get; set; }
     private bool RepliesLoading { get; set; }
     private List<IObject?> Replies { get; set; } = [];
@@ -177,6 +188,67 @@ else if (ObjectDoc is null)
     /// </summary>
     private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor;
 
+    private string? ParentHref
+    {
+        get
+        {
+            if (ParentDoc?.Id is not { } id)
+            {
+                return null;
+            }
+
+            return $"/object?iri={Uri.EscapeDataString(id)}";
+        }
+    }
+
+    private string ParentAuthor
+    {
+        get
+        {
+            if (ParentDoc is null)
+            {
+                return "unknown";
+            }
+
+            if (ParentDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return "@" + px;
+            }
+
+            if (ParentDoc is ActivityObject { AttributedTo: { } attr } && attr.FirstOrDefault() is { } first)
+            {
+                if (first is Actor { PreferredUsername: { Length: > 0 } apx })
+                {
+                    return "@" + apx;
+                }
+
+                string? actorIriStr = first is ILink { Href: { } href } ? href.ToString() : first.Id;
+                if (actorIriStr is not null && Iri.TryParse(actorIriStr, out var attrIri))
+                {
+                    var segments = attrIri.Value.Split('/');
+                    return segments.Length > 1 ? segments[^1] : "unknown";
+                }
+            }
+
+            return "unknown";
+        }
+    }
+
+    private string ParentPreview
+    {
+        get
+        {
+            var content = (ParentDoc as ActivityObject)?.Content?.FirstOrDefault();
+            if (string.IsNullOrEmpty(content))
+            {
+                return "(no content)";
+            }
+
+            var text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(content, " ").Trim();
+            return text.Length > 200 ? text[..200] + "…" : text;
+        }
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         if (Client is not { } client || ObjectIri is not { } iri || LoadError is not null)
@@ -208,6 +280,7 @@ else if (ObjectDoc is null)
 
         if (ObjectDoc is not null && ObjectDoc is not Actor)
         {
+            await LoadParentAsync(client);
             await LoadRepliesAsync(client, iri);
             await LoadEngagementAsync(client, iri);
         }
@@ -253,6 +326,24 @@ else if (ObjectDoc is null)
         }
 
         StateHasChanged();
+    }
+
+    private async Task LoadParentAsync(IActivityPubClient client)
+    {
+        if (ObjectDoc.GetParentIri() is not { } parentIri)
+        {
+            return;
+        }
+
+        try
+        {
+            var parent = await client.GetObjectAsync(parentIri, CancellationToken.None);
+            ParentDoc = parent;
+        }
+        catch
+        {
+            // Non-fatal: parent context simply won't show.
+        }
     }
 
     private async Task LoadEngagementAsync(IActivityPubClient client, Iri iri)
