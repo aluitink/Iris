@@ -148,7 +148,7 @@ public sealed class ComposeProfileIntegrationTests : IDisposable
         // page; the post itself is a circuit action and is not in the static HTML.
         Assert.Contains("Compose", html);
         Assert.Contains("compose-content", html);
-        Assert.Contains("Post note", html);
+        Assert.Contains("compose-char-count", html);
     }
 
     [Fact]

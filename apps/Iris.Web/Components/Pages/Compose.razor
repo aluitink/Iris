@@ -1,6 +1,7 @@
 @page "/compose"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Core.Identity
 @using Iris.Web.Accounts
 @using KristofferStrube.ActivityStreams
 
@@ -28,6 +29,18 @@
     <label for="compose-content">Content</label>
     <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
               placeholder="What's on your mind?"></textarea>
+    <div class="compose-meta">
+        <span class="compose-char-count @(Content.Length > MaxChars ? "compose-char-count--over" : "")">
+            @Content.Length/@MaxChars
+        </span>
+        @if (ReplyToIri is null)
+        {
+            <select class="compose-type-select" @bind="ContentType" disabled="@Busy">
+                <option value="Note">Note</option>
+                <option value="Article">Article (long-form)</option>
+            </select>
+        }
+    </div>
     <p class="muted compose-hint">
         @(ReplyToIri is not null
             ? "This reply is threaded under the parent note and visible in its replies."
@@ -36,7 +49,7 @@
 
     <div class="compose-actions">
         <button @onclick="PostAsync" disabled="@Busy">
-            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : "Post note"))
+            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : "Post"))
         </button>
         @if (Posted)
         {
@@ -167,6 +180,13 @@
     private string Content { get; set; } = string.Empty;
 
     /// <summary>
+    /// The content type for new posts (Note or Article). Ignored for replies.
+    /// </summary>
+    private string ContentType { get; set; } = "Note";
+
+    private const int MaxChars = 500;
+
+    /// <summary>
     /// Whether a post is in flight — disables the button and shows the "Posting…" state.
     /// </summary>
     private bool Busy { get; set; }
@@ -239,9 +259,20 @@
         Error = null;
         try
         {
-            var result = ReplyToIri is { } parent
-                ? await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic])
-                : await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
+            DeliveryResult result;
+            if (ReplyToIri is { } parent)
+            {
+                result = await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic]);
+            }
+            else if (ContentType == "Article")
+            {
+                result = await PostArticleAsync(client, actorId);
+            }
+            else
+            {
+                result = await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
+            }
+
             if (result.IsSuccess)
             {
                 Posted = true;
@@ -262,5 +293,24 @@
         {
             Busy = false;
         }
+    }
+
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId)
+    {
+        var article = new Article
+        {
+            AttributedTo = [new Link { Href = new Uri(actorId.Value) }],
+            To = [new Link { Href = new Uri(AsPublic.Value) }],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        var create = new Create
+        {
+            Actor = [new Link { Href = new Uri(actorId.Value) }],
+            Object = [article]
+        };
+
+        return await client.DeliverAsync(actorId.OutboxOf(), create);
     }
 }
