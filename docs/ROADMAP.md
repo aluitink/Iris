@@ -53,4 +53,5 @@
  - **34.13 — reply flow (Phase 34):** `Compose.razor` accepts `?replyTo=`; "Reply" heading + context; `PostReplyAsync`. `ObjectDetail.razor` "Reply" button. Verified live (202).
   - **34.14 — object detail cleanup (Phase 34):** removed redundant "NOTE" label; `.object-detail` hero CSS. Verified live.
    - **34.15–16 — hide raw IRI + remove duplicate card headings (Phase 34):** `ActorProfile` handle → clickable link with IRI tooltip; `ObjectView` Actor branch IRI removed; `PagedCollection` Title/Description removed from Home, Notifications, Profile. Verified live.
-   - **34.19 — show replies on object detail (Phase 34):** `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live.
+    - **34.19 — show replies on object detail (Phase 34):** `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live.
+    - **34.20 — follow/unfollow cross-page round-trip fix (Phase 34):** `UiContext.GetFollowActivityIriAsync` scans the outbox for the Follow activity; `FollowButton` falls back to it when `_followActivityIri` is null. Cross-page unfollow now works. Verified live.
