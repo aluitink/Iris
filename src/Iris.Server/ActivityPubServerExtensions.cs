@@ -513,7 +513,7 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
             CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value),
-            sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>(),
+            sp.GetRequiredService<IConfiguration>(),
             CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value)));
 
         // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered

@@ -39,12 +39,12 @@ services:
     environment:
       # The app binds in-container port 8080 (the Dockerfile's ASPNETCORE_URLS); the advertised public
       # base URI is what the app tells the fediverse / browsers it is reachable at. Default is the real
-      # public FQDN (https://iris.luit.ink) — the reverse proxy forwards to host 8088.
+      # public FQDN (https://iris.luit.ink); the reverse proxy forwards to host 8088.
       Iris__AdvertiseBase: ${IRIS_ADVERTISE_BASE:-https://iris.luit.ink}
       # A connection string is present -> EF Core (PostgreSQL) persistence; absent -> in-memory.
       # Assembled from the POSTGRES_* vars (Host=db is the compose service name on the internal network).
       ConnectionStrings__Iris: "Host=db;Port=5432;Database=${POSTGRES_DB:-iris};Username=${POSTGRES_USER:-iris};Password=${POSTGRES_PASSWORD}"
-      # Admin bootstrap (docs/plans/production-app-authentication.md §6): if set, the first admin account
+      # Admin bootstrap (docs/plans/production-app-authentication.md, section 6): if set, the first admin account
       # is provisioned idempotently at boot. Unset -> no admin is created. App:* is Iris.Web's own section
       # (never bound by AddActivityPubServer's ActivityPubServerOptions, which owns Iris:*).
       App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
@@ -59,6 +59,12 @@ services:
       # consumer cross-origin access to the instance's API. Never AllowAnyOrigin. Blank -> same-origin-only.
       # Maps to Iris:Cors:Origins.
       Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
+      # Graceful-shutdown drain timeout (slice 33.6): bounds the time the DeliveryWorker waits for
+      # in-flight outbound deliveries to settle on a SIGTERM. A delivery that does not finish in time
+      # is dropped (journaled / dead-lettered per the F-22 at-least-once policy). Accepts a TimeSpan
+      # (e.g. 00:00:15) or a bare integer (seconds). Blank -> the app's 15 s default (fits under the
+      # host's 30 s ShutdownTimeout). Maps to Iris:Delivery:ShutdownDrainTimeout.
+      Iris__Delivery__ShutdownDrainTimeout: ${IRIS_SHUTDOWN_DRAIN_TIMEOUT:-}
       # The media volume is mounted for the (future) local-disk media backend; unused until that feature
       # lands. The Media__* config section is not read by Iris.Web yet (no dead env vars are set).
       ASPNETCORE_ENVIRONMENT: Production

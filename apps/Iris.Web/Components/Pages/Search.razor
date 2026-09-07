@@ -29,7 +29,7 @@ else
                 <input type="checkbox" @bind="ActorsOnly" />
                 Actors only
             </label>
-            <button class="button" @onclick="RunSearchAsync" disabled="@Busy">Search</button>
+            <button class="button" @onclick="() => RunSearchAsync()" disabled="@Busy">Search</button>
         </div>
         @if (Busy)
         {
@@ -74,16 +74,46 @@ else
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
 
+    [Inject]
+    private Microsoft.AspNetCore.Components.NavigationManager Nav { get; set; } = default!;
+
     /// <summary>
     /// The client to dial (the signed-in session's client), or <c>null</c> when signed out.
     /// </summary>
     private IActivityPubClient? Client => Session.Client;
+
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "q")]
+    public string? QueryParam { get; set; }
 
     private string Query { get; set; } = string.Empty;
     private bool ActorsOnly { get; set; }
     private bool Busy { get; set; }
     private IReadOnlyList<IObjectOrLink>? Results { get; set; }
     private string? Error { get; set; }
+    private bool _initialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (QueryParam is { Length: > 0 })
+        {
+            Query = QueryParam;
+        }
+
+        if (Query.Trim().Length > 0 && Client is not null)
+        {
+            await RunSearchAsync(skipNavigate: true);
+        }
+
+        _initialized = true;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!_initialized && QueryParam is { Length: > 0 } && QueryParam != Query)
+        {
+            Query = QueryParam;
+        }
+    }
 
     /// <summary>
     /// The instance's versioned base (<c>{origin}/ap/v1</c>), derived from the signed-in actor's IRI
@@ -110,11 +140,17 @@ else
     /// Runs a global search (the <see cref="IActivityPubClient.SearchAsync"/> path). An <c>@onclick</c>
     /// handler, so Blazor auto-renders the results when it completes.
     /// </summary>
-    private async Task RunSearchAsync()
+    private async Task RunSearchAsync(bool skipNavigate = false)
     {
         if (Client is not { } client || InstanceBase is not { } baseIri)
         {
             return;
+        }
+
+        if (!skipNavigate)
+        {
+            var url = Query.Trim().Length > 0 ? $"/search?q={Uri.EscapeDataString(Query.Trim())}" : "/search";
+            Nav.NavigateTo(url, forceLoad: false);
         }
 
         Busy = true;

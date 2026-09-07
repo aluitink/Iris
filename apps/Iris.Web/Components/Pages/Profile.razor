@@ -3,6 +3,7 @@
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Accounts
+@using Iris.Web.Ui
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>Profile · Iris</PageTitle>
@@ -44,6 +45,9 @@ else
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
 
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
     /// <summary>
     /// A stable <c>@key</c> for the outbox's <c>PagedCollection</c>. The profile outbox is a single,
     /// fixed collection (the session actor's outbox), so the key is a constant — it exists only so the
@@ -79,20 +83,19 @@ else
     /// </summary>
     protected override void OnParametersSet()
     {
-        if (Session.Client is { } client
-            && Session.ActorId is { } actorId
+        if (Session.ActorId is { } actorId
             && ActorDoc is null
             && LoadError is null)
         {
-            _ = LoadActorAsync(client, actorId);
+            _ = LoadActorAsync(actorId);
         }
     }
 
-    private async Task LoadActorAsync(IActivityPubClient client, Iri actorId)
+    private async Task LoadActorAsync(Iri actorId)
     {
         try
         {
-            var actor = await client.GetActorAsync(actorId, CancellationToken.None);
+            var actor = await Ui.GetActorAsync(actorId);
             if (actor is not null)
             {
                 ActorDoc = actor;

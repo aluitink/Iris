@@ -84,6 +84,30 @@ public static class WebAppFactory
     public const string MaxRequestBodySizeConfigKey = "Iris:MaxRequestBodySize";
 
     /// <summary>
+    /// The default host-shutdown delivery drain budget (slice 33.6): how long the <c>DeliveryWorker</c>
+    /// gets, once the host's stopping token is cancelled (a SIGTERM), to finish its in-flight outbound
+    /// deliveries before it stops. The host itself stops after <c>HostOptions.ShutdownTimeout</c>
+    /// (30 s by default, set by <c>WebApplicationBuilder</c>'s default) — and that 30 s covers
+    /// <em>every</em> hosted service in registration order (the EF persistence provider's
+    /// <c>StopAsync</c> runs before the delivery worker's), so a 60 s worker drain budget would be
+    /// truncated by the host's own timeout. The default is therefore 15 s: comfortably above the
+    /// seconds-scale delivery round-trips it protects, and comfortably below the 30 s host budget, so
+    /// the worker always returns before the host force-stops it. An operator raises it via
+    /// <c>Iris:Delivery:ShutdownDrainTimeout</c> (env <c>IRIS_SHUTDOWN_DRAIN_TIMEOUT</c>) when its
+    /// delivery traffic (or a busy queue) needs a longer drain — and should then also raise
+    /// <c>DOTNET_HOST__SHUTDOWNTIMEOUT</c> so the host's own budget covers it.
+    /// </summary>
+    public static readonly TimeSpan DefaultShutdownDrainTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// The configuration key for the host-shutdown delivery drain budget (slice 33.6). Bound from
+    /// <c>Iris:Delivery:ShutdownDrainTimeout</c> (env <c>IRIS_SHUTDOWN_DRAIN_TIMEOUT</c>); the value is
+    /// a <see cref="TimeSpan"/> string (e.g. <c>"00:00:30"</c>) or a number of seconds (e.g. <c>"30"</c>).
+    /// Unset → <see cref="DefaultShutdownDrainTimeout"/>.
+    /// </summary>
+    public const string ShutdownDrainTimeoutConfigKey = "Iris:Delivery:ShutdownDrainTimeout";
+
+    /// <summary>
     /// The name of the CORS policy registered when an operator opts into cross-origin access (slice
     /// 33.5). The policy allows only the origins listed in <see cref="CorsOriginsConfigKey"/> — never
     /// <c>AllowAnyOrigin</c>. When no origins are configured, no policy is registered and no CORS
@@ -222,6 +246,7 @@ public static class WebAppFactory
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
         builder.Services.AddScoped<IActorSessionAccessor, ActorSessionAccessor>();
+        builder.Services.AddScoped<Iris.Web.Ui.UiContext>();
 
         // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
         // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
@@ -251,6 +276,31 @@ public static class WebAppFactory
         // same-origin-only by default (the safe default for a public instance — a cross-origin
         // preflight/GET simply gets no Access-Control-Allow-Origin header and the browser blocks it).
         // ConfigurePipeline applies app.UseCors(CorsPolicyName) only when the policy is registered.
+        // 9a. Graceful shutdown (slice 33.6): an explicit host shutdown timeout + the delivery worker's
+        // drain budget. WebApplicationBuilder already sets HostOptions.ShutdownTimeout to 30 s (the
+        // framework default), and the DeliveryWorker's in-flight-delivery drain (its ExecuteAsync drain
+        // loop, bounded by Iris:Delivery:ShutdownDrainTimeout) is awaited INSIDE that 30 s window — the
+        // host stops its hosted services in order (persistence, then the queue-completion service, then
+        // the worker) and gives the whole stop phase at most ShutdownTimeout. The drain budget is
+        // therefore set below the host budget so the worker always finishes draining (or hits its own
+        // bound) before the host force-stops it. The default budget (15 s) is applied here so the
+        // production wiring is explicit and a single knob (Iris:Delivery:ShutdownDrainTimeout, env
+        // IRIS_SHUTDOWN_DRAIN_TIMEOUT) governs it; an operator that raises it must also raise
+        // DOTNET_HOST__SHUTDOWNTIMEOUT (the host's own budget) to match.
+        var drainRaw = builder.Configuration[ShutdownDrainTimeoutConfigKey];
+        if (string.IsNullOrWhiteSpace(drainRaw))
+        {
+            builder.Configuration[ShutdownDrainTimeoutConfigKey] = DefaultShutdownDrainTimeout.ToString();
+        }
+        if (TimeSpan.TryParse(drainRaw, out var drainTimeout) && drainTimeout > TimeSpan.Zero)
+        {
+            builder.Host.ConfigureHostOptions(options => options.ShutdownTimeout = drainTimeout);
+        }
+        else
+        {
+            builder.Host.ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(30));
+        }
+
         var corsOriginsRaw = builder.Configuration[CorsOriginsConfigKey];
         var corsOrigins = (corsOriginsRaw ?? string.Empty)
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

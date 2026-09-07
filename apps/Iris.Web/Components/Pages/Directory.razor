@@ -1,0 +1,119 @@
+@page "/directory"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Directory · Iris</PageTitle>
+
+<h2>Directory</h2>
+
+<p class="muted">
+    People on this instance. Browse local accounts to find people to follow.
+</p>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to browse the directory.</p></div>
+}
+else
+{
+    @if (Busy)
+    {
+        <div class="card card-loading">
+            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+            </svg>
+            <span class="muted">Loading…</span>
+        </div>
+    }
+    else if (Error is not null)
+    {
+        <div class="card"><div class="error">@Error</div></div>
+    }
+    else if (Actors is not null)
+    {
+        @if (Actors.Count == 0)
+        {
+            <div class="card">
+                <p class="muted">No local accounts yet. Be the first — <a href="/register">create an account</a>.</p>
+            </div>
+        }
+        else
+        {
+            <p class="muted">@Actors.Count account(s) on this instance.</p>
+            <div class="directory-list">
+                @foreach (var actor in Actors)
+                {
+                    <div class="directory-item">
+                        <div class="directory-item-body">
+                            <ObjectView Item="actor" />
+                        </div>
+                        <FollowButton TargetActor="actor" />
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private bool Busy { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Actors { get; set; }
+    private string? Error { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadActorsAsync();
+    }
+
+    private async Task LoadActorsAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } actor)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        Actors = null;
+        try
+        {
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            Iri? baseIri = index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+
+            if (baseIri is null)
+            {
+                Error = "Could not determine the instance address.";
+                return;
+            }
+
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                               baseIri.Value,
+                               string.Empty,
+                               new SearchOptions { Type = "Actor" }))
+            {
+                results.Add(item);
+            }
+
+            Actors = results;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

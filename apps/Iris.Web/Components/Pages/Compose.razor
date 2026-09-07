@@ -4,26 +4,33 @@
 @using Iris.Web.Accounts
 @using KristofferStrube.ActivityStreams
 
-<PageTitle>Compose · Iris</PageTitle>
+<PageTitle>@PageTitle · Iris</PageTitle>
 
-<h2>Compose</h2>
+<h2>@PageTitle</h2>
 
 <p class="muted">
-    Posting as <code>@(Session.ActorId?.Value ?? "…")</code>
+    Posting as <a href="/profile">@ActorHandle</a>
 </p>
 
 <div class="card compose-card">
+    @if (ReplyToIri is not null)
+    {
+        <p class="compose-reply-to">
+            Replying to <a href="@ReplyToHref">@ReplyToLabel</a>
+        </p>
+    }
     <label for="compose-content">Content</label>
     <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
               placeholder="What's on your mind?"></textarea>
     <p class="muted compose-hint">
-        A note addressed to the public — it lands in your outbox and appears in your followers'
-        timelines.
+        @(ReplyToIri is not null
+            ? "This reply is threaded under the parent note and visible in its replies."
+            : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
     </p>
 
     <div class="compose-actions">
         <button @onclick="PostAsync" disabled="@Busy">
-            @(Busy ? "Posting…" : "Post note")
+            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : "Post note"))
         </button>
         @if (Posted)
         {
@@ -50,6 +57,52 @@
 @code {
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "replyTo")]
+    private string? ReplyToParam { get; set; }
+
+    private Iri? ReplyToIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ReplyToParam) || !Iri.TryParse(ReplyToParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    private string ReplyToLabel
+    {
+        get
+        {
+            if (ReplyToIri is not { } iri)
+            {
+                return "…";
+            }
+
+            var uri = new Uri(iri.Value);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : iri.Value;
+        }
+    }
+
+    private string? ReplyToHref
+    {
+        get
+        {
+            if (ReplyToIri is not { } iri)
+            {
+                return null;
+            }
+
+            return $"/object?iri={Uri.EscapeDataString(iri.Value)}";
+        }
+    }
+
+    private string PageTitle => ReplyToIri is not null ? "Reply" : "Compose";
 
     /// <summary>
     /// The note text the user is composing. Cleared on a successful post.
@@ -84,19 +137,33 @@
     private string? Error { get; set; }
 
     /// <summary>
+    /// The signed-in actor's handle (e.g. "pwtest2"), derived from the last segment of the actor IRI.
+    /// </summary>
+    private string ActorHandle
+    {
+        get
+        {
+            if (Session.ActorId is not { } actorId)
+            {
+                return "…";
+            }
+
+            var uri = new Uri(actorId.Value);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : actorId.Value;
+        }
+    }
+
+    /// <summary>
     /// The ActivityStreams public collection address (the conventional <c>to</c> for public notes) —
     /// a note addressed to the public is delivered to the actor's followers' timelines (F-14).
     /// </summary>
     private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
 
     /// <summary>
-    /// Posts the composed note as the signed-in actor. The note is built with a <c>to</c> of the
-    /// ActivityStreams <c>as:Public</c> collection (a public note), so it is fanned out to the
-    /// actor's followers' feeds as well as stored in the actor's outbox. The write goes through the
-    /// session's <see cref="IActivityPubClient"/> (<c>PostNoteAsync</c> → publish to the actor's own
-    /// outbox, signed by the session's signing key) — the one sanctioned path from the UI into
-    /// ActivityPub state. Pass 1 (functionality): a plain text note; content warnings, media
-    /// attachments, and reply threading are later experience-pass items (F-28 / F-11 / F-12).
+    /// Posts the composed note (or reply, when <see cref="ReplyToIri"/> is set) as the signed-in actor.
+    /// The write goes through the session's <see cref="IActivityPubClient"/> — the one sanctioned path
+    /// from the UI into ActivityPub state.
     /// </summary>
     private async Task PostAsync()
     {
@@ -115,13 +182,14 @@
         Error = null;
         try
         {
-            var result = await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
+            var result = ReplyToIri is { } parent
+                ? await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic])
+                : await client.PostNoteAsync(actorId, Content.Trim(), to: [AsPublic]);
             if (result.IsSuccess)
             {
                 Posted = true;
                 Result = $"Posted (HTTP {result.StatusCode}).";
                 PostedIri = result.MintedId;
-                // A posted note is consumed; clear the composer so the next note starts fresh.
                 Content = string.Empty;
             }
             else

@@ -20,7 +20,7 @@
             }
             @if (Published is { } published)
             {
-                <span class="notification-time" title="@published.ToString("o")">@published.ToLocalTime().ToString("g")</span>
+                <span class="notification-time" title="@published.ToString("o")">@RelativeTime(published)</span>
             }
         </div>
         <div class="notification-target">
@@ -122,4 +122,6 @@
         var last = path.Split('/').LastOrDefault();
         return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
     }
+
+    private static string RelativeTime(DateTime utc) => TimeFormatting.Relative(utc);
 }

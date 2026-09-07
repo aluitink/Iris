@@ -239,6 +239,13 @@ ul.object-list li {
     gap: 0.15rem;
 }
 
+.object-header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.25rem;
+}
+
 .object-type {
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -246,19 +253,17 @@ ul.object-list li {
     color: #8fd3a7;
 }
 
-.object-author {
+.object-action {
+    font-size: 0.75rem;
     color: var(--muted);
-    font-size: 0.85rem;
+    font-style: italic;
 }
 
-.object-author .object-actor {
-    color: var(--text);
-    font-weight: 600;
-    text-decoration: none;
-}
-
-.object-author .object-actor:hover {
-    color: var(--accent);
+.object-time {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.75rem;
+    white-space: nowrap;
 }
 
 .object-name {
@@ -271,6 +276,37 @@ ul.object-list li {
     font-size: 0.8rem;
     word-break: break-all;
     text-decoration: none;
+}
+
+.object-actor-handle {
+    color: var(--text);
+    font-weight: 600;
+    font-size: 0.95rem;
+    text-decoration: none;
+}
+
+.object-actor-handle:hover {
+    color: var(--accent);
+}
+
+.object-actor {
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-actor:hover {
+    color: var(--accent);
+}
+
+.object-post-link {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+}
+
+.object-post-link:hover .object-content {
+    color: var(--accent);
 }
 
 .object-content {
@@ -623,3 +659,101 @@ ul.object-list li {
     font-size: 0.85rem;
     word-break: break-all;
 }
+
+/* Directory: actor rows with a follow button on the right. */
+.directory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.directory-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #12171f;
+}
+
+.directory-item-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.follow-button {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 6rem;
+    text-align: center;
+}
+
+.tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    margin: 1rem 0;
+}
+
+.tab {
+    padding: 0.5rem 1rem;
+    color: var(--muted);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    user-select: none;
+}
+
+.tab:hover {
+    color: var(--text);
+}
+
+.tab--active {
+    color: var(--text);
+    border-bottom-color: var(--accent);
+}
+
+.actor-detail-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.actor-detail-header .actor-profile {
+    flex: 1;
+    min-width: 200px;
+}
+
+.object-detail .object-content {
+    font-size: 1.2rem;
+    line-height: 1.6;
+}
+
+.object-detail .object-header {
+    margin-bottom: 0.75rem;
+}
+
+.object-detail-actions {
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+}
+
+.compose-reply-to {
+    margin: 0 0 0.75rem;
+    padding: 0.5rem 0.75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.compose-reply-to a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+

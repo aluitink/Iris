@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using Iris.Client;
 using Iris.Core;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -82,6 +83,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly IDeliveryRateLimiter? _rateLimiter;
     private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
     private readonly IDeliveryCircuitBreaker? _circuitBreaker;
+    private readonly int _shutdownDrainTimeoutMs;
 
     // 30.2: set (atomically, once) when ExecuteAsync begins its pump loop, so the readiness probe can
     // confirm the delivery worker is actually running — not merely registered. Read by the
@@ -108,6 +110,49 @@ public sealed class DeliveryWorker : BackgroundService
         ILogger<DeliveryWorker> logger)
         : this(queue, clientFactory, transportFactory, options, logger,
             new DeliveryRetryOptions(), null, 1, null, null, null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="DeliveryWorker"/> with the production (host-driven) wiring: the
+    /// retry / dead-letter policy, the concurrency cap, the rate limiter, the circuit breaker, and the
+    /// shutdown drain budget from <paramref name="configuration"/>. This is the constructor
+    /// <c>AddActivityPubServer</c> uses, so the drain budget is bound from the host's configuration
+    /// (<c>Iris:Delivery:ShutdownDrainTimeout</c>, see
+    /// <see cref="ShutdownDrainTimeoutMsConfigKey"/>) without changing any of the other parameters.
+    /// </summary>
+    /// <param name="queue">The delivery queue to pump. Must not be null.</param>
+    /// <param name="clientFactory">The factory that builds the signed delivery client. Must not be null.</param>
+    /// <param name="transportFactory">A factory for the outbound <see cref="HttpMessageHandler"/> transport.
+    /// Must not be null.</param>
+    /// <param name="options">The server options (provides <see cref="ActivityPubServerOptions.InstanceActorId"/>).</param>
+    /// <param name="logger">The logger. Must not be null.</param>
+    /// <param name="retryOptions">The retry / dead-letter policy. Null uses the defaults
+    /// (<see cref="DeliveryRetryOptions"/>: 5 attempts, 1s base, 60s cap).</param>
+    /// <param name="deadLetter">The dead-letter store for exhausted jobs. Null disables dead-lettering
+    /// (exhausted jobs are logged at <c>Error</c> and dropped).</param>
+    /// <param name="maxConcurrentDeliveries">The maximum number of deliveries in flight at once (1 = serial).</param>
+    /// <param name="rateLimiter">The per-peer outbound-delivery rate limiter (Phase 16.3). Null disables
+    /// rate limiting.</param>
+    /// <param name="configuration">The host configuration the shutdown drain budget is read from
+    /// (<c>Iris:Delivery:ShutdownDrainTimeout</c>). Null uses the default budget.</param>
+    /// <param name="circuitBreaker">The per-peer outbound-delivery circuit breaker (Phase 17.3). Null
+    /// disables circuit breaking.</param>
+    public DeliveryWorker(
+        IDeliveryQueue queue,
+        IActivityPubClientFactory clientFactory,
+        Func<HttpMessageHandler> transportFactory,
+        IOptions<ActivityPubServerOptions> options,
+        ILogger<DeliveryWorker> logger,
+        DeliveryRetryOptions? retryOptions,
+        IDeliveryDeadLetterStore? deadLetter,
+        int maxConcurrentDeliveries,
+        IDeliveryRateLimiter? rateLimiter,
+        IConfiguration? configuration,
+        IDeliveryCircuitBreaker? circuitBreaker)
+        : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter,
+            maxConcurrentDeliveries, rateLimiter, null, circuitBreaker,
+            ResolveShutdownDrainTimeoutMs(configuration))
     {
     }
 
@@ -159,7 +204,11 @@ public sealed class DeliveryWorker : BackgroundService
     /// <param name="metrics">The delivery metrics (Phase 17.2). Null disables metric recording (the
     /// worker delivers exactly as before).</param>
     /// <param name="circuitBreaker">The per-peer outbound-delivery circuit breaker (Phase 17.3). Null
-    /// disables circuit breaking (the worker delivers with per-job retry only).</param>
+    /// disables circuit breaking.</param>
+    /// <param name="shutdownDrainTimeoutMs">The host-shutdown drain budget in milliseconds (the time the
+    /// worker gets to drain in-flight deliveries once the host's stopping token is cancelled). Null uses
+    /// <see cref="DefaultShutdownDrainTimeoutMs"/>; a value below 0 is clamped to 0 (stop without
+    /// waiting — in-flight deliveries are dropped immediately).</param>
     /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
     public DeliveryWorker(
         IDeliveryQueue queue,
@@ -172,7 +221,8 @@ public sealed class DeliveryWorker : BackgroundService
         int maxConcurrentDeliveries,
         IDeliveryRateLimiter? rateLimiter,
         Iris.Server.Observability.IrisDeliveryMetrics? metrics = null,
-        IDeliveryCircuitBreaker? circuitBreaker = null)
+        IDeliveryCircuitBreaker? circuitBreaker = null,
+        int? shutdownDrainTimeoutMs = null)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -191,6 +241,52 @@ public sealed class DeliveryWorker : BackgroundService
         _rateLimiter = rateLimiter;
         _metrics = metrics;
         _circuitBreaker = circuitBreaker;
+        _shutdownDrainTimeoutMs = Math.Max(0, shutdownDrainTimeoutMs ?? 0);
+    }
+
+    /// <summary>
+    /// The configuration key for the host-shutdown delivery drain budget (slice 33.6). Bound from
+    /// <c>Iris:Delivery:ShutdownDrainTimeout</c>; the value is a <see cref="TimeSpan"/> string (e.g.
+    /// <c>"00:01:00"</c>) or a number of seconds (e.g. <c>"90"</c>). When unset, the worker falls back
+    /// to <see cref="DefaultShutdownDrainTimeoutMs"/>.
+    /// </summary>
+    public const string ShutdownDrainTimeoutMsConfigKey = "Iris:Delivery:ShutdownDrainTimeout";
+
+    /// <summary>
+    /// The default host-shutdown delivery drain budget (milliseconds): 60 seconds. On host shutdown the
+    /// worker gets this long to drain its in-flight outbound deliveries before stopping; a delivery
+    /// still in flight after the budget is dropped (it remains journaled for a file-backed queue and is
+    /// retried / dead-lettered per the normal policy on the next run). See
+    /// <see cref="DefaultShutdownDrainTimeoutMs"/> and the drain loop in
+    /// <see cref="ExecuteAsync(CancellationToken)"/>.
+    /// </summary>
+    public const int DefaultShutdownDrainTimeoutMs = 60_000;
+
+    /// <summary>
+    /// Resolves the drain budget from <paramref name="configuration"/>: <c>Iris:Delivery:ShutdownDrainTimeout</c>
+    /// as a <see cref="TimeSpan"/> (a <c>"hh:mm:ss"</c> string or a seconds count). Returns
+    /// <see cref="DefaultShutdownDrainTimeoutMs"/> when the value is absent, empty, or unparseable (a
+    /// misconfiguration never crashes boot or silently disables the drain).
+    /// </summary>
+    public static int ResolveShutdownDrainTimeoutMs(IConfiguration? configuration)
+    {
+        var raw = configuration?[ShutdownDrainTimeoutMsConfigKey];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return DefaultShutdownDrainTimeoutMs;
+        }
+
+        if (TimeSpan.TryParse(raw, out var timespan) && timespan >= TimeSpan.Zero)
+        {
+            return (int)timespan.TotalMilliseconds;
+        }
+
+        if (int.TryParse(raw, out var seconds) && seconds >= 0)
+        {
+            return seconds * 1000;
+        }
+
+        return DefaultShutdownDrainTimeoutMs;
     }
 
     /// <summary>
@@ -279,14 +375,75 @@ public sealed class DeliveryWorker : BackgroundService
             inFlight[deliveryTask] = 0;
         }
 
-        // Drain: wait for the in-flight deliveries admitted before the break to finish. A host shutdown
-        // cancels stoppingToken, so the remaining deliveries observe it and finish promptly.
-        while (!inFlight.IsEmpty && !stoppingToken.IsCancellationRequested)
+        // Drain: wait for the in-flight deliveries admitted before the break to finish.
+        //
+        // Normal stop (the queue completed and emptied — the host's DeliveryQueueShutdownService ran
+        // first, or the worker stopped without a shutdown signal): wait for every in-flight delivery to
+        // finish, with no time bound.
+        //
+        // Host shutdown: stoppingToken is cancelled, which the in-flight deliveries observe on their next
+        // await (their SendAsync / retry backoff / rate-limiter wait all take it). Wait for them to
+        // finish, but bound the wait by the drain budget (Iris:Delivery:ShutdownDrainTimeout —
+        // DefaultShutdownDrainTimeoutMs when unset). A delivery that does not finish in time (e.g. a
+        // network call that ignores cancellation) is dropped: it was journaled before it was handed to
+        // the worker (a file-backed queue), or it will be re-driven via the dead-letter store — the
+        // F-22 at-least-once policy covers it. The bound is what keeps the host's own shutdown timeout
+        // (HostOptions.ShutdownTimeout, 30 s by default) from expiring while the worker is still waiting.
+        //
+        // The budget is measured from the moment the drain begins. On a host shutdown the stopping token
+        // is already cancelled when the drain starts (BackgroundService.StopAsync cancels it and then
+        // awaits ExecuteAsync), so the drain starts with the full budget. On a normal stop (the queue
+        // completed and emptied without any cancellation) the drain is unbounded — there is no shutdown
+        // in flight to bound it for.
+        TimeSpan drainBudget;
+        if (stoppingToken.IsCancellationRequested)
         {
-            await WaitForAnyInFlightAsync(inFlight).ConfigureAwait(false);
+            drainBudget = TimeSpan.FromMilliseconds(_shutdownDrainTimeoutMs);
+        }
+        else
+        {
+            drainBudget = Timeout.InfiniteTimeSpan;
+        }
+        var drainWatch = System.Diagnostics.Stopwatch.StartNew();
+        while (!inFlight.IsEmpty)
+        {
+            bool boundedDrain = drainBudget != Timeout.InfiniteTimeSpan;
+            TimeSpan? remaining = boundedDrain ? drainBudget - drainWatch.Elapsed : null;
+            if (remaining is { } rem && rem <= TimeSpan.Zero)
+            {
+                break; // the drain budget expired with deliveries still in flight
+            }
+
+            var wait = WaitForAnyInFlightAsync(inFlight);
+            if (remaining is { } boundedRemaining)
+            {
+                // The budget timer must NOT observe the stopping token (which is already cancelled on a
+                // host shutdown) — it is the thing that bounds the wait. If it observed the token it
+                // would fire immediately and the drain would drop every in-flight delivery at once.
+                var delayTask = Task.Delay(boundedRemaining, CancellationToken.None);
+                var completed = await Task.WhenAny(wait, delayTask).ConfigureAwait(false);
+                if (ReferenceEquals(completed, delayTask))
+                {
+                    break; // the drain budget expired with deliveries still in flight
+                }
+            }
+            else
+            {
+                await wait.ConfigureAwait(false);
+            }
         }
 
-        _logger.LogDebug("DeliveryWorker stopped (queue complete and drained).");
+        if (inFlight.IsEmpty)
+        {
+            _logger.LogDebug("DeliveryWorker stopped (queue complete and drained).");
+        }
+        else
+        {
+            _logger.LogWarning(
+                "DeliveryWorker stopped with {InFlightCount} deliveries still in flight after the {DrainTimeoutMs} ms shutdown drain budget; they are journaled/dead-lettered per the delivery policy.",
+                inFlight.Count,
+                _shutdownDrainTimeoutMs);
+        }
     }
 
     /// <summary>

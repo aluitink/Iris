@@ -1,27 +1,124 @@
-@using Iris.Core
-@using Iris.Core.Identity
-@using KristofferStrube.ActivityStreams
-@using ActivityObject = KristofferStrube.ActivityStreams.Object
-
 <div class="object-view">
-    @if (Item is IObject { Id: { Length: > 0 } id } obj)
+    @if (Item is Create create)
     {
         <div class="object-item">
-            <span class="object-type">@obj.GetType().Name</span>
-            @if (AuthorIri is { } author)
+            <div class="object-header">
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+            @if (CreatedObjectIri is { } objIri)
             {
-                <span class="object-author">
-                    by
-                    <a href="@ActorHref(author)" title="@author" class="object-actor">
-                        @HandleOf(author)
-                    </a>
-                </span>
+                <a href="@ObjectHref(objIri)" class="object-post-link">
+                    <div class="object-content">@ActivityContent</div>
+                </a>
             }
-            @if (ActorName is { Length: > 0 } name && !NameIsRedundant)
+            else if (ActivityEmbeddedObject is not null)
+            {
+                <div class="object-content">@ActivityContent</div>
+            }
+            else
+            {
+                @if (CreateIri is { } cri)
+                {
+                    <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
+                }
+            }
+        </div>
+    }
+    else if (Item is Announce)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                <span class="object-action">Boosted</span>
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+            @if (ActivityEmbeddedObject is { Id: { Length: > 0 } })
+            {
+                <div class="object-content">@ActivityContent</div>
+            }
+        </div>
+    }
+    else if (Item is Like)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                <span class="object-action">Liked</span>
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+        </div>
+    }
+    else if (Item is Follow)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                <span class="object-action">Follows</span>
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+            @if (FollowTargetIri is { } target)
+            {
+                <div class="object-content">
+                    <a href="@ActorHref(target)" title="@target" class="object-actor-handle">@HandleOf(target)</a>
+                </div>
+            }
+        </div>
+    }
+    else if (Item is Actor actor)
+    {
+        <div class="object-item object-actor">
+            @if (actor.Id is { Length: > 0 } actorId)
+            {
+                <a href="@ActorHref(new Iri(actorId))" title="@actorId" class="object-actor-handle">@actor.PreferredUsername</a>
+            }
+            @if (actor.Name?.FirstOrDefault() is { Length: > 0 } name && !NameIsRedundant)
             {
                 <span class="object-name">@name</span>
             }
-            <a href="@ObjectHref(new Iri(id))" title="@id" class="object-iri">@id</a>
+            @if (actor.Id is { Length: > 0 } iri)
+            {
+                <a href="@ActorHref(new Iri(iri))" title="@iri" class="object-iri">@iri</a>
+            }
+        </div>
+    }
+    else if (Item is IObject { Id: { Length: > 0 } id } obj)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                @if (AuthorIri is { } author)
+                {
+                    <a href="@ActorHref(author)" title="@author" class="object-actor-handle">@HandleOf(author)</a>
+                }
+                @if (Published is { } published)
+                {
+                    <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
+                }
+            </div>
             @if (JoinStrings(obj.Content) is { Length: > 0 } content)
             {
                 @if (IsSensitive)
@@ -45,7 +142,9 @@
                 }
                 else
                 {
-                    <div class="object-content">@RenderedContent</div>
+                    <a href="@ObjectHref(new Iri(id))" class="object-post-link">
+                        <div class="object-content">@RenderedContent</div>
+                    </a>
                 }
             }
             @foreach (var audience in AudienceIris)
@@ -54,10 +153,6 @@
                     to
                     <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
                 </div>
-            }
-            @if (Published is { } published)
-            {
-                <div class="object-published" title="@published.ToString("o")">@published.ToLocalTime().ToString("g")</div>
             }
             @if (Updated is { } updated)
             {
@@ -80,9 +175,6 @@
             @foreach (var media in MediaAttachments)
             {
                 <div class="object-media">
-                    @* In Iris.Web the instance is the app's own origin, so a media IRI (the instance's
-                       /ap/v1/media/{id}) is same-origin and browser-loadable directly — no proxy rewrite
-                       (Decision 057's cross-origin case does not arise for local media). *@
                     <img src="@media" alt="" loading="lazy" />
                 </div>
             }
@@ -91,8 +183,15 @@
     else if (Item is ILink { Href: { } linkHref })
     {
         <div class="object-item">
-            <span class="object-type">Link</span>
-            <a href="@ObjectHref(new Iri(linkHref))" title="@linkHref" class="object-iri">@linkHref</a>
+            @if (IsActorLink(linkHref.OriginalString))
+            {
+                <a href="@ActorHref(new Iri(linkHref.OriginalString))" title="@linkHref.OriginalString" class="object-actor-handle">@HandleOf(new Iri(linkHref.OriginalString))</a>
+            }
+            else
+            {
+                <span class="object-type">Link</span>
+                <a href="@ObjectHref(new Iri(linkHref.OriginalString))" title="@linkHref.OriginalString" class="object-iri">@linkHref.OriginalString</a>
+            }
         </div>
     }
     else
@@ -100,156 +199,3 @@
         <div class="object-item"><span class="object-type">Unknown</span></div>
     }
 </div>
-
-@code {
-    /// <summary>
-    /// The object (or link) to render. Pattern-matched into <see cref="IObject"/> / <see cref="ILink"/>
-    /// per the 3rd-Party ActivityStreams rules — never a concrete type.
-    /// </summary>
-    [Parameter]
-    public IObjectOrLink? Item { get; set; }
-
-    private IObject? Obj => Item as IObject;
-
-    /// <summary>
-    /// The author's IRI (the first <c>attributedTo</c> entry), when present — rendered as a link to the
-    /// actor page.
-    /// </summary>
-    private Iri? AuthorIri => (Obj as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
-
-    /// <summary>
-    /// The parent object's IRI (the <c>inReplyTo</c>), when present — rendered as a link to the parent
-    /// (reply threading).
-    /// </summary>
-    private Iri? ParentIri => Obj?.GetParentIri();
-
-    /// <summary>
-    /// The mentioned actors' IRIs (the <c>mention</c> tags), when present — rendered as links to the
-    /// actors' pages.
-    /// </summary>
-    private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
-
-    /// <summary>
-    /// The audience IRIs (the object's <c>to</c> + <c>cc</c>, de-duplicated, the public sentinel
-    /// excluded), when present — rendered as links to the recipients' pages.
-    /// </summary>
-    private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
-
-    /// <summary>
-    /// The object's <c>published</c> timestamp, when present — rendered as a local time.
-    /// </summary>
-    private DateTime? Published => Obj?.Published;
-
-    /// <summary>
-    /// The object's <c>updated</c> timestamp (when the content was last edited), when present —
-    /// rendered as a local time next to the published time.
-    /// </summary>
-    private DateTime? Updated => Obj?.GetUpdated();
-
-    /// <summary>
-    /// Whether the object is content-sensitive — when true the content renders behind a notice and is
-    /// not shown until the viewer reveals it.
-    /// </summary>
-    private bool IsSensitive => Obj?.IsSensitive() ?? false;
-
-    /// <summary>
-    /// The object's <c>summary</c> (the sensitivity preview / warning), when present — shown in the
-    /// notice in place of a sensitive object's content.
-    /// </summary>
-    private string? Summary => Obj?.GetSummary();
-
-    /// <summary>
-    /// The actor's <c>name</c> (the first entry), when present — rendered in the object view for actor
-    /// documents.
-    /// </summary>
-    private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
-
-    /// <summary>
-    /// Whether the actor's <c>name</c> is redundant with its <c>preferredUsername</c> (case-insensitive
-    /// equal) — the seeded/provisioned actors name themselves by their username, so the name would
-    /// render as a duplicate of the handle; when redundant the name is omitted.
-    /// </summary>
-    private bool NameIsRedundant
-    {
-        get
-        {
-            var actor = Obj as Actor;
-            if (actor is null)
-            {
-                return false;
-            }
-
-            var name = actor.Name?.FirstOrDefault();
-            var username = actor.PreferredUsername;
-            return !string.IsNullOrWhiteSpace(name)
-                && !string.IsNullOrWhiteSpace(username)
-                && name!.Equals(username, StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    /// <summary>
-    /// The object's media attachments (embedded <see cref="Image"/> entries with a resolvable media IRI),
-    /// when present — rendered as <c>&lt;img&gt;</c>. In Iris.Web the media IRIs are same-origin (the
-    /// instance's own <c>/ap/v1/media/{id}</c>), so they are browser-loadable directly.
-    /// </summary>
-    private IReadOnlyList<string> MediaAttachments
-        => (Obj?.GetMediaAttachments() ?? [])
-            .Select(m => m.Iri.Value)
-            .ToList();
-
-    /// <summary>
-    /// The object's <c>content</c> rendered to a safe <see cref="MarkupString"/>. When the content is
-    /// pre-rendered HTML (a client rendered Markdown to HTML before posting —
-    /// <see cref="IriExtensions.IsPreRenderedHtmlContent"/>), it is emitted verbatim (it is already
-    /// safe HTML). Otherwise (Markdown source or plain text) it is HTML-escaped and emitted as plain
-    /// text — Markdown rendering is a later experience-pass item (F-11), not part of this
-    /// functionality-first slice. An empty or null content renders as an empty string.
-    /// </summary>
-    private MarkupString RenderedContent
-    {
-        get
-        {
-            var content = JoinStrings(Obj?.Content);
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                return new MarkupString(string.Empty);
-            }
-
-            return new MarkupString(
-                Obj is { } o && o.IsPreRenderedHtmlContent() ? content : System.Net.WebUtility.HtmlEncode(content));
-        }
-    }
-
-    /// <summary>
-    /// Whether the viewer has revealed a sensitive object's content. Per-circuit UI state: a sensitive
-    /// object's real content is not rendered (nor present in the DOM) until this flips to
-    /// <c>true</c> via the reveal button.
-    /// </summary>
-    private bool Revealed;
-
-    private static string? JoinStrings(IEnumerable<string>? values)
-        => values is null ? null : string.Join(" ", values);
-
-    /// <summary>
-    /// The href for an object IRI: the app's object page (a later slice) with the IRI as a query param.
-    /// Until that route exists, this deep-links to the raw IRI (a no-op link for the MVP timeline).
-    /// </summary>
-    private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
-
-    /// <summary>
-    /// The href for an actor IRI: the app's actor page (a later slice) with the IRI as a query param.
-    /// Until that route exists, this deep-links to the raw IRI (a no-op link for the MVP timeline).
-    /// </summary>
-    private static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";
-
-    /// <summary>
-    /// A short display for an actor IRI: the path's last segment (the username) when it looks like a
-    /// user IRI (<c>/ap/v1/u/{user}</c>), else the full IRI.
-    /// </summary>
-    private static string HandleOf(Iri iri)
-    {
-        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
-        var last = path.Split('/').LastOrDefault();
-        return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
-    }
-}
