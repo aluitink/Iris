@@ -4,6 +4,7 @@
 @using Iris.Core.Identity
 @using Iris.Web.Accounts
 @using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
@@ -50,11 +51,32 @@ else if (ObjectDoc is null)
         {
             <div class="object-detail-engagement">@EngagementText</div>
         }
-        @if (ReplyHref is not null)
-        {
-            <div class="object-detail-actions">
+        <div class="object-detail-actions">
+            @if (ReplyHref is not null)
+            {
                 <a class="button button--secondary" href="@ReplyHref">Reply</a>
-            </div>
+            }
+            @if (IsOwnPost)
+            {
+                @if (!ConfirmingDelete)
+                {
+                    <button type="button" class="button button--danger" @onclick="() => ConfirmingDelete = true">Delete</button>
+                }
+                else
+                {
+                    <span class="delete-confirm">
+                        <span class="muted">Delete this post?</span>
+                        <button type="button" class="button button--danger" disabled="@Deleting" @onclick="DeleteAsync">
+                            @(Deleting ? "Deleting…" : "Confirm")
+                        </button>
+                        <button type="button" class="button button--secondary" disabled="@Deleting" @onclick="() => ConfirmingDelete = false">Cancel</button>
+                    </span>
+                }
+            }
+        </div>
+        @if (DeleteError is not null)
+        {
+            <div class="error">@DeleteError</div>
         }
     </div>
 
@@ -92,6 +114,9 @@ else if (ObjectDoc is null)
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
 
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
     [SupplyParameterFromQuery(Name = "iri")]
     public string? IriParam { get; set; }
 
@@ -104,6 +129,9 @@ else if (ObjectDoc is null)
     private List<IObject?> Replies { get; set; } = [];
     private int LikeCount { get; set; }
     private int BoostCount { get; set; }
+    private bool ConfirmingDelete { get; set; }
+    private bool Deleting { get; set; }
+    private string? DeleteError { get; set; }
 
     private string? EngagementText
     {
@@ -368,6 +396,54 @@ else if (ObjectDoc is null)
         catch
         {
             // Non-fatal: engagement counts simply won't show.
+        }
+    }
+
+    private bool IsOwnPost
+    {
+        get
+        {
+            if (ObjectDoc is not ActivityObject { AttributedTo: { } attr } || Session.ActorId is not { } me)
+            {
+                return false;
+            }
+
+            return attr.Any(a =>
+            {
+                var iri = a.ResolveObjectIri();
+                return iri is not null && iri!.ToString() == me.ToString();
+            });
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        if (Session.Client is not { } client || Session.ActorId is not { } me || ObjectIri is not { } iri)
+        {
+            return;
+        }
+
+        Deleting = true;
+        DeleteError = null;
+        try
+        {
+            var result = await client.DeleteAsync(me, iri);
+            if (result.IsSuccess)
+            {
+                Navigation.NavigateTo("/home");
+            }
+            else
+            {
+                DeleteError = $"Delete failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            DeleteError = ex.Message;
+        }
+        finally
+        {
+            Deleting = false;
         }
     }
 }

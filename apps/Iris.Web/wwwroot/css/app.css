@@ -196,6 +196,17 @@ button.secondary {
     border: 1px solid var(--border);
 }
 
+.button--danger {
+    background: #e05565;
+    color: #fff;
+}
+
+.delete-confirm {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
 input.input,
 input[type="text"],
 input[type="password"],
