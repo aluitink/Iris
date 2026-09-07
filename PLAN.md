@@ -71,7 +71,9 @@ Iris.slnx
 
 ## Now
 
-**Phase 37 — Profile editing & remaining UI gaps (ACTIVE, 37.5).** 37.1–37.4 COMPLETE. Phase 36 COMPLETE. Phase 35 COMPLETE. **Next: 37.5 — compose nested reply thread context.**
+**Phase 37 — Profile editing & remaining UI gaps (COMPLETE).** 37.1–37.5 all COMPLETE. Phase 36 COMPLETE. Phase 35 COMPLETE.
+
+**Phase 38 — Communities & settings (ACTIVE, 38.1+).** New phase. **Next: 38.1 — community directory (browse all communities).**
 
 ## Active Slice
 
@@ -131,15 +133,13 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 37 — Profile editing & remaining UI gaps (ACTIVE):**
+**Phase 38 — Communities & settings (ACTIVE):**
 
-1. ~~**37.1: Server — extend `UpdateActivityHandler` for actor updates**~~ **COMPLETE** — handler now detects actor self-updates (embedded `Actor` whose IRI matches the updating actor), merges mutable fields (name, summary, icon, endpoints) into the stored actor via `IActorStore`, preserves `publicKey`/`ExtensionData`, and propagates to remote followers. 4 new unit tests. 937 Server tests pass.
-2. ~~**37.2: Client — `UpdateActorAsync`**~~ **COMPLETE** — new method on `IActivityPubClient` builds an `Update` with the actor's updated `Person` and POSTs to the actor's outbox. 2 new tests. 154 Client tests pass.
-3. ~~**37.3: UI — profile edit form**~~ **COMPLETE** — "Edit profile" button on `/profile` → `EditProfileForm` component (name + bio fields) → calls `UpdateActorAsync` → invalidates actor cache + reloads. CSS added. Verified via Playwright (form renders, saves, closes; actor doc intact with publicKey preserved).
-4. ~~**37.4: Notification type icons**~~ **COMPLETE** — `NotificationIcon` method on `NotificationRow` renders distinct SVG icons (heart, boost, user, check, cross, pen, undo, bell) before the verb. CSS: `.notification-icon` (1rem).
-5. **37.5: Compose — nested reply thread context** — when replying to a reply, show the parent's parent (the thread root) in the reply context preview.
+1. **38.1: Community directory** — a `/communities` page listing all local communities (name, description, member count) with join/leave buttons. Server: `GET /ap/v1/communities` (or equivalent) may need a new endpoint if one doesn't exist.
+2. **38.2: Community detail page** — `/community?iri=…` showing the community's header (avatar, name, description, member count), feed tab, members tab, and a "Join"/"Leave" button.
+3. **38.3: Post to community** — compose form that targets a community (sets `AttributedTo` to the community, `To` to community followers + public).
 
-*(Phases 32–35 are complete — see the Recently Completed section and docs/changes/ for details.)*
+*(Phases 32–37 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
 
 
@@ -166,11 +166,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 37.5: **Compose nested reply thread context** (Phase 37) — when replying to a reply, fetches + shows the thread root (author + truncated content) in a styled block.
   - 37.4: **Notification type icons** (Phase 37) — distinct SVG icons (heart, boost, user, check, cross, pen, undo, bell) before the verb in `NotificationRow`.
   - 37.3: **UI profile edit form** (Phase 37) — EditProfileForm component (name + bio) on `/profile`; calls `UpdateActorAsync`; cache invalidation + reload.
   - 37.2: **Client `UpdateActorAsync`** (Phase 37) — builds `Update` with updated `Person`, POSTs to actor outbox.
   - 37.1: **Server actor-update handler** (Phase 37) — `UpdateActivityHandler` handles actor self-updates; merges into `IActorStore`, preserves `publicKey`, propagates to followers.
-  - 36.5: **Directory — actor summary** (Phase 36) — `ObjectView` Actor branch renders `Summary` when present.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

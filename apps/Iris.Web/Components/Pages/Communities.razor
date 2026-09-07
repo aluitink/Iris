@@ -1,0 +1,164 @@
+@page "/communities"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Communities · Iris</PageTitle>
+
+<h2>Communities</h2>
+
+<p class="muted">
+    Local communities on this instance — join one to post to its feed and connect with members.
+</p>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to browse communities.</p></div>
+}
+else
+{
+    @if (Busy)
+    {
+        <div class="card-loading">
+            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+            </svg>
+            <span class="muted">Loading communities…</span>
+        </div>
+    }
+    else if (Error is not null)
+    {
+        <div class="card"><div class="error">@Error</div></div>
+    }
+    else if (Items is not null)
+    {
+        @if (Items.Count == 0)
+        {
+            <div class="card">
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                    <p>No communities yet.</p>
+                    <p>Communities created on this instance will appear here.</p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="directory-list">
+                @foreach (var community in Items)
+                {
+                    var name = community.Name?.FirstOrDefault() ?? "Unnamed";
+                    var summary = community.Summary?.FirstOrDefault();
+                    var handle = HandleOf(community);
+                    var iri = community.Id;
+
+                    <div class="directory-item">
+                        <div class="directory-item-body">
+                            <a href="@ActorHref(iri)" class="object-actor-handle">@name</a>
+                            @if (handle is { Length: > 0 })
+                            {
+                                <span class="muted" style="font-size: 0.85rem;">@handle</span>
+                            }
+                            @if (summary is { Length: > 0 })
+                            {
+                                <p class="muted" style="margin: 0.25rem 0 0; font-size: 0.85rem;">@Truncate(summary, 150)</p>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    private IActivityPubClient? Client => Session.Client;
+    private List<Group>? Items { get; set; }
+    private bool Busy { get; set; }
+    private string? Error { get; set; }
+
+    private Iri? InstanceBase
+    {
+        get
+        {
+            if (Session.ActorId is not { } actor)
+            {
+                return null;
+            }
+
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            return index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Client is { } client && InstanceBase is { } baseIri)
+        {
+            Busy = true;
+            try
+            {
+                var results = new List<IObjectOrLink>();
+                await foreach (var item in client.SearchAsync(
+                                   baseIri,
+                                   string.Empty,
+                                   new SearchOptions { Type = "Actor" }))
+                {
+                    results.Add(item);
+                }
+
+                Items = results
+                    .OfType<KristofferStrube.ActivityStreams.Object>()
+                    .Where(o => o is Group)
+                    .Cast<Group>()
+                    .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Error = ex.Message;
+            }
+            finally
+            {
+                Busy = false;
+            }
+        }
+    }
+
+    private static string? HandleOf(Actor actor)
+    {
+        if (actor.Id is not { Length: > 0 } id)
+        {
+            return null;
+        }
+
+        try
+        {
+            var uri = new Uri(id);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? ActorHref(string? iri)
+        => iri is not null ? $"/actor?iri={Uri.EscapeDataString(iri)}" : null;
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
+}
