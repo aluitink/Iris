@@ -90,6 +90,30 @@ a {
     gap: 0.9rem;
 }
 
+@media (max-width: 640px) {
+    .main-header {
+        flex-wrap: wrap;
+        padding: 0.6rem 0.75rem;
+    }
+
+    .main-nav {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        max-width: 100%;
+    }
+
+    .main-nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .main-nav a {
+        white-space: nowrap;
+        font-size: 0.9rem;
+    }
+}
+
 .main-nav a {
     color: var(--text);
     text-decoration: none;
