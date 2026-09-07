@@ -72,6 +72,7 @@
      - **35.6 — compose character count + content type (Phase 35):** "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
      - **35.5 — object detail delete own posts (Phase 35):** Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
      - **35.6 — compose character count + content type (Phase 35):** "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
+      - **37.1 — server actor-update handler (Phase 37):** `UpdateActivityHandler` handles actor self-updates; merges into `IActorStore`, preserves `publicKey`, propagates to followers.
       - **36.5 — directory actor summary (Phase 36):** `ObjectView` Actor branch renders `Summary` when present.
       - **37.2 — client `UpdateActorAsync` (Phase 37):** `IActivityPubClient.UpdateActorAsync` builds an `Update` with the actor's updated `Person` and POSTs to the actor's outbox. 2 new tests.
       - **36.4 — actor detail follower/following count badges (Phase 36):** tab labels show "(N)" from collection `totalItems`.
