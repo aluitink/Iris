@@ -103,7 +103,7 @@ Iris.slnx
 
 **Design & polish:**
 
-10. **34.23: Landing page — remove the ugly text input** — the signed-out landing page shows a large bordered text input containing "Iris" (looks like a broken form field). Replace with a styled `<h1>` brand heading. The card below says "Welcome to Iris" — merge the brand + tagline into one clean hero.
+10. ~~34.23: **Landing page — remove the ugly text input**~~ **COMPLETE** — removed the card wrapper and redundant "Welcome to Iris" heading. The signed-out landing now shows a centered hero: accent-colored "Iris" title + tagline + sign-in/register buttons. Verified live.
 11. **34.24: Avatar consistency** — the profile page shows a square avatar with a letter "a"; the actor detail shows a larger square "A". Make avatars circular (border-radius: 50%) and consistent in size across profile, directory, actor detail, and object headers.
 12. **34.25: Empty states** — home timeline, notifications, and search all have plain text empty states. Add a subtle icon or illustration (inline SVG) + a short, friendly message. The home timeline empty state should have a "Browse the directory →" link.
 13. **34.26: Loading states** — when a page is loading (e.g. object detail, actor detail), show a subtle skeleton or spinner. Currently object detail shows a spinner; actor detail and directory show nothing while loading.
@@ -149,11 +149,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 34.23: **Landing page hero** (Phase 34) — removed card + redundant heading; signed-out landing now shows a centered hero with accent-colored title + tagline + buttons. Verified live.
  - 34.22: **Compose reply context preview** (Phase 34) — `Compose.razor` fetches the parent note on load; shows author handle + truncated content (200 chars) in a styled blockquote. Verified live.
  - 34.21: **Home timeline shows followed actors' posts** (Phase 34) — verified: following andrew from the directory populates `/home` with his posts. No code change needed.
- - 34.20: **Follow/unfollow cross-page round-trip fix** (Phase 34) — `UiContext.GetFollowActivityIriAsync` scans the outbox for the Follow activity; `FollowButton` falls back to it when `_followActivityIri` is null. Cross-page unfollow now works. Verified live. Full fast suite green (1,599 passed).
- - 34.19: **Show replies on object detail** (Phase 34) — `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live. Full test suite green (1,599 passed).
- - 34.15–16: **Hide raw IRI + remove duplicate card headings** (Phase 34) — `ActorProfile` handle → clickable link with IRI tooltip (visible IRI removed); `ObjectView` Actor branch IRI removed; `PagedCollection` Title/Description removed from Home, Notifications, Profile. Verified live. Full test suite green (1,599 passed).
+ - 34.20: **Follow/unfollow cross-page round-trip fix** (Phase 34) — `UiContext.GetFollowActivityIriAsync` scans the outbox for the Follow activity; `FollowButton` falls back to it when `_followActivityIri` is null. Cross-page unfollow now works. Verified live.
+ - 34.19: **Show replies on object detail** (Phase 34) — `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
