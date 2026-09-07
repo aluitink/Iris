@@ -51,6 +51,12 @@ else
         </div>
     </div>
 
+    <div class="community-post-action">
+        <a class="button" href="@($"/compose?community={Uri.EscapeDataString(CommunityIri?.Value ?? string.Empty)}")">
+            ＋ Post to this community
+        </a>
+    </div>
+
     <div class="tab-bar">
         <a href="#feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
         <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>

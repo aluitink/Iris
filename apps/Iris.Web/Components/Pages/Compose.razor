@@ -37,6 +37,14 @@
             }
         </div>
     }
+    @if (CommunityIri is { } cIri)
+    {
+        <div class="compose-community-context">
+            <p class="compose-community-to">
+                Posting to <a href="@($"/community?iri={Uri.EscapeDataString(cIri.Value)}")">@CommunityName ?? "community"</a>
+            </p>
+        </div>
+    }
     <label for="compose-content">Content</label>
     <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
               placeholder="What's on your mind?"></textarea>
@@ -55,16 +63,25 @@
     <p class="muted compose-hint">
         @(ReplyToIri is not null
             ? "This reply is threaded under the parent note and visible in its replies."
-            : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
+            : CommunityIri is not null
+                ? "This post is attributed to the community and visible to its members."
+                : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
     </p>
 
     <div class="compose-actions">
         <button @onclick="PostAsync" disabled="@Busy">
-            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : "Post"))
+            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : CommunityIri is not null ? "Post to community" : "Post"))
         </button>
         @if (Posted)
         {
-            <a class="button button--secondary" href="/profile">View your posts →</a>
+            @if (CommunityIri is { } postCommunity)
+            {
+                <a class="button button--secondary" href="@($"/community?iri={Uri.EscapeDataString(postCommunity.Value)}")">View community feed →</a>
+            }
+            else
+            {
+                <a class="button button--secondary" href="/profile">View your posts →</a>
+            }
         }
     </div>
 
@@ -90,6 +107,33 @@
 
     [SupplyParameterFromQuery(Name = "replyTo")]
     private string? ReplyToParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "community")]
+    private string? CommunityParam { get; set; }
+
+    /// <summary>
+    /// The community IRI the post targets (from the <c>community</c> query parameter), when set.
+    /// When present, the post is attributed to both the author and the community, and addressed
+    /// to the community's followers collection + the public.
+    /// </summary>
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(CommunityParam) || !Iri.TryParse(CommunityParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The community's display name (fetched asynchronously), shown in the compose header when
+    /// posting to a community.
+    /// </summary>
+    private string? CommunityName { get; set; }
 
     private Iri? ReplyToIri
     {
@@ -131,6 +175,36 @@
         if (ReplyToIri is { } iri && _fetchedIri != iri.Value)
         {
             await LoadReplyContextAsync(iri);
+        }
+
+        if (CommunityIri is { } cIri && CommunityName is null)
+        {
+            await LoadCommunityNameAsync(cIri);
+        }
+    }
+
+    private async Task LoadCommunityNameAsync(Iri communityIri)
+    {
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var obj = await client.GetObjectAsync(communityIri);
+            if (obj is Group group)
+            {
+                CommunityName = group.Name?.FirstOrDefault() ?? group.PreferredUsername;
+            }
+            else if (obj is Actor actor)
+            {
+                CommunityName = actor.Name?.FirstOrDefault() ?? actor.PreferredUsername;
+            }
+        }
+        catch
+        {
+            // Non-fatal: no community name shown.
         }
     }
 
@@ -238,7 +312,23 @@
         }
     }
 
-    private string PageTitle => ReplyToIri is not null ? "Reply" : "Compose";
+    private string PageTitle
+    {
+        get
+        {
+            if (ReplyToIri is not null)
+            {
+                return "Reply";
+            }
+
+            if (CommunityIri is not null && CommunityName is { Length: > 0 } name)
+            {
+                return $"Post to {name}";
+            }
+
+            return "Compose";
+        }
+    }
 
     /// <summary>
     /// The note text the user is composing. Cleared on a successful post.
@@ -330,6 +420,10 @@
             {
                 result = await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic]);
             }
+            else if (CommunityIri is { } community)
+            {
+                result = await PostToCommunityAsync(client, actorId, community);
+            }
             else if (ContentType == "Article")
             {
                 result = await PostArticleAsync(client, actorId);
@@ -359,6 +453,34 @@
         {
             Busy = false;
         }
+    }
+
+    /// <summary>
+    /// Posts a note to a community: the note's <c>attributedTo</c> carries both the author and the
+    /// community, and its <c>to</c> is the community's followers collection + the public. The
+    /// receiving server's <c>Create</c> handler records the post in the community's members' outboxes
+    /// (the "followed content" half of the community feed).
+    /// </summary>
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri)
+    {
+        var followersIri = communityIri.FollowersOf();
+        var note = new KristofferStrube.ActivityStreams.Note
+        {
+            AttributedTo =
+            [
+                new Link { Href = new Uri(actorId.Value) },
+                new Link { Href = new Uri(communityIri.Value) }
+            ],
+            To =
+            [
+                new Link { Href = new Uri(followersIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        return await client.PostNoteAsync(actorId, note);
     }
 
     private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId)

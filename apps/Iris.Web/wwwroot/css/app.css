@@ -1178,4 +1178,17 @@ ul.object-list li {
     padding: 2rem;
 }
 
+.community-post-action {
+    margin-bottom: 1rem;
+}
+
+.compose-community-context {
+    margin-bottom: 0.75rem;
+}
+
+.compose-community-to {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
 
