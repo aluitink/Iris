@@ -48,8 +48,8 @@ else
 
     <div class="tab-bar">
         <a href="#outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
-        <a href="#followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers</a>
-        <a href="#following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
+        <a href="#followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
+        <a href="#following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
     </div>
 
     @if (ActiveTab == "outbox")
@@ -136,6 +136,9 @@ else
     private Iri? FollowersIri => ActorIri?.FollowersOf();
     private Iri? FollowingIri => ActorIri?.FollowingOf();
 
+    private int? FollowerCount { get; set; }
+    private int? FollowingCount { get; set; }
+
     protected override async Task OnParametersSetAsync()
     {
         if (ActorIri is not { } iri || LoadError is not null)
@@ -154,6 +157,7 @@ else
             if (obj is not null)
             {
                 ActorDoc = obj;
+                _ = LoadCountsAsync(iri);
             }
             else
             {
@@ -164,6 +168,41 @@ else
         {
             LoadError = ex.Message;
         }
+    }
+
+    private async Task LoadCountsAsync(Iri actorIri)
+    {
+        var client = Client;
+        if (client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
+            FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
+            StateHasChanged();
+        }
+        catch
+        {
+            // Counts are best-effort; a failure to fetch them should not break the page.
+        }
+    }
+
+    private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri? collectionIri, CancellationToken ct = default)
+    {
+        if (collectionIri is not { } iri)
+        {
+            return null;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(iri, ct: ct))
+        {
+            return page.TotalItems;
+        }
+
+        return null;
     }
 
     private void SwitchTab(string tab)

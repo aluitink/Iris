@@ -109,6 +109,10 @@
             {
                 <span class="object-name">@name</span>
             }
+            @if (actor.Summary?.FirstOrDefault() is { Length: > 0 } summary)
+            {
+                <span class="object-summary">@summary</span>
+            }
         </div>
     }
     else if (Item is IObject { Id: { Length: > 0 } id } obj)

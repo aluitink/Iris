@@ -339,6 +339,13 @@ ul.object-list li {
     font-weight: 500;
 }
 
+.object-summary {
+    color: var(--muted);
+    font-size: 0.85rem;
+    display: block;
+    margin-top: 0.15rem;
+}
+
 .object-iri {
     color: var(--muted);
     font-size: 0.8rem;
