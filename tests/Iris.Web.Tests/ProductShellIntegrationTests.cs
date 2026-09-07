@@ -142,6 +142,46 @@ public sealed class ProductShellIntegrationTests : IDisposable
     }
 
     // ------------------------------------------------------------------
+    // The [Authorize]-gated settings page (39.3).
+    // ------------------------------------------------------------------
+
+    [Fact]
+    public async Task SettingsPage_SignedOut_RedirectsToLogin()
+    {
+        var client = _server.CreateClient();
+        var response = await client.GetAsync("/settings");
+        Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+        var location = response.Headers.Location!;
+        Assert.Equal("/login", location.PathAndQuery.Split('?', 2)[0]);
+        Assert.Contains("ReturnUrl=%2Fsettings", location.Query);
+    }
+
+    [Fact]
+    public async Task SettingsPage_SignedIn_Returns200WithSettingsMarkup()
+    {
+        var (client, authCookie) = await SignInAsync("settingsuser", "s3cret-pw");
+        var response = await GetWithAuthAsync(client, "/settings", authCookie);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        // The settings page's static markup: the h2 heading + the tab bar (all three tab labels
+        // are in the DOM; the active tab's content is prerendered).
+        Assert.Contains("<h2>Settings</h2>", html);
+        Assert.Contains("Account", html);
+        Assert.Contains("Password", html);
+        Assert.Contains("Communities", html);
+    }
+
+    [Fact]
+    public async Task SettingsPage_SignedIn_NavShowsSettingsLink()
+    {
+        var (client, authCookie) = await SignInAsync("navsettingsuser", "s3cret-pw");
+        var response = await GetWithAuthAsync(client, "/settings", authCookie);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("href=\"/settings\"", html);
+    }
+
+    // ------------------------------------------------------------------
     // Helpers: sign in over the real HTTP surface, then make an
     // authenticated request with the returned iris.auth cookie.
     // ------------------------------------------------------------------
