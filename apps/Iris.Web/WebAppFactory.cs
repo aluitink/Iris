@@ -220,7 +220,10 @@ public static class WebAppFactory
                 options.ExpireTimeSpan = TimeSpan.FromDays(14);
                 options.SlidingExpiration = true;
             });
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+        });
 
         // 7a. Signing-identity resolution that outlives the in-process key provider (slice 33.3). The
         // server's default IKeyProvider is an InMemoryKeyProvider that only knows actors registered with
