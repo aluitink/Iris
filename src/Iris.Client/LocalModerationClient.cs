@@ -76,6 +76,30 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalCommunityMemberRemoveAsync(communityId, memberId, credentials, ct);
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, CancellationToken ct = default)
+        => LocalCommunityJoinRequestsGetAsync(communityId, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityJoinRequestsGetAsync(communityId, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default)
+        => LocalCommunityJoinRequestDecisionAsync(communityId, actorId, "accept", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityJoinRequestDecisionAsync(communityId, actorId, "accept", credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default)
+        => LocalCommunityJoinRequestDecisionAsync(communityId, actorId, "reject", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityJoinRequestDecisionAsync(communityId, actorId, "reject", credentials, ct);
+
     /// <summary>
     /// Performs a local, Basic-authenticated community member removal:
     /// <c>POST /local/v1/c/{name}/members/remove/{memberId}</c>. The community's IRI is used to
@@ -127,6 +151,98 @@ public sealed class LocalModerationClient : ILocalModerationClient
         }
 
         return SendLocalPostAsync(handler, requestUri, ownsHandler, ct);
+    }
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated GET of the community's pending join requests:
+    /// <c>GET /local/v1/c/{name}/requests</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalCommunityJoinRequestsGetAsync(
+        Iri communityId,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/requests");
+
+        var (handler, ownsHandler) = ResolveLocalHandler(credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated POST for a community join-request decision:
+    /// <c>POST /local/v1/c/{name}/requests/{action}/{actorId}</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalCommunityJoinRequestDecisionAsync(
+        Iri communityId,
+        Iri actorId,
+        string action,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/requests/{action}/{actorId.Value.TrimStart('/')}");
+
+        var (handler, ownsHandler) = ResolveLocalHandler(credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Resolves the local-auth handler from the explicit credentials or the client's default.
+    /// Returns the handler and whether it is request-scoped (owned).
+    /// </summary>
+    private (LocalAuthHandler handler, bool ownsHandler) ResolveLocalHandler(ProxyCredentials? credentials)
+    {
+        var configured = _localAuth;
+        if (credentials is not null && configured is null)
+        {
+            return (new LocalAuthHandler(credentials, new HttpClientHandler()), true);
+        }
+        else if (credentials is not null)
+        {
+            return (new LocalAuthHandler(credentials, configured!), false);
+        }
+        else if (configured is not null)
+        {
+            return (configured, false);
+        }
+
+        throw new InvalidOperationException(
+            "Community join-request operations require LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
     }
 
     /// <summary>

@@ -95,6 +95,10 @@ else
     <div class="tab-bar">
         <a href="#feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
         <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
+        @if (IsCreator)
+        {
+            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
+        }
     </div>
 
     @if (ActiveTab == "feed")
@@ -119,6 +123,41 @@ else
             ShowRefreshButton="true"
             EmptyMessage="No members yet."
             ItemTemplate="@MemberTemplate" />
+    }
+    else if (ActiveTab == "requests" && IsCreator)
+    {
+        <div class="card">
+            @if (JoinRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (JoinRequestError is not null)
+            {
+                <div class="error">@JoinRequestError</div>
+            }
+            else if (JoinRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            else
+            {
+                @if (JoinRequestActors is { } actors)
+                {
+                    @foreach (var actorIri in actors)
+                    {
+                        <div class="member-row">
+                            <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri)}")" class="object-actor-handle">@DisplayHandle(actorIri)</a>
+                            <button class="btn btn-small btn-primary" @onclick="() => AcceptJoinRequestAsync(actorIri)" disabled="@IsDecidingJoinRequest">
+                                @(IsDecidingJoinRequest && DecidingActorIri == actorIri ? "Accepting…" : "Accept")
+                            </button>
+                            <button class="btn btn-small btn-danger" @onclick="() => RejectJoinRequestAsync(actorIri)" disabled="@IsDecidingJoinRequest">
+                                @(IsDecidingJoinRequest && DecidingActorIri == actorIri ? "Rejecting…" : "Reject")
+                            </button>
+                        </div>
+                    }
+                }
+            }
+        </div>
     }
 }
 
@@ -413,6 +452,10 @@ else
     private void SwitchTab(string tab)
     {
         ActiveTab = tab;
+        if (tab == "requests" && IsCreator && JoinRequestActors is null)
+        {
+            _ = LoadJoinRequestsAsync();
+        }
     }
 
     private RenderFragment<IObjectOrLink> MemberTemplate
@@ -437,6 +480,141 @@ else
 
     private bool IsRemovingMember { get; set; }
     private string? MemberRemoveError { get; set; }
+
+    private List<string>? JoinRequestActors { get; set; }
+    private int? JoinRequestCount { get; set; }
+    private bool JoinRequestsLoading { get; set; }
+    private string? JoinRequestError { get; set; }
+    private bool IsDecidingJoinRequest { get; set; }
+    private string? DecidingActorIri { get; set; }
+
+    private async Task LoadJoinRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        JoinRequestsLoading = true;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityJoinRequestsAsync(communityIri);
+            if (result.IsSuccess)
+            {
+                var actors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+                JoinRequestActors = actors;
+                JoinRequestCount = actors.Count;
+            }
+            else
+            {
+                JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            JoinRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+                Ui.InvalidateMembership(communityIri);
+                _ = LoadMemberCountAsync(communityIri);
+            }
+            else
+            {
+                JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string DisplayHandle(string actorIri)
+    {
+        try
+        {
+            var uri = new Uri(actorIri);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
 
     private async Task RemoveMemberAsync(IObjectOrLink member)
     {

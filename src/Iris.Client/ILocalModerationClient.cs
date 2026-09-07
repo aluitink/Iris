@@ -145,4 +145,67 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's pending join requests, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>GET /local/v1/c/{name}/requests</c>) that returns the actor IRIs with pending requests.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of actor IRIs).</returns>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's pending join requests with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending join request, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/requests/accept/{actorId}</c>) that adds the actor as a member
+    /// and removes the pending request.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is accepted.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending join request with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is accepted.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending join request, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/requests/reject/{actorId}</c>) that removes the pending request
+    /// (no membership granted).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is rejected.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending join request with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is rejected.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
 }

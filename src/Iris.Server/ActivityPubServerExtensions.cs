@@ -1021,6 +1021,22 @@ public static class ActivityPubServerExtensions
         // community's creator (via the Group's AttributedTo) before removing the membership edge.
         localGroup.MapPost("/c/{name}/members/remove/{**target}", CommunityRemoveMemberHandler).WithName("community-remove-member-endpoint");
 
+        // Local join-request listing (community): GET /local/v1/c/{name}/requests — the community's
+        // creator lists pending join requests (actors who sent a Join while manuallyApprovesMembers
+        // is set). The person's IRI is the credential seam (IActorCredentialValidator); the server
+        // verifies the person is the community's creator (via the Group's AttributedTo).
+        localGroup.MapGet("/c/{name}/requests", CommunityListJoinRequestsHandler).WithName("community-list-join-requests-endpoint");
+
+        // Local join-request accept (community): POST /local/v1/c/{name}/requests/accept/{**actorIri} —
+        // the community's creator accepts a pending join request: the actor is added as a member and
+        // the pending request is removed. Creator-only (same seam as member removal).
+        localGroup.MapPost("/c/{name}/requests/accept/{**actorIri}", CommunityAcceptJoinRequestHandler).WithName("community-accept-join-request-endpoint");
+
+        // Local join-request reject (community): POST /local/v1/c/{name}/requests/reject/{**actorIri} —
+        // the community's creator rejects a pending join request: the pending request is removed
+        // (no membership granted). Creator-only (same seam as member removal).
+        localGroup.MapPost("/c/{name}/requests/reject/{**actorIri}", CommunityRejectJoinRequestHandler).WithName("community-reject-join-request-endpoint");
+
         // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
         // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
         // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
@@ -5659,6 +5675,189 @@ public static class ActivityPubServerExtensions
         InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
 
         return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Lists the community's pending join requests (GET /local/v1/c/{name}/requests). Creator-only:
+    /// the community's creator (via the Group's AttributedTo + IActorCredentialValidator) may list
+    /// the actors who have a pending join request. Returns a JSON array of actor IRIs.
+    /// </summary>
+    private static async Task<IResult> CommunityListJoinRequestsHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var requests = await persistence.Communities.GetJoinRequestsAsync(communityIri, ct).ConfigureAwait(false);
+        return Results.Json(requests.Select(r => r.Value).ToArray());
+    }
+
+    /// <summary>
+    /// Accepts a pending join request (POST /local/v1/c/{name}/requests/{**actorIri}/accept).
+    /// Creator-only: the actor is added as a member and the pending request is removed.
+    /// Returns 204 No Content on success; 404 when the community or request is unknown.
+    /// </summary>
+    private static async Task<IResult> CommunityAcceptJoinRequestHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Communities.HasJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        await persistence.Communities.AddMemberAsync(communityIri, iri, ct).ConfigureAwait(false);
+        await persistence.Communities.RemoveJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Rejects a pending join request (POST /local/v1/c/{name}/requests/{**actorIri}/reject).
+    /// Creator-only: the pending request is removed (no membership granted).
+    /// Returns 204 No Content on success; 404 when the community or request is unknown.
+    /// </summary>
+    private static async Task<IResult> CommunityRejectJoinRequestHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Communities.HasJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        await persistence.Communities.RemoveJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false);
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Verifies that the authenticated requester is the community's creator (the Group's AttributedTo).
+    /// Tries each AttributedTo IRI against the credential validator until one validates.
+    /// </summary>
+    private static async Task<bool> VerifyCommunityCreatorAsync(
+        HttpContext context,
+        Group community,
+        IActorCredentialValidator credentialValidator,
+        string baseUrl,
+        CancellationToken ct)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var attributedTo = community.AttributedTo;
+        if (attributedTo is null || !attributedTo.Any())
+        {
+            return false;
+        }
+
+        foreach (var attr in attributedTo)
+        {
+            var attrIri = attr.ResolveObjectIri();
+            if (attrIri is not { } iri)
+            {
+                continue;
+            }
+
+            var handle = ExtractHandleFromIri(iri);
+            if (handle is null)
+            {
+                continue;
+            }
+
+            var personIri = BuildActorIri(baseUrl, handle);
+            if (await credentialValidator.TryValidateAsync(personIri, authorization, ct).ConfigureAwait(false) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Parses a catch-all route value into an <see cref="Iri"/>. Returns null when the value is
+    /// missing, empty, or not a valid IRI.
+    /// </summary>
+    private static Iri? ParseCatchAllIri(HttpContext context, string routeKey)
+    {
+        if (context.Request.RouteValues[routeKey] is not string value
+            || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Iri.TryParse(value, out var iri) ? iri : null;
     }
 
     /// <summary>
