@@ -578,6 +578,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="name">The community's handle (the final path segment of its IRI,
     /// <c>{base}/ap/v1/c/{name}</c>; also its <c>preferredUsername</c>).</param>
     /// <param name="displayName">The community's human-readable display name (its <c>name</c>).</param>
+    /// <param name="description">Optional description (the community's <c>summary</c>).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
@@ -594,6 +595,7 @@ public interface IActivityPubClient : IDisposable
         Iri actorId,
         string name,
         string displayName,
+        string? description = null,
         CancellationToken ct = default);
 
     /// <summary>

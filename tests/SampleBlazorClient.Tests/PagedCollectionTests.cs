@@ -100,7 +100,7 @@ public class PagedCollectionTests
         public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
-        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, CancellationToken ct = default)
+        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, string? description = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)

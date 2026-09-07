@@ -19,6 +19,34 @@
 }
 else
 {
+    <div class="card create-community-card">
+        <h3>Create a community</h3>
+        <div class="form-group">
+            <label for="community-name">Name</label>
+            <input id="community-name" type="text" @bind="NewName" placeholder="My Community" maxlength="100" />
+        </div>
+        <div class="form-group">
+            <label for="community-handle">Handle</label>
+            <input id="community-handle" type="text" @bind="NewHandle" placeholder="my-community" maxlength="63" pattern="[a-z0-9\-]*" />
+            <span class="muted" style="font-size: 0.8rem;">Lowercase letters, digits, and hyphens.</span>
+        </div>
+        <div class="form-group">
+            <label for="community-description">Description <span class="muted">(optional)</span></label>
+            <textarea id="community-description" @bind="NewDescription" placeholder="What is this community about?" rows="3" maxlength="500"></textarea>
+        </div>
+        <button class="button button--primary" @onclick="CreateAsync" disabled="@(CreateBusy || string.IsNullOrWhiteSpace(NewName) || string.IsNullOrWhiteSpace(NewHandle))">
+            @(CreateBusy ? "Creating…" : "Create community")
+        </button>
+        @if (CreateError is not null)
+        {
+            <div class="error" style="margin-top: 0.5rem;">@CreateError</div>
+        }
+        @if (CreateSuccess)
+        {
+            <div class="success" style="margin-top: 0.5rem;">Community created!</div>
+        }
+    </div>
+
     @if (Busy)
     {
         <div class="card-loading">
@@ -45,7 +73,7 @@ else
                         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                     </svg>
                     <p>No communities yet.</p>
-                    <p>Communities created on this instance will appear here.</p>
+                    <p>Create one above to get started.</p>
                 </div>
             </div>
         }
@@ -103,6 +131,13 @@ else
         }
     }
 
+    private string NewName { get; set; } = string.Empty;
+    private string NewHandle { get; set; } = string.Empty;
+    private string NewDescription { get; set; } = string.Empty;
+    private bool CreateBusy { get; set; }
+    private string? CreateError { get; set; }
+    private bool CreateSuccess { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         if (Client is { } client && InstanceBase is { } baseIri)
@@ -112,9 +147,9 @@ else
             {
                 var results = new List<IObjectOrLink>();
                 await foreach (var item in client.SearchAsync(
-                                   baseIri,
-                                   string.Empty,
-                                   new SearchOptions { Type = "Actor" }))
+                                    baseIri,
+                                    string.Empty,
+                                    new SearchOptions { Type = "Actor" }))
                 {
                     results.Add(item);
                 }
@@ -134,6 +169,80 @@ else
             {
                 Busy = false;
             }
+        }
+    }
+
+    private async Task CreateAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } actorId)
+        {
+            return;
+        }
+
+        CreateBusy = true;
+        CreateError = null;
+        CreateSuccess = false;
+
+        try
+        {
+            var result = await client.CreateCommunityAsync(actorId, NewHandle.Trim(), NewName.Trim(), NewDescription.Trim());
+            if (result.IsSuccess)
+            {
+                CreateSuccess = true;
+                NewName = string.Empty;
+                NewHandle = string.Empty;
+                NewDescription = string.Empty;
+                await LoadCommunitiesAsync();
+            }
+            else
+            {
+                CreateError = $"Failed to create community (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            CreateError = ex.Message;
+        }
+        finally
+        {
+            CreateBusy = false;
+        }
+    }
+
+    private async Task LoadCommunitiesAsync()
+    {
+        if (Client is not { } client || InstanceBase is not { } baseIri)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        try
+        {
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                                baseIri,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor" }))
+            {
+                results.Add(item);
+            }
+
+            Items = results
+                .OfType<KristofferStrube.ActivityStreams.Object>()
+                .Where(o => o is Group)
+                .Cast<Group>()
+                .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
         }
     }
 

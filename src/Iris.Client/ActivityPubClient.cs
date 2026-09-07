@@ -746,6 +746,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         Iri actorId,
         string name,
         string displayName,
+        string? description = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -768,6 +769,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Id = communityIri.Value,
             PreferredUsername = name,
             Name = [displayName],
+            Summary = description is { Length: > 0 } ? [description] : null,
         };
 
         // Decision 055: the client sends only the Create's shape (actor + the embedded Group); the server
