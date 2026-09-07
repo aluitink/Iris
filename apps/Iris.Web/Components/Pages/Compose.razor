@@ -15,9 +15,15 @@
 <div class="card compose-card">
     @if (ReplyToIri is not null)
     {
-        <p class="compose-reply-to">
-            Replying to <a href="@ReplyToHref">@ReplyToLabel</a>
-        </p>
+        <div class="compose-reply-context">
+            <p class="compose-reply-to">
+                Replying to <a href="@ReplyToHref">@ReplyToAuthor</a>
+            </p>
+            @if (ReplyToPreview is { Length: > 0 })
+            {
+                <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
+            }
+        </div>
     }
     <label for="compose-content">Content</label>
     <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
@@ -74,20 +80,71 @@
         }
     }
 
-    private string ReplyToLabel
-    {
-        get
-        {
-            if (ReplyToIri is not { } iri)
-            {
-                return "…";
-            }
+    /// <summary>
+    /// The author handle of the parent note (fetched asynchronously), or "…" while loading.
+    /// </summary>
+    private string ReplyToAuthor { get; set; } = "…";
 
-            var uri = new Uri(iri.Value);
-            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
-            return segments.Length > 0 ? segments[^1] : iri.Value;
+    /// <summary>
+    /// A truncated preview of the parent note's content (for context while composing a reply).
+    /// </summary>
+    private string? ReplyToPreview { get; set; }
+
+    private string? _fetchedIri;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReplyToIri is { } iri && _fetchedIri != iri.Value)
+        {
+            await LoadReplyContextAsync(iri);
         }
     }
+
+    private async Task LoadReplyContextAsync(Iri iri)
+    {
+        _fetchedIri = iri.Value;
+        ReplyToAuthor = "…";
+        ReplyToPreview = null;
+
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var note = await client.GetObjectAsync(iri);
+            if (note is KristofferStrube.ActivityStreams.Object obj)
+            {
+                if (obj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ReplyToPreview = Truncate(text, 200);
+                    }
+                }
+
+                if (obj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ReplyToAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: show the default "…" author and no preview.
+        }
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
 
     private string? ReplyToHref
     {
