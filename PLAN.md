@@ -150,7 +150,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 **Phase 43 — Per-user moderation & follow-request queue (ACTIVE):**
 
 1. ~~**43.1: Moderation actions on posts (Block/Mute/Flag)**~~ **COMPLETE** — "⋯" dropdown on `EngagementBar` (author ≠ self); Block/Flag via `IActivityPubClient`, Mute via `ILocalModerationClient`; 6 integration tests. → [docs/changes/333](docs/changes/333-43.1-post-moderation-actions.md)
-2. **43.2: Follow-request queue (person actor)** — "Requests" tab on `/profile` (visible when `manuallyApprovesFollowers` is on): lists pending Follow activities from the outbox; Accept/Reject buttons calling `AcceptAsync`/`RejectAsync`. 5+ integration tests.
+2. ~~**43.2: Follow-request queue (person actor)**~~ **COMPLETE** — "Requests" tab on `/profile` (visible when `manuallyApprovesFollowers` is on) lists pending Follows from the outbox; Accept/Reject via `IActivityPubClient`; 5 integration tests. → [docs/changes/334](docs/changes/334-43.2-follow-request-queue.md)
 3. **43.3: Moderation actions on actor detail (Block/Mute/Flag)** — a "⋯" menu on `ActorDetail` header (when viewing another actor) with Block, Mute, and Report. Same client calls as 43.1. 5+ integration tests.
 
 *(Phases 32–42 are complete — see docs/changes/ for details.)*
