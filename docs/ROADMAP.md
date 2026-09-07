@@ -77,3 +77,4 @@
       - **37.2 — client `UpdateActorAsync` (Phase 37):** `IActivityPubClient.UpdateActorAsync` builds an `Update` with the actor's updated `Person` and POSTs to the actor's outbox. 2 new tests.
       - **36.4 — actor detail follower/following count badges (Phase 36):** tab labels show "(N)" from collection `totalItems`.
       - **36.1 — systematic UI review (Phase 36):** all 11 pages reviewed; Phase 36 backlog generated (36.2–36.6).
+     - **37.3 — UI profile edit form (Phase 37):** EditProfileForm component (name + bio) on `/profile`; calls `UpdateActorAsync`; cache invalidation + reload.

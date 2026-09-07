@@ -73,7 +73,9 @@ Iris.slnx
 
 **Phase 37 — Profile editing & remaining UI gaps (COMPLETE).** 37.1–37.5 all COMPLETE. Phase 36 COMPLETE. Phase 35 COMPLETE.
 
-**Phase 38 — Communities & settings (ACTIVE, 38.2+).** 38.1 COMPLETE. **Next: 38.2 — community detail page.**
+**Phase 38 — Communities & settings (COMPLETE).** 38.1–38.3 all COMPLETE.
+
+**Phase 39 — Community management & settings (ACTIVE).** Next: 39.1 — community join/leave.
 
 ## Active Slice
 
@@ -137,9 +139,15 @@ Short, bounded list — only the next few items, not the whole roadmap.
 
 1. ~~**38.1: Community directory**~~ **COMPLETE** — `/communities` page lists all local communities (Groups) via the search endpoint + client-side filter. Empty state when none exist. Nav link added.
 2. ~~**38.2: Community detail page**~~ **COMPLETE** — `/community?iri=…` shows the community's header (avatar, name, description, member count), Feed tab (community feed via `PagedCollection`), Members tab, and Follow button. Communities directory links to this page.
-3. **38.3: Post to community** — compose form that targets a community (sets `AttributedTo` to the community, `To` to community followers + public).
+3. ~~**38.3: Post to community**~~ **COMPLETE** — `Compose.razor` accepts `?community=` query param; shows "Posting to {name}" context; builds a Note with `AttributedTo` = [actor, community] and `To` = [community followers, as:Public]; "Post to community" button on community detail page.
 
-*(Phases 32–37 are complete — see the Recently Completed section and docs/changes/ for details.)*
+**Phase 39 — Community management & settings (ACTIVE):**
+
+1. **39.1: Community join/leave** — "Join community" button on community detail (calls `RequestJoinAsync`); "Leave" button when a member; membership state shown in UI.
+2. **39.2: Community create** — "Create community" form (name, handle, description) on `/communities`; calls `CreateCommunityAsync`.
+3. **39.3: Settings page** — `/settings` with account section (change password placeholder), profile edit link, connected communities list.
+
+*(Phases 32–38 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
 
 
@@ -166,11 +174,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 38.3: **Post to community** (Phase 38) — `?community=` param on compose; Note with `AttributedTo`=[actor,community], `To`=[followers,public]; "Post to this community" button on community detail.
   - 38.2: **Community detail page** (Phase 38) — `/community?iri=…` with header (avatar, name, description, member count), Feed + Members tabs, Follow button.
   - 38.1: **Community directory** (Phase 38) — `/communities` page lists local Groups via search + client-side filter; empty state; nav link.
   - 37.5: **Compose nested reply thread context** (Phase 37) — when replying to a reply, fetches + shows the thread root (author + truncated content) in a styled block.
   - 37.4: **Notification type icons** (Phase 37) — distinct SVG icons (heart, boost, user, check, cross, pen, undo, bell) before the verb in `NotificationRow`.
-  - 37.3: **UI profile edit form** (Phase 37) — EditProfileForm component (name + bio) on `/profile`; calls `UpdateActorAsync`; cache invalidation + reload.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
