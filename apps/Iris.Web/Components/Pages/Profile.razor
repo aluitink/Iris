@@ -25,6 +25,7 @@ else
             <EditProfileForm
                 InitialName="@(ActorObj?.Name?.FirstOrDefault() ?? string.Empty)"
                 InitialSummary="@(ActorObj?.Summary?.FirstOrDefault() ?? string.Empty)"
+                InitialApproveFollowers="@(ActorObj?.GetManuallyApprovesFollowers() ?? false)"
                 Saving="_saving"
                 SaveError="@(SaveError)"
                 OnSubmit="SubmitEditAsync"
@@ -106,6 +107,7 @@ else
     private string? SaveError { get; set; }
     private bool _editing;
     private bool _saving;
+    private bool _originalApproveFollowers;
     private string ActiveTab { get; set; } = "posts";
 
     private Actor? ActorObj => ActorDoc as Actor;
@@ -203,6 +205,7 @@ else
 
     private void StartEdit()
     {
+        _originalApproveFollowers = ActorObj?.GetManuallyApprovesFollowers() ?? false;
         _editing = true;
         SaveError = null;
     }
@@ -213,7 +216,7 @@ else
         SaveError = null;
     }
 
-    private async Task SubmitEditAsync(string name, string summary)
+    private async Task SubmitEditAsync(string name, string summary, bool approveFollowers)
     {
         if (Session.ActorId is not { } actorId || Session.Client is not { } client)
         {
@@ -236,15 +239,24 @@ else
             };
 
             var result = await client.UpdateActorAsync(actorId, updated);
-            if (result.IsSuccess)
-            {
-                _editing = false;
-                await LoadActorFreshAsync(actorId);
-            }
-            else
+            if (!result.IsSuccess)
             {
                 SaveError = $"Update failed (HTTP {result.StatusCode}).";
+                return;
             }
+
+            if (approveFollowers != _originalApproveFollowers)
+            {
+                var flagResult = await client.SetManuallyApprovesFollowersAsync(actorId, approveFollowers);
+                if (!flagResult.IsSuccess)
+                {
+                    SaveError = $"Failed to update approval setting (HTTP {flagResult.StatusCode}).";
+                    return;
+                }
+            }
+
+            _editing = false;
+            await LoadActorFreshAsync(actorId);
         }
         catch (Exception ex)
         {
