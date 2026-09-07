@@ -241,6 +241,123 @@ public sealed class UpdateActivityHandlerTests
         Assert.Equal("original body", (await GetAsync(persistence, NoteIri))!.Content?.FirstOrDefault());
     }
 
+    // --- Actor self-update (profile editing) -------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_UpdatesStoredActor()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // The actor sends an Update with their own (updated) Person document.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+            Summary = ["A test summary"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The stored actor now reflects the edit.
+        Assert.True(await persistence.Actors.TryGetActorAsync(LocalPerson, out var stored));
+        Assert.Equal(["Bobby"], stored!.Name);
+        Assert.Equal(["A test summary"], stored.Summary);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_PropagatesToRemoteFollower()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+            Summary = ["New bio"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The Update is propagated to the remote follower's inbox.
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(RemotePerson.InboxOf(), job.InboxIri);
+        Assert.Same(update, job.Activity);
+        Assert.Equal(LocalPerson, job.ActorIri);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_OnlyLocalFollowers_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await SeedLocalActorAsync(persistence, LocalFollower);
+        await persistence.Follows.RecordFollowAsync(LocalFollower, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RemoteActorUpdatesLocalActorProfile_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // A remote actor purporting to update a local actor's profile → the object IRI
+        // (LocalPerson) does not match the updating actor's IRI (RemotePerson), so the
+        // actor-update branch does not fire; the object-store path also doesn't fire
+        // (no object stored at that IRI). No-op.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Hijacked"],
+        };
+        var update = BuildUpdate(RemotePerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.True(await persistence.Actors.TryGetActorAsync(LocalPerson, out var stored));
+        Assert.NotEqual(["Hijacked"], stored!.Name);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ActorNotStored_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        var sut = BuildHandler(persistence);
+
+        // The update references an actor this instance does not store → no-op.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["New Name"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.False(await persistence.Actors.TryGetActorAsync(LocalPerson, out _));
+    }
+
     // --- Helpers --------------------------------------------------------------------------
 
     private static UpdateActivityHandler BuildHandler(

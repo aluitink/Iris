@@ -69,4 +69,6 @@
     - **34.33 — re-evaluate and generate new work (Phase 34):** systematic UI review; generated Phase 35 with 6 items.
     - **35.1 — server published timestamps (Phase 35):** `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published` on activities + embedded objects. New posts show relative time. Verified live.
     - **35.5 — object detail delete own posts (Phase 35):** Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
-    - **35.6 — compose character count + content type (Phase 35):** "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
+     - **35.6 — compose character count + content type (Phase 35):** "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
+     - **35.5 — object detail delete own posts (Phase 35):** Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
+     - **37.1 — server actor-update handler (Phase 37):** `UpdateActivityHandler` handles actor self-updates (embedded `Actor` whose IRI matches the updating actor); merges mutable fields into `IActorStore`, preserves `publicKey`/`ExtensionData`, propagates to remote followers. 4 new tests.

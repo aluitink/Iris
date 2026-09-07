@@ -96,6 +96,15 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
+        // An actor updating their own profile document: the embedded object is an Actor and the
+        // object IRI matches the updating actor's IRI. Refresh the stored actor (preserving publicKey
+        // and other ExtensionData the update does not carry), then propagate to remote followers.
+        if (updated is Actor updatedActor && actorIri is { } actorRef && objectIri is { } objRef && actorRef.Value == objRef.Value)
+        {
+            await HandleActorUpdateAsync(updatedActor, actorRef, activity, ct).ConfigureAwait(false);
+            return;
+        }
+
         // Refresh only an object this instance actually stores (one created by a Create, or previously
         // stored). An object with no local record is not this instance's to update.
         if (!await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out var stored, ct).ConfigureAwait(false))
@@ -129,6 +138,68 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         {
             await _propagation
                 .PropagateUpdateAsync(actorIri.Value, objectIri.Value, activity, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Handles an actor updating their own profile document. Refreshes the stored actor's mutable
+    /// fields (name, summary, icon, endpoints) from the embedded update, preserving the
+    /// <c>publicKey</c> and any other <c>ExtensionData</c> the update does not carry. Propagates to
+    /// remote followers when the actor is local.
+    /// </summary>
+    private async Task HandleActorUpdateAsync(Actor updated, Iri actorIri, Update activity, CancellationToken ct)
+    {
+        if (!await _persistence.Actors.TryGetActorAsync(actorIri, out var stored, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        if (stored is null)
+        {
+            return;
+        }
+
+        // Merge the mutable fields from the update into the stored actor, preserving the publicKey
+        // and any ExtensionData entries the update does not override.
+        if (updated.Name is { } name && name.Any())
+        {
+            stored.Name = name;
+        }
+
+        if (updated.Summary is { } summary && summary.Any())
+        {
+            stored.Summary = summary;
+        }
+
+        if (updated.Icon is { } icon && icon.Any())
+        {
+            stored.Icon = icon;
+        }
+
+        if (updated.Endpoints is not null)
+        {
+            stored.Endpoints = updated.Endpoints;
+        }
+
+        // Merge ExtensionData: the update may carry new entries (e.g. a changed summary in a
+        // non-standard location); preserve entries the update does not override (notably publicKey).
+        if (updated.ExtensionData is { Count: > 0 } extData)
+        {
+            stored.ExtensionData ??= [];
+            foreach (var (key, value) in extData)
+            {
+                stored.ExtensionData[key] = value;
+            }
+        }
+
+        await _persistence.Actors.PutActorAsync(stored, ct).ConfigureAwait(false);
+
+        var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri, ct).ConfigureAwait(false);
+        if (actorIsLocal)
+        {
+            await _propagation
+                .PropagateUpdateAsync(actorIri, actorIri, activity, ct)
                 .ConfigureAwait(false);
         }
     }
