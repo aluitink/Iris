@@ -43,7 +43,7 @@
         }
         else
         {
-            @if (Items.Count == 0 && !HasMore)
+            @if (RenderedItems.Count == 0 && !HasMore)
             {
                 @if (EmptyContent is not null)
                 {
@@ -54,10 +54,10 @@
                     <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
                 }
             }
-            @if (Items.Count > 0)
+            @if (RenderedItems.Count > 0)
             {
                 <ul class="object-list">
-                    @foreach (var item in Items)
+                    @foreach (var item in RenderedItems)
                     {
                         <li>
                             @if (ItemTemplate is not null)
@@ -165,11 +165,28 @@
     [Parameter]
     public bool ShowRefreshButton { get; set; }
 
+    /// <summary>
+    /// Optional filter applied to fetched items before rendering. Items that do not pass the predicate
+    /// are excluded from the rendered list (but still consumed from the page, so pagination is unaffected).
+    /// When <c>null</c>, all items are rendered (default behavior).
+    /// </summary>
+    [Parameter]
+    public Func<IObjectOrLink, bool>? ItemFilter { get; set; }
+
     private List<IObjectOrLink>? Items { get; set; }
     private bool HasMore { get; set; }
     private bool LoadingMore { get; set; }
     private bool Refreshing { get; set; }
     private string? LoadError { get; set; }
+
+    /// <summary>
+    /// The items after applying <see cref="ItemFilter"/> (when set). When no filter is set, this is
+    /// the raw <see cref="Items"/> list.
+    /// </summary>
+    private List<IObjectOrLink> RenderedItems
+        => ItemFilter is { } filter && Items is { } items
+            ? items.Where(filter).ToList()
+            : Items ?? [];
 
     /// <summary>
     /// When <c>true</c>, the next fetch bypasses the page cache (the one-shot <c>?refresh=true</c> from

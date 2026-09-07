@@ -3,6 +3,7 @@
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
 
 <PageTitle>Home · Iris</PageTitle>
 
@@ -13,7 +14,8 @@
     Client="@FeedClient"
     CollectionIri="@FeedIri"
     PageSize="5"
-    ShowRefreshButton="true">
+    ShowRefreshButton="true"
+    ItemFilter="IsContentItem">
     <EmptyContent>
         <div class="empty-state">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -51,4 +53,39 @@
     /// </summary>
     private Iri? FeedIri
         => Session.ActorId is { } actor ? actor.FeedOf() : null;
+
+    /// <summary>
+    /// Filters the home timeline to content items only (Create of a Note/Article, Announce). Social
+    /// activities (Follow, Accept, Reject, Like, etc.) are excluded — they belong in notifications.
+    /// </summary>
+    private static bool IsContentItem(IObjectOrLink item)
+    {
+        if (item is Create create)
+        {
+            if (create.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is Note || obj is Article)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        if (item is Announce)
+        {
+            return true;
+        }
+
+        if (item is Note || item is Article)
+        {
+            return true;
+        }
+
+        return false;
+    }
 }
