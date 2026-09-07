@@ -152,6 +152,44 @@ public partial class ObjectView
         }
     }
 
+    private bool IsContentCreate => Item is Create && ActivityEmbeddedObject is Note or Article;
+
+    private Iri? AnnounceTargetIri
+    {
+        get
+        {
+            if (Item is not Announce)
+            {
+                return null;
+            }
+
+            if (ActivityEmbeddedObject is { Id: { Length: > 0 } id })
+            {
+                return new Iri(id);
+            }
+
+            return null;
+        }
+    }
+
+    private Iri? BareObjectIri
+    {
+        get
+        {
+            if (Obj is not (Note or Article))
+            {
+                return null;
+            }
+
+            if (Obj!.Id is { Length: > 0 } id)
+            {
+                return new Iri(id);
+            }
+
+            return null;
+        }
+    }
+
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);
 

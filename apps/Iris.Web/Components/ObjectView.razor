@@ -17,10 +17,18 @@
                 <a href="@ObjectHref(objIri)" class="object-post-link">
                     <div class="object-content">@ActivityContent</div>
                 </a>
+                @if (IsContentCreate)
+                {
+                    <EngagementBar ObjectIri="@objIri" />
+                }
             }
             else if (ActivityEmbeddedObject is not null)
             {
                 <div class="object-content">@ActivityContent</div>
+                @if (IsContentCreate && CreatedObjectIri is { } embeddedIri)
+                {
+                    <EngagementBar ObjectIri="@embeddedIri" />
+                }
             }
             else
             {
@@ -45,9 +53,10 @@
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
             </div>
-            @if (ActivityEmbeddedObject is { Id: { Length: > 0 } })
+            @if (AnnounceTargetIri is { } targetIri)
             {
                 <div class="object-content">@ActivityContent</div>
+                <EngagementBar ObjectIri="@targetIri" />
             }
         </div>
     }
@@ -173,6 +182,10 @@
                 <div class="object-media">
                     <img src="@media" alt="" loading="lazy" />
                 </div>
+            }
+            @if (obj is Note or Article)
+            {
+                <EngagementBar ObjectIri="@BareObjectIri" />
             }
         </div>
     }

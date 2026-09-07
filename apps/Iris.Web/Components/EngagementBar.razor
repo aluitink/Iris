@@ -1,0 +1,135 @@
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+@if (ObjectIri is { } iri)
+{
+    <div class="engagement-bar">
+        <button type="button"
+                class="engagement-btn @(_liked ? "engagement-btn--active" : "")"
+                title="Like"
+                disabled="@_busy"
+                @onclick="() => ToggleLikeAsync(iri)">
+            <svg viewBox="0 0 24 24" fill="@(_liked ? "currentColor" : "none")" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+            <span class="engagement-count">@_likeCount</span>
+        </button>
+        <button type="button"
+                class="engagement-btn @(_boosted ? "engagement-btn--active" : "")"
+                title="Boost"
+                disabled="@_busy"
+                @onclick="() => ToggleBoostAsync(iri)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M17 1l4 4-4 4" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <path d="M7 23l-4-4 4-4" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+            <span class="engagement-count">@_boostCount</span>
+        </button>
+        <a class="engagement-btn"
+           href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
+           title="Reply">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+        </a>
+    </div>
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// The IRI of the object to engage with (like, boost, reply).
+    /// </summary>
+    [Parameter]
+    public Iri? ObjectIri { get; set; }
+
+    private int _likeCount;
+    private int _boostCount;
+    private bool _liked;
+    private bool _boosted;
+    private bool _busy;
+    private Iri? _likeIri;
+    private Iri? _announceIri;
+
+    private async Task ToggleLikeAsync(Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_liked && _likeIri is { } likeId)
+            {
+                await client.UnlikeAsync(me, likeId);
+                _liked = false;
+                _likeIri = null;
+                _likeCount = Math.Max(0, _likeCount - 1);
+            }
+            else
+            {
+                var result = await client.LikeAsync(me, iri);
+                if (result.IsSuccess && result.MintedId is { } minted)
+                {
+                    _liked = true;
+                    _likeIri = new Iri(minted);
+                    _likeCount++;
+                }
+            }
+        }
+        catch
+        {
+            // Revert on failure (optimistic update rollback is implicit: state only changes on success).
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleBoostAsync(Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_boosted && _announceIri is { } announceId)
+            {
+                await client.UnannounceAsync(me, announceId);
+                _boosted = false;
+                _announceIri = null;
+                _boostCount = Math.Max(0, _boostCount - 1);
+            }
+            else
+            {
+                var result = await client.AnnounceAsync(me, iri);
+                if (result.IsSuccess && result.MintedId is { } minted)
+                {
+                    _boosted = true;
+                    _announceIri = new Iri(minted);
+                    _boostCount++;
+                }
+            }
+        }
+        catch
+        {
+            // Revert on failure.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
