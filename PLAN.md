@@ -77,6 +77,8 @@ Iris.slnx
 
 **Phase 39 — Community management & settings (COMPLETE).** 39.1–39.3 all COMPLETE.
 
+**Phase 40 — Community management polish (ACTIVE).** 40.1 COMPLETE; 40.2, 40.3 pending.
+
 ## Active Slice
 
 **Phase 34 — UI polish & engagement (autonomous loop).** This is an open-ended, growing workstream. Each iteration: (1) pick the next item below, (2) implement it, (3) build + Docker rebuild + verify via Playwright, (4) run existing tests (must be green), (5) visual-review all pages, (6) add new items discovered during the review, (7) update this file. The item list below is the **living backlog** — it grows with each iteration.
@@ -147,9 +149,9 @@ Short, bounded list — only the next few items, not the whole roadmap.
 2. ~~**39.2: Community create**~~ **COMPLETE** — "Create community" form (name, handle, description) on `/communities`; calls `CreateCommunityAsync`; server materializes the community via outbox-publish. → [docs/changes/322](docs/changes/322-39.2-community-create.md)
 3. ~~**39.3: Settings page**~~ **COMPLETE** — `/settings` with Account (profile + edit link), Password (placeholder), Communities (member list) tabs; nav link added. → [docs/changes/323](docs/changes/323-39.3-settings-page.md)
 
-**Phase 40 — Community management polish (NEW):**
+**Phase 40 — Community management polish (ACTIVE):**
 
-1. **40.1: Community settings/edit** — "Edit community" form on community detail page (name, description) for the community creator; calls `UpdateActorAsync` on the Group.
+1. ~~**40.1: Community settings/edit**~~ **COMPLETE** — "Edit community" form on community detail page (name, description) for the community creator (detected via `AttributedTo`); `UpdateActorAsync` generalized from `Person` to `Actor`; server handles `Update` on community outbox + inbox. → [docs/changes/324](docs/changes/324-40.1-community-edit.md)
 2. **40.2: Community member management** — community creator can remove members from the Members tab (via a "Remove" button per member row); server-side `RemoveMember` endpoint or client-side `Leave` delivery.
 3. **40.3: Community feed shows only member posts** — community feed should filter to posts where the community is in `AttributedTo` (community-tagged posts), not all member outbox posts.
 
@@ -180,11 +182,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 39.3: **Settings page** (Phase 39) — `/settings` with Account (profile + edit link), Password (placeholder), Communities (member list) tabs; nav link.
-  - 39.2: **Community create** (Phase 39) — "Create community" form on `/communities` (name, handle, description); `CreateCommunityAsync` with optional `description` param.
-  - 39.1: **Community join/leave** (Phase 39) — `JoinButton.razor`; `RequestJoinAsync`/`RequestLeaveAsync` deliver Join/Leave to community inbox; membership edge in `Edges` table.
-  - 38.3: **Post to community** (Phase 38) — `?community=` param on compose; Note with `AttributedTo`=[actor,community], `To`=[followers,public].
-  - 38.2: **Community detail page** (Phase 38) — `/community?iri=…` with header, Feed + Members tabs, Follow button.
+  - 40.1: **Community settings/edit** (Phase 40) — "Edit community" form for creator; `UpdateActorAsync` generalized to `Actor`; server handles `Update` on community outbox + inbox.
+  - 39.3: **Settings page** (Phase 39) — `/settings` with Account, Password, Communities tabs; nav link.
+  - 39.2: **Community create** (Phase 39) — "Create community" form on `/communities`; `CreateCommunityAsync` with `description` param.
+  - 39.1: **Community join/leave** (Phase 39) — `JoinButton.razor`; `RequestJoinAsync`/`RequestLeaveAsync`; membership edge in `Edges` table.
+  - 38.3: **Post to community** (Phase 38) — `?community=` param on compose; Note with `AttributedTo`=[actor,community].
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

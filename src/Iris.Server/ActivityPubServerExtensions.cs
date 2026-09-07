@@ -2222,6 +2222,16 @@ public static class ActivityPubServerExtensions
                     .ConfigureAwait(false);
             }
 
+            // A community updating its own profile document (name, summary, icon): the embedded
+            // object is a Group whose IRI matches the community's IRI. This is a local-only
+            // operation (no delivery needed) — merge the mutable fields into the stored community.
+            if (payload is Update update)
+            {
+                await HandleCommunityUpdateAsync(persistence, communityIri, update, ct).ConfigureAwait(false);
+                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                    .ConfigureAwait(false);
+            }
+
             Iri? recipientIri = payload switch
             {
                 Follow follow => await RecordCommunityFollowAsync(persistence, communityIri, follow, ct)
@@ -2290,6 +2300,67 @@ public static class ActivityPubServerExtensions
         // Decision 055: return the created object (with its minted id) in the 2xx body so the client can
         // learn the id (for a future Undo of this activity, e.g. un-adding a member).
         return Results.Text(ActivityJson.Serialize((Activity)payload), ActivityJson.ActivityJsonContentType, statusCode: 202);
+    }
+
+    /// <summary>
+    /// Handles a community updating its own profile document (a <see cref="Update"/> with an embedded
+    /// <see cref="Group"/> whose IRI matches the community's IRI). Merges the mutable fields (name,
+    /// summary, icon, endpoints) into the stored community, preserving the <c>publicKey</c> and any
+    /// <c>ExtensionData</c> entries the update does not carry.
+    /// </summary>
+    private static async Task HandleCommunityUpdateAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Update update,
+        CancellationToken ct)
+    {
+        var updated = update.Object?.FirstOrDefault();
+        if (updated is not IObject { Id: not null } obj || obj.Id.ToIri() is not { } objIri)
+        {
+            return;
+        }
+
+        if (objIri != communityIri || obj is not Group updatedGroup)
+        {
+            return;
+        }
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var stored, ct).ConfigureAwait(false)
+            || stored is null)
+        {
+            return;
+        }
+
+        if (updatedGroup.Name is { } name && name.Any())
+        {
+            stored.Name = name;
+        }
+
+        if (updatedGroup.Summary is { } summary && summary.Any())
+        {
+            stored.Summary = summary;
+        }
+
+        if (updatedGroup.Icon is { } icon && icon.Any())
+        {
+            stored.Icon = icon;
+        }
+
+        if (updatedGroup.Endpoints is not null)
+        {
+            stored.Endpoints = updatedGroup.Endpoints;
+        }
+
+        if (updatedGroup.ExtensionData is { Count: > 0 } extData)
+        {
+            stored.ExtensionData ??= [];
+            foreach (var (key, value) in extData)
+            {
+                stored.ExtensionData[key] = value;
+            }
+        }
+
+        await persistence.Communities.PutCommunityAsync(stored, ct).ConfigureAwait(false);
     }
 
     /// <summary>

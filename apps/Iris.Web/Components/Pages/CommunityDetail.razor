@@ -36,7 +36,12 @@ else
     <div class="community-detail-header">
         <ActorProfile Actor="CommunityDoc" ActorId="@(CommunityDoc.Id)" />
         <div class="community-detail-actions">
-            @if (IsSelf)
+            @if (IsCreator)
+            {
+                <p class="muted">This is your community.</p>
+                <button class="btn" @onclick="StartEditCommunity">Edit community</button>
+            }
+            else if (IsSelf)
             {
                 <p class="muted">This is your community.</p>
             }
@@ -51,6 +56,35 @@ else
             }
         </div>
     </div>
+
+    @if (IsEditingCommunity)
+    {
+        <div class="card edit-community-form">
+            <h3>Edit community</h3>
+            @if (CommunitySaveError is not null)
+            {
+                <div class="error">@CommunitySaveError</div>
+            }
+            <form @onsubmit="SubmitCommunityEditAsync">
+                <div class="form-group">
+                    <label for="edit-community-name">Name</label>
+                    <input id="edit-community-name" type="text" @bind="EditName" maxlength="100"
+                           placeholder="Community name" />
+                </div>
+                <div class="form-group">
+                    <label for="edit-community-summary">Description</label>
+                    <textarea id="edit-community-summary" @bind="EditSummary" rows="3" maxlength="500"
+                              placeholder="What is this community about?"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@IsSavingCommunity">
+                        @if (IsSavingCommunity) { <span>Saving…</span> } else { <span>Save</span> }
+                    </button>
+                    <button type="button" class="btn" @onclick="CancelEditCommunity" disabled="@IsSavingCommunity">Cancel</button>
+                </div>
+            </form>
+        </div>
+    }
 
     <div class="community-post-action">
         <a class="button" href="@($"/compose?community={Uri.EscapeDataString(CommunityIri?.Value ?? string.Empty)}")">
@@ -105,8 +139,29 @@ else
     private string ActiveTab { get; set; } = "feed";
     private int? MemberCount { get; set; }
 
+    private bool IsEditingCommunity { get; set; }
+    private bool IsSavingCommunity { get; set; }
+    private string? CommunitySaveError { get; set; }
+    private string EditName { get; set; } = string.Empty;
+    private string EditSummary { get; set; } = string.Empty;
+
     private bool IsSelf
         => Session.ActorId is { } me && CommunityDoc?.Id is { } id && me.Value == id;
+
+    private bool IsCreator
+    {
+        get
+        {
+            if (Session.ActorId is not { } me || CommunityDoc is not Actor { AttributedTo: { } attr })
+            {
+                return false;
+            }
+
+            return attr.Any(a =>
+                (a is ILink { Href: { } href } && href.ToString() == me.Value) ||
+                (a is IObject { Id: { Length: > 0 } id } && id == me.Value));
+        }
+    }
 
     private string PageHeading
     {
@@ -269,6 +324,90 @@ else
         }
 
         return "Unknown";
+    }
+
+    private void StartEditCommunity()
+    {
+        if (CommunityDoc is Group group)
+        {
+            EditName = group.Name?.FirstOrDefault() ?? string.Empty;
+            EditSummary = group.Summary?.FirstOrDefault() ?? string.Empty;
+        }
+
+        IsEditingCommunity = true;
+        CommunitySaveError = null;
+    }
+
+    private void CancelEditCommunity()
+    {
+        IsEditingCommunity = false;
+        CommunitySaveError = null;
+    }
+
+    private async Task SubmitCommunityEditAsync()
+    {
+        if (Client is not { } client || CommunityDoc is not Group group || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsSavingCommunity = true;
+        CommunitySaveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var updated = new Group
+            {
+                Id = communityIri.Value,
+                PreferredUsername = group.PreferredUsername,
+                Name = string.IsNullOrWhiteSpace(EditName) ? null : [EditName],
+                Summary = string.IsNullOrWhiteSpace(EditSummary) ? null : [EditSummary],
+            };
+
+            var result = await client.UpdateActorAsync(communityIri, updated);
+            if (result.IsSuccess)
+            {
+                IsEditingCommunity = false;
+                Ui.InvalidateActor(communityIri);
+                CommunityDoc = null;
+                await LoadCommunityAsync(communityIri);
+            }
+            else
+            {
+                CommunitySaveError = $"Update failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            CommunitySaveError = ex.Message;
+        }
+        finally
+        {
+            IsSavingCommunity = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCommunityAsync(Iri iri)
+    {
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is not null)
+            {
+                CommunityDoc = obj;
+                _ = LoadMemberCountAsync(iri);
+            }
+            else
+            {
+                LoadError = "Community not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
     }
 
     private void SwitchTab(string tab)

@@ -572,9 +572,9 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
-    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)
+    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
     {
-        // An actor updating their own profile: the Update carries the actor's updated Person document
+        // An actor updating their own profile: the Update carries the actor's updated document
         // (with the actor's IRI as the id) and is published to the actor's own outbox. The server's
         // UpdateActivityHandler detects the actor self-update (embedded Actor whose IRI matches the
         // updating actor), merges the mutable fields into the stored actor (preserving the signing
@@ -770,6 +770,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             PreferredUsername = name,
             Name = [displayName],
             Summary = description is { Length: > 0 } ? [description] : null,
+            AttributedTo = [new Link { Href = actorId.Uri }],
         };
 
         // Decision 055: the client sends only the Create's shape (actor + the embedded Group); the server

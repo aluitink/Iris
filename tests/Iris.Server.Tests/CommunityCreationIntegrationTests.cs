@@ -7,6 +7,7 @@ using Iris.Server;
 using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Testing;
+using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
 using KeyPair = Iris.Core.Identity.KeyPair;
 
@@ -184,6 +185,73 @@ public sealed class CommunityCreationIntegrationTests : IDisposable
         Assert.True(href is not null, "the WebFinger response must contain a self link");
         Assert.True(string.Equals(communityIri.Value, href, StringComparison.Ordinal),
             $"the WebFinger self link must resolve to the community IRI (expected {communityIri.Value}, got {href})");
+    }
+
+    // --- CreateCommunityAsync sets AttributedTo to the creator --------------------------------
+
+    [Fact]
+    public async Task CreateCommunityAsync_SetsAttributedToToCreator()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        var result = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(result.IsSuccess, $"the CreateCommunityAsync must be accepted (got {result.StatusCode})");
+
+        Assert.True(
+            await _persistence.Communities.TryGetCommunityAsync(communityIri, out var community),
+            "the community should be stored");
+        Assert.NotNull(community);
+
+        // The Group's attributedTo must point to the creator (alice).
+        var attributedTo = community.AttributedTo;
+        Assert.NotNull(attributedTo);
+        var hasCreator = attributedTo.Any(a =>
+            (a is ILink { Href: { } href } && href.ToString() == _aliceIri.Value) ||
+            (a is IObject { Id: { Length: > 0 } id } && id == _aliceIri.Value));
+        Assert.True(hasCreator, "the community's attributedTo must include the creator's IRI");
+    }
+
+    // --- UpdateActorAsync on a Group (community edit) -----------------------------------------
+
+    [Fact]
+    public async Task UpdateActorAsync_OnGroup_UpdatesCommunityNameAndSummary()
+    {
+        var communityIri = new Iri($"https://{AHost}/ap/v1/c/devs");
+
+        // Create the community first.
+        var createResult = await _client.CreateCommunityAsync(_aliceIri, "devs", "Devs Community");
+        Assert.True(createResult.IsSuccess, $"the CreateCommunityAsync must be accepted (got {createResult.StatusCode})");
+
+        Assert.True(
+            await _persistence.Communities.TryGetCommunityAsync(communityIri, out var before),
+            "the community should be stored after creation");
+        Assert.Equal("Devs Community", before?.Name?.FirstOrDefault());
+
+        // Update the community's name and summary (alice is the creator, so she can edit it).
+        var updatedGroup = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = "devs",
+            Name = ["Developers Hub"],
+            Summary = ["A community for developers"],
+        };
+
+        var updateResult = await _client.UpdateActorAsync(communityIri, updatedGroup);
+        Assert.True(updateResult.IsSuccess, $"the UpdateActorAsync on a Group must be accepted (got {updateResult.StatusCode})");
+
+        // The community's name and summary must be updated.
+        Assert.True(
+            await _persistence.Communities.TryGetCommunityAsync(communityIri, out var after),
+            "the community should still be stored after the update");
+        Assert.NotNull(after);
+        Assert.Equal("Developers Hub", after.Name?.FirstOrDefault());
+        Assert.Equal("A community for developers", after.Summary?.FirstOrDefault());
+
+        // The signing key must be preserved (the update merges mutable fields, not the key).
+        var keyId = new Iri($"{communityIri.Value}#key-1");
+        Assert.True(_persistence.Keys.TryGetKey(keyId, out var key),
+            "the community's signing key must survive the update");
+        Assert.NotNull(key);
     }
 
     // --- 19.5.1 discovery: the community document advertises iris:capabilities ---------------

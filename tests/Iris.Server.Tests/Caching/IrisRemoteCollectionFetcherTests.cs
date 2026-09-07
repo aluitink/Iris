@@ -272,7 +272,7 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>

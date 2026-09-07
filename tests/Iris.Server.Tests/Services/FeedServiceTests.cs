@@ -746,7 +746,7 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, string? description = null, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
-        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Person updatedActor, CancellationToken ct = default)
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default)

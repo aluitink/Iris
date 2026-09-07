@@ -150,18 +150,71 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     /// </summary>
     private async Task HandleActorUpdateAsync(Actor updated, Iri actorIri, Update activity, CancellationToken ct)
     {
-        if (!await _persistence.Actors.TryGetActorAsync(actorIri, out var stored, ct).ConfigureAwait(false))
+        // Check the Actors store first (Person actors). If not found, fall back to the Communities
+        // store (Group actors / communities), which are stored separately.
+        if (await _persistence.Actors.TryGetActorAsync(actorIri, out var stored, ct).ConfigureAwait(false)
+            && stored is not null)
+        {
+            MergeActorFields(stored, updated);
+            await _persistence.Actors.PutActorAsync(stored, ct).ConfigureAwait(false);
+        }
+        else if (updated is Group updatedGroup
+                 && await _persistence.Communities.TryGetCommunityAsync(actorIri, out var community, ct).ConfigureAwait(false)
+                 && community is not null)
+        {
+            // Merge the mutable fields from the update into the stored community, preserving the
+            // publicKey and any ExtensionData entries the update does not override.
+            if (updatedGroup.Name is { } name && name.Any())
+            {
+                community.Name = name;
+            }
+
+            if (updatedGroup.Summary is { } summary && summary.Any())
+            {
+                community.Summary = summary;
+            }
+
+            if (updatedGroup.Icon is { } icon && icon.Any())
+            {
+                community.Icon = icon;
+            }
+
+            if (updatedGroup.Endpoints is not null)
+            {
+                community.Endpoints = updatedGroup.Endpoints;
+            }
+
+            if (updatedGroup.ExtensionData is { Count: > 0 } extData)
+            {
+                community.ExtensionData ??= [];
+                foreach (var (key, value) in extData)
+                {
+                    community.ExtensionData[key] = value;
+                }
+            }
+
+            await _persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        }
+        else
         {
             return;
         }
 
-        if (stored is null)
+        var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri, ct).ConfigureAwait(false);
+        if (actorIsLocal)
         {
-            return;
+            await _propagation
+                .PropagateUpdateAsync(actorIri, actorIri, activity, ct)
+                .ConfigureAwait(false);
         }
+    }
 
-        // Merge the mutable fields from the update into the stored actor, preserving the publicKey
-        // and any ExtensionData entries the update does not override.
+    /// <summary>
+    /// Merges the mutable fields from <paramref name="updated"/> into <paramref name="stored"/>,
+    /// preserving the <c>publicKey</c> and any <c>ExtensionData</c> entries the update does not carry.
+    /// </summary>
+    private static void MergeActorFields(Actor stored, Actor updated)
+    {
         if (updated.Name is { } name && name.Any())
         {
             stored.Name = name;
@@ -182,8 +235,6 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             stored.Endpoints = updated.Endpoints;
         }
 
-        // Merge ExtensionData: the update may carry new entries (e.g. a changed summary in a
-        // non-standard location); preserve entries the update does not override (notably publicKey).
         if (updated.ExtensionData is { Count: > 0 } extData)
         {
             stored.ExtensionData ??= [];
@@ -191,16 +242,6 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             {
                 stored.ExtensionData[key] = value;
             }
-        }
-
-        await _persistence.Actors.PutActorAsync(stored, ct).ConfigureAwait(false);
-
-        var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri, ct).ConfigureAwait(false);
-        if (actorIsLocal)
-        {
-            await _propagation
-                .PropagateUpdateAsync(actorIri, actorIri, activity, ct)
-                .ConfigureAwait(false);
         }
     }
 
