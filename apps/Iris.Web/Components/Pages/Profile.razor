@@ -52,6 +52,10 @@ else
         <a href="#posts" class="tab @(ActiveTab == "posts" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("posts")'>Your posts</a>
         <a href="#replies" class="tab @(ActiveTab == "replies" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("replies")'>Replies</a>
         <a href="#likes" class="tab @(ActiveTab == "likes" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("likes")'>Likes</a>
+        @if (ApprovesFollowers)
+        {
+            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+        }
     </div>
 
     @if (ActiveTab == "posts")
@@ -89,6 +93,18 @@ else
             ItemTemplate="@NotificationTemplate"
             EmptyMessage="No likes on your posts yet." />
     }
+    else if (ActiveTab == "requests")
+    {
+        <PagedCollection
+            @key="@RequestsKey"
+            Client="@OutboxClient"
+            CollectionIri="@OutboxIri"
+            PageSize="10"
+            ShowRefreshButton="true"
+            ItemFilter="IsFollow"
+            ItemTemplate="@FollowRequestTemplate"
+            EmptyMessage="No pending follow requests." />
+    }
 }
 
 @code {
@@ -101,6 +117,7 @@ else
     private const string PostsKey = "profile-posts";
     private const string RepliesKey = "profile-replies";
     private const string LikesKey = "profile-likes";
+    private const string RequestsKey = "profile-requests";
 
     private IObject? ActorDoc { get; set; }
     private string? LoadError { get; set; }
@@ -111,6 +128,8 @@ else
     private string ActiveTab { get; set; } = "posts";
 
     private Actor? ActorObj => ActorDoc as Actor;
+
+    private bool ApprovesFollowers => ActorObj?.GetManuallyApprovesFollowers() == true;
 
     private IActivityPubClient? OutboxClient => Session.Client;
     private IActivityPubClient? InboxClient => Session.Client;
@@ -147,6 +166,24 @@ else
 
         return activity.Type?.FirstOrDefault() == "Like";
     }
+
+    private static bool IsFollow(IObjectOrLink item)
+    {
+        if (item is not Activity activity)
+        {
+            return false;
+        }
+
+        return activity.Type?.FirstOrDefault() == "Follow";
+    }
+
+    private RenderFragment<IObjectOrLink> FollowRequestTemplate
+        => item => builder =>
+        {
+            builder.OpenComponent<FollowRequestRow>(0);
+            builder.AddComponentParameter(1, nameof(FollowRequestRow.Item), item);
+            builder.CloseComponent();
+        };
 
     private RenderFragment<IObjectOrLink> PostTemplate
         => item => builder =>

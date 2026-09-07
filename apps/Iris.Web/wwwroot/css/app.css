@@ -1313,4 +1313,32 @@ ul.object-list li {
     cursor: default;
 }
 
+.follow-request-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+}
+
+.follow-request-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.follow-request-actor {
+    font-weight: 600;
+}
+
+.follow-request-actions {
+    display: flex;
+    gap: 0.4rem;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.6rem;
+    font-size: 0.8rem;
+}
+
 
