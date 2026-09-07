@@ -62,7 +62,8 @@ public sealed class CommunityMembershipManagementIntegrationTests : IDisposable
         // community's local members' outboxes; alice is a local actor (not yet a member), so her post
         // appears in the feed only once she is added as a member.
         TestSeeder.AddCreateActivity(
-            _persistence, _aliceIri, $"{_aliceIri.Value}/activities/create-1", "alice first post");
+            _persistence, _aliceIri, $"{_aliceIri.Value}/activities/create-1", "alice first post",
+            new[] { _communityIri });
 
         // B's fetcher is wired to B ITSELF: to validate an Add/Remove the community signs through its own
         // inbox, B must resolve the community's signing key (iris#key-1) by fetching its OWN community

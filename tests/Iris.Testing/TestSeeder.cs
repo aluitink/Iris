@@ -416,14 +416,22 @@ public static class TestSeeder
     /// <param name="actorIri">The actor whose outbox the activity is added to.</param>
     /// <param name="activityId">The activity's IRI (unique per outbox).</param>
     /// <param name="content">The note's text content.</param>
+    /// <param name="attributedTo">Optional IRIs for the note's <c>attributedTo</c> (e.g. the community IRI for community-tagged posts).</param>
     public static void AddCreateActivity(
-        InMemoryPersistenceProvider persistence, Iri actorIri, string activityId, string content)
+        InMemoryPersistenceProvider persistence, Iri actorIri, string activityId, string content,
+        IEnumerable<Iri>? attributedTo = null)
     {
+        var note = new Note { Id = $"{activityId}#note", Content = [content] };
+        if (attributedTo is not null)
+        {
+            note.AttributedTo = attributedTo.Select(iri => new Link { Href = new Uri(iri.Value) }).ToList();
+        }
+
         persistence.Activities.AddToOutboxAsync(actorIri, new Create
         {
             Id = activityId,
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
-            Object = [new Note { Id = $"{activityId}#note", Content = [content] }],
+            Object = [note],
         }).GetAwaiter().GetResult();
     }
 }

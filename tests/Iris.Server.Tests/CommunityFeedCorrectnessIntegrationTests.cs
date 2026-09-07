@@ -95,8 +95,9 @@ public sealed class CommunityFeedCorrectnessIntegrationTests : IAsyncLifetime
         var aliceIri = new Iri($"https://{AHost}/ap/v1/u/{Alice}");
         var bobIri = new Iri($"https://{AHost}/ap/v1/u/{Bob}");
         var sharedId = $"https://{AHost}/ap/v1/shared/create-1";
-        TestSeeder.AddCreateActivity(_persistence, aliceIri, sharedId, "a shared post");
-        TestSeeder.AddCreateActivity(_persistence, bobIri, sharedId, "a shared post");
+        var communityIri = new Iri($"{_base}/ap/v1/c/{Community}");
+        TestSeeder.AddCreateActivity(_persistence, aliceIri, sharedId, "a shared post", new[] { communityIri });
+        TestSeeder.AddCreateActivity(_persistence, bobIri, sharedId, "a shared post", new[] { communityIri });
 
         var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/feed?limit=10");
         response.EnsureSuccessStatusCode();
@@ -163,13 +164,13 @@ public sealed class CommunityFeedCorrectnessIntegrationTests : IAsyncLifetime
 
         // alice: 2 posts, added oldest→newest (GARDEN create-1, FEDERAL create-2) so the outbox is
         // newest first (FEDERAL create-2, GARDEN create-1).
-        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
-        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post");
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post", new[] { communityIri });
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post", new[] { communityIri });
 
         // bob: 2 posts, added oldest→newest (weather create-1, federation create-2) so the outbox is
         // newest first (federation create-2, weather create-1).
-        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather");
-        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "about federation");
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather", new[] { communityIri });
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "about federation", new[] { communityIri });
     }
 }
 

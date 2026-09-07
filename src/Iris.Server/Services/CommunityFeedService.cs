@@ -4,6 +4,7 @@ using Iris.Server.Caching;
 using Iris.Server.Security;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 using CollectionPage = Iris.Core.Collections.CollectionPage;
 
 namespace Iris.Server.Services;
@@ -148,6 +149,14 @@ public sealed class CommunityFeedService : ICommunityFeedService
         // De-duplicate by activity IRI (keep the first, i.e. newest, occurrence). A local member's
         // outbox is read from the local activity store; a remote member's outbox is fetched over the
         // wire (walking the outbox's pages, capped by FeedOptions.PagesPerActor).
+        //
+        // 40.3: filter to community-tagged posts only. A member's personal posts (where the community
+        // is NOT in the note's <c>attributedTo</c>) are excluded from the community feed. Only content
+        // explicitly tagged to the community (the note's <c>attributedTo</c> carries the community IRI)
+        // appears. This applies to <c>Create</c> (the embedded Note), <c>Announce</c> (the referenced
+        // object), and <c>Like</c> (the liked object). A member's outbox items that are not community-
+        // tagged are dropped before the merge.
+        var communityIriValue = communityIri.Value;
         var seen = new HashSet<Iri>();
         var merged = new List<(int Position, Iri MemberIri, IObjectOrLink Item)>();
         foreach (var memberIri in orderedMembers)
@@ -157,6 +166,13 @@ public sealed class CommunityFeedService : ICommunityFeedService
             for (var position = 0; position < outbox.Count; position++)
             {
                 var item = outbox[position];
+
+                // 40.3: skip items that are not community-tagged.
+                if (!IsCommunityTagged(item, communityIriValue))
+                {
+                    continue;
+                }
+
                 if (item is IObject { Id: { Length: > 0 } id })
                 {
                     // Keep the newest (first) occurrence of a repeated IRI; drop the rest.
@@ -318,6 +334,60 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         return items.Take(_options.MaxItems).ToList();
+    }
+
+    /// <summary>
+    /// Returns true when the feed item is community-tagged: the community IRI appears in the
+    /// <c>attributedTo</c> of the note (for a <c>Create</c>), the referenced object (for an
+    /// <c>Announce</c> or <c>Like</c>), or the item itself (a bare object). Items that are not
+    /// community-tagged are excluded from the community feed (40.3).
+    /// </summary>
+    private static bool IsCommunityTagged(IObjectOrLink item, string communityIriValue)
+    {
+        if (item is not IObject obj)
+        {
+            return false;
+        }
+
+        // For activities (Create, Announce, Like, etc.), check the referenced object's attributedTo.
+        if (obj is Activity activity)
+        {
+            foreach (var referenced in activity.Object ?? [])
+            {
+                if (referenced is IObject refObj && HasCommunityInAttributedTo(refObj, communityIriValue))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // For bare objects (Note, Article, etc.), check their own attributedTo.
+        return HasCommunityInAttributedTo(obj, communityIriValue);
+    }
+
+    /// <summary>
+    /// Returns true when the object's <c>attributedTo</c> collection contains the community IRI.
+    /// </summary>
+    private static bool HasCommunityInAttributedTo(IObject obj, string communityIriValue)
+    {
+        var attributedTo = (obj as ActivityObject)?.AttributedTo;
+        if (attributedTo is null)
+        {
+            return false;
+        }
+
+        foreach (var attr in attributedTo)
+        {
+            if (attr.ResolveObjectIri() is { } iri &&
+                string.Equals(iri.Value, communityIriValue, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

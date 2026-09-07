@@ -249,13 +249,13 @@ public sealed class CommunitySearchIntegrationTests : IAsyncLifetime
 
         // alice: 2 posts, added oldest→newest (GARDEN create-1, FEDERAL create-2) so the outbox is
         // newest first (FEDERAL, GARDEN).
-        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
-        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post");
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post", new[] { communityIri });
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-2", "a FEDERAL post", new[] { communityIri });
 
         // bob: 2 posts, added oldest→newest (weather create-1, federation create-2) so the outbox is
         // newest first (federation, weather).
-        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about federation");
-        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "the weather today");
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about federation", new[] { communityIri });
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-2", "the weather today", new[] { communityIri });
 
         // A member-less community for completeness.
         TestSeeder.SeedCommunity(persistence, AHost, "empty");

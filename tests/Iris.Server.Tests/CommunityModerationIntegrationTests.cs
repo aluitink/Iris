@@ -369,8 +369,8 @@ public sealed class CommunityModerationIntegrationTests : IAsyncLifetime
         var irisIri = TestSeeder.SeedCommunity(persistence, AHost, Community);
         TestSeeder.AddMember(persistence, irisIri, aliceIri);
         TestSeeder.AddMember(persistence, irisIri, bobIri);
-        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post");
-        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather");
+        TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-1", "a GARDEN post", new[] { irisIri });
+        TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-1", "about weather", new[] { irisIri });
     }
 }
 

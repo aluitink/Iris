@@ -250,13 +250,13 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         // first (create-3, create-2, create-1).
         for (var i = 1; i <= 3; i++)
         {
-            TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-{i}", $"alice note {i}");
+            TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-{i}", $"alice note {i}", new[] { communityIri });
         }
 
         // bob: 2 posts, added oldest→newest so the outbox is newest first (create-2, create-1).
         for (var i = 1; i <= 2; i++)
         {
-            TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-{i}", $"bob note {i}");
+            TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-{i}", $"bob note {i}", new[] { communityIri });
         }
 
         // carol: a member with no posts (empty outbox) — must contribute nothing to the feed.
