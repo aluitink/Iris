@@ -147,7 +147,11 @@ Short, bounded list — only the next few items, not the whole roadmap.
 2. ~~**42.2: Person "manuallyApprovesFollowers" toggle**~~ **COMPLETE** — profile edit form checkbox ("Require approval for follow requests"); on save calls `SetManuallyApprovesFollowersAsync` when the flag changed; reads state via `GetManuallyApprovesFollowers`; 5 integration tests. → [docs/changes/331](docs/changes/331-42.2-profile-approve-followers-toggle.md)
 3. ~~**42.3: Instance admin — user list**~~ **COMPLETE** — `/admin/users` page (admin-only, "Admin" policy); lists all local accounts (handle, role badge, created date); reads `IUserAccountStore.GetAllAsync()` in-process; 5 integration tests. → [docs/changes/332](docs/changes/332-42.3-admin-user-list.md)
 
-**Phase 43 — (TBD):** Next phase to be selected from the feature matrix / backlog.
+**Phase 43 — Per-user moderation & follow-request queue (ACTIVE):**
+
+1. ~~**43.1: Moderation actions on posts (Block/Mute/Flag)**~~ **COMPLETE** — "⋯" dropdown on `EngagementBar` (author ≠ self); Block/Flag via `IActivityPubClient`, Mute via `ILocalModerationClient`; 6 integration tests. → [docs/changes/333](docs/changes/333-43.1-post-moderation-actions.md)
+2. **43.2: Follow-request queue (person actor)** — "Requests" tab on `/profile` (visible when `manuallyApprovesFollowers` is on): lists pending Follow activities from the outbox; Accept/Reject buttons calling `AcceptAsync`/`RejectAsync`. 5+ integration tests.
+3. **43.3: Moderation actions on actor detail (Block/Mute/Flag)** — a "⋯" menu on `ActorDetail` header (when viewing another actor) with Block, Mute, and Report. Same client calls as 43.1. 5+ integration tests.
 
 *(Phases 32–42 are complete — see docs/changes/ for details.)*
 
