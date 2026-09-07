@@ -43,6 +43,7 @@ else
         else
         {
             <FollowButton TargetActor="ActorDoc" />
+            <ModerationActions TargetActor="ActorDoc" />
         }
     </div>
 
@@ -50,6 +51,10 @@ else
         <a href="#outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
         <a href="#followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
         <a href="#following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
+        @if (ShowJoinRequestsTab)
+        {
+            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+        }
     </div>
 
     @if (ActiveTab == "outbox")
@@ -84,6 +89,38 @@ else
             PageSize="5"
             ShowRefreshButton="true"
             EmptyMessage="Not following anyone yet." />
+    }
+    else if (ActiveTab == "requests" && ShowJoinRequestsTab)
+    {
+        <div class="card">
+            @if (JoinRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (JoinRequestError is not null)
+            {
+                <div class="error">@JoinRequestError</div>
+            }
+            else if (JoinRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            else if (JoinRequestActors is { } actors)
+            {
+                @foreach (var requestIri in actors)
+                {
+                    <div class="member-row">
+                        <a href="@($"/actor?iri={Uri.EscapeDataString(requestIri)}")" class="object-actor-handle">@DisplayHandle(requestIri)</a>
+                        <button class="btn btn-small btn-primary" @onclick="() => AcceptJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Accepting…" : "Accept")
+                        </button>
+                        <button class="btn btn-small btn-danger" @onclick="() => RejectJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Rejecting…" : "Reject")
+                        </button>
+                    </div>
+                }
+            }
+        </div>
     }
 }
 
@@ -135,6 +172,23 @@ else
     private Iri? OutboxIri => ActorIri?.OutboxOf();
     private Iri? FollowersIri => ActorIri?.FollowersOf();
     private Iri? FollowingIri => ActorIri?.FollowingOf();
+
+    private bool IsCommunity => ActorDoc is Actor actor && actor.Type?.FirstOrDefault() == "Group";
+
+    private bool ApprovesMembers
+    {
+        get
+        {
+            if (ActorDoc is not KristofferStrube.ActivityStreams.Object doc)
+            {
+                return false;
+            }
+
+            return doc.GetManuallyApprovesMembers() == true;
+        }
+    }
+
+    private bool ShowJoinRequestsTab => IsCommunity && ApprovesMembers;
 
     private int? FollowerCount { get; set; }
     private int? FollowingCount { get; set; }
@@ -208,5 +262,141 @@ else
     private void SwitchTab(string tab)
     {
         ActiveTab = tab;
+
+        if (tab == "requests" && ShowJoinRequestsTab && JoinRequestActors is null)
+        {
+            _ = LoadJoinRequestsAsync();
+        }
+    }
+
+    // --- Community join-request queue (manuallyApprovesMembers) ----------------------------
+
+    private bool JoinRequestsLoading { get; set; }
+    private List<string>? JoinRequestActors { get; set; }
+    private string? JoinRequestError { get; set; }
+    private bool IsDecidingJoinRequest { get; set; }
+    private string? DecidingActorIri { get; set; }
+
+    private async Task LoadJoinRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        JoinRequestsLoading = true;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityJoinRequestsAsync(actorIri);
+            if (result.IsSuccess)
+            {
+                JoinRequestActors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+            }
+            else
+            {
+                JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            JoinRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string DisplayHandle(string iri)
+    {
+        try
+        {
+            var segments = new Uri(iri).AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
     }
 }

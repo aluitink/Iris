@@ -1,0 +1,238 @@
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using KristofferStrube.ActivityStreams
+
+@if (Client is null || LocalModeration is null || Session.ActorId is not { } me || TargetActorIri is null || IsSelf)
+{
+    return;
+}
+
+<div class="moderation-actions">
+    @if (!IsBlocked && !IsMuted)
+    {
+        <button class="btn btn-sm" disabled="@Busy" @onclick="BlockAsync">Block</button>
+        <button class="btn btn-sm" disabled="@Busy" @onclick="MuteAsync">Mute</button>
+        <button class="btn btn-sm" disabled="@Busy" @onclick="FlagAsync">Report</button>
+    }
+    else
+    {
+        @if (IsBlocked)
+        {
+            <button class="btn btn-sm" disabled="@Busy" @onclick="UnblockAsync">Unblock</button>
+        }
+        @if (IsMuted)
+        {
+            <button class="btn btn-sm" disabled="@Busy" @onclick="UnmuteAsync">Unmute</button>
+        }
+    }
+</div>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Parameter]
+    public IObjectOrLink? TargetActor { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+    private ILocalModerationClient? LocalModeration => Session.LocalModeration;
+
+    private bool Busy { get; set; }
+    private bool IsBlocked { get; set; }
+    private bool IsMuted { get; set; }
+    private string? _blockIri;
+    private string? _flagIri;
+    private string? _lastTargetIri;
+
+    private Iri? TargetActorIri
+    {
+        get
+        {
+            if (TargetActor is IObject { Id: { Length: > 0 } id })
+            {
+                return new Iri(id);
+            }
+
+            return null;
+        }
+    }
+
+    private bool IsSelf
+    {
+        get
+        {
+            if (Session.ActorId is not { } me || TargetActor is not IObject { Id: { Length: > 0 } targetId })
+            {
+                return false;
+            }
+
+            return string.Equals(me.Value, targetId, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (TargetActor is not IObject { Id: { Length: > 0 } targetId })
+        {
+            return;
+        }
+
+        if (_lastTargetIri == targetId)
+        {
+            return;
+        }
+
+        _lastTargetIri = targetId;
+        IsBlocked = false;
+        IsMuted = false;
+        _blockIri = null;
+        _flagIri = null;
+
+        var client = Client;
+        if (client is not null && Session.ActorId is { } me)
+        {
+            try
+            {
+                IsBlocked = await ContainsIriAsync(client.GetBlocksAsync(me), targetId);
+                IsMuted = await ContainsIriAsync(client.GetMutesAsync(me), targetId);
+            }
+            catch
+            {
+                // Best-effort state read; leave defaults on failure.
+            }
+        }
+    }
+
+    private static async Task<bool> ContainsIriAsync(IAsyncEnumerable<IObjectOrLink> items, string iri)
+    {
+        await foreach (var item in items)
+        {
+            var value = item switch
+            {
+                IObject obj => obj.Id,
+                Link link => link.Href?.ToString(),
+                _ => null,
+            };
+
+            if (string.Equals(value, iri, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task BlockAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } me || TargetActorIri is not { } target)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            var result = await client.BlockAsync(me, target);
+            if (result.IsSuccess)
+            {
+                IsBlocked = true;
+                _blockIri = result.MintedId;
+            }
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task UnblockAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } me || _blockIri is not { Length: > 0 } blockIri)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            var result = await client.UnblockAsync(me, new Iri(blockIri));
+            if (result.IsSuccess)
+            {
+                IsBlocked = false;
+                _blockIri = null;
+            }
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task MuteAsync()
+    {
+        if (LocalModeration is not { } localModeration || Session.ActorId is not { } me || TargetActorIri is not { } target)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            var result = await localModeration.MuteAsync(me, target);
+            if (result.IsSuccess)
+            {
+                IsMuted = true;
+            }
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task UnmuteAsync()
+    {
+        if (LocalModeration is not { } localModeration || Session.ActorId is not { } me || TargetActorIri is not { } target)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            var result = await localModeration.UnmuteAsync(me, target);
+            if (result.IsSuccess)
+            {
+                IsMuted = false;
+            }
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task FlagAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } me || TargetActorIri is not { } target)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            var result = await client.FlagAsync(me, target);
+            if (result.IsSuccess)
+            {
+                _flagIri = result.MintedId;
+            }
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}
