@@ -121,7 +121,7 @@ Iris.slnx
 22. **35.2: Timeline cards — show relative timestamps** — verified as part of 35.1: new posts show "just now" with ISO 8601 in `<time title>`. Existing posts (pre-35.1) lack timestamps — expected, no migration. Marked COMPLETE.
 23. ~~35.3: **Home timeline — filter out social activities (Follow, Accept, Reject)**~~ **COMPLETE** — `PagedCollection` gains an optional `ItemFilter` predicate; `HomeTimeline` passes `IsContentItem` (only Create(Note/Article) + Announce render). Server feed API unchanged. Verified live: Follow activity no longer appears in home feed.
 24. ~~35.4: **Timeline cards — inline engagement actions (like, boost, reply)**~~ **COMPLETE** — new `EngagementBar` component (like/boost/reply buttons) integrated into `ObjectView` for Create(Note/Article), Announce, and bare Note/Article. Like/boost use `LikeAsync`/`AnnounceAsync` with optimistic count updates; reply links to `/compose?replyTo=`. Verified live: like toggles 0→1→0.
-25. **35.5: Object detail — delete own posts** — add a "Delete" button on the object detail page when viewing your own note. Calls the existing `DeleteAsync` client method. Shows a confirmation dialog. After deletion, redirects to home.
+25. ~~35.5: **Object detail — delete own posts**~~ **COMPLETE** — Delete button on object detail (own posts only, via `attributedTo` check). Two-step confirm → `DeleteAsync` → redirect to `/home`. Verified live: appears on own post, not others'; full delete flow works.
 26. **35.6: Compose — character count + content type** — add a character counter below the textarea (e.g. "245/500"). Add a content type selector (Note, Article, Question) that affects the ActivityStreams `type` or `contentType`.
 ### Recently completed this session (34.1–34.14)
 
@@ -158,11 +158,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
- - 35.4: **Timeline cards — inline engagement actions** (Phase 35) — `EngagementBar` component (like/boost/reply) in `ObjectView` for content items. Optimistic like/boost via `LikeAsync`/`AnnounceAsync`; reply links to compose. Verified live.
- - 35.3: **Home timeline — content-only filter** (Phase 35) — `PagedCollection` gains `ItemFilter` predicate; `HomeTimeline` filters to Create(Note/Article) + Announce only. Verified live.
- - 35.2: **Timeline cards — relative timestamps** (Phase 35) — verified via 35.1's `Published` fix. No additional code needed.
- - 35.1: **Server — published timestamps** (Phase 35) — `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published`. New posts show relative time. Verified live.
- - 34.33: **Re-evaluate and generate new work** (Phase 34) — systematic UI review; generated Phase 35 with 6 items.
+ - 35.5: **Object detail — delete own posts** (Phase 35) — Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
+ - 35.4: **Timeline cards — inline engagement actions** (Phase 35) — `EngagementBar` (like/boost/reply) in `ObjectView`. Optimistic updates. Verified live.
+ - 35.3: **Home timeline — content-only filter** (Phase 35) — `PagedCollection` `ItemFilter`; `HomeTimeline` filters to content only. Verified live.
+ - 35.2: **Timeline cards — relative timestamps** (Phase 35) — verified via 35.1. No additional code.
+ - 35.1: **Server — published timestamps** (Phase 35) — `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published`. Verified live.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
