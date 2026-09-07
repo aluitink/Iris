@@ -538,7 +538,7 @@ ul.object-list li {
     flex: 0 0 auto;
     width: 4rem;
     height: 4rem;
-    border-radius: 0.5rem;
+    border-radius: 50%;
     overflow: hidden;
     display: inline-flex;
     align-items: center;
@@ -550,7 +550,7 @@ ul.object-list li {
 .actor-profile-avatar-img {
     width: 4rem;
     height: 4rem;
-    border-radius: 0.5rem;
+    border-radius: 50%;
     object-fit: cover;
 }
 
