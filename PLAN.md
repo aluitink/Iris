@@ -106,7 +106,7 @@ Iris.slnx
 10. ~~34.23: **Landing page — remove the ugly text input**~~ **COMPLETE** — removed the card wrapper and redundant "Welcome to Iris" heading. The signed-out landing now shows a centered hero: accent-colored "Iris" title + tagline + sign-in/register buttons. Verified live.
 11. ~~34.24: **Avatar consistency**~~ **COMPLETE** — `.actor-profile-avatar` + `.actor-profile-avatar-img` now use `border-radius: 50%` (circular). Both profile and actor detail show 64px circular avatars. Verified live.
 12. ~~34.25: **Empty states**~~ **COMPLETE** — added `PagedCollection.EmptyContent` RenderFragment parameter. Home timeline, notifications, and search now show inline SVG icons + friendly messages. Home timeline empty state includes a "Browse the directory →" link. Verified live.
-13. **34.26: Loading states** — when a page is loading (e.g. object detail, actor detail), show a subtle skeleton or spinner. Currently object detail shows a spinner; actor detail and directory show nothing while loading.
+13. ~~34.26: **Loading states**~~ **COMPLETE (verification; no code change)** — all pages already have loading spinners: object detail (`card-loading` + spinner), actor detail (`profile-loading` + spinner when `ActorDoc is null`), directory (`card-loading` + spinner when `Busy`), search (`card-loading` + spinner when `Busy`), and `PagedCollection` (spinner during initial fetch + "Load more" button). Verified in code.
 14. **34.27: Post card spacing & separators** — in the profile outbox and home timeline, consecutive posts have minimal visual separation. Add more vertical spacing between `.object-item` cards or a subtle separator line.
 15. **34.28: Object detail — show like count + boost count** — the object detail page shows the note but no engagement metrics. Fetch the `/likes` and `/announcements` collections (or use the `Replies`/`Likes` properties on the object) and show "N likes · M boosts" under the note.
 16. **34.29: Favicon + meta tags** — the app has no favicon (browser tab shows a generic icon). Add a simple SVG favicon (e.g. a stylized "I" or an iris flower). Add `<meta name="description">` for the landing page.
@@ -149,11 +149,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 34.26: **Loading states** (Phase 34) — verified: all pages already have loading spinners (object detail, actor detail, directory, search, PagedCollection). No code change needed.
  - 34.25: **Empty states with icons** (Phase 34) — `PagedCollection.EmptyContent` RenderFragment; home/notifications/search show SVG icons + friendly messages; home has "Browse the directory →" link. Verified live.
  - 34.24: **Avatar consistency** (Phase 34) — `.actor-profile-avatar` + `.actor-profile-avatar-img` now circular (border-radius: 50%). Both profile and actor detail show 64px circular avatars. Verified live.
  - 34.23: **Landing page hero** (Phase 34) — removed card + redundant heading; signed-out landing now shows a centered hero with accent-colored title + tagline + buttons. Verified live.
  - 34.22: **Compose reply context preview** (Phase 34) — `Compose.razor` fetches the parent note on load; shows author handle + truncated content (200 chars) in a styled blockquote. Verified live.
- - 34.21: **Home timeline shows followed actors' posts** (Phase 34) — verified: following andrew from the directory populates `/home` with his posts. No code change needed.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

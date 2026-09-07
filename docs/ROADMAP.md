@@ -55,3 +55,4 @@
    - **34.15–16 — hide raw IRI + remove duplicate card headings (Phase 34):** `ActorProfile` handle → clickable link with IRI tooltip; `ObjectView` Actor branch IRI removed; `PagedCollection` Title/Description removed from Home, Notifications, Profile. Verified live.
     - **34.19 — show replies on object detail (Phase 34):** `ObjectDetail.razor` fetches replies via `GetRepliesAsync`, resolves each to a full object, renders in a "Replies" card via `ObjectView`. Verified live.
     - **34.20 — follow/unfollow cross-page round-trip fix (Phase 34):** `UiContext.GetFollowActivityIriAsync` scans the outbox for the Follow activity; `FollowButton` falls back to it when `_followActivityIri` is null. Cross-page unfollow now works. Verified live.
+    - **34.21 — home timeline shows followed actors' posts (Phase 34):** verified: following andrew from the directory populates `/home` with his posts. No code change needed.
