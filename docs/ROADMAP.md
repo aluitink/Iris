@@ -58,3 +58,4 @@
     - **34.21 — home timeline shows followed actors' posts (Phase 34):** verified: following andrew from the directory populates `/home` with his posts. No code change needed.
     - **34.22 — compose reply context preview (Phase 34):** `Compose.razor` fetches the parent note on load; shows author handle + truncated content (200 chars) in a styled blockquote. Verified live.
     - **34.23 — landing page hero (Phase 34):** removed card + redundant heading; signed-out landing now shows a centered hero with accent-colored title + tagline + buttons. Verified live.
+    - **34.24 — avatar consistency (Phase 34):** `.actor-profile-avatar` + `.actor-profile-avatar-img` now circular (border-radius: 50%). Both profile and actor detail show 64px circular avatars. Verified live.
