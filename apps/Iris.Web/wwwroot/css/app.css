@@ -992,6 +992,38 @@ ul.object-list li {
     line-height: 1.4;
 }
 
+.compose-thread-root {
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    font-size: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.compose-thread-root-label {
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.compose-thread-root-author {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.compose-thread-root .compose-reply-preview {
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+}
+
 /* 34.23: signed-out landing hero — replaces the old h1 + card with a clean centered block. */
 .landing-hero {
     text-align: center;

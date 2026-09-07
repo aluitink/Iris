@@ -13,7 +13,7 @@
     Posting as <a href="/profile">@ActorHandle</a>
 </p>
 
-<div class="card compose-card">
+    <div class="card compose-card">
     @if (ReplyToIri is not null)
     {
         <div class="compose-reply-context">
@@ -23,6 +23,17 @@
             @if (ReplyToPreview is { Length: > 0 })
             {
                 <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
+            }
+            @if (ThreadRootAuthor is { Length: > 0 })
+            {
+                <div class="compose-thread-root">
+                    <span class="compose-thread-root-label">Thread started by</span>
+                    <span class="compose-thread-root-author">@ThreadRootAuthor</span>
+                    @if (ThreadRootPreview is { Length: > 0 })
+                    {
+                        <blockquote class="compose-reply-preview">@ThreadRootPreview</blockquote>
+                    }
+                </div>
             }
         </div>
     }
@@ -103,6 +114,16 @@
     /// </summary>
     private string? ReplyToPreview { get; set; }
 
+    /// <summary>
+    /// The author handle of the thread root (the parent's parent), when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootAuthor { get; set; }
+
+    /// <summary>
+    /// A truncated preview of the thread root's content, when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootPreview { get; set; }
+
     private string? _fetchedIri;
 
     protected override async Task OnParametersSetAsync()
@@ -118,6 +139,8 @@
         _fetchedIri = iri.Value;
         ReplyToAuthor = "…";
         ReplyToPreview = null;
+        ThreadRootAuthor = null;
+        ThreadRootPreview = null;
 
         try
         {
@@ -148,11 +171,54 @@
                         ReplyToAuthor = segments.Length > 0 ? segments[^1] : author.Value;
                     }
                 }
+
+                if (obj.InReplyTo is { } replyTo)
+                {
+                    var parentIri = replyTo.FirstOrDefault()?.ResolveObjectIri();
+                    if (parentIri is { } grandparent)
+                    {
+                        await LoadThreadRootAsync(client, grandparent);
+                    }
+                }
             }
         }
         catch
         {
             // Non-fatal: show the default "…" author and no preview.
+        }
+    }
+
+    private async Task LoadThreadRootAsync(IActivityPubClient client, Iri iri)
+    {
+        try
+        {
+            var root = await client.GetObjectAsync(iri);
+            if (root is KristofferStrube.ActivityStreams.Object rootObj)
+            {
+                if (rootObj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ThreadRootPreview = Truncate(text, 150);
+                    }
+                }
+
+                if (rootObj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ThreadRootAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: no thread root context shown.
         }
     }
 
