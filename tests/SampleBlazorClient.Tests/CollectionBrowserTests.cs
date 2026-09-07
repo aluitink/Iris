@@ -55,6 +55,9 @@ public class CollectionBrowserTests
         public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
             => throw new NotSupportedException();
 

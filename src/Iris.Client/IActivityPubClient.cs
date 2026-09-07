@@ -177,6 +177,19 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
 
     /// <summary>
+    /// Leaves a community as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Leave"/>
+    /// whose <c>actor</c> is the leaving member and whose <c>object</c> references the member (the handler
+    /// reads <c>object</c> to determine who to remove), then delivers it to the community's inbox.
+    /// The server's <c>MembershipActivityHandler</c> removes the member from the community's member set.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor leaving (must match the client's signing identity so
+    /// the request is signed as that actor).</param>
+    /// <param name="communityIri">The IRI of the community to leave.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Accepts a pending join request for a community as <paramref name="communityIri"/> (the community
     /// operator's decision): builds an <see cref="KristofferStrube.ActivityStreams.Accept"/> whose
     /// <c>object</c> references <paramref name="joinIri"/> (the original <see cref="KristofferStrube.ActivityStreams.Join"/>)

@@ -324,15 +324,37 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // MembershipActivityHandler interprets it: when manuallyApprovesMembers is set, the server
         // records a pending join request; otherwise the server auto-grants membership (19.5.2).
         //
-        // Decision 055: the client sends only the Join's shape (actor + object); the server mints the
-        // Join's id (an unguessable ULID) and returns it in the 2xx body.
+        // The Join's `object` is the **member** (the actor joining) — the handler reads `object` to
+        // determine who to add to the community's member set. The community itself is implied by the
+        // delivery target (the community's inbox), not by the `object` field.
+        //
+        // The inbox endpoint requires the activity to have an id (the server does not mint ids for
+        // inbox-received activities — that is the outbox-publish path). The client mints a unique id
+        // under the actor's own tree.
         var join = new Join
         {
+            Id = $"{actorId.Value.TrimEnd('/')}/joins/{Guid.NewGuid():N}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = actorId.Uri }],
         };
 
         return DeliverAsync(communityIri.InboxOf(), join, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+    {
+        // A Leave is delivered to the community's inbox (the membership's owner). The community's
+        // MembershipActivityHandler interprets it: the handler reads `object` to determine who to
+        // remove from the member set. The `object` is the leaving member (same as the actor).
+        var leave = new Leave
+        {
+            Id = $"{actorId.Value.TrimEnd('/')}/leaves/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = actorId.Uri }],
+        };
+
+        return DeliverAsync(communityIri.InboxOf(), leave, ct);
     }
 
     /// <inheritdoc/>

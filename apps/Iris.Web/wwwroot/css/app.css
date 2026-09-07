@@ -852,6 +852,13 @@ ul.object-list li {
     text-align: center;
 }
 
+.join-button {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 5rem;
+    text-align: center;
+}
+
 .tab-bar {
     display: flex;
     gap: 0;

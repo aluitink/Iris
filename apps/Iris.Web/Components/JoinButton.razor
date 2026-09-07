@@ -1,0 +1,128 @@
+@using Iris.Client
+@using Iris.Core
+@using Iris.Core.Identity
+@using Iris.Web.Accounts
+@using Iris.Web.Ui
+@using KristofferStrube.ActivityStreams
+
+@if (Client is null || CommunityActor is null)
+{
+    return;
+}
+
+@if (IsSelf)
+{
+    return;
+}
+
+<button class="button @(IsMember ? "button--secondary" : "") join-button"
+        @onclick="ToggleJoinAsync"
+        disabled="@Busy">
+    @if (Busy)
+    {
+        <span class="join-button-busy">…</span>
+    }
+    else
+    {
+        @if (IsMember)
+        {
+            <span>Leave</span>
+        }
+        else
+        {
+            <span>Join</span>
+        }
+    }
+</button>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [Parameter]
+    public IObjectOrLink? CommunityActor { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private bool Busy { get; set; }
+    private bool IsMember { get; set; }
+    private string? _lastCommunityIri;
+
+    private bool IsSelf
+    {
+        get
+        {
+            if (Session.ActorId is not { } me || CommunityActor is not IObject { Id: { Length: > 0 } id })
+            {
+                return false;
+            }
+
+            return string.Equals(me.Value, id, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (CommunityActor is not IObject { Id: { Length: > 0 } id })
+            {
+                return null;
+            }
+
+            return new Iri(id);
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CommunityIri is not { } iri)
+        {
+            return;
+        }
+
+        if (_lastCommunityIri == iri.Value)
+        {
+            return;
+        }
+
+        _lastCommunityIri = iri.Value;
+        IsMember = await Ui.IsMemberAsync(iri);
+    }
+
+    private async Task ToggleJoinAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } me || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        Busy = true;
+        try
+        {
+            if (IsMember)
+            {
+                await client.RequestLeaveAsync(me, communityIri);
+                IsMember = false;
+                Ui.InvalidateMembership(communityIri);
+            }
+            else
+            {
+                await client.RequestJoinAsync(me, communityIri);
+                IsMember = true;
+                Ui.InvalidateMembership(communityIri);
+            }
+        }
+        catch
+        {
+            // Leave state unchanged on error.
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

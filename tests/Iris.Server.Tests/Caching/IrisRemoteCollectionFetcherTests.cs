@@ -224,6 +224,10 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

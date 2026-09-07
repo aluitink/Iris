@@ -75,7 +75,7 @@ Iris.slnx
 
 **Phase 38 — Communities & settings (COMPLETE).** 38.1–38.3 all COMPLETE.
 
-**Phase 39 — Community management & settings (ACTIVE).** Next: 39.1 — community join/leave.
+**Phase 39 — Community management & settings (ACTIVE).** 39.1 COMPLETE. Next: 39.2 — community create.
 
 ## Active Slice
 
@@ -143,7 +143,7 @@ Short, bounded list — only the next few items, not the whole roadmap.
 
 **Phase 39 — Community management & settings (ACTIVE):**
 
-1. **39.1: Community join/leave** — "Join community" button on community detail (calls `RequestJoinAsync`); "Leave" button when a member; membership state shown in UI.
+1. ~~**39.1: Community join/leave**~~ **COMPLETE** — `JoinButton.razor` on community detail; `RequestJoinAsync`/`RequestLeaveAsync` deliver `Join`/`Leave` to community inbox; `UiContext.IsMemberAsync` reads `/members` with `BypassCache`; membership edge in `Edges` table. → [docs/changes/321](docs/changes/321-39.1-community-join-leave.md)
 2. **39.2: Community create** — "Create community" form (name, handle, description) on `/communities`; calls `CreateCommunityAsync`.
 3. **39.3: Settings page** — `/settings` with account section (change password placeholder), profile edit link, connected communities list.
 

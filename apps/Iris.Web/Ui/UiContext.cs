@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Iris.Client;
+using Iris.Client.Collections;
 using Iris.Core.Identity;
 using Iris.Web.Accounts;
 using KristofferStrube.ActivityStreams;
@@ -16,12 +17,16 @@ public sealed class UiContext
 {
     private static readonly TimeSpan FollowingTtl = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ActorTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan MembershipTtl = TimeSpan.FromMinutes(2);
 
     private sealed record FollowingEntry(HashSet<string> Set, DateTime At);
     private sealed record ActorEntry(IObject Doc, DateTime At);
+    private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
 
     private readonly ConcurrentDictionary<string, FollowingEntry> _following = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ActorEntry> _actors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, MembershipEntry> _memberships = new(StringComparer.OrdinalIgnoreCase);
+    private readonly SemaphoreSlim _membershipGate = new(1, 1);
 
     private readonly IActorSessionAccessor _session;
     private readonly SemaphoreSlim _followingGate = new(1, 1);
@@ -177,5 +182,82 @@ public sealed class UiContext
     public void InvalidateActor(Iri actorIri)
     {
         _actors.TryRemove(actorIri.Value, out _);
+    }
+
+    /// <summary>
+    /// Whether the signed-in actor is a member of <paramref name="communityIri"/>. Consults the
+    /// per-circuit membership cache (keyed by community IRI); on a miss, walks the community's
+    /// <c>members</c> collection once and caches the full set for the TTL window.
+    /// </summary>
+    public async Task<bool> IsMemberAsync(Iri communityIri)
+    {
+        if (_session.ActorId is not { } me || _session.Client is not { } client)
+        {
+            return false;
+        }
+
+        if (_memberships.TryGetValue(communityIri.Value, out var entry)
+            && DateTime.UtcNow - entry.At < MembershipTtl)
+        {
+            return entry.Set.Contains(me.Value);
+        }
+
+        await _membershipGate.WaitAsync();
+        try
+        {
+            if (_memberships.TryGetValue(communityIri.Value, out var fresh)
+                && DateTime.UtcNow - fresh.At < MembershipTtl)
+            {
+                return fresh.Set.Contains(me.Value);
+            }
+
+            var members = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var membersIri = AppendSegment(communityIri, "members");
+                await foreach (var item in client.GetCollectionItemsAsync(membersIri, new CollectionQuery(BypassCache: true)))
+                {
+                    var iri = item.ResolveObjectIri()?.Value;
+                    if (iri is not null)
+                    {
+                        members.Add(iri);
+                    }
+                }
+            }
+            catch
+            {
+                // Non-fatal: return the (possibly empty) set we have so far.
+            }
+
+            _memberships[communityIri.Value] = new MembershipEntry(members, DateTime.UtcNow);
+            return members.Contains(me.Value);
+        }
+        finally
+        {
+            _membershipGate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Invalidates the cached membership set for a community (call after a join/leave so the next
+    /// <see cref="IsMemberAsync"/> re-reads the server).
+    /// </summary>
+    public void InvalidateMembership(Iri communityIri)
+    {
+        _memberships.TryRemove(communityIri.Value, out _);
+    }
+
+    private static Iri AppendSegment(Iri iri, string segment)
+    {
+        var baseUri = iri.Uri;
+        var builder = new UriBuilder(baseUri);
+        var path = builder.Path;
+        if (path.Length == 0 || !path.EndsWith('/'))
+        {
+            path += "/";
+        }
+
+        builder.Path = path + segment;
+        return new Iri(builder.Uri);
     }
 }
