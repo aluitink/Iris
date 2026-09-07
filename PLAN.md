@@ -81,6 +81,8 @@ Iris.slnx
 
 **Phase 41 — Notifications & engagement polish (COMPLETE).** 41.1–41.3 all COMPLETE.
 
+**Phase 42 — Community settings & instance admin (ACTIVE).** 42.1 COMPLETE; 42.2–42.3 pending.
+
 ## Active Slice
 
 **Phase 34 — UI polish & engagement (autonomous loop).** This is an open-ended, growing workstream. Each iteration: (1) pick the next item below, (2) implement it, (3) build + Docker rebuild + verify via Playwright, (4) run existing tests (must be green), (5) visual-review all pages, (6) add new items discovered during the review, (7) update this file. The item list below is the **living backlog** — it grows with each iteration.
@@ -139,13 +141,13 @@ See the **Recently Completed** section below for the rolling window.
 
 Short, bounded list — only the next few items, not the whole roadmap.
 
-**Phase 41 — Notifications & engagement polish (ACTIVE):**
+**Phase 42 — Community settings & instance admin (ACTIVE):**
 
-1. ~~**41.1: Notification read-state + unread badge**~~ **COMPLETE** — "Mark all as read" button on `/notifications` sets `NotificationsReadAt`; nav badge shows unread count (60s poll); server endpoints + in-process `NotificationService`; 7 integration tests. → [docs/changes/327](docs/changes/327-41.1-notification-read-state-and-badge.md)
-2. ~~**41.2: Profile — show engagement received**~~ **COMPLETE** — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests. → [docs/changes/328](docs/changes/328-41.2-profile-engagement-tabs.md)
-3. ~~**41.3: Community membership requests (admin UI)**~~ **COMPLETE** — community detail "Requests" tab (creator-only): lists pending join requests via `GET /local/v1/c/{name}/requests`; Accept/Reject buttons call `POST /local/v1/c/{name}/requests/{accept|reject}/{**actorIri}` (creator-only, mirrors the member-removal pattern). `ICommunityStore` pending-join-request API; `ILocalModerationClient` join-request methods; 10 integration tests. → [docs/changes/329](docs/changes/329-41.3-community-join-requests-admin-ui.md)
+1. ~~**42.1: Community "manuallyApprovesMembers" toggle**~~ **COMPLETE** — community edit form checkbox ("Require approval for join requests"); on save calls `SetManuallyApprovesMembersAsync` when the flag changed; reads state via `GetManuallyApprovesMembers`; 5 integration tests. → [docs/changes/330](docs/changes/330-42.1-community-approve-members-toggle.md)
+2. **42.2: Community "manuallyApprovesFollowers" toggle** — same pattern for the follow-approval gate.
+3. **42.3: Instance admin — user list** — admin-role page listing all local accounts (username, handle, role, created date); admin-only route guard.
 
-*(Phases 32–40 are complete — see docs/changes/ for details.)*
+*(Phases 32–41 are complete — see docs/changes/ for details.)*
 
 
 
