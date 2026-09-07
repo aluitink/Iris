@@ -71,7 +71,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 35 — Timeline actions & content completeness (ACTIVE, autonomous loop).** Phase 34 (UI polish & engagement) is **COMPLETE** (34.1–34.33). Phase 35 focuses on making the timeline interactive (engagement actions on cards), fixing data gaps (missing `published` timestamps), and adding missing user-facing functionality (post deletion, content filtering). Same protocol as Phase 34: UI work only, no new automated UI tests, verify via MCP Playwright, existing tests must stay green.
+**Phase 35 — Timeline actions & content completeness (COMPLETE, 35.1–35.6).** All six items done: published timestamps, relative time display, home timeline content filter, inline engagement actions (like/boost/reply), delete own posts, and compose character count + content type. Phase 34 (UI polish & engagement) COMPLETE (34.1–34.33). **Next: Phase 36 — define scope via systematic UI review.**
 
 ## Active Slice
 
@@ -122,16 +122,21 @@ Iris.slnx
 23. ~~35.3: **Home timeline — filter out social activities (Follow, Accept, Reject)**~~ **COMPLETE** — `PagedCollection` gains an optional `ItemFilter` predicate; `HomeTimeline` passes `IsContentItem` (only Create(Note/Article) + Announce render). Server feed API unchanged. Verified live: Follow activity no longer appears in home feed.
 24. ~~35.4: **Timeline cards — inline engagement actions (like, boost, reply)**~~ **COMPLETE** — new `EngagementBar` component (like/boost/reply buttons) integrated into `ObjectView` for Create(Note/Article), Announce, and bare Note/Article. Like/boost use `LikeAsync`/`AnnounceAsync` with optimistic count updates; reply links to `/compose?replyTo=`. Verified live: like toggles 0→1→0.
 25. ~~35.5: **Object detail — delete own posts**~~ **COMPLETE** — Delete button on object detail (own posts only, via `attributedTo` check). Two-step confirm → `DeleteAsync` → redirect to `/home`. Verified live: appears on own post, not others'; full delete flow works.
-26. **35.6: Compose — character count + content type** — add a character counter below the textarea (e.g. "245/500"). Add a content type selector (Note, Article, Question) that affects the ActivityStreams `type` or `contentType`.
+26. ~~35.6: **Compose — character count + content type**~~ **COMPLETE** — character counter ("N/500", red when over) + Note/Article dropdown (hidden for replies). Article posts via `DeliverAsync` with an `Article` object. Verified live.
 ### Recently completed this session (34.1–34.14)
 
 See the **Recently Completed** section below for the rolling window.
 
 ## Up Next
 
-Short, bounded list — only the next few items, not the whole roadmap. The Phase 34 backlog above is the authoritative list. When it drops below ~3 uncompleted items, do a fresh visual review and add more.
+Short, bounded list — only the next few items, not the whole roadmap.
 
-*(Phases 32 & 33 are complete — see the Recently Completed section and docs/changes/ for details. The Phase 34 backlog above is the active work.)*
+**Phase 36 — UI review & next iteration (ACTIVE):**
+
+1. **36.1: Systematic UI review** — navigate all pages (home, compose, profile, directory, notifications, search, object detail, actor detail, landing, community) as alice; identify remaining gaps, inconsistencies, and polish opportunities. Generate Phase 36 backlog from findings.
+2. **36.2: Address top findings** — implement the highest-priority items from the 36.1 review.
+
+*(Phases 32–35 are complete — see the Recently Completed section and docs/changes/ for details.)*
 
 
 
@@ -158,11 +163,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+ - 35.6: **Compose — character count + content type** (Phase 35) — "N/500" counter (red when over) + Note/Article dropdown. Article via `DeliverAsync`. Verified live.
  - 35.5: **Object detail — delete own posts** (Phase 35) — Delete button (own posts only) with two-step confirm; `DeleteAsync` → redirect `/home`. Verified live.
  - 35.4: **Timeline cards — inline engagement actions** (Phase 35) — `EngagementBar` (like/boost/reply) in `ObjectView`. Optimistic updates. Verified live.
  - 35.3: **Home timeline — content-only filter** (Phase 35) — `PagedCollection` `ItemFilter`; `HomeTimeline` filters to content only. Verified live.
  - 35.2: **Timeline cards — relative timestamps** (Phase 35) — verified via 35.1. No additional code.
- - 35.1: **Server — published timestamps** (Phase 35) — `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published`. Verified live.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

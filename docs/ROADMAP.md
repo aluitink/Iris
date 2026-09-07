@@ -67,3 +67,4 @@
     - **34.31 — color & typography refinement (Phase 34):** warmer bg, heading hierarchy, `--accent-warm`, line-height 1.6, brand 1.3rem. Verified live.
     - **34.32 — object detail shows full thread (Phase 34):** fetches parent via `GetParentIri()`; shows "In reply to [author]" + truncated parent content. Verified live.
     - **34.33 — re-evaluate and generate new work (Phase 34):** systematic UI review; generated Phase 35 with 6 items.
+    - **35.1 — server published timestamps (Phase 35):** `MintActivityIds` + `InboxProcessor` + `CreateActivityHandler` set `Published` on activities + embedded objects. New posts show relative time. Verified live.
