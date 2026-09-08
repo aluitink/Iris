@@ -408,6 +408,7 @@ public static class WebAppFactory
         MapNotificationEndpoints(app);
         MapSessionEndpoints(app);
         MapAdminEndpoints(app);
+        MapMetricsEndpoint(app);
 
         // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
         app.MapActivityPubEndpoints();
@@ -595,6 +596,71 @@ public static class WebAppFactory
                 u.CreatedAt,
             }));
         }).RequireAuthorization(p => p.RequireRole("Admin"));
+    }
+
+    /// <summary>
+    /// Maps <c>GET /local/v1/metrics</c> — the Prometheus text-format metrics endpoint (48.3).
+    /// Exposes the outbound-delivery counters (enqueued, delivered, attempt failures, dead-letters)
+    /// as Prometheus gauges so a Prometheus instance can scrape them for Grafana dashboards and
+    /// alerting. No authentication (a Prometheus scraper on the internal network reaches it
+    /// without credentials; the reverse proxy's rate limit is the only gate).
+    /// </summary>
+    public static void MapMetricsEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/local/v1/metrics", (Iris.Server.Observability.IrisDeliveryMetrics? metrics) =>
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("# Iris outbound-delivery metrics (cumulative counters).");
+
+            if (metrics is null)
+            {
+                // Metrics are not registered (no instance actor configured). Report zeros.
+                sb.AppendLine("iris_delivery_enqueued_total 0");
+                sb.AppendLine("iris_delivery_delivered_total 0");
+                sb.AppendLine("iris_delivery_attempt_failed_total 0");
+                sb.AppendLine("iris_delivery_dead_lettered_total 0");
+                return Results.Text(sb.ToString(), "text/plain; version=0.0.4; charset=utf-8");
+            }
+
+            var snap = metrics.Snapshot;
+            sb.AppendLine("# HELP iris_delivery_enqueued_total Total delivery jobs placed on the queue.");
+            sb.AppendLine("# TYPE iris_delivery_enqueued_total counter");
+            sb.AppendLine($"iris_delivery_enqueued_total {snap.Enqueued}");
+
+            sb.AppendLine("# HELP iris_delivery_delivered_total Total deliveries that completed with a 2xx response.");
+            sb.AppendLine("# TYPE iris_delivery_delivered_total counter");
+            sb.AppendLine($"iris_delivery_delivered_total {snap.Delivered}");
+
+            sb.AppendLine("# HELP iris_delivery_attempt_failed_total Total single delivery attempts that failed.");
+            sb.AppendLine("# TYPE iris_delivery_attempt_failed_total counter");
+            sb.AppendLine($"iris_delivery_attempt_failed_total {snap.AttemptFailed}");
+
+            sb.AppendLine("# HELP iris_delivery_dead_lettered_total Total jobs that exhausted their retry budget.");
+            sb.AppendLine("# TYPE iris_delivery_dead_lettered_total counter");
+            sb.AppendLine($"iris_delivery_dead_lettered_total {snap.DeadLettered}");
+
+            // Per-activity-type breakdown.
+            sb.AppendLine("# HELP iris_delivery_by_type Per-activity-type delivery counters.");
+            sb.AppendLine("# TYPE iris_delivery_by_type counter");
+            foreach (var (type, counts) in snap.ByActivityType)
+            {
+                var label = $"activity_type=\"{type}\"";
+                sb.AppendLine($"iris_delivery_by_type{{{label},direction=\"enqueued\"}} {counts.Enqueued}");
+                sb.AppendLine($"iris_delivery_by_type{{{label},direction=\"delivered\"}} {counts.Delivered}");
+                sb.AppendLine($"iris_delivery_by_type{{{label},direction=\"attempt_failed\"}} {counts.AttemptFailed}");
+                sb.AppendLine($"iris_delivery_by_type{{{label},direction=\"dead_lettered\"}} {counts.DeadLettered}");
+            }
+
+            // Per-failure-kind breakdown.
+            sb.AppendLine("# HELP iris_delivery_failure_kind Per-failure-kind breakdown of attempt failures + dead-letters.");
+            sb.AppendLine("# TYPE iris_delivery_failure_kind counter");
+            foreach (var (kind, count) in snap.ByFailureKind)
+            {
+                sb.AppendLine($"iris_delivery_failure_kind{{kind=\"{kind}\"}} {count}");
+            }
+
+            return Results.Text(sb.ToString(), "text/plain; version=0.0.4; charset=utf-8");
+        });
     }
 
     /// <summary>
