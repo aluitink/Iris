@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**46.4: Object detail + notifications** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
+**46.5: Mobile layout** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -108,9 +108,8 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 46 — Visual inspection & design pass** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
 
-1. **46.4: Object detail + notifications** — notification row human-readable, object detail polish (P3-14).
-2. **46.5: Mobile layout** — mobile nav, mobile spacing, mobile card layout.
-3. **46.6: Forms + tabs + footer** — tab style, compose tips, search description, footer links.
+1. **46.5: Mobile layout** — mobile nav, mobile spacing, mobile card layout.
+2. **46.6: Forms + tabs + footer** — tab style, compose tips, search description, footer links.
 
 ## Inbox
 
@@ -124,11 +123,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 46.4: **Object detail + notifications** (Phase 46) — notification rows show short labels instead of raw IRIs; object detail heading shows @author instead of type name. [changes/344](docs/changes/344-46.4-object-detail-notifications.md)
   - 46.3: **Card system** (Phase 46) — avatar initials in cards, author bold, content lighter, button hierarchy (ghost/warning), community row structure. [changes/343](docs/changes/343-46.3-card-system.md)
   - 46.2: **Nav + brand** (Phase 46) — hamburger below 768px, brand icon + mark, hide Blazor error bar, footer NodeInfo link. [changes/342](docs/changes/342-46.2-nav-brand.md)
   - 46.1: **Design audit** (Phase 46) — screenshot all 12 pages at 1280×800 + 375×812 (signed-in/out); 14 design findings prioritized P1/P2/P3; 5 fix slices defined (46.2–46.6). [changes/341](docs/changes/341-46.1-design-audit.md)
   - 45.7: **Triage closeout** (Phase 45, COMPLETE) — reviewed all 14 defects from 45.1–45.6; all fixed in-slice, 0 deferred. [changes/340](docs/changes/340-45.7-triage-closeout.md)
-  - 45.6: **Edge states pass** (Phase 45) — no defects found; all routes/deep-links/empty/responsive verified clean. 951 server tests green.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

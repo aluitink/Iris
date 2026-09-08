@@ -7,8 +7,10 @@
     @if (Item is Activity activity)
     {
         var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
-        var objectIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+        var objectFirst = activity.Object?.FirstOrDefault();
+        var objectIri = objectFirst?.ResolveObjectIri();
         var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
+        var targetPreview = TargetPreview(objectFirst);
 
         <div class="notification-head">
             @NotificationIcon(activity)
@@ -27,7 +29,9 @@
         <div class="notification-target">
             @if (objectIri is { } target)
             {
-                <a href="@ObjectHref(target)" title="@target" class="object-iri">@target</a>
+                <a href="@ObjectHref(target)" title="@target" class="notification-target-link">
+                    @(targetPreview ?? ShortLabel(target))
+                </a>
             }
             else if (targetIri is { } t)
             {
@@ -107,6 +111,42 @@
     {
         var nested = activity.Object?.FirstOrDefault() as Activity;
         return nested?.Type?.FirstOrDefault() == "Follow";
+    }
+
+    /// <summary>
+    /// A short human-readable preview of the activity's target object (the note that was liked,
+    /// boosted, or replied to). Strips HTML and truncates to 120 characters. Returns null when the
+    /// target is not a content object or has no text content (e.g. a Follow activity whose object is
+    /// another activity, not a note).
+    /// </summary>
+    private static string? TargetPreview(IObjectOrLink? item)
+    {
+        if (item is not ActivityObject obj || obj.Content is not { } content)
+        {
+            return null;
+        }
+
+        var text = string.Join(" ", content);
+        text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(text, " ").Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        return text.Length > 120 ? text[..120] + "…" : text;
+    }
+
+    /// <summary>
+    /// A short label for a target IRI when no content preview is available: the last two path
+    /// segments (e.g. "notes/06G7ZE…") truncated for display, so the user sees something meaningful
+    /// rather than the full raw IRI.
+    /// </summary>
+    private static string ShortLabel(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var segments = path.Split('/');
+        var label = segments.Length >= 2 ? string.Join(" ", segments[^2..]) : iri.Value;
+        return label.Length > 40 ? label[..37] + "…" : label;
     }
 
     private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";

@@ -981,7 +981,21 @@ ul.object-list li {
 .notification-target {
     color: var(--muted);
     font-size: 0.85rem;
-    word-break: break-all;
+    margin-top: 0.2rem;
+}
+
+.notification-target-link {
+    color: var(--muted);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-target-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
 }
 
 /* Directory: actor rows with a follow button on the right. */

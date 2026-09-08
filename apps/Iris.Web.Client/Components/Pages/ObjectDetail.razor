@@ -196,12 +196,28 @@ else if (ObjectDoc is null)
                 return px;
             }
 
-            var type = (ObjectDoc as ActivityObject)?.Type?.FirstOrDefault();
-            if (string.IsNullOrEmpty(type))
+            var subject = SubjectObject;
+            if (subject?.AttributedTo is { } attr)
             {
-                type = ObjectDoc?.GetType().Name;
+                var first = attr.FirstOrDefault();
+                if (first is Actor { PreferredUsername: { Length: > 0 } apx })
+                {
+                    return "@" + apx;
+                }
+
+                var iri = first?.ResolveObjectIri();
+                if (iri is { } i)
+                {
+                    var path = Uri.UnescapeDataString(new Uri(i.Value).AbsolutePath).TrimEnd('/');
+                    var last = path.Split('/').LastOrDefault();
+                    if (!string.IsNullOrWhiteSpace(last))
+                    {
+                        return "@" + last;
+                    }
+                }
             }
 
+            var type = subject?.Type?.FirstOrDefault() ?? ObjectDoc?.GetType().Name;
             return string.IsNullOrEmpty(type) ? "Object" : type;
         }
     }
