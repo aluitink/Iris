@@ -53,10 +53,34 @@ else
     {
         <div class="card">
             <h3>Change password</h3>
-            <p class="muted" style="margin-bottom: 1rem;">
-                Password changes are not yet available. This feature is on the roadmap.
-            </p>
-            <button class="button" disabled>Change password</button>
+            @if (PasswordError is not null)
+            {
+                <div class="error">@PasswordError</div>
+            }
+            @if (PasswordSuccess)
+            {
+                <div class="success">Password changed successfully.</div>
+            }
+            <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
+                <div>
+                    <label class="label" for="current-password">Current password</label>
+                    <input id="current-password" type="password" class="input" value="@CurrentPassword"
+                           @onchange="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
+                </div>
+                <div>
+                    <label class="label" for="new-password">New password</label>
+                    <input id="new-password" type="password" class="input" value="@NewPassword"
+                           @onchange="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
+                </div>
+                <div>
+                    <label class="label" for="confirm-password">Confirm new password</label>
+                    <input id="confirm-password" type="password" class="input" value="@ConfirmPassword"
+                           @onchange="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
+                </div>
+                <button class="button" disabled="@PasswordBusy" @onclick="ChangePasswordAsync">
+                    @(PasswordBusy ? "Changing…" : "Change password")
+                </button>
+            </div>
         </div>
     }
     else if (ActiveTab == "communities")
@@ -247,6 +271,11 @@ else
     [Inject]
     private UiContext Ui { get; set; } = default!;
 
+    [Inject]
+    private IHttpClientFactory HttpFactory { get; set; } = default!;
+
+    private HttpClient _http = null!;
+
     private IActivityPubClient? Client => Session.Client;
     private ILocalModerationClient? LocalModeration => Session.LocalModeration;
     private string ActiveTab { get; set; } = "account";
@@ -265,6 +294,12 @@ else
     private string RelayIriInput { get; set; } = string.Empty;
     private bool RelaysBusy { get; set; }
     private string? RelaysError { get; set; }
+    private string CurrentPassword { get; set; } = string.Empty;
+    private string NewPassword { get; set; } = string.Empty;
+    private string ConfirmPassword { get; set; } = string.Empty;
+    private bool PasswordBusy { get; set; }
+    private string? PasswordError { get; set; }
+    private bool PasswordSuccess { get; set; }
 
     private Iri? InstanceBase
     {
@@ -286,6 +321,11 @@ else
     /// Primes the session's signing key so <c>Session.ActorId</c>/<c>Session.Client</c> resolve before
     /// the account tab renders.
     /// </summary>
+    protected override void OnInitialized()
+    {
+        _http = HttpFactory.CreateClient("iris");
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
@@ -535,6 +575,51 @@ else
         finally
         {
             ModerationBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ChangePasswordAsync()
+    {
+        PasswordError = null;
+        PasswordSuccess = false;
+
+        if (NewPassword != ConfirmPassword)
+        {
+            PasswordError = "New password and confirmation do not match.";
+            StateHasChanged();
+            return;
+        }
+
+        PasswordBusy = true;
+
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { CurrentPassword, NewPassword });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PostAsync("/local/v1/account/password", content);
+            if (response.IsSuccessStatusCode)
+            {
+                PasswordSuccess = true;
+                CurrentPassword = string.Empty;
+                NewPassword = string.Empty;
+                ConfirmPassword = string.Empty;
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                PasswordError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Password change failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            PasswordError = ex.Message;
+        }
+        finally
+        {
+            PasswordBusy = false;
         }
 
         StateHasChanged();

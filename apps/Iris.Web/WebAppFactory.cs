@@ -259,6 +259,7 @@ public static class WebAppFactory
         builder.Services.TryAddSingleton<IInstanceMetadataStore, InMemoryInstanceMetadataStore>();
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
+        builder.Services.AddSingleton<ChangePasswordService>();
 
         // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
         // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
@@ -437,6 +438,7 @@ public static class WebAppFactory
         // HTTP requests.
         MapAuthEndpoints(app);
         MapNotificationEndpoints(app);
+        MapAccountEndpoints(app);
         MapSessionEndpoints(app);
         MapAdminEndpoints(app);
         MapMetricsEndpoint(app);
@@ -582,6 +584,33 @@ public static class WebAppFactory
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
             var unread = CountUnread(inbox, account.NotificationsReadAt);
             return Results.Json(new { unread });
+        }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Maps the account self-service endpoints: <c>POST /local/v1/account/password</c> (changes the
+    /// signed-in user's password). <c>[Authorize]</c>-gated (cookie auth); resolves the account via
+    /// the <c>sub</c> claim.
+    /// </summary>
+    /// <param name="endpoints">The endpoint route builder.</param>
+    public static void MapAccountEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapPost("/local/v1/account/password", async (
+            HttpContext ctx,
+            ChangePasswordService changePassword,
+            ChangePasswordRequest body,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await changePassword.ChangeAsync(accountId, body.CurrentPassword ?? string.Empty, body.NewPassword ?? string.Empty, ct);
+            return result.Succeeded
+                ? Results.Ok(new { success = true })
+                : Results.BadRequest(new { error = result.Error });
         }).RequireAuthorization();
     }
 
@@ -937,3 +966,8 @@ public static class WebAppFactory
 /// <param name="FlaggerIri">The IRI of the actor who filed the flag.</param>
 /// <param name="FlaggedIri">The IRI of the actor that was flagged.</param>
 public sealed record DismissFlagRequest(string? FlaggerIri, string? FlaggedIri);
+
+/// <summary>Request body for <c>POST /local/v1/account/password</c> (52.1).</summary>
+/// <param name="CurrentPassword">The user's current password (verified before the change).</param>
+/// <param name="NewPassword">The new password.</param>
+public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
