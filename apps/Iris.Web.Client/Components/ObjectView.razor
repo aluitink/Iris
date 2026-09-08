@@ -20,7 +20,7 @@
                 </a>
                 @if (IsContentCreate)
                 {
-                    <EngagementBar ObjectIri="@objIri" AuthorIri="ActivityActorIri" />
+                    <EngagementBar ObjectIri="@objIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
                 }
             }
             else if (ActivityEmbeddedObject is not null)
@@ -28,7 +28,7 @@
                 <div class="object-content">@ActivityContent</div>
                 @if (IsContentCreate && CreatedObjectIri is { } embeddedIri)
                 {
-                    <EngagementBar ObjectIri="@embeddedIri" AuthorIri="ActivityActorIri" />
+                    <EngagementBar ObjectIri="@embeddedIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
                 }
             }
             else
@@ -67,7 +67,7 @@
                         <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
                     </div>
                 }
-                <EngagementBar ObjectIri="@targetIri" />
+                <EngagementBar ObjectIri="@targetIri" Object="ActivityEmbeddedObject" />
             }
         </div>
     }
@@ -201,7 +201,7 @@
             }
             @if (obj is Note or Article)
             {
-                <EngagementBar ObjectIri="@BareObjectIri" />
+                <EngagementBar ObjectIri="@BareObjectIri" Object="obj" />
             }
         </div>
     }

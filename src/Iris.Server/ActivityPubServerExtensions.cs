@@ -4299,6 +4299,8 @@ public static class ActivityPubServerExtensions
         var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
         bool? isLikedValue = null;
         bool? isSharedValue = null;
+        int? likedCountValue = null;
+        int? sharedCountValue = null;
         if (obj is not KristofferStrube.ActivityStreams.Tombstone)
         {
             isLikedValue = requesterIri is { } r
@@ -4307,6 +4309,14 @@ public static class ActivityPubServerExtensions
             isSharedValue = requesterIri is { } s
                 ? await persistence.Announces.HasAnnouncedAsync(s, objectIri, ct).ConfigureAwait(false)
                 : null;
+
+            // The per-object interaction counters (iris:likedCount / iris:sharedCount): cacheable,
+            // not per-requester (the same value for every requester), so they are computed on every read
+            // and rendered onto the object document. A client (e.g. the object-detail page) reads them
+            // off the document it already fetched instead of re-walking the /likes and /shares
+            // collections (54.8).
+            likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
         }
 
         // Cache-Control: an object (or its tombstone) is a stable, addressable document; cache it like
@@ -4317,7 +4327,9 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
         return Results.Text(
-            ServeObjectDocument(obj, objectIri, isLikedValue, isSharedValue, IrisExtensionNamespace(options)),
+            ServeObjectDocument(
+                obj, objectIri, isLikedValue, isSharedValue, likedCountValue, sharedCountValue,
+                IrisExtensionNamespace(options)),
             ActivityJson.ActivityJsonContentType);
     }
 
@@ -4371,12 +4383,18 @@ public static class ActivityPubServerExtensions
     /// <param name="isShared">The requesting user's net boost state on the object (the
     /// <c>iris:isShared</c> extension); when <c>true</c> a <c>true</c> is rendered, when
     /// <c>null</c>/<c>false</c> the extension is omitted.</param>
+    /// <param name="likedCount">The number of distinct likers (the <c>iris:likedCount</c> extension;
+    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
+    /// <param name="sharedCount">The number of distinct announcers (the <c>iris:sharedCount</c>
+    /// extension; cacheable, not per-requester); when non-null it is rendered, when null the extension is
+    /// omitted.</param>
     /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (the <c>@vocab</c> the
-    /// document declares); the <c>isLiked</c> / <c>isShared</c> terms are written as
-    /// <c>{irisNamespace}isLiked</c> / <c>{irisNamespace}isShared</c>.</param>
+    /// document declares); the <c>isLiked</c> / <c>isShared</c> / <c>likedCount</c> / <c>sharedCount</c>
+    /// terms are written as <c>{irisNamespace}&lt;term&gt;</c>.</param>
     /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
     private static string ServeObjectDocument(
-        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, string? irisNamespace)
+        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, int? likedCount, int? sharedCount,
+        string? irisNamespace)
     {
         if (obj is KristofferStrube.ActivityStreams.Tombstone)
         {
@@ -4412,6 +4430,23 @@ public static class ActivityPubServerExtensions
                 document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                 document.ExtensionData[ns + IrisExtensionTerms.IsShared] =
                     System.Text.Json.JsonSerializer.SerializeToElement(true);
+            }
+
+            // The per-object interaction counters (cacheable, not per-requester): rendered whenever a
+            // count is supplied, so a client reads them off the object document instead of re-walking the
+            // /likes and /shares collections (54.8).
+            if (likedCount is { } likes)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(likes);
+            }
+
+            if (sharedCount is { } shares)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(shares);
             }
         }
 
@@ -4540,6 +4575,15 @@ public static class ActivityPubServerExtensions
                         System.Text.Json.JsonSerializer.SerializeToElement(true);
                 }
             }
+
+            // Stabilize the embedded object: the ActivityStreams library's OneOrMultipleConverter
+            // re-materializes (clones) the embedded object on every enumeration of Activity.Object, so
+            // the ExtensionData written above onto copyObj would be lost when the collection page is
+            // serialized (the serializer fetches a fresh clone, not the instance we enriched). Replacing
+            // Activity.Object with a single-element array containing copyObj makes enumeration return the
+            // SAME stable instance every time, so the interaction counters (and, for an authenticated
+            // requester, isLiked / isShared) survive to the wire.
+            activityCopy.Object = new IObjectOrLink[] { copyObj };
 
             result.Add(activityCopy);
         }
@@ -6631,7 +6675,9 @@ public static class ActivityPubServerExtensions
                 // Serialize through the polymorphic IObjectOrLink type (not the concrete runtime
                 // type) so a Link item renders as a bare IRI string and an object item renders as a
                 // full JSON object — the same wire shape the library's one-or-multiple items
-                // converter produces, just always inside an array.
+                // converter produces, just always inside an array. An enriched item's embedded object
+                // is a stable instance (see EnrichCollectionItemsAsync), so its ExtensionData (the
+                // interaction counters) survives this serialization.
                 System.Text.Json.JsonSerializer.Serialize(writer, item, typeof(IObjectOrLink), ActivityJson.Options);
             }
             writer.WriteEndArray();

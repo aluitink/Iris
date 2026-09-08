@@ -81,6 +81,20 @@
     [Parameter]
     public Iri? AuthorIri { get; set; }
 
+    /// <summary>
+    /// The content object this bar is rendered for (a <see cref="Note"/>/<see cref="Article"/>), when the
+    /// caller has it in hand (a collection item or an object document). When the object carries the
+    /// server-rendered <c>iris:likedCount</c> / <c>iris:sharedCount</c> / <c>iris:isLiked</c> /
+    /// <c>iris:isShared</c> extensions, the bar seeds its counts and the signed-in user's like/boost state
+    /// from them and skips the per-object <c>/likes</c> / <c>/shares</c> collection walk (54.8) — issuing
+    /// at most a single walk (only the collection the user engaged) to recover the minted activity id an
+    /// unlike / un-boost (an <c>Undo</c>) references. When the extensions are absent (a non-Iris instance,
+    /// or a read the server did not enrich) the bar falls back to the full walk for both collections, as
+    /// before.
+    /// </summary>
+    [Parameter]
+    public IObject? Object { get; set; }
+
     private int _likeCount;
     private int _boostCount;
     private bool _liked;
@@ -110,22 +124,82 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        // Seed the like/boost counts AND the signed-in user's own like/boost state from the server. Both
-        // reads bypass the client collection-page cache: a like/boost the user just made must not be masked
-        // by a stale pre-engagement page (the server derives the count live from the reverse index, so a
-        // fresh read is authoritative and cheap).
+        // Seed the like/boost counts AND the signed-in user's own like/boost state from the server.
         //
-        // The object's /likes collection is the NET like state served as the actual Like activities (the
-        // spec-compliant, federation-friendly shape): each item is a Like with its minted id, its actor
-        // (the liker) and its object (the liked object). So the count is the number of items, "did I like
-        // it?" is "is there a Like whose actor is me?", and that same Like's id is what an unlike (an Undo)
-        // references. An undone like is absent (the server squashes Like/Undo to the net state), so a post
-        // the user previously liked still lights the heart on load. /shares is the same, for boosts.
+        // Fast path (54.8): the server renders the per-object counters (iris:likedCount /
+        // iris:sharedCount) and — for an authenticated (signed) read — the requester's net like/boost
+        // state (iris:isLiked / iris:isShared) directly onto the content object (a collection item in a
+        // feed, or the object document). When the object carries BOTH counters, they are authoritative
+        // (the server derives them live from the reverse index), so the bar seeds _likeCount /
+        // _boostCount from them and does NOT re-walk the /likes and /shares collections just to count
+        // items (the two per-object fetches that used to fire for every rendered object). The viewer's
+        // like/boost state is read from isLiked / isShared. The ONLY thing a walk still recovers is the
+        // minted Like/Announce activity id an unlike/un-boost (an Undo) references — and that is only
+        // needed when the user HAS engaged, so at most ONE collection is walked (the one engaged), never
+        // both. When the counters are absent (a non-Iris instance, a cached outbox item the server did not
+        // enrich with per-requester state, or an unsigned read) the bar falls back to the full walk for
+        // both collections, exactly as before.
         if (ObjectIri is not { } iri || Session.Client is not { } client)
         {
             return;
         }
 
+        var ns = Session.IrisNamespaceBase?.Value;
+        if (ns is not null
+            && Object is { } obj
+            && obj.GetLikedCount(ns) is { } likedCount
+            && obj.GetSharedCount(ns) is { } sharedCount)
+        {
+            try
+            {
+                _likeCount = likedCount;
+                _boostCount = sharedCount;
+                _liked = obj.GetIsLiked(ns) is true;
+                _boosted = obj.GetIsShared(ns) is true;
+                _countsLoaded = true;
+
+                var me = Session.ActorId;
+                if (_liked && me is { } meIri)
+                {
+                    // Recover the minted Like id for the unlike (Undo) reference — the single walk that
+                    // remains, and only because the user has liked this object.
+                    await foreach (var item in client.GetLikesAsync(
+                        iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+                    {
+                        if (LikeActorIri(item) is { } liker && IriEquals(liker, meIri))
+                        {
+                            _likeIri = ItemIri(item);
+                            break;
+                        }
+                    }
+                }
+
+                if (_boosted && me is { } meIri2)
+                {
+                    await foreach (var item in client.GetSharesAsync(
+                        iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+                    {
+                        if (AnnounceActorIri(item) is { } booster && IriEquals(booster, meIri2))
+                        {
+                            _announceIri = ItemIri(item);
+                            break;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Non-fatal: the counts are already seeded from the extensions; only the (optional) id
+                // recovery fails, so an unlike/un-boost would simply re-fetch on the next interaction.
+            }
+            return;
+        }
+
+        // Fallback: no server-rendered counters (non-Iris / un-enriched / unsigned). Walk both
+        // collections to derive the counts AND the viewer's own like/boost state (and the minted ids).
+        // Both reads bypass the client collection-page cache: a like/boost the user just made must not be
+        // masked by a stale pre-engagement page (the server derives the count live from the reverse index,
+        // so a fresh read is authoritative and cheap).
         try
         {
             var me = Session.ActorId;

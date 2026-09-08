@@ -72,6 +72,17 @@ public interface IActorSessionAccessor
     Iri? ActorId { get; }
 
     /// <summary>
+    /// The deployment's <c>iris:</c> namespace base IRI (the full-IRI prefix the server uses for its
+    /// JSON-LD extension properties — e.g. <c>likedCount</c>, <c>isLiked</c> — whose wire key is
+    /// <c>{NamespaceBase}{term}</c>). Derived from the instance's canonical base (the advertised FQDN when
+    /// set, otherwise the browser origin) as <c>{base}/ns#</c>, matching the server's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>. Null when the base cannot be determined. Used to read
+    /// the server-rendered extensions off a fetched document via
+    /// <see cref="Iris.Client.IrisDocumentExtensions"/>.
+    /// </summary>
+    Iri? IrisNamespaceBase { get; }
+
+    /// <summary>
     /// The signed-in user's role, or null when signed out.
     /// </summary>
     string? Role { get; }
@@ -278,6 +289,22 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
 
             var value = _state!.User.FindFirst(ActorClaims.ActorIri)?.Value;
             return value is not null && Iri.TryParse(value, out var iri) ? (Iri?)iri : null;
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// The instance's canonical base is the advertised FQDN when set (the host the server advertises its
+    /// <c>NamespaceIri</c> from), otherwise the browser origin (the same-origin case, where the server
+    /// derives the namespace from the request's own base). The namespace is <c>{base}/ns#</c> — the same
+    /// derivation <c>WebAppFactory</c> uses for <c>ActivityPubServerOptions.NamespaceIri</c>.
+    /// </remarks>
+    public Iri? IrisNamespaceBase
+    {
+        get
+        {
+            var baseUri = _advertiseBase ?? _browserBase;
+            return Iri.TryParse($"{baseUri.Scheme}://{baseUri.Authority}/ns#", out var ns) ? ns : null;
         }
     }
 
