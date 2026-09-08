@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**52.2: Admin-assisted password reset** — admin sets a new password for a user (account recovery path); `POST /local/v1/admin/users/{id}/password-reset` (Admin role).
+**52.3: Login rate limiting** — throttle failed login attempts per IP; after N failures, return 429 with a retry-after hint.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,8 +106,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 52 — Account & admin completion (in progress):**
 
-1. **52.2: Admin-assisted password reset** — ACTIVE. Admin sets a new password for a user; `POST /local/v1/admin/users/{id}/password-reset`.
-2. **52.3: Login rate limiting** — throttle failed login attempts per IP.
+1. **52.3: Login rate limiting** — ACTIVE. Throttle failed login attempts per IP; 429 after N failures.
 
 **Phase 45–51** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -123,6 +122,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 52.2: **Admin-assisted password reset** (Phase 52) — `POST /local/v1/admin/users/{id}/password-reset`; AdminUsers page with inline reset form; fixed WASM HttpClient + Role enum deserialization; live-verified reset→login round-trip. [changes/366](docs/changes/366-52.2-admin-password-reset.md)
   - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
   - 51.5: **Relay subscriptions UI (settings)** (Phase 51) — "Relays" tab in `/settings`; list/subscribe/unsubscribe via `IActivityPubClient.GetRelaysAsync` + `ILocalModerationClient`; `BypassCache` on re-reads; live-verified subscribe→list→unsubscribe round-trip. [changes/364](docs/changes/364-51.5-relay-subscriptions-ui.md)
   - 51.4: **Moderation queue (admin)** (Phase 51) — `/admin/moderation` page listing all flags; `GET /local/v1/admin/flags` + `POST /local/v1/admin/flags/dismiss` (Admin role); `GetAllFlagEdgesAsync` in all 3 stores; live-verified flag→dismiss round-trip. [changes/363](docs/changes/363-51.4-moderation-queue-admin.md)

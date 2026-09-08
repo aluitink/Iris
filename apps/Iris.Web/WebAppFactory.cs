@@ -660,6 +660,31 @@ public static class WebAppFactory
             }));
         }).RequireAuthorization(p => p.RequireRole("Admin"));
 
+        // Admin-assisted password reset (52.2): POST /local/v1/admin/users/{id}/password-reset.
+        // The admin sets a new password for a user (account recovery path).
+        endpoints.MapPost("/local/v1/admin/users/{id:guid}/password-reset", async (
+            Guid id,
+            IUserAccountStore accounts,
+            PasswordHasher hasher,
+            AdminPasswordResetRequest body,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrEmpty(body.Password) || body.Password.Length < RegistrationService.MinPasswordLength)
+            {
+                return Results.BadRequest(new { error = $"Password must be at least {RegistrationService.MinPasswordLength} characters." });
+            }
+
+            var account = await accounts.FindByIdAsync(id, ct);
+            if (account is null)
+            {
+                return Results.NotFound();
+            }
+
+            var newHash = hasher.Hash(body.Password);
+            await accounts.UpdatePasswordHashAsync(id, newHash, ct);
+            return Results.Ok(new { success = true, username = account.Username });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
         // Instance metadata (51.3): GET/PUT /local/v1/admin/instance — admin-only.
         endpoints.MapGet("/local/v1/admin/instance", async (
             IInstanceMetadataStore metadataStore,
@@ -971,3 +996,7 @@ public sealed record DismissFlagRequest(string? FlaggerIri, string? FlaggedIri);
 /// <param name="CurrentPassword">The user's current password (verified before the change).</param>
 /// <param name="NewPassword">The new password.</param>
 public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewPassword);
+
+/// <summary>Request body for <c>POST /local/v1/admin/users/{id}/password-reset</c> (52.2).</summary>
+/// <param name="Password">The new password to set for the user.</param>
+public sealed record AdminPasswordResetRequest(string? Password);
