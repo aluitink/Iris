@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**53.7: isReplied/repliedCount + reply expansion** — investigate & implement.
+**53.8: Fix logout-on-refresh** — investigate & fix.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,7 +106,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 53 — Post-1.0 enhancements & operational improvements (in progress):**
 
-1. **53.7: isReplied/repliedCount + reply expansion** — ACTIVE. Add `isReplied`/`repliedCount` to content objects (the requester's reply state + the reply count), and support expanding a collapsed reply thread in the UI.
+1. **53.8: Fix logout-on-refresh** — ACTIVE. After a browser refresh, the user is logged out (the WASM auth state is not persisted). Investigate the auth state provider lifecycle and fix so a refresh preserves the session.
 3. **53.4: Fix post-login current-user context race** — investigate & fix: after login, the current user's actor isn't fetched until landing on a page that requires it (e.g. the timeline), so the feed renders empty on first paint and only populates after a manual refresh. Establish user context as part of the login flow, before the post-login navigation.
 4. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
 5. **53.6: isLiked/isShared on nested collection objects + likedCount/sharedCount extensions** — investigate & design: when a collection (feed/outbox) is dereferenced and contains objects wrapped in an activity (e.g. `Create`), the wrapped object should carry the per-requester `iris:isLiked`/`iris:isShared` extensions too; add `iris:likedCount`/`iris:sharedCount` extensions so clients don't need to enumerate each object's `likes`/`shares` collection.
@@ -134,9 +134,9 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 53.7: **repliedCount on nested objects** (Phase 53) — `iris:repliedCount` on nested objects in outbox/feed, computed from `IReplyStore.GetRepliesAsync`. `isReplied` skipped (ambiguous). [changes/374](docs/changes/374-53.7-replied-count.md)
   - 53.6: **isLiked/isShared on nested objects + likedCount/sharedCount** (Phase 53) — `likedCount`/`sharedCount` on nested objects in outbox (cached) and feed; `isLiked`/`isShared` on nested objects in feed (per-requester, uncached). [changes/373](docs/changes/373-53.6-nested-object-interaction-state.md)
   - 53.5: **OrderedCollection capability advertisement + feed activity-type filtering** (Phase 53) — `iris:refresh`/`iris:query`/`iris:type` capability flags on page-1 `OrderedCollection`; `?type=...` query parameter on the feed endpoint filters to activities of that type. [changes/372](docs/changes/372-53.5-ordered-collection-capabilities.md)
-  - 53.4: **Fix post-login current-user context race** (Phase 53) — `PagedCollection.OnParametersSet` now resets `_loadedFor` when `Client` is null, so the initial load fires when the client becomes available (not when `CollectionIri` first appears with a null client). [changes/371](docs/changes/371-53.4-post-login-context-race.md)
   - 52.3: **Login rate limiting** (Phase 52) — surfaced `RetryAfter` hint in login error message ("Try again in about N minutes"); made thresholds configurable via `IRIS_LOGIN_MAX_ATTEMPTS` / `IRIS_LOGIN_RATE_WINDOW_MINUTES`; live-verified 5 failures → block on 6th, per-key isolation. [changes/367](docs/changes/367-52.3-login-rate-limiting.md)
   - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
   - 51.3: **Instance metadata edit (admin)** (Phase 51) — `/admin/instance` page with name/description form; `IInstanceMetadataStore` (EF + in-memory); `GET`/`PUT /local/v1/admin/instance` (Admin role); EF migration; live-verified save + persist across restart. [changes/362](docs/changes/362-51.3-instance-metadata-edit-admin.md)

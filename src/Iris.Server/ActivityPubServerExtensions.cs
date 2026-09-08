@@ -3713,6 +3713,7 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.Type] = "boolean",
                 [IrisExtensionTerms.LikedCount] = "integer",
                 [IrisExtensionTerms.SharedCount] = "integer",
+                [IrisExtensionTerms.RepliedCount] = "integer",
             },
         };
 
@@ -4394,6 +4395,7 @@ public static class ActivityPubServerExtensions
     /// <list type="bullet">
     /// <item><c>iris:likedCount</c> — the number of distinct likers (from <see cref="ILikeStore.GetLikersAsync"/>).</item>
     /// <item><c>iris:sharedCount</c> — the number of distinct announcers (from <see cref="IAnnounceStore.GetAnnouncersAsync"/>).</item>
+    /// <item><c>iris:repliedCount</c> — the number of replies (from <see cref="IReplyStore.GetRepliesAsync"/>).</item>
     /// <item><c>iris:isLiked</c> / <c>iris:isShared</c> — when a requester IRI is supplied, the requester's
     /// net like/boost state on the embedded object (per-requester, read-time state).</item>
     /// </list>
@@ -4401,8 +4403,8 @@ public static class ActivityPubServerExtensions
     /// references) are passed through unchanged. The original items are never mutated.
     /// </summary>
     /// <param name="items">The collection-page items to enrich.</param>
-    /// <param name="persistence">The persistence provider (provides <see cref="ILikeStore"/> and
-    /// <see cref="IAnnounceStore"/>).</param>
+    /// <param name="persistence">The persistence provider (provides <see cref="ILikeStore"/>,
+    /// <see cref="IAnnounceStore"/>, and <see cref="IReplyStore"/>).</param>
     /// <param name="requesterIri">The authenticated requester's IRI (for <c>isLiked</c>/<c>isShared</c>);
     /// null when the request is anonymous (only counts are added).</param>
     /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (null omits all extensions).</param>
@@ -4472,7 +4474,7 @@ public static class ActivityPubServerExtensions
                 objectIri = new Iri(id);
             }
 
-            // Compute likedCount / sharedCount (cacheable — not per-requester).
+            // Compute likedCount / sharedCount / repliedCount (cacheable — not per-requester).
             if (objectIri is { } oid)
             {
                 var likers = await persistence.Likes.GetLikersAsync(oid, ct).ConfigureAwait(false);
@@ -4483,6 +4485,10 @@ public static class ActivityPubServerExtensions
                 var announcers = await persistence.Announces.GetAnnouncersAsync(oid, ct).ConfigureAwait(false);
                 copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
                     System.Text.Json.JsonSerializer.SerializeToElement(announcers.Count);
+
+                var replies = await persistence.Replies.GetRepliesAsync(oid, ct).ConfigureAwait(false);
+                copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(replies.Count);
             }
 
             // Compute isLiked / isShared (per-requester — only when a requester is known).

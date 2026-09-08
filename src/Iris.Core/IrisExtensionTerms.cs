@@ -109,4 +109,13 @@ public static class IrisExtensionTerms
     /// collection-page response cache. The full wire key is <c>{NamespaceIri}sharedCount</c>.
     /// </summary>
     public const string SharedCount = "sharedCount";
+
+    /// <summary>
+    /// The <c>repliedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of objects that reply to the object
+    /// (the reply reverse-index count). This is a cacheable, per-object interaction counter: it is not
+    /// per-requester, so it is safe to serve from the local collection-page response cache. The full wire
+    /// key is <c>{NamespaceIri}repliedCount</c>.
+    /// </summary>
+    public const string RepliedCount = "repliedCount";
 }
