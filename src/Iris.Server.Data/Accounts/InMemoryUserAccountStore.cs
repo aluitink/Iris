@@ -107,6 +107,25 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         }
     }
 
+    public Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_accounts.TryGetValue(id, out var account))
+            {
+                return Task.FromException(new InvalidOperationException($"No account with id {id}."));
+            }
+            account.NotificationPrefs = prefs is null
+                ? null
+                : new NotificationPreferences
+                {
+                    DisabledTypes = [.. prefs.DisabledTypes],
+                    MutedActors = [.. prefs.MutedActors],
+                };
+        }
+        return Task.CompletedTask;
+    }
+
     // A defensive clone so callers cannot mutate the stored account by holding onto the returned reference.
     private static UserAccount clone(UserAccount account) => new()
     {
@@ -116,6 +135,13 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         Role = account.Role,
         ActorId = account.ActorId,
         NotificationsReadAt = account.NotificationsReadAt,
+        NotificationPrefs = account.NotificationPrefs is null
+            ? null
+            : new NotificationPreferences
+            {
+                DisabledTypes = [.. account.NotificationPrefs.DisabledTypes],
+                MutedActors = [.. account.NotificationPrefs.MutedActors],
+            },
         CreatedAt = account.CreatedAt,
     };
 }

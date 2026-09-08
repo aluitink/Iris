@@ -13,6 +13,25 @@ public enum UserRole
 }
 
 /// <summary>
+/// Per-account notification preferences (53.2): which activity types the user wants to receive
+/// as notifications, and which actors' notifications are muted.
+/// </summary>
+public sealed class NotificationPreferences
+{
+    /// <summary>
+    /// Activity types the user has opted out of (e.g. "Like", "Announce"). An empty or null set
+    /// means all types are enabled.
+    /// </summary>
+    public HashSet<string> DisabledTypes { get; set; } = [];
+
+    /// <summary>
+    /// Actor IRIs whose notifications are muted (the user does not want to see notifications
+    /// from these actors). An empty or null set means no actors are muted.
+    /// </summary>
+    public HashSet<string> MutedActors { get; set; } = [];
+}
+
+/// <summary>
 /// A local browser-session account (username, password hash, role) linked 1:1 to a local
 /// ActivityPub actor. The account <em>is</em> a federated identity — the linked actor
 /// (<see cref="ActorId"/>) is the durable identity concept, so whatever authenticates the
@@ -60,6 +79,11 @@ public sealed class UserAccount
     /// list). Null until first read.
     /// </summary>
     public DateTimeOffset? NotificationsReadAt { get; set; }
+
+    /// <summary>
+    /// The account's notification preferences (53.2). Null means all types enabled, no muted actors.
+    /// </summary>
+    public NotificationPreferences? NotificationPrefs { get; set; }
 
     /// <summary>
     /// When the account was created.

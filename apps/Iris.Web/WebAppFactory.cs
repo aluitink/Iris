@@ -575,7 +575,8 @@ public static class WebAppFactory
 
             // Count unread (for the response body, so the client can update its badge without a second call).
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
-            var unread = CountUnread(inbox, now);
+            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs);
+            var unread = CountUnread(filtered, now);
             return Results.Json(new { unread });
         }).RequireAuthorization();
 
@@ -598,8 +599,57 @@ public static class WebAppFactory
             }
 
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
-            var unread = CountUnread(inbox, account.NotificationsReadAt);
+            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs);
+            var unread = CountUnread(filtered, account.NotificationsReadAt);
             return Results.Json(new { unread });
+        }).RequireAuthorization();
+
+        // Notification preferences (53.2): GET returns the current prefs, PUT replaces them.
+        endpoints.MapGet("/local/v1/account/notification-preferences", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var prefs = account.NotificationPrefs ?? new NotificationPreferences();
+            return Results.Json(new
+            {
+                disabledTypes = prefs.DisabledTypes.ToList(),
+                mutedActors = prefs.MutedActors.ToList(),
+            });
+        }).RequireAuthorization();
+
+        endpoints.MapPut("/local/v1/account/notification-preferences", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            NotificationPrefsRequest body,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var prefs = new NotificationPreferences
+            {
+                DisabledTypes = [.. (body.DisabledTypes ?? []).Where(t => !string.IsNullOrWhiteSpace(t))],
+                MutedActors = [.. (body.MutedActors ?? []).Where(a => !string.IsNullOrWhiteSpace(a))],
+            };
+
+            await accounts.UpdateNotificationPrefsAsync(accountId, prefs, ct);
+            return Results.Ok(new { success = true });
         }).RequireAuthorization();
     }
 
@@ -894,6 +944,52 @@ public static class WebAppFactory
     }
 
     /// <summary>
+    /// Filters inbox items based on notification preferences (53.2). Removes items whose activity type
+    /// is in the disabled set, or whose actor is in the muted-actors set.
+    /// </summary>
+    internal static IReadOnlyList<IObjectOrLink> FilterInboxByPrefs(
+        IReadOnlyList<IObjectOrLink> inbox,
+        NotificationPreferences? prefs)
+    {
+        if (prefs is null || inbox.Count == 0)
+        {
+            return inbox;
+        }
+
+        var hasFilters = prefs.DisabledTypes.Count > 0 || prefs.MutedActors.Count > 0;
+        if (!hasFilters)
+        {
+            return inbox;
+        }
+
+        var result = new List<IObjectOrLink>(inbox.Count);
+        foreach (var item in inbox)
+        {
+            if (item is not Activity act)
+            {
+                result.Add(item);
+                continue;
+            }
+
+            var type = act.Type?.FirstOrDefault();
+            if (type is not null && prefs.DisabledTypes.Contains(type))
+            {
+                continue;
+            }
+
+            var actorIri = (act.Actor as IEnumerable<IObjectOrLink>)?.FirstOrDefault()?.ResolveObjectIri();
+            if (actorIri is { } resolvedIri && prefs.MutedActors.Contains(resolvedIri.Value))
+            {
+                continue;
+            }
+
+            result.Add(item);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Migrates the database (EF provider only; a no-op for the in-memory provider), seeds the single
     /// local actor (writing its signing key to the registered <see cref="IKeyStore"/>), and registers
     /// that key with the server's <see cref="IKeyProvider"/>. Called by <see cref="BuildApp"/> and by
@@ -1046,3 +1142,8 @@ public sealed record ChangePasswordRequest(string? CurrentPassword, string? NewP
 /// <summary>Request body for <c>POST /local/v1/admin/users/{id}/password-reset</c> (52.2).</summary>
 /// <param name="Password">The new password to set for the user.</param>
 public sealed record AdminPasswordResetRequest(string? Password);
+
+/// <summary>Request body for <c>PUT /local/v1/account/notification-preferences</c> (53.2).</summary>
+/// <param name="DisabledTypes">Activity types the user has opted out of.</param>
+/// <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
+public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors);

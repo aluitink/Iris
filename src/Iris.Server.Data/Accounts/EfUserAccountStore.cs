@@ -111,6 +111,24 @@ public sealed class EfUserAccountStore : IUserAccountStore
     }
 
     /// <inheritdoc/>
+    public async Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entity = await db.Set<UserAccountEntity>().FirstOrDefaultAsync(e => e.Id == id, ct)
+            .ConfigureAwait(false);
+        if (entity is null)
+        {
+            throw new InvalidOperationException($"No account with id {id}.");
+        }
+
+        entity.NotificationPrefsJson = prefs is null
+            ? null
+            : System.Text.Json.JsonSerializer.Serialize(prefs);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -135,6 +153,9 @@ public sealed class EfUserAccountStore : IUserAccountStore
         Role = account.Role.ToString(),
         ActorIri = account.ActorId.Value,
         NotificationsReadAt = account.NotificationsReadAt,
+        NotificationPrefsJson = account.NotificationPrefs is null
+            ? null
+            : System.Text.Json.JsonSerializer.Serialize(account.NotificationPrefs),
         CreatedAt = account.CreatedAt,
     };
 
@@ -146,6 +167,9 @@ public sealed class EfUserAccountStore : IUserAccountStore
         Role = Enum.TryParse<UserRole>(entity.Role, out var role) ? role : UserRole.User,
         ActorId = new Iri(entity.ActorIri),
         NotificationsReadAt = entity.NotificationsReadAt,
+        NotificationPrefs = entity.NotificationPrefsJson is null
+            ? null
+            : System.Text.Json.JsonSerializer.Deserialize<NotificationPreferences>(entity.NotificationPrefsJson),
         CreatedAt = entity.CreatedAt,
     };
 }

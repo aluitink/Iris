@@ -63,4 +63,10 @@ public interface IUserAccountStore
     /// Returns <c>true</c> if the account existed and was removed, <c>false</c> otherwise.
     /// </summary>
     Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replaces an account's notification preferences (53.2). Pass <c>null</c> to reset to defaults
+    /// (all types enabled, no muted actors).
+    /// </summary>
+    Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default);
 }

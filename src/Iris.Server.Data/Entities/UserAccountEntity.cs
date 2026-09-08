@@ -39,6 +39,11 @@ public sealed class UserAccountEntity
     public DateTimeOffset? NotificationsReadAt { get; set; }
 
     /// <summary>
+    /// Serialized notification preferences (53.2). Null means all types enabled, no muted actors.
+    /// </summary>
+    public string? NotificationPrefsJson { get; set; }
+
+    /// <summary>
     /// When the account was created.
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }

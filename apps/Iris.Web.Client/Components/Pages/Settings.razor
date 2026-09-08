@@ -20,6 +20,7 @@ else
     <div class="tab-bar">
         <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
         <a href="#password" class="tab @(ActiveTab == "password" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("password")'>Password</a>
+        <a href="#notifications" class="tab @(ActiveTab == "notifications" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("notifications")'>Notifications</a>
         <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
         <a href="#relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
         <a href="#moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
@@ -82,6 +83,72 @@ else
                     @(PasswordBusy ? "Changing…" : "Change password")
                 </button>
             </div>
+        </div>
+    }
+    else if (ActiveTab == "notifications")
+    {
+        <div class="card">
+            <h3>Notifications</h3>
+            @if (NotifBusy)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
+            else if (NotifError is not null)
+            {
+                <div class="error">@NotifError</div>
+            }
+            else if (NotifPrefs is not null)
+            {
+                <h4>Notification types</h4>
+                <p class="muted">Choose which types of activities you want to receive as notifications.</p>
+                @foreach (var (type, label) in NotifTypeOptions)
+                {
+                    var isEnabled = !NotifPrefs.DisabledTypes.Contains(type);
+                    <label class="notif-pref-row">
+                        <input type="checkbox" checked="@isEnabled"
+                               @onchange="e => ToggleNotifType(type, e.Value is bool b && b)" />
+                        <span>@label</span>
+                    </label>
+                }
+
+                <h4 style="margin-top: 1.5rem;">Muted actors</h4>
+                <p class="muted">Notifications from these actors will be hidden.</p>
+                @if (NotifPrefs.MutedActors.Count == 0)
+                {
+                    <p class="muted">No muted actors.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var iri in NotifPrefs.MutedActors)
+                        {
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@($"/actor?iri={Uri.EscapeDataString(iri)}")" class="object-actor-handle">@HandleFromIri(new Iri(iri))</a>
+                                    <span class="muted" style="font-size: 0.85rem;">Muted</span>
+                                </div>
+                                <button class="button button--ghost" @onclick="() => RemoveMutedActor(iri)">Unmute</button>
+                            </div>
+                        }
+                    </div>
+                }
+                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                    <input type="text" class="input" style="max-width: 20rem;" placeholder="Actor IRI (e.g. https://iris.luit.ink/ap/v1/u/bob)"
+                           value="@MutedActorInput"
+                           @onchange="e => MutedActorInput = e.Value?.ToString() ?? string.Empty" />
+                    <button class="button" @onclick="AddMutedActor">Mute</button>
+                </div>
+
+                @if (NotifSaved)
+                {
+                    <div class="success" style="margin-top: 0.75rem;">Preferences saved.</div>
+                }
+            }
         </div>
     }
     else if (ActiveTab == "communities")
@@ -334,6 +401,19 @@ else
     private bool _deleteConfirm;
     private bool DeleteBusy { get; set; }
     private string? DeleteError { get; set; }
+    private NotifPrefsModel? NotifPrefs { get; set; }
+    private bool NotifBusy { get; set; }
+    private string? NotifError { get; set; }
+    private bool NotifSaved { get; set; }
+    private string MutedActorInput { get; set; } = string.Empty;
+
+    private static readonly (string Type, string Label)[] NotifTypeOptions =
+    [
+        ("Follow", "New followers"),
+        ("Like", "Likes on your posts"),
+        ("Announce", "Boosts / shares"),
+        ("Create", "Replies to your posts"),
+    ];
 
     private Iri? InstanceBase
     {
@@ -402,6 +482,10 @@ else
         if (tab == "moderation" && (BlockedActors is null || MutedActors is null || FlaggedActors is null) && ModerationError is null)
         {
             _ = LoadModerationAsync();
+        }
+        if (tab == "notifications" && NotifPrefs is null && NotifError is null)
+        {
+            _ = LoadNotifPrefsAsync();
         }
     }
 
@@ -687,6 +771,114 @@ else
         finally
         {
             DeleteBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private sealed class NotifPrefsModel
+    {
+        public HashSet<string> DisabledTypes { get; set; } = [];
+        public HashSet<string> MutedActors { get; set; } = [];
+    }
+
+    private async Task LoadNotifPrefsAsync()
+    {
+        NotifBusy = true;
+        NotifError = null;
+        NotifSaved = false;
+
+        try
+        {
+            var response = await _http.GetAsync("/local/v1/account/notification-preferences");
+            if (!response.IsSuccessStatusCode)
+            {
+                NotifError = $"Failed to load preferences (HTTP {(int)response.StatusCode})";
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                var prefs = new NotifPrefsModel();
+                if (doc.RootElement.TryGetProperty("disabledTypes", out var dt))
+                {
+                    foreach (var t in dt.EnumerateArray())
+                    {
+                        var s = t.GetString();
+                        if (s is not null) prefs.DisabledTypes.Add(s);
+                    }
+                }
+                if (doc.RootElement.TryGetProperty("mutedActors", out var ma))
+                {
+                    foreach (var a in ma.EnumerateArray())
+                    {
+                        var s = a.GetString();
+                        if (s is not null) prefs.MutedActors.Add(s);
+                    }
+                }
+                NotifPrefs = prefs;
+            }
+        }
+        catch (Exception ex)
+        {
+            NotifError = ex.Message;
+        }
+        finally
+        {
+            NotifBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ToggleNotifType(string type, bool enabled)
+    {
+        if (NotifPrefs is null) return;
+        if (enabled)
+        {
+            NotifPrefs.DisabledTypes.Remove(type);
+        }
+        else
+        {
+            NotifPrefs.DisabledTypes.Add(type);
+        }
+        _ = SaveNotifPrefsAsync();
+    }
+
+    private void AddMutedActor()
+    {
+        if (NotifPrefs is null || string.IsNullOrWhiteSpace(MutedActorInput)) return;
+        NotifPrefs.MutedActors.Add(MutedActorInput.Trim());
+        MutedActorInput = string.Empty;
+        _ = SaveNotifPrefsAsync();
+    }
+
+    private void RemoveMutedActor(string iri)
+    {
+        if (NotifPrefs is null) return;
+        NotifPrefs.MutedActors.Remove(iri);
+        _ = SaveNotifPrefsAsync();
+    }
+
+    private async Task SaveNotifPrefsAsync()
+    {
+        if (NotifPrefs is null) return;
+        NotifSaved = false;
+
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new
+            {
+                disabledTypes = NotifPrefs.DisabledTypes.ToList(),
+                mutedActors = NotifPrefs.MutedActors.ToList(),
+            });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
+            NotifSaved = response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            NotifError = ex.Message;
         }
 
         StateHasChanged();
