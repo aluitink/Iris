@@ -315,9 +315,9 @@ else
             _editing = false;
             await LoadActorFreshAsync(actorId);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SaveError = ex.Message;
+            SaveError = "Your profile changes couldn't be saved. Please try again.";
         }
         finally
         {

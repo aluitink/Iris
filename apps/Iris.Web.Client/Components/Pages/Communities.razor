@@ -162,9 +162,9 @@ else
                     .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
                     .ToList();
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Error = ex.Message;
+                Error = "We couldn't load the community list right now. Please check your connection and try again.";
             }
             finally
             {
@@ -200,9 +200,9 @@ else
                 CreateError = $"Failed to create community (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            CreateError = ex.Message;
+            CreateError = "Something went wrong while creating the community. Please try again.";
         }
         finally
         {
@@ -237,9 +237,9 @@ else
                 .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
                 .ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Error = ex.Message;
+            Error = "We couldn't refresh the community list. Please try again.";
         }
         finally
         {

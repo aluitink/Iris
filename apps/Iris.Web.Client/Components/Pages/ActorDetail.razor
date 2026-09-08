@@ -304,9 +304,9 @@ else
                 JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            JoinRequestError = ex.Message;
+            JoinRequestError = "We couldn't load the join requests. Please try again.";
         }
         finally
         {
@@ -340,9 +340,9 @@ else
                 JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            JoinRequestError = ex.Message;
+            JoinRequestError = "The join request couldn't be approved. Please try again.";
         }
         finally
         {
@@ -377,9 +377,9 @@ else
                 JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            JoinRequestError = ex.Message;
+            JoinRequestError = "The join request couldn't be declined. Please try again.";
         }
         finally
         {

@@ -585,9 +585,9 @@
                 Result = $"Post failed (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Error = ex.Message;
+            Error = "Your post couldn't be sent right now. Please check your connection and try again.";
         }
         finally
         {

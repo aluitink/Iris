@@ -71,7 +71,7 @@ Iris.slnx
 
 ## Now
 
-**Phase 54 — Post-1.0 polish & hardening (IN PROGRESS).** 54.1 (full manual Playwright regression pass) is COMPLETE — swept all pages, fixed 5 defects (admin-page access + raw exceptions, notification-verb misspelling, mobile footer overflow, `aria-pressed`, outbox empty cards). Next slice 54.2 (empty/loading-state consistency audit) is Active.
+**Phase 54 — Post-1.0 polish & hardening (IN PROGRESS).** 54.1 (full manual Playwright regression pass) COMPLETE — 5 defects fixed. 54.2 (empty/loading-state consistency audit) COMPLETE — states verified consistent; all 29 action-time `ex.Message` raw-exception occurrences replaced with friendly copy (the client no longer leaks raw exception text anywhere). Next slice 54.3 (accessibility & keyboard-navigation regression) is Active.
 
 *(Phases 32–53 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
 
@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-**54.2: Empty-state & loading-state consistency audit** — Every paged collection, actor, community, and object page should have a deliberate empty + loading + error state. Audit each page live (signed-in + signed-out), log any missing/inconsistent state (spinner, "no items" message, error copy), and fix in-slice. Also fold in the ~27 action-time `ex.Message` raw-exception occurrences deferred from 54.1 (replace with friendly copy per the 47.2 principle). Manual verification only (no new coded tests) per the binding WASM manual-test policy.
+**54.3: Accessibility & keyboard-navigation regression** — Verify the 47.3 ARIA pass held across the 54.1/54.2 UI changes: Tab order, visible focus, `aria-live` on toasts/notifications, heading hierarchy, and that the new friendly error/empty copy is announced correctly. Manual Playwright pass (keyboard-only navigation + screen-reader snapshot via the accessibility tree); no new coded tests per the binding WASM manual-test policy.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,8 +104,9 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 54 — Post-1.0 polish & hardening (in progress):**
 
-1. **54.2: Empty-state & loading-state consistency audit** — ACTIVE. Every paged collection, actor, community, and object page should have a deliberate empty + loading + error state; fold in the action-time `ex.Message` raw-exception clean-up deferred from 54.1.
-2. **54.3: Accessibility & keyboard-navigation regression** — verify the 47.3 ARIA pass held; Tab order, focus visibility, aria-live on toasts/notifications.
+1. **54.3: Accessibility & keyboard-navigation regression** — ACTIVE. Verify the 47.3 ARIA pass held across the 54.1/54.2 changes; Tab order, visible focus, `aria-live` on toasts/notifications, heading hierarchy, screen-reader announcement of the new friendly error/empty copy.
+2. **54.4: Global error-boundary & circuit-disconnect pass** — verify the Blazor global error UI and circuit-disconnect/reconnect messages never leak stack traces or raw exception text to users (continues the 54.2 `ex.Message` hardening at the app-shell level); friendly copy for unhandled render exceptions.
+3. **54.5: Responsive regression at tablet/laptop breakpoints** — extend the 54.1 mobile pass (375px) to 768px and 1024px: verify no overflow/clipping on the dense pages (Settings cards, admin users/moderation tables, actor detail tabs).
 
 **Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -121,11 +122,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 54.2: **Empty-state & loading-state consistency audit** (Phase 54) — audited every paged-collection/actor/community/object page for deliberate empty+loading+error states (found already consistent — `PagedCollection` centralizes them; non-paged pages all have the four states); live-verified empty states (community feed/members, actor following, object replies). Replaced all 29 action-time `ex.Message` raw-exception occurrences with friendly copy — the WASM client no longer leaks raw exception text anywhere. [changes/377](docs/changes/377-54.2-empty-loading-state-audit.md)
   - 54.1: **Full manual Playwright regression pass** (Phase 54) — swept all pages live; fixed 5 defects: admin-page access (friendly access-denied + no raw JSON exception, via new `AdminGuard`), notification-verb misspelling ("flagged you" not "flaged"), mobile footer overflow (`flex-wrap`), `aria-pressed` explicit true/false, and outbox empty cards (shared `OutboxFilter` content-only). Load-time `ex.Message` → friendly copy (admin×4, Profile, CommunityDetail). [changes/376](docs/changes/376-54.1-playwright-regression-pass.md)
   - 53.9: **Branded WASM loading screen** (Phase 53) — replaced the bare "Loading…" text with a branded splash (pulsing logo + spinner + wordmark) using the app's design tokens. [changes/375](docs/changes/375-53.9-wasm-loading-screen.md)
   - 53.8: **Fix logout-on-refresh** (Phase 53) — INVESTIGATED: could not reproduce. `CookieAuthenticationStateProvider` correctly calls `/local/v1/session` on WASM startup; the auth cookie is persistent (`IsPersistent = true`). Live-verified: login → navigate → full page refresh → still authenticated. The bug was likely observed before the 53.4 post-login context race fix, or is environment-specific. No code change needed.
   - 53.7: **repliedCount on nested objects** (Phase 53) — `iris:repliedCount` on nested objects in outbox/feed, computed from `IReplyStore.GetRepliesAsync`. `isReplied` skipped (ambiguous). [changes/374](docs/changes/374-53.7-replied-count.md)
-  - 53.6: **isLiked/isShared on nested objects + likedCount/sharedCount** (Phase 53) — `likedCount`/`sharedCount` on nested objects in outbox (cached) and feed; `isLiked`/`isShared` on nested objects in feed (per-requester, uncached). [changes/373](docs/changes/373-53.6-nested-object-interaction-state.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

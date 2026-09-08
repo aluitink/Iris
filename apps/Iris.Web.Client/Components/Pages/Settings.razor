@@ -521,9 +521,9 @@ else
             FlaggedActors = await CollectIrisAsync(client.GetFlagsAsync(me));
             (BlockActivityIris, FlagActivityIris) = await CollectActivityIrisAsync(client, me);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModerationError = ex.Message;
+            ModerationError = "That moderation action couldn't be completed. Please try again.";
         }
         finally
         {
@@ -621,9 +621,9 @@ else
                 bm.Remove(target.Value);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModerationError = ex.Message;
+            ModerationError = "That moderation action couldn't be completed. Please try again.";
         }
         finally
         {
@@ -650,9 +650,9 @@ else
                 ? mutes.Where(m => m != target).ToList()
                 : [];
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModerationError = ex.Message;
+            ModerationError = "That moderation action couldn't be completed. Please try again.";
         }
         finally
         {
@@ -686,9 +686,9 @@ else
                 fm.Remove(target.Value);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            ModerationError = ex.Message;
+            ModerationError = "That moderation action couldn't be completed. Please try again.";
         }
         finally
         {
@@ -731,9 +731,9 @@ else
                 PasswordError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Password change failed.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            PasswordError = ex.Message;
+            PasswordError = "Your password couldn't be changed. Please try again.";
         }
         finally
         {
@@ -764,9 +764,9 @@ else
                 DeleteError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Deletion failed.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            DeleteError = ex.Message;
+            DeleteError = "Your account couldn't be deleted. Please try again.";
         }
         finally
         {
@@ -819,9 +819,9 @@ else
                 NotifPrefs = prefs;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            NotifError = ex.Message;
+            NotifError = "We couldn't load your notification preferences. Please try again.";
         }
         finally
         {
@@ -876,9 +876,9 @@ else
             var response = await _http.PutAsync("/local/v1/account/notification-preferences", content);
             NotifSaved = response.IsSuccessStatusCode;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            NotifError = ex.Message;
+            NotifError = "Your notification preferences couldn't be saved. Please try again.";
         }
 
         StateHasChanged();
@@ -899,9 +899,9 @@ else
             var query = bypassCache ? new CollectionQuery { BypassCache = true } : null;
             Relays = await CollectIrisAsync(client.GetRelaysAsync(me, query));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            RelaysError = ex.Message;
+            RelaysError = "We couldn't load your relay list. Please try again.";
         }
         finally
         {
@@ -944,9 +944,9 @@ else
                 return;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            RelaysError = ex.Message;
+            RelaysError = "The relay couldn't be subscribed. Please check the URL and try again.";
         }
         finally
         {
@@ -979,9 +979,9 @@ else
                 return;
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            RelaysError = ex.Message;
+            RelaysError = "The relay couldn't be removed. Please try again.";
         }
         finally
         {
@@ -1043,9 +1043,9 @@ else
 
             MemberCommunities = memberCommunities;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            CommunitiesError = ex.Message;
+            CommunitiesError = "We couldn't load your communities. Please try again.";
         }
         finally
         {

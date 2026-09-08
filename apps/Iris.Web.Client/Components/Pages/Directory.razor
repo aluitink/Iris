@@ -108,9 +108,9 @@ else
 
             Actors = results;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Error = ex.Message;
+            Error = "We couldn't load the directory. Please check your connection and try again.";
         }
         finally
         {

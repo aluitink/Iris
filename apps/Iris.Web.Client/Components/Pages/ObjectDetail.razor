@@ -543,9 +543,9 @@ else if (ObjectDoc is null)
                 EditError = $"Edit failed (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            EditError = ex.Message;
+            EditError = "Your edit couldn't be saved. Please try again.";
         }
         finally
         {
@@ -578,9 +578,9 @@ else if (ObjectDoc is null)
                 DeleteError = $"Delete failed (HTTP {result.StatusCode}).";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            DeleteError = ex.Message;
+            DeleteError = "The post couldn't be deleted. Please try again.";
         }
         finally
         {
