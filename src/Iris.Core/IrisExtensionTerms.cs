@@ -64,4 +64,31 @@ public static class IrisExtensionTerms
     /// requester's <c>/announces</c> collection. The full wire key is <c>{NamespaceIri}isShared</c>.
     /// </summary>
     public const string IsShared = "isShared";
+
+    /// <summary>
+    /// The <c>refresh</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?refresh=true</c> query parameter (cache-bypass). Clients that read this flag can
+    /// issue a <c>?refresh=true</c> request to force a re-render rather than relying on the
+    /// <c>Cache-Control</c> TTL. The full wire key is <c>{NamespaceIri}refresh</c>.
+    /// </summary>
+    public const string Refresh = "refresh";
+
+    /// <summary>
+    /// The <c>query</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?q=...</c> content-filter query parameter. Clients that read this flag can issue
+    /// a <c>?q=...</c> request to filter the collection's items by content/name. The full wire key is
+    /// <c>{NamespaceIri}query</c>.
+    /// </summary>
+    public const string Query = "query";
+
+    /// <summary>
+    /// The <c>type</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?type=...</c> activity-type-filter query parameter. Clients that read this flag
+    /// can issue a <c>?type=Create</c> request to filter the collection to only activities of that type.
+    /// The full wire key is <c>{NamespaceIri}type</c>.
+    /// </summary>
+    public const string Type = "type";
 }

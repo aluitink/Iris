@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design.
+**53.6: isLiked/isShared on nested objects + likedCount/sharedCount** — investigate & implement.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,7 +106,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 53 — Post-1.0 enhancements & operational improvements (in progress):**
 
-1. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — ACTIVE. Investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
+1. **53.6: isLiked/isShared on nested objects + likedCount/sharedCount** — ACTIVE. Add `isLiked`/`isShared` to nested (embedded) objects in collection items, and `likedCount`/`sharedCount` to content objects, so the client can render like/boost state and counts without extra requests.
 3. **53.4: Fix post-login current-user context race** — investigate & fix: after login, the current user's actor isn't fetched until landing on a page that requires it (e.g. the timeline), so the feed renders empty on first paint and only populates after a manual refresh. Establish user context as part of the login flow, before the post-login navigation.
 4. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
 5. **53.6: isLiked/isShared on nested collection objects + likedCount/sharedCount extensions** — investigate & design: when a collection (feed/outbox) is dereferenced and contains objects wrapped in an activity (e.g. `Create`), the wrapped object should carry the per-requester `iris:isLiked`/`iris:isShared` extensions too; add `iris:likedCount`/`iris:sharedCount` extensions so clients don't need to enumerate each object's `likes`/`shares` collection.
@@ -134,9 +134,9 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 53.5: **OrderedCollection capability advertisement + feed activity-type filtering** (Phase 53) — `iris:refresh`/`iris:query`/`iris:type` capability flags on page-1 `OrderedCollection`; `?type=...` query parameter on the feed endpoint filters to activities of that type. [changes/372](docs/changes/372-53.5-ordered-collection-capabilities.md)
   - 53.4: **Fix post-login current-user context race** (Phase 53) — `PagedCollection.OnParametersSet` now resets `_loadedFor` when `Client` is null, so the initial load fires when the client becomes available (not when `CollectionIri` first appears with a null client). [changes/371](docs/changes/371-53.4-post-login-context-race.md)
   - 53.3: **Instance admin dashboard** (Phase 53) — `/admin/dashboard` page with stat cards (user count, post count) + recent registrations table; `GET /local/v1/admin/stats` endpoint; footer nav link. [changes/370](docs/changes/370-53.3-instance-admin-dashboard.md)
-  - 53.2: **Notification preferences** (Phase 53) — per-user mute/follow notification toggles; `NotificationPreferences` model + `NotificationPrefsJson` EF column + migration; `GET`/`PUT /local/v1/account/notification-preferences`; server-side inbox filter applied to unread-count + mark-read; Settings > Notifications tab (type checkboxes + muted-actors list). [changes/369](docs/changes/369-53.2-notification-preferences.md)
   - 52.3: **Login rate limiting** (Phase 52) — surfaced `RetryAfter` hint in login error message ("Try again in about N minutes"); made thresholds configurable via `IRIS_LOGIN_MAX_ATTEMPTS` / `IRIS_LOGIN_RATE_WINDOW_MINUTES`; live-verified 5 failures → block on 6th, per-key isolation. [changes/367](docs/changes/367-52.3-login-rate-limiting.md)
   - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
   - 51.3: **Instance metadata edit (admin)** (Phase 51) — `/admin/instance` page with name/description form; `IInstanceMetadataStore` (EF + in-memory); `GET`/`PUT /local/v1/admin/instance` (Admin role); EF migration; live-verified save + persist across restart. [changes/362](docs/changes/362-51.3-instance-metadata-edit-admin.md)

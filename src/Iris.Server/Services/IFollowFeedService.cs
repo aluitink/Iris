@@ -42,9 +42,12 @@ public interface IFollowFeedService
     /// <param name="actorIri">The IRI of the actor whose followed feed is requested (must be a local actor).</param>
     /// <param name="query">Optional content filter (matched case-insensitively against item content/name).
     /// A null/empty/whitespace query returns the feed unfiltered.</param>
+    /// <param name="activityType">Optional activity-type filter (e.g. <c>"Create"</c>): when non-empty, only
+    /// items whose <c>type</c> includes the given ActivityStreams type are returned. A null/empty/whitespace
+    /// value returns the feed unfiltered by type.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>A task that completes with the feed items (filtered when a query is supplied; empty when the
-    /// actor follows no one, no followed actor has content, or nothing matches the query). A remote outbox
-    /// that cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, CancellationToken ct = default);
+    /// <returns>A task that completes with the feed items (filtered when a query/type filter is supplied;
+    /// empty when the actor follows no one, no followed actor has content, or nothing matches the filters).
+    /// A remote outbox that cannot be fetched contributes nothing (it does not fail the whole feed).</returns>
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, CancellationToken ct = default);
 }

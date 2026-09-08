@@ -75,7 +75,7 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, CancellationToken ct = default)
     {
         var feed = await BuildFeedAsync(actorIri, ct).ConfigureAwait(false);
 
@@ -84,7 +84,14 @@ public sealed class FeedService : IFollowFeedService
         // activities, the content/name of each referenced object) contains the query, case-insensitively.
         if (!string.IsNullOrWhiteSpace(query))
         {
-            return FilterFeed(feed, query);
+            feed = FilterFeed(feed, query);
+        }
+
+        // A non-empty activityType filters the feed to only activities of that type (e.g. "Create" to
+        // show only posts, excluding Flag/Block/Like/Announce activities).
+        if (!string.IsNullOrWhiteSpace(activityType))
+        {
+            feed = FilterFeedByType(feed, activityType);
         }
 
         return feed;
@@ -203,6 +210,30 @@ public sealed class FeedService : IFollowFeedService
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Filters the feed items to those whose ActivityStreams <c>type</c> includes the given type
+    /// (case-sensitive, matching the standard ActivityStreams type names like <c>Create</c>, <c>Like</c>,
+    /// <c>Announce</c>, etc.). Non-activity items (plain objects) are excluded when a type filter is
+    /// active. The order is preserved.
+    /// </summary>
+    private static IReadOnlyList<IObjectOrLink> FilterFeedByType(IReadOnlyList<IObjectOrLink> feed, string activityType)
+    {
+        var matches = new List<IObjectOrLink>();
+        foreach (var item in feed)
+        {
+            if (item is Activity activity)
+            {
+                var type = activity.Type?.FirstOrDefault();
+                if (string.Equals(type, activityType, StringComparison.Ordinal))
+                {
+                    matches.Add(item);
+                }
+            }
+        }
+
+        return matches;
     }
 
     /// <summary>

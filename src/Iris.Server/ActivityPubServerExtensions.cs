@@ -3707,6 +3707,9 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.SearchQuery] = "string",
                 [IrisExtensionTerms.IsLiked] = "boolean",
                 [IrisExtensionTerms.IsShared] = "boolean",
+                [IrisExtensionTerms.Refresh] = "boolean",
+                [IrisExtensionTerms.Query] = "boolean",
+                [IrisExtensionTerms.Type] = "boolean",
             },
         };
 
@@ -5340,13 +5343,24 @@ public static class ActivityPubServerExtensions
         // (21.4.2 — the followed feed's content filter, mirroring the community feed's F-23 ?q). An
         // empty/absent ?q returns the feed unfiltered.
         var query = context.Request.Query["q"].ToString();
-        var items = await feedService.GetFeedAsync(actorIri, query.Length > 0 ? query : null, ct).ConfigureAwait(false);
+
+        // A ?type query filters the feed to only activities of that type (e.g. ?type=Create to show
+        // only posts, excluding Flag/Block/Like/Announce activities).
+        var activityType = context.Request.Query["type"].ToString();
+
+        var items = await feedService.GetFeedAsync(
+            actorIri,
+            query.Length > 0 ? query : null,
+            activityType.Length > 0 ? activityType : null,
+            ct).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = new Iri($"{actorIri.Value}/feed");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items,
+            supportsRefresh: true, supportsQuery: true, supportsType: true,
+            namespaceIri: IrisExtensionNamespace(options));
 
         // The feed is not served through the local collection-page response cache (it merges remote
         // follows' outboxes over the wire on every request), but it still carries the collection
@@ -6306,12 +6320,20 @@ public static class ActivityPubServerExtensions
     /// <param name="page">The 1-based page number to render.</param>
     /// <param name="limit">The page size (items per page).</param>
     /// <param name="items">All of the collection's items (newest-first for the outbox), unslliced.</param>
+    /// <param name="supportsRefresh">When true, advertises the <c>iris:refresh</c> capability on page 1.</param>
+    /// <param name="supportsQuery">When true, advertises the <c>iris:query</c> capability on page 1.</param>
+    /// <param name="supportsType">When true, advertises the <c>iris:type</c> capability on page 1.</param>
+    /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (null omits all capabilities).</param>
     /// <returns>The serialized JSON-LD document for the requested page.</returns>
     private static string BuildCollectionPageDocument(
         Iri collectionIri,
         int page,
         int limit,
-        IReadOnlyList<IObjectOrLink> items)
+        IReadOnlyList<IObjectOrLink> items,
+        bool supportsRefresh = false,
+        bool supportsQuery = false,
+        bool supportsType = false,
+        string? namespaceIri = null)
     {
         var total = items.Count;
         var pageCount = total == 0 ? 1 : (int)Math.Ceiling(total / (double)limit);
@@ -6345,7 +6367,11 @@ public static class ActivityPubServerExtensions
                 partOf: null,
                 startIndex: null,
                 next: pageCount > 1 ? $"{collectionIri.Value}/?page=2" : null,
-                prev: null);
+                prev: null,
+                supportsRefresh: supportsRefresh,
+                supportsQuery: supportsQuery,
+                supportsType: supportsType,
+                namespaceIri: namespaceIri);
         }
 
         return SerializeCollectionPage(
@@ -6357,7 +6383,11 @@ public static class ActivityPubServerExtensions
             partOf: collectionIri.Value,
             startIndex: start,
             next: page < pageCount ? $"{collectionIri.Value}/?page={page + 1}" : null,
-            prev: $"{collectionIri.Value}/?page={page - 1}");
+            prev: $"{collectionIri.Value}/?page={page - 1}",
+            supportsRefresh: false,
+            supportsQuery: false,
+            supportsType: false,
+            namespaceIri: null);
     }
 
     /// <summary>
@@ -6380,6 +6410,14 @@ public static class ActivityPubServerExtensions
     /// <param name="startIndex">The 1-based <c>startIndex</c> (page N&gt;1 only; null otherwise).</param>
     /// <param name="next">The <c>next</c> page IRI, or null when this is the last page.</param>
     /// <param name="prev">The <c>prev</c> page IRI, or null when this is page 1.</param>
+    /// <param name="supportsRefresh">When true, advertises <c>iris:refresh: true</c> (the collection
+    /// supports <c>?refresh=true</c> cache-bypass).</param>
+    /// <param name="supportsQuery">When true, advertises <c>iris:query: true</c> (the collection
+    /// supports <c>?q=...</c> content filtering).</param>
+    /// <param name="supportsType">When true, advertises <c>iris:type: true</c> (the collection
+    /// supports <c>?type=...</c> activity-type filtering).</param>
+    /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (used to prefix the
+    /// capability extension keys). Null or empty omits all capability extensions.</param>
     /// <returns>The serialized JSON-LD document for the page.</returns>
     private static string SerializeCollectionPage(
         string id,
@@ -6390,7 +6428,11 @@ public static class ActivityPubServerExtensions
         string? partOf,
         int? startIndex,
         string? next,
-        string? prev)
+        string? prev,
+        bool supportsRefresh = false,
+        bool supportsQuery = false,
+        bool supportsType = false,
+        string? namespaceIri = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
@@ -6437,6 +6479,30 @@ public static class ActivityPubServerExtensions
             if (prev is not null)
             {
                 writer.WriteString("prev", prev);
+            }
+
+            // Capability extensions (iris:-namespaced booleans) advertise the query parameters this
+            // collection supports. Only emitted on page 1 (the OrderedCollection document), never on
+            // page N>1 (OrderedCollectionPage).
+            if (!string.IsNullOrEmpty(namespaceIri))
+            {
+                if (supportsRefresh)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Refresh);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsQuery)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Query);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsType)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Type);
+                    writer.WriteBooleanValue(true);
+                }
             }
 
             writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
