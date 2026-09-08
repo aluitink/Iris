@@ -66,6 +66,7 @@ else
             CollectionIri="@OutboxIri"
             PageSize="5"
             ShowRefreshButton="true"
+            ItemFilter="IsContentItem"
             ItemTemplate="@PostTemplate"
             EmptyMessage="You haven't posted anything yet. Compose a note to get started." />
     }
@@ -175,6 +176,34 @@ else
         }
 
         return activity.Type?.FirstOrDefault() == "Follow";
+    }
+
+    /// <summary>
+    /// Filters the outbox to content items only (Create of a Note/Article). Social activities
+    /// (Follow, Accept, Reject, Like, Announce, Undo, Delete) are excluded from the "Your posts"
+    /// tab — they belong in notifications.
+    /// </summary>
+    private static bool IsContentItem(IObjectOrLink item)
+    {
+        if (item is not Create create)
+        {
+            return false;
+        }
+
+        if (create.Object is not { } objects)
+        {
+            return false;
+        }
+
+        foreach (var obj in objects)
+        {
+            if (obj is Note || obj is Article)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private RenderFragment<IObjectOrLink> FollowRequestTemplate
