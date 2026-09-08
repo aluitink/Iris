@@ -131,6 +131,16 @@ else
         }
     }
 
+    /// <summary>
+    /// Primes the session's signing key so <c>Session.ActorId</c>/<c>Session.Client</c> resolve before
+    /// the account tab renders.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        StateHasChanged();
+    }
+
     protected override void OnParametersSet()
     {
         if (Session.ActorId is { } actorId && ActorDoc is null)

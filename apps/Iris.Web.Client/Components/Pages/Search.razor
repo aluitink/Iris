@@ -101,6 +101,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await Session.EnsureReadyAsync();
         if (QueryParam is { Length: > 0 })
         {
             Query = QueryParam;

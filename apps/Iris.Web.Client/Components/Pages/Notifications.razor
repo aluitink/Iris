@@ -47,6 +47,16 @@
 
     private bool _markingRead;
 
+    /// <summary>
+    /// Primes the session's signing key so <c>Session.Client</c>/<c>Session.ActorId</c> resolve before
+    /// the inbox <c>PagedCollection</c> renders.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        StateHasChanged();
+    }
+
     private async Task OnMarkAllReadAsync()
     {
         if (Session.UserId is not { } uid)

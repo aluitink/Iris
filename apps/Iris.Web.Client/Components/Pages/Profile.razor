@@ -208,6 +208,18 @@ else
         StateHasChanged();
     }
 
+    /// <summary>
+    /// Primes the session's signing key (WASM cannot block on the key load during render). Once the
+    /// load completes, re-render so <see cref="Session"/>/<see cref="OutboxClient"/> resolve and the
+    /// actor document can be fetched. Without this, <c>Session.ActorId</c> is null on first render and
+    /// the profile is stuck on "Loading your profile…".
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        StateHasChanged();
+    }
+
     protected override void OnParametersSet()
     {
         if (Session.ActorId is { } actorId

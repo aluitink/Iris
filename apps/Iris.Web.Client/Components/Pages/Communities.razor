@@ -140,6 +140,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await Session.EnsureReadyAsync();
         if (Client is { } client && InstanceBase is { } baseIri)
         {
             Busy = true;

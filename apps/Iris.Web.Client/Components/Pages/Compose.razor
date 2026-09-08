@@ -199,6 +199,7 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        await Session.EnsureReadyAsync();
         if (ReplyToIri is { } iri && _fetchedIri != iri.Value)
         {
             await LoadReplyContextAsync(iri);

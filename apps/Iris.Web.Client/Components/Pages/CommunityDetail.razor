@@ -251,6 +251,7 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        await Session.EnsureReadyAsync();
         if (CommunityIri is not { } iri || LoadError is not null)
         {
             return;

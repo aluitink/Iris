@@ -309,6 +309,7 @@ else if (ObjectDoc is null)
 
     protected override async Task OnParametersSetAsync()
     {
+        await Session.EnsureReadyAsync();
         if (Client is not { } client || ObjectIri is not { } iri || LoadError is not null)
         {
             return;

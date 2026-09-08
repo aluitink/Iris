@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-*(none selected yet — the next turn takes the top item from Up Next, which is 45.1.)*
+**45.1: Auth & session pass** (in progress → complete this turn). See [docs/changes/](docs/changes/) for the slice change doc.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -92,7 +92,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
 2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build --no-cache iris-web && docker compose up -d iris-web`
-3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** visited.
+3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** (inline screenshot no files) visited - use public fqdn address "https://iris.luit.ink".
 4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
 5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
 6. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
@@ -104,7 +104,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 45 — WASM manual test & bug hunt** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
 
-1. **45.1: Auth & session pass** — register ≥3 new accounts; login/logout/refresh/session persistence; login error paths (bad password, rate limit); antiforgery on login/register forms; session endpoint + cookie auth state in the WASM client.
+1. **45.2: Content round-trips pass** — per account: Note, Article, reply (context + `inReplyTo`), edit own post, delete own post, boost, like; verify rendering on home/profile/object detail + counters; HTML/long-text/Unicode content. *(45.1 completed — see Recently Completed.)*
 2. **45.2: Content round-trips pass** — per account: Note, Article, reply (context + `inReplyTo`), edit own post, delete own post, boost, like; verify rendering on home/profile/object detail + counters; HTML/long-text/Unicode content.
 3. **45.3: Media & CW pass** — image attachment (top-level Note/Article), sensitive/CW reveal toggle, same-origin media IRI, feed + object detail rendering, oversized-file rejection (1 MiB cap).
 4. **45.4: Social graph pass** — follow/unfollow cross-page, follow-request queue, community join/leave + membership requests, home timeline reflects follows, profile tabs.
@@ -129,6 +129,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 45.1: **Auth & session pass** (Phase 45) — Playwright pass over login/register/logout/session. Defects found + fixed: (a) WASM client's home timeline blank — `index.html` was missing the `<script src="js/WebCrypto.js">` bridge tag (the signing key never loaded → `Session.Client` null); added `wwwroot/js/WebCrypto.js` + the script tag. (b) 10 pages (Profile, Settings, Notifications, Directory, Search, Compose, Communities, CommunityDetail, ActorDetail, ObjectDetail) read `Session.*` synchronously but never called `EnsureReadyAsync()` → stuck on loading; added `await Session.EnsureReadyAsync()` to each page's init lifecycle. (c) Inbox 403 — `InboxEndpointHandler` only checked Basic auth; added the same cookie-auth `actor_iri` fallback as `ActorDocumentHandler` so the signed WASM client can read its own inbox (Notifications). Verified: register bob/carol/dave, duplicate-handle + short-password + invalid-handle errors, bad-password login error, logout ends session, session persists across reload, antiforgery 400 on login POST w/o token, session endpoint 302 unauth. 951 tests green.
   - 44.3: **Media attachment (image) on compose (F-27)** (Phase 44) — "Add image" picker on Compose (top-level posts); on post uploads via `IMediaClient` → same-origin media IRI; `ComposeNote.Build`/Article path carries a single `Image` attachment; feed's `GetMediaAttachments` already renders it. 5 unit + 4 integration tests.
   - 44.2: **Edit own post** (Phase 44) — "Edit" button on own posts (object detail); client `UpdateNoteAsync` posts an `Update` activity; server refreshes the stored object in place and federates; 5 integration tests.
   - 44.1: **Content warning / sensitive flag on compose** (Phase 44) — CW checkbox + summary on Compose (Note posts); note built via `ComposeNote.Build` (sensitive + summary); feed reveal toggle already renders it; 4 integration tests.

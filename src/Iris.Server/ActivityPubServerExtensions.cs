@@ -5078,6 +5078,20 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. Same seam as the actor document's privateKey extension (ActorDocumentHandler)
+        // — without it the signed WASM client (which sends no Basic auth header) is 403'd on its own
+        // inbox, so the Notifications page never loads.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);

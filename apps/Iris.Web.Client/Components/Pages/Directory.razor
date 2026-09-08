@@ -70,6 +70,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await Session.EnsureReadyAsync();
         await LoadActorsAsync();
     }
 
