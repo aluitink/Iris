@@ -1321,6 +1321,19 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the local
+        // mute falls back to cookie auth — the same pattern as the media upload endpoint.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1396,6 +1409,19 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the local
+        // relay subscription falls back to cookie auth — the same pattern as the media upload endpoint.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -2141,12 +2167,24 @@ public static class ActivityPubServerExtensions
                 }
 
                 // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
-                //    recipient needs no cross-instance hop (the local edge is already recorded); only a
-                //    remote recipient is delivered to, signed as the acting local actor.
-                if (recipientIri is { } recipient
-                    && !await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
+                //    recipient needs no cross-instance hop (the local edge is already recorded); the
+                //    activity is added directly to the recipient's inbox so it appears in their
+                //    notifications. A remote recipient is delivered to over the wire, signed as the
+                //    acting local actor.
+                if (recipientIri is { } recipient)
                 {
-                    await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                    var isLocal = await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false)
+                        || await persistence.Communities.TryGetCommunityAsync(recipient, out _, ct).ConfigureAwait(false);
+                    if (isLocal)
+                    {
+                        await persistence.Activities
+                            .AddToInboxAsync(recipient, activity, ct)
+                            .ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                    }
                 }
             }
         }

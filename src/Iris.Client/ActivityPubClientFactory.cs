@@ -136,12 +136,15 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
         // subscription is not a signed inbox delivery — it is a Basic-authenticated POST to the actor's
         // own instance). The local-auth handler is a separate, unsigned pipeline (it must not go through
         // the SigningHandler, which would throw for a request it cannot sign). With no LocalCredentials
-        // the client is built without a default handler — only the explicit-credential overloads work.
-        var localAuth = options.LocalCredentials is { } localCreds
-            ? new LocalAuthHandler(localCreds, httpHandler)
-            : null;
+        // the client falls back to cookie-auth passthrough (the Blazor WASM client): the transport
+        // handler carries the site cookie, and the server's local-moderation endpoints accept cookie
+        // auth as a fallback.
+        if (options.LocalCredentials is { } localCreds)
+        {
+            return new LocalModerationClient(new LocalAuthHandler(localCreds, httpHandler));
+        }
 
-        return new LocalModerationClient(localAuth);
+        return new LocalModerationClient(httpHandler);
     }
 
     /// <inheritdoc/>

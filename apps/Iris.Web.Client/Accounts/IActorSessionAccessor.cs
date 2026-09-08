@@ -329,7 +329,7 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
 
             _localModeration = _clientFactory.CreateLocalModerationClient(
                 new ActivityPubClientOptions { ActorId = actorId },
-                BuildTransportHandler());
+                BuildSameOriginRewriter());
             return _localModeration;
         }
     }

@@ -19,6 +19,7 @@ namespace Iris.Client;
 public sealed class LocalModerationClient : ILocalModerationClient
 {
     private readonly LocalAuthHandler? _localAuth;
+    private readonly HttpMessageHandler? _passthrough;
 
     /// <summary>
     /// Initializes a new <see cref="LocalModerationClient"/>.
@@ -34,6 +35,22 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public LocalModerationClient(LocalAuthHandler? localAuth)
     {
         _localAuth = localAuth;
+    }
+
+    /// <summary>
+    /// Initializes a new <see cref="LocalModerationClient"/> in cookie-auth passthrough mode: the
+    /// no-credential overloads send requests through <paramref name="passthrough"/> without a
+    /// <see cref="LocalAuthHandler"/> wrapper (the server accepts cookie auth as a fallback). Used by
+    /// the Blazor WASM client, which has no Basic-auth credentials.
+    /// </summary>
+    /// <param name="passthrough">
+    /// The transport handler that carries the site cookie (e.g. a <c>SameOriginApHandler</c>-based
+    /// handler). The client does not dispose it.
+    /// </param>
+    public LocalModerationClient(HttpMessageHandler passthrough)
+    {
+        ArgumentNullException.ThrowIfNull(passthrough);
+        _passthrough = passthrough;
     }
 
     /// <inheritdoc/>
@@ -296,26 +313,31 @@ public sealed class LocalModerationClient : ILocalModerationClient
         // is the factory's, and a test may route it through a deferred handler that is created once), so
         // the HttpClient must NOT dispose it. When a handler is built for the request (explicit
         // credentials over a fresh transport) it is request-scoped and IS disposed.
+        //
+        // Cookie-auth passthrough (the Blazor WASM client): the transport handler carries the site
+        // cookie; the server's local-moderation endpoints accept cookie auth as a fallback. The
+        // passthrough handler is shared (not disposed).
         var configured = _localAuth;
-        LocalAuthHandler handler;
+        HttpMessageHandler handler;
         bool ownsHandler;
         if (credentials is not null && configured is null)
         {
-            // Explicit credentials with no configured default: build a request-scoped handler over a
-            // fresh transport (owned and disposed with the request).
             handler = new LocalAuthHandler(credentials, new HttpClientHandler());
             ownsHandler = true;
         }
         else if (credentials is not null)
         {
-            // Explicit credentials with a configured default: wrap the shared transport (not disposed —
-            // it is the factory's / a deferred test handler, reused across calls).
             handler = new LocalAuthHandler(credentials, configured!);
             ownsHandler = false;
         }
         else if (configured is not null)
         {
             handler = configured;
+            ownsHandler = false;
+        }
+        else if (_passthrough is not null)
+        {
+            handler = _passthrough;
             ownsHandler = false;
         }
         else
