@@ -622,16 +622,15 @@
     /// </summary>
     private async Task<MediaUploadResult> UploadAttachmentAsync(Iri actorId, IBrowserFile file)
     {
-        var media = Session.MediaClient
-            ?? throw new InvalidOperationException("Media upload is not available for this session.");
-
         var bytes = await ReadBytesAsync(file);
-        return await media.UploadAsync(
+        var result = await Session.UploadMediaAsync(
             actorId,
             bytes,
             file.ContentType ?? "application/octet-stream",
             file.Name,
             CancellationToken.None);
+        return result
+            ?? throw new InvalidOperationException("Media upload failed.");
     }
 
     /// <summary>

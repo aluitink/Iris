@@ -1468,6 +1468,20 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the media
+        // upload falls back to cookie auth — the same pattern as the inbox endpoint and the actor
+        // document's owner-only extension.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();

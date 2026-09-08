@@ -96,6 +96,19 @@ public interface IActorSessionAccessor
     /// (a) / F-27) — a local, Basic-authenticated multipart POST (not a signed inbox delivery).
     /// </summary>
     IMediaClient? MediaClient { get; }
+
+    /// <summary>
+    /// Uploads a media file via cookie auth (the Blazor WASM UI's path — the client has no Basic-auth
+    /// credentials). POSTs a multipart file to the actor's own instance's local media endpoint and
+    /// returns the same-origin media IRI. Returns null when signed out or the upload fails.
+    /// </summary>
+    /// <param name="actorId">The actor's IRI (the owner of the upload).</param>
+    /// <param name="bytes">The file's bytes.</param>
+    /// <param name="contentType">The file's MIME type (e.g. <c>image/png</c>).</param>
+    /// <param name="fileName">The file's name (e.g. <c>photo.png</c>).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A <see cref="MediaUploadResult"/> on success; null when signed out or the upload fails.</returns>
+    Task<MediaUploadResult?> UploadMediaAsync(Iri actorId, byte[] bytes, string contentType, string fileName, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -353,6 +366,83 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
                 BuildTransportHandler());
             return _mediaClient;
         }
+    }
+
+    /// <inheritdoc/>
+    public async Task<MediaUploadResult?> UploadMediaAsync(Iri actorId, byte[] bytes, string contentType, string fileName, CancellationToken ct = default)
+    {
+        if (!IsSignedIn)
+        {
+            return null;
+        }
+
+        // Cookie-auth upload: the WASM client has no Basic-auth credentials, so the media upload goes
+        // through the same-origin client (which carries the site cookie). The server's local media
+        // endpoint accepts cookie auth (the actor_iri claim must match the requested actor).
+        try
+        {
+            // Build the local media upload URI: {origin}/local/v1/u/{handle}/media.
+            var handle = ExtractHandle(actorId);
+            if (handle is null)
+            {
+                return null;
+            }
+
+            var uri = $"{_browserBase.Scheme}://{_browserBase.Authority}/local/v1/u/{handle}/{MediaConstants.UploadSegment}";
+
+            using var form = new MultipartFormDataContent();
+            var fileContent = new ByteArrayContent(bytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            form.Add(fileContent, "file", fileName);
+
+            using var response = await _sameOriginHttp.PostAsync(uri, form, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            var json = System.Text.Json.JsonDocument.Parse(body);
+            var root = json.RootElement;
+
+            var mediaIri = root.TryGetProperty("id", out var m) ? m.GetString() : null;
+            var mediaType = root.TryGetProperty("type", out var c) ? c.GetString() : null;
+            var name = root.TryGetProperty("name", out var f) ? f.GetString() : null;
+
+            if (string.IsNullOrWhiteSpace(mediaIri))
+            {
+                return null;
+            }
+
+            return new MediaUploadResult(new Iri(mediaIri), mediaType ?? contentType, name ?? fileName);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Extracts the handle (the final path segment) from an actor IRI (e.g. <c>https://host/ap/v1/u/alice</c>
+    /// → <c>alice</c>). Null when the IRI does not match the expected shape.
+    /// </summary>
+    private static string? ExtractHandle(Iri actorIri)
+    {
+        var uri = new Uri(actorIri.Value);
+        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+        // Expected shape: /ap/v1/u/{handle}
+        if (segments.Length < 4)
+        {
+            return null;
+        }
+
+        var idx = Array.IndexOf(segments, "u");
+        if (idx < 0 || idx + 1 >= segments.Length)
+        {
+            return null;
+        }
+
+        return segments[idx + 1];
     }
 
     /// <inheritdoc/>
