@@ -59,6 +59,11 @@ public static class ComposeNote
     /// The attachment image's <c>name</c> (the file's original name), as returned by the media upload.
     /// Used only when <paramref name="mediaIri"/> is set.
     /// </param>
+    /// <param name="mentions">
+    /// The IRIs of actors mentioned in the note (the <c>@handle</c> convention). When non-empty, each
+    /// becomes a <see cref="Mention"/> <c>tag</c> entry whose <c>href</c> is the actor IRI (the
+    /// ActivityPub @mention convention). When null or empty the note carries no <c>tag</c>.
+    /// </param>
     /// <returns>
     /// The composed <see cref="Note"/> (type <c>Note</c>, set by the constructor), ready to be published
     /// through the signed pipeline.
@@ -73,7 +78,8 @@ public static class ComposeNote
         IEnumerable<Iri>? to = null,
         Iri? mediaIri = null,
         string? mediaType = null,
-        string? mediaName = null)
+        string? mediaName = null,
+        IEnumerable<Iri>? mentions = null)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -133,6 +139,18 @@ public static class ComposeNote
                 image.Name = [rawName];
             }
             note.Attachment = [image];
+        }
+
+        if (mentions is not null)
+        {
+            var mentionTags = mentions
+                .Where(i => i != default)
+                .Select(i => new Mention { Href = i.Uri })
+                .ToList();
+            if (mentionTags.Count > 0)
+            {
+                note.Tag = mentionTags;
+            }
         }
 
         return note;

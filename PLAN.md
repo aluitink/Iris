@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**Phase 50 — Release preparation & final hardening (COMPLETE).** All 3 slices done. v1.0.0 is ready for tagging.
+**51.2: View own blocks/mutes/flags** — `/settings` tabs or `/profile` section showing the user's own block/mute/flag lists with undo buttons.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,17 +104,14 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 45 — WASM manual test & bug hunt** (COMPLETE — see [docs/changes/340](docs/changes/340-45.7-triage-closeout.md)).
+**Phase 51 — Feature completion & remaining gaps (in progress):**
 
-**Phase 46 — Visual inspection & design pass** (COMPLETE — see [changes/341–346](docs/changes/341-46.1-design-audit.md)).
+1. **51.2: View own blocks/mutes/flags** — ACTIVE. `/settings` tabs or `/profile` section showing the user's own block/mute/flag lists with undo buttons.
+2. **51.3: Instance metadata edit (admin)** — admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
+3. **51.4: Moderation queue (admin)** — `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
+4. **51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
 
-**Phase 49 — Federation interop & scale validation** (COMPLETE — see [changes/354–356](docs/changes/354-49.1-cross-instance-federation-test-pass.md)).
-
-**Phase 50 — Release preparation & final hardening (COMPLETE):**
-
-1. ~~**50.1: Security audit & dependency review**~~ — COMPLETE. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)
-2. ~~**50.2: CHANGELOG + versioning**~~ — COMPLETE. `CHANGELOG.md` written (v1.0.0); `Version`, `AssemblyVersion`, `FileVersion`, `AssemblyInformationalVersion` added to `Directory.Build.props`. [changes/358](docs/changes/358-50.2-changelog-versioning.md)
-3. ~~**50.3: Release checklist & documentation pass**~~ — COMPLETE. Fixed DP keys path in backup/restore scripts + BACKUP.md (50.1 follow-up); created `RELEASE.md` (tag → build → push → deploy → verify → rollback); full test suite green (1,210 passed, 0 failures). [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)
+**Phase 45–50** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Inbox
 
@@ -128,6 +125,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 51.1: **Mentions in compose** (Phase 51) — `@handle` detection in compose (regex, same-origin); `Mention` tags built in `ComposeNote.Build` + wired into all 4 post paths; fixed doubled-protocol IRI bug (`Uri.GetLeftPart` already includes scheme). Live-verified: note's tag = actor IRI. [changes/360](docs/changes/360-51.1-mentions-in-compose.md)
   - 50.3: **Release checklist & documentation pass** (Phase 50) — fixed DP keys path in backup/restore scripts + BACKUP.md (50.1 follow-up); created `RELEASE.md`; full test suite green (1,210 passed, 0 failures). [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)
   - 50.2: **CHANGELOG + versioning** (Phase 50) — `CHANGELOG.md` written (v1.0.0); `Version`/`AssemblyVersion`/`FileVersion`/`AssemblyInformationalVersion` added to `Directory.Build.props`. [changes/358](docs/changes/358-50.2-changelog-versioning.md)
   - 50.1: **Security audit & dependency review** (Phase 50) — 0 vulnerable packages; fixed: cookie flags (HttpOnly/SameSite/SecurePolicy), non-root Docker user (iris uid 1001), DesignTimeDbContextFactory env-var connection string. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)

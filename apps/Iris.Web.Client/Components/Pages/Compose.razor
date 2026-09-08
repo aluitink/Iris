@@ -337,6 +337,38 @@
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max] + "…";
 
+    /// <summary>
+    /// Detects <c>@handle</c> mentions in the composed text. A mention is an <c>@</c> followed by a
+    /// handle (alphanumerics + underscores) at the start of the text or after whitespace. The handle is
+    /// resolved to an actor IRI using the signed-in actor's origin (same-instance mentions only —
+    /// cross-instance mentions would require a WebFinger lookup, which is deferred).
+    /// Returns an empty list when no mentions are found or the client is unavailable.
+    /// </summary>
+    private async Task<List<Iri>> DetectMentionsAsync(string text, Iri actorId)
+    {
+        var mentions = new List<Iri>();
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_]+)");
+        if (matches.Count == 0)
+        {
+            return mentions;
+        }
+
+        var uri = new Uri(actorId.Value);
+        var baseOrigin = uri.GetLeftPart(System.UriPartial.Authority);
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var handle = match.Groups[1].Value;
+            var actorIri = new Iri($"{baseOrigin}/ap/v1/u/{handle}");
+            if (!mentions.Contains(actorIri))
+            {
+                mentions.Add(actorIri);
+            }
+        }
+
+        return mentions;
+    }
+
     private string? ReplyToHref
     {
         get
@@ -508,18 +540,20 @@
                 media = await UploadAttachmentAsync(actorId, file);
             }
 
+            var mentions = await DetectMentionsAsync(Content.Trim(), actorId);
+
             DeliveryResult result;
             if (ReplyToIri is { } parent)
             {
-                result = await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic]);
+                result = await client.PostReplyAsync(actorId, parent, Content.Trim(), mentions: mentions.Count > 0 ? mentions : null, to: [AsPublic]);
             }
             else if (CommunityIri is { } community)
             {
-                result = await PostToCommunityAsync(client, actorId, community);
+                result = await PostToCommunityAsync(client, actorId, community, mentions.Count > 0 ? mentions : null);
             }
             else if (ContentType == "Article")
             {
-                result = await PostArticleAsync(client, actorId, media);
+                result = await PostArticleAsync(client, actorId, media, mentions.Count > 0 ? mentions : null);
             }
             else
             {
@@ -531,7 +565,8 @@
                     to: [AsPublic],
                     mediaIri: media?.MediaIri,
                     mediaType: media?.ContentType,
-                    mediaName: media?.FileName);
+                    mediaName: media?.FileName,
+                    mentions: mentions.Count > 0 ? mentions : null);
                 result = await client.PostNoteAsync(actorId, note);
             }
 
@@ -564,9 +599,10 @@
     /// Posts a note to a community: the note's <c>attributedTo</c> carries both the author and the
     /// community, and its <c>to</c> is the community's followers collection + the public. The
     /// receiving server's <c>Create</c> handler records the post in the community's members' outboxes
-    /// (the "followed content" half of the community feed).
+    /// (the "followed content" half of the community feed). When <paramref name="mentions"/> is
+    /// non-empty, each mentioned actor becomes a <c>Mention</c> <c>tag</c> entry.
     /// </summary>
-    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri)
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<Iri>? mentions = null)
     {
         var followersIri = communityIri.FollowersOf();
         var note = new KristofferStrube.ActivityStreams.Note
@@ -585,10 +621,15 @@
             Published = DateTime.UtcNow
         };
 
+        if (mentions is { Count: > 0 })
+        {
+            note.Tag = mentions.Select(m => new KristofferStrube.ActivityStreams.Mention { Href = m.Uri }).ToList();
+        }
+
         return await client.PostNoteAsync(actorId, note);
     }
 
-    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, MediaUploadResult? media)
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, MediaUploadResult? media, List<Iri>? mentions = null)
     {
         var article = new Article
         {
@@ -613,6 +654,11 @@
                 image.Name = [fileName];
             }
             article.Attachment = [image];
+        }
+
+        if (mentions is { Count: > 0 })
+        {
+            article.Tag = mentions.Select(m => new KristofferStrube.ActivityStreams.Mention { Href = m.Uri }).ToList();
         }
 
         var create = new Create
