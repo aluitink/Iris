@@ -73,7 +73,9 @@ Iris.slnx
 
 **Phase 44 — Post content completeness (COMPLETE).** 44.1–44.3 all COMPLETE. *(Phases 32–44 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
 
-**Phase 45 — WASM manual test & bug hunt (ACTIVE).** The app just transitioned from SSR (Blazor Server) to a Blazor WebAssembly client; the port is expected to have left implementation holes. Phases 45–46 focus on **manual testing via MCP Playwright** (test accounts + test content created by hand), **triaging defects into this file and fixing them**, and **visual inspection with design decisions** built on what exists. Scope + hunting map + per-slice definitions: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md).
+**Phase 45 — WASM manual test & bug hunt (COMPLETE).** 14 defects found + fixed across 5 slices; 0 deferred. [changes/340](docs/changes/340-45.7-triage-closeout.md).
+
+**Phase 46 — Visual inspection & design pass (ACTIVE).** Screenshot all pages; prioritized design-decision list; implement fixes one coherent area per slice. Scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md).
 
 **Test policy for these phases (user-directed, binding):**
 
@@ -84,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**45.7: Triage closeout** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
+**46.1: Design audit** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -102,14 +104,12 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 45 — WASM manual test & bug hunt** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
+**Phase 45 — WASM manual test & bug hunt** (COMPLETE — see [docs/changes/340](docs/changes/340-45.7-triage-closeout.md)).
 
-1. **45.7: Triage closeout** — review all defects from 45.1–45.6; unfixed → Up Next; change doc summarizing findings + fixes.
+**Phase 46 — Visual inspection & design pass**:
 
-**Phase 46 — Visual inspection & design pass** (after 45):
-
-5. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
-6. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
+1. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
+2. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
 
 ## Inbox
 
@@ -123,11 +123,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 45.6: **Edge states pass** (Phase 45) — Playwright pass over empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page. No defects found. All routes render correctly: /home, /compose, /notifications, /directory, /communities, /profile, /settings, /search (all 0 console errors). Deep links: /actor?iri=nonexistent → "Actor not found." (404 console error expected), /object?iri=nonexistent → "Object not found.", /community?iri=nonexistent → "Community not found." (all 1 expected 404 console error, no unhandled exceptions). Empty states: /search?q=zzzz → "No matches found. Try a different handle or search term.", /actor?iri=dave (no posts) → "No posts yet." Refresh: home + actor detail deep links re-render correctly (0 console errors). Responsive: 375px (iPhone SE) — nav wraps, cards stack, no overflow; 1024px (tablet) — full nav visible, cards centered. 951 server tests green.
-  - 45.5: **Notifications & moderation pass** (Phase 45) — Playwright pass over notifications list + mark-all-read, block/mute/report + undo on actor detail. Defects found + fixed: (a) local-to-local inbox not populated — `ActivityPubServerExtensions` outbox publish handler skipped `AddToInboxAsync` for local recipients; added inbox population for local persons + communities so the Notifications page shows follows/likes. (b) mute required `LocalCredentials` (Basic auth) which the WASM client cannot carry; added cookie-auth fallback to `LocalMuteHandler` + `LocalRelayHandler` (same pattern as media upload), added a cookie-auth passthrough constructor to `LocalModerationClient`, updated `ActivityPubClientFactory` to use passthrough when no `LocalCredentials`, and changed `IActorSessionAccessor` to pass the `SameOriginApHandler`-wrapped handler so FQDN IRIs are rewritten to same-origin. (c) Docker build stale WASM — local `wwwroot/_framework/` accumulated stale Blazor WASM files across builds; added `apps/Iris.Web/wwwroot/_framework/` to `.dockerignore` + added `Iris.Web.Client` restore to the Dockerfile so the WASM is rebuilt from source in the container. Verified: like notification appears in alice's inbox after bob likes her post; mark-all-read works; block/unblock toggles on actor detail; mute/unmute works (no console errors); report button present. 951 server tests green.
-  - 45.4: **Social graph pass** (Phase 45) — Playwright pass over follow/unfollow cross-page, community join/leave, home timeline reflects follows, profile tabs (posts/replies/likes). Defect found + fixed: `following`/`followers` collection pages were never invalidated after follow/unfollow writes (60s TTL served stale pages → cross-page follow-state mismatch). Added `InvalidateLocalCollectionPage` calls for `following` (actor) + `followers` (target) in the outbox publish handler's Follow/Undo-Follow switch, and injected `LocalCollectionPageCache` into `FollowActivityHandler` to invalidate the recipient's `followers` page on inbound follows. Verified: follow in Directory → actor detail immediately shows "Unfollow" + correct follower count; unfollow round-trip; community join/leave; home timeline shows followed actor's new posts; profile tabs (posts/replies/likes) all render; zero console errors. 951 server + 63 web tests green.
-  - 45.3: **Media & CW pass** (Phase 45) — Playwright pass over image attachment (Note + Article), CW reveal toggle, same-origin media IRI, feed + object detail rendering. Defects found + fixed: (a) media upload required Basic auth which the WASM client cannot carry; added cookie-auth fallback to `LocalMediaUploadHandler` (same pattern as inbox/actor document). (b) `UploadMediaAsync` added to `IActorSessionAccessor` for cookie-auth multipart POST via `_sameOriginHttp`. (c) `ObjectView.RewriteMediaToSameOrigin` rewrites FQDN media IRIs to same-origin paths so the browser's `<img>` loads them same-origin (no CORS, no mixed-content). (d) `Compose.razor` `UploadAttachmentAsync` uses `Session.UploadMediaAsync` instead of `Session.MediaClient.UploadAsync`. Verified: Note with image + CW (202, image renders 64×64 same-origin, CW reveal toggle works), Article with image (202, image renders same-origin), oversized-file rejection (server 413 at 10 MiB cap). 951 tests green.
-  - 45.2: **Content round-trips pass** (Phase 45) — Playwright pass over post/edit/delete/like/boost with Unicode/emoji/HTML content. Defects found + fixed: (a) systemic JSON casing mismatch — WASM client's `GetFromJsonAsync`/`ReadFromJsonAsync` used case-sensitive property binding while the server emits camelCase → login/register 400 + zero notification badge; fixed 5 deserialization sites to `PropertyNameCaseInsensitive = true`. (b) CORS — `SameOriginApHandler` rewrote FQDN IRIs to same-origin but was innermost (after signing); moved it outermost so the URL is rewritten BEFORE signing (signature host matches the browser's dial host). (c) `appsettings.json` added to the WASM client (`Iris:AdvertiseBase=https://iris.luit.ink`) so the handler knows the FQDN to rewrite. (d) ObjectDetail `DeleteAsync` used the Create IRI (not the note IRI) → delete was a no-op; fixed to use the `SubjectObject`'s IRI. Verified: post (202, renders on profile with Unicode/emoji/escaped HTML), like (`/likes` totalItems=1, heart lights), boost (`/shares` totalItems=1, boost lights), edit (content updated in DB + UI, like/boost counts persist), delete (note tombstoned with `formerType: Note`). 951 tests green.
+  - 45.7: **Triage closeout** (Phase 45, COMPLETE) — reviewed all 14 defects from 45.1–45.6; all fixed in-slice, 0 deferred. Change doc summarizing findings, recurring patterns (cookie-auth fallback, JSON casing, SameOriginApHandler ordering, cache invalidation, Docker stale WASM), and the nginx `index.html` cache environment finding. [changes/340](docs/changes/340-45.7-triage-closeout.md)
+  - 45.6: **Edge states pass** (Phase 45) — Playwright pass over empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page. No defects found. All routes render correctly: /home, /compose, /notifications, /directory, /communities, /profile, /settings, /search (all 0 console errors). Deep links: /actor?iri=nonexistent → "Actor not found.", /object?iri=nonexistent → "Object not found.", /community?iri=nonexistent → "Community not found." Empty states: search no-matches, user with no posts. Refresh: home + actor detail deep links re-render correctly. Responsive: 375px + 1024px clean. 951 server tests green.
+  - 45.5: **Notifications & moderation pass** (Phase 45) — Playwright pass over notifications list + mark-all-read, block/mute/report + undo on actor detail. Defects found + fixed: local inbox population, cookie-auth mute/relay, Docker stale WASM. 951 server tests green.
+  - 45.4: **Social graph pass** (Phase 45) — Playwright pass over follow/unfollow cross-page, community join/leave, home timeline reflects follows, profile tabs. Defect found + fixed: collection-page cache invalidation on follow/unfollow. 951 server + 63 web tests green.
+  - 45.3: **Media & CW pass** (Phase 45) — Playwright pass over image attachment, CW reveal toggle, same-origin media IRI. Defects found + fixed: cookie-auth media upload, same-origin media rewrite. 951 tests green.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
