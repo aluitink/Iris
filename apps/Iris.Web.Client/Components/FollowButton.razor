@@ -73,7 +73,7 @@
             return;
         }
 
-        if (_lastTargetIri == targetId)
+        if (_lastTargetIri is not null && string.Equals(_lastTargetIri, targetId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }

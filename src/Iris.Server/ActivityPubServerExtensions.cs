@@ -2092,6 +2092,14 @@ public static class ActivityPubServerExtensions
                 // collection), so resolve the undone sub-activity and invalidate accordingly.
                 switch (activity)
                 {
+                    case Follow followAct:
+                        InvalidateLocalCollectionPage(collectionCache, actorIri, "following");
+                        var followTargetIri = followAct.Object?.FirstOrDefault().ResolveObjectIri();
+                        if (followTargetIri.HasValue)
+                        {
+                            InvalidateLocalCollectionPage(collectionCache, followTargetIri.Value, "followers");
+                        }
+                        break;
                     case Block:
                         InvalidateLocalCollectionPage(collectionCache, actorIri, "blocks");
                         break;
@@ -2117,6 +2125,15 @@ public static class ActivityPubServerExtensions
                             else if (undoneActivity is MuteActivity)
                             {
                                 InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
+                            }
+                            else if (undoneActivity is Follow undoneFollow)
+                            {
+                                InvalidateLocalCollectionPage(collectionCache, actorIri, "following");
+                                var undoneFollowTargetIri = undoneFollow.Object?.FirstOrDefault().ResolveObjectIri();
+                                if (undoneFollowTargetIri.HasValue)
+                                {
+                                    InvalidateLocalCollectionPage(collectionCache, undoneFollowTargetIri.Value, "followers");
+                                }
                             }
                         }
 
