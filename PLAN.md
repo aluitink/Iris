@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**50.2: CHANGELOG + versioning** — write `CHANGELOG.md` summarizing all phases, set a version tag (`v1.0.0`), add `AssemblyVersion`/`AssemblyInformationalVersion` to the csproj.
+**50.3: Release checklist & documentation pass** — verify `deploy/README.md`, `BACKUP.md`, `MONITORING.md` are consistent; add a `RELEASE.md` (tag → build → docker push → deploy → verify); final `dotnet build` + `dotnet test` green confirmation.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -113,8 +113,8 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 **Phase 50 — Release preparation & final hardening (in progress)**:
 
 1. ~~**50.1: Security audit & dependency review**~~ — COMPLETE. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)
-2. **50.2: CHANGELOG + versioning** — IN PROGRESS.
-3. **50.3: Release checklist & documentation pass** — verify `deploy/README.md`, `BACKUP.md`, `MONITORING.md` are consistent; add a `RELEASE.md` (tag → build → docker push → deploy → verify); final `dotnet build` + `dotnet test` green confirmation.
+2. ~~**50.2: CHANGELOG + versioning**~~ — COMPLETE. `CHANGELOG.md` written (v1.0.0); `Version`, `AssemblyVersion`, `FileVersion`, `AssemblyInformationalVersion` added to `Directory.Build.props`.
+3. **50.3: Release checklist & documentation pass** — IN PROGRESS. Verify `deploy/README.md`, `BACKUP.md`, `MONITORING.md` are consistent; add a `RELEASE.md` (tag → build → docker push → deploy → verify); final `dotnet build` + `dotnet test` green confirmation.
 
 ## Inbox
 
@@ -128,11 +128,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 50.2: **CHANGELOG + versioning** (Phase 50) — `CHANGELOG.md` written (v1.0.0, summarizing all phases); `Version`/`AssemblyVersion`/`FileVersion`/`AssemblyInformationalVersion` (1.0.0) added to `Directory.Build.props`. [changes/358](docs/changes/358-50.2-changelog-versioning.md)
   - 50.1: **Security audit & dependency review** (Phase 50) — 0 vulnerable packages; fixed: cookie flags (HttpOnly/SameSite/SecurePolicy), non-root Docker user (iris uid 1001), DesignTimeDbContextFactory env-var connection string. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)
   - 49.3: **API documentation** (Phase 49) — `Microsoft.AspNetCore.OpenApi` 10.0.11, `/openapi/v1.json` spec (44 endpoints), Swagger UI at `/api/`. [changes/356](docs/changes/356-49.3-api-documentation.md)
   - 49.2: **Load testing** (Phase 49) — load-test-iris.py (asyncio, p50/p95/p99, rps, error rate); ~62-65 rps @ 0% errors @ 10-100 concurrency; all endpoints equal; no app bottlenecks; scaling path = more containers. [changes/355](docs/changes/355-49.2-load-testing.md)
   - 49.1: **Cross-instance federation test pass** (Phase 49) — verified WebFinger (local+remote), NodeInfo, actor docs, health, metrics, timeline, directory; 0 console errors; no defects. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
-  - 48.3: **Monitoring & alerting** (Phase 48, COMPLETE) — `/local/v1/metrics` Prometheus endpoint, monitor-iris.sh, MONITORING.md. [changes/353](docs/changes/353-48.3-monitoring-alerting.md)
   - 48.2: **Backup & restore strategy** (Phase 48) — backup/restore scripts, DP keys volume, BACKUP.md. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
   - 48.1: **Nginx reverse proxy config** (Phase 48) — nginx.conf, Caddyfile, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
   - 47.4: **Performance & polish** (Phase 47) — Cache-Control, page size, CSS vars, favicon. [changes/350](docs/changes/350-47.4-performance-polish.md)
