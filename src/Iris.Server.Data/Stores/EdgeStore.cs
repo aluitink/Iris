@@ -117,4 +117,19 @@ public sealed class EdgeStore
             .ConfigureAwait(false);
         return sources.Select(s => new Iri(s)).ToList();
     }
+
+    /// <summary>
+    /// Enumerates all edges of a kind with their creation timestamps (for the admin moderation queue).
+    /// </summary>
+    public async Task<IReadOnlyList<(string Source, string Target, DateTimeOffset CreatedAt)>> AllEdgesWithTimestampsAsync(EdgeKind kind, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        return await db.Set<EdgeEntity>()
+            .Where(e => e.Kind == kind)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => new ValueTuple<string, string, DateTimeOffset>(e.Source, e.Target, e.CreatedAt))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
 }

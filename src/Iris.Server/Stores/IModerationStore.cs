@@ -154,4 +154,21 @@ public interface IModerationStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when the mute edge exists.</returns>
     public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns every flag edge on the instance (the admin moderation queue, 51.4). Each entry is a
+    /// <see cref="FlagEdge"/> (flagger IRI, flagged IRI, timestamp).
+    /// </summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the flag edges (possibly empty), ordered by creation time
+    /// (newest first).</returns>
+    public Task<IReadOnlyList<FlagEdge>> GetAllFlagEdgesAsync(CancellationToken ct = default);
 }
+
+/// <summary>
+/// A single flag edge in the moderation queue: who flagged whom, and when.
+/// </summary>
+/// <param name="Flagger">The IRI of the actor who issued the flag.</param>
+/// <param name="Flagged">The IRI of the actor who was flagged.</param>
+/// <param name="CreatedAt">When the flag was recorded.</param>
+public sealed record FlagEdge(Iri Flagger, Iri Flagged, DateTimeOffset CreatedAt);

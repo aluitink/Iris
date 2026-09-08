@@ -668,6 +668,36 @@ public static class WebAppFactory
 
             return Results.Json(new { name = name.Trim(), description = description, updatedAt = DateTimeOffset.UtcNow });
         }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        // Moderation queue (51.4): GET /local/v1/admin/flags — list all flag edges on the instance.
+        endpoints.MapGet("/local/v1/admin/flags", async (
+            IPersistenceProvider persistence,
+            CancellationToken ct) =>
+        {
+            var edges = await persistence.Moderation.GetAllFlagEdgesAsync(ct);
+            return Results.Json(edges.Select(e => new
+            {
+                FlaggerIri = e.Flagger.Value,
+                FlaggedIri = e.Flagged.Value,
+                e.CreatedAt,
+            }));
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        // Moderation queue (51.4): POST /local/v1/admin/flags/dismiss — dismiss (remove) a flag edge.
+        // The flagger and flagged IRIs are in the JSON body (the IRIs contain slashes, so they
+        // cannot be reliably parsed from the URL path).
+        endpoints.MapPost("/local/v1/admin/flags/dismiss", async (
+            IPersistenceProvider persistence,
+            DismissFlagRequest body,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrEmpty(body.FlaggerIri) || string.IsNullOrEmpty(body.FlaggedIri))
+            {
+                return Results.BadRequest(new { error = "flaggerIri and flaggedIri are required" });
+            }
+            var removed = await persistence.Moderation.RemoveFlagAsync(new Iri(body.FlaggerIri), new Iri(body.FlaggedIri), ct);
+            return removed ? Results.Ok(new { removed = true }) : Results.NotFound();
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
     }
 
     /// <summary>
@@ -902,3 +932,8 @@ public static class WebAppFactory
     private static string HostLabel(string baseString)
         => Uri.TryCreate(baseString, UriKind.Absolute, out var uri) ? uri.Host : baseString;
 }
+
+/// <summary>Request body for <c>POST /local/v1/admin/flags/dismiss</c> (51.4).</summary>
+/// <param name="FlaggerIri">The IRI of the actor who filed the flag.</param>
+/// <param name="FlaggedIri">The IRI of the actor that was flagged.</param>
+public sealed record DismissFlagRequest(string? FlaggerIri, string? FlaggedIri);

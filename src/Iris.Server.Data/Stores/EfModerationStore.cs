@@ -70,4 +70,11 @@ public sealed class EfModerationStore : IModerationStore
     /// <inheritdoc/>
     public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)
         => _edges.ContainsAsync(EdgeKind.Mute, muterIri.Value, mutedIri.Value, ct);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<FlagEdge>> GetAllFlagEdgesAsync(CancellationToken ct = default)
+    {
+        var edges = await _edges.AllEdgesWithTimestampsAsync(EdgeKind.Flag, ct).ConfigureAwait(false);
+        return edges.Select(e => new FlagEdge(new Iri(e.Source), new Iri(e.Target), e.CreatedAt)).ToList();
+    }
 }
