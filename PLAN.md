@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**49.2: Load testing** — k6/wrk load test on the timeline + compose endpoints; identify bottlenecks; document capacity.
+**49.3: API documentation** — OpenAPI spec for the `/local/v1/` + `/ap/v1/` endpoints; Swagger UI.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -111,7 +111,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 **Phase 49 — Federation interop & scale validation (next)**:
 
 1. ~~**49.1: Cross-instance federation test pass**~~ — COMPLETE. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
-2. **49.2: Load testing** — k6/wrk load test on the timeline + compose endpoints; identify bottlenecks; document capacity.
+2. ~~**49.2: Load testing**~~ — COMPLETE. [changes/355](docs/changes/355-49.2-load-testing.md)
 3. **49.3: API documentation** — OpenAPI spec for the `/local/v1/` + `/ap/v1/` endpoints; Swagger UI.
 
 ## Inbox
@@ -126,6 +126,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 49.2: **Load testing** (Phase 49) — load-test-iris.py (asyncio, p50/p95/p99, rps, error rate); ~62-65 rps @ 0% errors @ 10-100 concurrency; all endpoints equal; no app bottlenecks; scaling path = more containers. [changes/355](docs/changes/355-49.2-load-testing.md)
   - 49.1: **Cross-instance federation test pass** (Phase 49) — verified WebFinger (local+remote), NodeInfo, actor docs, health, metrics, timeline, directory; 0 console errors; no defects. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
   - 48.3: **Monitoring & alerting** (Phase 48, COMPLETE) — `/local/v1/metrics` Prometheus endpoint, monitor-iris.sh, MONITORING.md. [changes/353](docs/changes/353-48.3-monitoring-alerting.md)
   - 48.2: **Backup & restore strategy** (Phase 48) — backup/restore scripts, DP keys volume, BACKUP.md. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
