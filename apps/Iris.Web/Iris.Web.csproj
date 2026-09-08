@@ -4,9 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Iris.Web</RootNamespace>
     <IsPackable>false</IsPackable>
-    <!-- The UI lives in Iris.Web.Client (WASM). The server is a pure API host. Disable Razor
-         component compilation so the leftover .razor files in Components/ are ignored. -->
-    <EnableDefaultRazorComponentItems>false</EnableDefaultRazorComponentItems>
     <Description>
       The Iris production social platform server: ASP.NET Core host that serves the ActivityPub API
       (Iris.Server), local auth (cookie), notification + session + admin endpoints, and the static
@@ -47,16 +44,10 @@
     <Exec Command="perl -0777 -pi -e 's/&quot;debugLevel&quot;: -1/&quot;debugLevel&quot;: 0/; s/&quot;mainAssemblyName&quot;: &quot;Iris.Web.Client&quot;/&quot;mainAssemblyName&quot;: &quot;Iris.Web.Client&quot;, &quot;globalizationMode&quot;: &quot;invariant&quot;/; s/&quot;icu&quot;: \[[^\]]*\],?//g' wwwroot/_framework/dotnet.js" />
   </Target>
 
-  <ItemGroup>
-    <!-- The UI (Blazor components, IActorSessionAccessor, NotificationService, UiContext) moved to
-         Iris.Web.Client. Exclude these from the server build. -->
-    <Compile Remove="Components/**" />
-    <Compile Remove="Accounts/IActorSessionAccessor.cs" />
-    <Compile Remove="Accounts/NotificationService.cs" />
-    <Compile Remove="Ui/**" />
-  </ItemGroup>
-
-
+  <!-- The UI (Blazor components, IActorSessionAccessor, NotificationService, UiContext) moved to
+       Iris.Web.Client (WASM); the server keeps only the auth surface in Accounts/
+       (ClaimsFactory, ActorClaims, ActorProvisioner, AdminBootstrapper, Login/Registration services,
+       PasswordHasher, LoginRateLimiter, HandleRules). -->
 
 
 

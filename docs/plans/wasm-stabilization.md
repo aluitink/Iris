@@ -27,6 +27,38 @@ The WASM port replaced in-circuit behavior with cross-request HTTP behavior. Kno
 
 Each slice = one Playwright-driven pass. Per pass: rebuild the app (`dotnet build` + docker rebuild), log in (or register) as the designated account, exercise the scope, **screenshot every screen**, log every defect, triage each defect into a fix slice (PLAN.md), fix what is in scope, re-verify live, commit.
 
+### 45.0 — docker-compose re-evaluation: single inbound port for API + UI
+
+The compose stack previously ran a single Blazor-Server app (circuit + API in one process). The transition split it: `Iris.Web` is now a **pure API host** that also serves the WASM client's static files, and `Iris.Web.Client` runs in the browser. There is **one external URL** (`https://iris.luit.ink`) forwarded by the reverse proxy to **host port 8088** — so UI requests and API requests must share that single inbound port. Re-evaluate and lock down the routing solution.
+
+**Current design (one Kestrel, one port, path-based routing):** a single `iris-web` container binds 8080 (published on host 8088). One ASP.NET Core pipeline serves both:
+
+- `UseStaticFiles` → the WASM client's `_framework/` + `wwwroot/` (copied into the server's `wwwroot` at build time).
+- `MapAuthEndpoints` / `MapNotificationEndpoints` / `MapSessionEndpoints` / `MapAdminEndpoints` → `/register`, `/login`, `/logout`, `/local/v1/...`.
+- `MapActivityPubEndpoints` → `/.well-known/webfinger`, `/ap/v1/...`.
+- `MapFallbackToFile("index.html")` (mapped **last**) → any other path serves the SPA shell; the WASM client-side router then handles `/home`, `/compose`, `/profile`, deep links, etc.
+
+The WASM client calls the API **same-origin** (`HttpClient.BaseAddress = HostEnvironment.BaseAddress` — the page's own origin), so no separate UI origin, no CORS, no cross-port calls, and cookie auth works by construction (the `iris.auth` cookie is scoped to the single origin).
+
+**45.0 verifies and hardens exactly this.** Scope:
+
+1. **Confirm the single-port split is clean on the live Docker app (Playwright + raw HTTP):**
+   - UI: `/` (signed-out landing), `/login`, `/register`, deep links (`/object?iri=…`, `/home`), and a refresh on each → the SPA shell (`index.html`) loads and the client router restores state.
+   - Static: `/index.html`, `/favicon.svg`, `/_framework/blazor.webassembly.js` (+ one wasm + `dotnet.js`) → 200 with correct `Content-Type`; confirm the served `dotnet.js` carries the build-time patches (`debugLevel: 0`, `globalizationMode: invariant`) — i.e. the served client is the one just built, not a stale copy.
+   - API: `/.well-known/webfinger?resource=acct:alice@…`, `GET /ap/v1/u/alice`, `GET /ap/v1/u/alice/outbox`, `GET /ap/v1/health`, `GET /local/v1/session` (401 signed-out / 200 signed-in), `GET /ns` → correct JSON, not the SPA fallback.
+   - **No shadowing:** assert the SPA fallback does NOT swallow an API/static route (every route above returns its real payload, not `index.html`), and that an unknown non-API path (e.g. `/definitely-not-a-route`) DOES fall back to `index.html` (200, the SPA shell).
+2. **Validate the reverse-proxy contract for the single origin:** the proxy forwards `https://iris.luit.ink` → host 8088 with **no path rewrite** (path prefix is the router: `/ap/v1/*` + `/local/v1/*` + `/.well-known/*` + `/_framework/*` + `/index.html` + `/favicon.svg` = backend; everything else = SPA). Confirm `UseForwardedHeaders` makes the app see scheme `https` + host `iris.luit.ink` (auth cookie `Secure` flag, advertised IRIs, redirects all correct under the proxy). Document the exact Caddy/nginx config in `docs/plans/production-app-deployment-env-reference.md` (WebSocket upgrade for `/_blazor` no longer applies — WASM has no SignalR circuit; only static + JSON + media flows).
+3. **Cookie + same-origin auth under the single origin:** register/login set `iris.auth` on `iris.luit.ink`; WASM `GET /local/v1/session` reads it; logout clears it; a hard refresh stays signed in; no CORS preflights appear in the network tab (same-origin). Antiforgery token fetch (`/local/v1/antiforgery`) + the login/register form POSTs succeed through the proxy.
+4. **Media + body cap on the shared port:** media upload (`POST` media) + serving the media IRI works on the same origin; an oversized body (e.g. 1.5 MiB) is rejected 413 by Kestrel before the pipeline (the 1 MiB cap) — confirm the cap applies to the shared inbound port.
+5. **Decision (record in the change doc):** keep **one container / one Kestrel / one port** (the status quo) — do NOT introduce a second UI container or a UI origin. Rationale: the WASM client is static files; same-origin cookie auth + no CORS + a single reverse-proxy target is strictly simpler and is what the single inbound URL requires. The only change if anything is found: ensure the `BuildAndCopyClient` output is always fresh (no stale `_framework`) and the route map order is provably correct.
+
+**Definition of done:** the live Docker app (behind the real FQDN where possible, else `http://localhost:8088` with `Iris__AdvertiseBase` set) passes every check in 1–4 with Playwright screenshots + raw-HTTP evidence; the proxy config + the keep-one-port decision are written up in the change doc; the route-order / static-freshness findings (if any) are fixed and re-verified.
+
+**Resolved during scoping (no open action):**
+
+- *Redundant apps:* settled by inspection — there is exactly **one Kestrel** (`Iris.Web`), serving API + static WASM on one port; `Iris.Web.Client` is browser-only (built + copied into the server's `wwwroot` by the `BuildAndCopyClient` target), not a separate app or container. The SSR-era dead files (`apps/Iris.Web/Components/**`, `apps/Iris.Web/Ui/**`, and the leftover `apps/Iris.Web/Accounts/IActorSessionAccessor.cs`, which was unused on the server and broke the build) were deleted, and `Iris.Web.Client` was added to `Iris.slnx`. The samples (`SampleServer`, `SampleBlazorClient`, `IrisStaticHost`) were left in place per the operator's direction (only the dead SSR files were removed).
+- *Stale-container SSR confusion (root-caused):* the live `iris-web` container was serving the **old Blazor Server (SSR) app** — its `wwwroot/_framework/` held `blazor.server.js` and the page ran over the `/_blazor` SignalR circuit, so the network stream showed a single base64 "blazor channel" instead of direct AP HTTP calls. A stale image silently serves the wrong UI. A clean `docker compose build --no-cache` + `up -d` fixed it: the container now serves `blazor.webassembly.js`, `dotnet.js` carries the build-time patches (`debugLevel: 0`, `globalizationMode: invariant`), and the browser makes real AP requests (`/local/v1/session`, `/ap/v1/u/{actor}/outbox`, signed outbox POSTs, media uploads). **This is why 45.0 verifies the served `_framework` is the just-built WASM output** — a rebuild must be the first step of every test pass, and a pass should assert `blazor.webassembly.js` is present (not `blazor.server.js`).
+
 | Slice | Scope |
 |---|---|
 | 45.1 | **Auth & session**: register new accounts (≥3: e.g. `bob`, `carol`, `dave`), log in/out, refresh on signed-in pages, session persistence across reload, logout state, login error paths (bad password, rate limit), antiforgery on the login/register forms. |
