@@ -17,6 +17,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Cors;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -139,6 +140,10 @@ public static class WebAppFactory
     {
         ArgumentNullException.ThrowIfNull(builder);
         builder.Services.AddAntiforgery();
+        // OpenAPI 3.1 spec generation (49.3). The built-in Microsoft.AspNetCore.OpenApi package
+        // (part of the ASP.NET Core shared framework tooling) inspects the minimal-API endpoints
+        // and emits a spec at /openapi/v1.json. A Swagger UI page is served at /api/ (wwwroot/api/index.html).
+        builder.Services.AddOpenApi();
         var baseString = string.IsNullOrWhiteSpace(advertisedBase)
             ? $"http://localhost:{DefaultPort}"
             : advertisedBase.TrimEnd('/');
@@ -357,6 +362,23 @@ public static class WebAppFactory
     /// <param name="baseNoSlash">The advertised public base URI (slash-free).</param>
     public static void ConfigurePipeline(WebApplication app, string baseNoSlash)
     {
+        // Swagger UI landing page (49.3): /api or /api/ → static HTML that loads /openapi/v1.json.
+        // Served via middleware BEFORE UseRouting to avoid ambiguity with the Blazor SPA fallback
+        // (MapFallbackToFile would otherwise catch /api as a "nonfile" path).
+        app.Use(async (ctx, next) =>
+        {
+            var reqPath = ctx.Request.Path.Value ?? string.Empty;
+            if (reqPath == "/api" || reqPath == "/api/")
+            {
+                var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                var htmlPath = Path.Combine(env.WebRootPath, "api", "index.html");
+                var content = await System.IO.File.ReadAllTextAsync(htmlPath, ctx.RequestAborted);
+                ctx.Response.ContentType = "text/html";
+                await ctx.Response.WriteAsync(content, ctx.RequestAborted);
+                return;
+            }
+            await next();
+        });
         app.UseRouting();
         // CORS (slice 33.5): applied only when an operator opted in via Iris:Cors:Origins (the
         // CorsPolicyName policy is registered in ConfigureServices only in that case). When no origins are
@@ -409,6 +431,9 @@ public static class WebAppFactory
         MapSessionEndpoints(app);
         MapAdminEndpoints(app);
         MapMetricsEndpoint(app);
+
+        // OpenAPI 3.1 spec endpoint (49.3): GET /openapi/v1.json returns the auto-generated spec.
+        app.MapOpenApi();
 
         // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
         app.MapActivityPubEndpoints();

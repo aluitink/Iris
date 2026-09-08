@@ -18,15 +18,15 @@
     <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+  </ItemGroup>
+
   <!-- Build the WASM client, then copy its _framework output + source wwwroot files (index.html,
        css/, favicon.svg) into our wwwroot. This makes UseStaticFiles serve everything from a single
        location (the server's wwwroot, which is copied to bin by the SDK). -->
-   <Target Name="BuildAndCopyClient" BeforeTargets="Build"
-           Inputs="..\Iris.Web.Client\Iris.Web.Client.csproj;..\Iris.Web.Client\bin\$(Configuration)\net10.0\wwwroot\_framework\blazor.webassembly.js"
-           Outputs="wwwroot\_framework\blazor.webassembly.js;wwwroot\index.html">
-    <MSBuild Projects="..\Iris.Web.Client\Iris.Web.Client.csproj" Targets="Build"
-             Properties="Configuration=$(Configuration)"
-             Condition="!Exists('..\Iris.Web.Client\bin\$(Configuration)\net10.0\wwwroot\_framework\blazor.webassembly.js')" />
+   <Target Name="BuildAndCopyClient" BeforeTargets="Build" Inputs="..\Iris.Web.Client\Iris.Web.Client.csproj;..\Iris.Web.Client\bin\$(Configuration)\net10.0\wwwroot\_framework\blazor.webassembly.js" Outputs="wwwroot\_framework\blazor.webassembly.js;wwwroot\index.html">
+    <MSBuild Projects="..\Iris.Web.Client\Iris.Web.Client.csproj" Targets="Build" Properties="Configuration=$(Configuration)" Condition="!Exists('..\Iris.Web.Client\bin\$(Configuration)\net10.0\wwwroot\_framework\blazor.webassembly.js')" />
     <ItemGroup>
       <!-- _framework build output -->
       <_WasmFramework Include="..\Iris.Web.Client\bin\$(Configuration)\net10.0\wwwroot\_framework\**\*" />

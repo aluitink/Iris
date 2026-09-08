@@ -198,6 +198,11 @@
         "resolved": "10.0.0",
         "contentHash": "inRnbpCS0nwO/RuoZIAqxQUuyjaknOOnCEZB55KSMMjRhl0RQDttSmLSGsUJN3RQ3ocf5NDLFd2mOQViHqMK5w=="
       },
+      "Microsoft.OpenApi": {
+        "type": "Transitive",
+        "resolved": "2.7.5",
+        "contentHash": "0FA67RSnRM4tcBKqiqVu/HPdZ9+QOKbmeRjxRUGTCjPU4C0bmUhd97Dso7Yild5P7nOV6GxJ2xrK0Kv/O9xp0w=="
+      },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
         "resolved": "17.14.1",
@@ -331,7 +336,8 @@
         "dependencies": {
           "Iris.Server": "[1.0.0, )",
           "Iris.Server.Data": "[1.0.0, )",
-          "Iris.Server.InMemory": "[1.0.0, )"
+          "Iris.Server.InMemory": "[1.0.0, )",
+          "Microsoft.AspNetCore.OpenApi": "[10.0.11, )"
         }
       },
       "BouncyCastle.Cryptography": {
@@ -345,6 +351,15 @@
         "requested": "[0.2.4, )",
         "resolved": "0.2.4",
         "contentHash": "D4ZRwcsJp7mtSERwjznNENKvUHg02GGxLiLMGcDfQVXI0xXpoI6xh0sEFwxL06cXQyQIByaWylNdYlb6hx1rkw=="
+      },
+      "Microsoft.AspNetCore.OpenApi": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.11, )",
+        "resolved": "10.0.11",
+        "contentHash": "R/1EATnPLU+gRfB6lwVkMcymmyAY5ppBBdRN/5lhNEiT3xP1sWccuSFkU/f1lQvN/WgRq5Vn8AhCdE3fqgsL/w==",
+        "dependencies": {
+          "Microsoft.OpenApi": "[2.7.5, 3.0.0)"
+        }
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",

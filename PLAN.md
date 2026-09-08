@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**49.3: API documentation** — OpenAPI spec for the `/local/v1/` + `/ap/v1/` endpoints; Swagger UI.
+**Phase 49 COMPLETE.** All 3 slices done (49.1–49.3). Next: Phase 50 (release preparation).
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -108,11 +108,13 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 46 — Visual inspection & design pass** (COMPLETE — see [changes/341–346](docs/changes/341-46.1-design-audit.md)).
 
-**Phase 49 — Federation interop & scale validation (next)**:
+**Phase 49 — Federation interop & scale validation** (COMPLETE — see [changes/354–356](docs/changes/354-49.1-cross-instance-federation-test-pass.md)).
 
-1. ~~**49.1: Cross-instance federation test pass**~~ — COMPLETE. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
-2. ~~**49.2: Load testing**~~ — COMPLETE. [changes/355](docs/changes/355-49.2-load-testing.md)
-3. **49.3: API documentation** — OpenAPI spec for the `/local/v1/` + `/ap/v1/` endpoints; Swagger UI.
+**Phase 50 — Release preparation & final hardening (next)**:
+
+1. **50.1: Security audit & dependency review** — `dotnet list package --vulnerable`, check all NuGet deps for known CVEs, review auth/session/CSRF/CORS config, verify no secrets in code, audit the Dockerfile for base-image age.
+2. **50.2: CHANGELOG + versioning** — write `CHANGELOG.md` summarizing all phases, set a version tag (`v1.0.0`), add `AssemblyVersion`/`AssemblyInformationalVersion` to the csproj.
+3. **50.3: Release checklist & documentation pass** — verify `deploy/README.md`, `BACKUP.md`, `MONITORING.md` are consistent; add a `RELEASE.md` (tag → build → docker push → deploy → verify); final `dotnet build` + `dotnet test` green confirmation.
 
 ## Inbox
 
@@ -126,6 +128,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 49.3: **API documentation** (Phase 49) — `Microsoft.AspNetCore.OpenApi` 10.0.11, `/openapi/v1.json` spec (44 endpoints), Swagger UI at `/api/`. [changes/356](docs/changes/356-49.3-api-documentation.md)
   - 49.2: **Load testing** (Phase 49) — load-test-iris.py (asyncio, p50/p95/p99, rps, error rate); ~62-65 rps @ 0% errors @ 10-100 concurrency; all endpoints equal; no app bottlenecks; scaling path = more containers. [changes/355](docs/changes/355-49.2-load-testing.md)
   - 49.1: **Cross-instance federation test pass** (Phase 49) — verified WebFinger (local+remote), NodeInfo, actor docs, health, metrics, timeline, directory; 0 console errors; no defects. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
   - 48.3: **Monitoring & alerting** (Phase 48, COMPLETE) — `/local/v1/metrics` Prometheus endpoint, monitor-iris.sh, MONITORING.md. [changes/353](docs/changes/353-48.3-monitoring-alerting.md)
