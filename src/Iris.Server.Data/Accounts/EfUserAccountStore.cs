@@ -110,6 +110,23 @@ public sealed class EfUserAccountStore : IUserAccountStore
         return entities.Select(ToModel).ToList();
     }
 
+    /// <inheritdoc/>
+    public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entity = await db.Set<UserAccountEntity>().FirstOrDefaultAsync(e => e.Id == id, ct)
+            .ConfigureAwait(false);
+        if (entity is null)
+        {
+            return false;
+        }
+
+        db.Set<UserAccountEntity>().Remove(entity);
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        return true;
+    }
+
     private static UserAccountEntity ToEntity(UserAccount account) => new()
     {
         Id = account.Id,

@@ -99,6 +99,14 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         }
     }
 
+    public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult(_accounts.Remove(id));
+        }
+    }
+
     // A defensive clone so callers cannot mutate the stored account by holding onto the returned reference.
     private static UserAccount clone(UserAccount account) => new()
     {

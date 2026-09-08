@@ -268,6 +268,7 @@ public static class WebAppFactory
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
         builder.Services.AddSingleton<ChangePasswordService>();
+        builder.Services.AddSingleton<AccountDeletionService>();
 
         // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
         // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
@@ -627,6 +628,24 @@ public static class WebAppFactory
                 ? Results.Ok(new { success = true })
                 : Results.BadRequest(new { error = result.Error });
         }).RequireAuthorization();
+
+        // Self-service account deletion (53.1): DELETE /local/v1/account.
+        endpoints.MapDelete("/local/v1/account", async (
+            HttpContext ctx,
+            AccountDeletionService deletion,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var result = await deletion.DeleteAsync(accountId, ct);
+            return result.Succeeded
+                ? Results.Ok(new { success = true })
+                : Results.BadRequest(new { error = result.Error });
+        }).RequireAuthorization();
     }
 
     /// <summary>
@@ -698,6 +717,18 @@ public static class WebAppFactory
             var newHash = hasher.Hash(body.Password);
             await accounts.UpdatePasswordHashAsync(id, newHash, ct);
             return Results.Ok(new { success = true, username = account.Username });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        // Admin account deletion (53.1): DELETE /local/v1/admin/users/{id}.
+        endpoints.MapDelete("/local/v1/admin/users/{id:guid}", async (
+            Guid id,
+            AccountDeletionService deletion,
+            CancellationToken ct) =>
+        {
+            var result = await deletion.DeleteAsync(id, ct);
+            return result.Succeeded
+                ? Results.Ok(new { success = true })
+                : Results.BadRequest(new { error = result.Error });
         }).RequireAuthorization(p => p.RequireRole("Admin"));
 
         // Instance metadata (51.3): GET/PUT /local/v1/admin/instance — admin-only.

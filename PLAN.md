@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**53.1: Account deletion (self-service + admin)** — user can delete their account from Settings (with confirmation); admin can delete any user from /admin/users. Cascades: remove actor from store, remove from followers/following, mark posts as deleted (tombstone).
+**53.2: Notification preferences** — mute/follow notification toggles per user.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,9 +106,14 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 53 — Post-1.0 enhancements & operational improvements (in progress):**
 
-1. **53.1: Account deletion (self-service + admin)** — ACTIVE. User deletes own account (Settings); admin deletes any user (/admin/users). Cascade: remove actor, tombstone posts, remove from followers/following.
-2. **53.2: Notification preferences** — mute/follow notification toggles per user.
+1. **53.2: Notification preferences** — ACTIVE. Mute/follow notification toggles per user.
 3. **53.3: Instance admin dashboard** — user count, post count, storage usage, recent registrations.
+4. **53.4: Fix post-login current-user context race** — investigate & fix: after login, the current user's actor isn't fetched until landing on a page that requires it (e.g. the timeline), so the feed renders empty on first paint and only populates after a manual refresh. Establish user context as part of the login flow, before the post-login navigation.
+5. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
+6. **53.6: isLiked/isShared on nested collection objects + likedCount/sharedCount extensions** — investigate & design: when a collection (feed/outbox) is dereferenced and contains objects wrapped in an activity (e.g. `Create`), the wrapped object should carry the per-requester `iris:isLiked`/`iris:isShared` extensions too; add `iris:likedCount`/`iris:sharedCount` extensions so clients don't need to enumerate each object's `likes`/`shares` collection.
+7. **53.7: isReplied/repliedCount extension + reply expansion** — investigate & design: add `iris:isReplied`/`iris:repliedCount` alongside isLiked/isShared; on the full object page, allow a "+" expansion that lazily loads that item's replies.
+8. **53.8: Fix logout-on-refresh** — investigate & fix: refreshing the page logs the user out; the auth cookie should persist login state across refreshes (check cookie expiry/persistence flags and whether WASM re-establishes auth state from the cookie on startup).
+9. **53.9: Improve initial WASM loading screen** — the loading screen shown while WASM resources download/boot (likely `index.html`/`App.razor` splash) is bare; improve it (branding, progress indication) for first-paint experience.
 
 **Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -124,6 +129,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 53.1: **Account deletion (self-service + admin)** (Phase 53) — Settings > Danger tab with two-step confirmation; AdminUsers page Delete button; `AccountDeletionService` tombstones objects → removes actor → deletes account row; `DELETE /local/v1/account` + `DELETE /local/v1/admin/users/{id}`; live-verified both paths. [changes/368](docs/changes/368-53.1-account-deletion.md)
   - 52.3: **Login rate limiting** (Phase 52) — surfaced `RetryAfter` hint in login error message ("Try again in about N minutes"); made thresholds configurable via `IRIS_LOGIN_MAX_ATTEMPTS` / `IRIS_LOGIN_RATE_WINDOW_MINUTES`; live-verified 5 failures → block on 6th, per-key isolation. [changes/367](docs/changes/367-52.3-login-rate-limiting.md)
   - 52.2: **Admin-assisted password reset** (Phase 52) — `POST /local/v1/admin/users/{id}/password-reset`; AdminUsers page with inline reset form; fixed WASM HttpClient + Role enum deserialization; live-verified reset→login round-trip. [changes/366](docs/changes/366-52.2-admin-password-reset.md)
   - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
@@ -139,7 +145,6 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
   - 49.2: **Load testing** (Phase 49) — load-test-iris.py (asyncio, p50/p95/p99, rps, error rate); ~62-65 rps @ 0% errors @ 10-100 concurrency; all endpoints equal; no app bottlenecks; scaling path = more containers. [changes/355](docs/changes/355-49.2-load-testing.md)
   - 48.2: **Backup & restore strategy** (Phase 48) — backup/restore scripts, DP keys volume, BACKUP.md. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
   - 48.1: **Nginx reverse proxy config** (Phase 48) — nginx.conf, Caddyfile, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
-  - 47.4: **Performance & polish** (Phase 47) — Cache-Control, page size, CSS vars, favicon. [changes/350](docs/changes/350-47.4-performance-polish.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

@@ -56,4 +56,11 @@ public interface IUserAccountStore
     /// not), so a local actor can sign outbound federation after a restart.
     /// </summary>
     Task<IReadOnlyCollection<UserAccount>> GetAllAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Permanently removes an account. The caller is responsible for any higher-level teardown
+    /// (tombstoning objects, removing the actor) before calling this.
+    /// Returns <c>true</c> if the account existed and was removed, <c>false</c> otherwise.
+    /// </summary>
+    Task<bool> DeleteAsync(Guid id, CancellationToken ct = default);
 }

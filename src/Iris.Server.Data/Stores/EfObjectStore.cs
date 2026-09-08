@@ -121,6 +121,26 @@ public sealed class EfObjectStore : IObjectStore
         return result;
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entities = await db.Set<ObjectEntity>().AsNoTracking()
+            .Where(e => e.AttributedTo == actorIri.Value)
+            .ToListAsync(ct).ConfigureAwait(false);
+        var result = new List<IObject>(entities.Count);
+        foreach (var entity in entities)
+        {
+            if (AsDocument.Deserialize(entity.Document) is IObject obj)
+            {
+                result.Add(obj);
+            }
+        }
+
+        return result;
+    }
+
     /// <summary>
     /// Reads the object's attributed-to IRI (for the relational index) when it is a resolvable link.
     /// </summary>

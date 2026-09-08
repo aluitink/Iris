@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
 using Iris.Core;
+using Iris.Core.Identity;
 using Iris.Server.Persistance;
 using KristofferStrube.ActivityStreams;
 
@@ -90,6 +91,30 @@ public sealed class FileBackedObjectStore : IObjectStore, IDisposable
             {
                 var obj = ActivityJson.Deserialize<IObjectOrLink>(entry.Json) as IObject;
                 if (obj is not null)
+                {
+                    result.Add(obj);
+                }
+            }
+
+            return result;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<IObject>>(s =>
+        {
+            var result = new List<IObject>();
+            foreach (var entry in DocumentMap(s).Values)
+            {
+                var obj = ActivityJson.Deserialize<IObjectOrLink>(entry.Json) as IObject;
+                if (obj is null)
+                {
+                    continue;
+                }
+
+                var attributedTo = (obj as KristofferStrube.ActivityStreams.Object)?.AttributedTo?.FirstOrDefault();
+                var iri = attributedTo?.ResolveObjectIri();
+                if (iri is not null && iri == actorIri)
                 {
                     result.Add(obj);
                 }

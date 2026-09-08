@@ -23,6 +23,7 @@ else
         <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
         <a href="#relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
         <a href="#moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
+        <a href="#danger" class="tab tab--danger @(ActiveTab == "danger" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("danger")'>Danger</a>
     </div>
 
     @if (ActiveTab == "account")
@@ -262,6 +263,33 @@ else
             }
         </div>
     }
+    else if (ActiveTab == "danger")
+    {
+        <div class="card card--danger">
+            <h3>Account deletion</h3>
+            <p>Deleting your account is <strong>permanent and irreversible</strong>. All your posts will be
+            removed, your profile will disappear, and you will be unable to log in. Followers will no
+            longer see your content.</p>
+            @if (DeleteError is not null)
+            {
+                <div class="error">@DeleteError</div>
+            }
+            @if (_deleteConfirm)
+            {
+                <p style="color: var(--color-danger, #c0392b); font-weight: bold;">
+                    Are you absolutely sure? This cannot be undone.
+                </p>
+                <button class="button button--danger" disabled="@DeleteBusy" @onclick="DeleteAccountAsync">
+                    Yes, permanently delete my account
+                </button>
+                <button class="button button--ghost" @onclick="() => _deleteConfirm = false">Cancel</button>
+            }
+            else
+            {
+                <button class="button button--danger" @onclick="() => _deleteConfirm = true">Delete my account</button>
+            }
+        </div>
+    }
 }
 
 @code {
@@ -273,6 +301,9 @@ else
 
     [Inject]
     private IHttpClientFactory HttpFactory { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
 
     private HttpClient _http = null!;
 
@@ -300,6 +331,9 @@ else
     private bool PasswordBusy { get; set; }
     private string? PasswordError { get; set; }
     private bool PasswordSuccess { get; set; }
+    private bool _deleteConfirm;
+    private bool DeleteBusy { get; set; }
+    private string? DeleteError { get; set; }
 
     private Iri? InstanceBase
     {
@@ -620,6 +654,39 @@ else
         finally
         {
             PasswordBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task DeleteAccountAsync()
+    {
+        DeleteBusy = true;
+        DeleteError = null;
+
+        try
+        {
+            var response = await _http.DeleteAsync("/local/v1/account");
+            if (response.IsSuccessStatusCode)
+            {
+                // Redirect to login after a short delay so the user sees the confirmation.
+                await Task.Delay(500);
+                Navigation.NavigateTo("/logout", forceLoad: true);
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                DeleteError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Deletion failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            DeleteError = ex.Message;
+        }
+        finally
+        {
+            DeleteBusy = false;
         }
 
         StateHasChanged();

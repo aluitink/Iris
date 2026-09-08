@@ -32,6 +32,14 @@ else
         {
             <div class="success">@ResetSuccess</div>
         }
+        @if (DeleteError is not null)
+        {
+            <div class="error">@DeleteError</div>
+        }
+        @if (DeleteSuccess is not null)
+        {
+            <div class="success">@DeleteSuccess</div>
+        }
         <table class="admin-table">
             <thead>
                 <tr>
@@ -52,6 +60,9 @@ else
                             <button class="btn btn--small" @onclick="() => ResetPasswordPrompt(user)" disabled="@ResetBusy">
                                 Reset password
                             </button>
+                            <button class="btn btn--small btn--danger" @onclick="() => DeleteUserPrompt(user)" disabled="@DeleteBusy" style="margin-left: 0.25rem;">
+                                Delete
+                            </button>
                         </td>
                     </tr>
                 }
@@ -68,6 +79,15 @@ else
                 <button class="button button--ghost" @onclick="() => ResetTarget = null">Cancel</button>
             </div>
         }
+
+        @if (DeleteTarget is not null)
+        {
+            <div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; color: var(--color-danger, #c0392b);">
+                <span>Permanently delete <strong>@DeleteTarget.Username</strong>? This cannot be undone.</span>
+                <button class="button button--danger" disabled="@DeleteBusy" @onclick="DeleteUserConfirm">Delete</button>
+                <button class="button button--ghost" @onclick="() => DeleteTarget = null">Cancel</button>
+            </div>
+        }
     </div>
 }
 
@@ -81,6 +101,10 @@ else
     private bool ResetBusy { get; set; }
     private string? ResetError { get; set; }
     private string? ResetSuccess { get; set; }
+    private AdminUserDto? DeleteTarget { get; set; }
+    private bool DeleteBusy { get; set; }
+    private string? DeleteError { get; set; }
+    private string? DeleteSuccess { get; set; }
 
     public AdminUsers(IHttpClientFactory factory)
     {
@@ -94,25 +118,28 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        await LoadUsersAsync();
+    }
+
+    private async Task<List<AdminUserDto>?> LoadUsersAsync()
+    {
         try
         {
             var response = await _http!.GetAsync("/local/v1/admin/users");
             if (!response.IsSuccessStatusCode)
             {
                 LoadError = $"Failed to load users (HTTP {(int)response.StatusCode})";
-                return;
+                return null;
             }
-            // The server serializes the user fields as camelCase (actorIri, createdAt, etc.);
-            // ReadFromJsonAsync's default options are case-sensitive, so deserialize with a
-            // case-insensitive property name matcher so every field binds.
             var list = System.Text.Json.JsonSerializer.Deserialize<List<AdminUserDto>>(
                 await response.Content.ReadAsStringAsync(),
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            Users = list?.OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase).ToList();
+            return list?.OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase).ToList();
         }
         catch (Exception ex)
         {
             LoadError = ex.Message;
+            return null;
         }
     }
 
@@ -167,6 +194,53 @@ else
         finally
         {
             ResetBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private void DeleteUserPrompt(AdminUserDto user)
+    {
+        DeleteTarget = user;
+        DeleteError = null;
+        StateHasChanged();
+    }
+
+    private async Task DeleteUserConfirm()
+    {
+        if (DeleteTarget is null)
+        {
+            return;
+        }
+
+        DeleteBusy = true;
+        DeleteError = null;
+
+        try
+        {
+            var response = await _http!.DeleteAsync($"/local/v1/admin/users/{DeleteTarget.Id}");
+            if (response.IsSuccessStatusCode)
+            {
+                DeleteSuccess = $"Account @{DeleteTarget.Username} deleted.";
+                DeleteTarget = null;
+                // Reload the user list.
+                var list = await LoadUsersAsync();
+                Users = list;
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                DeleteError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Deletion failed.";
+            }
+        }
+        catch (Exception ex)
+        {
+            DeleteError = ex.Message;
+        }
+        finally
+        {
+            DeleteBusy = false;
         }
 
         StateHasChanged();

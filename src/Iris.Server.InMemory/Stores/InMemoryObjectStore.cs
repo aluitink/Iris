@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Identity;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
 
@@ -53,5 +54,20 @@ public sealed class InMemoryObjectStore : IObjectStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<IObject>>(_objects.Values.ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var results = _objects.Values
+            .Where(o =>
+            {
+                var attributedTo = (o as KristofferStrube.ActivityStreams.Object)?.AttributedTo?.FirstOrDefault();
+                var iri = attributedTo?.ResolveObjectIri();
+                return iri is not null && iri == actorIri;
+            })
+            .ToList();
+        return Task.FromResult<IReadOnlyList<IObject>>(results);
     }
 }

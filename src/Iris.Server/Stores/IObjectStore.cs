@@ -55,4 +55,13 @@ public interface IObjectStore
     /// unspecified; callers that need a stable order sort the result (e.g. by IRI). Callers that search
     /// content should skip <see cref="Tombstone"/>s (a deleted object has no searchable content).</returns>
     public Task<IReadOnlyList<IObject>> ListObjectsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists every object attributed to the given actor (via the <c>attributedTo</c> field).
+    /// Used for account-deletion teardown (tombstoning the actor's content).
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the objects attributed to the actor (possibly empty).</returns>
+    public Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default);
 }
