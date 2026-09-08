@@ -36,11 +36,19 @@ namespace Iris.Client.Pipeline;
 /// the remote instance and returns the response, so the browser only ever talks to its own origin.
 /// A same-host <c>GET</c> (a read of the local instance) dials directly, as before.
 /// </para>
+/// <para>
+/// Cookie-auth mode: when <c>credentials</c> is <see langword="null"/> the proxy request carries no
+/// <c>Authorization</c> header. Because the proxy request is same-origin, the browser's transport
+/// attaches the site cookie, and the proxy identifies the acting actor from the cookie's
+/// <c>actor_iri</c> claim (the same cookie-auth fallback the local mute / media endpoints use). This
+/// is how the Blazor WebAssembly client routes cross-instance reads: the browser has no Basic
+/// credentials, so it authenticates to its own instance by cookie.
+/// </para>
 /// </remarks>
 public sealed class ProxyFallbackHandler : DelegatingHandler
 {
     private readonly Iri _proxyBase;
-    private readonly ProxyCredentials _credentials;
+    private readonly ProxyCredentials? _credentials;
     private readonly bool _alwaysProxy;
     private readonly Uri? _dialBase;
     private readonly bool _crossInstanceReadsViaProxy;
@@ -50,11 +58,15 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     /// </summary>
     /// <param name="proxyBase">The home instance that hosts the proxy endpoint (its base IRI, e.g.
     /// <c>https://a.example</c>). Must be non-null and a valid IRI.</param>
-    /// <param name="credentials">The Basic-auth credentials to send to the proxy (the acting
-    /// actor's username + password).</param>
+    /// <param name="credentials">
+    /// The Basic-auth credentials to send to the proxy (the acting actor's username + password). When
+    /// <see langword="null"/> the proxy request carries <em>no</em> <c>Authorization</c> header and
+    /// authenticates by the same-origin site cookie instead (a browser whose transport attaches the
+    /// cookie — see the cross-instance-read mode, which the WASM client uses).
+    /// </param>
     /// <param name="innerHandler">The inner handler (the signed client pipeline) to forward the
     /// direct attempt to.</param>
-    public ProxyFallbackHandler(Iri proxyBase, ProxyCredentials credentials, HttpMessageHandler innerHandler)
+    public ProxyFallbackHandler(Iri proxyBase, ProxyCredentials? credentials, HttpMessageHandler innerHandler)
         : this(proxyBase, credentials, innerHandler, alwaysProxy: false)
     {
     }
@@ -63,7 +75,10 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     /// Initializes a new <see cref="ProxyFallbackHandler"/> over an explicit inner handler.
     /// </summary>
     /// <param name="proxyBase">The home instance that hosts the proxy endpoint (its base IRI).</param>
-    /// <param name="credentials">The Basic-auth credentials to send to the proxy.</param>
+    /// <param name="credentials">
+    /// The Basic-auth credentials to send to the proxy, or <see langword="null"/> to authenticate by
+    /// the same-origin site cookie (no <c>Authorization</c> header is sent).
+    /// </param>
     /// <param name="innerHandler">The inner handler (the signed client pipeline).</param>
     /// <param name="alwaysProxy">
     /// When <see langword="true"/> every request is routed through the proxy <em>without</em> a direct
@@ -72,11 +87,11 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     /// direct attempt is made first and the proxy is used only on a 401/403.
     /// </param>
     public ProxyFallbackHandler(
-        Iri proxyBase, ProxyCredentials credentials, HttpMessageHandler innerHandler, bool alwaysProxy)
+        Iri proxyBase, ProxyCredentials? credentials, HttpMessageHandler innerHandler, bool alwaysProxy)
     {
         ArgumentNullException.ThrowIfNull(innerHandler);
         _proxyBase = proxyBase;
-        _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+        _credentials = credentials;
         InnerHandler = innerHandler;
         _alwaysProxy = alwaysProxy;
     }
@@ -86,7 +101,11 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     /// cross-instance-read mode.
     /// </summary>
     /// <param name="proxyBase">The home instance that hosts the proxy endpoint (its base IRI).</param>
-    /// <param name="credentials">The Basic-auth credentials to send to the proxy.</param>
+    /// <param name="credentials">
+    /// The Basic-auth credentials to send to the proxy, or <see langword="null"/> to authenticate by
+    /// the same-origin site cookie (no <c>Authorization</c> header is sent — the cross-instance-read
+    /// mode's WASM usage, where the browser carries the cookie).
+    /// </param>
     /// <param name="innerHandler">The inner handler (the signed client pipeline).</param>
     /// <param name="alwaysProxy">
     /// When <see langword="true"/> every signed write (POST/PUT) is routed through the proxy without a
@@ -104,7 +123,7 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     /// </param>
     public ProxyFallbackHandler(
         Iri proxyBase,
-        ProxyCredentials credentials,
+        ProxyCredentials? credentials,
         HttpMessageHandler innerHandler,
         bool alwaysProxy,
         Uri? dialBase,
@@ -112,7 +131,7 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
     {
         ArgumentNullException.ThrowIfNull(innerHandler);
         _proxyBase = proxyBase;
-        _credentials = credentials ?? throw new ArgumentNullException(nameof(credentials));
+        _credentials = credentials;
         InnerHandler = innerHandler;
         _alwaysProxy = alwaysProxy;
         _dialBase = dialBase;
@@ -180,8 +199,16 @@ public sealed class ProxyFallbackHandler : DelegatingHandler
             $"{_proxyBase.Value.TrimEnd('/')}/ap/v1/proxy/{target}");
 
         using var proxyRequest = new HttpRequestMessage(HttpMethod.Post, proxyUri);
-        proxyRequest.Headers.Authorization = new AuthenticationHeaderValue(
-            "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_credentials.Username}:{_credentials.Password}")));
+        // Basic-auth mode: send the acting actor's credentials so the proxy identifies the actor from
+        // the Authorization header. Cookie-auth mode (credentials null): send NO Authorization header —
+        // the proxy request is same-origin, so the browser's transport attaches the site cookie and the
+        // proxy identifies the actor from the cookie's actor_iri claim (the WASM client has no Basic
+        // credentials; the browser cannot be given the user's password).
+        if (_credentials is { } credentials)
+        {
+            proxyRequest.Headers.Authorization = new AuthenticationHeaderValue(
+                "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{credentials.Username}:{credentials.Password}")));
+        }
 
         // The proxy transport is always a POST (the target IRI rides in the path); the X-Iris-Proxy-
         // Method header carries the REAL method of the request the client wants made, so the proxy

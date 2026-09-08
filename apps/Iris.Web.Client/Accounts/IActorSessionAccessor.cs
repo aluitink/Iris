@@ -204,6 +204,39 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     /// </summary>
     private SameOriginApHandler BuildSameOriginRewriter() => new(new HttpClientHandler(), _advertiseBase, _browserBase);
 
+    /// <summary>
+    /// Builds the <see cref="ActivityPubClientOptions"/> for the session's signed ActivityPub client,
+    /// enabling the cross-instance-read proxy fallback (54.7). A browser cannot reach a cross-origin
+    /// remote instance directly — a direct cross-origin <c>GET</c> is CORS-blocked (a network failure
+    /// with no status code, so the 401/403 fallback never engages). Routing a cross-instance <c>GET</c>
+    /// straight through the same-origin home proxy (which relays it to the remote and returns the
+    /// response) is the only way the browser can load a remote actor/object.
+    /// </summary>
+    /// <remarks>
+    /// The proxy and dial bases are the instance's canonical base — the advertised FQDN when set (the
+    /// host the client's own actor IRIs use, so a local read is same-host and dials directly, not
+    /// proxied), otherwise the browser origin (the same-origin case). <see cref="ActivityPubClientOptions.
+    /// ProxyCredentials"/> is left null: the proxy request is same-origin, so the browser's transport
+    /// attaches the site cookie and the proxy identifies the actor from the cookie's <c>actor_iri</c>
+    /// claim (the browser has no Basic credentials — it cannot be given the user's password).
+    /// </remarks>
+    private ActivityPubClientOptions BuildClientOptions(Iri actorId)
+    {
+        // The home instance's canonical base: the advertised FQDN (the host local actor IRIs use) when
+        // set, else the browser origin (the client dials the same origin it advertises). This is both
+        // the proxy base (where POST /ap/v1/proxy/{target} lives) and the dial base (the host a GET
+        // must differ from to be a cross-instance read).
+        var baseUri = _advertiseBase ?? _browserBase;
+        return new ActivityPubClientOptions
+        {
+            ActorId = actorId,
+            ProxyBaseUrl = new Iri(baseUri.ToString()),
+            ProxyCredentials = null,
+            DialBaseUri = baseUri,
+            RouteCrossInstanceReadsViaProxy = true,
+        };
+    }
+
     private static bool IsAuthenticated(AuthenticationState? state)
         => state is not null && state.User.Identity is { IsAuthenticated: true };
 
@@ -292,8 +325,10 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
                 return null;
             }
 
+            // Non-nullable capture (the null check above guarantees a value).
+            Iri signedAs = actorId.Value;
             _client = _clientFactory.Create(
-                new ActivityPubClientOptions { ActorId = actorId },
+                BuildClientOptions(signedAs),
                 BuildTransportHandler(),
                 outermost: BuildSameOriginRewriter());
             return _client;

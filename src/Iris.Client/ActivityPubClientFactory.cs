@@ -100,11 +100,21 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
         // signed pipeline so a 401/403 from a remote instance is retried through the proxy (which
         // re-signs with the actor's key). The proxy POST is unsigned (the proxy signs the forwarded
         // request), so it must bypass the SigningHandler — hence ProxyFallbackHandler is outermost.
-        if (options.ProxyBaseUrl is { } proxyBase && options.ProxyCredentials is { } proxyCreds)
+        //
+        // Two configurations enable the handler:
+        //  - Basic-auth: ProxyBaseUrl + ProxyCredentials (a 401/403 fallback, or always-proxy writes).
+        //  - Cookie-auth cross-instance reads (WASM): ProxyBaseUrl + RouteCrossInstanceReadsViaProxy,
+        //    with ProxyCredentials null — the proxy request is same-origin and authenticates by the
+        //    site cookie (the browser has no Basic credentials).
+        var basicAuthProxy = options.ProxyBaseUrl is not null && options.ProxyCredentials is not null;
+        var cookieAuthCrossInstanceReads = options.ProxyBaseUrl is not null
+            && options.ProxyCredentials is null
+            && options.RouteCrossInstanceReadsViaProxy;
+        if (basicAuthProxy || cookieAuthCrossInstanceReads)
         {
             pipeline = new ProxyFallbackHandler(
-                proxyBase,
-                proxyCreds,
+                options.ProxyBaseUrl!.Value,
+                options.ProxyCredentials,
                 pipeline,
                 options.AlwaysProxy,
                 options.DialBaseUri,

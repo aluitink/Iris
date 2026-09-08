@@ -1181,6 +1181,26 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(BuildActorIri(baseUrl, "proxy"), authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim. The WASM client cannot
+        // carry Basic auth (the browser has no credentials), so a cross-instance read routed through this
+        // same-origin proxy falls back to cookie auth — the same pattern as the local mute / media upload
+        // endpoints. The claim must be a local actor IRI on this instance's base ({base}/ap/v1/u/{handle});
+        // the handle is the final path segment.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            var actorPrefix = $"{baseUrl.TrimEnd('/')}{ActivityPubServerConstants.RoutePrefix}/u/";
+            if (cookieActorIri is not null && cookieActorIri.StartsWith(actorPrefix, StringComparison.Ordinal))
+            {
+                var handle = cookieActorIri[actorPrefix.Length..];
+                if (handle.Length > 0 && !handle.Contains('/', StringComparison.Ordinal))
+                {
+                    authenticatedHandle = handle;
+                }
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1197,6 +1217,16 @@ public static class ActivityPubServerExtensions
         {
             return Results.NotFound();
         }
+
+        // Decode the catch-all value. The {**target} route value is the RAW path segment — Kestrel
+        // does NOT decode %2F to / in the path (a / is a path separator), so a client that percent-
+        // encodes the target IRI (the Blazor WebAssembly ProxyFallbackHandler sends
+        // Uri.EscapeDataString(target), e.g. https%3A%2F%2Fremote.example%2F%40alice) leaves the value
+        // encoded. A client that sends the target with literal slashes (the integration tests) leaves
+        // it already decoded. Uri.UnescapeDataString handles both: it decodes the encoded form, and is
+        // a no-op on the already-decoded form (no % sequences). Without this, the encoded target
+        // parses as a *relative* IRI and the target policy rejects it (403 "must be absolute http(s)").
+        targetValue = Uri.UnescapeDataString(targetValue);
 
         // The catch-all route value {**target} captures only the PATH of the target IRI — the route
         // matches the path, and the target's query string (e.g. ?page=2 for a paginated collection) is
