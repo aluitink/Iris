@@ -209,6 +209,12 @@ public partial class ObjectView
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);
 
+    private static string AvatarInitial(Iri iri)
+    {
+        var handle = HandleOf(iri);
+        return handle.Length > 0 ? char.ToUpper(handle[0]).ToString() : "?";
+    }
+
     private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
 
     private static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";

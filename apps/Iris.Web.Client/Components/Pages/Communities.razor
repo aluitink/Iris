@@ -89,14 +89,14 @@ else
 
                     <div class="directory-item">
                         <div class="directory-item-body">
-                            <a href="@CommunityHref(iri)" class="object-actor-handle">@name</a>
+                            <a href="@CommunityHref(iri)" class="directory-item-name">@name</a>
                             @if (handle is { Length: > 0 })
                             {
-                                <span class="muted" style="font-size: 0.85rem;">@handle</span>
+                                <span class="directory-item-handle">@handle</span>
                             }
                             @if (summary is { Length: > 0 })
                             {
-                                <p class="muted" style="margin: 0.25rem 0 0; font-size: 0.85rem;">@Truncate(summary, 150)</p>
+                                <p class="directory-item-summary">@Truncate(summary, 150)</p>
                             }
                         </div>
                     </div>

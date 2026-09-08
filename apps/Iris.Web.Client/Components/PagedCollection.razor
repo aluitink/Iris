@@ -20,7 +20,7 @@
         @if (ShowRefreshButton)
         {
             <div class="paged-collection-actions">
-                <button @onclick="RefreshAsync" disabled="@Refreshing">
+                <button class="button--ghost" @onclick="RefreshAsync" disabled="@Refreshing">
                     @(Refreshing ? "Refreshing…" : "Refresh")
                 </button>
             </div>

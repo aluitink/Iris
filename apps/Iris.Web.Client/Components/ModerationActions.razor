@@ -11,19 +11,19 @@
 <div class="moderation-actions">
     @if (!IsBlocked && !IsMuted)
     {
-        <button class="btn btn-sm" disabled="@Busy" @onclick="BlockAsync">Block</button>
-        <button class="btn btn-sm" disabled="@Busy" @onclick="MuteAsync">Mute</button>
-        <button class="btn btn-sm" disabled="@Busy" @onclick="FlagAsync">Report</button>
+        <button class="btn btn-sm button--warning" disabled="@Busy" @onclick="BlockAsync">Block</button>
+        <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="MuteAsync">Mute</button>
+        <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="FlagAsync">Report</button>
     }
     else
     {
         @if (IsBlocked)
         {
-            <button class="btn btn-sm" disabled="@Busy" @onclick="UnblockAsync">Unblock</button>
+            <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="UnblockAsync">Unblock</button>
         }
         @if (IsMuted)
         {
-            <button class="btn btn-sm" disabled="@Busy" @onclick="UnmuteAsync">Unmute</button>
+            <button class="btn btn-sm button--ghost" disabled="@Busy" @onclick="UnmuteAsync">Unmute</button>
         }
     }
 </div>

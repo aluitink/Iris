@@ -265,9 +265,28 @@ button.secondary {
     border: 1px solid var(--border);
 }
 
+.button--ghost,
+.btn.button--ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+}
+
+.button--ghost:hover,
+.btn.button--ghost:hover {
+    background: var(--panel);
+    color: var(--text);
+}
+
 .button--danger {
     background: #e05565;
     color: #fff;
+}
+
+.button--warning,
+.btn.button--warning {
+    background: #d4a030;
+    color: #0f1115;
 }
 
 .delete-confirm {
@@ -377,9 +396,35 @@ ul.object-list li {
 
 .object-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.5rem;
-    margin-bottom: 0.25rem;
+    margin-bottom: 0.35rem;
+}
+
+.object-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.object-avatar img {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.object-avatar-fallback {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
 }
 
 .object-type {
@@ -424,7 +469,7 @@ ul.object-list li {
 
 .object-actor-handle {
     color: var(--text);
-    font-weight: 600;
+    font-weight: 700;
     font-size: 0.95rem;
     text-decoration: none;
 }
@@ -458,6 +503,7 @@ ul.object-list li {
     font-size: 0.9rem;
     line-height: 1.5;
     overflow-wrap: break-word;
+    opacity: 0.92;
 }
 
 .object-content h1,
@@ -959,6 +1005,31 @@ ul.object-list li {
 .directory-item-body {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.directory-item-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.directory-item-name:hover {
+    color: var(--accent);
+}
+
+.directory-item-handle {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.directory-item-summary {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin: 0;
 }
 
 .follow-button {

@@ -5,6 +5,7 @@
             <div class="object-header">
                 @if (ActivityActorIri is { } actor)
                 {
+                    <span class="object-avatar"><span class="object-avatar-fallback">@AvatarInitial(actor)</span></span>
                     <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
                 }
                 @if (ActivityPublished is { } pub)
@@ -46,6 +47,7 @@
                 <span class="object-action">Boosted</span>
                 @if (ActivityActorIri is { } actor)
                 {
+                    <span class="object-avatar"><span class="object-avatar-fallback">@AvatarInitial(actor)</span></span>
                     <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
                 }
                 @if (ActivityPublished is { } pub)
@@ -121,6 +123,7 @@
             <div class="object-header">
                 @if (AuthorIri is { } author)
                 {
+                    <span class="object-avatar"><span class="object-avatar-fallback">@AvatarInitial(author)</span></span>
                     <a href="@ActorHref(author)" title="@author" class="object-actor-handle">@HandleOf(author)</a>
                 }
                 @if (Published is { } published)
