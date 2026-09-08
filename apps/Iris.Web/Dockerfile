@@ -31,11 +31,19 @@ COPY . .
 RUN dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# Create a non-root user to run the app (50.1 security hardening). The Data Protection keys
+# volume is mounted at /home/iris/.aspnet/DataProtection-Keys (see docker-compose.yml).
+RUN groupadd --gid 1001 iris && useradd --uid 1001 --gid iris --home-dir /home/iris --shell /usr/sbin/nologin iris
 WORKDIR /app
 COPY --from=build /app/publish .
+RUN chown -R iris:iris /app
+# Startup script: runs briefly as root to fix the DP keys volume ownership (Docker named
+# volumes are created root-owned), then drops to the iris user for the app process.
+RUN printf '#!/bin/sh\nchown -R 1001:1001 /home/iris/.aspnet 2>/dev/null || true\nexec setpriv --reuid=1001 --regid=1001 --clear-groups dotnet Iris.Web.dll\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+USER root
 # The app binds in-container port 8080; the compose file publishes it on host port 8088 (the
 # iris.luit.ink reverse-proxy target). The advertised public base URI is set via the
 # Iris__AdvertiseBase env var in the compose file (not here) — it is the operator's public hostname.
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
-ENTRYPOINT ["dotnet", "Iris.Web.dll"]
+ENTRYPOINT ["/entrypoint.sh"]

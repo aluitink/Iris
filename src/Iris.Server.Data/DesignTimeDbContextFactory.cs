@@ -14,7 +14,13 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Iri
 {
     /// <inheritdoc/>
     public IrisDbContext CreateDbContext(string[] args)
-        => new(new DbContextOptionsBuilder<IrisDbContext>()
-            .UseNpgsql("Host=localhost;Database=iris;Username=iris;Password=iris")
+    {
+        // 50.1 security hardening: read the connection string from the environment (IRIS_DB_CONNECTION)
+        // instead of hardcoding credentials. Falls back to a trivial localhost value for CI/dev.
+        var conn = Environment.GetEnvironmentVariable("IRIS_DB_CONNECTION")
+            ?? "Host=localhost;Database=iris;Username=iris;Password=iris";
+        return new(new DbContextOptionsBuilder<IrisDbContext>()
+            .UseNpgsql(conn)
             .Options);
+    }
 }

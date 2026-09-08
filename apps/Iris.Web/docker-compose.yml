@@ -76,8 +76,9 @@ services:
       - iris-media-data:/data/media
       # Data Protection keys (48.2): persist the ASP.NET Core key ring so auth cookies +
       # antiforgery tokens survive container recreation (docker compose down + up). Without
-      # this volume, every restart invalidates all user sessions.
-      - iris-dp-keys:/root/.aspnet/DataProtection-Keys
+      # this volume, every restart invalidates all user sessions. Path matches the non-root
+      # iris user's home in the Dockerfile (50.1 security hardening).
+      - iris-dp-keys:/home/iris/.aspnet/DataProtection-Keys
     healthcheck:
       # The base aspnet image has no curl, so this is a pure TCP-connect probe on the bind port (the
       # same pattern the sample stack uses for its servers). A successful connect means Kestrel is

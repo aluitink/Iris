@@ -216,6 +216,14 @@ public static class WebAppFactory
             .AddCookie(options =>
             {
                 options.Cookie.Name = "iris.auth";
+                options.Cookie.HttpOnly = true;
+                options.Cookie.SameSite = SameSiteMode.Lax;
+                // 50.1 security hardening: SameAsRequest sets the Secure flag only when the
+                // request is HTTPS. Behind the nginx reverse proxy (production) the
+                // forwarded-headers middleware makes the app see HTTPS → Secure is set.
+                // Over plain HTTP (local dev / Docker) the cookie is still set so the app
+                // is usable without TLS.
+                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
                 options.LoginPath = "/login";
                 options.LogoutPath = "/logout";
                 options.ExpireTimeSpan = TimeSpan.FromDays(14);
