@@ -78,3 +78,6 @@ apps/Iris.Web/wwwroot_old/
 .loop/
 probe_*.txt
 .ui-review/
+
+## Backups (local backup archives — never commit)
+backups/

@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**48.2: Backup & restore strategy** — Postgres backup (pg_dump schedule), restore runbook, data protection key persistence.
+**48.3: Monitoring & alerting** — health check endpoint already exists; add uptime monitoring, error rate alerts, delivery queue depth metrics.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -111,7 +111,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 **Phase 48 — Production deployment & monitoring**:
 
 1. ~~**48.1: Nginx reverse proxy config**~~ — COMPLETE. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
-2. **48.2: Backup & restore strategy** — Postgres backup (pg_dump schedule), restore runbook, data protection key persistence.
+2. ~~**48.2: Backup & restore strategy**~~ — COMPLETE. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
 3. **48.3: Monitoring & alerting** — health check endpoint already exists; add uptime monitoring, error rate alerts, delivery queue depth metrics.
 
 ## Inbox
@@ -126,11 +126,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 48.2: **Backup & restore strategy** (Phase 48) — backup-iris.sh (pg_dump + DP keys + media), restore-iris.sh (full/selective), BACKUP.md (systemd timer, RPO/RTO, off-site), iris-dp-keys volume in compose. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
   - 48.1: **Nginx reverse proxy config** (Phase 48) — production nginx.conf (TLS, WebSocket upgrade, security headers, gzip, rate limiting), nginx-ratelimit.conf, Caddyfile alternative, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
   - 47.4: **Performance & polish** (Phase 47) — static-file Cache-Control (immutable for _framework/, 24h for CSS/JS), timeline page size 5→20, missing CSS variables fixed, real favicon, Load more button styling. [changes/350](docs/changes/350-47.4-performance-polish.md)
   - 47.3: **Accessibility pass** (Phase 47) — ARIA labels on Like/Boost/Reply/More-options controls, aria-pressed state, keyboard nav for moderation toggle, aria-hidden on decorative SVGs. [changes/349](docs/changes/349-47.3-accessibility-pass.md)
   - 47.2: **Edge-case hardening** (Phase 47) — fixed raw .NET exception messages in ObjectDetail, ActorDetail, CommunityDetail, PagedCollection; verified empty states and loading indicators across all pages. [changes/348](docs/changes/348-47.2-edge-case-hardening.md)
-  - 47.1: **UX gap review** (Phase 47) — systematic Playwright pass over all pages; fixed boost card showing no content (now shows "View boosted post →" link). 0 console errors across all pages. [changes/347](docs/changes/347-47.1-ux-gap-review.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
