@@ -71,13 +71,13 @@ echo "    Database dump: $(du -h "${BACKUP_PATH}/database.dump" | cut -f1)"
 
 # ---- 2. Data Protection keys ----
 echo "[2/3] Backing up Data Protection keys..."
-# The keys are in the app container's filesystem at /root/.aspnet/DataProtection-Keys
-# (the default location when running as root in the aspnet image).
-# In production, persist these on a named volume (see BACKUP.md) so they survive
-# container recreation. The backup copies them from the live container.
+# The keys are in the app container's filesystem at /home/iris/.aspnet/DataProtection-Keys
+# (the non-root iris user's home; 50.1 security hardening). In production, persist these
+# on a named volume (see BACKUP.md) so they survive container recreation.
+# The backup copies them from the live container.
 mkdir -p "${BACKUP_PATH}/data-protection-keys"
 docker compose -f "$COMPOSE_FILE" exec -T iris-web \
-  tar -cf - -C /root/.aspnet DataProtection-Keys 2>/dev/null \
+  tar -cf - -C /home/iris/.aspnet DataProtection-Keys 2>/dev/null \
   | tar -xf - -C "${BACKUP_PATH}/data-protection-keys" \
   || echo "    WARNING: Data Protection keys not found (may not be generated yet)."
 

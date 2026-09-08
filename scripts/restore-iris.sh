@@ -139,9 +139,9 @@ if $RESTORE_KEYS; then
   echo "[2] Restoring Data Protection keys..."
   if [[ -d "${BACKUP_DIR}/data-protection-keys" ]] && \
      find "${BACKUP_DIR}/data-protection-keys" -name "*.xml" | grep -q .; then
-    # Copy keys into the app container.
+    # Copy keys into the app container (non-root iris user; 50.1 security hardening).
     docker compose -f "$COMPOSE_FILE" cp "${BACKUP_DIR}/data-protection-keys/." \
-      "iris-web:/root/.aspnet/DataProtection-Keys/"
+      "iris-web:/home/iris/.aspnet/DataProtection-Keys/"
     echo "    Data Protection keys restored."
   else
     echo "    No Data Protection keys in backup — skipping."

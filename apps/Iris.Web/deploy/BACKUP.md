@@ -5,7 +5,7 @@
 | Component | Location in container | Why |
 |-----------|----------------------|-----|
 | PostgreSQL | `iris-db-data` volume | All accounts, actors, posts, follows, communities. **Critical.** |
-| Data Protection keys | `/root/.aspnet/DataProtection-Keys/` in `iris-web` | Auth cookie encryption, antiforgery tokens. Without these, all user sessions are invalidated on restore. |
+| Data Protection keys | `/home/iris/.aspnet/DataProtection-Keys/` in `iris-web` | Auth cookie encryption, antiforgery tokens. Without these, all user sessions are invalidated on restore. |
 | Media | `iris-media-data` volume | Uploaded images. Loss is inconvenient but not catastrophic (users can re-upload). |
 
 ## Backup script
@@ -107,17 +107,18 @@ If systemd timers are not available:
 
 ## Data Protection key persistence (recommended)
 
-By default, ASP.NET Core stores Data Protection keys in `/root/.aspnet/DataProtection-Keys/`
-**inside the container filesystem**. This means `docker compose down` + `up` (which recreates
+By default, ASP.NET Core stores Data Protection keys in the running user's home directory
+(`/home/iris/.aspnet/DataProtection-Keys/` for the non-root `iris` user created in 50.1).
+**Inside the container filesystem** this means `docker compose down` + `up` (which recreates
 the container) loses the keys, invalidating all user sessions.
 
-**Fix:** mount a named volume for the keys in `docker-compose.yml`:
+**Fix:** mount a named volume for the keys in `docker-compose.yml` (already configured):
 
 ```yaml
   iris-web:
     volumes:
       - iris-media-data:/data/media
-      - iris-dp-keys:/root/.aspnet/DataProtection-Keys   # ADD THIS LINE
+      - iris-dp-keys:/home/iris/.aspnet/DataProtection-Keys
 ```
 
 And declare the volume at the bottom:
