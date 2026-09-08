@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-*(Phase 51 complete — all 5 slices done. Awaiting next phase definition.)*
+**52.1: Change password (self-service)** — Settings → Password tab: current password + new password form; server endpoint `POST /local/v1/account/password` (Basic auth); updates the credential store.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,9 +104,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 45–51** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
+**Phase 52 — Account & admin completion (in progress):**
 
-*(Up Next will be seeded when the next phase is defined.)*
+1. **52.1: Change password (self-service)** — ACTIVE. Settings → Password tab; `POST /local/v1/account/password`.
+2. **52.2: Admin-assisted password reset** — admin sets a new password for a user (account recovery path).
+3. **52.3: Login rate limiting** — throttle failed login attempts per IP.
+
+**Phase 45–51** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Inbox
 
