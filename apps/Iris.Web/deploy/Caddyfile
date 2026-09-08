@@ -1,0 +1,63 @@
+# Iris — production Caddy reverse proxy configuration.
+#
+# Caddy is the recommended proxy: it handles TLS (Let's Encrypt) automatically
+# and upgrades WebSocket connections transparently (no extra directive needed).
+#
+# Usage: place at /etc/caddy/Caddyfile (or mount into a Caddy container).
+# Replace iris.example.com with the actual FQDN.
+#
+# This is intentionally minimal — Caddy's defaults cover the hard parts
+# (TLS, HSTS, WebSocket upgrade). Add directives below as needed.
+
+iris.example.com {
+	# Security headers (Caddy sets HSTS automatically with managed TLS).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	# Content-Security-Policy: the Blazor app uses inline scripts for the .NET runtime.
+	# Adjust if you add/remove inline <script> blocks.
+	header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' wss://iris.example.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+
+	# Gzip compression (Caddy compresses text/* and application/json by default;
+	# add these common types explicitly).
+	encode gzip
+
+	# Rate limiting: 10 r/s per IP, burst 20.
+	@ratelimit not expression{
+		http.request.header["x-forwarded-for"] == "" or
+		client.ip == "127.0.0.1"
+	}
+	rate_limit @ratelimit {
+		zone ap_limit
+		7 r/s
+		burst 20
+	}
+
+	# Client body size (match the app's media upload limit).
+	request_body {
+		max_size 10485760
+	}
+
+	# Health check endpoint (no rate limiting).
+	@health path /ap/v1/health
+	rate_limit @health {
+		disable
+	}
+
+	# Proxy to the app (WebSocket upgrade is handled transparently by Caddy).
+	reverse_proxy 127.0.0.1:8088 {
+		# Long-lived WebSocket connections: raise the timeout.
+		flush_interval -1
+	}
+
+	# Log to stdout (or a file).
+	log {
+		output stdout
+		format json
+	}
+}
