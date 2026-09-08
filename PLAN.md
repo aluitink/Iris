@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**Phase 47 — Post-design stabilization & polish.** 47.1, 47.2 COMPLETE. Next: 47.3.
+**Phase 47 — Post-design stabilization & polish.** 47.1, 47.2, 47.3 COMPLETE. Next: 47.4.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -110,8 +110,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 47 — Post-design stabilization & polish**:
 
-1. **47.3: Accessibility pass** — ARIA labels, keyboard navigation, focus management, contrast audit.
-2. **47.4: Performance & polish** — lazy-loading images, virtualize long timelines if needed, final visual tweaks.
+1. **47.4: Performance & polish** — lazy-loading images, virtualize long timelines if needed, final visual tweaks.
 
 ## Inbox
 
@@ -125,11 +124,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 47.3: **Accessibility pass** (Phase 47) — ARIA labels on Like/Boost/Reply/More-options controls, aria-pressed state, keyboard nav for moderation toggle, aria-hidden on decorative SVGs. [changes/349](docs/changes/349-47.3-accessibility-pass.md)
   - 47.2: **Edge-case hardening** (Phase 47) — fixed raw .NET exception messages in ObjectDetail, ActorDetail, CommunityDetail, PagedCollection; verified empty states and loading indicators across all pages. [changes/348](docs/changes/348-47.2-edge-case-hardening.md)
   - 47.1: **UX gap review** (Phase 47) — systematic Playwright pass over all pages; fixed boost card showing no content (now shows "View boosted post →" link). 0 console errors across all pages. [changes/347](docs/changes/347-47.1-ux-gap-review.md)
   - 46.6: **Forms + tabs + footer** (Phase 46, COMPLETE) — pill/segmented tab style, simplified search description, footer links (NodeInfo/WebFinger/Status), Dockerfile WASM build fix. [changes/346](docs/changes/346-46.6-forms-tabs-footer.md)
   - 46.5: **Mobile layout** (Phase 46) — mobile spacing/layout, profile "Your posts" filter (content items only), compose formatting tips. [changes/345](docs/changes/345-46.5-mobile-layout.md)
-  - 46.4: **Object detail + notifications** (Phase 46) — notification rows show short labels instead of raw IRIs; object detail heading shows @author instead of type name. [changes/344](docs/changes/344-46.4-object-detail-notifications.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

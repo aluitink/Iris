@@ -9,6 +9,8 @@
         <button type="button"
                 class="engagement-btn @(_liked ? "engagement-btn--active" : "")"
                 title="Like"
+                aria-label="Like"
+                aria-pressed="@_liked"
                 disabled="@_busy"
                 @onclick="() => ToggleLikeAsync(iri)">
             <svg viewBox="0 0 24 24" fill="@(_liked ? "currentColor" : "none")" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -19,6 +21,8 @@
         <button type="button"
                 class="engagement-btn @(_boosted ? "engagement-btn--active" : "")"
                 title="Boost"
+                aria-label="Boost"
+                aria-pressed="@_boosted"
                 disabled="@_busy"
                 @onclick="() => ToggleBoostAsync(iri)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -31,14 +35,17 @@
         </button>
         <a class="engagement-btn"
            href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
-           title="Reply">
+           title="Reply"
+           aria-label="Reply">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
         </a>
         @if (CanModerate)
         {
-            <div class="engagement-more" @onclick="() => _showModeration = !_showModeration">
+            <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="_showModeration"
+                 @onclick="() => _showModeration = !_showModeration"
+                 @onkeydown="OnMoreKeyDown">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                     <circle cx="12" cy="5" r="1.5" />
                     <circle cx="12" cy="12" r="1.5" />
@@ -83,6 +90,17 @@
     private bool _showModeration;
     private Iri? _likeIri;
     private Iri? _announceIri;
+
+    /// <summary>
+    /// Keyboard handler for the "More options" toggle (Enter/Space activates).
+    /// </summary>
+    private void OnMoreKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            _showModeration = !_showModeration;
+        }
+    }
 
     /// <summary>
     /// Whether the activity's actor/attributedTo is the given user (tolerating trailing-slash IRI variants).

@@ -59,7 +59,7 @@
             @if (Attachment is not null)
             {
                 <span class="compose-attach-name">@Attachment.Name</span>
-                <button type="button" class="compose-attach-remove" @onclick="ClearAttachment" disabled="@Busy">✕</button>
+                <button type="button" class="compose-attach-remove" aria-label="Remove attachment" @onclick="ClearAttachment" disabled="@Busy">✕</button>
             }
         </div>
     }
