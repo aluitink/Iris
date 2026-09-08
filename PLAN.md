@@ -71,11 +71,9 @@ Iris.slnx
 
 ## Now
 
-**Phase 44 — Post content completeness (COMPLETE).** 44.1–44.3 all COMPLETE. *(Phases 32–44 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
+**Phase 54 — Post-1.0 polish & hardening (IN PROGRESS).** First slice 54.1 (full manual Playwright regression pass) is Active.
 
-**Phase 45 — WASM manual test & bug hunt (COMPLETE).** 14 defects found + fixed across 5 slices; 0 deferred. [changes/340](docs/changes/340-45.7-triage-closeout.md).
-
-**Phase 46 — Visual inspection & design pass (COMPLETE).** 6 slices (46.1–46.6): design audit, nav + brand, card system, object detail + notifications, mobile layout, forms + tabs + footer. All 14 design findings addressed. [changes/341–346](docs/changes/341-46.1-design-audit.md).
+*(Phases 32–53 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
 
 **Test policy for these phases (user-directed, binding):**
 
@@ -93,7 +91,7 @@ Iris.slnx
 Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
-2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build --no-cache iris-web && docker compose up -d iris-web`
+2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web` — **avoid `--no-cache`** (repeated no-cache fills the host disk; if the build fails with `No space left on device`, run `docker builder prune -af` first).
 3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** (inline screenshot no files) visited - use public fqdn address "https://iris.luit.ink".
 4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
 5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
@@ -129,18 +127,6 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
   - 53.7: **repliedCount on nested objects** (Phase 53) — `iris:repliedCount` on nested objects in outbox/feed, computed from `IReplyStore.GetRepliesAsync`. `isReplied` skipped (ambiguous). [changes/374](docs/changes/374-53.7-replied-count.md)
   - 53.6: **isLiked/isShared on nested objects + likedCount/sharedCount** (Phase 53) — `likedCount`/`sharedCount` on nested objects in outbox (cached) and feed; `isLiked`/`isShared` on nested objects in feed (per-requester, uncached). [changes/373](docs/changes/373-53.6-nested-object-interaction-state.md)
   - 53.5: **OrderedCollection capability advertisement + feed activity-type filtering** (Phase 53) — `iris:refresh`/`iris:query`/`iris:type` capability flags on page-1 `OrderedCollection`; `?type=...` query parameter on the feed endpoint filters to activities of that type. [changes/372](docs/changes/372-53.5-ordered-collection-capabilities.md)
-  - 52.3: **Login rate limiting** (Phase 52) — surfaced `RetryAfter` hint in login error message ("Try again in about N minutes"); made thresholds configurable via `IRIS_LOGIN_MAX_ATTEMPTS` / `IRIS_LOGIN_RATE_WINDOW_MINUTES`; live-verified 5 failures → block on 6th, per-key isolation. [changes/367](docs/changes/367-52.3-login-rate-limiting.md)
-  - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
-  - 51.3: **Instance metadata edit (admin)** (Phase 51) — `/admin/instance` page with name/description form; `IInstanceMetadataStore` (EF + in-memory); `GET`/`PUT /local/v1/admin/instance` (Admin role); EF migration; live-verified save + persist across restart. [changes/362](docs/changes/362-51.3-instance-metadata-edit-admin.md)
-  - 51.2: **View own blocks/mutes/flags** (Phase 51) — Moderation tab in `/settings` with Blocked/Muted/Reported sections + undo buttons; outbox scan for minted activity IRIs (unblock/unflag); live-verified block→unblock round-trip. [changes/361](docs/changes/361-51.2-view-own-blocks-mutes-flags.md)
-  - 51.1: **Mentions in compose** (Phase 51) — `@handle` detection in compose (regex, same-origin); `Mention` tags built in `ComposeNote.Build` + wired into all 4 post paths; fixed doubled-protocol IRI bug. [changes/360](docs/changes/360-51.1-mentions-in-compose.md)
-  - 50.3: **Release checklist & documentation pass** (Phase 50) — fixed DP keys path; created `RELEASE.md`; full test suite green. [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)
-  - 50.2: **CHANGELOG + versioning** (Phase 50) — `CHANGELOG.md` written (v1.0.0); `Version`/`AssemblyVersion`/`FileVersion`/`AssemblyInformationalVersion` added to `Directory.Build.props`. [changes/358](docs/changes/358-50.2-changelog-versioning.md)
-  - 50.1: **Security audit & dependency review** (Phase 50) — 0 vulnerable packages; fixed: cookie flags (HttpOnly/SameSite/SecurePolicy), non-root Docker user (iris uid 1001), DesignTimeDbContextFactory env-var connection string. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)
-  - 49.3: **API documentation** (Phase 49) — `Microsoft.AspNetCore.OpenApi` 10.0.11, `/openapi/v1.json` spec (44 endpoints), Swagger UI at `/api/`. [changes/356](docs/changes/356-49.3-api-documentation.md)
-  - 49.2: **Load testing** (Phase 49) — load-test-iris.py (asyncio, p50/p95/p99, rps, error rate); ~62-65 rps @ 0% errors @ 10-100 concurrency; all endpoints equal; no app bottlenecks; scaling path = more containers. [changes/355](docs/changes/355-49.2-load-testing.md)
-  - 48.2: **Backup & restore strategy** (Phase 48) — backup/restore scripts, DP keys volume, BACKUP.md. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
-  - 48.1: **Nginx reverse proxy config** (Phase 48) — nginx.conf, Caddyfile, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
