@@ -57,7 +57,16 @@
             </div>
             @if (AnnounceTargetIri is { } targetIri)
             {
-                <div class="object-content">@ActivityContent</div>
+                @if (HasAnnounceContent)
+                {
+                    <div class="object-content">@ActivityContent</div>
+                }
+                else
+                {
+                    <div class="object-content">
+                        <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                    </div>
+                }
                 <EngagementBar ObjectIri="@targetIri" />
             }
         </div>

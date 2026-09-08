@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**Phase 47 — Post-design stabilization & polish (next).** Define scope from remaining UX gaps and any user feedback.
+**Phase 47 — Post-design stabilization & polish.** 47.1 COMPLETE. Next: 47.2.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -108,9 +108,11 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 46 — Visual inspection & design pass** (COMPLETE — see [changes/341–346](docs/changes/341-46.1-design-audit.md)).
 
-**Phase 47 — Post-design stabilization & polish** (scope TBD):
+**Phase 47 — Post-design stabilization & polish**:
 
-1. **47.1: UX gap review** — systematic pass over all pages for remaining friction points, accessibility, and edge cases.
+1. **47.2: Edge-case hardening** — verify error states (404 object, invalid IRI, empty notifications, empty search), empty-state copy, and loading indicators.
+2. **47.3: Accessibility pass** — ARIA labels, keyboard navigation, focus management, contrast audit.
+3. **47.4: Performance & polish** — lazy-loading images, virtualize long timelines if needed, final visual tweaks.
 
 ## Inbox
 
@@ -124,11 +126,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 47.1: **UX gap review** (Phase 47) — systematic Playwright pass over all pages; fixed boost card showing no content (now shows "View boosted post →" link). 0 console errors across all pages. [changes/347](docs/changes/347-47.1-ux-gap-review.md)
   - 46.6: **Forms + tabs + footer** (Phase 46, COMPLETE) — pill/segmented tab style, simplified search description, footer links (NodeInfo/WebFinger/Status), Dockerfile WASM build fix. [changes/346](docs/changes/346-46.6-forms-tabs-footer.md)
   - 46.5: **Mobile layout** (Phase 46) — mobile spacing/layout, profile "Your posts" filter (content items only), compose formatting tips. [changes/345](docs/changes/345-46.5-mobile-layout.md)
   - 46.4: **Object detail + notifications** (Phase 46) — notification rows show short labels instead of raw IRIs; object detail heading shows @author instead of type name. [changes/344](docs/changes/344-46.4-object-detail-notifications.md)
   - 46.3: **Card system** (Phase 46) — avatar initials in cards, author bold, content lighter, button hierarchy (ghost/warning), community row structure. [changes/343](docs/changes/343-46.3-card-system.md)
-  - 46.2: **Nav + brand** (Phase 46) — hamburger below 768px, brand icon + mark, hide Blazor error bar, footer NodeInfo link. [changes/342](docs/changes/342-46.2-nav-brand.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

@@ -184,7 +184,31 @@ public partial class ObjectView
                 return new Iri(id);
             }
 
+            if ((Item as Activity)?.Object?.FirstOrDefault() is ILink { Href: { } linkUri })
+            {
+                return new Iri(linkUri.OriginalString);
+            }
+
             return null;
+        }
+    }
+
+    private bool HasAnnounceContent
+    {
+        get
+        {
+            if (Item is not Announce)
+            {
+                return false;
+            }
+
+            if (ActivityEmbeddedObject is not { } embedded)
+            {
+                return false;
+            }
+
+            var content = embedded is ActivityObject ao ? JoinStrings(ao.Content) : null;
+            return !string.IsNullOrWhiteSpace(content);
         }
     }
 
