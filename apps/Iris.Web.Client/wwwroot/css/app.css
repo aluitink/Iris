@@ -59,14 +59,28 @@ h3 {
 .main-header {
     border-bottom: 1px solid var(--border);
     padding: 0.75rem 1.25rem;
+    position: relative;
 }
 
 .brand {
     color: var(--accent-warm);
     font-weight: 700;
-    font-size: 1.3rem;
+    font-size: 1.4rem;
     text-decoration: none;
     letter-spacing: -0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.brand-icon {
+    width: 1.4rem;
+    height: 1.4rem;
+    flex-shrink: 0;
+}
+
+.brand-text {
+    line-height: 1;
 }
 
 .main-content {
@@ -82,6 +96,30 @@ h3 {
     padding: 0.75rem 1.25rem;
     color: var(--muted);
     font-size: 0.875rem;
+}
+
+.main-footer .content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.footer-links {
+    display: inline-flex;
+    gap: 1rem;
+}
+
+.footer-links a {
+    color: var(--muted);
+    font-size: 0.8rem;
+    text-decoration: none;
+}
+
+.footer-links a:hover {
+    color: var(--accent-warm);
+    text-decoration: underline;
 }
 
 .card {
@@ -122,27 +160,58 @@ a:hover {
     gap: 0.9rem;
 }
 
-@media (max-width: 640px) {
-    .main-header {
-        flex-wrap: wrap;
-        padding: 0.6rem 0.75rem;
+.nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    padding: 0.3rem;
+    margin-left: auto;
+}
+
+.nav-toggle svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.nav-toggle:hover {
+    color: var(--accent-warm);
+}
+
+@media (max-width: 768px) {
+    .nav-toggle {
+        display: block;
     }
 
     .main-nav {
-        flex-wrap: nowrap;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        max-width: 100%;
-    }
-
-    .main-nav::-webkit-scrollbar {
         display: none;
     }
 
-    .main-nav a {
+    .main-nav.nav-open {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        padding: 0.5rem 1rem;
+        gap: 0;
+        z-index: 100;
+    }
+
+    .main-nav.nav-open a {
+        padding: 0.6rem 0.25rem;
+        border-bottom: 1px solid var(--border);
         white-space: nowrap;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
+    }
+
+    .main-nav.nav-open a:last-child {
+        border-bottom: none;
     }
 }
 
@@ -1438,6 +1507,46 @@ ul.object-list li {
 .object-edit-actions {
     display: flex;
     gap: 0.5rem;
+}
+
+/* Hide the Blazor WASM error boundary bar until an error actually occurs. */
+#blazor-error-ui {
+    display: none;
+}
+
+#blazor-error-ui.show {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #2a1a1a;
+    border-top: 1px solid #5b2f2f;
+    padding: 0.75rem 1.25rem;
+    z-index: 200;
+    font-size: 0.9rem;
+    color: #e79c9c;
+}
+
+#blazor-error-ui a {
+    color: #e79c9c;
+    margin-left: 0.5rem;
+    text-decoration: none;
+}
+
+#blazor-error-ui a:hover {
+    text-decoration: underline;
+}
+
+#blazor-error-ui .dismiss {
+    margin-left: auto;
+    cursor: pointer;
+    color: #e79c9c;
+    background: none;
+    border: none;
+    font-size: 1rem;
+    padding: 0 0.25rem;
 }
 
 
