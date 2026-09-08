@@ -1,6 +1,7 @@
 @page "/settings"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Client.Collections
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
@@ -20,6 +21,7 @@ else
         <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
         <a href="#password" class="tab @(ActiveTab == "password" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("password")'>Password</a>
         <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        <a href="#relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
         <a href="#moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
     </div>
 
@@ -97,6 +99,58 @@ else
                         }
                     </div>
                 }
+            }
+        </div>
+    }
+    else if (ActiveTab == "relays")
+    {
+        <div class="card">
+            <h3>Relay subscriptions</h3>
+            <p class="muted" style="margin-bottom: 1rem;">
+                Relays are fan-out servers that receive a copy of your public posts.
+                Subscribing to a relay makes your content available to other ActivityPub
+                instances that follow that relay.
+            </p>
+            @if (RelaysBusy)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading relays…</span>
+                </div>
+            }
+            else if (RelaysError is not null)
+            {
+                <div class="error">@RelaysError</div>
+            }
+            else if (Relays is not null)
+            {
+                @if (Relays.Count == 0)
+                {
+                    <p class="muted">You are not subscribed to any relays.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var relayIri in Relays)
+                        {
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@relayIri.Value" target="_blank" rel="noopener noreferrer" class="object-actor-handle">@RelayHost(relayIri)</a>
+                                    <span class="muted" style="font-size: 0.85rem;">@relayIri.Value</span>
+                                </div>
+                                <button class="button button--ghost" disabled="@RelaysBusy" @onclick="() => UnsubscribeRelayAsync(relayIri)">Remove</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem;">
+                    <input type="url" class="input" placeholder="https://relay.example.com" value="@RelayIriInput"
+                           @onchange="e => RelayIriInput = e.Value?.ToString() ?? string.Empty" style="flex: 1;" />
+                    <button class="button" disabled="@RelaysBusy" @onclick="SubscribeRelayAsync">Subscribe</button>
+                </div>
             }
         </div>
     }
@@ -207,6 +261,10 @@ else
     private Dictionary<string, string>? FlagActivityIris { get; set; }
     private bool ModerationBusy { get; set; }
     private string? ModerationError { get; set; }
+    private List<Iri>? Relays { get; set; }
+    private string RelayIriInput { get; set; } = string.Empty;
+    private bool RelaysBusy { get; set; }
+    private string? RelaysError { get; set; }
 
     private Iri? InstanceBase
     {
@@ -262,6 +320,10 @@ else
         if (tab == "communities" && MemberCommunities is null && CommunitiesError is null)
         {
             _ = LoadMemberCommunitiesAsync();
+        }
+        if (tab == "relays" && Relays is null && RelaysError is null)
+        {
+            _ = LoadRelaysAsync();
         }
         if (tab == "moderation" && (BlockedActors is null || MutedActors is null || FlaggedActors is null) && ModerationError is null)
         {
@@ -476,6 +538,123 @@ else
         }
 
         StateHasChanged();
+    }
+
+    private async Task LoadRelaysAsync(bool bypassCache = false)
+    {
+        if (Client is not { } client || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        RelaysBusy = true;
+        RelaysError = null;
+
+        try
+        {
+            var query = bypassCache ? new CollectionQuery { BypassCache = true } : null;
+            Relays = await CollectIrisAsync(client.GetRelaysAsync(me, query));
+        }
+        catch (Exception ex)
+        {
+            RelaysError = ex.Message;
+        }
+        finally
+        {
+            RelaysBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task SubscribeRelayAsync()
+    {
+        if (LocalModeration is not { } mod || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        if (!Uri.TryCreate(RelayIriInput, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            RelaysError = "Please enter a valid http(s) URL.";
+            StateHasChanged();
+            return;
+        }
+
+        RelaysBusy = true;
+        RelaysError = null;
+
+        try
+        {
+            var relayIri = new Iri(uri.GetLeftPart(UriPartial.Authority));
+            var result = await mod.SubscribeRelayAsync(me, relayIri);
+            if (!result.IsSuccess)
+            {
+                RelaysError = $"Subscription failed (HTTP {(int)result.StatusCode}).";
+            }
+            else
+            {
+                RelayIriInput = string.Empty;
+                await LoadRelaysAsync(bypassCache: true);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            RelaysError = ex.Message;
+        }
+        finally
+        {
+            RelaysBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UnsubscribeRelayAsync(Iri relayIri)
+    {
+        if (LocalModeration is not { } mod || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        RelaysBusy = true;
+        RelaysError = null;
+
+        try
+        {
+            var result = await mod.UnsubscribeRelayAsync(me, relayIri);
+            if (!result.IsSuccess)
+            {
+                RelaysError = $"Unsubscribe failed (HTTP {(int)result.StatusCode}).";
+            }
+            else
+            {
+                await LoadRelaysAsync(bypassCache: true);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            RelaysError = ex.Message;
+        }
+        finally
+        {
+            RelaysBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private static string RelayHost(Iri relayIri)
+    {
+        if (Uri.TryCreate(relayIri.Value, UriKind.Absolute, out var uri))
+        {
+            return uri.Host;
+        }
+
+        return relayIri.Value;
     }
 
     private async Task LoadMemberCommunitiesAsync()

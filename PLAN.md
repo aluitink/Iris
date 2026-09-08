@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
+*(Phase 51 complete — all 5 slices done. Awaiting next phase definition.)*
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,11 +104,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 51 — Feature completion & remaining gaps (in progress):**
+**Phase 45–51** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
-1. **51.5: Relay subscriptions UI (settings)** — ACTIVE. List current relay subscriptions; add/remove relay by URL (F-06).
-
-**Phase 45–50** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
+*(Up Next will be seeded when the next phase is defined.)*
 
 ## Inbox
 
@@ -122,6 +120,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 51.5: **Relay subscriptions UI (settings)** (Phase 51) — "Relays" tab in `/settings`; list/subscribe/unsubscribe via `IActivityPubClient.GetRelaysAsync` + `ILocalModerationClient`; `BypassCache` on re-reads; live-verified subscribe→list→unsubscribe round-trip. [changes/364](docs/changes/364-51.5-relay-subscriptions-ui.md)
   - 51.4: **Moderation queue (admin)** (Phase 51) — `/admin/moderation` page listing all flags; `GET /local/v1/admin/flags` + `POST /local/v1/admin/flags/dismiss` (Admin role); `GetAllFlagEdgesAsync` in all 3 stores; live-verified flag→dismiss round-trip. [changes/363](docs/changes/363-51.4-moderation-queue-admin.md)
   - 51.3: **Instance metadata edit (admin)** (Phase 51) — `/admin/instance` page with name/description form; `IInstanceMetadataStore` (EF + in-memory); `GET`/`PUT /local/v1/admin/instance` (Admin role); EF migration; live-verified save + persist across restart. [changes/362](docs/changes/362-51.3-instance-metadata-edit-admin.md)
   - 51.2: **View own blocks/mutes/flags** (Phase 51) — Moderation tab in `/settings` with Blocked/Muted/Reported sections + undo buttons; outbox scan for minted activity IRIs (unblock/unflag); live-verified block→unblock round-trip. [changes/361](docs/changes/361-51.2-view-own-blocks-mutes-flags.md)
