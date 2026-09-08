@@ -20,6 +20,7 @@ else
         <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
         <a href="#password" class="tab @(ActiveTab == "password" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("password")'>Password</a>
         <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        <a href="#moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
     </div>
 
     @if (ActiveTab == "account")
@@ -99,6 +100,90 @@ else
             }
         </div>
     }
+    else if (ActiveTab == "moderation")
+    {
+        <div class="card">
+            <h3>Moderation</h3>
+            @if (ModerationBusy)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading moderation lists…</span>
+                </div>
+            }
+            else if (ModerationError is not null)
+            {
+                <div class="error">@ModerationError</div>
+            }
+            else if (BlockedActors is not null || MutedActors is not null || FlaggedActors is not null)
+            {
+                <h4>Blocked</h4>
+                @if (BlockedActors!.Count == 0)
+                {
+                    <p class="muted">You have not blocked anyone.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var actorIri in BlockedActors)
+                        {
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                    <span class="muted" style="font-size: 0.85rem;">Blocked</span>
+                                </div>
+                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnblockAsync(actorIri)">Unblock</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <h4 style="margin-top: 1.5rem;">Muted</h4>
+                @if (MutedActors!.Count == 0)
+                {
+                    <p class="muted">You have not muted anyone.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var actorIri in MutedActors)
+                        {
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                    <span class="muted" style="font-size: 0.85rem;">Muted</span>
+                                </div>
+                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnmuteAsync(actorIri)">Unmute</button>
+                            </div>
+                        }
+                    </div>
+                }
+
+                <h4 style="margin-top: 1.5rem;">Reported</h4>
+                @if (FlaggedActors!.Count == 0)
+                {
+                    <p class="muted">You have not reported anyone.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var actorIri in FlaggedActors)
+                        {
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                    <span class="muted" style="font-size: 0.85rem;">Reported</span>
+                                </div>
+                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnflagAsync(actorIri)">Remove</button>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
 }
 
 @code {
@@ -109,11 +194,19 @@ else
     private UiContext Ui { get; set; } = default!;
 
     private IActivityPubClient? Client => Session.Client;
+    private ILocalModerationClient? LocalModeration => Session.LocalModeration;
     private string ActiveTab { get; set; } = "account";
     private IObject? ActorDoc { get; set; }
     private List<Group>? MemberCommunities { get; set; }
     private bool CommunitiesBusy { get; set; }
     private string? CommunitiesError { get; set; }
+    private List<Iri>? BlockedActors { get; set; }
+    private List<Iri>? MutedActors { get; set; }
+    private List<Iri>? FlaggedActors { get; set; }
+    private Dictionary<string, string>? BlockActivityIris { get; set; }
+    private Dictionary<string, string>? FlagActivityIris { get; set; }
+    private bool ModerationBusy { get; set; }
+    private string? ModerationError { get; set; }
 
     private Iri? InstanceBase
     {
@@ -170,6 +263,219 @@ else
         {
             _ = LoadMemberCommunitiesAsync();
         }
+        if (tab == "moderation" && (BlockedActors is null || MutedActors is null || FlaggedActors is null) && ModerationError is null)
+        {
+            _ = LoadModerationAsync();
+        }
+    }
+
+    private string HandleFromIri(Iri actorIri)
+    {
+        const string marker = "/ap/v1/u/";
+        var value = actorIri.Value;
+        var index = value.IndexOf(marker, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return value;
+        }
+
+        var handle = value[(index + marker.Length)..];
+        var slash = handle.IndexOf('/');
+        return slash >= 0 ? handle[..slash] : handle;
+    }
+
+    private async Task LoadModerationAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        ModerationBusy = true;
+        ModerationError = null;
+
+        try
+        {
+            BlockedActors = await CollectIrisAsync(client.GetBlocksAsync(me));
+            MutedActors = await CollectIrisAsync(client.GetMutesAsync(me));
+            FlaggedActors = await CollectIrisAsync(client.GetFlagsAsync(me));
+            (BlockActivityIris, FlagActivityIris) = await CollectActivityIrisAsync(client, me);
+        }
+        catch (Exception ex)
+        {
+            ModerationError = ex.Message;
+        }
+        finally
+        {
+            ModerationBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private static async Task<List<Iri>> CollectIrisAsync(IAsyncEnumerable<IObjectOrLink> items)
+    {
+        var result = new List<Iri>();
+        await foreach (var item in items)
+        {
+            if (item is Link link && link.Href is { } href)
+            {
+                result.Add(new Iri(href.ToString()));
+            }
+        }
+
+        return result;
+    }
+
+    private async Task<(Dictionary<string, string>, Dictionary<string, string>)> CollectActivityIrisAsync(
+        IActivityPubClient client, Iri actorId)
+    {
+        var blockMap = new Dictionary<string, string>();
+        var flagMap = new Dictionary<string, string>();
+
+        try
+        {
+            await foreach (var item in client.GetCollectionItemsAsync(actorId.OutboxOf()))
+            {
+                if (item is not IObject activity || activity.Id is not { Length: > 0 } activityId)
+                {
+                    continue;
+                }
+
+                var type = activity is Block ? "Block" : activity is Flag ? "Flag" : null;
+                var objectIri = activity is KristofferStrube.ActivityStreams.Activity act
+                    ? act.Object?.FirstOrDefault()
+                    : null;
+                var targetValue = objectIri switch
+                {
+                    Link link => link.Href?.ToString(),
+                    IObject obj => obj.Id,
+                    _ => null,
+                };
+
+                if (targetValue is null)
+                {
+                    continue;
+                }
+
+                if (type == "Block")
+                {
+                    blockMap[targetValue] = activityId;
+                }
+                else if (type == "Flag")
+                {
+                    flagMap[targetValue] = activityId;
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort: if the outbox read fails, the maps stay empty and
+            // unblock/unflag will fall back to the target IRI.
+        }
+
+        return (blockMap, flagMap);
+    }
+
+    private async Task UnblockAsync(Iri target)
+    {
+        if (Client is not { } client || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        ModerationBusy = true;
+        ModerationError = null;
+
+        try
+        {
+            var blockIri = BlockActivityIris is { } map && map.TryGetValue(target.Value, out var mintedId)
+                ? new Iri(mintedId)
+                : target;
+            await client.UnblockAsync(me, blockIri);
+            BlockedActors = BlockedActors is { } blocks
+                ? blocks.Where(b => b != target).ToList()
+                : [];
+            if (BlockActivityIris is { } bm)
+            {
+                bm.Remove(target.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            ModerationError = ex.Message;
+        }
+        finally
+        {
+            ModerationBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UnmuteAsync(Iri target)
+    {
+        if (LocalModeration is not { } mod || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        ModerationBusy = true;
+        ModerationError = null;
+
+        try
+        {
+            await mod.UnmuteAsync(me, target);
+            MutedActors = MutedActors is { } mutes
+                ? mutes.Where(m => m != target).ToList()
+                : [];
+        }
+        catch (Exception ex)
+        {
+            ModerationError = ex.Message;
+        }
+        finally
+        {
+            ModerationBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task UnflagAsync(Iri target)
+    {
+        if (Client is not { } client || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        ModerationBusy = true;
+        ModerationError = null;
+
+        try
+        {
+            var flagIri = FlagActivityIris is { } map && map.TryGetValue(target.Value, out var mintedId)
+                ? new Iri(mintedId)
+                : target;
+            await client.UnflagAsync(me, flagIri);
+            FlaggedActors = FlaggedActors is { } flags
+                ? flags.Where(f => f != target).ToList()
+                : [];
+            if (FlagActivityIris is { } fm)
+            {
+                fm.Remove(target.Value);
+            }
+        }
+        catch (Exception ex)
+        {
+            ModerationError = ex.Message;
+        }
+        finally
+        {
+            ModerationBusy = false;
+        }
+
+        StateHasChanged();
     }
 
     private async Task LoadMemberCommunitiesAsync()

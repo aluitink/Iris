@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**51.2: View own blocks/mutes/flags** — `/settings` tabs or `/profile` section showing the user's own block/mute/flag lists with undo buttons.
+**51.3: Instance metadata edit (admin)** — admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,10 +106,9 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 51 — Feature completion & remaining gaps (in progress):**
 
-1. **51.2: View own blocks/mutes/flags** — ACTIVE. `/settings` tabs or `/profile` section showing the user's own block/mute/flag lists with undo buttons.
-2. **51.3: Instance metadata edit (admin)** — admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
-3. **51.4: Moderation queue (admin)** — `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
-4. **51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
+1. **51.3: Instance metadata edit (admin)** — ACTIVE. Admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
+2. **51.4: Moderation queue (admin)** — `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
+3. **51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
 
 **Phase 45–50** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -125,8 +124,9 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 51.1: **Mentions in compose** (Phase 51) — `@handle` detection in compose (regex, same-origin); `Mention` tags built in `ComposeNote.Build` + wired into all 4 post paths; fixed doubled-protocol IRI bug (`Uri.GetLeftPart` already includes scheme). Live-verified: note's tag = actor IRI. [changes/360](docs/changes/360-51.1-mentions-in-compose.md)
-  - 50.3: **Release checklist & documentation pass** (Phase 50) — fixed DP keys path in backup/restore scripts + BACKUP.md (50.1 follow-up); created `RELEASE.md`; full test suite green (1,210 passed, 0 failures). [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)
+  - 51.2: **View own blocks/mutes/flags** (Phase 51) — Moderation tab in `/settings` with Blocked/Muted/Reported sections + undo buttons; outbox scan for minted activity IRIs (unblock/unflag); live-verified block→unblock round-trip. [changes/361](docs/changes/361-51.2-view-own-blocks-mutes-flags.md)
+  - 51.1: **Mentions in compose** (Phase 51) — `@handle` detection in compose (regex, same-origin); `Mention` tags built in `ComposeNote.Build` + wired into all 4 post paths; fixed doubled-protocol IRI bug. [changes/360](docs/changes/360-51.1-mentions-in-compose.md)
+  - 50.3: **Release checklist & documentation pass** (Phase 50) — fixed DP keys path; created `RELEASE.md`; full test suite green. [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)
   - 50.2: **CHANGELOG + versioning** (Phase 50) — `CHANGELOG.md` written (v1.0.0); `Version`/`AssemblyVersion`/`FileVersion`/`AssemblyInformationalVersion` added to `Directory.Build.props`. [changes/358](docs/changes/358-50.2-changelog-versioning.md)
   - 50.1: **Security audit & dependency review** (Phase 50) — 0 vulnerable packages; fixed: cookie flags (HttpOnly/SameSite/SecurePolicy), non-root Docker user (iris uid 1001), DesignTimeDbContextFactory env-var connection string. [changes/357](docs/changes/357-50.1-security-audit-dependency-review.md)
   - 49.3: **API documentation** (Phase 49) — `Microsoft.AspNetCore.OpenApi` 10.0.11, `/openapi/v1.json` spec (44 endpoints), Swagger UI at `/api/`. [changes/356](docs/changes/356-49.3-api-documentation.md)
