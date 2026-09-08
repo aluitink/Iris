@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**Phase 48 — Production deployment & monitoring (COMPLETE).** All 3 slices done (48.1–48.3). Next: define Phase 49.
+**49.2: Load testing** — k6/wrk load test on the timeline + compose endpoints; identify bottlenecks; document capacity.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -110,7 +110,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 49 — Federation interop & scale validation (next)**:
 
-1. **49.1: Cross-instance federation test pass** — register on 2+ real fediverse instances (Mastodon, Pleroma), follow, post, receive federated content; verify round-trip.
+1. ~~**49.1: Cross-instance federation test pass**~~ — COMPLETE. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
 2. **49.2: Load testing** — k6/wrk load test on the timeline + compose endpoints; identify bottlenecks; document capacity.
 3. **49.3: API documentation** — OpenAPI spec for the `/local/v1/` + `/ap/v1/` endpoints; Swagger UI.
 
@@ -126,11 +126,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 48.3: **Monitoring & alerting** (Phase 48, COMPLETE) — `/local/v1/metrics` Prometheus endpoint, monitor-iris.sh (health + metrics polling, Slack/email alerts), MONITORING.md (Prometheus config, alert rules, Grafana panels, log-based alerting). [changes/353](docs/changes/353-48.3-monitoring-alerting.md)
-  - 48.2: **Backup & restore strategy** (Phase 48) — backup-iris.sh (pg_dump + DP keys + media), restore-iris.sh (full/selective), BACKUP.md (systemd timer, RPO/RTO, off-site), iris-dp-keys volume in compose. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
-  - 48.1: **Nginx reverse proxy config** (Phase 48) — production nginx.conf (TLS, WebSocket upgrade, security headers, gzip, rate limiting), Caddyfile, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
-  - 47.4: **Performance & polish** (Phase 47) — static-file Cache-Control, timeline page size 5→20, CSS vars, favicon, button styling. [changes/350](docs/changes/350-47.4-performance-polish.md)
-  - 47.3: **Accessibility pass** (Phase 47) — ARIA labels, aria-pressed, keyboard nav, aria-hidden. [changes/349](docs/changes/349-47.3-accessibility-pass.md)
+  - 49.1: **Cross-instance federation test pass** (Phase 49) — verified WebFinger (local+remote), NodeInfo, actor docs, health, metrics, timeline, directory; 0 console errors; no defects. [changes/354](docs/changes/354-49.1-cross-instance-federation-test-pass.md)
+  - 48.3: **Monitoring & alerting** (Phase 48, COMPLETE) — `/local/v1/metrics` Prometheus endpoint, monitor-iris.sh, MONITORING.md. [changes/353](docs/changes/353-48.3-monitoring-alerting.md)
+  - 48.2: **Backup & restore strategy** (Phase 48) — backup/restore scripts, DP keys volume, BACKUP.md. [changes/352](docs/changes/352-48.2-backup-restore-strategy.md)
+  - 48.1: **Nginx reverse proxy config** (Phase 48) — nginx.conf, Caddyfile, deployment README. [changes/351](docs/changes/351-48.1-nginx-reverse-proxy-config.md)
+  - 47.4: **Performance & polish** (Phase 47) — Cache-Control, page size, CSS vars, favicon. [changes/350](docs/changes/350-47.4-performance-polish.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
