@@ -1727,4 +1727,72 @@ ul.object-list li {
     margin-top: 0.25rem;
 }
 
+/* ---- WASM boot splash (53.9) ----
+   Shown inside #app before Blazor initializes and replaces it. Centered,
+   branded loading screen using the app's design tokens. */
+#app:only-child,
+body > #app {
+    min-height: 100vh;
+}
+
+.splash {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    text-align: center;
+    padding: 1.5rem;
+}
+
+.splash-logo svg {
+    width: 64px;
+    height: 64px;
+    display: block;
+    animation: splash-pulse 2.2s ease-in-out infinite;
+}
+
+.splash-spinner {
+    width: 28px;
+    height: 28px;
+    margin-top: 0.25rem;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: splash-spin 0.8s linear infinite;
+}
+
+.splash-title {
+    font-size: 1.8rem;
+    margin: 0.5rem 0 0;
+    letter-spacing: -0.02em;
+}
+
+.splash-sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.splash-status {
+    margin-top: 0.5rem;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+@keyframes splash-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes splash-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.75; transform: scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .splash-logo svg { animation: none; }
+    .splash-spinner { animation-duration: 1.6s; }
+}
+
 

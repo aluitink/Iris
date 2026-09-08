@@ -14,8 +14,16 @@
 <body>
     <div id="app">
         <div class="splash">
-            <h1>Iris</h1>
-            <p>An ActivityPub social platform.</p>
+            <div class="splash-logo" aria-hidden="true">
+                <svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" fill="none" stroke="#5b8cff" stroke-width="2.5"/>
+                    <circle cx="16" cy="16" r="4" fill="#5b8cff"/>
+                </svg>
+            </div>
+            <div class="splash-spinner" aria-hidden="true"></div>
+            <h1 class="splash-title">Iris</h1>
+            <p class="splash-sub">An ActivityPub social platform.</p>
+            <span class="splash-status" role="status">Loading…</span>
         </div>
     </div>
 

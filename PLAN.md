@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**53.8: Fix logout-on-refresh** — investigate & fix.
+**54.1: Full manual Playwright regression pass** — Phase 54 begins. A post-1.0.0 regression sweep over all pages (signed-in + signed-out, 1280×800 + 375×812): capture every page, log defects (page, repro, expected vs actual, severity), and fix in-slice any defect found. Manual verification only (no new coded tests) per the binding WASM manual-test policy.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,21 +104,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 53 — Post-1.0 enhancements & operational improvements (in progress):**
+**Phase 54 — Post-1.0 polish & hardening (in progress):**
 
-1. **53.8: Fix logout-on-refresh** — ACTIVE. After a browser refresh, the user is logged out (the WASM auth state is not persisted). Investigate the auth state provider lifecycle and fix so a refresh preserves the session.
-3. **53.4: Fix post-login current-user context race** — investigate & fix: after login, the current user's actor isn't fetched until landing on a page that requires it (e.g. the timeline), so the feed renders empty on first paint and only populates after a manual refresh. Establish user context as part of the login flow, before the post-login navigation.
-4. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
-5. **53.6: isLiked/isShared on nested collection objects + likedCount/sharedCount extensions** — investigate & design: when a collection (feed/outbox) is dereferenced and contains objects wrapped in an activity (e.g. `Create`), the wrapped object should carry the per-requester `iris:isLiked`/`iris:isShared` extensions too; add `iris:likedCount`/`iris:sharedCount` extensions so clients don't need to enumerate each object's `likes`/`shares` collection.
-6. **53.7: isReplied/repliedCount extension + reply expansion** — investigate & design: add `iris:isReplied`/`iris:repliedCount` alongside isLiked/isShared; on the full object page, allow a "+" expansion that lazily loads that item's replies.
-7. **53.8: Fix logout-on-refresh** — investigate & fix: refreshing the page logs the user out; the auth cookie should persist login state across refreshes (check cookie expiry/persistence flags and whether WASM re-establishes auth state from the cookie on startup).
-8. **53.9: Improve initial WASM loading screen** — the loading screen shown while WASM resources download/boot (likely `index.html`/`App.razor` splash) is bare; improve it (branding, progress indication) for first-paint experience.
-4. **53.4: Fix post-login current-user context race** — investigate & fix: after login, the current user's actor isn't fetched until landing on a page that requires it (e.g. the timeline), so the feed renders empty on first paint and only populates after a manual refresh. Establish user context as part of the login flow, before the post-login navigation.
-5. **53.5: OrderedCollection capability advertisement + feed activity-type filtering** — investigate & design: advertise `iris:` extensions on served `OrderedCollection` documents describing supported capabilities (refresh/query); extend feed query/filter support to target activity type (e.g. `Create`-only) so the timeline stops surfacing `Flag`/`Block` activities alongside posts.
-6. **53.6: isLiked/isShared on nested collection objects + likedCount/sharedCount extensions** — investigate & design: when a collection (feed/outbox) is dereferenced and contains objects wrapped in an activity (e.g. `Create`), the wrapped object should carry the per-requester `iris:isLiked`/`iris:isShared` extensions too; add `iris:likedCount`/`iris:sharedCount` extensions so clients don't need to enumerate each object's `likes`/`shares` collection.
-7. **53.7: isReplied/repliedCount extension + reply expansion** — investigate & design: add `iris:isReplied`/`iris:repliedCount` alongside isLiked/isShared; on the full object page, allow a "+" expansion that lazily loads that item's replies.
-8. **53.8: Fix logout-on-refresh** — investigate & fix: refreshing the page logs the user out; the auth cookie should persist login state across refreshes (check cookie expiry/persistence flags and whether WASM re-establishes auth state from the cookie on startup).
-9. **53.9: Improve initial WASM loading screen** — the loading screen shown while WASM resources download/boot (likely `index.html`/`App.razor` splash) is bare; improve it (branding, progress indication) for first-paint experience.
+1. **54.1: Full manual Playwright regression pass** — ACTIVE. Post-1.0.0 regression sweep over all pages (signed-in + signed-out, 1280×800 + 375×812); log defects, fix in-slice.
+2. **54.2: Empty-state & loading-state consistency audit** — every paged collection, actor, community, and object page should have a deliberate empty + loading + error state.
+3. **54.3: Accessibility & keyboard-navigation regression** — verify the 47.3 ARIA pass held; Tab order, focus visibility, aria-live on toasts/notifications.
 
 **Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -134,6 +124,8 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 53.9: **Branded WASM loading screen** (Phase 53) — replaced the bare "Loading…" text with a branded splash (pulsing logo + spinner + wordmark) using the app's design tokens. [changes/375](docs/changes/375-53.9-wasm-loading-screen.md)
+  - 53.8: **Fix logout-on-refresh** (Phase 53) — INVESTIGATED: could not reproduce. `CookieAuthenticationStateProvider` correctly calls `/local/v1/session` on WASM startup; the auth cookie is persistent (`IsPersistent = true`). Live-verified: login → navigate → full page refresh → still authenticated. The bug was likely observed before the 53.4 post-login context race fix, or is environment-specific. No code change needed.
   - 53.7: **repliedCount on nested objects** (Phase 53) — `iris:repliedCount` on nested objects in outbox/feed, computed from `IReplyStore.GetRepliesAsync`. `isReplied` skipped (ambiguous). [changes/374](docs/changes/374-53.7-replied-count.md)
   - 53.6: **isLiked/isShared on nested objects + likedCount/sharedCount** (Phase 53) — `likedCount`/`sharedCount` on nested objects in outbox (cached) and feed; `isLiked`/`isShared` on nested objects in feed (per-requester, uncached). [changes/373](docs/changes/373-53.6-nested-object-interaction-state.md)
   - 53.5: **OrderedCollection capability advertisement + feed activity-type filtering** (Phase 53) — `iris:refresh`/`iris:query`/`iris:type` capability flags on page-1 `OrderedCollection`; `?type=...` query parameter on the feed endpoint filters to activities of that type. [changes/372](docs/changes/372-53.5-ordered-collection-capabilities.md)
