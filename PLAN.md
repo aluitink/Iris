@@ -73,29 +73,49 @@ Iris.slnx
 
 **Phase 44 — Post content completeness (COMPLETE).** 44.1–44.3 all COMPLETE. *(Phases 32–44 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
 
-1. ~~**44.1: Content warning / sensitive flag on compose (F-28)**~~ **COMPLETE** — "Content warning" checkbox + summary input on Compose (Note posts); the Note path builds the note via `ComposeNote.Build` (sensitive + summary + to) and posts it via the `PostNoteAsync(Note)` overload; the feed's existing reveal toggle renders it. 4 integration tests. → [docs/changes/336](docs/changes/336-44.1-content-warning-compose.md)
-2. ~~**44.2: Edit own post (F-02)**~~ **COMPLETE** — an "Edit" button on own posts (object detail, next to Delete) enters inline edit mode; the client's new `UpdateNoteAsync` posts an `Update` activity through the signed outbox; the server's `UpdateActivityHandler` refreshes the stored object in place and federates to followers. 5 integration tests. → [docs/changes/337](docs/changes/337-44.2-edit-own-post.md)
-3. ~~**44.3: Media attachment (image) on compose (F-27)**~~ **COMPLETE** — an "Add image" file picker on Compose (top-level Note/Article posts only); on post the image is uploaded via `IMediaClient` (Phase 20.4a) to the local media endpoint → same-origin media IRI; `ComposeNote.Build` (and the Article path) carries a single `Image` attachment (url + id = media IRI, mediaType, name); the feed's existing `GetMediaAttachments` rendering shows it. 5 unit tests + 4 integration tests. → [docs/changes/338](docs/changes/338-44.3-media-compose.md)
+**Phase 45 — WASM manual test & bug hunt (ACTIVE).** The app just transitioned from SSR (Blazor Server) to a Blazor WebAssembly client; the port is expected to have left implementation holes. Phases 45–46 focus on **manual testing via MCP Playwright** (test accounts + test content created by hand), **triaging defects into this file and fixing them**, and **visual inspection with design decisions** built on what exists. Scope + hunting map + per-slice definitions: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md).
+
+**Test policy for these phases (user-directed, binding):**
+
+- **No new coded tests** — all verification is manual via MCP Playwright (live app, real browser).
+- **Existing web tests (`tests/Iris.Web.Tests`) are expendable:** keep what passes; if a change breaks one, **delete that test** (log it in the change doc) — never fix the app to satisfy it, never write a replacement.
+- **15-second rule:** any single test taking longer than 15 s is **skipped**; if the suite stalls on timing-out tests, use blame (detailed per-test timings) to find the offenders and **comment them out**.
+- **Done = live-verified:** build clean + Docker rebuild + Playwright pass over the slice's scope + screenshots; broken/slow tests handled per the rules above.
 
 ## Active Slice
 
-*(none — Phases 32–44 are complete; no slice selected. The next turn expands the next phase per the loop: if Up Next is empty, define the next phase as a one-line placeholder in ROADMAP.md, seed Up Next with its first slices, commit, and end the turn.)*
+*(none selected yet — the next turn takes the top item from Up Next, which is 45.1.)*
 
-### Loop protocol (production app)
+### Loop protocol (WASM manual-test phase)
+
+Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
 2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build --no-cache iris-web && docker compose up -d iris-web`
-3. **Verify**: MCP Playwright — log in as `alice` / `alice-password`, navigate pages, test interactions
-4. **Tests**: `cd /workspace && dotnet test --no-build -c Release` (0 failures required)
-5. **Visual review**: screenshot all pages (home, compose, profile, directory, notifications, search, actor detail, object detail, landing). Compare against what a polished social platform should look like.
-6. **Add items**: append new findings to Up Next. Mark completed items with ~~strikethrough~~ + **COMPLETE**.
-7. **Update PLAN.md**: move completed items to Recently Completed; keep Up Next sorted by priority.
+3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** visited.
+4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
+5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
+6. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
+7. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (defects first).
 
 ## Up Next
 
-Short, bounded list — only the next few items, not the whole roadmap.
+Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-*(empty — no slices queued. Phases 32–44 are complete; the next phase will be defined by the loop per the Active Slice note.)*
+**Phase 45 — WASM manual test & bug hunt** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
+
+1. **45.1: Auth & session pass** — register ≥3 new accounts; login/logout/refresh/session persistence; login error paths (bad password, rate limit); antiforgery on login/register forms; session endpoint + cookie auth state in the WASM client.
+2. **45.2: Content round-trips pass** — per account: Note, Article, reply (context + `inReplyTo`), edit own post, delete own post, boost, like; verify rendering on home/profile/object detail + counters; HTML/long-text/Unicode content.
+3. **45.3: Media & CW pass** — image attachment (top-level Note/Article), sensitive/CW reveal toggle, same-origin media IRI, feed + object detail rendering, oversized-file rejection (1 MiB cap).
+4. **45.4: Social graph pass** — follow/unfollow cross-page, follow-request queue, community join/leave + membership requests, home timeline reflects follows, profile tabs.
+5. **45.5: Notifications & moderation pass** — notifications list + unread badge + mark-all-read; block/mute/report + undo (posts + actor detail); admin user list.
+6. **45.6: Edge states pass** — empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page.
+7. **45.7: Triage closeout** — review all defects from 45.1–45.6; unfixed → Up Next; change doc summarizing findings + fixes.
+
+**Phase 46 — Visual inspection & design pass** (after 45):
+
+8. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
+9. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
 
 ## Inbox
 
