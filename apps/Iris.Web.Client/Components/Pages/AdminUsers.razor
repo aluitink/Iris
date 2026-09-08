@@ -65,7 +65,12 @@ else
                 LoadError = $"Failed to load users (HTTP {(int)response.StatusCode})";
                 return;
             }
-            var list = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+            // The server serializes the user fields as camelCase (actorIri, createdAt, etc.);
+            // ReadFromJsonAsync's default options are case-sensitive, so deserialize with a
+            // case-insensitive property name matcher so every field binds.
+            var list = System.Text.Json.JsonSerializer.Deserialize<List<AdminUserDto>>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             Users = list?.OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase).ToList();
         }
         catch (Exception ex)

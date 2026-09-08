@@ -244,8 +244,18 @@
         // awaited), so Blazor never re-renders after Items is populated — the "Loading…" spinner
         // (Items == null) stays on screen until the user clicks Refresh (an @onclick handler, which
         // Blazor auto-re-renders). Mirror that auto-re-render here so the initial navigate renders the
-        // loaded items without a manual Refresh.
-        StateHasChanged();
+        // loaded items without a manual Refresh. StateHasChanged throws InvalidOperationException if
+        // the component was disposed between the await and this call (e.g. the user navigated away
+        // mid-fetch) — that would be an unobserved exception on this fire-and-forget task, which
+        // trips the global Blazor error UI, so it must be swallowed.
+        try
+        {
+            StateHasChanged();
+        }
+        catch (InvalidOperationException)
+        {
+            // Component disposed mid-fetch; nothing to render.
+        }
     }
 
     private async Task LoadMoreAsync()

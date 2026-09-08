@@ -72,7 +72,8 @@ public sealed class FakeActivityPubServer : IDisposable
 
     /// <summary>
     /// The <see cref="HttpMessageHandler"/> that talks to this instance's in-process endpoint. Pass it
-    /// as the transport to <see cref="Iris.Client.IActivityPubClientFactory.Create"/> so the real
+    /// as the transport to <see cref="Iris.Client.IActivityPubClientFactory.Create(Iris.Client.ActivityPubClientOptions, System.Net.Http.HttpMessageHandler)"/>
+    /// so the real
     /// client pipeline (retry → JsonLd → signing) wraps a genuine HTTP round-trip.
     /// </summary>
     public HttpMessageHandler Handler { get; }

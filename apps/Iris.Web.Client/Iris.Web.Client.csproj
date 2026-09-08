@@ -29,6 +29,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The WASM client's appsettings.json (auto-included as Content by the SDK) carries
+         Iris:AdvertiseBase, the instance's public FQDN base, so the session's SameOriginApHandler can
+         rewrite FQDN-addressed requests to same-origin (the browser cannot sign or read a cross-origin
+         ActivityPub request). Ensure it is copied to the WASM output (wwwroot). -->
+    <Content Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
     <ProjectReference Include="..\..\src\Iris.Client.Extensions\Iris.Client.Extensions.csproj" />
     <ProjectReference Include="..\..\src\Iris.Client\Iris.Client.csproj" />
     <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.csproj" />

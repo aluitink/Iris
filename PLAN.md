@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-**45.1: Auth & session pass** (in progress → complete this turn). See [docs/changes/](docs/changes/) for the slice change doc.
+**45.3: Media & CW pass** (next up). See [docs/changes/](docs/changes/) for the slice change doc.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,18 +104,16 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 45 — WASM manual test & bug hunt** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
 
-1. **45.2: Content round-trips pass** — per account: Note, Article, reply (context + `inReplyTo`), edit own post, delete own post, boost, like; verify rendering on home/profile/object detail + counters; HTML/long-text/Unicode content. *(45.1 completed — see Recently Completed.)*
-2. **45.2: Content round-trips pass** — per account: Note, Article, reply (context + `inReplyTo`), edit own post, delete own post, boost, like; verify rendering on home/profile/object detail + counters; HTML/long-text/Unicode content.
-3. **45.3: Media & CW pass** — image attachment (top-level Note/Article), sensitive/CW reveal toggle, same-origin media IRI, feed + object detail rendering, oversized-file rejection (1 MiB cap).
-4. **45.4: Social graph pass** — follow/unfollow cross-page, follow-request queue, community join/leave + membership requests, home timeline reflects follows, profile tabs.
-5. **45.5: Notifications & moderation pass** — notifications list + unread badge + mark-all-read; block/mute/report + undo (posts + actor detail); admin user list.
-6. **45.6: Edge states pass** — empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page.
-7. **45.7: Triage closeout** — review all defects from 45.1–45.6; unfixed → Up Next; change doc summarizing findings + fixes.
+1. **45.3: Media & CW pass** — image attachment (top-level Note/Article), sensitive/CW reveal toggle, same-origin media IRI, feed + object detail rendering, oversized-file rejection (1 MiB cap).
+2. **45.4: Social graph pass** — follow/unfollow cross-page, follow-request queue, community join/leave + membership requests, home timeline reflects follows, profile tabs.
+3. **45.5: Notifications & moderation pass** — notifications list + unread badge + mark-all-read; block/mute/report + undo (posts + actor detail); admin user list.
+4. **45.6: Edge states pass** — empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page.
+5. **45.7: Triage closeout** — review all defects from 45.1–45.6; unfixed → Up Next; change doc summarizing findings + fixes.
 
 **Phase 46 — Visual inspection & design pass** (after 45):
 
-8. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
-9. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
+6. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
+7. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
 
 ## Inbox
 
@@ -129,11 +127,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 45.2: **Content round-trips pass** (Phase 45) — Playwright pass over post/edit/delete/like/boost with Unicode/emoji/HTML content. Defects found + fixed: (a) systemic JSON casing mismatch — WASM client's `GetFromJsonAsync`/`ReadFromJsonAsync` used case-sensitive property binding while the server emits camelCase → login/register 400 + zero notification badge; fixed 5 deserialization sites to `PropertyNameCaseInsensitive = true`. (b) CORS — `SameOriginApHandler` rewrote FQDN IRIs to same-origin but was innermost (after signing); moved it outermost so the URL is rewritten BEFORE signing (signature host matches the browser's dial host). (c) `appsettings.json` added to the WASM client (`Iris:AdvertiseBase=https://iris.luit.ink`) so the handler knows the FQDN to rewrite. (d) ObjectDetail `DeleteAsync` used the Create IRI (not the note IRI) → delete was a no-op; fixed to use the `SubjectObject`'s IRI. Verified: post (202, renders on profile with Unicode/emoji/escaped HTML), like (`/likes` totalItems=1, heart lights), boost (`/shares` totalItems=1, boost lights), edit (content updated in DB + UI, like/boost counts persist), delete (note tombstoned with `formerType: Note`). 951 tests green.
   - 45.1: **Auth & session pass** (Phase 45) — Playwright pass over login/register/logout/session. Defects found + fixed: (a) WASM client's home timeline blank — `index.html` was missing the `<script src="js/WebCrypto.js">` bridge tag (the signing key never loaded → `Session.Client` null); added `wwwroot/js/WebCrypto.js` + the script tag. (b) 10 pages (Profile, Settings, Notifications, Directory, Search, Compose, Communities, CommunityDetail, ActorDetail, ObjectDetail) read `Session.*` synchronously but never called `EnsureReadyAsync()` → stuck on loading; added `await Session.EnsureReadyAsync()` to each page's init lifecycle. (c) Inbox 403 — `InboxEndpointHandler` only checked Basic auth; added the same cookie-auth `actor_iri` fallback as `ActorDocumentHandler` so the signed WASM client can read its own inbox (Notifications). Verified: register bob/carol/dave, duplicate-handle + short-password + invalid-handle errors, bad-password login error, logout ends session, session persists across reload, antiforgery 400 on login POST w/o token, session endpoint 302 unauth. 951 tests green.
   - 44.3: **Media attachment (image) on compose (F-27)** (Phase 44) — "Add image" picker on Compose (top-level posts); on post uploads via `IMediaClient` → same-origin media IRI; `ComposeNote.Build`/Article path carries a single `Image` attachment; feed's `GetMediaAttachments` already renders it. 5 unit + 4 integration tests.
   - 44.2: **Edit own post** (Phase 44) — "Edit" button on own posts (object detail); client `UpdateNoteAsync` posts an `Update` activity; server refreshes the stored object in place and federates; 5 integration tests.
   - 44.1: **Content warning / sensitive flag on compose** (Phase 44) — CW checkbox + summary on Compose (Note posts); note built via `ComposeNote.Build` (sensitive + summary); feed reveal toggle already renders it; 4 integration tests.
-  - 43.3: **Moderation on actor detail** (Phase 43) — `ModerationActions` (Block/Report via `IActivityPubClient`, Mute via `ILocalModerationClient`, Undo state from blocks/mutes collections) + community join-request "Requests" tab; 8 integration tests.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

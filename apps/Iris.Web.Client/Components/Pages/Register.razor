@@ -56,7 +56,12 @@
             // URL resolves. The default injected HttpClient has no base address and would
             // throw on a relative URI.
             var http = Services.GetRequiredService<IHttpClientFactory>().CreateClient("iris");
-            var body = await http.GetFromJsonAsync<AntiforgeryResponse>("local/v1/antiforgery");
+            // The server serializes the token as "requestToken" (camelCase); GetFromJsonAsync's
+            // default options are case-sensitive, so deserialize explicitly with a case-insensitive
+            // property name matcher so the field binds regardless of the server's casing.
+            var json = await http.GetStringAsync("local/v1/antiforgery");
+            var body = System.Text.Json.JsonSerializer.Deserialize<AntiforgeryResponse>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             _antiforgeryToken = body?.RequestToken;
         }
         catch

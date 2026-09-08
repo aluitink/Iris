@@ -113,6 +113,9 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     private readonly IKeyProvider _keyProvider;
     private readonly IActivityPubClientFactory _clientFactory;
     private readonly IJSRuntime? _js;
+    private readonly Uri? _advertiseBase;
+    private readonly Uri _browserBase;
+    private readonly HttpClient _sameOriginHttp;
     private AuthenticationState? _state;
     private Task<AuthenticationState>? _stateLoad;
     private IActivityPubClient? _client;
@@ -129,13 +132,26 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     /// <param name="keyProvider">The key provider (maps actor IRI to key IRI).</param>
     /// <param name="clientFactory">The ActivityPub client factory (builds the signed HTTP client).</param>
     /// <param name="js">The JS runtime (WASM only; null on server — uses BCL key loading).</param>
+    /// <param name="advertiseBase">
+    /// The instance's advertised (public FQDN) ActivityPub base, or null when the browser dials the same
+    /// origin it advertises (no cross-origin rewrite needed). When set, the session's ActivityPub clients
+    /// route FQDN-addressed requests same-origin (via <see cref="SameOriginApHandler"/>) so the browser can
+    /// sign writes and read the owner-only key without a CORS failure.
+    /// </param>
+    /// <param name="browserBaseAddress">
+    /// The browser's origin (the instance's dial base, e.g. <c>http://localhost:8088/</c>). Used as the
+    /// BaseAddress for the same-origin key-fetch client so relative (rewritten) requests resolve to the
+    /// browser's own origin.
+    /// </param>
     public ActorSessionAccessor(
         AuthenticationStateProvider authentication,
         HttpClient http,
         IKeyStore keyStore,
         IKeyProvider keyProvider,
         IActivityPubClientFactory clientFactory,
-        IJSRuntime? js = null)
+        IJSRuntime? js = null,
+        Uri? advertiseBase = null,
+        Uri? browserBaseAddress = null)
     {
         _authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
         _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -143,7 +159,37 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
         _keyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _js = js;
+        _advertiseBase = advertiseBase is null ? null : new Uri(TrimTrailingSlash(advertiseBase.ToString()));
+        // A dedicated same-origin client for the owner-only actor-document read (the privateKey fetch).
+        // It carries the site cookie (cookie auth) and rewrites FQDN IRIs to same-origin (the browser
+        // cannot read a cross-origin owner-only resource — CORS). BaseAddress is the browser origin so a
+        // rewritten (relative) request resolves to the browser's own origin.
+        _browserBase = browserBaseAddress ?? new Uri("http://localhost/");
+        _sameOriginHttp = new HttpClient(new SameOriginApHandler(new HttpClientHandler(), _advertiseBase, _browserBase), disposeHandler: true)
+        {
+            BaseAddress = _browserBase,
+        };
     }
+
+    private static string TrimTrailingSlash(string value)
+        => value.EndsWith("/", StringComparison.Ordinal) ? value[..^1] : value;
+
+    /// <summary>
+    /// The plain browser transport handler (cookie auth) that the factory's signed pipeline wraps. This
+    /// is the INNERMOST handler — the <see cref="SameOriginApHandler"/> that rewrites FQDN IRIs to
+    /// same-origin sits OUTERMOST (see <see cref="BuildSameOriginRewriter"/>) so the rewrite precedes
+    /// signing.
+    /// </summary>
+    private HttpMessageHandler BuildTransportHandler() => new HttpClientHandler();
+
+    /// <summary>
+    /// Builds the outermost <see cref="SameOriginApHandler"/> for the session's signed clients: it
+    /// rewrites absolute FQDN IRIs to same-origin BEFORE the <see cref="Iris.Client.Pipeline.SigningHandler"/>
+    /// signs, so the signature's <c>host</c> component matches the host the server receives on the wire
+    /// (the browser sends the site's dial host because <c>Host</c> is a forbidden header it cannot
+    /// override — see <see cref="SameOriginApHandler"/>).
+    /// </summary>
+    private SameOriginApHandler BuildSameOriginRewriter() => new(new HttpClientHandler(), _advertiseBase, _browserBase);
 
     private static bool IsAuthenticated(AuthenticationState? state)
         => state is not null && state.User.Identity is { IsAuthenticated: true };
@@ -233,7 +279,10 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
                 return null;
             }
 
-            _client = _clientFactory.Create(new ActivityPubClientOptions { ActorId = actorId }, new HttpClientHandler());
+            _client = _clientFactory.Create(
+                new ActivityPubClientOptions { ActorId = actorId },
+                BuildTransportHandler(),
+                outermost: BuildSameOriginRewriter());
             return _client;
         }
     }
@@ -265,7 +314,9 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
                 return null;
             }
 
-            _localModeration = _clientFactory.CreateLocalModerationClient(new ActivityPubClientOptions { ActorId = actorId }, new HttpClientHandler());
+            _localModeration = _clientFactory.CreateLocalModerationClient(
+                new ActivityPubClientOptions { ActorId = actorId },
+                BuildTransportHandler());
             return _localModeration;
         }
     }
@@ -297,7 +348,9 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
                 return null;
             }
 
-            _mediaClient = _clientFactory.CreateMediaClient(new ActivityPubClientOptions { ActorId = actorId }, new HttpClientHandler());
+            _mediaClient = _clientFactory.CreateMediaClient(
+                new ActivityPubClientOptions { ActorId = actorId },
+                BuildTransportHandler());
             return _mediaClient;
         }
     }
@@ -361,7 +414,10 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
 
         try
         {
-            using var response = await _http.GetAsync(me.Value);
+            // The owner-only actor-document read must go same-origin: it carries the site cookie (cookie
+            // auth) and the FQDN IRI is rewritten to a same-origin path by the handler (a cross-origin
+            // read would be CORS-blocked). _sameOriginHttp is that same-origin client.
+            using var response = await _sameOriginHttp.GetAsync(me.Value);
             if (!response.IsSuccessStatusCode)
             {
                 return false;

@@ -45,7 +45,12 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
                 return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
             }
 
-            var json = await response.Content.ReadFromJsonAsync<SessionResponse>();
+            // The server serializes the claims as camelCase (actorIri, etc.); ReadFromJsonAsync's
+            // default options are case-sensitive, so deserialize with a case-insensitive property
+            // name matcher so every field binds regardless of the server's casing.
+            var json = System.Text.Json.JsonSerializer.Deserialize<SessionResponse>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (json is null)
             {
                 return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));

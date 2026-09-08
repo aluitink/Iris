@@ -50,7 +50,17 @@
             return;
         }
 
-        var count = await _notifications.GetUnreadCountAsync(accountId, _cts.Token);
+        int count;
+        try
+        {
+            count = await _notifications.GetUnreadCountAsync(accountId, _cts.Token);
+        }
+        catch
+        {
+            // The HTTP call can throw (a 401 after logout, a transient network error); this is a
+            // fire-and-forget task, so an unobserved exception would trip the global Blazor error UI.
+            return;
+        }
         _unread = Math.Max(0, count);
         try
         {

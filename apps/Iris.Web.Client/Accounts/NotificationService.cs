@@ -26,8 +26,12 @@ public sealed class NotificationService
     /// </summary>
     public async Task<int> GetUnreadCountAsync(Guid accountId, CancellationToken ct = default)
     {
-        var response = await _http.GetFromJsonAsync<UnreadCountDto>(
-            "/local/v1/notifications/unread-count", ct);
+        // The server serializes the count as "unread" (camelCase); GetFromJsonAsync's default
+        // options are case-sensitive, so deserialize explicitly with a case-insensitive property
+        // name matcher so the field binds regardless of the server's casing.
+        var json = await _http.GetStringAsync("/local/v1/notifications/unread-count", ct);
+        var response = System.Text.Json.JsonSerializer.Deserialize<UnreadCountDto>(json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return response?.Unread ?? 0;
     }
 
@@ -43,7 +47,9 @@ public sealed class NotificationService
             return 0;
         }
 
-        var body = await response.Content.ReadFromJsonAsync<UnreadCountDto>(ct);
+        var body = System.Text.Json.JsonSerializer.Deserialize<UnreadCountDto>(
+            await response.Content.ReadAsStringAsync(ct),
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return body?.Unread ?? 0;
     }
 
