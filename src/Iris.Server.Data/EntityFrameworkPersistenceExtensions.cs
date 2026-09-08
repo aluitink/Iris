@@ -72,6 +72,9 @@ public static class EntityFrameworkPersistenceExtensions
         // The local browser-session account store (EF Core).
         services.TryAddSingleton<IUserAccountStore, EfUserAccountStore>();
 
+        // The instance metadata store (EF Core).
+        services.TryAddSingleton<IInstanceMetadataStore, EfInstanceMetadataStore>();
+
         // The aggregate provider. This MUST be a hard AddSingleton (not TryAddSingleton):
         // AddActivityPubServer registers a recursive fallback factory for IPersistenceProvider
         // (sp => sp.GetRequiredService<IPersistenceProvider>()) via TryAddSingleton, which becomes the

@@ -3,6 +3,7 @@ using System;
 using Iris.Server.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Iris.Server.Data.Migrations
 {
     [DbContext(typeof(IrisDbContext))]
-    partial class IrisDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260908134636_AddInstanceMetadata")]
+    partial class AddInstanceMetadata
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

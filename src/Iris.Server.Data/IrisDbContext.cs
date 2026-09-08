@@ -39,6 +39,7 @@ public sealed class IrisDbContext : DbContext
         ConfigureCreateIndex(modelBuilder);
         ConfigureMedia(modelBuilder);
         ConfigureUserAccount(modelBuilder);
+        ConfigureInstanceMetadata(modelBuilder);
     }
 
     /// <summary>
@@ -187,6 +188,20 @@ public sealed class IrisDbContext : DbContext
             entity.Property(e => e.FileName).HasMaxLength(512);
             entity.Property(e => e.StorageKey).HasMaxLength(1024);
             entity.HasIndex(e => e.Id);
+        });
+    }
+
+    /// <summary>
+    /// Configures the instance metadata entity (a single row, key = 0).
+    /// </summary>
+    private static void ConfigureInstanceMetadata(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<InstanceMetadataEntity>(entity =>
+        {
+            entity.ToTable("InstanceMetadata");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(255);
+            entity.Property(e => e.Description).HasMaxLength(1024);
         });
     }
 }

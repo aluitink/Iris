@@ -1,0 +1,135 @@
+@page "/admin/instance"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@using System.Net.Http.Json
+
+<PageTitle>Admin · Instance · Iris</PageTitle>
+
+<h2>Instance settings</h2>
+
+@if (LoadError is not null)
+{
+    <div class="error">@LoadError</div>
+}
+else if (Meta is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading instance settings…</span>
+    </div>
+}
+else
+{
+    <div class="card">
+        <form @onsubmit="SaveAsync">
+            <div class="form-group">
+                <label>Instance name</label>
+                <input type="text" @bind="Name" maxlength="255" required />
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea @bind="Description" rows="3" maxlength="1024"
+                          placeholder="A short description of this instance"></textarea>
+            </div>
+            <button type="submit" class="btn btn--primary" disabled="@Saving">
+                @if (Saving) { <span>Saving…</span> } else { <span>Save</span> }
+            </button>
+        </form>
+
+        @if (SaveMessage is not null)
+        {
+            <div class="success" style="margin-top:1rem;">@SaveMessage</div>
+        }
+        @if (SaveError is not null)
+        {
+            <div class="error" style="margin-top:1rem;">@SaveError</div>
+        }
+    </div>
+}
+
+@code {
+    private HttpClient _http = null!;
+    private InstanceMeta? Meta { get; set; }
+    private string? LoadError { get; set; }
+    private string Name { get; set; } = string.Empty;
+    private string Description { get; set; } = string.Empty;
+    private bool Saving { get; set; }
+    private string? SaveMessage { get; set; }
+    private string? SaveError { get; set; }
+
+    [Inject] private IHttpClientFactory HttpFactory { get; set; } = default!;
+
+    protected override void OnInitialized()
+    {
+        _http = HttpFactory.CreateClient("iris");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync("/local/v1/admin/instance");
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = $"Failed to load instance settings (HTTP {(int)response.StatusCode})";
+                return;
+            }
+            var meta = System.Text.Json.JsonSerializer.Deserialize<InstanceMeta>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (meta is null)
+            {
+                LoadError = "Failed to parse instance settings.";
+                return;
+            }
+            Meta = meta;
+            Name = meta.Name;
+            Description = meta.Description ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        Saving = true;
+        SaveMessage = null;
+        SaveError = null;
+        try
+        {
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { name = Name, description = Description });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http.PutAsync("/local/v1/admin/instance", content);
+            if (!response.IsSuccessStatusCode)
+            {
+                SaveError = $"Failed to save (HTTP {(int)response.StatusCode})";
+            }
+            else
+            {
+                var saved = System.Text.Json.JsonSerializer.Deserialize<InstanceMeta>(
+                    await response.Content.ReadAsStringAsync(),
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (saved is not null)
+                {
+                    Meta = saved;
+                    Name = saved.Name;
+                    Description = saved.Description ?? string.Empty;
+                }
+                SaveMessage = "Instance settings saved.";
+            }
+        }
+        catch (Exception ex)
+        {
+            SaveError = ex.Message;
+        }
+        finally
+        {
+            Saving = false;
+        }
+    }
+
+    private sealed record InstanceMeta(string Name, string? Description, DateTimeOffset? UpdatedAt);
+}

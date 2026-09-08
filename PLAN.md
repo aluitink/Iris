@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**51.3: Instance metadata edit (admin)** — admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
+**51.4: Moderation queue (admin)** — `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,9 +106,8 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 51 — Feature completion & remaining gaps (in progress):**
 
-1. **51.3: Instance metadata edit (admin)** — ACTIVE. Admin-only form to edit instance name/description (NodeInfo fields); `Update` on the instance actor or a local endpoint.
-2. **51.4: Moderation queue (admin)** — `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
-3. **51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
+1. **51.4: Moderation queue (admin)** — ACTIVE. `/admin/moderation` page listing all flags on the instance; accept/reject/dismiss actions.
+2. **51.5: Relay subscriptions UI (settings)** — list current relay subscriptions; add/remove relay by URL (F-06).
 
 **Phase 45–50** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
@@ -124,6 +123,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 51.3: **Instance metadata edit (admin)** (Phase 51) — `/admin/instance` page with name/description form; `IInstanceMetadataStore` (EF + in-memory); `GET`/`PUT /local/v1/admin/instance` (Admin role); EF migration; live-verified save + persist across restart. [changes/362](docs/changes/362-51.3-instance-metadata-edit-admin.md)
   - 51.2: **View own blocks/mutes/flags** (Phase 51) — Moderation tab in `/settings` with Blocked/Muted/Reported sections + undo buttons; outbox scan for minted activity IRIs (unblock/unflag); live-verified block→unblock round-trip. [changes/361](docs/changes/361-51.2-view-own-blocks-mutes-flags.md)
   - 51.1: **Mentions in compose** (Phase 51) — `@handle` detection in compose (regex, same-origin); `Mention` tags built in `ComposeNote.Build` + wired into all 4 post paths; fixed doubled-protocol IRI bug. [changes/360](docs/changes/360-51.1-mentions-in-compose.md)
   - 50.3: **Release checklist & documentation pass** (Phase 50) — fixed DP keys path; created `RELEASE.md`; full test suite green. [changes/359](docs/changes/359-50.3-release-checklist-documentation.md)

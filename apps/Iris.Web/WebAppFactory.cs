@@ -256,6 +256,7 @@ public static class WebAppFactory
             sp.GetRequiredService<IKeyProvider>(),
             baseUri));
         builder.Services.TryAddSingleton<IUserAccountStore, InMemoryUserAccountStore>();
+        builder.Services.TryAddSingleton<IInstanceMetadataStore, InMemoryInstanceMetadataStore>();
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
 
@@ -628,6 +629,44 @@ public static class WebAppFactory
                 u.Role,
                 u.CreatedAt,
             }));
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        // Instance metadata (51.3): GET/PUT /local/v1/admin/instance — admin-only.
+        endpoints.MapGet("/local/v1/admin/instance", async (
+            IInstanceMetadataStore metadataStore,
+            IOptions<ActivityPubServerOptions> optionsAccessor,
+            CancellationToken ct) =>
+        {
+            var stored = await metadataStore.GetAsync(ct);
+            var fallbackName = optionsAccessor.Value.InstanceName ?? "Iris";
+            return Results.Json(new
+            {
+                Name = stored?.Name ?? fallbackName,
+                Description = stored?.Description ?? "An Iris ActivityPub instance",
+                UpdatedAt = stored?.UpdatedAt,
+            });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        endpoints.MapPut("/local/v1/admin/instance", async (
+            IInstanceMetadataStore metadataStore,
+            HttpRequest request,
+            CancellationToken ct) =>
+        {
+            using var doc = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+            var root = doc.RootElement;
+            var name = root.TryGetProperty("name", out var n) ? n.GetString() : null;
+            var description = root.TryGetProperty("description", out var d) ? d.GetString() : null;
+
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return Results.BadRequest(new { error = "name is required" });
+            }
+
+            await metadataStore.UpdateAsync(
+                new InstanceMetadata(name.Trim(), string.IsNullOrWhiteSpace(description) ? null : description.Trim(), DateTimeOffset.UtcNow),
+                ct);
+
+            return Results.Json(new { name = name.Trim(), description = description, updatedAt = DateTimeOffset.UtcNow });
         }).RequireAuthorization(p => p.RequireRole("Admin"));
     }
 
