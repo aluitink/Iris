@@ -230,9 +230,9 @@
         {
             await EnumerateOnePageAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = ex.Message;
+            LoadError = "Failed to load. Please try again.";
         }
 
         if (Items is null && LoadError is null)
@@ -271,9 +271,9 @@
         {
             await EnumerateOnePageAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = ex.Message;
+            LoadError = "Failed to load more items. Please try again.";
         }
         finally
         {
@@ -303,9 +303,9 @@
             _resumeFrom = null;
             await EnumerateOnePageAsync();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = ex.Message;
+            LoadError = "Failed to refresh. Please try again.";
         }
         finally
         {

@@ -348,9 +348,9 @@ else if (ObjectDoc is null)
                 LoadError = "Object not found.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = ex.Message;
+            LoadError = "Failed to load object. It may not exist or the server is unreachable.";
         }
 
         if (ObjectDoc is not null && ObjectDoc is not Actor)

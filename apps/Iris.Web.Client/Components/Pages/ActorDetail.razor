@@ -219,9 +219,9 @@ else
                 LoadError = "Actor not found.";
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            LoadError = ex.Message;
+            LoadError = "Failed to load actor. It may not exist or the server is unreachable.";
         }
     }
 
