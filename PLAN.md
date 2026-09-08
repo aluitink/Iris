@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**46.1: Design audit** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
+**46.2: Nav + brand** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,10 +106,13 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 45 — WASM manual test & bug hunt** (COMPLETE — see [docs/changes/340](docs/changes/340-45.7-triage-closeout.md)).
 
-**Phase 46 — Visual inspection & design pass**:
+**Phase 46 — Visual inspection & design pass** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
 
-1. **46.1: Design audit** — screenshot all pages (signed-in/out, empty/populated, 1280×800 + 375×812); prioritized design-decision list.
-2. **46.2+: Design fixes** — implement audit decisions, one coherent area per slice (card system, nav/header, forms, object detail, mobile); before/after screenshots.
+1. **46.2: Nav + brand** — hamburger below 768px, nav grouping, brand mark, hide error bar until error (P1-1, P2-7, P3-10).
+2. **46.3: Card system** — post card hierarchy (author bolder, avatars in cards), button hierarchy (primary/secondary/destructive), community row structure (P1-2, P2-5, P2-6, P3-12).
+3. **46.4: Object detail + notifications** — notification row human-readable, object detail polish (P3-14).
+4. **46.5: Mobile layout** — mobile nav, mobile spacing, mobile card layout.
+5. **46.6: Forms + tabs + footer** — tab style, compose tips, search description, footer links.
 
 ## Inbox
 
@@ -123,11 +126,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 45.7: **Triage closeout** (Phase 45, COMPLETE) — reviewed all 14 defects from 45.1–45.6; all fixed in-slice, 0 deferred. Change doc summarizing findings, recurring patterns (cookie-auth fallback, JSON casing, SameOriginApHandler ordering, cache invalidation, Docker stale WASM), and the nginx `index.html` cache environment finding. [changes/340](docs/changes/340-45.7-triage-closeout.md)
-  - 45.6: **Edge states pass** (Phase 45) — Playwright pass over empty/loading/error states, deep links + refresh on every route, responsive 375px/1024px, console errors on every page. No defects found. All routes render correctly: /home, /compose, /notifications, /directory, /communities, /profile, /settings, /search (all 0 console errors). Deep links: /actor?iri=nonexistent → "Actor not found.", /object?iri=nonexistent → "Object not found.", /community?iri=nonexistent → "Community not found." Empty states: search no-matches, user with no posts. Refresh: home + actor detail deep links re-render correctly. Responsive: 375px + 1024px clean. 951 server tests green.
-  - 45.5: **Notifications & moderation pass** (Phase 45) — Playwright pass over notifications list + mark-all-read, block/mute/report + undo on actor detail. Defects found + fixed: local inbox population, cookie-auth mute/relay, Docker stale WASM. 951 server tests green.
-  - 45.4: **Social graph pass** (Phase 45) — Playwright pass over follow/unfollow cross-page, community join/leave, home timeline reflects follows, profile tabs. Defect found + fixed: collection-page cache invalidation on follow/unfollow. 951 server + 63 web tests green.
-  - 45.3: **Media & CW pass** (Phase 45) — Playwright pass over image attachment, CW reveal toggle, same-origin media IRI. Defects found + fixed: cookie-auth media upload, same-origin media rewrite. 951 tests green.
+  - 46.1: **Design audit** (Phase 46) — screenshot all 12 pages at 1280×800 + 375×812 (signed-in/out); 14 design findings prioritized P1/P2/P3; 5 fix slices defined (46.2–46.6). [changes/341](docs/changes/341-46.1-design-audit.md)
+  - 45.7: **Triage closeout** (Phase 45, COMPLETE) — reviewed all 14 defects from 45.1–45.6; all fixed in-slice, 0 deferred. [changes/340](docs/changes/340-45.7-triage-closeout.md)
+  - 45.6: **Edge states pass** (Phase 45) — no defects found; all routes/deep-links/empty/responsive verified clean. 951 server tests green.
+  - 45.5: **Notifications & moderation pass** (Phase 45) — local inbox population, cookie-auth mute/relay, Docker stale WASM. 951 server tests green.
+  - 45.4: **Social graph pass** (Phase 45) — collection-page cache invalidation on follow/unfollow. 951 server + 63 web tests green.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
