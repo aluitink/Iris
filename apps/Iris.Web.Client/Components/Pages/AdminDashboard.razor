@@ -1,0 +1,112 @@
+@page "/admin/dashboard"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@using System.Net.Http.Json
+
+<PageTitle>Admin · Dashboard · Iris</PageTitle>
+
+<h2>Instance dashboard</h2>
+
+@if (LoadError is not null)
+{
+    <div class="error">@LoadError</div>
+}
+else if (Stats is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading dashboard…</span>
+    </div>
+}
+else
+{
+    <div class="stats-grid">
+        <div class="card stat-card">
+            <div class="stat-value">@Stats.UserCount</div>
+            <div class="stat-label">Local users</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@Stats.PostCount</div>
+            <div class="stat-label">Posts (objects)</div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+        <h3 style="margin-top: 0;">Recent registrations</h3>
+        @if (Stats.RecentRegistrations.Count == 0)
+        {
+            <p class="muted">No registrations yet.</p>
+        }
+        else
+        {
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Handle</th>
+                        <th>Role</th>
+                        <th>Registered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in Stats.RecentRegistrations)
+                    {
+                        <tr>
+                            <td>@user.Username</td>
+                            <td><span class="badge @RoleBadgeClass(user.Role)">@RoleLabel(user.Role)</span></td>
+                            <td>@user.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private readonly IHttpClientFactory _factory;
+    private HttpClient? _http;
+    private DashboardStats? Stats { get; set; }
+    private string? LoadError { get; set; }
+
+    public AdminDashboard(IHttpClientFactory factory)
+    {
+        _factory = factory;
+    }
+
+    protected override void OnInitialized()
+    {
+        _http = _factory.CreateClient("iris");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatsAsync();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        try
+        {
+            var response = await _http!.GetAsync("/local/v1/admin/stats");
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = $"Failed to load stats (HTTP {(int)response.StatusCode})";
+                return;
+            }
+            Stats = System.Text.Json.JsonSerializer.Deserialize<DashboardStats>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private static string RoleLabel(int role) => role == 1 ? "Admin" : "User";
+    private static string RoleBadgeClass(int role) => role == 1 ? "badge--admin" : "badge--user";
+
+    private sealed record DashboardStats(int UserCount, int PostCount, List<DashboardUser> RecentRegistrations);
+    private sealed record DashboardUser(Guid Id, string Username, string ActorIri, int Role, DateTimeOffset CreatedAt);
+}

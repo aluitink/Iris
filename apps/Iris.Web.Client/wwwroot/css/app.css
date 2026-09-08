@@ -1703,4 +1703,28 @@ ul.object-list li {
     padding: 0 0.25rem;
 }
 
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1rem;
+}
+
+.stat-card {
+    text-align: center;
+    padding: 1.5rem 1rem;
+}
+
+.stat-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--color-accent, #4a6cf7);
+    line-height: 1.1;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--color-muted, #6b7280);
+    margin-top: 0.25rem;
+}
+
 

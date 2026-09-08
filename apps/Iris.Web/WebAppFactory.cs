@@ -848,6 +848,39 @@ public static class WebAppFactory
             var removed = await persistence.Moderation.RemoveFlagAsync(new Iri(body.FlaggerIri), new Iri(body.FlaggedIri), ct);
             return removed ? Results.Ok(new { removed = true }) : Results.NotFound();
         }).RequireAuthorization(p => p.RequireRole("Admin"));
+
+        // Instance admin dashboard (53.3): GET /local/v1/admin/stats — user count, post count,
+        // storage usage, recent registrations.
+        endpoints.MapGet("/local/v1/admin/stats", async (
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            CancellationToken ct) =>
+        {
+            var allAccounts = await accounts.GetAllAsync(ct);
+            var userCount = allAccounts.Count;
+            var recentRegistrations = allAccounts
+                .OrderByDescending(u => u.CreatedAt)
+                .Take(10)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.Username,
+                    ActorIri = u.ActorId.Value,
+                    u.Role,
+                    u.CreatedAt,
+                })
+                .ToList();
+
+            var allObjects = await persistence.Objects.ListObjectsAsync(ct);
+            var postCount = allObjects.Count(o => o is not KristofferStrube.ActivityStreams.Tombstone);
+
+            return Results.Json(new
+            {
+                UserCount = userCount,
+                PostCount = postCount,
+                RecentRegistrations = recentRegistrations,
+            });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
     }
 
     /// <summary>
