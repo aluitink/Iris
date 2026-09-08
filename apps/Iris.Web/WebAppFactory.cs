@@ -384,8 +384,23 @@ public static class WebAppFactory
         app.UseAuthentication();
         app.UseAuthorization();
         // Static files: serves the WASM client's _framework/ + wwwroot/ (copied into this host's
-        // wwwroot at build time by the BuildAndCopyClient target).
-        app.UseStaticFiles(new StaticFileOptions { ServeUnknownFileTypes = true });
+        // wwwroot at build time by the BuildAndCopyClient target). _framework/ assets are
+        // fingerprinted per build, so they get long-term immutable caching; CSS/JS get 24h.
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            OnPrepareResponse = ctx =>
+            {
+                var path = ctx.Context.Request.Path.Value ?? string.Empty;
+                if (path.StartsWith("/_framework/"))
+                {
+                    ctx.Context.Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+                }
+                else if (path.EndsWith(".css") || path.EndsWith(".js"))
+                {
+                    ctx.Context.Response.Headers.CacheControl = "public, max-age=86400";
+                }
+            },
+        });
         // The local-account auth endpoints (see <see cref="MapAuthEndpoints"/>). The interactive Blazor
         // circuit cannot set cookies (read-only response headers), so sign-in/out happen here in plain
         // HTTP requests.

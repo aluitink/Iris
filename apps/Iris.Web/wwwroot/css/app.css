@@ -1,11 +1,15 @@
 :root {
     --bg: #111318;
     --panel: #191d24;
+    --surface: #1f242e;
     --text: #e6e8ec;
+    --fg: #e6e8ec;
     --muted: #8b93a1;
     --accent: #5b8cff;
     --accent-warm: #7c9fff;
     --border: #262b36;
+    --hover: #262b36;
+    --card: #191d24;
 }
 
 * {

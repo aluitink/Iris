@@ -74,7 +74,7 @@
             }
             @if (HasMore)
             {
-                <button @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                <button class="button button--secondary" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
                 @if (LoadingMore)
                 {
                     <div class="card-loading card-loading-inline">
