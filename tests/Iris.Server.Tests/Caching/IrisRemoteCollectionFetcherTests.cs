@@ -298,6 +298,10 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public async IAsyncEnumerable<IObjectOrLink> GetInboxItemsAsync(
             Iri actorId, Iris.Client.Pipeline.ProxyCredentials credentials, CollectionQuery? query = null, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
         {

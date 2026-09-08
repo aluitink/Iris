@@ -58,6 +58,12 @@ opencode.jsonc
 opencode.md
 OPENCODE.md
 
+## Blazor WebAssembly build output
+apps/Iris.Web/wwwroot/_framework/
+apps/Iris.Web/wwwroot/index.html
+apps/Iris.Web/wwwroot_backup/
+apps/Iris.Web/wwwroot_old/
+
 ## Scratch (reflection probes / throwaway experiments)
 .probe_tmp/
 .probe_tmp2/

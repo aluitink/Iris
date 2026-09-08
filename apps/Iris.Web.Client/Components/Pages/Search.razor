@@ -1,0 +1,201 @@
+@page "/search"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Search · Iris</PageTitle>
+
+<h2>Search</h2>
+
+<p class="muted">
+    Global search across the instance — actors and notes — by handle or content (the server's
+    <code>GET /ap/v1/search</code>, F-13).
+</p>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to search.</p></div>
+}
+else
+{
+    <div class="card">
+        <label for="search-query">Search the instance</label>
+        <div class="search-controls">
+            <input id="search-query" type="text" @bind="Query" @onkeydown="OnKeyDownAsync"
+                   placeholder="e.g. alice, or a word in a note" />
+            <label class="search-actors-only">
+                <input type="checkbox" @bind="ActorsOnly" />
+                Actors only
+            </label>
+            <button class="button" @onclick="() => RunSearchAsync()" disabled="@Busy">Search</button>
+        </div>
+        @if (Busy)
+        {
+            <div class="card-loading">
+                <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                    <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                </svg>
+                <span class="muted">Searching…</span>
+            </div>
+        }
+    </div>
+
+    @if (Error is not null)
+    {
+        <div class="card"><div class="error">@Error</div></div>
+    }
+    else if (Results is not null)
+    {
+        <div class="card">
+            <h3>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "All content")</h3>
+            <p class="muted">
+                @(ActorsOnly ? "Actors only." : "Actors, then matching notes.") @Results.Count result(s).
+            </p>
+            @if (Results.Count == 0)
+            {
+                <div class="empty-state">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <circle cx="11" cy="11" r="8" />
+                        <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    <p>No matches found.</p>
+                    <p>Try a different handle or search term.</p>
+                </div>
+            }
+            else
+            {
+                <ul class="object-list">
+                    @foreach (var item in Results)
+                    {
+                        <li><ObjectView Item="item" /></li>
+                    }
+                </ul>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private Microsoft.AspNetCore.Components.NavigationManager Nav { get; set; } = default!;
+
+    /// <summary>
+    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out.
+    /// </summary>
+    private IActivityPubClient? Client => Session.Client;
+
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "q")]
+    public string? QueryParam { get; set; }
+
+    private string Query { get; set; } = string.Empty;
+    private bool ActorsOnly { get; set; }
+    private bool Busy { get; set; }
+    private IReadOnlyList<IObjectOrLink>? Results { get; set; }
+    private string? Error { get; set; }
+    private bool _initialized;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (QueryParam is { Length: > 0 })
+        {
+            Query = QueryParam;
+        }
+
+        if (Query.Trim().Length > 0 && Client is not null)
+        {
+            await RunSearchAsync(skipNavigate: true);
+        }
+
+        _initialized = true;
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (!_initialized && QueryParam is { Length: > 0 } && QueryParam != Query)
+        {
+            Query = QueryParam;
+        }
+    }
+
+    /// <summary>
+    /// The instance's versioned base (<c>{origin}/ap/v1</c>), derived from the signed-in actor's IRI
+    /// (<c>{origin}/ap/v1/u/{handle}</c>) by truncating at <c>/ap/v1</c>. This is the <c>instanceBase</c>
+    /// the global-search request dials (the server's <c>GET {instanceBase}/search</c>).
+    /// </summary>
+    private Iri? InstanceBase
+    {
+        get
+        {
+            if (Session.ActorId is not { } actor)
+            {
+                return null;
+            }
+
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            return index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+        }
+    }
+
+    /// <summary>
+    /// Runs a global search (the <see cref="IActivityPubClient.SearchAsync"/> path). An <c>@onclick</c>
+    /// handler, so Blazor auto-renders the results when it completes.
+    /// </summary>
+    private async Task RunSearchAsync(bool skipNavigate = false)
+    {
+        if (Client is not { } client || InstanceBase is not { } baseIri)
+        {
+            return;
+        }
+
+        if (!skipNavigate)
+        {
+            var url = Query.Trim().Length > 0 ? $"/search?q={Uri.EscapeDataString(Query.Trim())}" : "/search";
+            Nav.NavigateTo(url, forceLoad: false);
+        }
+
+        Busy = true;
+        Error = null;
+        Results = null;
+        try
+        {
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                               baseIri,
+                               Query,
+                               new SearchOptions { Type = ActorsOnly ? "Actor" : null }))
+            {
+                results.Add(item);
+            }
+
+            Results = results;
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Submits the search on Enter in the query box.
+    /// </summary>
+    private Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            return RunSearchAsync();
+        }
+
+        return Task.CompletedTask;
+    }
+}

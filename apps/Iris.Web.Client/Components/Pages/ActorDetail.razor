@@ -1,0 +1,402 @@
+@page "/actor"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+
+<PageTitle>@PageHeading · Iris</PageTitle>
+
+<h2>@PageHeading</h2>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to view actors.</p></div>
+}
+else if (string.IsNullOrEmpty(IriParam))
+{
+    <div class="card"><p class="muted">No actor specified. Use the directory to find people.</p></div>
+}
+else if (LoadError is not null)
+{
+    <div class="card"><div class="error">@LoadError</div></div>
+}
+else if (ActorDoc is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading actor…</span>
+    </div>
+}
+else
+{
+    <div class="actor-detail-header">
+        <ActorProfile Actor="ActorDoc" ActorId="@(ActorDoc.Id)" />
+        @if (IsSelf)
+        {
+            <p class="muted">This is you.</p>
+        }
+        else
+        {
+            <FollowButton TargetActor="ActorDoc" />
+            <ModerationActions TargetActor="ActorDoc" />
+        }
+    </div>
+
+    <div class="tab-bar">
+        <a href="#outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
+        <a href="#followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
+        <a href="#following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
+        @if (ShowJoinRequestsTab)
+        {
+            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+        }
+    </div>
+
+    @if (ActiveTab == "outbox")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="OutboxIri"
+            Title="Posts"
+            Description="This actor's outbox — a Create for each note, plus follows and boosts."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No posts yet." />
+    }
+    else if (ActiveTab == "followers")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="FollowersIri"
+            Title="Followers"
+            Description="Actors following this person."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No followers yet." />
+    }
+    else if (ActiveTab == "following")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="FollowingIri"
+            Title="Following"
+            Description="Actors this person follows."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="Not following anyone yet." />
+    }
+    else if (ActiveTab == "requests" && ShowJoinRequestsTab)
+    {
+        <div class="card">
+            @if (JoinRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (JoinRequestError is not null)
+            {
+                <div class="error">@JoinRequestError</div>
+            }
+            else if (JoinRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            else if (JoinRequestActors is { } actors)
+            {
+                @foreach (var requestIri in actors)
+                {
+                    <div class="member-row">
+                        <a href="@($"/actor?iri={Uri.EscapeDataString(requestIri)}")" class="object-actor-handle">@DisplayHandle(requestIri)</a>
+                        <button class="btn btn-small btn-primary" @onclick="() => AcceptJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Accepting…" : "Accept")
+                        </button>
+                        <button class="btn btn-small btn-danger" @onclick="() => RejectJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Rejecting…" : "Reject")
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "iri")]
+    public string? IriParam { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private IObject? ActorDoc { get; set; }
+    private string? LoadError { get; set; }
+    private string ActiveTab { get; set; } = "outbox";
+
+    private bool IsSelf
+        => Session.ActorId is { } me && ActorDoc?.Id is { } id && me.Value == id;
+
+    private string PageHeading
+    {
+        get
+        {
+            if (ActorDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return px;
+            }
+
+            return "Actor";
+        }
+    }
+
+    private Iri? ActorIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(IriParam) || !Iri.TryParse(IriParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    private Iri? OutboxIri => ActorIri?.OutboxOf();
+    private Iri? FollowersIri => ActorIri?.FollowersOf();
+    private Iri? FollowingIri => ActorIri?.FollowingOf();
+
+    private bool IsCommunity => ActorDoc is Actor actor && actor.Type?.FirstOrDefault() == "Group";
+
+    private bool ApprovesMembers
+    {
+        get
+        {
+            if (ActorDoc is not KristofferStrube.ActivityStreams.Object doc)
+            {
+                return false;
+            }
+
+            return doc.GetManuallyApprovesMembers() == true;
+        }
+    }
+
+    private bool ShowJoinRequestsTab => IsCommunity && ApprovesMembers;
+
+    private int? FollowerCount { get; set; }
+    private int? FollowingCount { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ActorIri is not { } iri || LoadError is not null)
+        {
+            return;
+        }
+
+        if (ActorDoc is not null && ActorDoc.Id == iri.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is not null)
+            {
+                ActorDoc = obj;
+                _ = LoadCountsAsync(iri);
+            }
+            else
+            {
+                LoadError = "Actor not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task LoadCountsAsync(Iri actorIri)
+    {
+        var client = Client;
+        if (client is null)
+        {
+            return;
+        }
+
+        try
+        {
+            FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
+            FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
+            StateHasChanged();
+        }
+        catch
+        {
+            // Counts are best-effort; a failure to fetch them should not break the page.
+        }
+    }
+
+    private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri? collectionIri, CancellationToken ct = default)
+    {
+        if (collectionIri is not { } iri)
+        {
+            return null;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(iri, ct: ct))
+        {
+            return page.TotalItems;
+        }
+
+        return null;
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+
+        if (tab == "requests" && ShowJoinRequestsTab && JoinRequestActors is null)
+        {
+            _ = LoadJoinRequestsAsync();
+        }
+    }
+
+    // --- Community join-request queue (manuallyApprovesMembers) ----------------------------
+
+    private bool JoinRequestsLoading { get; set; }
+    private List<string>? JoinRequestActors { get; set; }
+    private string? JoinRequestError { get; set; }
+    private bool IsDecidingJoinRequest { get; set; }
+    private string? DecidingActorIri { get; set; }
+
+    private async Task LoadJoinRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        JoinRequestsLoading = true;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityJoinRequestsAsync(actorIri);
+            if (result.IsSuccess)
+            {
+                JoinRequestActors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+            }
+            else
+            {
+                JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            JoinRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string DisplayHandle(string iri)
+    {
+        try
+        {
+            var segments = new Uri(iri).AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+}

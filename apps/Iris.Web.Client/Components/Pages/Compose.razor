@@ -1,0 +1,646 @@
+@page "/compose"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Compose
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Microsoft.AspNetCore.Components.Web
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>@PageTitle · Iris</PageTitle>
+
+<h2>@PageTitle</h2>
+
+<p class="muted">
+    Posting as <a href="/profile">@ActorHandle</a>
+</p>
+
+    <div class="card compose-card">
+    @if (ReplyToIri is not null)
+    {
+        <div class="compose-reply-context">
+            <p class="compose-reply-to">
+                Replying to <a href="@ReplyToHref">@ReplyToAuthor</a>
+            </p>
+            @if (ReplyToPreview is { Length: > 0 })
+            {
+                <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
+            }
+            @if (ThreadRootAuthor is { Length: > 0 })
+            {
+                <div class="compose-thread-root">
+                    <span class="compose-thread-root-label">Thread started by</span>
+                    <span class="compose-thread-root-author">@ThreadRootAuthor</span>
+                    @if (ThreadRootPreview is { Length: > 0 })
+                    {
+                        <blockquote class="compose-reply-preview">@ThreadRootPreview</blockquote>
+                    }
+                </div>
+            }
+        </div>
+    }
+    @if (CommunityIri is { } cIri)
+    {
+        <div class="compose-community-context">
+            <p class="compose-community-to">
+                Posting to <a href="@($"/community?iri={Uri.EscapeDataString(cIri.Value)}")">@CommunityName ?? "community"</a>
+            </p>
+        </div>
+    }
+    <label for="compose-content">Content</label>
+    <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
+              placeholder="What's on your mind?"></textarea>
+    @if (ReplyToIri is null)
+    {
+        <label for="compose-attachment" class="compose-attach-label">Attachment (optional — image)</label>
+        <div class="compose-attach">
+            <InputFile id="compose-attachment" OnChange="OnAttachmentChosen" OnFileRemoved="OnAttachmentRemoved"
+                       accept="image/*" disabled="@Busy" />
+            @if (Attachment is not null)
+            {
+                <span class="compose-attach-name">@Attachment.Name</span>
+                <button type="button" class="compose-attach-remove" @onclick="ClearAttachment" disabled="@Busy">✕</button>
+            }
+        </div>
+    }
+    <div class="compose-meta">
+        <span class="compose-char-count @(Content.Length > MaxChars ? "compose-char-count--over" : "")">
+            @Content.Length/@MaxChars
+        </span>
+        @if (ReplyToIri is null)
+        {
+            <select class="compose-type-select" @bind="ContentType" disabled="@Busy">
+                <option value="Note">Note</option>
+                <option value="Article">Article (long-form)</option>
+            </select>
+        }
+        @if (ReplyToIri is null && CommunityIri is null)
+        {
+            <label class="compose-sensitive-toggle">
+                <input type="checkbox" @bind="IsSensitive" disabled="@Busy" />
+                Content warning
+            </label>
+            @if (IsSensitive)
+            {
+                <input class="compose-sensitive-summary" type="text" @bind="SensitiveSummary"
+                       placeholder="Warning summary (shown before revealing)" maxlength="200" disabled="@Busy" />
+            }
+        }
+    </div>
+    <p class="muted compose-hint">
+        @(ReplyToIri is not null
+            ? "This reply is threaded under the parent note and visible in its replies."
+            : CommunityIri is not null
+                ? "This post is attributed to the community and visible to its members."
+                : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
+    </p>
+
+    <div class="compose-actions">
+        <button @onclick="PostAsync" disabled="@Busy">
+            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : CommunityIri is not null ? "Post to community" : "Post"))
+        </button>
+        @if (Posted)
+        {
+            @if (CommunityIri is { } postCommunity)
+            {
+                <a class="button button--secondary" href="@($"/community?iri={Uri.EscapeDataString(postCommunity.Value)}")">View community feed →</a>
+            }
+            else
+            {
+                <a class="button button--secondary" href="/profile">View your posts →</a>
+            }
+        }
+    </div>
+
+    @if (Result is not null)
+    {
+        <p class="muted compose-result">
+            @Result
+            @if (PostedIri is not null)
+            {
+                <code class="compose-result-iri">@PostedIri</code>
+            }
+        </p>
+    }
+    @if (Error is not null)
+    {
+        <div class="error">@Error</div>
+    }
+</div>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "replyTo")]
+    private string? ReplyToParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "community")]
+    private string? CommunityParam { get; set; }
+
+    /// <summary>
+    /// The community IRI the post targets (from the <c>community</c> query parameter), when set.
+    /// When present, the post is attributed to both the author and the community, and addressed
+    /// to the community's followers collection + the public.
+    /// </summary>
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(CommunityParam) || !Iri.TryParse(CommunityParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The community's display name (fetched asynchronously), shown in the compose header when
+    /// posting to a community.
+    /// </summary>
+    private string? CommunityName { get; set; }
+
+    private Iri? ReplyToIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ReplyToParam) || !Iri.TryParse(ReplyToParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The author handle of the parent note (fetched asynchronously), or "…" while loading.
+    /// </summary>
+    private string ReplyToAuthor { get; set; } = "…";
+
+    /// <summary>
+    /// A truncated preview of the parent note's content (for context while composing a reply).
+    /// </summary>
+    private string? ReplyToPreview { get; set; }
+
+    /// <summary>
+    /// The author handle of the thread root (the parent's parent), when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootAuthor { get; set; }
+
+    /// <summary>
+    /// A truncated preview of the thread root's content, when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootPreview { get; set; }
+
+    private string? _fetchedIri;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ReplyToIri is { } iri && _fetchedIri != iri.Value)
+        {
+            await LoadReplyContextAsync(iri);
+        }
+
+        if (CommunityIri is { } cIri && CommunityName is null)
+        {
+            await LoadCommunityNameAsync(cIri);
+        }
+    }
+
+    private async Task LoadCommunityNameAsync(Iri communityIri)
+    {
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var obj = await client.GetObjectAsync(communityIri);
+            if (obj is Group group)
+            {
+                CommunityName = group.Name?.FirstOrDefault() ?? group.PreferredUsername;
+            }
+            else if (obj is Actor actor)
+            {
+                CommunityName = actor.Name?.FirstOrDefault() ?? actor.PreferredUsername;
+            }
+        }
+        catch
+        {
+            // Non-fatal: no community name shown.
+        }
+    }
+
+    private async Task LoadReplyContextAsync(Iri iri)
+    {
+        _fetchedIri = iri.Value;
+        ReplyToAuthor = "…";
+        ReplyToPreview = null;
+        ThreadRootAuthor = null;
+        ThreadRootPreview = null;
+
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var note = await client.GetObjectAsync(iri);
+            if (note is KristofferStrube.ActivityStreams.Object obj)
+            {
+                if (obj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ReplyToPreview = Truncate(text, 200);
+                    }
+                }
+
+                if (obj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ReplyToAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+
+                if (obj.InReplyTo is { } replyTo)
+                {
+                    var parentIri = replyTo.FirstOrDefault()?.ResolveObjectIri();
+                    if (parentIri is { } grandparent)
+                    {
+                        await LoadThreadRootAsync(client, grandparent);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: show the default "…" author and no preview.
+        }
+    }
+
+    private async Task LoadThreadRootAsync(IActivityPubClient client, Iri iri)
+    {
+        try
+        {
+            var root = await client.GetObjectAsync(iri);
+            if (root is KristofferStrube.ActivityStreams.Object rootObj)
+            {
+                if (rootObj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ThreadRootPreview = Truncate(text, 150);
+                    }
+                }
+
+                if (rootObj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ThreadRootAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: no thread root context shown.
+        }
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
+
+    private string? ReplyToHref
+    {
+        get
+        {
+            if (ReplyToIri is not { } iri)
+            {
+                return null;
+            }
+
+            return $"/object?iri={Uri.EscapeDataString(iri.Value)}";
+        }
+    }
+
+    private string PageTitle
+    {
+        get
+        {
+            if (ReplyToIri is not null)
+            {
+                return "Reply";
+            }
+
+            if (CommunityIri is not null && CommunityName is { Length: > 0 } name)
+            {
+                return $"Post to {name}";
+            }
+
+            return "Compose";
+        }
+    }
+
+    /// <summary>
+    /// The note text the user is composing. Cleared on a successful post.
+    /// </summary>
+    private string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The content type for new posts (Note or Article). Ignored for replies.
+    /// </summary>
+    private string ContentType { get; set; } = "Note";
+
+    /// <summary>
+    /// Whether the composed note is flagged content-sensitive (the ActivityStreams <c>sensitive</c> term).
+    /// The feed renders such notes behind a notice + reveal toggle. Applies to Note posts only (the
+    /// Article/reply/community paths don't set it).
+    /// </summary>
+    private bool IsSensitive { get; set; }
+
+    /// <summary>
+    /// The sensitivity summary (the ActivityStreams <c>summary</c> term) — the short warning text the feed
+    /// shows in place of the note's content until the viewer reveals it. Read only when
+    /// <see cref="IsSensitive"/> is set.
+    /// </summary>
+    private string SensitiveSummary { get; set; } = string.Empty;
+
+    private const int MaxChars = 500;
+
+    /// <summary>
+    /// The chosen image attachment (a browser <see cref="IBrowserFile"/>), held until the post uploads it.
+    /// Null when nothing is selected. Applies to Note and Article posts only (replies carry no attachment).
+    /// </summary>
+    private IBrowserFile? Attachment { get; set; }
+
+    /// <summary>
+    /// The maximum attachment size accepted (10 MiB — matches the server's upload cap); an oversized file
+    /// is rejected by the server with <c>413</c>.
+    /// </summary>
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// Records the chosen attachment (a browser <see cref="IBrowserFile"/>, read lazily at post time) and
+    /// clears any previous selection. A no-op when nothing is chosen.
+    /// </summary>
+    private void OnAttachmentChosen(InputFileChangeEventArgs e)
+        => Attachment = e.File;
+
+    /// <summary>
+    /// Clears the attachment when the browser's file input is emptied (the built-in "remove" affordance).
+    /// </summary>
+    private void OnAttachmentRemoved(InputFileChangeEventArgs e)
+        => Attachment = null;
+
+    /// <summary>
+    /// Removes the selected attachment (the "✕" affordance next to the file name).
+    /// </summary>
+    private void ClearAttachment()
+        => Attachment = null;
+
+    /// <summary>
+    /// Whether a post is in flight — disables the button and shows the "Posting…" state.
+    /// </summary>
+    private bool Busy { get; set; }
+
+    /// <summary>
+    /// Whether the last post succeeded — when true the "View your posts" link is shown (a quick path
+    /// to the profile's outbox, where the just-posted note now lives).
+    /// </summary>
+    private bool Posted { get; set; }
+
+    /// <summary>
+    /// The IRI the server minted for the posted <c>Create</c> (from <see cref="DeliveryResult.MintedId"/>),
+    /// shown after a successful post so the user can see what was created.
+    /// </summary>
+    private string? PostedIri { get; set; }
+
+    /// <summary>
+    /// A human-readable status line for the last post (e.g. the HTTP status), when present.
+    /// </summary>
+    private string? Result { get; set; }
+
+    /// <summary>
+    /// The error message from the last post, when present.
+    /// </summary>
+    private string? Error { get; set; }
+
+    /// <summary>
+    /// The signed-in actor's handle (e.g. "pwtest2"), derived from the last segment of the actor IRI.
+    /// </summary>
+    private string ActorHandle
+    {
+        get
+        {
+            if (Session.ActorId is not { } actorId)
+            {
+                return "…";
+            }
+
+            var uri = new Uri(actorId.Value);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : actorId.Value;
+        }
+    }
+
+    /// <summary>
+    /// The ActivityStreams public collection address (the conventional <c>to</c> for public notes) —
+    /// a note addressed to the public is delivered to the actor's followers' timelines (F-14).
+    /// </summary>
+    private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
+
+    /// <summary>
+    /// Posts the composed note (or reply, when <see cref="ReplyToIri"/> is set) as the signed-in actor.
+    /// The write goes through the session's <see cref="IActivityPubClient"/> — the one sanctioned path
+    /// from the UI into ActivityPub state.
+    /// </summary>
+    private async Task PostAsync()
+    {
+        if (Session.ActorId is not { } actorId
+            || Session.Client is not { } client
+            || string.IsNullOrWhiteSpace(Content)
+            || Busy)
+        {
+            return;
+        }
+
+        Busy = true;
+        Posted = false;
+        PostedIri = null;
+        Result = null;
+        Error = null;
+        try
+        {
+            // Upload the chosen attachment first (a local, Basic-authenticated multipart POST — not a
+            // signed inbox delivery) to get the same-origin media IRI, so the post can carry an Image
+            // attachment whose url is that IRI (the browser loads it same-origin, never a cross-origin
+            // media host — Decision 056 (b)). Replies and community posts carry no attachment.
+            MediaUploadResult? media = null;
+            if (Attachment is { Size: > 0 } file)
+            {
+                media = await UploadAttachmentAsync(actorId, file);
+            }
+
+            DeliveryResult result;
+            if (ReplyToIri is { } parent)
+            {
+                result = await client.PostReplyAsync(actorId, parent, Content.Trim(), to: [AsPublic]);
+            }
+            else if (CommunityIri is { } community)
+            {
+                result = await PostToCommunityAsync(client, actorId, community);
+            }
+            else if (ContentType == "Article")
+            {
+                result = await PostArticleAsync(client, actorId, media);
+            }
+            else
+            {
+                var note = ComposeNote.Build(
+                    actorId,
+                    Content.Trim(),
+                    sensitive: IsSensitive,
+                    summary: SensitiveSummary,
+                    to: [AsPublic],
+                    mediaIri: media?.MediaIri,
+                    mediaType: media?.ContentType,
+                    mediaName: media?.FileName);
+                result = await client.PostNoteAsync(actorId, note);
+            }
+
+            if (result.IsSuccess)
+            {
+                Posted = true;
+                Result = $"Posted (HTTP {result.StatusCode}).";
+                PostedIri = result.MintedId;
+                Content = string.Empty;
+                IsSensitive = false;
+                SensitiveSummary = string.Empty;
+                Attachment = null;
+            }
+            else
+            {
+                Result = $"Post failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            Error = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Posts a note to a community: the note's <c>attributedTo</c> carries both the author and the
+    /// community, and its <c>to</c> is the community's followers collection + the public. The
+    /// receiving server's <c>Create</c> handler records the post in the community's members' outboxes
+    /// (the "followed content" half of the community feed).
+    /// </summary>
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri)
+    {
+        var followersIri = communityIri.FollowersOf();
+        var note = new KristofferStrube.ActivityStreams.Note
+        {
+            AttributedTo =
+            [
+                new Link { Href = new Uri(actorId.Value) },
+                new Link { Href = new Uri(communityIri.Value) }
+            ],
+            To =
+            [
+                new Link { Href = new Uri(followersIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        return await client.PostNoteAsync(actorId, note);
+    }
+
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, MediaUploadResult? media)
+    {
+        var article = new Article
+        {
+            AttributedTo = [new Link { Href = new Uri(actorId.Value) }],
+            To = [new Link { Href = new Uri(AsPublic.Value) }],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        if (media is { } m)
+        {
+            // The Image attachment's url is the same-origin media IRI (its id mirrors it, so a reader can
+            // resolve the media without the url); mediaType + name come from the upload.
+            var image = new Image
+            {
+                Url = [new Link { Href = m.MediaIri.Uri }],
+                Id = m.MediaIri.Value,
+                MediaType = m.ContentType,
+            };
+            if (m.FileName is { } fileName && !string.IsNullOrWhiteSpace(fileName))
+            {
+                image.Name = [fileName];
+            }
+            article.Attachment = [image];
+        }
+
+        var create = new Create
+        {
+            Actor = [new Link { Href = new Uri(actorId.Value) }],
+            Object = [article]
+        };
+
+        return await client.DeliverAsync(actorId.OutboxOf(), create);
+    }
+
+    /// <summary>
+    /// Uploads the chosen image attachment (a local, Basic-authenticated multipart POST to the actor's
+    /// own home instance — Phase 20.4 (a), not a signed inbox delivery) and returns the same-origin media
+    /// IRI + content-type + file name (set as the note's <c>Image</c> attachment). Throws on failure
+    /// (surfaced as the post's error line).
+    /// </summary>
+    private async Task<MediaUploadResult> UploadAttachmentAsync(Iri actorId, IBrowserFile file)
+    {
+        var media = Session.MediaClient
+            ?? throw new InvalidOperationException("Media upload is not available for this session.");
+
+        var bytes = await ReadBytesAsync(file);
+        return await media.UploadAsync(
+            actorId,
+            bytes,
+            file.ContentType ?? "application/octet-stream",
+            file.Name,
+            CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Reads a browser file's bytes (capped at <see cref="MaxAttachmentBytes"/>).
+    /// </summary>
+    private static async Task<byte[]> ReadBytesAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(MaxAttachmentBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+}

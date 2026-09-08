@@ -1,0 +1,84 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="card edit-profile-form">
+    <h3>Edit profile</h3>
+
+    @if (SaveError is not null)
+    {
+        <div class="error">@SaveError</div>
+    }
+
+    <form @onsubmit="HandleSubmitAsync">
+        <div class="form-group">
+            <label for="edit-name">Display name</label>
+            <input id="edit-name" type="text" @bind="_name" maxlength="100"
+                   placeholder="Your name" />
+        </div>
+
+        <div class="form-group">
+            <label for="edit-summary">Bio</label>
+            <textarea id="edit-summary" @bind="_summary" rows="3" maxlength="500"
+                      placeholder="Tell the world about yourself…"></textarea>
+        </div>
+
+        <div class="form-group form-group--checkbox">
+            <label for="edit-approve-followers">
+                <input id="edit-approve-followers" type="checkbox" @bind="_approveFollowers" />
+                Require approval for follow requests
+            </label>
+            <p class="muted">When enabled, new followers must be explicitly approved.</p>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="btn btn-primary" disabled="@Saving">
+                @if (Saving) { <span>Saving…</span> } else { <span>Save</span> }
+            </button>
+            <button type="button" class="btn" @onclick="OnCancel" disabled="@Saving">Cancel</button>
+        </div>
+    </form>
+</div>
+
+@code {
+    [Parameter]
+    public string InitialName { get; set; } = string.Empty;
+
+    [Parameter]
+    public string InitialSummary { get; set; } = string.Empty;
+
+    [Parameter]
+    public bool InitialApproveFollowers { get; set; }
+
+    [Parameter]
+    public bool Saving { get; set; }
+
+    [Parameter]
+    public string? SaveError { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnNameChange { get; set; }
+
+    [Parameter]
+    public EventCallback<string> OnSummaryChange { get; set; }
+
+    [Parameter]
+    public Func<string, string, bool, Task> OnSubmit { get; set; } = default!;
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private string _name = string.Empty;
+    private string _summary = string.Empty;
+    private bool _approveFollowers;
+
+    protected override void OnParametersSet()
+    {
+        _name = InitialName;
+        _summary = InitialSummary;
+        _approveFollowers = InitialApproveFollowers;
+    }
+
+    private async Task HandleSubmitAsync()
+    {
+        await OnSubmit(_name, _summary, _approveFollowers);
+    }
+}

@@ -126,6 +126,9 @@ public class PagedCollectionTests
             IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(Iri objectIri, CollectionQuery? query = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 

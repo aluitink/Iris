@@ -4,6 +4,7 @@
 @using Iris.Core.Compose
 @using Iris.Core.Identity
 @using Iris.Web.Accounts
+@using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>@PageTitle · Iris</PageTitle>
@@ -49,6 +50,19 @@
     <label for="compose-content">Content</label>
     <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
               placeholder="What's on your mind?"></textarea>
+    @if (ReplyToIri is null)
+    {
+        <label for="compose-attachment" class="compose-attach-label">Attachment (optional — image)</label>
+        <div class="compose-attach">
+            <InputFile id="compose-attachment" OnChange="OnAttachmentChosen" OnFileRemoved="OnAttachmentRemoved"
+                       accept="image/*" disabled="@Busy" />
+            @if (Attachment is not null)
+            {
+                <span class="compose-attach-name">@Attachment.Name</span>
+                <button type="button" class="compose-attach-remove" @onclick="ClearAttachment" disabled="@Busy">✕</button>
+            }
+        </div>
+    }
     <div class="compose-meta">
         <span class="compose-char-count @(Content.Length > MaxChars ? "compose-char-count--over" : "")">
             @Content.Length/@MaxChars
@@ -370,6 +384,37 @@
     private const int MaxChars = 500;
 
     /// <summary>
+    /// The chosen image attachment (a browser <see cref="IBrowserFile"/>), held until the post uploads it.
+    /// Null when nothing is selected. Applies to Note and Article posts only (replies carry no attachment).
+    /// </summary>
+    private IBrowserFile? Attachment { get; set; }
+
+    /// <summary>
+    /// The maximum attachment size accepted (10 MiB — matches the server's upload cap); an oversized file
+    /// is rejected by the server with <c>413</c>.
+    /// </summary>
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// Records the chosen attachment (a browser <see cref="IBrowserFile"/>, read lazily at post time) and
+    /// clears any previous selection. A no-op when nothing is chosen.
+    /// </summary>
+    private void OnAttachmentChosen(InputFileChangeEventArgs e)
+        => Attachment = e.File;
+
+    /// <summary>
+    /// Clears the attachment when the browser's file input is emptied (the built-in "remove" affordance).
+    /// </summary>
+    private void OnAttachmentRemoved(InputFileChangeEventArgs e)
+        => Attachment = null;
+
+    /// <summary>
+    /// Removes the selected attachment (the "✕" affordance next to the file name).
+    /// </summary>
+    private void ClearAttachment()
+        => Attachment = null;
+
+    /// <summary>
     /// Whether a post is in flight — disables the button and shows the "Posting…" state.
     /// </summary>
     private bool Busy { get; set; }
@@ -442,6 +487,16 @@
         Error = null;
         try
         {
+            // Upload the chosen attachment first (a local, Basic-authenticated multipart POST — not a
+            // signed inbox delivery) to get the same-origin media IRI, so the post can carry an Image
+            // attachment whose url is that IRI (the browser loads it same-origin, never a cross-origin
+            // media host — Decision 056 (b)). Replies and community posts carry no attachment.
+            MediaUploadResult? media = null;
+            if (Attachment is { Size: > 0 } file)
+            {
+                media = await UploadAttachmentAsync(actorId, file);
+            }
+
             DeliveryResult result;
             if (ReplyToIri is { } parent)
             {
@@ -453,11 +508,19 @@
             }
             else if (ContentType == "Article")
             {
-                result = await PostArticleAsync(client, actorId);
+                result = await PostArticleAsync(client, actorId, media);
             }
             else
             {
-                var note = ComposeNote.Build(actorId, Content.Trim(), sensitive: IsSensitive, summary: SensitiveSummary, to: [AsPublic]);
+                var note = ComposeNote.Build(
+                    actorId,
+                    Content.Trim(),
+                    sensitive: IsSensitive,
+                    summary: SensitiveSummary,
+                    to: [AsPublic],
+                    mediaIri: media?.MediaIri,
+                    mediaType: media?.ContentType,
+                    mediaName: media?.FileName);
                 result = await client.PostNoteAsync(actorId, note);
             }
 
@@ -469,6 +532,7 @@
                 Content = string.Empty;
                 IsSensitive = false;
                 SensitiveSummary = string.Empty;
+                Attachment = null;
             }
             else
             {
@@ -513,7 +577,7 @@
         return await client.PostNoteAsync(actorId, note);
     }
 
-    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId)
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, MediaUploadResult? media)
     {
         var article = new Article
         {
@@ -523,6 +587,23 @@
             Published = DateTime.UtcNow
         };
 
+        if (media is { } m)
+        {
+            // The Image attachment's url is the same-origin media IRI (its id mirrors it, so a reader can
+            // resolve the media without the url); mediaType + name come from the upload.
+            var image = new Image
+            {
+                Url = [new Link { Href = m.MediaIri.Uri }],
+                Id = m.MediaIri.Value,
+                MediaType = m.ContentType,
+            };
+            if (m.FileName is { } fileName && !string.IsNullOrWhiteSpace(fileName))
+            {
+                image.Name = [fileName];
+            }
+            article.Attachment = [image];
+        }
+
         var create = new Create
         {
             Actor = [new Link { Href = new Uri(actorId.Value) }],
@@ -530,5 +611,36 @@
         };
 
         return await client.DeliverAsync(actorId.OutboxOf(), create);
+    }
+
+    /// <summary>
+    /// Uploads the chosen image attachment (a local, Basic-authenticated multipart POST to the actor's
+    /// own home instance — Phase 20.4 (a), not a signed inbox delivery) and returns the same-origin media
+    /// IRI + content-type + file name (set as the note's <c>Image</c> attachment). Throws on failure
+    /// (surfaced as the post's error line).
+    /// </summary>
+    private async Task<MediaUploadResult> UploadAttachmentAsync(Iri actorId, IBrowserFile file)
+    {
+        var media = Session.MediaClient
+            ?? throw new InvalidOperationException("Media upload is not available for this session.");
+
+        var bytes = await ReadBytesAsync(file);
+        return await media.UploadAsync(
+            actorId,
+            bytes,
+            file.ContentType ?? "application/octet-stream",
+            file.Name,
+            CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Reads a browser file's bytes (capped at <see cref="MaxAttachmentBytes"/>).
+    /// </summary>
+    private static async Task<byte[]> ReadBytesAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(MaxAttachmentBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 }

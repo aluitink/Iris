@@ -77,17 +77,6 @@
           "AngleSharp.Css": "1.0.0-beta.144"
         }
       },
-      "Microsoft.AspNetCore.Authorization": {
-        "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "FxWC2bc788/51CiSiMkKW5gQyqrSSs1991BhphS6ZARMGii+3Qr355Q9OSB/nBpdHVjIopfegAhreZ6UPpO9WA==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Metadata": "10.0.10",
-          "Microsoft.Extensions.Diagnostics": "10.0.10",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.10",
-          "Microsoft.Extensions.Options": "10.0.10"
-        }
-      },
       "Microsoft.AspNetCore.Components": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -102,15 +91,6 @@
         "resolved": "10.0.10",
         "contentHash": "ZBJobkEDv6yWftw3ycZMkuV9YpvJOBmjWpg2UbQ0Ol4THObhKai0PNl/SGFBmpw03JKCPA63RgplQOA1LQbRDg=="
       },
-      "Microsoft.AspNetCore.Components.Authorization": {
-        "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "em2xVQkvtn3BHFT3J9pp4K3yDgPnp0S5a+gcGxb6xkjqy+81yDa8XEEaQnkruCVRusFMltORFFmnlrnHa/A90w==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Authorization": "10.0.10",
-          "Microsoft.AspNetCore.Components": "10.0.10"
-        }
-      },
       "Microsoft.AspNetCore.Components.Forms": {
         "type": "Transitive",
         "resolved": "10.0.10",
@@ -118,18 +98,6 @@
         "dependencies": {
           "Microsoft.AspNetCore.Components": "10.0.10",
           "Microsoft.Extensions.Validation": "10.0.10"
-        }
-      },
-      "Microsoft.AspNetCore.Components.Web": {
-        "type": "Transitive",
-        "resolved": "10.0.10",
-        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Components": "10.0.10",
-          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
-          "Microsoft.Extensions.DependencyInjection": "10.0.10",
-          "Microsoft.Extensions.Primitives": "10.0.10",
-          "Microsoft.JSInterop": "10.0.10"
         }
       },
       "Microsoft.AspNetCore.Components.WebAssembly.Authentication": {
@@ -451,6 +419,41 @@
         "requested": "[0.2.4, )",
         "resolved": "0.2.4",
         "contentHash": "D4ZRwcsJp7mtSERwjznNENKvUHg02GGxLiLMGcDfQVXI0xXpoI6xh0sEFwxL06cXQyQIByaWylNdYlb6hx1rkw=="
+      },
+      "Microsoft.AspNetCore.Authorization": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "FxWC2bc788/51CiSiMkKW5gQyqrSSs1991BhphS6ZARMGii+3Qr355Q9OSB/nBpdHVjIopfegAhreZ6UPpO9WA==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Metadata": "10.0.10",
+          "Microsoft.Extensions.Diagnostics": "10.0.10",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.10",
+          "Microsoft.Extensions.Options": "10.0.10"
+        }
+      },
+      "Microsoft.AspNetCore.Components.Authorization": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "em2xVQkvtn3BHFT3J9pp4K3yDgPnp0S5a+gcGxb6xkjqy+81yDa8XEEaQnkruCVRusFMltORFFmnlrnHa/A90w==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Authorization": "10.0.10",
+          "Microsoft.AspNetCore.Components": "10.0.10"
+        }
+      },
+      "Microsoft.AspNetCore.Components.Web": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.10, )",
+        "resolved": "10.0.10",
+        "contentHash": "8+cyStKhSy94Q2L/2zmgk0H1f+GKvBGEvTImT0qdsCqeNbT7ilGDKTIJ1PiugsPtSNLuUEABUqMpA3rE1yAKFg==",
+        "dependencies": {
+          "Microsoft.AspNetCore.Components": "10.0.10",
+          "Microsoft.AspNetCore.Components.Forms": "10.0.10",
+          "Microsoft.Extensions.DependencyInjection": "10.0.10",
+          "Microsoft.Extensions.Primitives": "10.0.10",
+          "Microsoft.JSInterop": "10.0.10"
+        }
       },
       "Microsoft.AspNetCore.Components.WebAssembly": {
         "type": "CentralTransitive",

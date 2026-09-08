@@ -40,4 +40,28 @@ public static class IrisExtensionTerms
     /// the instance-wide search page. The full wire key is <c>{NamespaceIri}searchQuery</c>.
     /// </summary>
     public const string SearchQuery = "searchQuery";
+
+    /// <summary>
+    /// The <c>isLiked</c> extension (per-object like state): a <c>bool</c> rendered on a content object's
+    /// document that is <c>true</c> when the <em>requesting</em> user currently has a like on the object
+    /// (the like edge is present — i.e. the object is in the requester's net <c>liked</c> state, after any
+    /// intervening Like/Undo squashing to the present). Absent (omitted) when the request is unauthenticated
+    /// or the requester has not liked the object. This is a per-requester, read-time convenience: the object
+    /// document is served to each requester with their own <c>isLiked</c>, so the client can render a lit
+    /// heart without first reading the requester's <c>/liked</c> collection. The full wire key is
+    /// <c>{NamespaceIri}isLiked</c>.
+    /// </summary>
+    public const string IsLiked = "isLiked";
+
+    /// <summary>
+    /// The <c>isShared</c> extension (per-object boost state): a <c>bool</c> rendered on a content
+    /// object's document that is <c>true</c> when the <em>requesting</em> user currently has a boost on
+    /// the object (the announce edge is present — i.e. the object is in the requester's net
+    /// <c>shared</c> state, after any intervening Announce/Undo squashing to the present). Absent
+    /// (omitted) when the request is unauthenticated or the requester has not boosted the object. This is
+    /// a per-requester, read-time convenience: the object document is served to each requester with their
+    /// own <c>isShared</c>, so the client can render a lit boost marker without first reading the
+    /// requester's <c>/announces</c> collection. The full wire key is <c>{NamespaceIri}isShared</c>.
+    /// </summary>
+    public const string IsShared = "isShared";
 }

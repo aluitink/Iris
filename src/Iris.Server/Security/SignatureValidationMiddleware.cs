@@ -40,9 +40,18 @@ public sealed class SignatureValidationMiddleware(RequestDelegate next)
         SignatureValidationResult outcome;
         // Only POST requests are signature-validated here. GETs (object/actor-document fetches,
         // including the key-resolution bootstrap the inbound validator performs) are left to their
-        // endpoints' own policy; validating them too would recurse (validating a key-resolution
-        // GET would trigger another key-resolution GET on the remote instance). The security-critical
-        // path is the inbox POST (activities), which is always validated.
+        // endpoints' own policy. Validating GETs in the middleware would recurse in a federating loop:
+        // the inbound key resolver's key-resolution fetch is itself a signed request, and in a
+        // two-instance setup each instance's fetcher routes to the other, so validating those GETs
+        // bounces the resolution across instances until the request's cancellation token fires (the
+        // inbox POST's validation is then canceled and the activity drops).
+        //
+        // The object-document handler serves the per-requester iris:isLiked extension from a signed
+        // GET's authenticated identity. It validates the signature inline (calling the validator
+        // directly) rather than relying on the middleware, because the object-document catch-all is
+        // only reached for NON-actor-document paths (actor documents are dispatched by their own
+        // /u/{handle} route first) — so an inline validation there never re-enters on a
+        // key-resolution fetch, and the loop is broken.
         if (HttpMethods.Post == context.Request.Method
             && context.Request.Headers.ContainsKey(Signatures.SignatureHeaderName))
         {

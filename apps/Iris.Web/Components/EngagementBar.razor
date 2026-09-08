@@ -79,12 +79,138 @@
     private bool _liked;
     private bool _boosted;
     private bool _busy;
+    private bool _countsLoaded;
     private bool _showModeration;
     private Iri? _likeIri;
     private Iri? _announceIri;
 
+    /// <summary>
+    /// Whether the activity's actor/attributedTo is the given user (tolerating trailing-slash IRI variants).
+    /// </summary>
     private bool CanModerate
         => AuthorIri is { } author && Session.ActorId is { } me && author != me;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Seed the like/boost counts AND the signed-in user's own like/boost state from the server. Both
+        // reads bypass the client collection-page cache: a like/boost the user just made must not be masked
+        // by a stale pre-engagement page (the server derives the count live from the reverse index, so a
+        // fresh read is authoritative and cheap).
+        //
+        // The object's /likes collection is the NET like state served as the actual Like activities (the
+        // spec-compliant, federation-friendly shape): each item is a Like with its minted id, its actor
+        // (the liker) and its object (the liked object). So the count is the number of items, "did I like
+        // it?" is "is there a Like whose actor is me?", and that same Like's id is what an unlike (an Undo)
+        // references. An undone like is absent (the server squashes Like/Undo to the net state), so a post
+        // the user previously liked still lights the heart on load. /shares is the same, for boosts.
+        if (ObjectIri is not { } iri || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        try
+        {
+            var me = Session.ActorId;
+            int likes = 0;
+            int boosts = 0;
+            bool iLiked = false;
+            bool iBoosted = false;
+
+            await foreach (var item in client.GetLikesAsync(
+                iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+            {
+                likes++;
+                if (!iLiked && me is { } meIri && LikeActorIri(item) is { } liker && IriEquals(liker, meIri))
+                {
+                    iLiked = true;
+                    _likeIri = ItemIri(item); // the minted Like id, for the unlike (Undo) reference.
+                }
+            }
+
+            await foreach (var item in client.GetSharesAsync(
+                iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+            {
+                boosts++;
+                if (!iBoosted && me is { } meIri && AnnounceActorIri(item) is { } booster && IriEquals(booster, meIri))
+                {
+                    iBoosted = true;
+                    _announceIri = ItemIri(item); // the minted Announce id, for the un-boost (Undo) reference.
+                }
+            }
+
+            _likeCount = likes;
+            _boostCount = boosts;
+            _liked = iLiked;
+            _boosted = iBoosted;
+            _countsLoaded = true;
+        }
+        catch
+        {
+            // Non-fatal: counts simply won't show until a later render re-fetches.
+        }
+    }
+
+    /// <summary>
+    /// Resolves the IRI an <see cref="IObjectOrLink"/> collection item points at (a <c>Link</c>'s
+    /// <c>href</c>, or an embedded object's <c>id</c>) — null when neither is present.
+    /// </summary>
+    private static Iri? ItemIri(IObjectOrLink item)
+        => item switch
+        {
+            ILink { Href: { } href } => new Iri(href),
+            IObject { Id: { Length: > 0 } id } => new Iri(id),
+            _ => null,
+        };
+
+    /// <summary>
+    /// Resolves the IRI of the actor who issued a <see cref="Like"/> collection item (the liker) — the
+    /// <c>actor</c> of a <c>Like</c> activity. Null when the item is not a <c>Like</c> (or the <c>Like</c>
+    /// carries no resolvable <c>actor</c>, e.g. a degraded Link-to-liker fallback).
+    /// </summary>
+    private static Iri? LikeActorIri(IObjectOrLink item)
+        => item is Like like && like.Actor is { } actors
+            ? ResolveActorIri(actors)
+            : null;
+
+    /// <summary>
+    /// Resolves the IRI of the actor who issued an <see cref="Announce"/> (boost) collection item (the
+    /// booster) — the <c>actor</c> of an <c>Announce</c> activity. Null when the item is not an
+    /// <c>Announce</c> (or the <c>Announce</c> carries no resolvable <c>actor</c>, e.g. a degraded
+    /// Link-to-announcer fallback).
+    /// </summary>
+    private static Iri? AnnounceActorIri(IObjectOrLink item)
+        => item is Announce announce && announce.Actor is { } actors
+            ? ResolveActorIri(actors)
+            : null;
+
+    /// <summary>
+    /// Resolves the first resolvable IRI from an ActivityStreams actor/object reference collection
+    /// (handles both <c>Link</c> and embedded-object references).
+    /// </summary>
+    private static Iri? ResolveActorIri(IEnumerable<IObjectOrLink> refs)
+    {
+        foreach (var reference in refs)
+        {
+            if (reference is ILink { Href: { } href })
+            {
+                return new Iri(href);
+            }
+
+            if (reference is IObject { Id: { Length: > 0 } id })
+            {
+                return new Iri(id);
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Compares two IRIs for the same resource, tolerating trailing-slash differences (the same IRI can be
+    /// written with or without a trailing slash across producers/consumers).
+    /// </summary>
+    private static bool IriEquals(Iri a, Iri b)
+        => a == b || a.Value.TrimEnd('/') == b.Value.TrimEnd('/');
 
     private async Task ToggleLikeAsync(Iri iri)
     {
@@ -101,7 +227,11 @@
                 await client.UnlikeAsync(me, likeId);
                 _liked = false;
                 _likeIri = null;
-                _likeCount = Math.Max(0, _likeCount - 1);
+                // Adjust from the seeded total only once it's known (a pre-load click is a no-op delta).
+                if (_countsLoaded)
+                {
+                    _likeCount = Math.Max(0, _likeCount - 1);
+                }
             }
             else
             {
@@ -110,7 +240,10 @@
                 {
                     _liked = true;
                     _likeIri = new Iri(minted);
-                    _likeCount++;
+                    if (_countsLoaded)
+                    {
+                        _likeCount++;
+                    }
                 }
             }
         }
@@ -139,7 +272,10 @@
                 await client.UnannounceAsync(me, announceId);
                 _boosted = false;
                 _announceIri = null;
-                _boostCount = Math.Max(0, _boostCount - 1);
+                if (_countsLoaded)
+                {
+                    _boostCount = Math.Max(0, _boostCount - 1);
+                }
             }
             else
             {
@@ -148,7 +284,10 @@
                 {
                     _boosted = true;
                     _announceIri = new Iri(minted);
-                    _boostCount++;
+                    if (_countsLoaded)
+                    {
+                        _boostCount++;
+                    }
                 }
             }
         }

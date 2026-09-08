@@ -22,6 +22,12 @@
           host for the WASM app; it adds no runtime dependency. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.10" />
+    <!-- Blazor Web components: provides the <AntiforgeryToken /> component that the WASM client's
+          /register and /login forms embed so their traditional HTML POSTs carry a valid token. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Web" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.10" />
     <!-- JS interop surface (Microsoft.JSInterop) for Iris.WebCrypto. A plain abstraction package
           (no dependencies) — the .NET side of the browser WebCrypto signing bridge. Referenced only by
           the Iris.WebCrypto library (and transitively by WASM hosts that consume it). -->

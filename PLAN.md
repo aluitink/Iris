@@ -85,11 +85,11 @@ Iris.slnx
 
 **Phase 43 — Per-user moderation & follow-request queue (COMPLETE).** 43.1–43.3 all COMPLETE.
 
-**Phase 44 — Post content completeness (ACTIVE):**
+**Phase 44 — Post content completeness (COMPLETE).** 44.1–44.3 all COMPLETE.
 
 1. ~~**44.1: Content warning / sensitive flag on compose (F-28)**~~ **COMPLETE** — "Content warning" checkbox + summary input on Compose (Note posts); the Note path builds the note via `ComposeNote.Build` (sensitive + summary + to) and posts it via the `PostNoteAsync(Note)` overload; the feed's existing reveal toggle renders it. 4 integration tests. → [docs/changes/336](docs/changes/336-44.1-content-warning-compose.md)
 2. ~~**44.2: Edit own post (F-02)**~~ **COMPLETE** — an "Edit" button on own posts (object detail, next to Delete) enters inline edit mode; the client's new `UpdateNoteAsync` posts an `Update` activity through the signed outbox; the server's `UpdateActivityHandler` refreshes the stored object in place and federates to followers. 5 integration tests. → [docs/changes/337](docs/changes/337-44.2-edit-own-post.md)
-3. **44.3: Media attachment (image) on compose** — file upload via `IMediaClient` (Phase 20.4a) → same-origin media IRI; `ComposeNote.Build`/note `attachment` carries an `Image`; feed renders the image. Depends on media storage being wired in the app.
+3. ~~**44.3: Media attachment (image) on compose (F-27)**~~ **COMPLETE** — an "Add image" file picker on Compose (top-level Note/Article posts only); on post the image is uploaded via `IMediaClient` (Phase 20.4a) to the local media endpoint → same-origin media IRI; `ComposeNote.Build` (and the Article path) carries a single `Image` attachment (url + id = media IRI, mediaType, name); the feed's existing `GetMediaAttachments` rendering shows it. 5 unit tests + 4 integration tests. → [docs/changes/338](docs/changes/338-44.3-media-compose.md)
 
 ## Active Slice
 
@@ -188,15 +188,12 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 41.3: **Community membership requests (admin UI)** (Phase 41) — "Requests" tab (creator only): lists pending join requests; Accept/Reject buttons; `GET /local/v1/c/{name}/requests` + `POST .../accept/{**actorIri}` + `POST .../reject/{**actorIri}`; `ILocalModerationClient` join-request methods; 10 integration tests.
-  - 41.2: **Profile engagement tabs** (Phase 41) — `/profile` tab bar (Your posts / Replies / Likes); inbox-filter via `PagedCollection.ItemFilter`; 5 integration tests.
-  - 41.1: **Notification read-state + unread badge** (Phase 41) — "Mark all as read" button + nav unread badge (60s poll); `POST /local/v1/notifications/read` + `GET /local/v1/notifications/unread-count`; in-process `NotificationService`; 7 integration tests.
+  - 44.3: **Media attachment (image) on compose (F-27)** (Phase 44) — "Add image" picker on Compose (top-level posts); on post uploads via `IMediaClient` → same-origin media IRI; `ComposeNote.Build`/Article path carries a single `Image` attachment; feed's `GetMediaAttachments` already renders it. 5 unit + 4 integration tests.
   - 44.2: **Edit own post** (Phase 44) — "Edit" button on own posts (object detail); client `UpdateNoteAsync` posts an `Update` activity; server refreshes the stored object in place and federates; 5 integration tests.
   - 44.1: **Content warning / sensitive flag on compose** (Phase 44) — CW checkbox + summary on Compose (Note posts); note built via `ComposeNote.Build` (sensitive + summary); feed reveal toggle already renders it; 4 integration tests.
   - 43.3: **Moderation on actor detail** (Phase 43) — `ModerationActions` (Block/Report via `IActivityPubClient`, Mute via `ILocalModerationClient`, Undo state from blocks/mutes collections) + community join-request "Requests" tab; 8 integration tests.
   - 43.2: **Follow-request queue (person)** (Phase 43) — "Requests" tab on `/profile` (when `manuallyApprovesFollowers` on); pending Follows from outbox; Accept/Reject; 5 integration tests.
   - 43.1: **Moderation actions on posts** (Phase 43) — "⋯" dropdown on `EngagementBar` (author ≠ self); Block/Flag via signed outbox, Mute via local Basic-auth; 6 integration tests.
-  - 42.3: **Instance admin — user list** (Phase 42) — `/admin/users` page (admin-only); lists local accounts; 5 integration tests.
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean

@@ -1,0 +1,101 @@
+@page "/home"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Home · Iris</PageTitle>
+
+<h2>Home timeline</h2>
+
+<PagedCollection
+    @key="@FeedKey"
+    Client="@FeedClient"
+    CollectionIri="@FeedIri"
+    PageSize="5"
+    ShowRefreshButton="true"
+    ItemFilter="IsContentItem">
+    <EmptyContent>
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            <p>Your timeline is empty.</p>
+            <p>Follow people to see their posts here.</p>
+            <a href="/directory">Browse the directory →</a>
+        </div>
+    </EmptyContent>
+</PagedCollection>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    /// <summary>
+    /// Primes the session's signing key (WASM cannot block on the key load during render). Once the
+    /// load completes, re-render so <see cref="FeedClient"/> resolves and the feed card appears.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// A stable <c>@key</c> for the feed's <c>PagedCollection</c>. The home timeline is a single,
+    /// fixed collection (the session actor's followed feed), so the key is a constant — it exists only
+    /// so the <c>PagedCollection</c> has a key to key on (its internal state is otherwise stable).
+    /// </summary>
+    private const string FeedKey = "home-feed";
+
+    /// <summary>
+    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out. The page is
+    /// <c>[Authorize]</c>-gated, so in practice this is always set on a rendered (circuit) request;
+    /// <c>null</c> only occurs on the static prerender of a signed-out request (which the auth
+    /// middleware redirects to <c>/login</c> before the circuit boots).
+    /// </summary>
+    private IActivityPubClient? FeedClient => Session.Client;
+
+    /// <summary>
+    /// The followed-feed collection IRI (the session actor's <c>{actor}/feed</c>), or <c>null</c> when
+    /// signed out. Derived via <see cref="IriExtensions.FeedOf(Iri)"/>.
+    /// </summary>
+    private Iri? FeedIri
+        => Session.ActorId is { } actor ? actor.FeedOf() : null;
+
+    /// <summary>
+    /// Filters the home timeline to content items only (Create of a Note/Article, Announce). Social
+    /// activities (Follow, Accept, Reject, Like, etc.) are excluded — they belong in notifications.
+    /// </summary>
+    private static bool IsContentItem(IObjectOrLink item)
+    {
+        if (item is Create create)
+        {
+            if (create.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is Note || obj is Article)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        if (item is Announce)
+        {
+            return true;
+        }
+
+        if (item is Note || item is Article)
+        {
+            return true;
+        }
+
+        return false;
+    }
+}

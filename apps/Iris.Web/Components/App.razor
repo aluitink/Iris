@@ -9,12 +9,12 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="stylesheet" href="css/app.css" />
     <ImportMap />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="InteractiveWebAssembly" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
-    <script src="_framework/blazor.web.js"></script>
+    <Routes @rendermode="InteractiveWebAssembly" />
+    <script src="_framework/blazor.webassembly.js"></script>
 </body>
 
 </html>

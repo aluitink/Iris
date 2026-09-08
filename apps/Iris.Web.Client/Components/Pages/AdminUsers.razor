@@ -1,0 +1,81 @@
+@page "/admin/users"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@using System.Net.Http.Json
+
+<PageTitle>Admin · Users · Iris</PageTitle>
+
+<h2>Instance users</h2>
+
+@if (LoadError is not null)
+{
+    <div class="error">@LoadError</div>
+}
+else if (Users is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading users…</span>
+    </div>
+}
+else
+{
+    <div class="card">
+        <p class="muted">@Users.Count local account(s)</p>
+        <table class="admin-table">
+            <thead>
+                <tr>
+                    <th>Handle</th>
+                    <th>Role</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in Users)
+                {
+                    <tr>
+                        <td>@user.Username</td>
+                        <td><span class="badge @RoleBadgeClass(user.Role)">@user.Role</span></td>
+                        <td>@user.CreatedAt.ToString("yyyy-MM-dd")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private readonly HttpClient _http;
+    private IReadOnlyList<AdminUserDto>? Users { get; set; }
+    private string? LoadError { get; set; }
+
+    public AdminUsers(HttpClient http)
+    {
+        _http = http;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync("/local/v1/admin/users");
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = $"Failed to load users (HTTP {(int)response.StatusCode})";
+                return;
+            }
+            var list = await response.Content.ReadFromJsonAsync<List<AdminUserDto>>();
+            Users = list?.OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private static string RoleBadgeClass(string role)
+        => role == "Admin" ? "badge--admin" : "badge--user";
+
+    private sealed record AdminUserDto(Guid Id, string Username, string? DisplayName, string ActorIri, string Role, DateTimeOffset CreatedAt);
+}

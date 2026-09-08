@@ -408,14 +408,16 @@ else if (ObjectDoc is null)
     {
         try
         {
+            // Bypass the client collection-page cache: the count must reflect likes/boosts made moments
+            // ago (the server derives it live from the reverse index, so a fresh read is authoritative).
             int likes = 0;
-            await foreach (var _ in client.GetLikesAsync(iri, new CollectionQuery { Limit = 100 }, CancellationToken.None))
+            await foreach (var _ in client.GetLikesAsync(iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
             {
                 likes++;
             }
 
             int boosts = 0;
-            await foreach (var _ in client.GetSharesAsync(iri, new CollectionQuery { Limit = 100 }, CancellationToken.None))
+            await foreach (var _ in client.GetSharesAsync(iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
             {
                 boosts++;
             }

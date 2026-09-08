@@ -121,4 +121,90 @@ public class ComposeNoteTests
         Assert.True(back is IObject obj && obj.IsSensitive());
         Assert.Equal("Warning", ((IObject)back).GetSummary());
     }
+
+    [Fact]
+    public void Build_NoAttachment_WhenNoMedia()
+    {
+        var note = ComposeNote.Build(Alice, "content");
+
+        Assert.Null(note.Attachment);
+    }
+
+    [Fact]
+    public void Build_SetsImageAttachment_WhenMediaProvided()
+    {
+        var media = new Iri("https://a.domain.local/ap/v1/media/abc-123");
+        var note = ComposeNote.Build(
+            Alice,
+            "with a picture",
+            mediaIri: media,
+            mediaType: "image/png",
+            mediaName: "cat.png");
+
+        var image = Assert.IsType<Image>(note.Attachment?.Single());
+        // The url is the same-origin media IRI (the feed's GetMediaAttachments reads it back).
+        Assert.Equal(media, image.Url?.Single()?.ResolveObjectIri());
+        Assert.Equal(media.Value, image.Id);
+        Assert.Equal("image/png", image.MediaType);
+        Assert.Equal("cat.png", image.Name?.Single());
+        // The single read boundary resolves the attachment to the media IRI + file name.
+        var (iri, name) = ((IObject)note).GetMediaAttachments().Single();
+        Assert.Equal(media, iri);
+        Assert.Equal("cat.png", name);
+    }
+
+    [Fact]
+    public void Build_OmitsAttachmentName_WhenMediaNameBlank()
+    {
+        var media = new Iri("https://a.domain.local/ap/v1/media/abc-123");
+        var note = ComposeNote.Build(
+            Alice,
+            "no file name",
+            mediaIri: media,
+            mediaType: "image/png",
+            mediaName: "   ");
+
+        var image = Assert.IsType<Image>(note.Attachment?.Single());
+        Assert.Equal(media, image.Url?.Single()?.ResolveObjectIri());
+        // A blank (whitespace) file name yields no name entry (the Image.Name property stays null).
+        Assert.Null(image.Name);
+    }
+
+    [Fact]
+    public void Build_MediaAttachment_RoundTripsThroughWire()
+    {
+        var media = new Iri("https://a.domain.local/ap/v1/media/abc-123");
+        var note = ComposeNote.Build(
+            Alice,
+            "wire media",
+            mediaIri: media,
+            mediaType: "image/jpeg",
+            mediaName: "photo.jpg");
+        var json = ActivityJson.Serialize(note);
+        var back = ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
+
+        // The Image attachment (url + id + mediaType + name) survives the wire form.
+        Assert.NotNull(back);
+        var (iri, name) = back!.GetMediaAttachments().Single();
+        Assert.Equal(media, iri);
+        Assert.Equal("photo.jpg", name);
+        Assert.Contains("\"mediaType\":\"image/jpeg\"", json);
+    }
+
+    [Fact]
+    public void Build_MediaAndSensitive_AreIndependent()
+    {
+        var media = new Iri("https://a.domain.local/ap/v1/media/abc-123");
+        var note = ComposeNote.Build(
+            Alice,
+            "both",
+            sensitive: true,
+            summary: "graphic",
+            mediaIri: media,
+            mediaType: "image/png");
+
+        Assert.True(((IObject)note).IsSensitive());
+        Assert.Equal("graphic", ((IObject)note).GetSummary());
+        Assert.NotNull(note.Attachment);
+    }
 }

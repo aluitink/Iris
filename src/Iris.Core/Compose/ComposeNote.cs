@@ -44,6 +44,21 @@ public static class ComposeNote
     /// The optional audience link(s) (e.g. the public <c>as:Public</c> address). When null or empty the
     /// note carries no explicit <c>to</c>.
     /// </param>
+    /// <param name="mediaIri">
+    /// The same-origin media IRI (the <c>/ap/v1/media/{id}</c> path minted on upload) of the note's image
+    /// attachment (Phase 20.4 (a) / F-27), when one was uploaded. When set (non-null) the note carries a
+    /// single <see cref="Image"/> <c>attachment</c> whose <c>url</c> (and mirroring <c>id</c>) is this IRI,
+    /// with <c>mediaType</c> and <c>name</c> from <paramref name="mediaType"/> and
+    /// <paramref name="mediaName"/>. When null the note carries no <c>attachment</c>.
+    /// </param>
+    /// <param name="mediaType">
+    /// The attachment image's <c>mediaType</c> (the file's content type, e.g. <c>image/png</c>), as
+    /// returned by the media upload. Used only when <paramref name="mediaIri"/> is set.
+    /// </param>
+    /// <param name="mediaName">
+    /// The attachment image's <c>name</c> (the file's original name), as returned by the media upload.
+    /// Used only when <paramref name="mediaIri"/> is set.
+    /// </param>
     /// <returns>
     /// The composed <see cref="Note"/> (type <c>Note</c>, set by the constructor), ready to be published
     /// through the signed pipeline.
@@ -55,7 +70,10 @@ public static class ComposeNote
         string? markdownHtml = null,
         bool sensitive = false,
         string? summary = null,
-        IEnumerable<Iri>? to = null)
+        IEnumerable<Iri>? to = null,
+        Iri? mediaIri = null,
+        string? mediaType = null,
+        string? mediaName = null)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -93,6 +111,28 @@ public static class ComposeNote
             {
                 note.To = audience;
             }
+        }
+
+        if (mediaIri is { } media)
+        {
+            // A note's image attachment (Phase 20.4 (a) / F-27): a single Image whose url is the
+            // same-origin media IRI minted on upload (and whose id mirrors it, so a reader can resolve
+            // the media without the url). mediaType + name come from the upload (Decision 056 (b): the
+            // url is same-origin, never a cross-origin media host). The feed's ObjectView renders it via
+            // GetMediaAttachments.
+            var image = new Image
+            {
+                Url = [new Link { Href = media.Uri }],
+                Id = media.Value,
+                MediaType = mediaType,
+            };
+            // A blank (null/whitespace) file name yields no name entry; the Image.Name property is left
+            // at its default. (A `{ Length: > 0 }` pattern alone would not catch a whitespace-only name.)
+            if (mediaName is { } rawName && !string.IsNullOrWhiteSpace(rawName))
+            {
+                image.Name = [rawName];
+            }
+            note.Attachment = [image];
         }
 
         return note;

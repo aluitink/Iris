@@ -62,9 +62,9 @@ public sealed class EditOwnPostIntegrationTests : IDisposable
                 webApp.UseSignatureValidation();
                 webApp.UseAuthentication();
                 webApp.UseAuthorization();
+                webApp.UseStaticFiles();
                 webApp.UseEndpoints(endpoints =>
                 {
-                    endpoints.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
                     WebAppFactory.MapAuthEndpoints(endpoints);
                     endpoints.MapActivityPubEndpoints();
                 });

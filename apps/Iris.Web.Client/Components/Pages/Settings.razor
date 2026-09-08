@@ -1,0 +1,218 @@
+@page "/settings"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>Settings · Iris</PageTitle>
+
+<h2>Settings</h2>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to manage your settings.</p></div>
+}
+else
+{
+    <div class="tab-bar">
+        <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
+        <a href="#password" class="tab @(ActiveTab == "password" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("password")'>Password</a>
+        <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+    </div>
+
+    @if (ActiveTab == "account")
+    {
+        <div class="card">
+            <h3>Account</h3>
+            @if (ActorDoc is not null)
+            {
+                <div class="settings-account-info">
+                    <ActorProfile Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" />
+                    <p class="muted" style="margin-top: 0.75rem;">
+                        <a href="/profile">Edit your profile</a> to update your display name and description.
+                    </p>
+                </div>
+            }
+            else
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
+        </div>
+    }
+    else if (ActiveTab == "password")
+    {
+        <div class="card">
+            <h3>Change password</h3>
+            <p class="muted" style="margin-bottom: 1rem;">
+                Password changes are not yet available. This feature is on the roadmap.
+            </p>
+            <button class="button" disabled>Change password</button>
+        </div>
+    }
+    else if (ActiveTab == "communities")
+    {
+        <div class="card">
+            <h3>Your communities</h3>
+            @if (CommunitiesBusy)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading communities…</span>
+                </div>
+            }
+            else if (CommunitiesError is not null)
+            {
+                <div class="error">@CommunitiesError</div>
+            }
+            else if (MemberCommunities is not null)
+            {
+                @if (MemberCommunities.Count == 0)
+                {
+                    <p class="muted">You are not a member of any communities yet. <a href="/communities">Browse communities</a> to find one.</p>
+                }
+                else
+                {
+                    <div class="directory-list">
+                        @foreach (var community in MemberCommunities)
+                        {
+                            var name = community.Name?.FirstOrDefault() ?? "Unnamed";
+                            var iri = community.Id;
+
+                            <div class="directory-item">
+                                <div class="directory-item-body">
+                                    <a href="@($"/community?iri={Uri.EscapeDataString(iri ?? string.Empty)}")" class="object-actor-handle">@name</a>
+                                    <span class="muted" style="font-size: 0.85rem;">Member</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    private IActivityPubClient? Client => Session.Client;
+    private string ActiveTab { get; set; } = "account";
+    private IObject? ActorDoc { get; set; }
+    private List<Group>? MemberCommunities { get; set; }
+    private bool CommunitiesBusy { get; set; }
+    private string? CommunitiesError { get; set; }
+
+    private Iri? InstanceBase
+    {
+        get
+        {
+            if (Session.ActorId is not { } actor)
+            {
+                return null;
+            }
+
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            return index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Session.ActorId is { } actorId && ActorDoc is null)
+        {
+            _ = LoadActorAsync(actorId);
+        }
+    }
+
+    private async Task LoadActorAsync(Iri actorId)
+    {
+        try
+        {
+            ActorDoc = await Ui.GetActorAsync(actorId);
+        }
+        catch
+        {
+            // Non-fatal: the account tab will show the loading state.
+        }
+
+        StateHasChanged();
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+        if (tab == "communities" && MemberCommunities is null && CommunitiesError is null)
+        {
+            _ = LoadMemberCommunitiesAsync();
+        }
+    }
+
+    private async Task LoadMemberCommunitiesAsync()
+    {
+        if (Client is not { } client || InstanceBase is not { } baseIri)
+        {
+            return;
+        }
+
+        CommunitiesBusy = true;
+        CommunitiesError = null;
+
+        try
+        {
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                                baseIri,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor" }))
+            {
+                results.Add(item);
+            }
+
+            var allCommunities = results
+                .OfType<KristofferStrube.ActivityStreams.Object>()
+                .Where(o => o is Group)
+                .Cast<Group>()
+                .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
+                .ToList();
+
+            var memberCommunities = new List<Group>();
+            foreach (var community in allCommunities)
+            {
+                if (community.Id is { Length: > 0 } id && Iri.TryParse(id, out var communityIri))
+                {
+                    if (await Ui.IsMemberAsync(communityIri))
+                    {
+                        memberCommunities.Add(community);
+                    }
+                }
+            }
+
+            MemberCommunities = memberCommunities;
+        }
+        catch (Exception ex)
+        {
+            CommunitiesError = ex.Message;
+        }
+        finally
+        {
+            CommunitiesBusy = false;
+        }
+
+        StateHasChanged();
+    }
+}

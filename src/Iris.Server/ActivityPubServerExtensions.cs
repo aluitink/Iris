@@ -171,7 +171,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<ISignatureVerifier>(),
             sp.GetService<RemoteKeyCache>(),
             sp.GetService<RemoteActorCache>(),
-            sp.GetRequiredService<ILogger<HttpSignatureValidator>>()));
+            sp.GetRequiredService<ILogger<HttpSignatureValidator>>(),
+            sp.GetService<IPersistenceProvider>()));
         services.TryAddSingleton<IActorDocumentFetcher>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
@@ -1066,10 +1067,22 @@ public static class ActivityPubServerExtensions
         var actorIri = BuildActorIri(baseUrl, handle);
 
         // Determine whether the request is authenticated for this actor (owner-only extension).
+        // Two paths: (1) Basic auth via the credential validator (federation clients), (2) cookie
+        // auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. Either path grants the owner-only privateKey extension.
         var authorization = context.Request.Headers.Authorization.ToString();
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
 
         // Owner-only (authenticated) document: private data. Never cached; always no-store.
         if (authenticatedHandle is not null)
@@ -3623,6 +3636,8 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.Capabilities] = "@id",
                 [IrisExtensionTerms.Settings] = "@id",
                 [IrisExtensionTerms.SearchQuery] = "string",
+                [IrisExtensionTerms.IsLiked] = "boolean",
+                [IrisExtensionTerms.IsShared] = "boolean",
             },
         };
 
@@ -4079,6 +4094,9 @@ public static class ActivityPubServerExtensions
     /// <param name="path">The object IRI's path relative to the route prefix (the <c>{**path}</c> catch-all).</param>
     /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/>).</param>
     /// <param name="optionsAccessor">The server options (provides the advertised base URL).</param>
+    /// <param name="signatureValidator">Validates the request's HTTP signature inline (for the per-requester
+    /// <c>isLiked</c> extension); a signed object read's authenticated actor is resolved here rather than via
+    /// the middleware, so the validation never re-enters on a key-resolution fetch.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The object (or its tombstone) as <c>application/activity+json</c>, or <c>404</c>.</returns>
     private static async Task<IResult> ObjectDocumentHandler(
@@ -4086,6 +4104,7 @@ public static class ActivityPubServerExtensions
         string path,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -4162,11 +4181,67 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The iris:isLiked / iris:isShared extensions: when the request carries a valid HTTP signature
+        // (the Iris client signs all its ActivityPub interactions, reads included, to establish identity),
+        // render a `true` on the object when the authenticated requester currently has a (net) like /
+        // boost on it. Each net state is the edge in its store: a Like (Announce) followed by an Undo
+        // (an unlike / un-boost) has removed it, so it reads false; a Like → Undo → Like (Announce → Undo
+        // → Announce) re-added it, so it reads true. An unsigned / anonymous request gets neither (a client
+        // that has no signed identity cannot light a heart or boost marker). Only a real content object
+        // carries them (a tombstone / a minted activity such as a Like or Announce itself has no like /
+        // boost state to surface).
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        bool? isLikedValue = null;
+        bool? isSharedValue = null;
+        if (obj is not KristofferStrube.ActivityStreams.Tombstone)
+        {
+            isLikedValue = requesterIri is { } r
+                ? await persistence.Likes.HasLikedAsync(r, objectIri, ct).ConfigureAwait(false)
+                : null;
+            isSharedValue = requesterIri is { } s
+                ? await persistence.Announces.HasAnnouncedAsync(s, objectIri, ct).ConfigureAwait(false)
+                : null;
+        }
+
         // Cache-Control: an object (or its tombstone) is a stable, addressable document; cache it like
-        // the actor document (max-age=60, stale-while-revalidate=300).
+        // the actor document (max-age=60, stale-while-revalidate=300). The document is per-requester
+        // (isLiked / isShared depend on the requester), so the 60s TTL is a soft bound — a requester who
+        // just liked / boosted an object sees it light on a re-fetch that bypasses the cache (the client
+        // passes ?refresh=true).
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
-        return Results.Text(ServeObjectDocument(obj, objectIri), ActivityJson.ActivityJsonContentType);
+        return Results.Text(
+            ServeObjectDocument(obj, objectIri, isLikedValue, isSharedValue, IrisExtensionNamespace(options)),
+            ActivityJson.ActivityJsonContentType);
+    }
+
+    /// <summary>
+    /// Resolves the authenticated requesting actor for a signed object read (the identity behind the
+    /// <c>iris:isLiked</c> / <c>iris:isShared</c> extensions): the actor bound to a valid HTTP signature on
+    /// the request (the Iris client signs all its ActivityPub interactions, reads included, to establish
+    /// identity); <see langword="null"/> when the request is unsigned / anonymous or its signature is
+    /// invalid (the extensions are then omitted from the served document).
+    /// </summary>
+    private static async Task<Iri?> ResolveAuthenticatedRequesterAsync(
+        HttpContext context,
+        ISignatureValidator signatureValidator,
+        CancellationToken ct)
+    {
+        // The authenticated actor is the one established by a valid HTTP signature (the Iris client signs
+        // every AP interaction it sends, including object reads, to validate identity). Validate the
+        // signature INLINE (not via the middleware): this handler is only reached for NON-actor-document
+        // object paths (actor documents are dispatched by their own /u/{handle} route first), so an inline
+        // validation here never re-enters on the inbound key resolver's key-resolution fetch — which would
+        // otherwise cascade across instances in a federating loop. An unsigned request (no Signature
+        // header) has no identity (no isLiked / isShared); a signed-but-invalid request is treated as
+        // anonymous (reading an object must not 401 just because the requester's signature is stale).
+        var outcome = await signatureValidator.ValidateAsync(context, ct).ConfigureAwait(false);
+        if (outcome is null || !outcome.IsValid)
+        {
+            return null;
+        }
+
+        return outcome.ActorIri;
     }
 
     /// <summary>
@@ -4184,8 +4259,18 @@ public static class ActivityPubServerExtensions
     /// </remarks>
     /// <param name="obj">The stored object to serve.</param>
     /// <param name="objectIri">The object's canonical IRI (the addressable form this endpoint serves it at).</param>
+    /// <param name="isLiked">The requesting user's net like state on the object (the <c>iris:isLiked</c>
+    /// extension); when <c>true</c> a <c>true</c> is rendered, when <c>null</c>/<c>false</c> the extension
+    /// is omitted.</param>
+    /// <param name="isShared">The requesting user's net boost state on the object (the
+    /// <c>iris:isShared</c> extension); when <c>true</c> a <c>true</c> is rendered, when
+    /// <c>null</c>/<c>false</c> the extension is omitted.</param>
+    /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (the <c>@vocab</c> the
+    /// document declares); the <c>isLiked</c> / <c>isShared</c> terms are written as
+    /// <c>{irisNamespace}isLiked</c> / <c>{irisNamespace}isShared</c>.</param>
     /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
-    private static string ServeObjectDocument(IObject obj, Iri objectIri)
+    private static string ServeObjectDocument(
+        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, string? irisNamespace)
     {
         if (obj is KristofferStrube.ActivityStreams.Tombstone)
         {
@@ -4199,6 +4284,29 @@ public static class ActivityPubServerExtensions
         if (!HasCanonicalUrl(document))
         {
             document.Url = [new Link { Href = new Uri(objectIri.Value) }];
+        }
+
+        // The iris:isLiked / iris:isShared extensions (per-object like / boost state): when the requesting
+        // user is authenticated and has (net) liked / boosted this object, render a `true` so a client can
+        // light the heart / boost marker without reading the requester's /liked (or /announces) collection.
+        // Absent when the request is anonymous or the requester has not liked / boosted the object (a false
+        // value is omitted — the default is "not liked" / "not boosted"). This is per-requester, read-time
+        // state (never stored on the object), so it is only ever added to the deep copy.
+        if (irisNamespace is { } ns)
+        {
+            if (isLiked is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+            }
+
+            if (isShared is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsShared] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+            }
         }
 
         return ActivityJson.Serialize(document);
@@ -4269,26 +4377,34 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Serves the actors that like a content object (the like reverse index) as the per-object
-    /// <c>likes</c> collection for <c>GET /ap/v1/{**path}/likes</c> (decision 056 (d), the per-object
-    /// like counter). The items are the IRIs of the actors that liked the object, read from
-    /// <see cref="ILikeStore.GetLikersAsync"/> and embedded as <see cref="Link"/>s (the same shape as the
-    /// followers/following/liked/replies collections — a client resolves a liker's full actor via the
-    /// actor endpoint). Unlike the paged collections, this is a <em>full, non-paged</em>
-    /// <c>OrderedCollection</c>: a like/boost set is small and bounded (unlike an outbox), so the whole
-    /// set is served at once and a client can read the exact count from <c>totalItems</c>.
+    /// Serves the <see cref="KristofferStrube.ActivityStreams.Like"/> activities issued against a content
+    /// object as the per-object <c>likes</c> collection for <c>GET /ap/v1/{**path}/likes</c> (the
+    /// per-object like counter — decision 056 (d)). The items are the actual <c>Like</c> activities (each
+    /// with its minted <c>id</c>, its <c>actor</c> — the liker — and its <c>object</c> — the liked object)
+    /// — the spec-compliant, federation-friendly shape — so a client reads a like's actor off
+    /// <c>item.actor</c> and can undo it by referencing <c>item.id</c>, exactly as ActivityPub's
+    /// <c>Liked</c> relationship prescribes. Unlike the paged collections, this is a <em>full, non-paged</em>
+    /// <c>OrderedCollection</c>: a like set is small and bounded (unlike an outbox), so the whole set is
+    /// served at once and a client can read the exact count from <c>totalItems</c>.
     /// </summary>
     /// <remarks>
+    /// <strong>Net-state squashing.</strong> The set of <c>Like</c> activities is derived from the object's
+    /// likers reverse index (<see cref="ILikeStore.GetLikersAsync"/>) — the <em>net</em> like state — not a
+    /// raw activity log. A <c>Like</c> followed by an <c>Undo</c> (an unlike) removes the edge, so the
+    /// undone <c>Like</c> is not served; a <c>Like</c> → <c>Undo</c> → <c>Like</c> re-adds it, so the
+    /// <c>Like</c> is served exactly once. The collection therefore reflects only the likes that currently
+    /// stand (one per liker), which is what the like count and the <c>isLiked</c> extension read.
+    /// <para>
     /// <c>likes</c> is an <em>extension collection</em>, not a core ActivityStreams <c>Object</c>
-    /// property (the only core object collection is <c>replies</c> — likes/shares are only core-AS
-    /// <c>Like</c>/<c>Announce</c> activities). It is exposed under the <em>bare, non-namespaced</em>
-    /// term <c>likes</c> — the same convention the wider ActivityPub ecosystem uses for object-side
-    /// interaction collections — so an ecosystem client that knows the term can read the count off the
-    /// object's <c>likes</c> collection uniformly for local and external objects. Per the ActivityStreams
-    /// extensibility rule a strict consumer that does not know the term MUST ignore it (not error), so the
-    /// bare term is safe. An object this instance does not store 404s (mirroring the object document).
-    /// The wire is verbatim — the object document itself is not rewritten; the count is derived from the
-    /// reverse index at read time (decision 057).
+    /// property (the only core object collection is <c>replies</c>). It is exposed under the
+    /// <em>bare, non-namespaced</em> term <c>likes</c> — the ecosystem convention for an object-side
+    /// interaction collection — so an ecosystem client that knows the term can read it uniformly for local
+    /// and external objects. Per the ActivityStreams extensibility rule a strict consumer that does not know
+    /// the term MUST ignore it (not error), so the bare term is safe. An object this instance does not store
+    /// 404s (mirroring the object document). A liker whose <c>Like</c> activity was never durably stored
+    /// (e.g. recorded only as an edge by an older build) degrades to a <see cref="Link"/> to the liker
+    /// rather than being dropped, so the count stays exact.
+    /// </para>
     /// </remarks>
     private static async Task<IResult> ObjectLikesAsync(
         HttpContext context,
@@ -4303,16 +4419,72 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The likers reverse index is the NET like state: each liker appears at most once, and an
+        // undone like (an Undo of the Like) has already removed the edge, so it is absent here. A
+        // Like → Undo → Like re-adds the edge, so the like stands exactly once. Deriving the collection
+        // from this index (rather than scanning the raw activity log) is what makes the collection — and
+        // the count and the isLiked extension it backs — squash Like/Undo correctly.
         var likers = await persistence.Likes.GetLikersAsync(parentIri, ct).ConfigureAwait(false);
-        return BuildInteractionCollection(context, parentIri.LikesOf(), ActorIrisToLinks(likers));
+        if (likers.Count == 0)
+        {
+            // No current likers — serve an empty collection (skip the activity-store sweep entirely).
+            return BuildInteractionCollection(context, parentIri.LikesOf(), []);
+        }
+
+        // Resolve each liker's full Like activity (id + actor + object) from the activity store so the
+        // collection serves spec-compliant Like documents, not bare actor links. The activity store is the
+        // single source of truth for minted activities (the outbox-publish write path persisted the Like
+        // via PutActivityAsync, the same record the Undo path looks up). A liker whose Like was never
+        // durably stored degrades to a Link to the liker (the count stays exact; the item simply lacks the
+        // minted id / object reference).
+        var items = new List<IObjectOrLink>(likers.Count);
+        foreach (var liker in likers)
+        {
+            items.Add(await ResolveLikeActivityAsync(persistence, liker, parentIri, ct).ConfigureAwait(false));
+        }
+
+        return BuildInteractionCollection(context, parentIri.LikesOf(), items);
+    }
+
+    /// <summary>
+    /// Resolves the full <see cref="KristofferStrube.ActivityStreams.Like"/> activity a <paramref name="liker"/>
+    /// issued against <paramref name="likedObjectIri"/> (for serving in the object's <c>likes</c>
+    /// collection): a <c>Like</c> stored in the activity store with this liker as its <c>actor</c> and this
+    /// object as its <c>object</c>. Returns a <see cref="Link"/> to the liker when no such stored
+    /// <c>Like</c> exists (a like recorded only as an edge), so the collection never drops a current liker.
+    /// </summary>
+    private static async Task<IObjectOrLink> ResolveLikeActivityAsync(
+        IPersistenceProvider persistence,
+        Iri liker,
+        Iri likedObjectIri,
+        CancellationToken ct)
+    {
+        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        foreach (var activity in all)
+        {
+            if (activity is not KristofferStrube.ActivityStreams.Like like
+                || like.Actor is not { } actors
+                || like.Object is not { } objects)
+            {
+                continue;
+            }
+
+            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri && actorIri == liker
+                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri && objectIri == likedObjectIri)
+            {
+                return like;
+            }
+        }
+
+        return new Link { Href = liker.Uri };
     }
 
     /// <summary>
     /// Serves the actors that announced (boosted) a content object (the announce reverse index) as the
     /// per-object <c>shares</c> collection for <c>GET /ap/v1/{**path}/shares</c> (decision 056 (d), the
-    /// per-object boost counter). Same shape and full/non-paged semantics as the <c>likes</c> surface;
-    /// the items are the IRIs of the actors that announced the object, read from
-    /// <see cref="IAnnounceStore.GetAnnouncersAsync"/>. An object this instance does not store 404s.
+    /// per-object boost counter). Same shape and full/non-paged semantics as the <c>likes</c> surface —
+    /// each item is the full <c>Announce</c> activity (id + actor + object), not a bare actor link. An
+    /// object this instance does not store 404s.
     /// </summary>
     /// <remarks>
     /// <c>shares</c> is an extension collection exposed under the <em>bare, non-namespaced</em> term
@@ -4332,8 +4504,65 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The announcers reverse index is the NET boost state: each announcer appears at most once, and an
+        // undone boost (an Undo of the Announce) has already removed the edge, so it is absent here. An
+        // Announce → Undo → Announce re-adds the edge, so the boost stands exactly once. Deriving the
+        // collection from this index (rather than scanning the raw activity log) is what makes the
+        // collection — and the count and the isShared extension it backs — squash Announce/Undo correctly.
         var announcers = await persistence.Announces.GetAnnouncersAsync(parentIri, ct).ConfigureAwait(false);
-        return BuildInteractionCollection(context, parentIri.SharesOf(), ActorIrisToLinks(announcers));
+        if (announcers.Count == 0)
+        {
+            // No current announcers — serve an empty collection (skip the activity-store sweep entirely).
+            return BuildInteractionCollection(context, parentIri.SharesOf(), []);
+        }
+
+        // Resolve each announcer's full Announce activity (id + actor + object) from the activity store so
+        // the collection serves spec-compliant Announce documents, not bare actor links. The activity store
+        // is the single source of truth for minted activities (the outbox-publish write path persisted the
+        // Announce via PutActivityAsync, the same record the Undo path looks up). An announcer whose
+        // Announce was never durably stored degrades to a Link to the announcer (the count stays exact; the
+        // item simply lacks the minted id / object reference).
+        var items = new List<IObjectOrLink>(announcers.Count);
+        foreach (var announcer in announcers)
+        {
+            items.Add(await ResolveAnnounceActivityAsync(persistence, announcer, parentIri, ct).ConfigureAwait(false));
+        }
+
+        return BuildInteractionCollection(context, parentIri.SharesOf(), items);
+    }
+
+    /// <summary>
+    /// Resolves the full <see cref="KristofferStrube.ActivityStreams.Announce"/> activity a
+    /// <paramref name="announcer"/> issued against <paramref name="announcedObjectIri"/> (for serving in
+    /// the object's <c>shares</c> collection): an <c>Announce</c> stored in the activity store with this
+    /// announcer as its <c>actor</c> and this object as its <c>object</c>. Returns a <see cref="Link"/> to
+    /// the announcer when no such stored <c>Announce</c> exists (a boost recorded only as an edge), so the
+    /// collection never drops a current announcer.
+    /// </summary>
+    private static async Task<IObjectOrLink> ResolveAnnounceActivityAsync(
+        IPersistenceProvider persistence,
+        Iri announcer,
+        Iri announcedObjectIri,
+        CancellationToken ct)
+    {
+        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        foreach (var activity in all)
+        {
+            if (activity is not KristofferStrube.ActivityStreams.Announce announce
+                || announce.Actor is not { } actors
+                || announce.Object is not { } objects)
+            {
+                continue;
+            }
+
+            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri && actorIri == announcer
+                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri && objectIri == announcedObjectIri)
+            {
+                return announce;
+            }
+        }
+
+        return new Link { Href = announcer.Uri };
     }
 
     /// <summary>

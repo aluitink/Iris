@@ -164,10 +164,10 @@ public sealed class CorsIntegrationTests : IDisposable
                 }
                 webApp.UseAntiforgery();
                 webApp.UseSignatureValidation();
+                webApp.UseStaticFiles();
                 webApp.UseEndpoints(endpoints =>
                 {
                     endpoints.MapActivityPubEndpoints();
-                    endpoints.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
                 });
             });
 

@@ -7,8 +7,8 @@ namespace Iris.Web.Accounts;
 /// <summary>
 /// Builds the cookie-auth <see cref="ClaimsIdentity"/> for a signed-in account. The claims schema is
 /// fixed (the auth plan §5): the account id as <c>sub</c>, the username, the linked actor IRI (custom
-/// claim <see cref="ActorClaims.ActorIri"/>), and the role. <see cref="IActorSessionAccessor"/> reads
-/// the actor-IRI claim to bind the user's <see cref="Iris.Client.IActivityPubClient"/>.
+/// claim <see cref="ActorClaims.ActorIri"/>), and the role. The WASM client reads the actor-IRI claim
+/// to bind the user's <see cref="Iris.Client.IActivityPubClient"/>.
 /// </summary>
 public static class ClaimsFactory
 {

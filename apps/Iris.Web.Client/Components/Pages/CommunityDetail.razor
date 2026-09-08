@@ -1,0 +1,681 @@
+@page "/community"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+<PageTitle>@PageHeading · Iris</PageTitle>
+
+<h2>@PageHeading</h2>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to view communities.</p></div>
+}
+else if (string.IsNullOrEmpty(IriParam))
+{
+    <div class="card"><p class="muted">No community specified. Use the directory to find communities.</p></div>
+}
+else if (LoadError is not null)
+{
+    <div class="card"><div class="error">@LoadError</div></div>
+}
+else if (CommunityDoc is null)
+{
+    <div class="card community-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading community…</span>
+    </div>
+}
+else
+{
+    <div class="community-detail-header">
+        <ActorProfile Actor="CommunityDoc" ActorId="@(CommunityDoc.Id)" />
+        <div class="community-detail-actions">
+            @if (IsCreator)
+            {
+                <p class="muted">This is your community.</p>
+                <button class="btn" @onclick="StartEditCommunity">Edit community</button>
+            }
+            else if (IsSelf)
+            {
+                <p class="muted">This is your community.</p>
+            }
+            else
+            {
+                <FollowButton TargetActor="CommunityDoc" />
+                <JoinButton CommunityActor="CommunityDoc" />
+            }
+            @if (MemberCount is { } mc)
+            {
+                <span class="community-member-count">@mc member@(mc == 1 ? string.Empty : "s")</span>
+            }
+        </div>
+    </div>
+
+    @if (IsEditingCommunity)
+    {
+        <div class="card edit-community-form">
+            <h3>Edit community</h3>
+            @if (CommunitySaveError is not null)
+            {
+                <div class="error">@CommunitySaveError</div>
+            }
+            <form @onsubmit="SubmitCommunityEditAsync">
+                <div class="form-group">
+                    <label for="edit-community-name">Name</label>
+                    <input id="edit-community-name" type="text" @bind="EditName" maxlength="100"
+                           placeholder="Community name" />
+                </div>
+                <div class="form-group">
+                    <label for="edit-community-summary">Description</label>
+                    <textarea id="edit-community-summary" @bind="EditSummary" rows="3" maxlength="500"
+                              placeholder="What is this community about?"></textarea>
+                </div>
+                <div class="form-group form-group--checkbox">
+                    <label for="edit-community-approve-members">
+                        <input id="edit-community-approve-members" type="checkbox" @bind="EditApproveMembers" />
+                        Require approval for join requests
+                    </label>
+                    <p class="muted">When enabled, actors must be explicitly approved before they can join.</p>
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@IsSavingCommunity">
+                        @if (IsSavingCommunity) { <span>Saving…</span> } else { <span>Save</span> }
+                    </button>
+                    <button type="button" class="btn" @onclick="CancelEditCommunity" disabled="@IsSavingCommunity">Cancel</button>
+                </div>
+            </form>
+        </div>
+    }
+
+    <div class="community-post-action">
+        <a class="button" href="@($"/compose?community={Uri.EscapeDataString(CommunityIri?.Value ?? string.Empty)}")">
+            ＋ Post to this community
+        </a>
+    </div>
+
+    <div class="tab-bar">
+        <a href="#feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
+        <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
+        @if (IsCreator)
+        {
+            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
+        }
+    </div>
+
+    @if (ActiveTab == "feed")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="FeedIri"
+            Title="Community Feed"
+            Description="Posts from this community's members."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No posts in this community yet." />
+    }
+    else if (ActiveTab == "members")
+    {
+        <PagedCollection
+            Client="Client"
+            CollectionIri="MembersIri"
+            Title="Members"
+            Description="Actors who are members of this community."
+            PageSize="5"
+            ShowRefreshButton="true"
+            EmptyMessage="No members yet."
+            ItemTemplate="@MemberTemplate" />
+    }
+    else if (ActiveTab == "requests" && IsCreator)
+    {
+        <div class="card">
+            @if (JoinRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (JoinRequestError is not null)
+            {
+                <div class="error">@JoinRequestError</div>
+            }
+            else if (JoinRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            else
+            {
+                @if (JoinRequestActors is { } actors)
+                {
+                    @foreach (var actorIri in actors)
+                    {
+                        <div class="member-row">
+                            <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri)}")" class="object-actor-handle">@DisplayHandle(actorIri)</a>
+                            <button class="btn btn-small btn-primary" @onclick="() => AcceptJoinRequestAsync(actorIri)" disabled="@IsDecidingJoinRequest">
+                                @(IsDecidingJoinRequest && DecidingActorIri == actorIri ? "Accepting…" : "Accept")
+                            </button>
+                            <button class="btn btn-small btn-danger" @onclick="() => RejectJoinRequestAsync(actorIri)" disabled="@IsDecidingJoinRequest">
+                                @(IsDecidingJoinRequest && DecidingActorIri == actorIri ? "Rejecting…" : "Reject")
+                            </button>
+                        </div>
+                    }
+                }
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "iri")]
+    public string? IriParam { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private IObject? CommunityDoc { get; set; }
+    private string? LoadError { get; set; }
+    private string ActiveTab { get; set; } = "feed";
+    private int? MemberCount { get; set; }
+
+    private bool IsEditingCommunity { get; set; }
+    private bool IsSavingCommunity { get; set; }
+    private string? CommunitySaveError { get; set; }
+    private string EditName { get; set; } = string.Empty;
+    private string EditSummary { get; set; } = string.Empty;
+    private bool EditApproveMembers { get; set; }
+    private bool OriginalApproveMembers { get; set; }
+
+    private bool IsSelf
+        => Session.ActorId is { } me && CommunityDoc?.Id is { } id && me.Value == id;
+
+    private bool IsCreator
+    {
+        get
+        {
+            if (Session.ActorId is not { } me || CommunityDoc is not Actor { AttributedTo: { } attr })
+            {
+                return false;
+            }
+
+            return attr.Any(a =>
+                (a is ILink { Href: { } href } && href.ToString() == me.Value) ||
+                (a is IObject { Id: { Length: > 0 } id } && id == me.Value));
+        }
+    }
+
+    private string PageHeading
+    {
+        get
+        {
+            if (CommunityDoc is Group group)
+            {
+                var name = group.Name?.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    return name;
+                }
+            }
+
+            if (CommunityDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return px;
+            }
+
+            return "Community";
+        }
+    }
+
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(IriParam) || !Iri.TryParse(IriParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    private Iri? FeedIri => CommunityIri?.FeedOf();
+    private Iri? MembersIri => CommunityIri is { } iri ? AppendSegment(iri, "members") : null;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (CommunityIri is not { } iri || LoadError is not null)
+        {
+            return;
+        }
+
+        if (CommunityDoc is not null && CommunityDoc.Id == iri.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is not null)
+            {
+                CommunityDoc = obj;
+                _ = LoadMemberCountAsync(iri);
+            }
+            else
+            {
+                LoadError = "Community not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private async Task LoadMemberCountAsync(Iri communityIri)
+    {
+        var client = Client;
+        if (client is null)
+        {
+            return;
+        }
+
+        var membersIri = AppendSegment(communityIri, "members");
+        try
+        {
+            MemberCount = await GetFirstPageTotalAsync(client, membersIri);
+            StateHasChanged();
+        }
+        catch
+        {
+            // Best-effort: a failure to fetch the count should not break the page.
+        }
+    }
+
+    private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri collectionIri, CancellationToken ct = default)
+    {
+        await foreach (var page in client.GetCollectionAsync(collectionIri, ct: ct))
+        {
+            return page.TotalItems;
+        }
+
+        return null;
+    }
+
+    private static Iri AppendSegment(Iri iri, string segment)
+    {
+        var baseUri = iri.Uri;
+        var builder = new UriBuilder(baseUri);
+        var path = builder.Path;
+        if (path.Length == 0 || !path.EndsWith('/'))
+        {
+            path += "/";
+        }
+
+        builder.Path = path + segment;
+        return new Iri(builder.Uri);
+    }
+
+    private static string MemberHref(IObjectOrLink item)
+    {
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            return id;
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            return href.ToString();
+        }
+
+        return string.Empty;
+    }
+
+    private static string MemberName(IObjectOrLink item)
+    {
+        if (item is Actor { PreferredUsername: { Length: > 0 } px })
+        {
+            return px;
+        }
+
+        if (item is IObject { Name: { } names } && names.Any())
+        {
+            return names.FirstOrDefault() ?? "Unknown";
+        }
+
+        if (item is IObject { Id: { Length: > 0 } id })
+        {
+            try
+            {
+                var uri = new Uri(id);
+                var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                return segments.Length > 0 ? segments[^1] : "Unknown";
+            }
+            catch
+            {
+                return "Unknown";
+            }
+        }
+
+        if (item is ILink { Href: { } href })
+        {
+            var last = href.Segments.LastOrDefault()?.TrimEnd('/');
+            return string.IsNullOrEmpty(last) ? "Unknown" : last!;
+        }
+
+        return "Unknown";
+    }
+
+    private void StartEditCommunity()
+    {
+        if (CommunityDoc is Group group)
+        {
+            EditName = group.Name?.FirstOrDefault() ?? string.Empty;
+            EditSummary = group.Summary?.FirstOrDefault() ?? string.Empty;
+            EditApproveMembers = group.GetManuallyApprovesMembers() ?? false;
+            OriginalApproveMembers = EditApproveMembers;
+        }
+
+        IsEditingCommunity = true;
+        CommunitySaveError = null;
+    }
+
+    private void CancelEditCommunity()
+    {
+        IsEditingCommunity = false;
+        CommunitySaveError = null;
+    }
+
+    private async Task SubmitCommunityEditAsync()
+    {
+        if (Client is not { } client || CommunityDoc is not Group group || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsSavingCommunity = true;
+        CommunitySaveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var updated = new Group
+            {
+                Id = communityIri.Value,
+                PreferredUsername = group.PreferredUsername,
+                Name = string.IsNullOrWhiteSpace(EditName) ? null : [EditName],
+                Summary = string.IsNullOrWhiteSpace(EditSummary) ? null : [EditSummary],
+            };
+
+            var result = await client.UpdateActorAsync(communityIri, updated);
+            if (!result.IsSuccess)
+            {
+                CommunitySaveError = $"Update failed (HTTP {result.StatusCode}).";
+                return;
+            }
+
+            if (EditApproveMembers != OriginalApproveMembers)
+            {
+                var flagResult = await client.SetManuallyApprovesMembersAsync(communityIri, EditApproveMembers);
+                if (!flagResult.IsSuccess)
+                {
+                    CommunitySaveError = $"Failed to update approval setting (HTTP {flagResult.StatusCode}).";
+                    return;
+                }
+            }
+
+            IsEditingCommunity = false;
+            Ui.InvalidateActor(communityIri);
+            CommunityDoc = null;
+            await LoadCommunityAsync(communityIri);
+        }
+        catch (Exception ex)
+        {
+            CommunitySaveError = ex.Message;
+        }
+        finally
+        {
+            IsSavingCommunity = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCommunityAsync(Iri iri)
+    {
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is not null)
+            {
+                CommunityDoc = obj;
+                _ = LoadMemberCountAsync(iri);
+            }
+            else
+            {
+                LoadError = "Community not found.";
+            }
+        }
+        catch (Exception ex)
+        {
+            LoadError = ex.Message;
+        }
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+        if (tab == "requests" && IsCreator && JoinRequestActors is null)
+        {
+            _ = LoadJoinRequestsAsync();
+        }
+    }
+
+    private RenderFragment<IObjectOrLink> MemberTemplate
+    {
+        get
+        {
+            return member => @<div class="member-row">
+                <a href="@($"/actor?iri={Uri.EscapeDataString(MemberHref(member))}")" class="object-actor-handle">@MemberName(member)</a>
+                @if (IsCreator && MemberHref(member) != Session.ActorId?.Value)
+                {
+                    <button class="btn btn-small btn-danger" @onclick="() => RemoveMemberAsync(member)" disabled="@IsRemovingMember">
+                        @(IsRemovingMember ? "Removing…" : "Remove")
+                    </button>
+                }
+                @if (MemberRemoveError is not null)
+                {
+                    <span class="error">@MemberRemoveError</span>
+                }
+            </div>;
+        }
+    }
+
+    private bool IsRemovingMember { get; set; }
+    private string? MemberRemoveError { get; set; }
+
+    private List<string>? JoinRequestActors { get; set; }
+    private int? JoinRequestCount { get; set; }
+    private bool JoinRequestsLoading { get; set; }
+    private string? JoinRequestError { get; set; }
+    private bool IsDecidingJoinRequest { get; set; }
+    private string? DecidingActorIri { get; set; }
+
+    private async Task LoadJoinRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        JoinRequestsLoading = true;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityJoinRequestsAsync(communityIri);
+            if (result.IsSuccess)
+            {
+                var actors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+                JoinRequestActors = actors;
+                JoinRequestCount = actors.Count;
+            }
+            else
+            {
+                JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            JoinRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+                Ui.InvalidateMembership(communityIri);
+                _ = LoadMemberCountAsync(communityIri);
+            }
+            else
+            {
+                JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            JoinRequestError = ex.Message;
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private static string DisplayHandle(string actorIri)
+    {
+        try
+        {
+            var uri = new Uri(actorIri);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+
+    private async Task RemoveMemberAsync(IObjectOrLink member)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        var memberIriStr = MemberHref(member);
+        if (string.IsNullOrEmpty(memberIriStr))
+        {
+            return;
+        }
+
+        var memberIri = new Iri(memberIriStr);
+        IsRemovingMember = true;
+        MemberRemoveError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RemoveCommunityMemberAsync(communityIri, memberIri);
+            if (result.IsSuccess)
+            {
+                Ui.InvalidateMembership(communityIri);
+                _ = LoadMemberCountAsync(communityIri);
+            }
+            else
+            {
+                MemberRemoveError = $"Removal failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            MemberRemoveError = ex.Message;
+        }
+        finally
+        {
+            IsRemovingMember = false;
+            StateHasChanged();
+        }
+    }
+}

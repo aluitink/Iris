@@ -16,7 +16,6 @@ using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Cors;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -139,6 +138,7 @@ public static class WebAppFactory
     public static void ConfigureServices(WebApplicationBuilder builder, string? advertisedBase = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        builder.Services.AddAntiforgery();
         var baseString = string.IsNullOrWhiteSpace(advertisedBase)
             ? $"http://localhost:{DefaultPort}"
             : advertisedBase.TrimEnd('/');
@@ -150,11 +150,7 @@ public static class WebAppFactory
         var baseNoSlash = baseUri.Value.TrimEnd('/');
         var actorIri = new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}");
 
-        // 1. The Blazor Web App (Interactive Server render mode is the MVP's whole-app render mode,
-        //    per production-app-web-host.md §2).
-        builder.Services.AddRazorComponents().AddInteractiveServerComponents();
-
-        // 2. The ActivityPub server (unchanged library call). The namespace is derived from the
+        // 1. The ActivityPub server (unchanged library call). The namespace is derived from the
         //    advertised base URI ({base}/ns#) — the production default when NamespaceIri is unset
         //    (Phase 31.8) — and hosted as a resolvable JSON-LD context at {base}/ns.
         builder.Services.AddActivityPubServer(options =>
@@ -249,9 +245,6 @@ public static class WebAppFactory
         builder.Services.TryAddSingleton<IUserAccountStore, InMemoryUserAccountStore>();
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
-        builder.Services.AddScoped<IActorSessionAccessor, ActorSessionAccessor>();
-        builder.Services.AddScoped<Iris.Web.Ui.UiContext>();
-        builder.Services.AddScoped<NotificationService>();
 
         // 8. Inbound request-body size cap (slice 33.4): bound the memory an unauthenticated inbound
         // federation POST can force the app to buffer. Kestrel's default imposes no request-body limit,
@@ -390,21 +383,24 @@ public static class WebAppFactory
         // Cookie authentication + authorization (the local-account auth scheme).
         app.UseAuthentication();
         app.UseAuthorization();
-        // The Blazor Web App (the product UI; serves / and the static assets).
-        app.MapRazorComponents<Components.App>().AddInteractiveServerRenderMode();
-        // The Blazor framework files (_framework/blazor.web.js) + the app's static assets (wwwroot,
-        // e.g. css/app.css) — served via the static web assets endpoint (required for the interactive
-        // circuit to boot; without it the page renders but the JS cannot load).
-        app.UseStaticFiles();
-        app.MapStaticAssets();
+        // Static files: serves the WASM client's _framework/ + wwwroot/ (copied into this host's
+        // wwwroot at build time by the BuildAndCopyClient target).
+        app.UseStaticFiles(new StaticFileOptions { ServeUnknownFileTypes = true });
         // The local-account auth endpoints (see <see cref="MapAuthEndpoints"/>). The interactive Blazor
         // circuit cannot set cookies (read-only response headers), so sign-in/out happen here in plain
         // HTTP requests.
         MapAuthEndpoints(app);
         MapNotificationEndpoints(app);
+        MapSessionEndpoints(app);
+        MapAdminEndpoints(app);
 
         // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
         app.MapActivityPubEndpoints();
+
+        // SPA fallback: any non-API, non-static path serves the WASM client's index.html so the
+        // client-side router can handle it (e.g. /home, /compose, /profile). Must be mapped LAST
+        // so it doesn't shadow the API endpoints above.
+        app.MapFallbackToFile("index.html");
     }
 
     /// <summary>
@@ -464,6 +460,17 @@ public static class WebAppFactory
             await ctx.SignOutAsync(
                 Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme);
             return Results.Redirect("/login");
+        });
+
+        // The WASM client's /register + /login forms are traditional HTML POSTs (they must run in a
+        // real HTTP request so SignInAsync can set the auth cookie). They need a valid antiforgery
+        // token to pass UseAntiforgery. This endpoint issues a fresh token pair; the client fetches
+        // it on page load and embeds RequestToken as a hidden form field (HandlerToken is the cookie
+        // value, set here so the POST's cookie + field match).
+        endpoints.MapGet("/local/v1/antiforgery", (Microsoft.AspNetCore.Antiforgery.IAntiforgery af, HttpContext ctx) =>
+        {
+            var token = af.GetAndStoreTokens(ctx);
+            return Results.Json(new { token.RequestToken });
         });
     }
 
@@ -526,6 +533,53 @@ public static class WebAppFactory
             var unread = CountUnread(inbox, account.NotificationsReadAt);
             return Results.Json(new { unread });
         }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Maps the session endpoint: <c>GET /local/v1/session</c> returns the signed-in user's claims
+    /// as JSON (id, username, actor IRI, role). Used by the WASM client's
+    /// <c>CookieAuthenticationStateProvider</c> to resolve the auth state at startup.
+    /// </summary>
+    public static void MapSessionEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/local/v1/session", (HttpContext ctx) =>
+        {
+            if (!ctx.User.Identity?.IsAuthenticated == true)
+            {
+                return Results.Unauthorized();
+            }
+
+            var id = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? "";
+            var username = ctx.User.FindFirstValue(ClaimTypes.Name) ?? "";
+            var actorIri = ctx.User.FindFirstValue(ActorClaims.ActorIri) ?? "";
+            var role = ctx.User.FindFirstValue(ClaimTypes.Role) ?? "";
+            return Results.Json(new { Id = id, Username = username, ActorIri = actorIri, Role = role });
+        }).RequireAuthorization();
+    }
+
+    /// <summary>
+    /// Maps the admin user-management endpoints (WASM client replacement for the in-process
+    /// <c>IUserAccountStore</c> the old <c>AdminUsers.razor</c> used):
+    /// <c>GET /local/v1/admin/users</c> — list all accounts.
+    /// Requires the <c>Admin</c> role.
+    /// </summary>
+    public static void MapAdminEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/local/v1/admin/users", async (
+            IUserAccountStore accounts,
+            CancellationToken ct) =>
+        {
+            var users = await accounts.GetAllAsync(ct);
+            return Results.Json(users.Select(u => new
+            {
+                u.Id,
+                u.Username,
+                DisplayName = u.Username,
+                ActorIri = u.ActorId.Value,
+                u.Role,
+                u.CreatedAt,
+            }));
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
     }
 
     /// <summary>

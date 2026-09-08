@@ -207,12 +207,6 @@
           "Iris.Core": "[1.0.0, )"
         }
       },
-      "iris.client.extensions": {
-        "type": "Project",
-        "dependencies": {
-          "Iris.Client": "[1.0.0, )"
-        }
-      },
       "iris.core": {
         "type": "Project",
         "dependencies": {
@@ -258,7 +252,6 @@
       "iris.web": {
         "type": "Project",
         "dependencies": {
-          "Iris.Client.Extensions": "[1.0.0, )",
           "Iris.Server": "[1.0.0, )",
           "Iris.Server.Data": "[1.0.0, )",
           "Iris.Server.InMemory": "[1.0.0, )"

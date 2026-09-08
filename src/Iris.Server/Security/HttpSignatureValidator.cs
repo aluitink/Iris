@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Iris.Core;
+using Iris.Server.Stores;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,7 +36,8 @@ public sealed class HttpSignatureValidator(
     ISignatureVerifier verifier,
     RemoteKeyCache? remoteKeyCache = null,
     RemoteActorCache? remoteActorCache = null,
-    ILogger<HttpSignatureValidator>? logger = null) : ISignatureValidator
+    ILogger<HttpSignatureValidator>? logger = null,
+    IPersistenceProvider? persistence = null) : ISignatureValidator
 {
     private readonly IInboundKeyResolver _keyResolver = keyResolver
         ?? throw new ArgumentNullException(nameof(keyResolver));
@@ -44,6 +46,7 @@ public sealed class HttpSignatureValidator(
     private readonly RemoteKeyCache? _keyCache = remoteKeyCache;
     private readonly RemoteActorCache? _actorCache = remoteActorCache;
     private readonly ILogger<HttpSignatureValidator> _logger = logger ?? NullLogger<HttpSignatureValidator>.Instance;
+    private readonly IPersistenceProvider? _persistence = persistence;
 
     /// <inheritdoc/>
     public async ValueTask<SignatureValidationResult?> ValidateAsync(HttpContext context, CancellationToken ct = default)
@@ -89,7 +92,26 @@ public sealed class HttpSignatureValidator(
             return new SignatureValidationResult(false, default, ExtractActorIri(body));
         }
 
-        // Resolve the remote public key. A null result (unknown actor / missing publicKey / fetch
+        // A body-less request (a signed GET read) is only validated when the signer is a LOCAL actor.
+        // Resolving a remote signer's key requires fetching its actor document (an outbound wire hop);
+        // doing so for a GET would recurse — the fetch itself is a request that, on a federating peer,
+        // triggers its own key resolution — and in a two-instance loop cascades into a stack overflow.
+        // The only GETs that need a per-requester identity are the local UI's object reads (a local
+        // user signing as themselves), and a local signer's key is resolvable without any wire hop. A
+        // remote signer's GET (cross-instance read / the key-resolution bootstrap itself) is left
+        // unvalidated (the caller treats it as anonymous — object reads are public), preserving the
+        // pre-existing POST-only behavior for cross-instance reads.
+        if (body.Length == 0 && _persistence is not null)
+        {
+            var keyOwner = OwnerActorIriFromKeyId(keyId);
+            if (!await _persistence.Actors.TryGetActorAsync(keyOwner, out _, ct).ConfigureAwait(false))
+            {
+                // Remote signer on a GET: no local identity to bind; skip validation (anonymous read).
+                return null;
+            }
+        }
+
+        // Resolve the signing key. A null result (unknown actor / missing publicKey / fetch
         // failure) is an invalid signature, not an error.
         ISigningKey? key = null;
         try
@@ -157,7 +179,15 @@ public sealed class HttpSignatureValidator(
                 context.Request.Path);
         }
 
-        return new SignatureValidationResult(isValid, keyId, ExtractActorIri(body));
+        // Bind the signature to the acting actor. The body's `actor` (a POST) is the acting actor;
+        // for a request with no body (a signed GET read) the signer is the cryptographically-verified
+        // key owner — the keyId with its #fragment removed (the ActivityPub keyId = actorIri#key-N
+        // convention). Prefer the body actor when present, else fall back to the key owner so a signed
+        // GET still carries an authenticated identity (the object-document handler uses it for the
+        // per-requester iris:isLiked extension).
+        var actor = ExtractActorIri(body) ?? OwnerActorIriFromKeyId(keyId);
+
+        return new SignatureValidationResult(isValid, keyId, actor);
     }
 
     /// <summary>
