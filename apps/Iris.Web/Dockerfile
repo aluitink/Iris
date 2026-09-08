@@ -28,7 +28,7 @@ RUN dotnet restore apps/Iris.Web/Iris.Web.csproj && dotnet restore apps/Iris.Web
 # Copy the full source tree and publish. UseAppHost=false -> a portable apphost-less DLL (the runtime
 # stage's shared framework provides the host), matching the sample Dockerfiles.
 COPY . .
-RUN dotnet restore apps/Iris.Web.Client/Iris.Web.Client.csproj && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
+RUN dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app

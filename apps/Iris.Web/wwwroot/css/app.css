@@ -1121,27 +1121,33 @@ ul.object-list li {
 
 .tab-bar {
     display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border);
+    gap: 0.25rem;
     margin: 1rem 0;
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 3px;
 }
 
 .tab {
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.9rem;
     color: var(--muted);
     text-decoration: none;
-    border-bottom: 2px solid transparent;
+    border-radius: 6px;
     cursor: pointer;
     user-select: none;
+    font-size: 0.9rem;
+    transition: background 0.15s, color 0.15s;
 }
 
 .tab:hover {
     color: var(--text);
+    background: var(--bg);
 }
 
 .tab--active {
     color: var(--text);
-    border-bottom-color: var(--accent);
+    background: var(--bg);
+    font-weight: 500;
 }
 
 .actor-detail-header {

@@ -75,7 +75,7 @@ Iris.slnx
 
 **Phase 45 — WASM manual test & bug hunt (COMPLETE).** 14 defects found + fixed across 5 slices; 0 deferred. [changes/340](docs/changes/340-45.7-triage-closeout.md).
 
-**Phase 46 — Visual inspection & design pass (ACTIVE).** Screenshot all pages; prioritized design-decision list; implement fixes one coherent area per slice. Scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md).
+**Phase 46 — Visual inspection & design pass (COMPLETE).** 6 slices (46.1–46.6): design audit, nav + brand, card system, object detail + notifications, mobile layout, forms + tabs + footer. All 14 design findings addressed. [changes/341–346](docs/changes/341-46.1-design-audit.md).
 
 **Test policy for these phases (user-directed, binding):**
 
@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**46.6: Forms + tabs + footer** (next up). See [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md) for scope.
+**Phase 47 — Post-design stabilization & polish (next).** Define scope from remaining UX gaps and any user feedback.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,9 +106,11 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 45 — WASM manual test & bug hunt** (COMPLETE — see [docs/changes/340](docs/changes/340-45.7-triage-closeout.md)).
 
-**Phase 46 — Visual inspection & design pass** (scope: [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)):
+**Phase 46 — Visual inspection & design pass** (COMPLETE — see [changes/341–346](docs/changes/341-46.1-design-audit.md)).
 
-1. **46.6: Forms + tabs + footer** — tab style, compose tips, search description, footer links.
+**Phase 47 — Post-design stabilization & polish** (scope TBD):
+
+1. **47.1: UX gap review** — systematic pass over all pages for remaining friction points, accessibility, and edge cases.
 
 ## Inbox
 
@@ -122,11 +124,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 46.6: **Forms + tabs + footer** (Phase 46, COMPLETE) — pill/segmented tab style, simplified search description, footer links (NodeInfo/WebFinger/Status), Dockerfile WASM build fix. [changes/346](docs/changes/346-46.6-forms-tabs-footer.md)
   - 46.5: **Mobile layout** (Phase 46) — mobile spacing/layout, profile "Your posts" filter (content items only), compose formatting tips. [changes/345](docs/changes/345-46.5-mobile-layout.md)
   - 46.4: **Object detail + notifications** (Phase 46) — notification rows show short labels instead of raw IRIs; object detail heading shows @author instead of type name. [changes/344](docs/changes/344-46.4-object-detail-notifications.md)
   - 46.3: **Card system** (Phase 46) — avatar initials in cards, author bold, content lighter, button hierarchy (ghost/warning), community row structure. [changes/343](docs/changes/343-46.3-card-system.md)
   - 46.2: **Nav + brand** (Phase 46) — hamburger below 768px, brand icon + mark, hide Blazor error bar, footer NodeInfo link. [changes/342](docs/changes/342-46.2-nav-brand.md)
-  - 46.1: **Design audit** (Phase 46) — screenshot all 12 pages at 1280×800 + 375×812 (signed-in/out); 14 design findings prioritized P1/P2/P3; 5 fix slices defined (46.2–46.6). [changes/341](docs/changes/341-46.1-design-audit.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
