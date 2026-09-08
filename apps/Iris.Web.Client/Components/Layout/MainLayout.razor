@@ -1,5 +1,6 @@
 @inherits LayoutComponentBase
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
 @using Iris.Web.Client.Components
 
 <div class="page">
@@ -35,7 +36,29 @@
     </header>
 
     <main class="main-content">
-        @Body
+        <ErrorBoundary>
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent Context="error">
+                <div class="card error-boundary-card" role="alert">
+                    <h1>Something went wrong</h1>
+                    <p>
+                        An unexpected error interrupted this page. Your account and data are safe —
+                        please try again.
+                    </p>
+                    <p class="error-boundary-actions">
+                        <button type="button" class="button" @onclick="ReloadAppAsync">Try again</button>
+                        <a class="button button--secondary" href="/home">Go home</a>
+                    </p>
+                    <!--
+                        The exception (Context) is deliberately NOT rendered: showing the raw message
+                        or stack trace would leak internal details to users. The full exception is
+                        already logged to the console for diagnosis.
+                    -->
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
     </main>
 
     <footer class="main-footer">
@@ -54,7 +77,20 @@
 </div>
 
 @code {
+    [Inject]
+    private IJSRuntime Js { get; set; } = default!;
+
     private bool _menuOpen;
 
     private void ToggleMenu() => _menuOpen = !_menuOpen;
+
+    /// <summary>
+    /// Forces a full client reload (reboots the WASM host) to recover from an unhandled render
+    /// exception — the same recovery the default Blazor error UI's "Reload" button performs. A plain
+    /// in-circuit navigation would not clear the broken render, so a hard reload is used.
+    /// </summary>
+    private async Task ReloadAppAsync()
+    {
+        await Js.InvokeVoidAsync("eval", "window.location.reload()");
+    }
 }
