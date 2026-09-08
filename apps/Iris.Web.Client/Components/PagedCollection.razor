@@ -206,64 +206,85 @@
     /// </summary>
     private Iri? _loadedFor;
 
+    /// <summary>
+    /// When <c>true</c>, an initial first-page load for <see cref="_loadedFor"/> is in flight. Prevents a
+    /// second <see cref="LoadInitialAsync"/> from firing for the same collection while the first is still
+    /// running — without it, a transient <c>Client</c> re-render between the fire-and-forget dispatch and
+    /// its completion could reset the tracker and re-fetch (the "duplicate home-feed fetch").
+    /// </summary>
+    private bool _loadingInitial;
+
     protected override void OnParametersSet()
     {
         if (Client is null)
         {
-            // Client not yet available (the session's signing key is still loading). Reset the
-            // loaded-for tracker so that when the client becomes available on the next render,
-            // the initial load fires (the CollectionIri hasn't changed, but the client has).
-            _loadedFor = null;
+            // Client not yet available (the session's signing key is still loading, or a transient
+            // re-auth flicker). Do NOT reset _loadedFor here: doing so would re-fire the initial load on
+            // the next render whenever Client dips to null momentarily (even though a load is already in
+            // flight or already done), producing a duplicate fetch. The initial load is instead gated by
+            // the iri != _loadedFor check below, which fires exactly once per distinct CollectionIri
+            // regardless of how many times Client is null in between.
             return;
         }
 
-        if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
+        if (CollectionIri is { } iri && !iri.Equals(_loadedFor) && !_loadingInitial)
         {
             _loadedFor = iri;
+            _loadingInitial = true;
             _ = LoadInitialAsync();
         }
     }
 
     private async Task LoadInitialAsync()
     {
-        // Items stays null for the duration of the first fetch so the "Loading…" spinner renders
-        // (Items is null) rather than the empty "No items" state: the empty message is only correct
-        // once a page has actually been read. EnumerateOnePageAsync initializes Items on first page
-        // arrival (Items ??= []); when the fetch yields no page (an empty collection), Items stays null
-        // and would spin forever — so initialize it here to the empty state in that case.
-        Items = null;
-        HasMore = false;
-        LoadError = null;
-        _resumeFrom = null;
         try
         {
-            await EnumerateOnePageAsync();
-        }
-        catch (Exception)
-        {
-            LoadError = "Failed to load. Please try again.";
-        }
+            // Items stays null for the duration of the first fetch so the "Loading…" spinner renders
+            // (Items is null) rather than the empty "No items" state: the empty message is only correct
+            // once a page has actually been read. EnumerateOnePageAsync initializes Items on first page
+            // arrival (Items ??= []); when the fetch yields no page (an empty collection), Items stays null
+            // and would spin forever — so initialize it here to the empty state in that case.
+            Items = null;
+            HasMore = false;
+            LoadError = null;
+            _resumeFrom = null;
+            try
+            {
+                await EnumerateOnePageAsync();
+            }
+            catch (Exception)
+            {
+                LoadError = "Failed to load. Please try again.";
+            }
 
-        if (Items is null && LoadError is null)
-        {
-            Items = [];
-        }
+            if (Items is null && LoadError is null)
+            {
+                Items = [];
+            }
 
-        // This load was fired fire-and-forget from OnParametersSet (not an @onclick handler, not
-        // awaited), so Blazor never re-renders after Items is populated — the "Loading…" spinner
-        // (Items == null) stays on screen until the user clicks Refresh (an @onclick handler, which
-        // Blazor auto-re-renders). Mirror that auto-re-render here so the initial navigate renders the
-        // loaded items without a manual Refresh. StateHasChanged throws InvalidOperationException if
-        // the component was disposed between the await and this call (e.g. the user navigated away
-        // mid-fetch) — that would be an unobserved exception on this fire-and-forget task, which
-        // trips the global Blazor error UI, so it must be swallowed.
-        try
-        {
-            StateHasChanged();
+            // This load was fired fire-and-forget from OnParametersSet (not an @onclick handler, not
+            // awaited), so Blazor never re-renders after Items is populated — the "Loading…" spinner
+            // (Items == null) stays on screen until the user clicks Refresh (an @onclick handler, which
+            // Blazor auto-re-renders). Mirror that auto-re-render here so the initial navigate renders the
+            // loaded items without a manual Refresh. StateHasChanged throws InvalidOperationException if
+            // the component was disposed between the await and this call (e.g. the user navigated away
+            // mid-fetch) — that would be an unobserved exception on this fire-and-forget task, which
+            // trips the global Blazor error UI, so it must be swallowed.
+            try
+            {
+                StateHasChanged();
+            }
+            catch (InvalidOperationException)
+            {
+                // Component disposed mid-fetch; nothing to render.
+            }
         }
-        catch (InvalidOperationException)
+        finally
         {
-            // Component disposed mid-fetch; nothing to render.
+            // Clear the in-flight marker so a *new* collection (a different CollectionIri, e.g. the user
+            // navigated to a different actor/community) can still trigger its own initial load. It must
+            // also clear on error so a failed load can be retried by a subsequent render.
+            _loadingInitial = false;
         }
     }
 
