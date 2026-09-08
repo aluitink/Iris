@@ -6,11 +6,11 @@
 
 <PageTitle>Admin · Users · Iris</PageTitle>
 
-<h2>Instance users</h2>
+<h1>Instance users</h1>
 
 @if (LoadError is not null)
 {
-    <div class="error">@LoadError</div>
+    <div class="error" role="alert">@LoadError</div>
 }
 else if (Users is null)
 {
@@ -27,19 +27,19 @@ else
         <p class="muted">@Users.Count local account(s)</p>
         @if (ResetError is not null)
         {
-            <div class="error">@ResetError</div>
+            <div class="error" role="alert">@ResetError</div>
         }
         @if (ResetSuccess is not null)
         {
-            <div class="success">@ResetSuccess</div>
+            <div class="success" role="status">@ResetSuccess</div>
         }
         @if (DeleteError is not null)
         {
-            <div class="error">@DeleteError</div>
+            <div class="error" role="alert">@DeleteError</div>
         }
         @if (DeleteSuccess is not null)
         {
-            <div class="success">@DeleteSuccess</div>
+            <div class="success" role="status">@DeleteSuccess</div>
         }
         <table class="admin-table">
             <thead>

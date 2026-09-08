@@ -9,7 +9,7 @@
 
 <PageTitle>@PageTitle · Iris</PageTitle>
 
-<h2>@PageTitle</h2>
+<h1>@PageTitle</h1>
 
 <p class="muted">
     Posting as <a href="/profile">@ActorHandle</a>
@@ -114,7 +114,7 @@
 
     @if (Result is not null)
     {
-        <p class="muted compose-result">
+        <p class="muted compose-result" role="status">
             @Result
             @if (PostedIri is not null)
             {
@@ -124,12 +124,12 @@
     }
     @if (Error is not null)
     {
-        <div class="error">@Error</div>
+        <div class="error" role="alert">@Error</div>
     }
 </div>
 
 <div class="compose-tips card">
-    <h3>Formatting tips</h3>
+    <h2>Formatting tips</h2>
     <ul class="compose-tips-list">
         <li>Use <strong>@@handle</strong> to mention someone (e.g. @@alice).</li>
         <li>Use <strong>#hashtag</strong> to tag a topic.</li>

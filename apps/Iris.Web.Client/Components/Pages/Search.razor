@@ -7,7 +7,7 @@
 
 <PageTitle>Search · Iris</PageTitle>
 
-<h2>Search</h2>
+<h1>Search</h1>
 
 <p class="muted">Search across the instance for people and posts.</p>
 
@@ -41,12 +41,12 @@ else
 
     @if (Error is not null)
     {
-        <div class="card"><div class="error">@Error</div></div>
+        <div class="card"><div class="error" role="alert">@Error</div></div>
     }
     else if (Results is not null)
     {
         <div class="card">
-            <h3>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "All content")</h3>
+            <h2>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "All content")</h2>
             <p class="muted">
                 @(ActorsOnly ? "Actors only." : "Actors, then matching notes.") @Results.Count result(s).
             </p>

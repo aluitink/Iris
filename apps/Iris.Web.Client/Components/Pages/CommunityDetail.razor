@@ -8,7 +8,7 @@
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
-<h2>@PageHeading</h2>
+<h1>@PageHeading</h1>
 
 @if (Client is null)
 {
@@ -20,7 +20,7 @@ else if (string.IsNullOrEmpty(IriParam))
 }
 else if (LoadError is not null)
 {
-    <div class="card"><div class="error">@LoadError</div></div>
+    <div class="card"><div class="error" role="alert">@LoadError</div></div>
 }
 else if (CommunityDoc is null)
 {
@@ -60,10 +60,10 @@ else
     @if (IsEditingCommunity)
     {
         <div class="card edit-community-form">
-            <h3>Edit community</h3>
+            <h2>Edit community</h2>
             @if (CommunitySaveError is not null)
             {
-                <div class="error">@CommunitySaveError</div>
+                <div class="error" role="alert">@CommunitySaveError</div>
             }
             <form @onsubmit="SubmitCommunityEditAsync">
                 <div class="form-group">
@@ -140,7 +140,7 @@ else
             }
             else if (JoinRequestError is not null)
             {
-                <div class="error">@JoinRequestError</div>
+                <div class="error" role="alert">@JoinRequestError</div>
             }
             else if (JoinRequestActors is { Count: 0 })
             {
@@ -493,7 +493,7 @@ else
                 }
                 @if (MemberRemoveError is not null)
                 {
-                    <span class="error">@MemberRemoveError</span>
+                    <span class="error" role="alert">@MemberRemoveError</span>
                 }
             </div>;
         }

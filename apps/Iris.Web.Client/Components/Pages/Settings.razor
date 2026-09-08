@@ -9,7 +9,7 @@
 
 <PageTitle>Settings · Iris</PageTitle>
 
-<h2>Settings</h2>
+<h1>Settings</h1>
 
 @if (Client is null)
 {
@@ -30,7 +30,7 @@ else
     @if (ActiveTab == "account")
     {
         <div class="card">
-            <h3>Account</h3>
+            <h2>Account</h2>
             @if (ActorDoc is not null)
             {
                 <div class="settings-account-info">
@@ -54,14 +54,14 @@ else
     else if (ActiveTab == "password")
     {
         <div class="card">
-            <h3>Change password</h3>
+            <h2>Change password</h2>
             @if (PasswordError is not null)
             {
-                <div class="error">@PasswordError</div>
+                <div class="error" role="alert">@PasswordError</div>
             }
             @if (PasswordSuccess)
             {
-                <div class="success">Password changed successfully.</div>
+                <div class="success" role="status">Password changed successfully.</div>
             }
             <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
                 <div>
@@ -88,7 +88,7 @@ else
     else if (ActiveTab == "notifications")
     {
         <div class="card">
-            <h3>Notifications</h3>
+            <h2>Notifications</h2>
             @if (NotifBusy)
             {
                 <div class="card-loading">
@@ -100,11 +100,11 @@ else
             }
             else if (NotifError is not null)
             {
-                <div class="error">@NotifError</div>
+                <div class="error" role="alert">@NotifError</div>
             }
             else if (NotifPrefs is not null)
             {
-                <h4>Notification types</h4>
+                <h3>Notification types</h3>
                 <p class="muted">Choose which types of activities you want to receive as notifications.</p>
                 @foreach (var (type, label) in NotifTypeOptions)
                 {
@@ -116,7 +116,7 @@ else
                     </label>
                 }
 
-                <h4 style="margin-top: 1.5rem;">Muted actors</h4>
+                <h3 style="margin-top: 1.5rem;">Muted actors</h3>
                 <p class="muted">Notifications from these actors will be hidden.</p>
                 @if (NotifPrefs.MutedActors.Count == 0)
                 {
@@ -146,7 +146,7 @@ else
 
                 @if (NotifSaved)
                 {
-                    <div class="success" style="margin-top: 0.75rem;">Preferences saved.</div>
+                    <div class="success" style="margin-top: 0.75rem;" role="status">Preferences saved.</div>
                 }
             }
         </div>
@@ -154,7 +154,7 @@ else
     else if (ActiveTab == "communities")
     {
         <div class="card">
-            <h3>Your communities</h3>
+            <h2>Your communities</h2>
             @if (CommunitiesBusy)
             {
                 <div class="card-loading">
@@ -166,7 +166,7 @@ else
             }
             else if (CommunitiesError is not null)
             {
-                <div class="error">@CommunitiesError</div>
+                <div class="error" role="alert">@CommunitiesError</div>
             }
             else if (MemberCommunities is not null)
             {
@@ -197,7 +197,7 @@ else
     else if (ActiveTab == "relays")
     {
         <div class="card">
-            <h3>Relay subscriptions</h3>
+            <h2>Relay subscriptions</h2>
             <p class="muted" style="margin-bottom: 1rem;">
                 Relays are fan-out servers that receive a copy of your public posts.
                 Subscribing to a relay makes your content available to other ActivityPub
@@ -214,7 +214,7 @@ else
             }
             else if (RelaysError is not null)
             {
-                <div class="error">@RelaysError</div>
+                <div class="error" role="alert">@RelaysError</div>
             }
             else if (Relays is not null)
             {
@@ -249,7 +249,7 @@ else
     else if (ActiveTab == "moderation")
     {
         <div class="card">
-            <h3>Moderation</h3>
+            <h2>Moderation</h2>
             @if (ModerationBusy)
             {
                 <div class="card-loading">
@@ -261,11 +261,11 @@ else
             }
             else if (ModerationError is not null)
             {
-                <div class="error">@ModerationError</div>
+                <div class="error" role="alert">@ModerationError</div>
             }
             else if (BlockedActors is not null || MutedActors is not null || FlaggedActors is not null)
             {
-                <h4>Blocked</h4>
+                <h3>Blocked</h3>
                 @if (BlockedActors!.Count == 0)
                 {
                     <p class="muted">You have not blocked anyone.</p>
@@ -286,7 +286,7 @@ else
                     </div>
                 }
 
-                <h4 style="margin-top: 1.5rem;">Muted</h4>
+                <h3 style="margin-top: 1.5rem;">Muted</h3>
                 @if (MutedActors!.Count == 0)
                 {
                     <p class="muted">You have not muted anyone.</p>
@@ -307,7 +307,7 @@ else
                     </div>
                 }
 
-                <h4 style="margin-top: 1.5rem;">Reported</h4>
+                <h3 style="margin-top: 1.5rem;">Reported</h3>
                 @if (FlaggedActors!.Count == 0)
                 {
                     <p class="muted">You have not reported anyone.</p>
@@ -333,13 +333,13 @@ else
     else if (ActiveTab == "danger")
     {
         <div class="card card--danger">
-            <h3>Account deletion</h3>
+            <h2>Account deletion</h2>
             <p>Deleting your account is <strong>permanent and irreversible</strong>. All your posts will be
             removed, your profile will disappear, and you will be unable to log in. Followers will no
             longer see your content.</p>
             @if (DeleteError is not null)
             {
-                <div class="error">@DeleteError</div>
+                <div class="error" role="alert">@DeleteError</div>
             }
             @if (_deleteConfirm)
             {

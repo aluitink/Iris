@@ -7,7 +7,7 @@
     <div class="card paged-collection">
         @if (!string.IsNullOrEmpty(Title))
         {
-            <h3>@Title</h3>
+            <h2>@Title</h2>
         }
         @if (!string.IsNullOrEmpty(Description))
         {
@@ -27,7 +27,7 @@
         }
         @if (LoadError is not null)
         {
-            <div class="error">@LoadError</div>
+            <div class="error" role="alert">@LoadError</div>
         }
         @if (Items is null)
         {

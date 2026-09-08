@@ -5,11 +5,11 @@
 
 <PageTitle>Admin · Instance · Iris</PageTitle>
 
-<h2>Instance settings</h2>
+<h1>Instance settings</h1>
 
 @if (LoadError is not null)
 {
-    <div class="error">@LoadError</div>
+    <div class="error" role="alert">@LoadError</div>
 }
 else if (Meta is null)
 {
@@ -40,11 +40,11 @@ else
 
         @if (SaveMessage is not null)
         {
-            <div class="success" style="margin-top:1rem;">@SaveMessage</div>
+            <div class="success" style="margin-top:1rem;" role="status">@SaveMessage</div>
         }
         @if (SaveError is not null)
         {
-            <div class="error" style="margin-top:1rem;">@SaveError</div>
+            <div class="error" style="margin-top:1rem;" role="alert">@SaveError</div>
         }
     </div>
 }

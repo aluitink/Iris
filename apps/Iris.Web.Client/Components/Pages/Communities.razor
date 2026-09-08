@@ -7,7 +7,7 @@
 
 <PageTitle>Communities · Iris</PageTitle>
 
-<h2>Communities</h2>
+<h1>Communities</h1>
 
 <p class="muted">
     Local communities on this instance — join one to post to its feed and connect with members.
@@ -20,7 +20,7 @@
 else
 {
     <div class="card create-community-card">
-        <h3>Create a community</h3>
+        <h2>Create a community</h2>
         <div class="form-group">
             <label for="community-name">Name</label>
             <input id="community-name" type="text" @bind="NewName" placeholder="My Community" maxlength="100" />
@@ -39,11 +39,11 @@ else
         </button>
         @if (CreateError is not null)
         {
-            <div class="error" style="margin-top: 0.5rem;">@CreateError</div>
+            <div class="error" style="margin-top: 0.5rem;" role="alert">@CreateError</div>
         }
         @if (CreateSuccess)
         {
-            <div class="success" style="margin-top: 0.5rem;">Community created!</div>
+            <div class="success" style="margin-top: 0.5rem;" role="status">Community created!</div>
         }
     </div>
 
@@ -58,7 +58,7 @@ else
     }
     else if (Error is not null)
     {
-        <div class="card"><div class="error">@Error</div></div>
+        <div class="card"><div class="error" role="alert">@Error</div></div>
     }
     else if (Items is not null)
     {

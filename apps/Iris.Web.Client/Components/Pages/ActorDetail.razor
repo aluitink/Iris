@@ -9,7 +9,7 @@
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
-<h2>@PageHeading</h2>
+<h1>@PageHeading</h1>
 
 @if (Client is null)
 {
@@ -21,7 +21,7 @@ else if (string.IsNullOrEmpty(IriParam))
 }
 else if (LoadError is not null)
 {
-    <div class="card"><div class="error">@LoadError</div></div>
+    <div class="card"><div class="error" role="alert">@LoadError</div></div>
 }
 else if (ActorDoc is null)
 {
@@ -100,7 +100,7 @@ else
             }
             else if (JoinRequestError is not null)
             {
-                <div class="error">@JoinRequestError</div>
+                <div class="error" role="alert">@JoinRequestError</div>
             }
             else if (JoinRequestActors is { Count: 0 })
             {

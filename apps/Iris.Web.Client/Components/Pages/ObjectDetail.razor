@@ -10,7 +10,7 @@
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
-<h2>@PageHeading</h2>
+<h1>@PageHeading</h1>
 
 @if (Client is null)
 {
@@ -22,7 +22,7 @@ else if (string.IsNullOrEmpty(IriParam))
 }
 else if (LoadError is not null)
 {
-    <div class="card"><div class="error">@LoadError</div></div>
+    <div class="card"><div class="error" role="alert">@LoadError</div></div>
 }
 else if (ObjectDoc is null)
 {
@@ -60,7 +60,7 @@ else if (ObjectDoc is null)
                 </div>
                 @if (EditError is not null)
                 {
-                    <div class="error">@EditError</div>
+                    <div class="error" role="alert">@EditError</div>
                 }
             </div>
         }
@@ -101,14 +101,14 @@ else if (ObjectDoc is null)
         </div>
         @if (DeleteError is not null)
         {
-            <div class="error">@DeleteError</div>
+            <div class="error" role="alert">@DeleteError</div>
         }
     </div>
 
     @if (ShowRepliesSection)
     {
         <div class="card replies-section">
-            <h3>Replies</h3>
+            <h2>Replies</h2>
             @if (RepliesLoading)
             {
                 <div class="card-loading">

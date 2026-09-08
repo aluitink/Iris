@@ -54,6 +54,21 @@ h3 {
     font-weight: 600;
 }
 
+/* Visible keyboard focus indicator on all interactive elements. The browser default
+   outline is thin and low-contrast on the dark theme, so we reinforce it with a
+   high-contrast, offset outline that is clearly visible on every focusable element. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+    outline: 3px solid var(--accent-warm);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
 .page {
     min-height: 100vh;
     display: flex;
@@ -1399,7 +1414,6 @@ ul.object-list li {
 
 .form-group input:focus,
 .form-group textarea:focus {
-    outline: none;
     border-color: var(--accent);
 }
 

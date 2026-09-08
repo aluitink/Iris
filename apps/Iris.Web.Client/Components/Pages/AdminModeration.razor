@@ -4,11 +4,11 @@
 
 <PageTitle>Admin · Moderation · Iris</PageTitle>
 
-<h2>Moderation queue</h2>
+<h1>Moderation queue</h1>
 
 @if (LoadError is not null)
 {
-    <div class="error">@LoadError</div>
+    <div class="error" role="alert">@LoadError</div>
 }
 else if (Flags is null)
 {

@@ -7,7 +7,7 @@
 
 <PageTitle>Directory · Iris</PageTitle>
 
-<h2>Directory</h2>
+<h1>Directory</h1>
 
 <p class="muted">
     People on this instance. Browse local accounts to find people to follow.
@@ -30,7 +30,7 @@ else
     }
     else if (Error is not null)
     {
-        <div class="card"><div class="error">@Error</div></div>
+        <div class="card"><div class="error" role="alert">@Error</div></div>
     }
     else if (Actors is not null)
     {

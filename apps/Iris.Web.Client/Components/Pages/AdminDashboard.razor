@@ -5,11 +5,11 @@
 
 <PageTitle>Admin · Dashboard · Iris</PageTitle>
 
-<h2>Instance dashboard</h2>
+<h1>Instance dashboard</h1>
 
 @if (LoadError is not null)
 {
-    <div class="error">@LoadError</div>
+    <div class="error" role="alert">@LoadError</div>
 }
 else if (Stats is null)
 {
@@ -34,7 +34,7 @@ else
     </div>
 
     <div class="card" style="margin-top: 1rem;">
-        <h3 style="margin-top: 0;">Recent registrations</h3>
+        <h2 style="margin-top: 0;">Recent registrations</h2>
         @if (Stats.RecentRegistrations.Count == 0)
         {
             <p class="muted">No registrations yet.</p>
