@@ -804,8 +804,9 @@ public static class ActivityPubServerExtensions
                 "/u/{handle}/feed",
                 (string handle, HttpContext context,
                     IPersistenceProvider persistence, IFollowFeedService feedService,
-                    IOptions<ActivityPubServerOptions> optionsAccessor, CancellationToken ct)
-                    => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, ct))
+                    IOptions<ActivityPubServerOptions> optionsAccessor,
+                    ISignatureValidator signatureValidator, CancellationToken ct)
+                    => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, signatureValidator, ct))
             .WithName("follow-feed-endpoint");
 
         // Community document: GET /ap/v1/c/{name} — the community (the library's Group actor) document.
@@ -3710,6 +3711,8 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.Refresh] = "boolean",
                 [IrisExtensionTerms.Query] = "boolean",
                 [IrisExtensionTerms.Type] = "boolean",
+                [IrisExtensionTerms.LikedCount] = "integer",
+                [IrisExtensionTerms.SharedCount] = "integer",
             },
         };
 
@@ -4382,6 +4385,130 @@ public static class ActivityPubServerExtensions
         }
 
         return ActivityJson.Serialize(document);
+    }
+
+    /// <summary>
+    /// Enriches collection-page items with per-object interaction state: for each item that is an
+    /// <c>Activity</c> with an embedded <see cref="IObject"/> in its <c>object</c> property, a deep copy is
+    /// made and the embedded object is annotated with:
+    /// <list type="bullet">
+    /// <item><c>iris:likedCount</c> — the number of distinct likers (from <see cref="ILikeStore.GetLikersAsync"/>).</item>
+    /// <item><c>iris:sharedCount</c> — the number of distinct announcers (from <see cref="IAnnounceStore.GetAnnouncersAsync"/>).</item>
+    /// <item><c>iris:isLiked</c> / <c>iris:isShared</c> — when a requester IRI is supplied, the requester's
+    /// net like/boost state on the embedded object (per-requester, read-time state).</item>
+    /// </list>
+    /// Items that are not activities with embedded objects (links, plain objects, activities with IRI-only
+    /// references) are passed through unchanged. The original items are never mutated.
+    /// </summary>
+    /// <param name="items">The collection-page items to enrich.</param>
+    /// <param name="persistence">The persistence provider (provides <see cref="ILikeStore"/> and
+    /// <see cref="IAnnounceStore"/>).</param>
+    /// <param name="requesterIri">The authenticated requester's IRI (for <c>isLiked</c>/<c>isShared</c>);
+    /// null when the request is anonymous (only counts are added).</param>
+    /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (null omits all extensions).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the enriched items (deep copies with extensions added).</returns>
+    private static async Task<IReadOnlyList<IObjectOrLink>> EnrichCollectionItemsAsync(
+        IReadOnlyList<IObjectOrLink> items,
+        IPersistenceProvider persistence,
+        Iri? requesterIri,
+        string? irisNamespace,
+        CancellationToken ct)
+    {
+        if (items.Count == 0 || string.IsNullOrEmpty(irisNamespace))
+        {
+            return items;
+        }
+
+        var ns = irisNamespace!;
+        var result = new List<IObjectOrLink>(items.Count);
+
+        foreach (var item in items)
+        {
+            // Only enrich activities that have exactly one embedded object (not a Link).
+            if (item is not Activity activity)
+            {
+                result.Add(item);
+                continue;
+            }
+
+            IObject? embeddedObj = null;
+            if (activity.Object is { } objRef)
+            {
+                var firstRef = objRef.FirstOrDefault();
+                if (firstRef is IObject o)
+                {
+                    embeddedObj = o;
+                }
+            }
+
+            if (embeddedObj is null || embeddedObj is KristofferStrube.ActivityStreams.Tombstone)
+            {
+                result.Add(item);
+                continue;
+            }
+
+            // Deep-copy the activity so we never mutate the stored object.
+            var activityCopy = ActivityJson.Deserialize<Activity>(ActivityJson.Serialize(item))!;
+            IObject? copyObj = null;
+            if (activityCopy.Object is { } copyObjRef)
+            {
+                var firstCopyRef = copyObjRef.FirstOrDefault();
+                if (firstCopyRef is IObject o)
+                {
+                    copyObj = o;
+                }
+            }
+
+            if (copyObj is null)
+            {
+                result.Add(item);
+                continue;
+            }
+
+            Iri? objectIri = null;
+            if (copyObj.Id is { Length: > 0 } id)
+            {
+                objectIri = new Iri(id);
+            }
+
+            // Compute likedCount / sharedCount (cacheable — not per-requester).
+            if (objectIri is { } oid)
+            {
+                var likers = await persistence.Likes.GetLikersAsync(oid, ct).ConfigureAwait(false);
+                copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                copyObj.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(likers.Count);
+
+                var announcers = await persistence.Announces.GetAnnouncersAsync(oid, ct).ConfigureAwait(false);
+                copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(announcers.Count);
+            }
+
+            // Compute isLiked / isShared (per-requester — only when a requester is known).
+            if (requesterIri is { } reqIri && objectIri is { } oid2)
+            {
+                var isLiked = await persistence.Likes.HasLikedAsync(reqIri, oid2, ct).ConfigureAwait(false);
+                if (isLiked)
+                {
+                    copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+
+                var isShared = await persistence.Announces.HasAnnouncedAsync(reqIri, oid2, ct).ConfigureAwait(false);
+                if (isShared)
+                {
+                    copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.IsShared] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+            }
+
+            result.Add(activityCopy);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -5239,15 +5366,27 @@ public static class ActivityPubServerExtensions
         var collectionIri = new Iri($"{actorIri}/{collectionName}");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
 
-        // Read (or render on a miss) through the local collection-page response cache.
+        // Read (or render on a miss) through the local collection-page response cache. For the outbox,
+        // enrich nested objects with likedCount/sharedCount (cacheable, not per-requester) before
+        // rendering so the cached document includes the interaction counts.
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(
-                collectionIri,
-                page,
-                limit,
-                items)),
+            async _ =>
+            {
+                var itemsToRender = items;
+                if (collectionName == "outbox")
+                {
+                    itemsToRender = await EnrichCollectionItemsAsync(
+                        items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                }
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender);
+            },
             ct).ConfigureAwait(false);
 
         // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
@@ -5326,6 +5465,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IFollowFeedService feedService,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -5354,13 +5494,21 @@ public static class ActivityPubServerExtensions
             activityType.Length > 0 ? activityType : null,
             ct).ConfigureAwait(false);
 
+        // Enrich nested objects with likedCount/sharedCount (+ isLiked/isShared for authenticated
+        // requesters). The feed is not served through the local collection-page response cache (it
+        // merges remote follows' outboxes over the wire on every request), so per-requester state is
+        // safe to add.
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        var ns = IrisExtensionNamespace(options);
+        var enrichedItems = await EnrichCollectionItemsAsync(items, persistence, requesterIri, ns, ct).ConfigureAwait(false);
+
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = new Iri($"{actorIri.Value}/feed");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items,
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
             supportsRefresh: true, supportsQuery: true, supportsType: true,
-            namespaceIri: IrisExtensionNamespace(options));
+            namespaceIri: ns);
 
         // The feed is not served through the local collection-page response cache (it merges remote
         // follows' outboxes over the wire on every request), but it still carries the collection
