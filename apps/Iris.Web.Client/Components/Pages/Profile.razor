@@ -183,28 +183,7 @@ else
     /// (Follow, Accept, Reject, Like, Announce, Undo, Delete) are excluded from the "Your posts"
     /// tab — they belong in notifications.
     /// </summary>
-    private static bool IsContentItem(IObjectOrLink item)
-    {
-        if (item is not Create create)
-        {
-            return false;
-        }
-
-        if (create.Object is not { } objects)
-        {
-            return false;
-        }
-
-        foreach (var obj in objects)
-        {
-            if (obj is Note || obj is Article)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    private static bool IsContentItem(IObjectOrLink item) => OutboxFilter.IsContentItem(item);
 
     private RenderFragment<IObjectOrLink> FollowRequestTemplate
         => item => builder =>
@@ -273,9 +252,9 @@ else
                 LoadError = "Your actor document could not be loaded.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            LoadError = ex.Message;
+            LoadError = "Your profile could not be loaded. Please refresh and try again.";
         }
 
         StateHasChanged();

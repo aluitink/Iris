@@ -1,5 +1,6 @@
 @page "/admin/moderation"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@using Iris.Web.Client.Accounts
 
 <PageTitle>Admin · Moderation · Iris</PageTitle>
 
@@ -64,6 +65,7 @@ else
     private readonly HashSet<FlagDto> Dismissed = new();
 
     [Inject] private IHttpClientFactory HttpFactory { get; set; } = default!;
+    [Inject] private IActorSessionAccessor Session { get; set; } = default!;
 
     protected override void OnInitialized()
     {
@@ -72,12 +74,25 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Prime the session's auth state (WASM cannot block on GetAuthenticationStateAsync during
+        // render). Without this, IsSignedIn/Role read the unprimed cache and report "signed out".
+        await Session.EnsureReadyAsync();
+
+        var denied = AdminGuard.AccessDenied(Session);
+        if (denied is not null)
+        {
+            LoadError = denied;
+            return;
+        }
+
         try
         {
             var response = await _http.GetAsync("/local/v1/admin/flags");
             if (!response.IsSuccessStatusCode)
             {
-                LoadError = $"Failed to load flags (HTTP {(int)response.StatusCode})";
+                LoadError = (int)response.StatusCode is 401 or 403
+                    ? AdminGuard.NotAdminMessage
+                    : AdminGuard.FriendlyLoadError("the moderation queue");
                 return;
             }
             var list = System.Text.Json.JsonSerializer.Deserialize<List<FlagDto>>(
@@ -85,9 +100,9 @@ else
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             Flags = list;
         }
-        catch (Exception ex)
+        catch
         {
-            LoadError = ex.Message;
+            LoadError = AdminGuard.FriendlyLoadError("the moderation queue");
         }
     }
 
@@ -104,9 +119,9 @@ else
                 Flags = Flags?.Where(f => f != flag).ToList();
             }
         }
-        catch (Exception ex)
+        catch
         {
-            LoadError = ex.Message;
+            LoadError = "Couldn't dismiss the flag. Please try again.";
         }
     }
 

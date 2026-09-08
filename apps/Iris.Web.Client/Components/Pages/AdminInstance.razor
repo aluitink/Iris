@@ -1,6 +1,7 @@
 @page "/admin/instance"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
 @using System.Net.Http.Json
+@using Iris.Web.Client.Accounts
 
 <PageTitle>Admin · Instance · Iris</PageTitle>
 
@@ -59,6 +60,7 @@ else
     private string? SaveError { get; set; }
 
     [Inject] private IHttpClientFactory HttpFactory { get; set; } = default!;
+    [Inject] private IActorSessionAccessor Session { get; set; } = default!;
 
     protected override void OnInitialized()
     {
@@ -67,12 +69,25 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        // Prime the session's auth state (WASM cannot block on GetAuthenticationStateAsync during
+        // render). Without this, IsSignedIn/Role read the unprimed cache and report "signed out".
+        await Session.EnsureReadyAsync();
+
+        var denied = AdminGuard.AccessDenied(Session);
+        if (denied is not null)
+        {
+            LoadError = denied;
+            return;
+        }
+
         try
         {
             var response = await _http.GetAsync("/local/v1/admin/instance");
             if (!response.IsSuccessStatusCode)
             {
-                LoadError = $"Failed to load instance settings (HTTP {(int)response.StatusCode})";
+                LoadError = (int)response.StatusCode is 401 or 403
+                    ? AdminGuard.NotAdminMessage
+                    : AdminGuard.FriendlyLoadError("the instance settings");
                 return;
             }
             var meta = System.Text.Json.JsonSerializer.Deserialize<InstanceMeta>(
@@ -87,9 +102,9 @@ else
             Name = meta.Name;
             Description = meta.Description ?? string.Empty;
         }
-        catch (Exception ex)
+        catch
         {
-            LoadError = ex.Message;
+            LoadError = AdminGuard.FriendlyLoadError("the instance settings");
         }
     }
 
@@ -105,7 +120,7 @@ else
             var response = await _http.PutAsync("/local/v1/admin/instance", content);
             if (!response.IsSuccessStatusCode)
             {
-                SaveError = $"Failed to save (HTTP {(int)response.StatusCode})";
+                SaveError = "Couldn't save the instance settings. Please try again.";
             }
             else
             {
@@ -121,9 +136,9 @@ else
                 SaveMessage = "Instance settings saved.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            SaveError = ex.Message;
+            SaveError = "Couldn't save the instance settings. Please try again.";
         }
         finally
         {

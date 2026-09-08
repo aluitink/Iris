@@ -98,8 +98,22 @@
                 return "replied to you";
             case "Undo":
                 return "undid";
+            case "Flag":
+                return "flagged you";
+            case "Block":
+                return "blocked you";
+            case "Mute":
+                return "muted you";
+            case "Reject":
+                return IsFollowConfirmation(activity) ? "declined your follow request" : "declined";
+            case "Add":
+                return "added you";
+            case "Remove":
+                return "removed you";
             default:
-                return type.Length > 0 ? type.ToLowerInvariant() + "ed" : "notified";
+                // A final, capitalised, plain verb for any other activity type — avoids misspellings
+                // from naïve "ed" suffixing (e.g. "Flag" → "flaged") and keeps the copy readable.
+                return type.Length > 0 ? char.ToUpperInvariant(type[0]) + type[1..] : "notified";
         }
     }
 

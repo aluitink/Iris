@@ -464,9 +464,9 @@ else
                 LoadError = "Community not found.";
             }
         }
-        catch (Exception ex)
+        catch
         {
-            LoadError = ex.Message;
+            LoadError = "This community could not be loaded. It may not exist or may be unavailable.";
         }
     }
 

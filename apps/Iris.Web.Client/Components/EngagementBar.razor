@@ -10,7 +10,7 @@
                 class="engagement-btn @(_liked ? "engagement-btn--active" : "")"
                 title="Like"
                 aria-label="Like"
-                aria-pressed="@_liked"
+                aria-pressed="@(_liked ? "true" : "false")"
                 disabled="@_busy"
                 @onclick="() => ToggleLikeAsync(iri)">
             <svg viewBox="0 0 24 24" fill="@(_liked ? "currentColor" : "none")" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -22,7 +22,7 @@
                 class="engagement-btn @(_boosted ? "engagement-btn--active" : "")"
                 title="Boost"
                 aria-label="Boost"
-                aria-pressed="@_boosted"
+                aria-pressed="@(_boosted ? "true" : "false")"
                 disabled="@_busy"
                 @onclick="() => ToggleBoostAsync(iri)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

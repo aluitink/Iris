@@ -63,9 +63,10 @@ else
             Client="Client"
             CollectionIri="OutboxIri"
             Title="Posts"
-            Description="This actor's outbox — a Create for each note, plus follows and boosts."
+            Description="This actor's notes and articles. Social activities (follows, boosts, moderation) are filtered out."
             PageSize="5"
             ShowRefreshButton="true"
+            ItemFilter="OutboxFilter.IsContentItem"
             EmptyMessage="No posts yet." />
     }
     else if (ActiveTab == "followers")
