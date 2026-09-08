@@ -248,8 +248,16 @@ public static class WebAppFactory
 
         // The account + actor-provisioning services (the "bootstrap mechanism").
         builder.Services.TryAddSingleton<PasswordHasher>();
+        // Login rate limiting (52.3): configurable via IRIS_LOGIN_MAX_ATTEMPTS (default 5) and
+        // IRIS_LOGIN_RATE_WINDOW_MINUTES (default 15). Set max attempts to 0 to disable.
+        var loginMaxAttempts = int.TryParse(
+            Environment.GetEnvironmentVariable("IRIS_LOGIN_MAX_ATTEMPTS") ??
+            builder.Configuration["Iris:Login:MaxAttempts"], out var lma) ? lma : 5;
+        var loginWindowMinutes = int.TryParse(
+            Environment.GetEnvironmentVariable("IRIS_LOGIN_RATE_WINDOW_MINUTES") ??
+            builder.Configuration["Iris:Login:WindowMinutes"], out var lw) ? lw : 15;
         builder.Services.TryAddSingleton<ILoginRateLimiter>(
-            new SlidingWindowLoginRateLimiter(maxAttempts: 5, window: TimeSpan.FromMinutes(15)));
+            new SlidingWindowLoginRateLimiter(loginMaxAttempts, TimeSpan.FromMinutes(loginWindowMinutes)));
         builder.Services.AddSingleton<ActorProvisioner>(sp => new ActorProvisioner(
             sp.GetRequiredService<IPersistenceProvider>(),
             sp.GetRequiredService<IKeyStore>(),
@@ -498,7 +506,14 @@ public static class WebAppFactory
             var result = await login.LoginAsync(handle, password ?? string.Empty, remoteIp);
             if (!result.Succeeded)
             {
-                return Results.Redirect($"/login?error={Uri.EscapeDataString(result.Error!)}");
+                var message = result.Error!;
+                if (result.RetryAfter is not null)
+                {
+                    var minutes = (int)Math.Ceiling((result.RetryAfter.Value - DateTimeOffset.UtcNow).TotalMinutes);
+                    if (minutes < 1) minutes = 1;
+                    message += $" Try again in about {minutes} minute{(minutes == 1 ? "" : "s")}.";
+                }
+                return Results.Redirect($"/login?error={Uri.EscapeDataString(message)}");
             }
             await ctx.SignInAsync(
                 Microsoft.AspNetCore.Authentication.Cookies.CookieAuthenticationDefaults.AuthenticationScheme,

@@ -86,7 +86,7 @@ Iris.slnx
 
 ## Active Slice
 
-**52.3: Login rate limiting** — throttle failed login attempts per IP; after N failures, return 429 with a retry-after hint.
+**53.1: Account deletion (self-service + admin)** — user can delete their account from Settings (with confirmation); admin can delete any user from /admin/users. Cascades: remove actor from store, remove from followers/following, mark posts as deleted (tombstone).
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,11 +104,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 52 — Account & admin completion (in progress):**
+**Phase 53 — Post-1.0 enhancements & operational improvements (in progress):**
 
-1. **52.3: Login rate limiting** — ACTIVE. Throttle failed login attempts per IP; 429 after N failures.
+1. **53.1: Account deletion (self-service + admin)** — ACTIVE. User deletes own account (Settings); admin deletes any user (/admin/users). Cascade: remove actor, tombstone posts, remove from followers/following.
+2. **53.2: Notification preferences** — mute/follow notification toggles per user.
+3. **53.3: Instance admin dashboard** — user count, post count, storage usage, recent registrations.
 
-**Phase 45–51** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
+**Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ## Inbox
 
@@ -122,6 +124,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 52.3: **Login rate limiting** (Phase 52) — surfaced `RetryAfter` hint in login error message ("Try again in about N minutes"); made thresholds configurable via `IRIS_LOGIN_MAX_ATTEMPTS` / `IRIS_LOGIN_RATE_WINDOW_MINUTES`; live-verified 5 failures → block on 6th, per-key isolation. [changes/367](docs/changes/367-52.3-login-rate-limiting.md)
   - 52.2: **Admin-assisted password reset** (Phase 52) — `POST /local/v1/admin/users/{id}/password-reset`; AdminUsers page with inline reset form; fixed WASM HttpClient + Role enum deserialization; live-verified reset→login round-trip. [changes/366](docs/changes/366-52.2-admin-password-reset.md)
   - 52.1: **Change password (self-service)** (Phase 52) — Settings → Password tab with current/new/confirm form; `ChangePasswordService` + `POST /local/v1/account/password` (cookie auth, `sub` claim); live-verified change→login→change-back round-trip. [changes/365](docs/changes/365-52.1-change-password.md)
   - 51.5: **Relay subscriptions UI (settings)** (Phase 51) — "Relays" tab in `/settings`; list/subscribe/unsubscribe via `IActivityPubClient.GetRelaysAsync` + `ILocalModerationClient`; `BypassCache` on re-reads; live-verified subscribe→list→unsubscribe round-trip. [changes/364](docs/changes/364-51.5-relay-subscriptions-ui.md)
