@@ -208,6 +208,15 @@
 
     protected override void OnParametersSet()
     {
+        if (Client is null)
+        {
+            // Client not yet available (the session's signing key is still loading). Reset the
+            // loaded-for tracker so that when the client becomes available on the next render,
+            // the initial load fires (the CollectionIri hasn't changed, but the client has).
+            _loadedFor = null;
+            return;
+        }
+
         if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
         {
             _loadedFor = iri;
