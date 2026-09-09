@@ -1,5 +1,8 @@
 @page "/"
 @using Microsoft.AspNetCore.Components.Authorization
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
 
 <PageTitle>Iris</PageTitle>
 
@@ -27,5 +30,73 @@
                 <a class="button button--secondary" href="/register">Create an account</a>
             </p>
         </div>
+
+        @if (Session.PublicFeedIri is { } feedIri)
+        {
+            <h2>Public timeline</h2>
+            <PagedCollection
+                CollectionIri="feedIri"
+                AnonymousHttpClient="Http"
+                PageSize="20"
+                ShowRefreshButton="true"
+                ItemFilter="IsContentItem">
+                <EmptyContent>
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        <p>No posts yet.</p>
+                        <p>Be the first to share something!</p>
+                    </div>
+                </EmptyContent>
+            </PagedCollection>
+        }
     </NotAuthorized>
 </AuthorizeView>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private IHttpClientFactory HttpClientFactory { get; set; } = default!;
+
+    private HttpClient? Http => HttpClientFactory?.CreateClient("iris");
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        StateHasChanged();
+    }
+
+    private static bool IsContentItem(IObjectOrLink item)
+    {
+        if (item is Create create)
+        {
+            if (create.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is Note || obj is Article)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        if (item is Announce)
+        {
+            return true;
+        }
+
+        if (item is Note || item is Article)
+        {
+            return true;
+        }
+
+        return false;
+    }
+}

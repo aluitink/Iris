@@ -2,7 +2,7 @@
 @using Iris.Client.Collections
 @using KristofferStrube.ActivityStreams
 
-@if (Client is not null && CollectionIri is not null)
+@if (HasAnyClient && CollectionIri is not null)
 {
     <div class="card paged-collection">
         @if (!string.IsNullOrEmpty(Title))
@@ -92,10 +92,20 @@
 @code {
     /// <summary>
     /// The client to dial. When <c>null</c> the component renders nothing and loads nothing (the parent
-    /// gates on a signed-in session).
+    /// gates on a signed-in session). When <c>null</c> and <see cref="AnonymousHttpClient"/> is set,
+    /// the component uses plain HTTP (no ActivityPub signing) to read the collection — used for
+    /// public feeds when signed out (54.27).
     /// </summary>
     [Parameter]
     public IActivityPubClient? Client { get; set; }
+
+    /// <summary>
+    /// A plain <see cref="HttpClient"/> for anonymous (unsigned) collection reads. Used when
+    /// <see cref="Client"/> is null (signed out) to read public collections like the public feed
+    /// (54.27). When both <see cref="Client"/> and this are null, the component renders nothing.
+    /// </summary>
+    [Parameter]
+    public HttpClient? AnonymousHttpClient { get; set; }
 
     /// <summary>
     /// The IRI of the collection (or of its <c>first</c> page) to enumerate. When <c>null</c> the
@@ -206,13 +216,15 @@
     /// </summary>
     private Iri? _loadedFor;
 
+    private bool HasAnyClient => Client is not null || AnonymousHttpClient is not null;
+
     protected override void OnParametersSet()
     {
-        if (Client is null)
+        if (!HasAnyClient)
         {
-            // Client not yet available (the session's signing key is still loading). Reset the
-            // loaded-for tracker so that when the client becomes available on the next render,
-            // the initial load fires (the CollectionIri hasn't changed, but the client has).
+            // No client available (signed out with no anonymous client, or the session's signing
+            // key is still loading). Reset the loaded-for tracker so that when a client becomes
+            // available on the next render, the initial load fires.
             _loadedFor = null;
             return;
         }
@@ -329,11 +341,6 @@
     /// </summary>
     private async Task EnumerateOnePageAsync()
     {
-        if (Client is not { } client)
-        {
-            return;
-        }
-
         if (_resumeFrom is not { } resumeIri)
         {
             if (CollectionIri is not { } firstIri)
@@ -344,15 +351,101 @@
             resumeIri = firstIri;
         }
 
-        var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache || _bypassNext);
-
-        await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
+        if (Client is { } client)
         {
-            Items ??= [];
-            Items.AddRange(page.Items);
-            HasMore = !page.IsLastPage;
-            _resumeFrom = page.NextPage;
-            break;
+            var query = new CollectionQuery(Limit: PageSize, BypassCache: BypassCache || _bypassNext);
+
+            await foreach (var page in client.GetCollectionAsync(resumeIri, query, CancellationToken.None))
+            {
+                Items ??= [];
+                Items.AddRange(page.Items);
+                HasMore = !page.IsLastPage;
+                _resumeFrom = page.NextPage;
+                break;
+            }
+            return;
         }
+
+        // Anonymous read (signed out, public collection like the public feed — 54.27).
+        if (AnonymousHttpClient is { } anonClient)
+        {
+            await FetchAnonymousPageAsync(anonClient, resumeIri);
+        }
+    }
+
+    /// <summary>
+    /// Fetches a single collection page via plain HTTP (no ActivityPub signing). Parses the
+    /// OrderedCollection / OrderedCollectionPage JSON and extracts items, next-page link, and
+    /// last-page flag. Used for public reads when signed out (54.27).
+    /// </summary>
+    private async Task FetchAnonymousPageAsync(HttpClient http, Iri pageIri)
+    {
+        var url = pageIri.Value;
+        if (PageSize is { } size)
+        {
+            url += (url.Contains('?') ? '&' : '?') + $"limit={size}";
+        }
+
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+        {
+            LoadError = "Failed to load. Please try again.";
+            return;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        var root = doc.RootElement;
+
+        Items ??= [];
+
+        // Extract items from the page.
+        if (root.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            foreach (var itemElement in itemsElement.EnumerateArray())
+            {
+                var itemJson = itemElement.GetRawText();
+                try
+                {
+                    var item = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
+                    if (item is not null)
+                    {
+                        Items.Add(item);
+                    }
+                }
+                catch
+                {
+                    // Skip items that fail to deserialize.
+                }
+            }
+        }
+
+        // Determine if there is a next page.
+        var hasMore = false;
+        var nextPageIri = (Iri?)null;
+
+        if (root.TryGetProperty("next", out var nextElement))
+        {
+            var nextValue = nextElement.ValueKind == System.Text.Json.JsonValueKind.String
+                ? nextElement.GetString()
+                : nextElement.TryGetProperty("id", out var nextId) ? nextId.GetString() : null;
+
+            if (nextValue is not null && nextValue.Length > 0)
+            {
+                hasMore = true;
+                if (Iri.TryParse(nextValue, out var nextIri))
+                {
+                    nextPageIri = nextIri;
+                }
+            }
+        }
+        else if (root.TryGetProperty("partOf", out var partOfElement))
+        {
+            // No "next" means this is the last page.
+            hasMore = false;
+        }
+
+        HasMore = hasMore;
+        _resumeFrom = nextPageIri;
     }
 }

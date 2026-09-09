@@ -37,12 +37,22 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
 
     private async Task<AuthenticationState> ResolveAsync()
     {
+        // First, fetch the public session (no auth required) to get the public feed IRI.
+        var publicFeedIri = await FetchPublicFeedIriAsync();
+
         try
         {
             var response = await _http.GetAsync("/local/v1/session");
             if (!response.IsSuccessStatusCode)
             {
-                return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+                // Signed out: return an unauthenticated state with the public feed IRI claim
+                // so the client can render the public feed for a logged-out visitor.
+                var publicIdentity = new ClaimsIdentity();
+                if (publicFeedIri is not null)
+                {
+                    publicIdentity.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
+                }
+                return new AuthenticationState(new ClaimsPrincipal(publicIdentity));
             }
 
             // The server serializes the claims as camelCase (actorIri, etc.); ReadFromJsonAsync's
@@ -53,7 +63,12 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
                 new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             if (json is null)
             {
-                return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+                var publicIdentity2 = new ClaimsIdentity();
+                if (publicFeedIri is not null)
+                {
+                    publicIdentity2.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
+                }
+                return new AuthenticationState(new ClaimsPrincipal(publicIdentity2));
             }
 
             var identity = new ClaimsIdentity(
@@ -64,14 +79,45 @@ public class CookieAuthenticationStateProvider : AuthenticationStateProvider
             identity.AddClaim(new Claim(ClaimTypes.Name, json.Username));
             identity.AddClaim(new Claim(ActorClaims.ActorIri, json.ActorIri));
             identity.AddClaim(new Claim(ClaimTypes.Role, json.Role));
+            identity.AddClaim(new Claim(ActorClaims.PublicFeedIri, json.PublicFeedIri ?? publicFeedIri ?? ""));
 
             return new AuthenticationState(new ClaimsPrincipal(identity));
         }
         catch
         {
-            return new AuthenticationState(new ClaimsPrincipal(new ClaimsIdentity()));
+            var publicIdentity3 = new ClaimsIdentity();
+            if (publicFeedIri is not null)
+            {
+                publicIdentity3.AddClaim(new Claim(ActorClaims.PublicFeedIri, publicFeedIri));
+            }
+            return new AuthenticationState(new ClaimsPrincipal(publicIdentity3));
         }
     }
 
-    private sealed record SessionResponse(string Id, string Username, string ActorIri, string Role);
+    /// <summary>
+    /// Fetches the public feed IRI from the no-auth public session endpoint. Returns null on failure.
+    /// </summary>
+    private async Task<string?> FetchPublicFeedIriAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync("/local/v1/session/public");
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = System.Text.Json.JsonSerializer.Deserialize<PublicSessionResponse>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return json?.PublicFeedIri;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed record SessionResponse(string Id, string Username, string ActorIri, string Role, string? PublicFeedIri);
+    private sealed record PublicSessionResponse(string? PublicFeedIri);
 }

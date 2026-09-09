@@ -448,7 +448,7 @@ public static class WebAppFactory
         MapAuthEndpoints(app);
         MapNotificationEndpoints(app);
         MapAccountEndpoints(app);
-        MapSessionEndpoints(app);
+        MapSessionEndpoints(app, app.Services.GetRequiredService<IOptions<ActivityPubServerOptions>>());
         MapAdminEndpoints(app);
         MapMetricsEndpoint(app);
 
@@ -699,12 +699,20 @@ public static class WebAppFactory
     }
 
     /// <summary>
-    /// Maps the session endpoint: <c>GET /local/v1/session</c> returns the signed-in user's claims
-    /// as JSON (id, username, actor IRI, role). Used by the WASM client's
-    /// <c>CookieAuthenticationStateProvider</c> to resolve the auth state at startup.
+    /// Maps the session endpoints:
+    /// <c>GET /local/v1/session</c> — returns the signed-in user's claims as JSON (id, username,
+    /// actor IRI, role, public feed IRI). Requires authorization.
+    /// <c>GET /local/v1/session/public</c> — returns the public feed IRI (no auth required). Used
+    /// by the WASM client when signed out, so the client knows which feed to render for a
+    /// logged-out visitor.
+    /// Both are used by the WASM client's <c>CookieAuthenticationStateProvider</c> to resolve
+    /// the auth state at startup.
     /// </summary>
-    public static void MapSessionEndpoints(IEndpointRouteBuilder endpoints)
+    public static void MapSessionEndpoints(IEndpointRouteBuilder endpoints, IOptions<ActivityPubServerOptions> serverOptions)
     {
+        var baseUrl = serverOptions.Value.BaseUri?.Value ?? "http://localhost";
+        var publicFeedIri = $"{baseUrl.TrimEnd('/')}/ap/v1/public/feed";
+
         endpoints.MapGet("/local/v1/session", (HttpContext ctx) =>
         {
             if (!ctx.User.Identity?.IsAuthenticated == true)
@@ -716,8 +724,14 @@ public static class WebAppFactory
             var username = ctx.User.FindFirstValue(ClaimTypes.Name) ?? "";
             var actorIri = ctx.User.FindFirstValue(ActorClaims.ActorIri) ?? "";
             var role = ctx.User.FindFirstValue(ClaimTypes.Role) ?? "";
-            return Results.Json(new { Id = id, Username = username, ActorIri = actorIri, Role = role });
+            return Results.Json(new { Id = id, Username = username, ActorIri = actorIri, Role = role, PublicFeedIri = publicFeedIri });
         }).RequireAuthorization();
+
+        // Public session (54.27): returns the public feed IRI without requiring auth. The WASM
+        // client calls this when signed out so it knows which feed to render for a logged-out
+        // visitor. The public feed endpoint itself is publicly readable (no auth required).
+        endpoints.MapGet("/local/v1/session/public", () =>
+            Results.Json(new { PublicFeedIri = publicFeedIri }));
     }
 
     /// <summary>

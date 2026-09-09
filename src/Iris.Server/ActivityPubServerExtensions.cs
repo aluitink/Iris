@@ -436,6 +436,12 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IPersistenceProvider>().Moderation);
         });
 
+        // Public feed (54.27): computes the instance's public timeline (the union of all local
+        // actors' outbox activities, newest first) for the /ap/v1/public/feed endpoint. Any visitor
+        // (signed in or out) can browse this feed — it surfaces all local posts so a logged-out
+        // visitor has something to see.
+        services.TryAddSingleton<IPublicFeedService, PublicFeedService>();
+
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
         // (handlers call it to schedule a delivery — it enqueues and returns), and the background
         // DeliveryWorker (pumps jobs off the queue and POSTs them, signed as InstanceActorId).
@@ -808,7 +814,20 @@ public static class ActivityPubServerExtensions
                     IOptions<ActivityPubServerOptions> optionsAccessor,
                     ISignatureValidator signatureValidator, CancellationToken ct)
                     => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, signatureValidator, ct))
-            .WithName("follow-feed-endpoint");
+             .WithName("follow-feed-endpoint");
+
+        // Public feed: GET /ap/v1/public/feed — the instance's public timeline (54.27): the union of
+        // all local actors' outbox activities, newest first, de-duplicated, capped. Any visitor
+        // (signed in or out) can browse this feed. Served as a paged collection (page 1 is an
+        // OrderedCollection with `first`; page N>1 an OrderedCollectionPage), paged via ?page/?limit.
+        group.MapGet(
+                "/public/feed",
+                (HttpContext context,
+                    IPersistenceProvider persistence, IPublicFeedService feedService,
+                    IOptions<ActivityPubServerOptions> optionsAccessor,
+                    ISignatureValidator signatureValidator, CancellationToken ct)
+                    => PublicFeedHandler(context, persistence, feedService, optionsAccessor, signatureValidator, ct))
+            .WithName("public-feed-endpoint");
 
         // Community document: GET /ap/v1/c/{name} — the community (the library's Group actor) document.
         // A community is addressed by its handle (not an actor IRI), so the route uses {name}.
@@ -5609,6 +5628,55 @@ public static class ActivityPubServerExtensions
         // The feed is not served through the local collection-page response cache (it merges remote
         // follows' outboxes over the wire on every request), but it still carries the collection
         // Cache-Control so intermediates may cache briefly.
+        var refresh = HasRefreshBypass(context);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+         return Results.Text(document, ActivityJson.ActivityJsonContentType);
+     }
+
+    /// <summary>
+    /// Serves the instance's public feed (the union of all local actors' outbox activities, newest
+    /// first, de-duplicated, capped) as a paged collection for <c>GET /ap/v1/public/feed</c>. Any
+    /// visitor (signed in or out) can browse this feed. Page 1 is an <c>OrderedCollection</c> (with
+    /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>
+    /// /<c>next</c>), paged via <c>?page</c>/<c>?limit</c>. The feed is not served through the local
+    /// collection-page response cache (it re-reads all outboxes on every request), but it still
+    /// carries the collection <c>Cache-Control</c> so intermediates may cache briefly.
+    /// </summary>
+    private static async Task<IResult> PublicFeedHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IPublicFeedService feedService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+
+        var query = context.Request.Query["q"].ToString();
+        var activityType = context.Request.Query["type"].ToString();
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var items = await feedService.GetPublicFeedAsync(
+            200,
+            query.Length > 0 ? query : null,
+            activityType.Length > 0 ? activityType : null,
+            ct).ConfigureAwait(false);
+
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        var ns = IrisExtensionNamespace(options);
+        var enrichedItems = await EnrichCollectionItemsAsync(items, persistence, requesterIri, ns, ct).ConfigureAwait(false);
+
+        var collectionIri = new Iri($"{baseUrl.TrimEnd('/')}/ap/v1/public/feed");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
+            supportsRefresh: true, supportsQuery: true, supportsType: true,
+            namespaceIri: ns);
+
         var refresh = HasRefreshBypass(context);
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl

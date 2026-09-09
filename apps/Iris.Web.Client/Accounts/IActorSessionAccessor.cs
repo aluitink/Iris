@@ -22,6 +22,12 @@ public static class ActorClaims
     /// The claim key for the linked actor's IRI (the account's federated identity).
     /// </summary>
     public const string ActorIri = "actor_iri";
+
+    /// <summary>
+    /// The claim key for the instance's public feed IRI (the collection a logged-out visitor
+    /// browses — the union of all local actors' outbox activities, 54.27).
+    /// </summary>
+    public const string PublicFeedIri = "public_feed_iri";
 }
 
 /// <summary>
@@ -86,6 +92,13 @@ public interface IActorSessionAccessor
     /// The signed-in user's role, or null when signed out.
     /// </summary>
     string? Role { get; }
+
+    /// <summary>
+    /// The instance's public feed IRI (the collection a logged-out visitor browses — the union of
+    /// all local actors' outbox activities, 54.27). Available whether or not the user is signed in.
+    /// Null when the public feed IRI could not be determined.
+    /// </summary>
+    Iri? PublicFeedIri { get; }
 
     /// <summary>
     /// An <see cref="IActivityPubClient"/> bound to the signed-in user's actor (lazily created, cached
@@ -334,6 +347,21 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
             }
 
             return _state!.User.FindFirst(ClaimTypes.Role)?.Value;
+        }
+    }
+
+    /// <inheritdoc/>
+    public Iri? PublicFeedIri
+    {
+        get
+        {
+            if (_state is null)
+            {
+                return null;
+            }
+
+            var value = _state.User.FindFirst(ActorClaims.PublicFeedIri)?.Value;
+            return value is not null && value.Length > 0 && Iri.TryParse(value, out var iri) ? (Iri?)iri : null;
         }
     }
 
