@@ -900,13 +900,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         string content,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
+        IEnumerable<string>? hashtags = null,
         CancellationToken ct = default)
     {
         // Decision 055 (server is the object-id authority): the client sends only the reply's *shape*
-        // (content, attributedTo, the parent's learned id as inReplyTo, mentions, audience) — no note id,
-        // no Create id. <paramref name="parentIri"/> is the id the server minted for the parent note
-        // (learned when the parent was posted). The server mints the Create's id and the embedded note's
-        // id (unguessable ULIDs) and returns the created Create in the 2xx body.
+        // (content, attributedTo, the parent's learned id as inReplyTo, mentions, hashtags, audience) —
+        // no note id, no Create id. <paramref name="parentIri"/> is the id the server minted for the
+        // parent note (learned when the parent was posted). The server mints the Create's id and the
+        // embedded note's id (unguessable ULIDs) and returns the created Create in the 2xx body.
         var note = new Note
         {
             Content = [content],
@@ -915,17 +916,49 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             InReplyTo = [new Link { Href = parentIri.Uri }],
         };
 
-        // F-12 mentions: each mentioned actor becomes a Mention tag whose href is the actor IRI (the
-        // ActivityPub @mention convention). Non-mention tags (e.g. hashtags) are not part of this API.
+        // F-12 tags: mentions (a Mention per @mentioned actor, href = the actor IRI) and hashtags (a
+        // Hashtag per #tag, name = the #tag text, href = this instance's hashtag search) are combined
+        // into a single `tag` array (the AP convention). Mentions come first, preserving order.
+        var tags = new List<IObjectOrLink>();
         if (mentions is not null)
         {
-            var mentionTags = mentions
-                .Select(mentionIri => new Mention { Href = mentionIri.Uri })
-                .ToList();
-            if (mentionTags.Count > 0)
+            foreach (var mentionIri in mentions)
             {
-                note.Tag = mentionTags;
+                tags.Add(new Mention { Href = mentionIri.Uri });
             }
+        }
+
+        if (hashtags is not null)
+        {
+            var baseOrigin = actorId.Uri.GetLeftPart(UriPartial.Authority);
+            foreach (var rawName in hashtags)
+            {
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                // A Hashtag tag is a generic ActivityStreams object of type Hashtag (the library has no
+                // concrete Hashtag class). The href (this instance's hashtag search) goes in ExtensionData
+                // because the Object base does not model href as a property — only Link does — exactly the
+                // shape IriExtensions.GetHashtagTags reads back.
+                var hashtag = new KristofferStrube.ActivityStreams.Object
+                {
+                    Type = ["Hashtag"],
+                    Name = [rawName],
+                    ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["href"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                            $"{baseOrigin}/search?q={Uri.EscapeDataString(rawName)}")
+                    }
+                };
+                tags.Add(hashtag);
+            }
+        }
+
+        if (tags.Count > 0)
+        {
+            note.Tag = tags;
         }
 
         if (to is not null)

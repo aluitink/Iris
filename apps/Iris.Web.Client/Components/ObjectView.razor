@@ -193,6 +193,12 @@
                     <a href="@ActorHref(mention)" title="@mention" class="object-actor">@HandleOf(mention)</a>
                 </div>
             }
+            @foreach (var (hashtagName, hashtagHref) in HashtagTags)
+            {
+                <div class="object-hashtag">
+                    <a href="@HashtagHref(hashtagName, hashtagHref)" title="@hashtagName" class="object-hashtag-link">@hashtagName</a>
+                </div>
+            }
             @foreach (var media in MediaAttachments)
             {
                 <div class="object-media">

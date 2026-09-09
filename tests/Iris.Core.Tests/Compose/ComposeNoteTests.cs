@@ -3,6 +3,7 @@ using Iris.Core;
 using Iris.Core.Compose;
 using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Tests.Compose;
 
@@ -206,5 +207,134 @@ public class ComposeNoteTests
         Assert.True(((IObject)note).IsSensitive());
         Assert.Equal("graphic", ((IObject)note).GetSummary());
         Assert.NotNull(note.Attachment);
+    }
+
+    // --- Hashtag (tag) round-tripping (54.14) ---
+
+    [Fact]
+    public void Build_SetsHashtagTags_WhenHashtagsProvided()
+    {
+        var note = ComposeNote.Build(Alice, "hello #world #dotnet");
+
+        Assert.Null(note.Tag);
+    }
+
+    [Fact]
+    public void Build_OmitsHashtags_WhenHashtagsNull()
+    {
+        var note = ComposeNote.Build(Alice, "content", hashtags: null);
+
+        Assert.Null(note.Tag);
+    }
+
+    [Fact]
+    public void Build_SetsHashtagTag_WhenSingleHashtag()
+    {
+        var note = ComposeNote.Build(Alice, "hello #world", hashtags: ["#world"]);
+
+        var tag = Assert.IsType<ActivityObject>(note.Tag?.Single());
+        Assert.Contains("Hashtag", tag.Type ?? []);
+        Assert.Equal("#world", tag.Name?.Single());
+    }
+
+    [Fact]
+    public void Build_SetsHashtagHref_WhenFactoryProvided()
+    {
+        var note = ComposeNote.Build(
+            Alice,
+            "hello #world",
+            hashtags: ["#world"],
+            hashtagHrefFactory: name => $"https://a.domain.local/search?q={Uri.EscapeDataString(name)}");
+
+        var tag = Assert.IsType<ActivityObject>(note.Tag?.Single());
+        Assert.NotNull(tag.ExtensionData);
+        Assert.True(tag.ExtensionData!.TryGetValue("href", out var hrefElement));
+        Assert.Equal("https://a.domain.local/search?q=%23world", hrefElement.GetString());
+    }
+
+    [Fact]
+    public void Build_CombinesMentionsAndHashtags_InTag()
+    {
+        var bob = new Iri("https://b.domain.local/u/bob");
+        var note = ComposeNote.Build(
+            Alice,
+            "hey @bob #greetings",
+            mentions: [bob],
+            hashtags: ["#greetings"]);
+
+        Assert.NotNull(note.Tag);
+        var tags = note.Tag!.ToList();
+        Assert.Equal(2, tags.Count);
+
+        // Mentions come first (a Mention with the actor href), then hashtags (type Hashtag + name).
+        var mention = Assert.IsType<Mention>(tags[0]);
+        Assert.Equal(bob.Uri, mention.Href);
+
+        var hashtag = Assert.IsType<ActivityObject>(tags[1]);
+        Assert.Contains("Hashtag", hashtag.Type ?? []);
+        Assert.Equal("#greetings", hashtag.Name?.Single());
+    }
+
+    [Fact]
+    public void Build_HashtagTag_RoundTripsThroughWire()
+    {
+        var note = ComposeNote.Build(
+            Alice,
+            "hello #world",
+            hashtags: ["#world"],
+            hashtagHrefFactory: name => $"https://a.domain.local/search?q={Uri.EscapeDataString(name)}");
+        var json = ActivityJson.Serialize(note);
+        var back = ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
+
+        // The Hashtag tag (type + name + href) survives the wire form and is read back by the
+        // single GetHashtagTags boundary.
+        Assert.NotNull(back);
+        var tags = back!.GetHashtagTags();
+        var (name, href) = Assert.Single(tags);
+        Assert.Equal("#world", name);
+        Assert.NotNull(href);
+        Assert.Equal(new Iri("https://a.domain.local/search?q=%23world"), href!.Value);
+        // The wire JSON carries the Hashtag type (the library emits the type list as an array —
+        // ["Hashtag","Object"] — because the base Object type is appended), the name, and the href.
+        Assert.Contains("Hashtag", json);
+        Assert.Contains("\"name\":\"#world\"", json);
+        Assert.Contains("\"href\":\"https://a.domain.local/search?q=%23world\"", json);
+    }
+
+    [Fact]
+    public void Build_HashtagTag_NoHref_WhenFactoryOmitted()
+    {
+        var note = ComposeNote.Build(Alice, "hello #world", hashtags: ["#world"]);
+        var tag = Assert.IsType<ActivityObject>(note.Tag?.Single());
+
+        // Without a factory the Hashtag carries no href (the name alone still identifies it per AP).
+        Assert.True(tag.ExtensionData is null || !tag.ExtensionData!.ContainsKey("href"));
+    }
+
+    [Fact]
+    public void Build_SkipsBlankHashtags()
+    {
+        var note = ComposeNote.Build(Alice, "hello", hashtags: ["#a", "   ", "#b"]);
+
+        Assert.NotNull(note.Tag);
+        var tags = note.Tag!.ToList();
+        Assert.Equal(2, tags.Count);
+        Assert.All(tags, t => Assert.Contains("Hashtag", (t as ActivityObject)?.Type ?? []));
+    }
+
+    [Fact]
+    public void Build_BlankHashtagHref_IsIgnored()
+    {
+        // A factory that returns a blank string yields no href (the { Length: > 0 } guard) — the tag
+        // is still present, just without a link. (Iri.TryParse itself is lenient, so a non-blank string
+        // — even an unusual one — is accepted, consistent with the rest of Iris's IRI boundary.)
+        var note = ComposeNote.Build(
+            Alice,
+            "hello #world",
+            hashtags: ["#world"],
+            hashtagHrefFactory: _ => "   ");
+
+        var tag = Assert.IsType<ActivityObject>(note.Tag?.Single());
+        Assert.True(tag.ExtensionData is null || !tag.ExtensionData!.ContainsKey("href"));
     }
 }

@@ -123,7 +123,8 @@ public class PagedCollectionTests
 
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId, Iri parentIri, string content,
-            IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+            IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null,
+            IEnumerable<string>? hashtags = null, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Compose;
 
@@ -62,7 +63,22 @@ public static class ComposeNote
     /// <param name="mentions">
     /// The IRIs of actors mentioned in the note (the <c>@handle</c> convention). When non-empty, each
     /// becomes a <see cref="Mention"/> <c>tag</c> entry whose <c>href</c> is the actor IRI (the
-    /// ActivityPub @mention convention). When null or empty the note carries no <c>tag</c>.
+    /// ActivityPub @mention convention). When null or empty the note carries no mention <c>tag</c>.
+    /// </param>
+    /// <param name="hashtags">
+    /// The hashtag names in the note (the <c>#hashtag</c> convention; each value should include the
+    /// leading <c>#</c>, e.g. <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c>
+    /// <c>tag</c> entry (an ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the
+    /// <c>#tag</c> text and whose <c>href</c> is the hashtag's browse URL, per
+    /// <paramref name="hashtagHrefFactory"/>). When null or empty the note carries no hashtag
+    /// <c>tag</c>. Mention and hashtag tags are combined into a single <c>tag</c> array.
+    /// </param>
+    /// <param name="hashtagHrefFactory">
+    /// An optional factory that maps a hashtag name (e.g. <c>"#hello"</c>) to its browse/search URL
+    /// (the <c>href</c> of the <c>Hashtag</c> tag). When null, the <c>Hashtag</c> tags carry no
+    /// <c>href</c> (the name alone still identifies the hashtag per the AP convention). Supplying a
+    /// factory lets a client point hashtag tags at its own hashtag page (e.g.
+    /// <c>{origin}/search?q=%23hello</c>).
     /// </param>
     /// <returns>
     /// The composed <see cref="Note"/> (type <c>Note</c>, set by the constructor), ready to be published
@@ -79,7 +95,9 @@ public static class ComposeNote
         Iri? mediaIri = null,
         string? mediaType = null,
         string? mediaName = null,
-        IEnumerable<Iri>? mentions = null)
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<string>? hashtags = null,
+        Func<string, string?>? hashtagHrefFactory = null)
     {
         ArgumentNullException.ThrowIfNull(content);
 
@@ -141,16 +159,49 @@ public static class ComposeNote
             note.Attachment = [image];
         }
 
+        // Combine mention and hashtag tags into a single `tag` array (the AP convention: a note's
+        // `tag` carries both Mention and Hashtag objects). Mentions are built first (their relative
+        // order is preserved), then hashtags.
+        var tags = new List<IObjectOrLink>();
+
         if (mentions is not null)
         {
-            var mentionTags = mentions
-                .Where(i => i != default)
-                .Select(i => new Mention { Href = i.Uri })
-                .ToList();
-            if (mentionTags.Count > 0)
+            foreach (var mentionIri in mentions.Where(i => i != default))
             {
-                note.Tag = mentionTags;
+                tags.Add(new Mention { Href = mentionIri.Uri });
             }
+        }
+
+        if (hashtags is not null)
+        {
+            foreach (var rawName in hashtags)
+            {
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                // A Hashtag tag is an ActivityStreams object of type Hashtag whose name is the #tag text.
+                // The library has no concrete Hashtag class, so it is built as a generic Object with the
+                // type set explicitly (the constructor leaves Type unset for the base Object) and the
+                // optional href in ExtensionData (the Object base does not model href as a property —
+                // only Link does), exactly the shape GetHashtagTags reads back.
+                var hashtag = new ActivityObject { Type = ["Hashtag"], Name = [rawName] };
+                if (hashtagHrefFactory is { } factory
+                    && factory(rawName) is { Length: > 0 } href
+                    && Iri.TryParse(href, out var parsedHref))
+                {
+                    hashtag.ExtensionData ??= new Dictionary<string, JsonElement>();
+                    hashtag.ExtensionData["href"] = JsonSerializer.SerializeToElement(href);
+                }
+
+                tags.Add(hashtag);
+            }
+        }
+
+        if (tags.Count > 0)
+        {
+            note.Tag = tags;
         }
 
         return note;

@@ -2,6 +2,7 @@ using System.Text.Json;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 using Xunit;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Tests.Identity;
 
@@ -308,6 +309,178 @@ public class IriExtensionsTests
         IObject? none = null;
 
         Assert.Empty(none.GetMentionIris());
+    }
+
+    // --- GetHashtagTags (54.14) ---
+
+    [Fact]
+    public void GetHashtagTags_NullObject_ReturnsEmpty()
+    {
+        IObject? obj = null;
+
+        var result = obj.GetHashtagTags();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHashtagTags_NoTag_ReturnsEmpty()
+    {
+        var note = new ActivityObject();
+
+        var result = note.GetHashtagTags();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHashtagTags_HashtagWithHref_ReturnsNameAndHref()
+    {
+        // A Hashtag tag as a foreign server emits it: a generic object of type Hashtag with name +
+        // href (the href lands in ExtensionData because the Object base does not model href).
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Id = "https://other.example/notes/1#tag=0",
+                    Type = ["Hashtag"],
+                    Name = ["#hello"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("https://other.example/tags/hello"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#hello", name);
+        Assert.NotNull(href);
+        Assert.Equal(new Iri("https://other.example/tags/hello"), href!.Value);
+    }
+
+    [Fact]
+    public void GetHashtagTags_HashtagWithoutHref_ReturnsNameWithNullHref()
+    {
+        // A server that emits a Hashtag with only a name (no href) — still surfaced, just unlinked.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#justname"]
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#justname", name);
+        Assert.Null(href);
+    }
+
+    [Fact]
+    public void GetHashtagTags_MixedMentionAndHashtag_ReturnsOnlyHashtags()
+    {
+        // The mention reader and hashtag reader are independent boundaries over the same `tag` array:
+        // GetHashtagTags returns only the Hashtag entries, not the Mention entries.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new Mention { Href = new Uri("https://a.domain.local/u/bob") },
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#greetings"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("https://a.domain.local/search?q=%23greetings"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#greetings", name);
+        Assert.NotNull(href);
+        Assert.Equal(new Iri("https://a.domain.local/search?q=%23greetings"), href!.Value);
+    }
+
+    [Fact]
+    public void GetHashtagTags_CaseInsensitiveType_Matches()
+    {
+        // A foreign server that capitalizes the type term differently is still matched (lenient).
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["HASHTAG"],
+                    Name = ["#loud"]
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, _) = Assert.Single(result);
+        Assert.Equal("#loud", name);
+    }
+
+    [Fact]
+    public void GetHashtagTags_UnparseableHref_IsTreatedAsAbsent()
+    {
+        // An href that fails Iri.TryParse (e.g. an unescaped space in the authority — the one class of
+        // input Uri.TryCreate rejects beyond blank/empty) is ignored: the tag is surfaced without a link.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#badhref"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("http://x y/z"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#badhref", name);
+        Assert.Null(href);
+    }
+
+    [Fact]
+    public void GetHashtagTags_SkipsHashtagWithoutName()
+    {
+        // A Hashtag-type tag with no name (malformed) is skipped.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject { Type = ["Hashtag"] }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        Assert.Empty(result);
     }
 
     [Fact]

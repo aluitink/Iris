@@ -638,7 +638,8 @@ ul.object-list li {
 
 .object-audience,
 .object-parent,
-.object-mention {
+.object-mention,
+.object-hashtag {
     color: var(--muted);
     font-size: 0.8rem;
 }
@@ -648,6 +649,16 @@ ul.object-list li {
     text-decoration: none;
     color: var(--text);
     font-weight: 600;
+}
+
+.object-hashtag-link {
+    text-decoration: none;
+    color: var(--accent, #4a90d9);
+    font-weight: 600;
+}
+
+.object-hashtag-link:hover {
+    text-decoration: underline;
 }
 
 .object-published {
@@ -824,6 +835,67 @@ ul.object-list li {
     width: 100%;
     resize: vertical;
     min-height: 5.5rem;
+}
+
+/* The @mention / #hashtag autocomplete popover (54.14): a positioned dropdown under the compose box
+   that lists matching actors (for @) or the typed hashtag (for #) while the user types a token. */
+.compose-autocomplete-wrap {
+    position: relative;
+}
+
+.compose-autocomplete {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    margin-top: 2px;
+    max-height: 11rem;
+    overflow-y: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    min-width: 12rem;
+    width: 100%;
+}
+
+.compose-autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: 0.85rem;
+    text-align: left;
+    cursor: pointer;
+}
+
+.compose-autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.compose-autocomplete-item:hover,
+.compose-autocomplete-item:focus {
+    background: var(--hover, rgba(74, 144, 217, 0.12));
+    outline: none;
+}
+
+.compose-autocomplete-handle {
+    font-weight: 600;
+    color: var(--accent, #4a90d9);
+}
+
+.compose-autocomplete-name {
+    color: var(--muted);
+}
+
+.compose-autocomplete-hashtag {
+    font-weight: 600;
+    color: var(--accent, #4a90d9);
 }
 
 .compose-meta {

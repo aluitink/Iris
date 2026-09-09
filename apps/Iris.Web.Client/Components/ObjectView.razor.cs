@@ -20,6 +20,7 @@ public partial class ObjectView
     private Iri? AuthorIri => (Obj as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
     private Iri? ParentIri => Obj?.GetParentIri();
     private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
+    private IReadOnlyList<(string Name, Iri? Href)> HashtagTags => Obj?.GetHashtagTags() ?? [];
     private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
@@ -242,6 +243,16 @@ public partial class ObjectView
     private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
 
     private static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";
+
+    /// <summary>
+    /// The href for a rendered hashtag: this instance's own hashtag search
+    /// (<c>/search?q={#tag}</c>). A hashtag's authoring-server href (when one was supplied in the
+    /// inbound <c>tag</c>) is a *foreign* URL (e.g. another instance's hashtag page) and is not useful
+    /// for a reader browsing this instance, so the link always points at the local hashtag search — the
+    /// same destination a reader would expect when tapping a <c>#tag</c> on this instance.
+    /// </summary>
+    internal static string HashtagHref(string name, Iri? href)
+        => $"/search?q={Uri.EscapeDataString(name)}";
 
     private static string HandleOf(Iri iri)
     {

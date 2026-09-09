@@ -265,6 +265,74 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Resolves the <c>name</c> (and, when present, <c>href</c>) of an object's <c>tag</c> entries that
+    /// are <c>Hashtag</c>s (the ActivityStreams <c>Hashtag</c> tag type, used for <c>#hashtags</c>).
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="Mention"/> (which the library models as a concrete type), a <c>Hashtag</c> tag
+    /// deserializes as a generic <see cref="IObject"/> whose <c>Type</c> list contains <c>"Hashtag"</c>,
+    /// whose <c>Name</c> is the <c>#tag</c> text (e.g. <c>"#hello"</c>), and whose <c>href</c> (the
+    /// hashtag's search/browse URL, when the authoring server provided one) is left in
+    /// <see cref="IObject.ExtensionData"/> (the <c>Object</c> base does not model <c>href</c> as a
+    /// property — only <see cref="Link"/> does). This is the single boundary read for that field, mirroring
+    /// <see cref="GetMentionIris"/>: it lets a renderer surface a note's hashtags (including ones that
+    /// arrived from other servers that carry them in <c>tag</c> rather than as inline <c>#text</c>) without
+    /// reaching into the 3rd-party ActivityStreams types. Returns an empty list when the object has no
+    /// hashtag tags.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>tag</c> is read. May be null.</param>
+    /// <returns>
+    /// The hashtag tags (the <c>#tag</c> name and its optional href, in <c>tag</c> order); possibly empty.
+    /// A hashtag with no <c>href</c> (a server that omitted it) carries a <see langword="null"/> href.
+    /// </returns>
+    public static IReadOnlyList<(string Name, Iri? Href)> GetHashtagTags(this IObject? obj)
+    {
+        var tags = obj?.Tag;
+        if (tags is null)
+        {
+            return [];
+        }
+
+        var hashtags = new List<(string Name, Iri? Href)>();
+        foreach (var tag in tags)
+        {
+            if (tag is not IObject { Type: { } types } hashtag)
+            {
+                continue;
+            }
+
+            // A Hashtag tag is an IObject whose type list includes "Hashtag" (ordinal, case-insensitive —
+            // the library normalizes the type term, but be lenient about casing from foreign servers).
+            if (!types.Any(t => string.Equals(t, "Hashtag", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var name = hashtag.Name?.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            // The hashtag's href (its search/browse URL) is in ExtensionData (the Object base does not
+            // model href as a property). It may be absent (a server that omitted it) — in which case the
+            // tag is still surfaced, just without a clickable link.
+            Iri? href = null;
+            if (hashtag.ExtensionData is { } ext && ext.TryGetValue("href", out var hrefElement)
+                && hrefElement.ValueKind == JsonValueKind.String
+                && hrefElement.GetString() is { Length: > 0 } hrefString
+                && Iri.TryParse(hrefString, out var parsedHref))
+            {
+                href = parsedHref;
+            }
+
+            hashtags.Add((name, href));
+        }
+
+        return hashtags;
+    }
+
+    /// <summary>
     /// Resolves the IRIs of an object's <c>attachment</c> entries (F-12).
     /// </summary>
     /// <remarks>

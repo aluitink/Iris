@@ -206,6 +206,54 @@ public sealed class ReplyIntegrationTests : IAsyncLifetime
         Assert.Equal(Mentioned.Value, tags.Single().GetString());
     }
 
+    // --- E2E: a signed PostReplyAsync with a hashtag carries a Hashtag tag over the wire (54.14) ---
+
+    [Fact]
+    public async Task Client_PostReplyAsync_HashtagCarriesHashtagTag()
+    {
+        using var client = CreateClient();
+
+        var result = await client.PostReplyAsync(
+            ActorIri,
+            ParentIri,
+            "a fresh reply #hashtag-roundtrip",
+            hashtags: ["#hashtag-roundtrip"]);
+
+        // The signed Create reaches alice's inbox; the handler records the parent → child edge.
+        Assert.Equal(202, result.StatusCode);
+
+        // Locate the new reply (the one that is not r1/r2) and fetch its stored document.
+        using var reader = CreateClient();
+        var items = new List<string>();
+        await foreach (var item in reader.GetRepliesAsync(ParentIri, new CollectionQuery { Limit = 10 }))
+        {
+            items.Add(ResolveIri(item));
+        }
+
+        var known = new[] { Reply1.Value, Reply2.Value };
+        var newReplyIri = items.Single(i => !known.Contains(i));
+
+        var response = await _http.GetAsync(ObjectPath(new Iri(newReplyIri)));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // The posted reply's `tag` carries a Hashtag object (type + name + href) — unlike a Mention
+        // (which serializes as a bare href string), a Hashtag is a full object because the library has
+        // no dedicated Hashtag type (it is a generic Object of type Hashtag).
+        Assert.True(root.TryGetProperty("tag", out var tag));
+        var tags = SingleElement(tag);
+        var hashtag = tags.Single();
+        Assert.Equal("object", hashtag.ValueKind.ToString().ToLowerInvariant());
+        // The type list includes "Hashtag" (the base "Object" is appended by the library).
+        var typeList = hashtag.GetProperty("type").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Contains("Hashtag", typeList);
+        Assert.Equal("#hashtag-roundtrip", hashtag.GetProperty("name").GetString());
+        // The href points at this instance's hashtag search for that tag.
+        var expectedHref = $"https://{Host}/search?q=%23hashtag-roundtrip";
+        Assert.Equal(expectedHref, hashtag.GetProperty("href").GetString());
+    }
+
     // --- Helpers --------------------------------------------------------------------
 
     /// <summary>

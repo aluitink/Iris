@@ -748,11 +748,17 @@ public interface IActivityPubClient : IDisposable
     /// carries no mention tags.</param>
     /// <param name="to">Optional audience link(s) for the reply (e.g. the public <c>as:Public</c>
     /// address). When null the reply carries no explicit <c>to</c>.</param>
+    /// <param name="hashtags">Optional hashtag names (each including the leading <c>#</c>, e.g.
+    /// <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c> <c>tag</c> entry (an
+    /// ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the <c>#tag</c> text and whose
+    /// <c>href</c> is the actor's origin <c>/search?q={#tag}</c> URL). Mention and hashtag tags are
+    /// combined into a single <c>tag</c> array. When null/empty the note carries no hashtag tags.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// Mirrors <c>PostNoteAsync</c> but sets <c>inReplyTo</c> (the parent) and, when
-    /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
+    /// <paramref name="mentions"/>/<paramref name="hashtags"/> are non-empty, a <c>tag</c> of
+    /// <see cref="Mention"/> and <c>Hashtag</c> entries. The
     /// receiving server's <c>Create</c> handler records the parent → child reply edge (via the note's
     /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The
     /// <see cref="Create"/> is published to <c>actorId.OutboxOf()</c> (the author's own outbox).
@@ -763,6 +769,7 @@ public interface IActivityPubClient : IDisposable
         string content,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
+        IEnumerable<string>? hashtags = null,
         CancellationToken ct = default);
 
     /// <summary>
