@@ -8,6 +8,7 @@
 
 <PageTitle>Sign in — Iris</PageTitle>
 
+<div class="card auth-card">
 <h1>Sign in</h1>
 
 @if (!string.IsNullOrEmpty(_error))
@@ -32,6 +33,7 @@
 </form>
 
 <p class="muted">New here? <a href="/register">Create an account</a>.</p>
+</div>
 
 @code {
     private string? _error;

@@ -537,6 +537,100 @@ ul.object-list li {
     color: var(--accent);
 }
 
+.actor-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.actor-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.actor-avatar-fallback {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.actor-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.actor-bar-handle {
+    color: var(--text);
+    font-weight: 700;
+    font-size: 0.95rem;
+    text-decoration: none;
+}
+
+.actor-bar-handle:hover {
+    color: var(--accent);
+}
+
+.actor-card {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+}
+
+.actor-card-avatar {
+    width: 4rem;
+    height: 4rem;
+    flex-shrink: 0;
+}
+
+.actor-card-avatar img {
+    width: 100%;
+    height: 100%;
+}
+
+.actor-card-avatar-fallback {
+    font-size: 1.75rem;
+}
+
+.actor-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+}
+
+.actor-card-handle {
+    color: var(--text);
+    font-weight: 700;
+    font-size: 1.05rem;
+    text-decoration: none;
+}
+
+.actor-card-handle:hover {
+    color: var(--accent);
+}
+
+.actor-card-name {
+    color: var(--text);
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.actor-card-summary {
+    color: var(--muted);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+}
+
 .object-type {
     font-size: 0.7rem;
     text-transform: uppercase;
