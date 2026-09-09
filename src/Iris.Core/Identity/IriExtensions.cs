@@ -1117,6 +1117,54 @@ public static class IriExtensions
         return null;
     }
 
+    /// <summary>
+    /// Reads the <c>publishedTime</c> property from an object's <see cref="IObject.ExtensionData"/>
+    /// (F-11, <c>Article</c>-specific). The ActivityStreams library models <c>published</c> (as
+    /// <see cref="ActivityObject.Published"/>) but not <c>publishedTime</c>; a remote <c>Article</c>
+    /// may carry both (the <c>published</c> timestamp is when the object was created in the
+    /// ActivityPub sense, while <c>publishedTime</c> is the article's publication date).
+    /// </summary>
+    /// <param name="obj">The object whose <c>publishedTime</c> is read. May be null.</param>
+    /// <returns>The parsed <c>publishedTime</c>, or <c>null</c> when absent or unparseable.</returns>
+    public static DateTime? GetPublishedTime(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("publishedTime", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        return DateTime.TryParse(value, out var dt) ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : null;
+    }
+
+    /// <summary>
+    /// Reads the <c>inLanguage</c> property from an object's <see cref="IObject.ExtensionData"/>
+    /// (F-11, <c>Article</c>-specific). The ActivityStreams library does not model <c>inLanguage</c>;
+    /// it lands in <c>ExtensionData</c>.
+    /// </summary>
+    /// <param name="obj">The object whose <c>inLanguage</c> is read. May be null.</param>
+    /// <returns>The language tag (e.g. <c>"en"</c>, <c>"fr-CA"</c>), or <c>null</c> when absent.</returns>
+    public static string? GetInLanguage(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("inLanguage", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
     private static Iri AppendSegment(Iri iri, string segment)
     {
         if (!iri.IsAbsolute)

@@ -1549,4 +1549,137 @@ public class IriExtensionsTests
         IObject? none = null;
         Assert.Null(none.GetPublicKeyIri());
     }
+
+    // --- GetPublishedTime (F-11, Article-specific) ---------------------------------------------
+
+    [Fact]
+    public void GetPublishedTime_WithPublishedTime_ReturnsParsedDate()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement("2026-01-15T10:30:00Z"),
+        };
+
+        var result = article.GetPublishedTime();
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 1, 15, 10, 30, 0, DateTimeKind.Utc), result!.Value);
+    }
+
+    [Fact]
+    public void GetPublishedTime_NoPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_InvalidPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement("not-a-date"),
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_NullObject_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_NonStringPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement(42),
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    // --- GetInLanguage (F-11, Article-specific) -------------------------------------------------
+
+    [Fact]
+    public void GetInLanguage_WithInLanguage_ReturnsTag()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement("fr-CA"),
+        };
+
+        Assert.Equal("fr-CA", article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NoInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+
+        Assert.Null(article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_EmptyInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement("   "),
+        };
+
+        Assert.Null(article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NullObject_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NonStringInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement(42),
+        };
+
+        Assert.Null(article.GetInLanguage());
+    }
 }

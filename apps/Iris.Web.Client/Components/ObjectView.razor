@@ -228,6 +228,24 @@
             {
                 <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
             }
+            @if (ArticlePublishedTime is { } pubTime)
+            {
+                <div class="object-article-meta">
+                    <time class="object-article-published" title="@pubTime.ToString("o")">published @pubTime.ToLocalTime().ToString("g")</time>
+                </div>
+            }
+            @if (ArticleDuration is { } duration)
+            {
+                <div class="object-article-meta">
+                    <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
+                </div>
+            }
+            @if (ArticleInLanguage is { Length: > 0 } lang)
+            {
+                <div class="object-article-meta">
+                    <span class="object-article-language">@lang</span>
+                </div>
+            }
             @if (ParentIri is { } parent)
             {
                 <div class="object-parent">

@@ -26,6 +26,9 @@ public partial class ObjectView
     private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
+    private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
+    private string? ArticleInLanguage => (ActivityEmbeddedObject ?? Obj)?.GetInLanguage();
+    private TimeSpan? ArticleDuration => (ActivityEmbeddedObject ?? Obj) is ActivityObject { Duration: { } d } ? d : null;
     private bool IsSensitive => Obj?.IsSensitive() ?? false;
     private string? Summary => Obj?.GetSummary();
     private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
