@@ -7,9 +7,10 @@ using CollectionPage = Iris.Core.Collections.CollectionPage;
 namespace Iris.Server.Services;
 
 /// <summary>
-/// The default <see cref="IFollowFeedService"/> (F-14): merges an actor's local follows' outboxes (read
-/// from the local activity store) with the remote follows' outboxes (fetched over the wire, walking each
-/// outbox's pages) into a single newest-first, de-duplicated, capped feed.
+/// The default <see cref="IFollowFeedService"/> (F-14): merges the actor's <em>own</em> outbox (read from
+/// the local activity store) with the local follows' outboxes (read from the local store) and the remote
+/// follows' outboxes (fetched over the wire, walking each outbox's pages) into a single newest-first,
+/// de-duplicated, capped feed.
 /// </summary>
 /// <remarks>
 /// For each followed actor the service reads (local) or walks (remote) the outbox's first
@@ -98,16 +99,21 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <summary>
-    /// Builds the unfiltered followed feed for the given actor: the union of the actor's local and remote
-    /// follows' outbox items, newest-first, de-duplicated, capped by <see cref="FeedOptions"/>.
+    /// Builds the unfiltered followed feed for the given actor: the actor's <em>own</em> outbox items plus
+    /// the union of the actor's local and remote follows' outbox items, newest-first, de-duplicated, capped
+    /// by <see cref="FeedOptions"/>.
     /// </summary>
+    /// <remarks>
+    /// The actor's own outbox is always merged in (54.17): a home timeline shows the signed-in actor's own
+    /// posts alongside the posts of the actors they follow. The actor is always local here (the feed
+    /// endpoint only resolves local actors), so their outbox is read from the local store. The own-outbox
+    /// items are prepended before the followed actors' items; <see cref="TruncateDedup"/> de-duplicates by
+    /// IRI (a post the actor made cannot also appear in a follow's outbox, but the de-dup is a cheap
+    /// safeguard) and caps the result to <see cref="FeedOptions.MaxItems"/>.
+    /// </remarks>
     private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, CancellationToken ct)
     {
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
-        if (followed.Count == 0)
-        {
-            return [];
-        }
 
         // Deterministic order across follows (IRI order), like the community feed.
         var ordered = followed.OrderBy(f => f.Value, StringComparer.Ordinal).ToList();
@@ -126,6 +132,14 @@ public sealed class FeedService : IFollowFeedService
             .ConfigureAwait(false);
 
         var feed = new List<IObjectOrLink>();
+
+        // The actor's own posts (54.17): always included, regardless of follows. The actor is local (the
+        // feed endpoint only resolves local actors), so read their outbox from the local store.
+        foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
+        {
+            feed.Add(item);
+        }
+
         foreach (var followIri in ordered)
         {
             if (blocked.Contains(followIri) || muted.Contains(followIri))
