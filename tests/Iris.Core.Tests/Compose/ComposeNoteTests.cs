@@ -68,20 +68,21 @@ public class ComposeNoteTests
     }
 
     [Fact]
-    public void Build_SetsSummary_WhenSensitiveAndSummaryPresent()
+    public void Build_SetsSummary_WhenSummaryPresent()
     {
-        var note = ComposeNote.Build(Alice, "content", sensitive: true, summary: "NSFW");
+        var note = ComposeNote.Build(Alice, "content", summary: "NSFW");
 
         Assert.Equal("NSFW", note.Summary?.Single());
         Assert.Equal("NSFW", ((IObject)note).GetSummary());
     }
 
     [Fact]
-    public void Build_OmitsSummary_WhenNotSensitive()
+    public void Build_SetsSummary_WhenSensitiveAndSummaryPresent()
     {
-        var note = ComposeNote.Build(Alice, "content", sensitive: false, summary: "NSFW");
+        var note = ComposeNote.Build(Alice, "content", sensitive: true, summary: "NSFW");
 
-        Assert.Null(note.Summary);
+        Assert.Equal("NSFW", note.Summary?.Single());
+        Assert.Equal("NSFW", ((IObject)note).GetSummary());
     }
 
     [Fact]
@@ -336,5 +337,34 @@ public class ComposeNoteTests
 
         var tag = Assert.IsType<ActivityObject>(note.Tag?.Single());
         Assert.True(tag.ExtensionData is null || !tag.ExtensionData!.ContainsKey("href"));
+    }
+
+    [Fact]
+    public void Build_SetsSource_WhenMarkdownHtmlProvided()
+    {
+        var note = ComposeNote.Build(Alice, "**bold** text", markdownHtml: "<strong>bold</strong> text");
+
+        Assert.NotNull(note.ExtensionData);
+        Assert.True(note.ExtensionData!.ContainsKey("source"));
+        var source = note.ExtensionData["source"];
+        Assert.Equal("text/markdown", source.GetProperty("mediaType").GetString());
+        Assert.Equal("**bold** text", source.GetProperty("content").GetString());
+    }
+
+    [Fact]
+    public void Build_OmitsSource_WhenNoMarkdownHtml()
+    {
+        var note = ComposeNote.Build(Alice, "plain text");
+
+        Assert.True(note.ExtensionData is null || !note.ExtensionData!.ContainsKey("source"));
+    }
+
+    [Fact]
+    public void Build_SetsSummary_IndependentOfSensitive()
+    {
+        var note = ComposeNote.Build(Alice, "content", summary: "CW only");
+
+        Assert.Equal("CW only", note.Summary?.Single());
+        Assert.True(((IObject)note).IsSensitive() == false);
     }
 }

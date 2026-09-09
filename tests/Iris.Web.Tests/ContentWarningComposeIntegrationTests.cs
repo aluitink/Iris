@@ -127,21 +127,9 @@ public sealed class ContentWarningComposeIntegrationTests : IDisposable
         Assert.Null(obj.GetSummary());
     }
 
-    [Fact]
-    public async Task SensitiveNote_SummaryOnlyWhenSensitive()
-    {
-        // A summary without the sensitive flag is ignored by ComposeNote.Build (not set on the note).
-        var client = BuildSignedClient(_actorIri, _actorKey);
-        var note = ComposeNote.Build(_actorIri, "Note with ignored summary", sensitive: false, summary: "Ignored", to: [Public]);
-
-        var result = await client.PostNoteAsync(_actorIri, note);
-        Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
-
-        var (_, obj) = await FindCreatedNoteAsync("Note with ignored summary");
-        Assert.NotNull(obj);
-        Assert.False(obj!.IsSensitive());
-        Assert.Null(obj.GetSummary());
-    }
+    // SensitiveNote_SummaryOnlyWhenSensitive deleted (56.3): the test asserted that summary is only
+    // set when sensitive is true, which is the old behavior. 56.3 decoupled summary from sensitive
+    // (Mastodon/Pleroma convention: CW is independent of the sensitive flag).
 
     [Fact]
     public async Task SensitiveNote_AppearsInPublicDocument()

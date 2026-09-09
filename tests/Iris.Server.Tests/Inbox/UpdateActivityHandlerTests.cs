@@ -452,4 +452,28 @@ public sealed class UpdateActivityHandlerTests
 
         return null;
     }
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerUpdatesNote_StampsUpdated()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var originalNote = BuildNote("original body");
+        originalNote.Published = DateTime.UtcNow.AddDays(-1);
+        await persistence.Objects.PutObjectAsync(originalNote);
+
+        var beforeEdit = DateTime.UtcNow;
+        var update = BuildUpdate(LocalPerson, BuildNote("edited body"));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.True(await persistence.Objects.TryGetObjectAsync(NoteIri, out var stored));
+        var note = Assert.IsType<Note>(stored);
+        Assert.Equal("edited body", note.Content?.FirstOrDefault());
+        Assert.NotNull(note.Updated);
+        Assert.True(note.Updated! >= beforeEdit, $"Updated ({note.Updated}) should be >= {beforeEdit}");
+        Assert.True(note.Updated! >= originalNote.Published!, $"Updated ({note.Updated}) should be >= published ({originalNote.Published})");
+    }
 }

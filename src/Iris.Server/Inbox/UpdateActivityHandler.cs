@@ -134,6 +134,17 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
+        // Stamp `updated` on content objects (non-actor) so remote clients can detect edits.
+        // Actor profile updates go through HandleActorUpdateAsync which uses field-merge semantics
+        // and does not set `updated`. The `updated` timestamp is meaningful for content objects
+        // (Notes, Articles) that carry a `published` timestamp.
+        if (updated is ActivityObject contentObj && contentObj is not Actor)
+        {
+            var now = DateTime.UtcNow;
+            var published = contentObj.Published;
+            contentObj.Updated = published is { } pub && now < pub ? pub : now;
+        }
+
         await _persistence.Objects.PutObjectAsync(updated, ct).ConfigureAwait(false);
 
         // F-02 (federated half): propagate the Update to the author's remote followers so their copies

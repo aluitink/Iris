@@ -104,9 +104,11 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 56 — Cross-implementation federation compatibility (IN PROGRESS):**
 
-- 56.1: **Mastodon wire-compatibility gap analysis** — review Iris's ActivityPub wire format against the [Mastodon ActivityPub spec](https://docs.joinmastodon.org/activity/) for the key flows (follow, create, like, announce, undo, block, mute, update, delete). Document gaps in a change doc. No code changes unless a defect is found.
-- 56.2: **Pleroma/Akko wire-compatibility check** — same gap analysis against Pleroma's AP implementation. Focus on differences from Mastodon (e.g. `to: ["as:Public"]` vs `to: "as:Public"`, `cc` array conventions, `attachment` vs `image`, `sensitive` flag handling).
-- 56.3: **Fix top-3 wire compatibility gaps** — implement fixes for the three highest-impact gaps identified in 56.1/56.2. Integration tests for each fix.
+- 56.1: **Mastodon wire-compatibility gap analysis** (COMPLETE) — [changes/412](docs/changes/412-56.1-mastodon-wire-compatibility-gap-analysis.md)
+- 56.2: **Pleroma/Akko wire-compatibility check** (COMPLETE) — [changes/413](docs/changes/413-56.2-pleroma-akko-wire-compatibility.md)
+- 56.3: **Fix top-3 wire compatibility gaps** (COMPLETE) — [changes/414](docs/changes/414-56.3-fix-top3-wire-compatibility-gaps.md)
+
+**Phase 56 COMPLETE.**
 
 *(Phase 55 COMPLETE — all three slices done. See ROADMAP.md.)*
 
@@ -124,8 +126,10 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
-  - 55.3: **Operator runbook + API reference polish** (Phase 55) — wrote `docs/OPERATOR_RUNBOOK.md` (consolidated operator reference: architecture, config, day-to-day ops, backup/restore, monitoring, 7 troubleshooting scenarios, upgrades, security notes). Verified OpenAPI spec: 61 endpoints, 3.1.1. Server 952/0, Web 63/0. [changes/411](docs/changes/411-55.3-operator-runbook-api-reference.md)
-  - 55.2: **Federation interop hardening — live cross-instance verification** (Phase 55) — stood up iris-dev2 (port 8082). **Found + fixed** multi-instance AdvertiseBase defect (hardcoded FQDN → use browser origin). Verified: follow/unfollow PASS, like delivery PASS, actor doc PASS, WebFinger PASS. 0 console errors. Server 952/0, Web 63/0. [changes/410](docs/changes/410-55.2-federation-interop-verification.md)
+  - 56.3: **Fix top-3 wire compatibility gaps** (Phase 56) — (1) `updated` timestamp stamped on content object edits in `UpdateActivityHandler`; (2) `source` field emitted with raw markdown in `ComposeNote.Build`; (3) `summary` decoupled from `sensitive` (CW independent of NSFW flag, matching Mastodon/Pleroma). 4 new tests, 1 web test deleted per policy. Core 296/0, Server 953/0, Web 62/0. [changes/414](docs/changes/414-56.3-fix-top3-wire-compatibility-gaps.md)
+  - 56.2: **Pleroma/Akko wire-compatibility check** (Phase 56) — inbound: clean (all Pleroma fields preserved via ExtensionData). Outbound: same 5 Mastodon gaps + 2 Pleroma-specific (conversationId, emoji). Analysis only. [changes/413](docs/changes/413-56.2-pleroma-akko-wire-compatibility.md)
+  - 56.1: **Mastodon wire-compatibility gap analysis** (Phase 56) — audited all outbound AP flows. Key gaps: `updated` missing, `source` missing, direct visibility incorrect, `summary` restricted, scalar-vs-array. Analysis only. [changes/412](docs/changes/412-56.1-mastodon-wire-compatibility-gap-analysis.md)
+  - 55.3: **Operator runbook + API reference polish** (Phase 55) — wrote `docs/OPERATOR_RUNBOOK.md` (consolidated operator reference). Verified OpenAPI spec: 61 endpoints, 3.1.1. Server 952/0, Web 63/0. [changes/411](docs/changes/411-55.3-operator-runbook-api-reference.md)
   - 55.1: **`IInstanceStatsProvider` — real NodeInfo user count** (Phase 55) — `IInstanceStatsProvider` in Iris.Server + InMemory/Ef implementations. NodeInfoHandler async, injects provider. Live: `usage.users.total` = 3. Server 952/0, Web 63/0. [changes/409](docs/changes/409-55.1-instance-stats-provider.md)
   - 54.33: **Verify discovery endpoints with real federation software** (Phase 54) — live-verified all `.well-known` discovery endpoints on `iris.luit.ink`: NodeInfo (RFC 8667), x-nodeinfo2, host-meta (RFC 6415), WebFinger (RFC 7033) all return RFC-compliant responses with correct content types. Compared response shapes with `mastodon.social`. **No defects found.** One known limitation noted: `usage.users.total` is hardcoded to 0 (fixed in 55.1). Web 63/0, Server 952/0. [changes/408](docs/changes/408-54.33-verify-discovery-endpoints.md)
   - 54.32: **Server-side logging — log inbound activity types** (Phase 54) — added structured logging to `HandleInboxPostAsync` (the single choke point for all inbound inbox deliveries). Every inbox delivery now logs: activity `type`, actor IRI, target object IRI, recipient, peer host, and outcome (accepted/rejected/rate-limited/exception). Info level for accepted deliveries + expected rejections; Warn for peer misbehavior; Error for processing exceptions. Fixed a latent `NullReferenceException` in the invalid-signature log path (default `Iri` has null `_uri`). Verified live: unsigned POSTs log correctly. Web 63/0, Server 952/0. [changes/407](docs/changes/407-54.32-inbound-activity-logging.md)

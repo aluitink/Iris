@@ -110,6 +110,19 @@ public static class ComposeNote
             AttributedTo = [new Link { Href = actorId.Uri }],
         };
 
+        // Emit the `source` field (Mastodon/Pleroma convention) when the content is Markdown-rendered
+        // HTML. The `source` carries the original Markdown text so remote clients can re-render or
+        // display the source. Written into ExtensionData (Rule 6) since the library does not model it.
+        if (!string.IsNullOrWhiteSpace(markdownHtml))
+        {
+            note.ExtensionData ??= new Dictionary<string, JsonElement>();
+            note.ExtensionData["source"] = JsonSerializer.SerializeToElement(new
+            {
+                content,
+                mediaType = "text/markdown",
+            });
+        }
+
         if (sensitive)
         {
             // `sensitive` is a standard AS term the library leaves in ExtensionData (Rule 6) — set it
@@ -119,9 +132,11 @@ public static class ComposeNote
             note.ExtensionData["sensitive"] = JsonSerializer.SerializeToElement(true);
         }
 
-        if (sensitive && !string.IsNullOrWhiteSpace(summary))
+        if (!string.IsNullOrWhiteSpace(summary))
         {
-            // `summary` is a real AS property (the content-sensitivity preview).
+            // `summary` is a real AS property (the content-sensitivity preview). It is independent of
+            // the `sensitive` flag (Mastodon/Pleroma convention): a note can carry a content warning
+            // without being marked sensitive.
             note.Summary = [summary];
         }
 
