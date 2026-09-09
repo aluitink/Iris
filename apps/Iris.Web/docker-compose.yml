@@ -74,6 +74,14 @@ services:
       # Pointing it at the mounted named volume (/data/media) makes blobs survive restarts. Maps to
       # Iris:MediaBlobDir (read by EntityFrameworkPersistenceExtensions.AddEntityFrameworkPersistence).
       Iris__MediaBlobDir: ${IRIS_MEDIA_BLOB_DIR:-/data/media}
+      # ASP.NET Core Data Protection uses the HOME env var to locate its key ring
+      # (~/.aspnet/DataProtection-Keys). setpriv (used by the entrypoint to drop
+      # root) does not set HOME, so the app falls back to the WORKDIR (/app) and
+      # stores keys in an ephemeral path. Pinning HOME to the iris user's actual
+      # home dir makes the keys land on the iris-dp-keys volume (line 88) and
+      # survive container recreation — no more session/antiforgery invalidation
+      # on every deploy.
+      HOME: /home/iris
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this
