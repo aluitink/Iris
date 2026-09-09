@@ -978,9 +978,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             yield break;
         }
 
+        // Fast path: when the collection's `first` resolves back to the collection's own IRI (the
+        // common case — an OrderedCollection served as its own first page, carrying a self `first`
+        // link), the collection document we just fetched IS the first page. Reuse it instead of
+        // issuing a second identical GET for the same IRI (the "duplicate home-feed fetch").
+        CollectionPage? page = null;
+        if (pageIri.Equals(collectionId))
+        {
+            page = ConvertToCollectionPage(first);
+        }
+
         while (pageIri is { } current)
         {
-            var page = await FetchCollectionPageAsync(current, bypassCache, ct).ConfigureAwait(false);
+            page ??= await FetchCollectionPageAsync(current, bypassCache, ct).ConfigureAwait(false);
             if (page is null)
             {
                 yield break;
@@ -998,6 +1008,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             }
 
             pageIri = page.NextPage;
+            page = null;
         }
     }
 
@@ -1276,13 +1287,22 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             obj = value;
         }
 
-        // A collection page is either an OrderedCollectionPage (page N>1) or the collection's first
-        // page served as an OrderedCollection (page 1 — the server serves the collection document
-        // itself, carrying its first page of items + a self `first`, with the `next` pointer living
-        // on the page). Both are valid first/current pages, so both are accepted.
-        if (obj is OrderedCollectionPage)
+        return ConvertToCollectionPage(obj);
+    }
+
+    /// <summary>
+    /// Converts a fetched collection-object document into a <see cref="CollectionPage"/>. A collection
+    /// page is either an <see cref="OrderedCollectionPage"/> (page N&gt;1) or the collection's first
+    /// page served as an <see cref="OrderedCollection"/> (page 1 — the server serves the collection
+    /// document itself, carrying its first page of items + a self <c>first</c>, with the <c>next</c>
+    /// pointer living on the page). Both are valid first/current pages, so both are accepted.
+    /// Returns <see langword="null"/> when the object is not a recognizable collection page.
+    /// </summary>
+    private static CollectionPage? ConvertToCollectionPage(IObject? obj)
+    {
+        if (obj is OrderedCollectionPage orderedPage)
         {
-            return CollectionPageFactory.FromOrderedCollectionPage(obj);
+            return CollectionPageFactory.FromOrderedCollectionPage(orderedPage);
         }
 
         if (obj is OrderedCollection collection)
