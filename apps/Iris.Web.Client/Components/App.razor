@@ -2,7 +2,15 @@
 <Router AppAssembly="typeof(Program).Assembly">
     <Found Context="routeData">
         <CascadingAuthenticationState>
-            <RouteView RouteData="routeData" DefaultLayout="typeof(Layout.MainLayout)" />
+            <AuthorizeRouteView RouteData="routeData"
+                                 DefaultLayout="typeof(Layout.MainLayout)">
+                <Authorizing>
+                    <span class="muted">Checking sign-in…</span>
+                </Authorizing>
+                <NotAuthorized>
+                    <RedirectToLogin />
+                </NotAuthorized>
+            </AuthorizeRouteView>
             <FocusOnNavigate RouteData="routeData" Selector="h1" />
         </CascadingAuthenticationState>
     </Found>

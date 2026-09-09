@@ -40,7 +40,10 @@ builder.Services.AddHttpClient("iris-notifications", client =>
 // The WASM client uses an in-memory key store + key provider (keys are ephemeral per browser session).
 builder.Services.AddSingleton<IKeyStore, InMemoryKeyStore>();
 builder.Services.AddSingleton<IKeyProvider, InMemoryKeyProvider>();
-builder.Services.AddAuthorizationCore();
+builder.Services.AddAuthorizationCore(options =>
+{
+    options.AddPolicy("Admin", policy => policy.RequireRole("Admin"));
+});
 builder.Services.AddScoped<AuthenticationStateProvider>(sp =>
 {
     // Use the named "iris" client (BaseAddress = the server origin) so the root-relative
