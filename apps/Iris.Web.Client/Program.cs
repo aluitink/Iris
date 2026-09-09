@@ -27,6 +27,16 @@ var serverBaseUri = new Uri(builder.HostEnvironment.BaseAddress);
 var advertiseBaseSetting = builder.Configuration["Iris:AdvertiseBase"];
 Uri? advertiseBase = !string.IsNullOrWhiteSpace(advertiseBaseSetting) ? new Uri(advertiseBaseSetting) : null;
 
+// Multi-instance: when the static AdvertiseBase host differs from the browser's origin (the same WASM
+// build is deployed to multiple instances, each with its own FQDN), use the browser's origin as the
+// advertise base. This ensures the session's ActivityPub clients rewrite the correct host to
+// same-origin and route cross-instance reads through the correct proxy.
+if (advertiseBase is not null
+    && !string.Equals(advertiseBase.DnsSafeHost, serverBaseUri.DnsSafeHost, StringComparison.OrdinalIgnoreCase))
+{
+    advertiseBase = serverBaseUri;
+}
+
 builder.Services.AddHttpClient("iris", client =>
 {
     client.BaseAddress = serverBaseUri;
