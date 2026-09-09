@@ -79,16 +79,19 @@ public sealed class GlobalSearchService : IGlobalSearchService
                 var contentTotal = await _persistence.Objects.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
                 total = actorTotal + contentTotal;
 
+                var actorTaken = 0;
                 if (offset < actorTotal)
                 {
                     var actorLimit = Math.Min(limit, actorTotal - offset);
+                    actorTaken = actorLimit;
                     results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
                 }
 
-                var contentOffset = offset < actorTotal ? offset - actorTotal : 0;
-                if (contentOffset < contentTotal)
+                var contentOffset = Math.Max(0, offset - actorTotal);
+                var remaining = limit - actorTaken;
+                if (contentOffset < contentTotal && remaining > 0)
                 {
-                    var contentLimit = Math.Min(limit, contentTotal - contentOffset);
+                    var contentLimit = Math.Min(remaining, contentTotal - contentOffset);
                     results.AddRange(await _persistence.Objects.SearchObjectsAsync(normalized, contentLimit, contentOffset, ct).ConfigureAwait(false));
                 }
             }
@@ -105,16 +108,19 @@ public sealed class GlobalSearchService : IGlobalSearchService
                     : new List<IObject>();
                 total = actorTotal + contentMatches.Count;
 
+                var actorTaken = 0;
                 if (offset < actorTotal)
                 {
                     var actorLimit = Math.Min(limit, actorTotal - offset);
+                    actorTaken = actorLimit;
                     results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
                 }
 
-                var contentOffset = offset < actorTotal ? offset - actorTotal : 0;
-                if (contentOffset < contentMatches.Count)
+                var contentOffset = Math.Max(0, offset - actorTotal);
+                var remaining = limit - actorTaken;
+                if (contentOffset < contentMatches.Count && remaining > 0)
                 {
-                    var contentLimit = Math.Min(limit, contentMatches.Count - contentOffset);
+                    var contentLimit = Math.Min(remaining, contentMatches.Count - contentOffset);
                     results.AddRange(contentMatches.Skip(contentOffset).Take(contentLimit));
                 }
             }

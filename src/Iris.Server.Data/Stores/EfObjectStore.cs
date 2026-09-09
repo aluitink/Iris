@@ -149,16 +149,18 @@ public sealed class EfObjectStore : IObjectStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        var queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
-
+        IQueryable<ObjectEntity> queryable;
         if (hasQuery)
         {
-            // Push the substring search into PostgreSQL via a GIN trigram (pg_trgm) index on the
-            // Document jsonb column (57.4). EF.Functions.Like maps to ILIKE on Npgsql, so the match is
-            // case-insensitive (matching the in-memory service); the GIN index makes it O(log n) instead
-            // of a sequential scan.
+            // Case-insensitive substring search over the jsonb Document column. Postgres cannot apply
+            // ILIKE to jsonb directly, so cast to text in the raw SQL fragment.
             var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+            queryable = db.Set<ObjectEntity>().FromSqlRaw<ObjectEntity>(
+                "SELECT * FROM \"Objects\" WHERE NOT \"IsTombstoned\" AND \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern).AsNoTracking();
+        }
+        else
+        {
+            queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
         }
 
         var entities = await queryable
@@ -188,14 +190,18 @@ public sealed class EfObjectStore : IObjectStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        var queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
         if (hasQuery)
         {
             var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+            return await db.Set<ObjectEntity>().FromSqlRaw<ObjectEntity>(
+                "SELECT * FROM \"Objects\" WHERE NOT \"IsTombstoned\" AND \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern)
+                .CountAsync(ct)
+                .ConfigureAwait(false);
         }
 
-        return await queryable.CountAsync(ct).ConfigureAwait(false);
+        return await db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned)
+            .CountAsync(ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

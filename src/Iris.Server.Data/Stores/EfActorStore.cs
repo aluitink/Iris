@@ -126,15 +126,19 @@ public sealed class EfActorStore : IActorStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        var queryable = db.Set<ActorEntity>().AsNoTracking();
+        IQueryable<ActorEntity> queryable;
         if (hasQuery)
         {
             // Match the same surfaces the in-memory service does (name / preferredUsername / IRI) by
-            // searching the document's JSON. EF.Functions.Like maps to ILIKE on Npgsql (case-insensitive);
-            // the IRI is always present in the document's `id`, so an IRI match is included. The Handle
-            // index remains for the WebFinger point lookup.
+            // searching the document's JSON. The Document column is jsonb; Postgres cannot apply ILIKE
+            // to jsonb directly, so cast to text in the raw SQL fragment.
             var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+            queryable = db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                "SELECT * FROM \"Actors\" WHERE \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern).AsNoTracking();
+        }
+        else
+        {
+            queryable = db.Set<ActorEntity>().AsNoTracking();
         }
 
         var entities = await queryable
@@ -164,14 +168,16 @@ public sealed class EfActorStore : IActorStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        var queryable = db.Set<ActorEntity>().AsNoTracking();
         if (hasQuery)
         {
             var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+            return await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                "SELECT * FROM \"Actors\" WHERE \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern)
+                .CountAsync(ct)
+                .ConfigureAwait(false);
         }
 
-        return await queryable.CountAsync(ct).ConfigureAwait(false);
+        return await db.Set<ActorEntity>().AsNoTracking().CountAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>
