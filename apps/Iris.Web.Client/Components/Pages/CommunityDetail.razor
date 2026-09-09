@@ -5,6 +5,7 @@
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
@@ -76,6 +77,30 @@ else
                     <textarea id="edit-community-summary" @bind="EditSummary" rows="3" maxlength="500"
                               placeholder="What is this community about?"></textarea>
                 </div>
+                <div class="form-group">
+                    <label>Community icon</label>
+                    <div class="avatar-upload-section">
+                        <ActorAvatar
+                            ActorIri="@(CommunityIri)"
+                            DisplayName="@PageHeading"
+                            IconIriOverride="@(EditIconIri)"
+                            CssClass="actor-profile-avatar" />
+                        <div class="avatar-upload-actions">
+                            <label class="btn btn-small">
+                                @(EditIconIri is not null ? "Change icon" : "Choose icon")
+                                <InputFile OnChange="@(e => OnIconFileChanged(e))" accept="image/*" class="visually-hidden" disabled="@IsSavingCommunity" />
+                            </label>
+                            @if (EditIconIri is not null)
+                            {
+                                <button type="button" class="btn btn-small btn-danger" @onclick="RemoveIcon" disabled="@IsSavingCommunity">Remove</button>
+                            }
+                            @if (IconUploadError is not null)
+                            {
+                                <span class="error" role="alert">@IconUploadError</span>
+                            }
+                        </div>
+                    </div>
+                </div>
                 <div class="form-group form-group--checkbox">
                     <label for="edit-community-approve-members">
                         <input id="edit-community-approve-members" type="checkbox" @bind="EditApproveMembers" />
@@ -104,6 +129,7 @@ else
         <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
         @if (IsCreator)
         {
+            <a href="#owners" class="tab @(ActiveTab == "owners" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("owners")'>Owners</a>
             <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
         }
     </div>
@@ -130,6 +156,42 @@ else
             ShowRefreshButton="true"
             EmptyMessage="No members yet."
             ItemTemplate="@MemberTemplate" />
+    }
+    else if (ActiveTab == "owners" && IsCreator)
+    {
+        <div class="card">
+            @if (OwnersLoading)
+            {
+                <p class="muted">Loading owners…</p>
+            }
+            else if (OwnerError is not null)
+            {
+                <div class="error" role="alert">@OwnerError</div>
+            }
+            else if (OwnerIris is { Count: 0 })
+            {
+                <p class="muted">No owners found.</p>
+            }
+            else
+            {
+                @if (OwnerIris is { } iris)
+                {
+                    @foreach (var ownerIri in iris)
+                    {
+                        <div class="member-row">
+                            <a href="@($"/actor?iri={Uri.EscapeDataString(ownerIri)}")" class="object-actor-handle">@DisplayHandle(ownerIri)</a>
+                            <span class="owner-badge">Owner</span>
+                            @if (iris.Count > 1)
+                            {
+                                <button class="btn btn-small btn-danger" @onclick="() => DemoteOwnerAsync(ownerIri)" disabled="@IsChangingOwner">
+                                    @(IsChangingOwner && ChangingOwnerIri == ownerIri ? "Demoting…" : "Demote")
+                                </button>
+                            }
+                        </div>
+                    }
+                }
+            }
+        </div>
     }
     else if (ActiveTab == "requests" && IsCreator)
     {
@@ -383,10 +445,12 @@ else
             EditSummary = group.Summary?.FirstOrDefault() ?? string.Empty;
             EditApproveMembers = group.GetManuallyApprovesMembers() ?? false;
             OriginalApproveMembers = EditApproveMembers;
+            EditIconIri = ActorIdentityHelper.IconIri(CommunityDoc);
         }
 
         IsEditingCommunity = true;
         CommunitySaveError = null;
+        IconUploadError = null;
     }
 
     private void CancelEditCommunity()
@@ -414,6 +478,7 @@ else
                 PreferredUsername = group.PreferredUsername,
                 Name = string.IsNullOrWhiteSpace(EditName) ? null : [EditName],
                 Summary = string.IsNullOrWhiteSpace(EditSummary) ? null : [EditSummary],
+                Icon = string.IsNullOrWhiteSpace(EditIconIri) ? [] : [new Link { Href = new Uri(EditIconIri) }],
             };
 
             var result = await client.UpdateActorAsync(communityIri, updated);
@@ -477,6 +542,14 @@ else
         {
             _ = LoadJoinRequestsAsync();
         }
+        if (tab == "owners" && IsCreator && OwnerIris is null)
+        {
+            _ = LoadOwnersAsync();
+        }
+        if (tab == "members" && IsCreator && OwnerIris is null)
+        {
+            _ = LoadOwnersAsync();
+        }
     }
 
     private RenderFragment<IObjectOrLink> MemberTemplate
@@ -485,8 +558,20 @@ else
         {
             return member => @<div class="member-row">
                 <a href="@($"/actor?iri={Uri.EscapeDataString(MemberHref(member))}")" class="object-actor-handle">@MemberName(member)</a>
-                @if (IsCreator && MemberHref(member) != Session.ActorId?.Value)
+                @if (IsCreator)
                 {
+                    var memberIriStr = MemberHref(member);
+                    var isOwner = OwnerIris is { } owners && owners.Contains(memberIriStr);
+                    @if (isOwner)
+                    {
+                        <span class="owner-badge">Owner</span>
+                    }
+                    else if (memberIriStr != Session.ActorId?.Value)
+                    {
+                        <button class="btn btn-small btn-primary" @onclick="() => PromoteOwnerAsync(memberIriStr)" disabled="@IsChangingOwner">
+                            @(IsChangingOwner && ChangingOwnerIri == memberIriStr ? "Promoting…" : "Promote")
+                        </button>
+                    }
                     <button class="btn btn-small btn-danger" @onclick="() => RemoveMemberAsync(member)" disabled="@IsRemovingMember">
                         @(IsRemovingMember ? "Removing…" : "Remove")
                     </button>
@@ -676,6 +761,182 @@ else
         finally
         {
             IsRemovingMember = false;
+            StateHasChanged();
+        }
+    }
+
+    private string? EditIconIri { get; set; }
+    private string? IconUploadError { get; set; }
+
+    private void RemoveIcon()
+    {
+        EditIconIri = null;
+        IconUploadError = null;
+    }
+
+    private async void OnIconFileChanged(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+    {
+        if (e.File is not { } file)
+        {
+            return;
+        }
+
+        if (Session.ActorId is not { } actorId)
+        {
+            return;
+        }
+
+        try
+        {
+            var bytes = await ReadAvatarBytesAsync(file);
+            var result = await Session.UploadMediaAsync(
+                actorId,
+                bytes,
+                file.ContentType ?? "application/octet-stream",
+                file.Name,
+                CancellationToken.None);
+
+            if (result is not null)
+            {
+                EditIconIri = result.MediaIri.Value;
+                IconUploadError = null;
+            }
+            else
+            {
+                IconUploadError = "Upload failed. Please try a smaller image.";
+            }
+        }
+        catch
+        {
+            IconUploadError = "Upload failed. Please try again.";
+        }
+
+        StateHasChanged();
+    }
+
+    private static async Task<byte[]> ReadAvatarBytesAsync(IBrowserFile file)
+    {
+        const int maxBytes = 10 * 1024 * 1024;
+        using var stream = file.OpenReadStream(maxBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+
+    private List<string>? OwnerIris { get; set; }
+    private bool OwnersLoading { get; set; }
+    private string? OwnerError { get; set; }
+    private bool IsChangingOwner { get; set; }
+    private string? ChangingOwnerIri { get; set; }
+
+    private async Task LoadOwnersAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        OwnersLoading = true;
+        OwnerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityOwnersAsync(communityIri);
+            if (result.IsSuccess)
+            {
+                OwnerIris = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+            }
+            else
+            {
+                OwnerError = $"Failed to load owners (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            OwnerError = "We couldn't load the owners. Please try again.";
+        }
+        finally
+        {
+            OwnersLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task PromoteOwnerAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsChangingOwner = true;
+        ChangingOwnerIri = actorIri;
+        OwnerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.PromoteCommunityOwnerAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadOwnersAsync();
+                Ui.InvalidateActor(communityIri);
+            }
+            else
+            {
+                OwnerError = $"Promote failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            OwnerError = "The member couldn't be promoted. Please try again.";
+        }
+        finally
+        {
+            IsChangingOwner = false;
+            ChangingOwnerIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DemoteOwnerAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsChangingOwner = true;
+        ChangingOwnerIri = actorIri;
+        OwnerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.DemoteCommunityOwnerAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadOwnersAsync();
+                Ui.InvalidateActor(communityIri);
+            }
+            else
+            {
+                OwnerError = $"Demote failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            OwnerError = "The owner couldn't be demoted. Please try again.";
+        }
+        finally
+        {
+            IsChangingOwner = false;
+            ChangingOwnerIri = null;
             StateHasChanged();
         }
     }

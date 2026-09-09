@@ -1059,6 +1059,12 @@ public static class ActivityPubServerExtensions
         // (no membership granted). Creator-only (same seam as member removal).
         localGroup.MapPost("/c/{name}/requests/reject/{**actorIri}", CommunityRejectJoinRequestHandler).WithName("community-reject-join-request-endpoint");
 
+        // Community owners (54.28): the Group's AttributedTo is the owner list. Owners can promote or
+        // demote members. Demoting the last owner is rejected (a community must always have ≥1 owner).
+        localGroup.MapGet("/c/{name}/owners", CommunityListOwnersHandler).WithName("community-list-owners-endpoint");
+        localGroup.MapPost("/c/{name}/owners/promote/{**actorIri}", CommunityPromoteOwnerHandler).WithName("community-promote-owner-endpoint");
+        localGroup.MapPost("/c/{name}/owners/demote/{**actorIri}", CommunityDemoteOwnerHandler).WithName("community-demote-owner-endpoint");
+
         // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
         // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
         // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
@@ -6442,6 +6448,185 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Lists the community's owners (GET /local/v1/c/{name}/owners). Owner-only. Returns a JSON array
+    /// of owner actor IRIs (the Group's AttributedTo).
+    /// </summary>
+    private static async Task<IResult> CommunityListOwnersHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var owners = new List<string>();
+        if (community.AttributedTo is { } attr)
+        {
+            foreach (var a in attr)
+            {
+                if (a.ResolveObjectIri() is { } iri)
+                {
+                    owners.Add(iri.Value);
+                }
+            }
+        }
+
+        return Results.Json(owners);
+    }
+
+    /// <summary>
+    /// Promotes a member to owner (POST /local/v1/c/{name}/owners/promote/{**actorIri}). Owner-only.
+    /// Adds the actor's IRI to the Group's AttributedTo list (if not already present).
+    /// </summary>
+    private static async Task<IResult> CommunityPromoteOwnerHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        // The actor must be a member before they can be promoted.
+        if (!await persistence.Communities.IsMemberAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // Check if already an owner.
+        var alreadyOwner = community.AttributedTo is { } attr && attr.Any(a =>
+            a.ResolveObjectIri() is { } aIri && aIri.Value == iri.Value);
+
+        if (alreadyOwner)
+        {
+            return Results.StatusCode(StatusCodes.Status409Conflict);
+        }
+
+        // Build a new AttributedTo list with the promoted owner appended.
+        var newAttributedTo = new List<IObjectOrLink>(community.AttributedTo ?? []);
+        newAttributedTo.Add(new Link { Href = iri.Uri });
+        community.AttributedTo = newAttributedTo;
+
+        await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Demotes an owner (POST /local/v1/c/{name}/owners/demote/{**actorIri}). Owner-only.
+    /// Removes the actor's IRI from the Group's AttributedTo list. Rejects if it would leave zero owners.
+    /// </summary>
+    private static async Task<IResult> CommunityDemoteOwnerHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        var attr = community.AttributedTo?.ToList();
+        if (attr is null || attr.Count == 0)
+        {
+            return Results.NotFound();
+        }
+
+        // The actor must currently be an owner.
+        var isOwner = false;
+        foreach (var a in attr)
+        {
+            if (a.ResolveObjectIri() is { } aIri && aIri.Value == iri.Value)
+            {
+                isOwner = true;
+                break;
+            }
+        }
+
+        if (!isOwner)
+        {
+            return Results.NotFound();
+        }
+
+        // Cannot demote the last owner.
+        if (attr.Count <= 1)
+        {
+            return Results.StatusCode(StatusCodes.Status400BadRequest);
+        }
+
+        // Build a new AttributedTo list without the demoted owner.
+        var newAttributedTo = attr.Where(a =>
+            a.ResolveObjectIri() is not { } aIri || aIri.Value != iri.Value
+        ).ToList();
+
+        community.AttributedTo = newAttributedTo;
+        await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
     /// Verifies that the authenticated requester is the community's creator (the Group's AttributedTo).
     /// Tries each AttributedTo IRI against the credential validator until one validates.
     /// </summary>
@@ -6459,12 +6644,23 @@ public static class ActivityPubServerExtensions
             return false;
         }
 
+        // Cookie-auth fallback (the Blazor WASM UI): the cookie carries an actor_iri claim.
+        var cookieActorIri = context.User.Identity is { IsAuthenticated: true }
+            ? context.User.FindFirst("actor_iri")?.Value
+            : null;
+
         foreach (var attr in attributedTo)
         {
             var attrIri = attr.ResolveObjectIri();
             if (attrIri is not { } iri)
             {
                 continue;
+            }
+
+            // Cookie auth: the signed-in user's actor IRI must match an owner IRI.
+            if (cookieActorIri is not null && cookieActorIri == iri.Value)
+            {
+                return true;
             }
 
             var handle = ExtractHandleFromIri(iri);

@@ -208,4 +208,37 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's owners (GET /local/v1/c/{name}/owners). Owner-only.
+    /// Returns a JSON array of owner actor IRIs (the Group's AttributedTo).
+    /// </summary>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's owners with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Promotes a member to owner (POST /local/v1/c/{name}/owners/promote/{**actorIri}). Owner-only.
+    /// Adds the actor's IRI to the Group's AttributedTo list.
+    /// </summary>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Promotes a member to owner with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Demotes an owner (POST /local/v1/c/{name}/owners/demote/{**actorIri}). Owner-only.
+    /// Removes the actor's IRI from the Group's AttributedTo list. Rejects if it would leave zero owners.
+    /// </summary>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Demotes an owner with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
 }

@@ -117,6 +117,126 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalCommunityJoinRequestDecisionAsync(communityId, actorId, "reject", credentials, ct);
 
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, CancellationToken ct = default)
+        => LocalCommunityOwnersGetAsync(communityId, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityOwnersGetAsync(communityId, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default)
+        => LocalCommunityOwnerDecisionAsync(communityId, actorId, "promote", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityOwnerDecisionAsync(communityId, actorId, "promote", credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default)
+        => LocalCommunityOwnerDecisionAsync(communityId, actorId, "demote", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityOwnerDecisionAsync(communityId, actorId, "demote", credentials, ct);
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated GET of the community's owners:
+    /// <c>GET /local/v1/c/{name}/owners</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalCommunityOwnersGetAsync(
+        Iri communityId,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var (requestUri, handler, ownsHandler) = BuildCommunityLocalRequest(communityId, "owners", null, credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated POST for a community owner decision:
+    /// <c>POST /local/v1/c/{name}/owners/{action}/{actorId}</c>.
+    /// </summary>
+    private async Task<DeliveryResult> LocalCommunityOwnerDecisionAsync(
+        Iri communityId,
+        Iri actorId,
+        string action,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var (requestUri, handler, ownsHandler) = BuildCommunityLocalRequest(communityId, $"owners/{action}", actorId, credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Builds the request URI and resolves the auth handler for a community-local request.
+    /// </summary>
+    private (Uri requestUri, HttpMessageHandler handler, bool ownsHandler) BuildCommunityLocalRequest(
+        Iri communityId,
+        string path,
+        Iri? targetId,
+        ProxyCredentials? credentials)
+    {
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var target = targetId is not null ? $"/{targetId.Value.Value.TrimStart('/')}" : string.Empty;
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/{path}{target}");
+
+        var (handler, ownsHandler) = ResolveLocalHandlerWithPassthrough(credentials);
+        return (requestUri, handler, ownsHandler);
+    }
+
+    /// <summary>
+    /// Resolves the local-auth handler with passthrough support (for the Blazor WASM cookie-auth client).
+    /// </summary>
+    private (HttpMessageHandler handler, bool ownsHandler) ResolveLocalHandlerWithPassthrough(ProxyCredentials? credentials)
+    {
+        var configured = _localAuth;
+        if (credentials is not null && configured is null)
+        {
+            return (new LocalAuthHandler(credentials, new HttpClientHandler()), true);
+        }
+        else if (credentials is not null)
+        {
+            return (new LocalAuthHandler(credentials, configured!), false);
+        }
+        else if (configured is not null)
+        {
+            return (configured, false);
+        }
+        else if (_passthrough is not null)
+        {
+            return (_passthrough, false);
+        }
+
+        throw new InvalidOperationException(
+            "Community owner operations require LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+    }
+
     /// <summary>
     /// Performs a local, Basic-authenticated community member removal:
     /// <c>POST /local/v1/c/{name}/members/remove/{memberId}</c>. The community's IRI is used to
