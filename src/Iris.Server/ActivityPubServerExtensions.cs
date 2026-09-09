@@ -14,6 +14,7 @@ using KristofferStrube.ActivityStreams;
 using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -1546,15 +1547,30 @@ public static class ActivityPubServerExtensions
 
         // 2. Read the uploaded file from the multipart form. The file is the single required part (named
         // "file"); its content-type + file name are carried by the part.
+        //
+        // The production host caps every inbound body at 1 MiB (DefaultMaxRequestBodySize, a DoS bound on
+        // the unauthenticated federation inbox). A media upload is an authenticated, owner-only write whose
+        // own cap is MaxMediaUploadBytes (10 MiB), so it must be exempted from the 1 MiB global ceiling —
+        // otherwise a legitimate 2–10 MiB image is rejected by Kestrel before the app's own cap is reached.
+        // Raise the per-request limit (IHttpMaxRequestBodySizeFeature) to the media cap; Kestrel enforces
+        // the per-request value over the connection default when the body is read.
+        if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { } sizeFeature)
+        {
+            sizeFeature.MaxRequestBodySize = MaxMediaUploadBytes;
+        }
+
         IFormFile? file;
         try
         {
             var form = await context.Request.ReadFormAsync(ct).ConfigureAwait(false);
             file = form.Files.Count > 0 ? form.Files[0] : null;
         }
-        catch (BadHttpRequestException)
+        catch (BadHttpRequestException ex)
         {
-            return Results.BadRequest();
+            // A body exceeding the (now 10 MiB) cap surfaces here as a 413 BadHttpRequestException; a
+            // malformed/non-multipart body is a 400. Propagate the exception's own status (413 for
+            // oversized, 400 otherwise) rather than collapsing both to 400.
+            return Results.StatusCode(ex.StatusCode is > 0 ? (int)ex.StatusCode : StatusCodes.Status400BadRequest);
         }
 
         if (file is null || file.Length == 0)
