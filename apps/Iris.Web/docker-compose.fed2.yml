@@ -1,0 +1,64 @@
+# Second Iris instance for federation interop testing (55.2).
+# Advertises https://iris-dev2.luit.ink (reverse proxy → host port 8082).
+# Shares the irisweb_iris-web-net Docker network with the production instance
+# (iris.luit.ink on port 8088) so the two can reach each other for federation.
+#
+# Bring up:  docker compose -f apps/Iris.Web/docker-compose.fed2.yml up -d --build
+# Tear down: docker compose -f apps/Iris.Web/docker-compose.fed2.yml down -v
+
+services:
+  db2:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: iris2
+      POSTGRES_USER: iris
+      POSTGRES_PASSWORD: iris-test-pw
+    volumes:
+      - iris2-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iris -d iris2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+
+  iris2-web:
+    build:
+      context: ../..
+      dockerfile: apps/Iris.Web/Dockerfile
+    environment:
+      # Public FQDN — the reverse proxy forwards iris-dev2.luit.ink:443 → host:8082.
+      Iris__AdvertiseBase: https://iris-dev2.luit.ink
+      ConnectionStrings__Iris: "Host=db2;Port=5432;Database=iris2;Username=iris;Password=iris-test-pw"
+      App__Admin__Username: carol
+      App__Admin__Password: carol-password
+      Iris__MediaBlobDir: /data/media
+      HOME: /home/iris
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      # 8082 matches the sample explorer's iris-b port (the reverse proxy for
+      # iris-dev2.luit.ink forwards to this host port).
+      - "8082:8080"
+    volumes:
+      - iris2-media-data:/data/media
+      - iris2-dp-keys:/home/iris/.aspnet/DataProtection-Keys
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      db2:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+networks:
+  iris-web-net:
+    external: true
+    name: irisweb_iris-web-net
+
+volumes:
+  iris2-db-data:
+  iris2-media-data:
+  iris2-dp-keys:
