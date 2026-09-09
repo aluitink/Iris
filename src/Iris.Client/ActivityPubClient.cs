@@ -901,6 +901,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
         IEnumerable<string>? hashtags = null,
+        Iri? conversationIri = null,
         CancellationToken ct = default)
     {
         // Decision 055 (server is the object-id authority): the client sends only the reply's *shape*
@@ -915,6 +916,14 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             // F-12 threading: the parent note is the reply's inReplyTo (a link to the parent).
             InReplyTo = [new Link { Href = parentIri.Uri }],
         };
+
+        // 57.3: when the caller supplies an explicit conversationId (the thread root IRI), set it on
+        // the note. The server's EnsureConversationIdAsync preserves it (does not overwrite). When null,
+        // the server derives it from the parent.
+        if (conversationIri is { } conv)
+        {
+            note.SetConversationId(conv);
+        }
 
         // F-12 tags: mentions (a Mention per @mentioned actor, href = the actor IRI) and hashtags (a
         // Hashtag per #tag, name = the #tag text, href = this instance's hashtag search) are combined

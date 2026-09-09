@@ -3457,6 +3457,12 @@ public static class ActivityPubServerExtensions
         var embedded = create.ExtractEmbeddedObject();
         if (embedded is not null)
         {
+            // 57.3: ensure the embedded object carries a conversationId (the Pleroma/Misskey thread-root
+            // IRI) before it is stored. Runs after the server has minted the object's id (the note's own
+            // IRI is available) but before PutObjectAsync (so the conversationId is part of the stored
+            // document). Best-effort: a failure to resolve the parent leaves the conversationId unset.
+            await EnsureConversationIdAsync(persistence, embedded, ct).ConfigureAwait(false);
+
             await persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
             var parentIri = embedded.GetParentIri();
             var childIri = embedded.ResolveObjectIri();
@@ -3494,6 +3500,67 @@ public static class ActivityPubServerExtensions
         // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
         // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
         return await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ensures an embedded object carries a <c>conversationId</c> (the Pleroma/Misskey thread-root IRI)
+    /// before it is stored. If the object already has one, it is preserved. Otherwise, for a reply
+    /// (its <c>inReplyTo</c> is set), the parent's <c>conversationId</c> is looked up; if the parent has
+    /// one it is copied, otherwise the parent's own IRI is used (it is the thread root). For a top-level
+    /// object (no <c>inReplyTo</c>), the object's own IRI is used as the conversation ID.
+    /// </summary>
+    /// <remarks>
+    /// 57.3: Pleroma and Misskey set a stable thread-root IRI on every note in a conversation; clients
+    /// use it for thread grouping. The value is redundant with <c>inReplyTo</c> but is the convention
+    /// those platforms use. This method runs on the server (the object-id authority) so it has access
+    /// to the stored parent's <c>conversationId</c>. Best-effort: a failure to resolve the parent (e.g.
+    /// the parent is on a remote instance not yet fetched) leaves the conversation ID unset rather
+    /// than failing the post.
+    /// </remarks>
+    /// <param name="persistence">The persistence provider (for the parent lookup).</param>
+    /// <param name="embedded">The embedded object (a <see cref="IObject"/> — typically a <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task EnsureConversationIdAsync(IPersistenceProvider persistence, IObject embedded, CancellationToken ct)
+    {
+        // Already set (e.g. by a remote Pleroma server) — preserve it.
+        if (embedded.GetConversationId() is not null)
+        {
+            return;
+        }
+
+        var selfIri = embedded.ResolveObjectIri();
+
+        var parentIri = embedded.GetParentIri();
+        if (parentIri is null)
+        {
+            // Top-level object: it is its own thread root.
+            if (selfIri is { } self)
+            {
+                embedded.SetConversationId(self);
+            }
+            return;
+        }
+
+        // Reply: look up the parent's conversationId. If the parent has one, use it; otherwise the
+        // parent's own IRI is the thread root (the parent is a top-level note on this instance).
+        if (parentIri is { } parent)
+        {
+            if (await persistence.Objects.TryGetObjectAsync(parent, out var parentObj, ct))
+            {
+                var parentConv = parentObj.GetConversationId();
+                if (parentConv is { } conv)
+                {
+                    embedded.SetConversationId(conv);
+                }
+                else
+                {
+                    // The parent has no conversationId (e.g. it was posted before 57.3, or is a top-level
+                    // note from a non-Pleroma server). The parent's own IRI is the thread root.
+                    embedded.SetConversationId(parent);
+                }
+            }
+        }
+        // If the parent is not found (remote, not yet fetched), leave conversationId unset.
     }
 
     /// <summary>

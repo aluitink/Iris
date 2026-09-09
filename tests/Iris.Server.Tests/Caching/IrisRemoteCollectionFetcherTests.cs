@@ -295,6 +295,7 @@ public sealed class IrisRemoteCollectionFetcherTests
             IEnumerable<Iri>? mentions = null,
             IEnumerable<Iri>? to = null,
             IEnumerable<string>? hashtags = null,
+            Iri? conversationIri = null,
             CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 

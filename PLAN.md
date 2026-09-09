@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-**57.2: Accessibility audit — WCAG 2.1 AA pass** — added ARIA tab patterns to 5 pages (Settings, ActorDetail, Profile, Directory, CommunityDetail), fixed DirectoryCard keyboard accessibility (div→button), fixed 3 color-contrast issues (stat-value, stat-label, footer links). All tests green.
+**57.3: `conversationId` support — Pleroma thread grouping** — server-side `conversationId` resolution on both local-post and federation inbound paths. `GetConversationId`/`SetConversationId` in IriExtensions. `PostReplyAsync` gains optional `conversationIri` parameter. 4 new integration tests. All tests green.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,7 +106,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 - 57.1: **Performance optimization — feed query profiling and index review** (COMPLETE) — [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)
 - 57.2: **Accessibility audit — WCAG 2.1 AA pass** (COMPLETE) — [changes/416](docs/changes/416-57.2-wcag-2.1-aa-accessibility-audit.md)
-- 57.3: **`conversationId` support — Pleroma thread grouping** — set `conversationId` on outbound notes (the thread root IRI). Read and preserve inbound `conversationId`. Integration tests.
+- 57.3: **`conversationId` support — Pleroma thread grouping** (COMPLETE) — [changes/417](docs/changes/417-57.3-conversation-id-thread-grouping.md)
 - 57.4: **Batch enrichment + search pagination** — batch `GetLikersAsync`/`GetAnnouncersAsync`/`GetRepliesAsync` into `WHERE (Kind, Target) IN (...)` queries; add pagination + text-search index for `ListObjectsAsync`/`ListActorsAsync`; `citext` or expression index for case-insensitive username lookup.
 
 **Phase 56 — Cross-implementation federation compatibility (COMPLETE):**
@@ -133,6 +133,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 57.3: **`conversationId` support — Pleroma thread grouping** (Phase 57) — server-side thread-root resolution on local-post + federation paths, `GetConversationId`/`SetConversationId` helpers, `PostReplyAsync` explicit override. 4 new integration tests. Core 296/0, Server 957/0, Web 62/0. [changes/417](docs/changes/417-57.3-conversation-id-thread-grouping.md)
   - 57.2: **WCAG 2.1 AA accessibility audit** (Phase 57) — ARIA tab patterns on 5 pages, DirectoryCard div→button for keyboard access, 3 color-contrast fixes. Core 296/0, Server 953/0, Web 62/0. [changes/416](docs/changes/416-57.2-wcag-2.1-aa-accessibility-audit.md)
   - 57.1: **Feed query profiling and index review** (Phase 57) — fixed N+1 in `GetBoxAsync` (batch `WHERE Id IN (...)`), added `BoxItems(Direction, ActorId, Position)` index, removed redundant `Edges`/`Media` indexes, `EfInstanceStatsProvider` → `COUNT(*)`. Core 296/0, Server 953/0, Server.Data 10/0, Web 62/0. [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)
   - 56.3: **Fix top-3 wire compatibility gaps** (Phase 56) — (1) `updated` timestamp stamped on content object edits in `UpdateActivityHandler`; (2) `source` field emitted with raw markdown in `ComposeNote.Build`; (3) `summary` decoupled from `sensitive` (CW independent of NSFW flag, matching Mastodon/Pleroma). 4 new tests, 1 web test deleted per policy. Core 296/0, Server 953/0, Web 62/0. [changes/414](docs/changes/414-56.3-fix-top3-wire-compatibility-gaps.md)

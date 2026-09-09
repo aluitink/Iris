@@ -750,9 +750,12 @@ public interface IActivityPubClient : IDisposable
     /// address). When null the reply carries no explicit <c>to</c>.</param>
     /// <param name="hashtags">Optional hashtag names (each including the leading <c>#</c>, e.g.
     /// <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c> <c>tag</c> entry (an
-    /// ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the <c>#tag</c> text and whose
-    /// <c>href</c> is the actor's origin <c>/search?q={#tag}</c> URL). Mention and hashtag tags are
+    /// ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the
+    /// <c>#tag</c> text and whose <c>href</c> is the actor's origin <c>/search?q={#tag}</c> URL). Mention and hashtag tags are
     /// combined into a single <c>tag</c> array. When null/empty the note carries no hashtag tags.</param>
+    /// <param name="conversationIri">Optional thread root IRI (the Pleroma/Misskey <c>conversationId</c>).
+    /// When set, it is written into the note's <c>conversationId</c> extension field. When null, the
+    /// server derives it (top-level → own IRI; reply → parent's conversationId or parent IRI).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
@@ -770,6 +773,7 @@ public interface IActivityPubClient : IDisposable
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
         IEnumerable<string>? hashtags = null,
+        Iri? conversationIri = null,
         CancellationToken ct = default);
 
     /// <summary>

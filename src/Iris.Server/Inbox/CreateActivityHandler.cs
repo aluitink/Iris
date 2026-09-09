@@ -219,6 +219,12 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 embedded.Published = activity.Published ?? DateTime.UtcNow;
             }
 
+            // 57.3: ensure the embedded object carries a conversationId (the Pleroma/Misskey thread-root
+            // IRI) before it is stored. If the remote server already set one (Pleroma/Misskey), it is
+            // preserved. Otherwise the server derives it (top-level → own IRI; reply → parent's
+            // conversationId or parent IRI). Best-effort: a missing parent leaves it unset.
+            await EnsureConversationIdAsync(embedded, ct).ConfigureAwait(false);
+
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
 
             // Phase 20.4 (d): eager-warm the stored object's cross-origin media attachments (best-effort;
@@ -252,6 +258,57 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 await _persistence.Replies
                     .RecordReplyAsync(parent, child, ct)
                     .ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ensures an embedded object carries a <c>conversationId</c> (the Pleroma/Misskey thread-root IRI)
+    /// before it is stored. If the object already has one (e.g. set by a Pleroma/Misskey server), it is
+    /// preserved. Otherwise, for a reply (its <c>inReplyTo</c> is set), the parent's <c>conversationId</c>
+    /// is looked up; if the parent has one it is copied, otherwise the parent's own IRI is used. For a
+    /// top-level object, the object's own IRI is used.
+    /// </summary>
+    /// <remarks>
+    /// 57.3: Pleroma and Misskey set a stable thread-root IRI on every note in a conversation. This
+    /// method runs on the server (the object-id authority) so it has access to the stored parent's
+    /// <c>conversationId</c>. Best-effort: a failure to resolve the parent (e.g. the parent is on a remote
+    /// instance not yet fetched) leaves the conversation ID unset rather than failing the post.
+    /// </remarks>
+    /// <param name="embedded">The embedded object (a <see cref="IObject"/> — typically a <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task EnsureConversationIdAsync(IObject embedded, CancellationToken ct)
+    {
+        if (embedded.GetConversationId() is not null)
+        {
+            return;
+        }
+
+        var selfIri = embedded.ResolveObjectIri();
+
+        var parentIri = embedded.GetParentIri();
+        if (parentIri is null)
+        {
+            if (selfIri is { } self)
+            {
+                embedded.SetConversationId(self);
+            }
+            return;
+        }
+
+        if (parentIri is { } parent)
+        {
+            if (await _persistence.Objects.TryGetObjectAsync(parent, out var parentObj, ct).ConfigureAwait(false))
+            {
+                var parentConv = parentObj.GetConversationId();
+                if (parentConv is { } conv)
+                {
+                    embedded.SetConversationId(conv);
+                }
+                else
+                {
+                    embedded.SetConversationId(parent);
+                }
             }
         }
     }

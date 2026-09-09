@@ -234,6 +234,49 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reads an object's <c>conversationId</c> (the Pleroma/Misskey thread-root IRI, carried in
+    /// <see cref="IObject.ExtensionData"/> since the library does not model it as a property).
+    /// </summary>
+    /// <remarks>
+    /// Pleroma and Misskey set a stable thread-root IRI on every note in a conversation; clients use
+    /// it for thread grouping. The value is a bare (un-namespaced) IRI string. Returns
+    /// <see langword="null"/> when the term is absent, not a string, or not a valid IRI.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>conversationId</c> is read. May be null.</param>
+    /// <returns>The thread root <see cref="Iri"/>, or <see langword="null"/> when absent or invalid.</returns>
+    public static Iri? GetConversationId(this IObject? obj)
+    {
+        if (obj is not { ExtensionData: { } ext })
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("conversationId", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        if (value is null)
+        {
+            return null;
+        }
+        return Iri.TryParse(value, out var iri) ? iri : null;
+    }
+
+    /// <summary>
+    /// Sets (or overwrites) an object's <c>conversationId</c> (the Pleroma/Misskey thread-root IRI) in
+    /// <see cref="IObject.ExtensionData"/>.
+    /// </summary>
+    /// <param name="obj">The object to modify. Must not be null.</param>
+    /// <param name="conversationId">The thread root IRI to set.</param>
+    public static void SetConversationId(this IObject obj, Iri conversationId)
+    {
+        obj.ExtensionData ??= new Dictionary<string, JsonElement>();
+        obj.ExtensionData["conversationId"] = JsonSerializer.SerializeToElement(conversationId.Value);
+    }
+
+    /// <summary>
     /// Resolves the IRIs of an object's <c>tag</c> entries that are <see cref="Mention"/>s (F-12).
     /// </summary>
     /// <remarks>
