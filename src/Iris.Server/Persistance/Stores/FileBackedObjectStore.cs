@@ -123,6 +123,61 @@ public sealed class FileBackedObjectStore : IObjectStore, IDisposable
             return result;
         }, ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> SearchObjectsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<IObject>>(s =>
+        {
+            var normalized = query?.Trim();
+            var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+            var matches = DocumentMap(s).Values
+                .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as IObject)
+                .Where(o => o is not null && o is not Tombstone && o is not Actor)
+                .Select(o => o!)
+                .Where(o => !hasQuery || ContainsInStrings(o.Content, normalized!) || ContainsInStrings(o.Name, normalized!))
+                .OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal)
+                .Skip(offset)
+                .Take(limit)
+                .ToList();
+
+            return matches;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+        => _file.SnapshotAsync<int>(s =>
+        {
+            var normalized = query?.Trim();
+            var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+            return DocumentMap(s).Values
+                .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as IObject)
+                .Count(o => o is not null && o is not Tombstone && o is not Actor
+                    && (!hasQuery || ContainsInStrings(o.Content, normalized!) || ContainsInStrings(o.Name, normalized!)));
+        }, ct);
+
+    /// <summary>
+    /// Returns true when any value in the multi-valued <c>content</c>/<c>name</c> property contains
+    /// <paramref name="query"/> as a case-insensitive substring.
+    /// </summary>
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null && value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// The document map for the current state (object IRI value → entry), created on demand.
     /// </summary>

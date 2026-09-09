@@ -141,6 +141,72 @@ public sealed class EfObjectStore : IObjectStore
         return result;
     }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<IObject>> SearchObjectsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
+
+        if (hasQuery)
+        {
+            // Push the substring search into PostgreSQL via a GIN trigram (pg_trgm) index on the
+            // Document jsonb column (57.4). EF.Functions.Like maps to ILIKE on Npgsql, so the match is
+            // case-insensitive (matching the in-memory service); the GIN index makes it O(log n) instead
+            // of a sequential scan.
+            var pattern = $"%{EscapeLike(normalized!)}%";
+            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+        }
+
+        var entities = await queryable
+            .OrderBy(e => e.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var result = new List<IObject>(entities.Count);
+        foreach (var entity in entities)
+        {
+            if (AsDocument.Deserialize(entity.Document) is IObject obj)
+            {
+                result.Add(obj);
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
+        if (hasQuery)
+        {
+            var pattern = $"%{EscapeLike(normalized!)}%";
+            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+        }
+
+        return await queryable.CountAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Escapes LIKE metacharacters (<c>%</c>, <c>_</c>, <c>\</c>) so a user-supplied query is matched
+    /// literally (not as a pattern).
+    /// </summary>
+    private static string EscapeLike(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+    }
+
     /// <summary>
     /// Reads the object's attributed-to IRI (for the relational index) when it is a resolvable link.
     /// </summary>

@@ -4671,14 +4671,14 @@ public static class ActivityPubServerExtensions
         }
 
         var ns = irisNamespace!;
-        var result = new List<IObjectOrLink>(items.Count);
 
-        foreach (var item in items)
+        // Phase 1: identify all embedded objects and their IRIs.
+        var entries = new List<(int Index, Activity Activity, IObject Obj, Iri? ObjectIri)>();
+        for (var i = 0; i < items.Count; i++)
         {
-            // Only enrich activities that have exactly one embedded object (not a Link).
+            var item = items[i];
             if (item is not Activity activity)
             {
-                result.Add(item);
                 continue;
             }
 
@@ -4694,12 +4694,61 @@ public static class ActivityPubServerExtensions
 
             if (embeddedObj is null || embeddedObj is KristofferStrube.ActivityStreams.Tombstone)
             {
-                result.Add(item);
                 continue;
             }
 
-            // Deep-copy the activity so we never mutate the stored object.
-            var activityCopy = ActivityJson.Deserialize<Activity>(ActivityJson.Serialize(item))!;
+            Iri? objectIri = null;
+            if (embeddedObj.Id is { Length: > 0 } id)
+            {
+                objectIri = new Iri(id);
+            }
+
+            entries.Add((i, activity, embeddedObj, objectIri));
+        }
+
+        if (entries.Count == 0)
+        {
+            return items;
+        }
+
+        // Phase 2: batch-fetch all interaction counts and per-requester state.
+        var objectIris = new List<Iri>();
+        foreach (var e in entries)
+        {
+            if (e.ObjectIri is { } oi)
+            {
+                objectIris.Add(oi);
+            }
+        }
+
+        var likersByObject = objectIris.Count > 0
+            ? await persistence.Likes.GetLikersBatchAsync(objectIris, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var announcersByObject = objectIris.Count > 0
+            ? await persistence.Announces.GetAnnouncersBatchAsync(objectIris, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var repliesByObject = objectIris.Count > 0
+            ? await persistence.Replies.GetRepliesBatchAsync(objectIris, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var likedByRequester = (requesterIri is { } req && objectIris.Count > 0)
+            ? await persistence.Likes.HasLikedBatchAsync(req, objectIris, ct).ConfigureAwait(false)
+            : new HashSet<Iri>();
+
+        var sharedByRequester = (requesterIri is { } req2 && objectIris.Count > 0)
+            ? await persistence.Announces.HasAnnouncedBatchAsync(req2, objectIris, ct).ConfigureAwait(false)
+            : new HashSet<Iri>();
+
+        // Phase 3: deep-copy and annotate each entry using the pre-fetched data.
+        var result = new List<IObjectOrLink>(items.Count);
+
+        // Build a map from index to enriched item; non-activity items pass through unchanged.
+        var enrichedByIndex = new Dictionary<int, IObjectOrLink>();
+        foreach (var (index, activity, embeddedObj, objectIri) in entries)
+        {
+            var activityCopy = ActivityJson.Deserialize<Activity>(ActivityJson.Serialize(activity))!;
             IObject? copyObj = null;
             if (activityCopy.Object is { } copyObjRef)
             {
@@ -4712,48 +4761,30 @@ public static class ActivityPubServerExtensions
 
             if (copyObj is null)
             {
-                result.Add(item);
+                enrichedByIndex[index] = activity;
                 continue;
             }
 
-            Iri? objectIri = null;
-            if (copyObj.Id is { Length: > 0 } id)
-            {
-                objectIri = new Iri(id);
-            }
-
-            // Compute likedCount / sharedCount / repliedCount (cacheable — not per-requester).
             if (objectIri is { } oid)
             {
-                var likers = await persistence.Likes.GetLikersAsync(oid, ct).ConfigureAwait(false);
                 copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                 copyObj.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(likers.Count);
+                    System.Text.Json.JsonSerializer.SerializeToElement(likersByObject.TryGetValue(oid, out var lk) ? lk.Count : 0);
 
-                var announcers = await persistence.Announces.GetAnnouncersAsync(oid, ct).ConfigureAwait(false);
                 copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(announcers.Count);
+                    System.Text.Json.JsonSerializer.SerializeToElement(announcersByObject.TryGetValue(oid, out var an) ? an.Count : 0);
 
-                var replies = await persistence.Replies.GetRepliesAsync(oid, ct).ConfigureAwait(false);
                 copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(replies.Count);
-            }
+                    System.Text.Json.JsonSerializer.SerializeToElement(repliesByObject.TryGetValue(oid, out var rp) ? rp.Count : 0);
 
-            // Compute isLiked / isShared (per-requester — only when a requester is known).
-            if (requesterIri is { } reqIri && objectIri is { } oid2)
-            {
-                var isLiked = await persistence.Likes.HasLikedAsync(reqIri, oid2, ct).ConfigureAwait(false);
-                if (isLiked)
+                if (likedByRequester.Contains(oid))
                 {
-                    copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                     copyObj.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
                         System.Text.Json.JsonSerializer.SerializeToElement(true);
                 }
 
-                var isShared = await persistence.Announces.HasAnnouncedAsync(reqIri, oid2, ct).ConfigureAwait(false);
-                if (isShared)
+                if (sharedByRequester.Contains(oid))
                 {
-                    copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                     copyObj.ExtensionData[ns + IrisExtensionTerms.IsShared] =
                         System.Text.Json.JsonSerializer.SerializeToElement(true);
                 }
@@ -4768,7 +4799,12 @@ public static class ActivityPubServerExtensions
             // requester, isLiked / isShared) survive to the wire.
             activityCopy.Object = new IObjectOrLink[] { copyObj };
 
-            result.Add(activityCopy);
+            enrichedByIndex[index] = activityCopy;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            result.Add(enrichedByIndex.TryGetValue(i, out var e) ? e : items[i]);
         }
 
         return result;
@@ -6978,10 +7014,16 @@ public static class ActivityPubServerExtensions
         var options = optionsAccessor.Value;
         var query = context.Request.Query["q"].ToString();
         var type = context.Request.Query["type"].ToString();
-        var items = await searchService.SearchAsync(query, ct, type).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
+
+        // 57.4: search the full surface and let BuildSearchPageDocument slice the page. The paged store
+        // methods (SearchPagedAsync) push the slice into the store for large result sets, but the page
+        // document builder derives totalItems from the full match count, so the handler fetches the full
+        // list and slices here. For the local surface (a single instance's directory + content) the full
+        // list is small and the slice is O(page size).
+        var items = await searchService.SearchAsync(query, ct, type).ConfigureAwait(false);
 
         // The collection IRI is the endpoint IRI (the /ap/v1 prefix is the route prefix), so the page
         // links (?offset/?limit) are relative to it and resolve back to this route. Trim any trailing
@@ -7303,7 +7345,8 @@ public static class ActivityPubServerExtensions
     /// <param name="collectionIri">The search collection's IRI (<c>{community}/search</c>).</param>
     /// <param name="offset">The 0-based offset of the first item on this page.</param>
     /// <param name="limit">The page size (items per page).</param>
-    /// <param name="items">All matching items (in feed order), unsliced.</param>
+    /// <param name="items">The full match list (actors + content, IRI-sorted); this page's slice is
+    /// derived from it using <paramref name="offset"/> and <paramref name="limit"/>.</param>
     /// <param name="query">The search query (an empty/whitespace query records no extension).</param>
     /// <param name="namespaceBase">The <c>iris:</c> namespace base IRI (the configurable
     /// <see cref="ActivityPubServerOptions.NamespaceIri"/>, or the canonical default when unset) used to

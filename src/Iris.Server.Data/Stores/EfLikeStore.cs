@@ -38,4 +38,29 @@ public sealed class EfLikeStore : ILikeStore
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default)
         => _edges.InSourcesAsync(EdgeKind.Like, likedObjectIri.Value, ct);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetLikersBatchAsync(
+        IReadOnlyCollection<Iri> likedObjectIris, CancellationToken ct = default)
+    {
+        var targets = likedObjectIris.Select(i => i.Value).ToList();
+        return await _edges.InSourcesBatchAsync(EdgeKind.Like, targets, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlySet<Iri>> HasLikedBatchAsync(
+        Iri likerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+    {
+        if (objectIris.Count == 0)
+        {
+            return new HashSet<Iri>();
+        }
+
+        var pairs = objectIris.Select(o => (likerIri.Value, o.Value)).ToList();
+        var found = await _edges.ContainsBatchAsync(EdgeKind.Like, pairs, ct).ConfigureAwait(false);
+        return found
+            .Select(s => s.Split('\0')[1])
+            .Select(v => new Iri(v))
+            .ToHashSet();
+    }
 }

@@ -35,4 +35,12 @@ public sealed class EfReplyStore : IReplyStore
     /// <inheritdoc/>
     public Task<bool> HasReplyAsync(Iri parentIri, Iri childIri, CancellationToken ct = default)
         => _edges.ContainsAsync(EdgeKind.Reply, parentIri.Value, childIri.Value, ct);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetRepliesBatchAsync(
+        IReadOnlyCollection<Iri> parentIris, CancellationToken ct = default)
+    {
+        var sources = parentIris.Select(i => i.Value).ToList();
+        return await _edges.OutTargetsBatchAsync(EdgeKind.Reply, sources, ct).ConfigureAwait(false);
+    }
 }

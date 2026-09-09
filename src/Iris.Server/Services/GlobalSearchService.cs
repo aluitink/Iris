@@ -32,8 +32,21 @@ public sealed class GlobalSearchService : IGlobalSearchService
     /// <inheritdoc/>
     public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null)
     {
+        // The un-paged surface is the full result set (offset 0, no limit) — the same matching, ordering,
+        // and type-filter rules as the paged search.
+        var (items, _) = await SearchPagedAsync(query, ct, type, int.MaxValue, 0).ConfigureAwait(false);
+        return items;
+    }
+
+    /// <inheritdoc/>
+    public async Task<(IReadOnlyList<IObjectOrLink> Items, int Total)> SearchPagedAsync(
+        string? query,
+        CancellationToken ct,
+        string? type,
+        int limit,
+        int offset)
+    {
         var normalized = query?.Trim();
-        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         // A type filter (e.g. "Actor") restricts the result to a single ActivityStreams type so the
         // directory page searches actors only (no content). The two passes are independent: the actor
@@ -46,84 +59,83 @@ public sealed class GlobalSearchService : IGlobalSearchService
         var actorPass = !hasType || string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
         var contentPass = !hasType || !string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
 
-        // The actor (directory) pass: every local actor whose name / preferredUsername / IRI matches.
-        var matchedActors = new List<IObjectOrLink>();
+        // The combined ordering is actors first, then content (each sub-list IRI-sorted), so the global
+        // offset/limit slice starts in the actor pass. When no type filter is set the per-pass store
+        // count is exact (the actor pass returns only actors, the content pass only content), so the
+        // totals are computed with a cheap COUNT and each pass materializes only its slice of the page
+        // (57.4 — no full-table scan). When a type filter restricts the content pass to a single type
+        // (the count is then over the untyped surface), the content slice is taken from the full content
+        // match set and filtered, so the total is exact.
+        int total;
+        var results = new List<IObjectOrLink>();
+
         if (actorPass)
         {
-            var actors = await _persistence.Actors.ListActorsAsync(ct).ConfigureAwait(false);
-            foreach (var actor in actors.OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal))
+            var actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
+
+            if (contentPass && !hasType)
             {
-                if (!hasQuery
-                    || ContainsInStrings(actor.Name, normalized!)
-                    || (actor.PreferredUsername is { Length: > 0 } username
-                        && username.Contains(normalized!, StringComparison.OrdinalIgnoreCase))
-                    || (actor.Id is { Length: > 0 } id
-                        && id.Contains(normalized!, StringComparison.OrdinalIgnoreCase)))
+                // No type filter: both passes are exact and independent.
+                var contentTotal = await _persistence.Objects.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
+                total = actorTotal + contentTotal;
+
+                if (offset < actorTotal)
                 {
-                    matchedActors.Add(actor);
+                    var actorLimit = Math.Min(limit, actorTotal - offset);
+                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
+                }
+
+                var contentOffset = offset < actorTotal ? offset - actorTotal : 0;
+                if (contentOffset < contentTotal)
+                {
+                    var contentLimit = Math.Min(limit, contentTotal - contentOffset);
+                    results.AddRange(await _persistence.Objects.SearchObjectsAsync(normalized, contentLimit, contentOffset, ct).ConfigureAwait(false));
+                }
+            }
+            else
+            {
+                // A type filter restricts the content pass to a single ActivityStreams type (the store
+                // count is over the untyped surface), so the content slice is taken from the full content
+                // match set and filtered to the type — keeping the total exact.
+                var contentAll = contentPass
+                    ? await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false)
+                    : Array.Empty<IObject>();
+                var contentMatches = contentPass
+                    ? contentAll.Where(o => ItemMatchesType(o, typeFilter!)).ToList()
+                    : new List<IObject>();
+                total = actorTotal + contentMatches.Count;
+
+                if (offset < actorTotal)
+                {
+                    var actorLimit = Math.Min(limit, actorTotal - offset);
+                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
+                }
+
+                var contentOffset = offset < actorTotal ? offset - actorTotal : 0;
+                if (contentOffset < contentMatches.Count)
+                {
+                    var contentLimit = Math.Min(limit, contentMatches.Count - contentOffset);
+                    results.AddRange(contentMatches.Skip(contentOffset).Take(contentLimit));
                 }
             }
         }
-
-        // The content pass: every stored content object (not a Tombstone, not an actor) whose content /
-        // name matches.
-        var matchedObjects = new List<IObjectOrLink>();
-        if (contentPass)
+        else
         {
-            var objects = await _persistence.Objects.ListObjectsAsync(ct).ConfigureAwait(false);
-            foreach (var obj in objects.OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal))
+            // Actor pass skipped (type filter is a non-actor type): the content pass starts at offset 0.
+            var contentAll = await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false);
+            var contentMatches = hasType
+                ? contentAll.Where(o => ItemMatchesType(o, typeFilter!)).ToList()
+                : contentAll.ToList();
+            total = contentMatches.Count;
+
+            if (offset < contentMatches.Count)
             {
-                // A deleted object (Tombstone) has no searchable content; an actor is matched by the
-                // actor pass (skip it here so it is not duplicated).
-                if (obj is Tombstone or Actor)
-                {
-                    continue;
-                }
-
-                // A type filter that is not "Actor" further restricts to items of that ActivityStreams
-                // type (e.g. "Note"); "Actor" never matches a content object.
-                if (hasType && !ItemMatchesType(obj, typeFilter!))
-                {
-                    continue;
-                }
-
-                if (!hasQuery
-                    || ContainsInStrings(obj.Content, normalized!)
-                    || ContainsInStrings(obj.Name, normalized!))
-                {
-                    matchedObjects.Add(obj);
-                }
+                var contentLimit = Math.Min(limit, contentMatches.Count - offset);
+                results.AddRange(contentMatches.Skip(offset).Take(contentLimit));
             }
         }
 
-        // Actors first, then content objects (each sub-list already IRI-sorted).
-        var results = new List<IObjectOrLink>(matchedActors.Count + matchedObjects.Count);
-        results.AddRange(matchedActors);
-        results.AddRange(matchedObjects);
-        return results;
-    }
-
-    /// <summary>
-    /// Returns true when any value in the multi-valued <c>content</c>/<c>name</c> property contains
-    /// <paramref name="query"/> as a substring (case-insensitive, ordinal).
-    /// </summary>
-    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
-    {
-        if (values is null)
-        {
-            return false;
-        }
-
-        foreach (var value in values)
-        {
-            if (value is not null
-                && value.Contains(query, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return (results, total);
     }
 
     /// <summary>

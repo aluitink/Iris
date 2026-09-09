@@ -85,6 +85,41 @@ public sealed class FileBackedAnnounceStore : IAnnounceStore, IDisposable
     public Task<IReadOnlyList<Iri>> GetAnnouncersAsync(Iri announcedObjectIri, CancellationToken ct = default)
         => _file.SnapshotAsync<IReadOnlyList<Iri>>(s => AnnouncedBy(s).TryGetValue(announcedObjectIri, out var set) ? set.ToList() : new List<Iri>(), ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetAnnouncersBatchAsync(
+        IReadOnlyCollection<Iri> announcedObjectIris, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(s =>
+        {
+            var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+            foreach (var iri in announcedObjectIris)
+            {
+                if (AnnouncedBy(s).TryGetValue(iri, out var set) && set.Count > 0)
+                {
+                    result[iri] = set.ToList();
+                }
+            }
+            return result;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlySet<Iri>> HasAnnouncedBatchAsync(
+        Iri announcerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlySet<Iri>>(s =>
+        {
+            var result = new HashSet<Iri>();
+            if (Edges(s).TryGetValue(announcerIri, out var set))
+            {
+                foreach (var iri in objectIris)
+                {
+                    if (set.Contains(iri))
+                    {
+                        result.Add(iri);
+                    }
+                }
+            }
+            return result;
+        }, ct);
+
     /// <summary>
     /// The forward edge index for the current state (announcer → set of announced objects), created on
     /// demand.

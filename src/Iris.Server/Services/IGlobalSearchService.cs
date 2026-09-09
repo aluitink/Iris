@@ -51,4 +51,26 @@ public interface IGlobalSearchService
     /// sub-list sorted by IRI). Each item is an <see cref="IObjectOrLink"/>; callers pattern-match
     /// (an <see cref="Actor"/> or a content <see cref="IObject"/>).</returns>
     public Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null);
+
+    /// <summary>
+    /// Searches the instance's local actors and content objects for <paramref name="query"/> and returns
+    /// a single page of the result plus the full match count (57.4 — pushes pagination into the search so
+    /// a global search does not materialize every matching item in memory).
+    /// </summary>
+    /// <param name="query">The search query (case-insensitive substring). An empty/whitespace query
+    /// matches all actors and content objects.</param>
+    /// <param name="type">An optional item-type filter (case-insensitive). When set (e.g.
+    /// <c>"Actor"</c>), only items of that ActivityStreams type are returned. When null/whitespace, both
+    /// actors and content are returned.</param>
+    /// <param name="limit">The maximum number of items to return (the page size).</param>
+    /// <param name="offset">The number of matching items to skip before the page starts.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the page of matching items (actors first, then content objects,
+    /// each sub-list sorted by IRI) and the full match total (for a search page's <c>totalItems</c>).</returns>
+    public Task<(IReadOnlyList<IObjectOrLink> Items, int Total)> SearchPagedAsync(
+        string? query,
+        CancellationToken ct,
+        string? type,
+        int limit,
+        int offset);
 }

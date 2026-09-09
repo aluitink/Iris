@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Iris.Server.Data.Migrations
 {
     [DbContext(typeof(IrisDbContext))]
-    [Migration("20260909162031_InitialCreate")]
+    [Migration("20260909190837_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

@@ -54,4 +54,62 @@ public sealed class InMemoryActorStore : IActorStore
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<Actor>>(_actors.Values.ToList());
     }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        var matches = _actors.Values
+            .Where(a => !hasQuery || MatchesActor(a, normalized!))
+            .OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(limit)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<Actor>>(matches);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        var count = _actors.Values.Count(a => !hasQuery || MatchesActor(a, normalized!));
+        return Task.FromResult(count);
+    }
+
+    /// <summary>
+    /// Returns true when the actor's <c>name</c>, <c>preferredUsername</c>, or IRI contains
+    /// <paramref name="query"/> as a case-insensitive substring (the same matching the global search
+    /// service applies to the actor pass).
+    /// </summary>
+    private static bool MatchesActor(Actor actor, string query)
+    {
+        return ContainsInStrings(actor.Name, query)
+            || (actor.PreferredUsername is { Length: > 0 } username && username.Contains(query, StringComparison.OrdinalIgnoreCase))
+            || (actor.Id is { Length: > 0 } id && id.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null && value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

@@ -48,4 +48,14 @@ public interface IReplyStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with <see langword="true"/> when the reply edge exists.</returns>
     public Task<bool> HasReplyAsync(Iri parentIri, Iri childIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the replies for a set of parent objects in a single batch query (57.4 — avoids N+1).
+    /// </summary>
+    /// <param name="parentIris">The IRIs of the parent objects whose replies are requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with a dictionary mapping each parent IRI to its reply IRIs
+    /// (parents with no replies are absent from the dictionary).</returns>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetRepliesBatchAsync(
+        IReadOnlyCollection<Iri> parentIris, CancellationToken ct = default);
 }

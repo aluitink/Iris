@@ -38,4 +38,29 @@ public sealed class EfAnnounceStore : IAnnounceStore
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetAnnouncersAsync(Iri announcedObjectIri, CancellationToken ct = default)
         => _edges.InSourcesAsync(EdgeKind.Announce, announcedObjectIri.Value, ct);
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetAnnouncersBatchAsync(
+        IReadOnlyCollection<Iri> announcedObjectIris, CancellationToken ct = default)
+    {
+        var targets = announcedObjectIris.Select(i => i.Value).ToList();
+        return await _edges.InSourcesBatchAsync(EdgeKind.Announce, targets, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlySet<Iri>> HasAnnouncedBatchAsync(
+        Iri announcerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+    {
+        if (objectIris.Count == 0)
+        {
+            return new HashSet<Iri>();
+        }
+
+        var pairs = objectIris.Select(o => (announcerIri.Value, o.Value)).ToList();
+        var found = await _edges.ContainsBatchAsync(EdgeKind.Announce, pairs, ct).ConfigureAwait(false);
+        return found
+            .Select(s => s.Split('\0')[1])
+            .Select(v => new Iri(v))
+            .ToHashSet();
+    }
 }

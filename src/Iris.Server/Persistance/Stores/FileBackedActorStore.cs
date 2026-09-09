@@ -97,6 +97,67 @@ public sealed class FileBackedActorStore : IActorStore, IDisposable
             return result;
         }, ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<Actor>>(s =>
+        {
+            var normalized = query?.Trim();
+            var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+            var matches = DocumentMap(s).Values
+                .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as Actor)
+                .Where(a => a is not null)
+                .Select(a => a!)
+                .Where(a => !hasQuery || MatchesActor(a, normalized!))
+                .OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal)
+                .Skip(offset)
+                .Take(limit)
+                .ToList();
+
+            return matches;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+        => _file.SnapshotAsync<int>(s =>
+        {
+            var normalized = query?.Trim();
+            var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+            return DocumentMap(s).Values
+                .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as Actor)
+                .Count(a => a is not null && (!hasQuery || MatchesActor(a, normalized!)));
+        }, ct);
+
+    /// <summary>
+    /// Returns true when the actor's <c>name</c>, <c>preferredUsername</c>, or IRI contains
+    /// <paramref name="query"/> as a case-insensitive substring.
+    /// </summary>
+    private static bool MatchesActor(Actor actor, string query)
+    {
+        return ContainsInStrings(actor.Name, query)
+            || (actor.PreferredUsername is { Length: > 0 } username && username.Contains(query, StringComparison.OrdinalIgnoreCase))
+            || (actor.Id is { Length: > 0 } id && id.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null && value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// The document map for the current state (actor IRI value → entry), created on demand.
     /// </summary>

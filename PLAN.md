@@ -102,12 +102,14 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 57 — Performance, accessibility, and remaining interop (IN PROGRESS):**
+**Phase 57 — Performance, accessibility, and remaining interop (COMPLETE):**
 
 - 57.1: **Performance optimization — feed query profiling and index review** (COMPLETE) — [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)
 - 57.2: **Accessibility audit — WCAG 2.1 AA pass** (COMPLETE) — [changes/416](docs/changes/416-57.2-wcag-2.1-aa-accessibility-audit.md)
 - 57.3: **`conversationId` support — Pleroma thread grouping** (COMPLETE) — [changes/417](docs/changes/417-57.3-conversation-id-thread-grouping.md)
-- 57.4: **Batch enrichment + search pagination** — batch `GetLikersAsync`/`GetAnnouncersAsync`/`GetRepliesAsync` into `WHERE (Kind, Target) IN (...)` queries; add pagination + text-search index for `ListObjectsAsync`/`ListActorsAsync`; `citext` or expression index for case-insensitive username lookup.
+- 57.4: **Batch enrichment + search pagination** (COMPLETE) — [changes/418](docs/changes/418-57.4-batch-enrichment-search-pagination.md)
+
+**Phase 57 COMPLETE.**
 
 **Phase 56 — Cross-implementation federation compatibility (COMPLETE):**
 
@@ -133,6 +135,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 57.4: **Batch enrichment + search pagination** (Phase 57) — batched `EnrichCollectionItemsAsync` from 5 per-item queries to 5 total (batch store methods `WHERE (Kind, Target) IN (...)`); added paged search (`SearchPagedAsync` + store pushdown `SearchObjectsAsync`/`SearchActorsAsync`/`CountSearchMatchesAsync` with `EF.Functions.Like` → ILIKE). Core 296/0, Server 957/0, Server.Data 10/0, Web 62/0. [changes/418](docs/changes/418-57.4-batch-enrichment-search-pagination.md)
   - 57.3: **`conversationId` support — Pleroma thread grouping** (Phase 57) — server-side thread-root resolution on local-post + federation paths, `GetConversationId`/`SetConversationId` helpers, `PostReplyAsync` explicit override. 4 new integration tests. Core 296/0, Server 957/0, Web 62/0. [changes/417](docs/changes/417-57.3-conversation-id-thread-grouping.md)
   - 57.2: **WCAG 2.1 AA accessibility audit** (Phase 57) — ARIA tab patterns on 5 pages, DirectoryCard div→button for keyboard access, 3 color-contrast fixes. Core 296/0, Server 953/0, Web 62/0. [changes/416](docs/changes/416-57.2-wcag-2.1-aa-accessibility-audit.md)
   - 57.1: **Feed query profiling and index review** (Phase 57) — fixed N+1 in `GetBoxAsync` (batch `WHERE Id IN (...)`), added `BoxItems(Direction, ActorId, Position)` index, removed redundant `Edges`/`Media` indexes, `EfInstanceStatsProvider` → `COUNT(*)`. Core 296/0, Server 953/0, Server.Data 10/0, Web 62/0. [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)

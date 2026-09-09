@@ -87,6 +87,41 @@ public sealed class FileBackedLikeStore : ILikeStore, IDisposable
     public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default)
         => _file.SnapshotAsync<IReadOnlyList<Iri>>(s => LikedBy(s).TryGetValue(likedObjectIri, out var set) ? set.ToList() : new List<Iri>(), ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetLikersBatchAsync(
+        IReadOnlyCollection<Iri> likedObjectIris, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(s =>
+        {
+            var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+            foreach (var iri in likedObjectIris)
+            {
+                if (LikedBy(s).TryGetValue(iri, out var set) && set.Count > 0)
+                {
+                    result[iri] = set.ToList();
+                }
+            }
+            return result;
+        }, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlySet<Iri>> HasLikedBatchAsync(
+        Iri likerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlySet<Iri>>(s =>
+        {
+            var result = new HashSet<Iri>();
+            if (Edges(s).TryGetValue(likerIri, out var set))
+            {
+                foreach (var iri in objectIris)
+                {
+                    if (set.Contains(iri))
+                    {
+                        result.Add(iri);
+                    }
+                }
+            }
+            return result;
+        }, ct);
+
     /// <summary>
     /// The forward edge index for the current state (liker → set of liked objects), created on demand.
     /// </summary>

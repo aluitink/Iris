@@ -117,4 +117,69 @@ public sealed class EfActorStore : IActorStore
 
         return result;
     }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var queryable = db.Set<ActorEntity>().AsNoTracking();
+        if (hasQuery)
+        {
+            // Match the same surfaces the in-memory service does (name / preferredUsername / IRI) by
+            // searching the document's JSON. EF.Functions.Like maps to ILIKE on Npgsql (case-insensitive);
+            // the IRI is always present in the document's `id`, so an IRI match is included. The Handle
+            // index remains for the WebFinger point lookup.
+            var pattern = $"%{EscapeLike(normalized!)}%";
+            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+        }
+
+        var entities = await queryable
+            .OrderBy(e => e.Id)
+            .Skip(offset)
+            .Take(limit)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var result = new List<Actor>(entities.Count);
+        foreach (var entity in entities)
+        {
+            if (AsDocument.Deserialize(entity.Document) is Actor actor)
+            {
+                result.Add(actor);
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var queryable = db.Set<ActorEntity>().AsNoTracking();
+        if (hasQuery)
+        {
+            var pattern = $"%{EscapeLike(normalized!)}%";
+            queryable = queryable.Where(e => EF.Functions.Like(e.Document, pattern, "\\"));
+        }
+
+        return await queryable.CountAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Escapes LIKE metacharacters (<c>%</c>, <c>_</c>, <c>\</c>) so a user-supplied query is matched
+    /// literally (not as a pattern).
+    /// </summary>
+    private static string EscapeLike(string value)
+    {
+        return value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+    }
 }

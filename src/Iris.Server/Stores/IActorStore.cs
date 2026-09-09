@@ -46,4 +46,26 @@ public interface IActorStore
     /// <returns>A task that completes with the stored actors (possibly empty). The order is
     /// unspecified; callers that need a stable order sort the result (e.g. by IRI).</returns>
     public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a page of actors matching a case-insensitive substring query over the actor's
+    /// <c>name</c>, <c>preferredUsername</c>, and IRI (57.4 — pushes the directory search into the store
+    /// so a global search does not load every actor into memory). An empty/whitespace query matches
+    /// every actor.
+    /// </summary>
+    /// <param name="query">The substring to search for (case-insensitive). Empty/whitespace matches all.</param>
+    /// <param name="limit">The maximum number of items to return (the page size).</param>
+    /// <param name="offset">The number of matching items to skip before the page starts.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the page of matching actors, ordered by IRI (ordinal).</returns>
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default);
+
+    /// <summary>
+    /// Counts the actors that would match <see cref="SearchActorsAsync"/>'s <paramref name="query"/> —
+    /// the full match total, used for a search page's <c>totalItems</c> (57.4).
+    /// </summary>
+    /// <param name="query">The substring to search for (case-insensitive). Empty/whitespace matches all.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the number of matching actors.</returns>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default);
 }
