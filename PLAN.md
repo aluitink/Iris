@@ -102,10 +102,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 54 — Post-1.0 polish & hardening (in progress):**
+**Phase 55 — Federation metadata, interop, and operational depth (in progress):**
 
-1. **54.34: Replenish — define next Phase 55 slices** — Phase 54 (Post-1.0 polish & hardening) is complete. Define Phase 55 with 2-3 concrete slices. Candidate areas: (a) `IInstanceStatsProvider` abstraction to report real `usage.users.total` in NodeInfo (54.33 follow-up); (b) federation interop hardening — verify + fix any remaining interop gaps with a real remote instance; (c) performance — profile WASM bundle size + server response times; (d) documentation — operator runbook, API reference polish.
-2. **54.35: `IInstanceStatsProvider` — real NodeInfo user count** — 54.33 found `usage.users.total` is hardcoded to 0 because `NodeInfoHandler` (in `Iris.Server`) can't access `IUserAccountStore` (in `Iris.Server.Data`) without a dependency violation. Introduce an `IInstanceStatsProvider` interface in `Iris.Server` (with an in-memory default returning 0) that `Iris.Server.Data` implements to return the real account count. Wire it into the NodeInfo handler. This makes the NodeInfo metadata accurate for federation software that uses `usage.users.total` to gauge instance popularity.
+1. **55.1: `IInstanceStatsProvider` — real NodeInfo user count** — 54.33 found `usage.users.total` is hardcoded to 0 because `NodeInfoHandler` (in `Iris.Server`) can't access `IUserAccountStore` (in `Iris.Server.Data`) without a dependency violation. Introduce an `IInstanceStatsProvider` interface in `Iris.Server` (with an in-memory default returning 0) that `Iris.Server.Data` implements to return the real account count. Wire it into the NodeInfo handler. This makes the NodeInfo metadata accurate for federation software that uses `usage.users.total` to gauge instance popularity.
+2. **55.2: Federation interop hardening — live cross-instance verification** — verify + fix any remaining interop gaps with a real remote instance. Stand up a second Iris instance (or use a public Mastodon/Pleroma instance) and verify: (a) follow/unfollow round-trip, (b) post delivery + display, (c) like/announce propagation, (d) actor document fetch, (e) WebFinger resolution. Fix any defects found. This is a live verification slice — no new code unless a defect is found.
+3. **55.3: Operator runbook + API reference polish** — write a concise operator runbook (deploy, backup/restore, monitor, troubleshoot, upgrade) and polish the OpenAPI spec (add descriptions to missing endpoints, fix any typos, verify all 44+ endpoints are documented). Deliverable: `docs/OPERATOR_RUNBOOK.md` + updated `/openapi/v1.json`.
 
 **Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
