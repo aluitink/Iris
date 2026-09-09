@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-**54.19: Directory should show actor cards, split into Communities/People tabs** — the actor directory currently lists actors plainly in one list; redesign it to show a card per actor using their icon/image, display name/handle, and a short bio/summary, with a "+"/expand affordance to reveal that actor's most recent posts inline. Also split the directory into two tabs — **Communities** and **People** — so Group-like actors and individual actors are browsed separately instead of mixed together.
+**57.1: Performance optimization — feed query profiling and index review** — profiled all EF Core queries. Fixed: N+1 in `GetBoxAsync` (1+N → 2 queries), missing `BoxItems(Direction, ActorId, Position)` index, removed 2 redundant indexes, `EfInstanceStatsProvider` → `COUNT(*)`. Deferred to 57.4: batch enrichment queries, pagination for `ListObjectsAsync`/`ListActorsAsync`, `citext` username index.
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -104,9 +104,10 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 57 — Performance, accessibility, and remaining interop (IN PROGRESS):**
 
-- 57.1: **Performance optimization — feed query profiling and index review** — profile the home feed, public feed, and outbox collection queries against the EF store. Check for N+1 queries, missing indexes, and suboptimal LINQ translations. Add indexes where needed. Integration tests verifying query plan efficiency.
+- 57.1: **Performance optimization — feed query profiling and index review** (COMPLETE) — [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)
 - 57.2: **Accessibility audit — WCAG 2.1 AA pass** — systematic review of all pages against WCAG 2.1 AA. Focus: color contrast, focus management, screen reader announcements, form labels, keyboard traps. Fix findings.
 - 57.3: **`conversationId` support — Pleroma thread grouping** — set `conversationId` on outbound notes (the thread root IRI). Read and preserve inbound `conversationId`. Integration tests.
+- 57.4: **Batch enrichment + search pagination** — batch `GetLikersAsync`/`GetAnnouncersAsync`/`GetRepliesAsync` into `WHERE (Kind, Target) IN (...)` queries; add pagination + text-search index for `ListObjectsAsync`/`ListActorsAsync`; `citext` or expression index for case-insensitive username lookup.
 
 **Phase 56 — Cross-implementation federation compatibility (COMPLETE):**
 
@@ -132,6 +133,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 57.1: **Feed query profiling and index review** (Phase 57) — fixed N+1 in `GetBoxAsync` (batch `WHERE Id IN (...)`), added `BoxItems(Direction, ActorId, Position)` index, removed redundant `Edges`/`Media` indexes, `EfInstanceStatsProvider` → `COUNT(*)`. Core 296/0, Server 953/0, Server.Data 10/0, Web 62/0. [changes/415](docs/changes/415-57.1-feed-query-profiling-index-review.md)
   - 56.3: **Fix top-3 wire compatibility gaps** (Phase 56) — (1) `updated` timestamp stamped on content object edits in `UpdateActivityHandler`; (2) `source` field emitted with raw markdown in `ComposeNote.Build`; (3) `summary` decoupled from `sensitive` (CW independent of NSFW flag, matching Mastodon/Pleroma). 4 new tests, 1 web test deleted per policy. Core 296/0, Server 953/0, Web 62/0. [changes/414](docs/changes/414-56.3-fix-top3-wire-compatibility-gaps.md)
   - 56.2: **Pleroma/Akko wire-compatibility check** (Phase 56) — inbound: clean (all Pleroma fields preserved via ExtensionData). Outbound: same 5 Mastodon gaps + 2 Pleroma-specific (conversationId, emoji). Analysis only. [changes/413](docs/changes/413-56.2-pleroma-akko-wire-compatibility.md)
   - 56.1: **Mastodon wire-compatibility gap analysis** (Phase 56) — audited all outbound AP flows. Key gaps: `updated` missing, `source` missing, direct visibility incorrect, `summary` restricted, scalar-vs-array. Analysis only. [changes/412](docs/changes/412-56.1-mastodon-wire-compatibility-gap-analysis.md)

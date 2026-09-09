@@ -92,6 +92,8 @@ namespace Iris.Server.Data.Migrations
 
                     b.HasKey("Direction", "ActorId", "ItemIri");
 
+                    b.HasIndex("Direction", "ActorId", "Position");
+
                     b.ToTable("BoxItems", (string)null);
                 });
 
@@ -130,9 +132,6 @@ namespace Iris.Server.Data.Migrations
                     b.HasKey("Kind", "Source", "Target");
 
                     b.HasIndex("Kind", "Target");
-
-                    b.HasIndex("Kind", "Source", "Target")
-                        .IsUnique();
 
                     b.ToTable("Edges", (string)null);
                 });
@@ -211,8 +210,6 @@ namespace Iris.Server.Data.Migrations
                         .HasColumnType("character varying(1024)");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("Id");
 
                     b.ToTable("Media", (string)null);
                 });

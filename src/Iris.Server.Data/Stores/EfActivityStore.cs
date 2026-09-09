@@ -136,11 +136,23 @@ public sealed class EfActivityStore : IActivityStore
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        if (items.Count == 0)
+        {
+            return [];
+        }
+
+        var iriSet = items.Select(i => i.ItemIri).ToList();
+        var activities = await db.Set<ActivityEntity>()
+            .AsNoTracking()
+            .Where(e => iriSet.Contains(e.Id))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        var activityLookup = activities.ToDictionary(a => a.Id);
+
         var result = new List<IObjectOrLink>(items.Count);
         foreach (var item in items)
         {
-            var activity = await db.Set<ActivityEntity>().AsNoTracking().FirstOrDefaultAsync(e => e.Id == item.ItemIri, ct).ConfigureAwait(false);
-            if (activity is null)
+            if (!activityLookup.TryGetValue(item.ItemIri, out var activity))
             {
                 continue;
             }

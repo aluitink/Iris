@@ -99,6 +99,14 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         }
     }
 
+    public Task<int> CountAsync(CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            return Task.FromResult(_accounts.Count);
+        }
+    }
+
     public Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         lock (_gate)

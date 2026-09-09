@@ -111,6 +111,14 @@ public sealed class EfUserAccountStore : IUserAccountStore
     }
 
     /// <inheritdoc/>
+    public async Task<int> CountAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        return await db.Set<UserAccountEntity>().CountAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

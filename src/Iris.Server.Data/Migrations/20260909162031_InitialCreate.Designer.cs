@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Iris.Server.Data.Migrations
 {
     [DbContext(typeof(IrisDbContext))]
-    [Migration("20260906102841_InitialCreate")]
+    [Migration("20260909162031_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -95,6 +95,8 @@ namespace Iris.Server.Data.Migrations
 
                     b.HasKey("Direction", "ActorId", "ItemIri");
 
+                    b.HasIndex("Direction", "ActorId", "Position");
+
                     b.ToTable("BoxItems", (string)null);
                 });
 
@@ -134,10 +136,32 @@ namespace Iris.Server.Data.Migrations
 
                     b.HasIndex("Kind", "Target");
 
-                    b.HasIndex("Kind", "Source", "Target")
-                        .IsUnique();
-
                     b.ToTable("Edges", (string)null);
+                });
+
+            modelBuilder.Entity("Iris.Server.Data.Entities.InstanceMetadataEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("InstanceMetadata", (string)null);
                 });
 
             modelBuilder.Entity("Iris.Server.Data.Entities.KeyEntity", b =>
@@ -190,8 +214,6 @@ namespace Iris.Server.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("Id");
-
                     b.ToTable("Media", (string)null);
                 });
 
@@ -239,6 +261,9 @@ namespace Iris.Server.Data.Migrations
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("NotificationPrefsJson")
+                        .HasColumnType("text");
 
                     b.Property<DateTimeOffset?>("NotificationsReadAt")
                         .HasColumnType("timestamp with time zone");

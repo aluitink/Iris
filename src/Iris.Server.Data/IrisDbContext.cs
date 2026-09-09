@@ -106,6 +106,8 @@ public sealed class IrisDbContext : DbContext
             entity.Property(e => e.ActorId).HasMaxLength(1024);
             entity.Property(e => e.ItemIri).HasMaxLength(1024);
             // Idempotent add: a re-recorded item (same collection + actor + IRI) is a no-op (unique key).
+            // Collection read: GetBoxAsync filters on (Direction, ActorId) and orders by Position.
+            entity.HasIndex(e => new { e.Direction, e.ActorId, e.Position });
         });
     }
 
@@ -134,8 +136,7 @@ public sealed class IrisDbContext : DbContext
             entity.HasKey(e => new { e.Kind, e.Source, e.Target });
             entity.Property(e => e.Source).HasMaxLength(1024);
             entity.Property(e => e.Target).HasMaxLength(1024);
-            // One directed edge per (kind, source, target); the reverse index queries on (kind, target).
-            entity.HasIndex(e => new { e.Kind, e.Source, e.Target }).IsUnique();
+            // Reverse-direction queries (InSourcesAsync) filter on (kind, target).
             entity.HasIndex(e => new { e.Kind, e.Target });
         });
     }
@@ -187,7 +188,6 @@ public sealed class IrisDbContext : DbContext
             entity.Property(e => e.ContentType).HasMaxLength(255);
             entity.Property(e => e.FileName).HasMaxLength(512);
             entity.Property(e => e.StorageKey).HasMaxLength(1024);
-            entity.HasIndex(e => e.Id);
         });
     }
 

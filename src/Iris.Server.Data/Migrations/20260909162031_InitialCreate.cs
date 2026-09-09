@@ -1,5 +1,6 @@
 ﻿using System;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
@@ -81,6 +82,21 @@ namespace Iris.Server.Data.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "InstanceMetadata",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Name = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    Description = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
+                    UpdatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_InstanceMetadata", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "Keys",
                 columns: table => new
                 {
@@ -136,6 +152,7 @@ namespace Iris.Server.Data.Migrations
                     Role = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
                     ActorIri = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
                     NotificationsReadAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    NotificationPrefsJson = table.Column<string>(type: "text", nullable: true),
                     CreatedAt = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
@@ -154,20 +171,14 @@ namespace Iris.Server.Data.Migrations
                 column: "Handle");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Edges_Kind_Source_Target",
-                table: "Edges",
-                columns: new[] { "Kind", "Source", "Target" },
-                unique: true);
+                name: "IX_BoxItems_Direction_ActorId_Position",
+                table: "BoxItems",
+                columns: new[] { "Direction", "ActorId", "Position" });
 
             migrationBuilder.CreateIndex(
                 name: "IX_Edges_Kind_Target",
                 table: "Edges",
                 columns: new[] { "Kind", "Target" });
-
-            migrationBuilder.CreateIndex(
-                name: "IX_Media_Id",
-                table: "Media",
-                column: "Id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Objects_AttributedTo",
@@ -203,6 +214,9 @@ namespace Iris.Server.Data.Migrations
 
             migrationBuilder.DropTable(
                 name: "Edges");
+
+            migrationBuilder.DropTable(
+                name: "InstanceMetadata");
 
             migrationBuilder.DropTable(
                 name: "Keys");

@@ -14,7 +14,6 @@ public sealed class EfInstanceStatsProvider(IUserAccountStore accounts) : IInsta
     /// <inheritdoc/>
     public async Task<int> GetLocalUserCountAsync(CancellationToken ct = default)
     {
-        var all = await _accounts.GetAllAsync(ct).ConfigureAwait(false);
-        return all.Count;
+        return await _accounts.CountAsync(ct).ConfigureAwait(false);
     }
 }
