@@ -442,6 +442,153 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reads the poll data from an object (F-26).
+    /// </summary>
+    /// <remarks>
+    /// Two wire shapes are supported:
+    /// <list type="bullet">
+    /// <item>Mastodon: a top-level <c>poll</c> object in <see cref="IObject.ExtensionData"/> with
+    /// <c>options</c> (array of <c>{title, votesCount}</c>), <c>endsAt</c>, <c>expired</c>,
+    /// <c>multiple</c>, <c>totalVotes</c>.</item>
+    /// <item>Pleroma / AS2.0: a <c>Question</c>-typed object (or a Note carrying <c>options</c> /
+    /// <c>endTime</c> / <c>closed</c> / <c>multiple</c> in <see cref="IObject.ExtensionData"/>),
+    /// where each option is <c>{name, votes}</c>.</item>
+    /// </list>
+    /// Returns <c>null</c> when the object carries no poll data.
+    /// </remarks>
+    /// <param name="obj">The object whose poll data is read. May be null.</param>
+    /// <returns>The parsed <see cref="PollData"/>, or <c>null</c> when no poll is present.</returns>
+    public static PollData? GetPollData(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        // Shape 1: Mastodon — top-level `poll` object in ExtensionData.
+        if (ext.TryGetValue("poll", out var pollElement) && pollElement.ValueKind == JsonValueKind.Object)
+        {
+            return ParsePollFromExtension(pollElement);
+        }
+
+        // Shape 2: Pleroma / AS2.0 — `options` array + `endTime` / `closed` / `multiple` directly on the object.
+        if (ext.TryGetValue("options", out var optionsElement) && optionsElement.ValueKind == JsonValueKind.Array)
+        {
+            return ParsePollFromAs2(obj, ext, optionsElement);
+        }
+
+        return null;
+    }
+
+    private static PollData? ParsePollFromExtension(JsonElement poll)
+    {
+        if (!poll.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var pollOptions = new List<PollOption>();
+        foreach (var opt in options.EnumerateArray())
+        {
+            if (opt.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var title = opt.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String
+                ? titleProp.GetString()!
+                : null;
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var votes = opt.TryGetProperty("votesCount", out var votesProp) && votesProp.ValueKind == JsonValueKind.Number
+                ? votesProp.GetInt32()
+                : 0;
+            pollOptions.Add(new PollOption(title, votes));
+        }
+
+        if (pollOptions.Count == 0)
+        {
+            return null;
+        }
+
+        var totalVotes = poll.TryGetProperty("totalVotes", out var tv) && tv.ValueKind == JsonValueKind.Number
+            ? tv.GetInt32()
+            : pollOptions.Sum(o => o.Votes);
+
+        DateTime? endsAt = null;
+        if (poll.TryGetProperty("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(ea.GetString(), out var parsed))
+        {
+            endsAt = parsed.ToUniversalTime();
+        }
+
+        var expired = poll.TryGetProperty("expired", out var exp) && exp.ValueKind == JsonValueKind.True;
+        var multiple = poll.TryGetProperty("multiple", out var mult) && mult.ValueKind == JsonValueKind.True;
+
+        return new PollData(pollOptions, totalVotes, endsAt, expired, multiple);
+    }
+
+    private static PollData? ParsePollFromAs2(IObject obj, Dictionary<string, JsonElement> ext, JsonElement options)
+    {
+        var pollOptions = new List<PollOption>();
+        foreach (var opt in options.EnumerateArray())
+        {
+            if (opt.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            // AS2.0 Question options use `name`; Mastodon uses `title`.
+            var name = opt.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                ? nameProp.GetString()!
+                : opt.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String
+                    ? titleProp.GetString()!
+                    : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var votes = opt.TryGetProperty("votes", out var votesProp) && votesProp.ValueKind == JsonValueKind.Number
+                ? votesProp.GetInt32()
+                : opt.TryGetProperty("votesCount", out var vcProp) && vcProp.ValueKind == JsonValueKind.Number
+                    ? vcProp.GetInt32()
+                    : 0;
+            pollOptions.Add(new PollOption(name, votes));
+        }
+
+        if (pollOptions.Count == 0)
+        {
+            return null;
+        }
+
+        var totalVotes = ext.TryGetValue("totalVotes", out var tv) && tv.ValueKind == JsonValueKind.Number
+            ? tv.GetInt32()
+            : pollOptions.Sum(o => o.Votes);
+
+        DateTime? endsAt = null;
+        if (ext.TryGetValue("endTime", out var et) && et.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(et.GetString(), out var parsed))
+        {
+            endsAt = parsed.ToUniversalTime();
+        }
+        else if (ext.TryGetValue("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+                 && DateTime.TryParse(ea.GetString(), out var parsed2))
+        {
+            endsAt = parsed2.ToUniversalTime();
+        }
+
+        var expired = ext.TryGetValue("closed", out var cl) && cl.ValueKind == JsonValueKind.True
+            || ext.TryGetValue("expired", out var exp) && exp.ValueKind == JsonValueKind.True;
+        var multiple = ext.TryGetValue("multiple", out var mult) && mult.ValueKind == JsonValueKind.True;
+
+        return new PollData(pollOptions, totalVotes, endsAt, expired, multiple);
+    }
+
+    /// <summary>
     /// Resolves the IRIs of an object's <c>attachment</c> entries (F-12).
     /// </summary>
     /// <remarks>
@@ -813,3 +960,26 @@ public static class IriExtensions
         return new Iri(builder.Uri);
     }
 }
+
+/// <summary>
+/// A single poll option with its vote count.
+/// </summary>
+/// <param name="Title">The option text (e.g. <c>"Alice"</c>).</param>
+/// <param name="Votes">The number of votes for this option.</param>
+public sealed record PollOption(string Title, int Votes);
+
+/// <summary>
+/// Parsed poll data from an object's <c>poll</c> extension (Mastodon) or <c>Question</c> properties
+/// (AS2.0 / Pleroma).
+/// </summary>
+/// <param name="Options">The poll options with their vote counts (in declaration order).</param>
+/// <param name="TotalVotes">The total number of votes cast (sum of all options).</param>
+/// <param name="EndsAt">The poll end timestamp, when declared.</param>
+/// <param name="Expired"><c>true</c> when the poll has closed (ended or explicitly marked expired).</param>
+/// <param name="Multiple"><c>true</c> when voters may select more than one option.</param>
+public sealed record PollData(
+    IReadOnlyList<PollOption> Options,
+    int TotalVotes,
+    DateTime? EndsAt,
+    bool Expired,
+    bool Multiple);

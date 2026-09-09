@@ -775,6 +775,67 @@ ul.object-list li {
     font-family: monospace;
 }
 
+.object-poll {
+    margin-top: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.object-poll-option {
+    position: relative;
+    border-radius: 0.25rem;
+    overflow: hidden;
+    height: 1.75rem;
+}
+
+.object-poll-option-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: 0.25rem;
+    transition: width 0.3s ease;
+}
+
+.object-poll-option-content {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0.5rem;
+    height: 100%;
+    font-size: 0.875rem;
+}
+
+.object-poll-option-title {
+    font-weight: 500;
+}
+
+.object-poll-option-votes {
+    color: var(--muted);
+    font-size: 0.8rem;
+}
+
+.object-poll-footer {
+    display: flex;
+    gap: 0.75rem;
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+}
+
+.object-poll-ended {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.object-poll-total {
+    margin-left: auto;
+}
+
 .object-published {
     color: var(--muted);
     font-size: 0.75rem;

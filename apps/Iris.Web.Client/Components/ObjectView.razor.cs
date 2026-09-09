@@ -22,6 +22,7 @@ public partial class ObjectView
     private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
     private IReadOnlyList<(string Name, Iri? Href)> HashtagTags => Obj?.GetHashtagTags() ?? [];
     private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> EmojiTags => ResolveEmojiTags();
+    private PollData? Poll => ResolvePoll();
     private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
@@ -254,6 +255,9 @@ public partial class ObjectView
     /// </summary>
     private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> ResolveEmojiTags()
         => (ActivityEmbeddedObject ?? Obj)?.GetCustomEmojis() ?? [];
+
+    private PollData? ResolvePoll()
+        => (ActivityEmbeddedObject ?? Obj)?.GetPollData();
 
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);

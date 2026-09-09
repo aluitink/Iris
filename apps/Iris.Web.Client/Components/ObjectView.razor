@@ -230,6 +230,37 @@
                     <img src="@media" alt="" loading="lazy" />
                 </div>
             }
+            @if (Poll is { } poll)
+            {
+                <div class="object-poll">
+                    @foreach (var option in poll.Options)
+                    {
+                        var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
+                        <div class="object-poll-option">
+                            <div class="object-poll-option-bar" style="width:@pct%"></div>
+                            <div class="object-poll-option-content">
+                                <span class="object-poll-option-title">@option.Title</span>
+                                <span class="object-poll-option-votes">@option.Votes</span>
+                            </div>
+                        </div>
+                    }
+                    <div class="object-poll-footer">
+                        @if (poll.Expired)
+                        {
+                            <span class="object-poll-ended">Poll ended</span>
+                        }
+                        else if (poll.EndsAt is { } ends)
+                        {
+                            <span class="object-poll-ends">Ends @RelativeTime(ends)</span>
+                        }
+                        @if (poll.Multiple)
+                        {
+                            <span class="object-poll-multiple">Multiple answers allowed</span>
+                        }
+                        <span class="object-poll-total">@poll.TotalVotes votes</span>
+                    </div>
+                </div>
+            }
             @if (obj is Note or Article)
             {
                 <EngagementBar ObjectIri="@BareObjectIri" Object="obj" />

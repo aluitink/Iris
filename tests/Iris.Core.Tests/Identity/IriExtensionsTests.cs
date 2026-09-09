@@ -1012,4 +1012,270 @@ public class IriExtensionsTests
         Assert.Equal(":smile:", result[0].ShortCode);
         Assert.Equal(new Iri("https://cdn.example.com/emoji/smile.png"), result[0].Url);
     }
+
+    // --- GetPollData (58.2) ---
+
+    [Fact]
+    public void GetPollData_NullObject_ReturnsNull()
+    {
+        IObject? obj = null;
+
+        Assert.Null(obj.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_NoPoll_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_ParsesOptionsVotesEndsAt()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "id": "poll-1",
+                    "options": [
+                        {"title": "Alice", "votesCount": 3},
+                        {"title": "Bob", "votesCount": 4},
+                        {"title": "Charlie", "votesCount": 5}
+                    ],
+                    "endsAt": "2026-12-01T00:00:00Z",
+                    "expired": false,
+                    "multiple": false,
+                    "totalVotes": 12
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(3, poll!.Options.Count);
+        Assert.Equal("Alice", poll.Options[0].Title);
+        Assert.Equal(3, poll.Options[0].Votes);
+        Assert.Equal("Charlie", poll.Options[2].Title);
+        Assert.Equal(5, poll.Options[2].Votes);
+        Assert.Equal(12, poll.TotalVotes);
+        Assert.False(poll.Expired);
+        Assert.False(poll.Multiple);
+        Assert.Equal(new DateTime(2026, 12, 1, 0, 0, 0, DateTimeKind.Utc), poll.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_ExpiredAndMultiple()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"title": "Yes", "votesCount": 7},
+                        {"title": "No", "votesCount": 3}
+                    ],
+                    "endsAt": "2026-01-01T00:00:00Z",
+                    "expired": true,
+                    "multiple": true,
+                    "totalVotes": 10
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.True(poll!.Expired);
+        Assert.True(poll.Multiple);
+        Assert.Equal(10, poll.TotalVotes);
+        Assert.Equal(2, poll.Options.Count);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_NoTotalVotes_SumsOptions()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"title": "A", "votesCount": 2},
+                        {"title": "B", "votesCount": 3}
+                    ],
+                    "expired": false,
+                    "multiple": false
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(5, poll!.TotalVotes);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_ParsesOptionsWithNamesAndVotes()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "Option A", "votes": 5},
+                    {"name": "Option B", "votes": 3}
+                ]
+                """).RootElement.Clone(),
+            ["endTime"] = JsonDocument.Parse("\"2026-11-15T12:00:00Z\"").RootElement.Clone(),
+            ["closed"] = JsonDocument.Parse("false").RootElement.Clone(),
+            ["multiple"] = JsonDocument.Parse("false").RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(2, poll!.Options.Count);
+        Assert.Equal("Option A", poll.Options[0].Title);
+        Assert.Equal(5, poll.Options[0].Votes);
+        Assert.Equal("Option B", poll.Options[1].Title);
+        Assert.Equal(3, poll.Options[1].Votes);
+        Assert.Equal(8, poll.TotalVotes);
+        Assert.False(poll.Expired);
+        Assert.Equal(new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc), poll.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_Closed_ParsesExpired()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "X", "votes": 1},
+                    {"name": "Y", "votes": 2}
+                ]
+                """).RootElement.Clone(),
+            ["closed"] = JsonDocument.Parse("true").RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.True(poll!.Expired);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_NoEndTime_EndsAtIsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "A", "votes": 1}
+                ]
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Null(poll!.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_SkipsOptionWithoutTitle()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"votesCount": 1},
+                        {"title": "Valid", "votesCount": 2}
+                    ],
+                    "expired": false,
+                    "multiple": false
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Single(poll!.Options);
+        Assert.Equal("Valid", poll.Options[0].Title);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_EmptyOptions_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {"options": [], "expired": false, "multiple": false}
+                """).RootElement.Clone(),
+        };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_NonObjectPoll_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("\"not-an-object\"").RootElement.Clone(),
+        };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_RoundTripsThroughJsonSerialization()
+    {
+        var note = new Note
+        {
+            Id = "https://a.domain.local/n/1",
+            Content = ["Who wins?"],
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "id": "poll-1",
+                    "options": [
+                        {"title": "Alice", "votesCount": 3},
+                        {"title": "Bob", "votesCount": 7}
+                    ],
+                    "endsAt": "2026-12-01T00:00:00Z",
+                    "expired": false,
+                    "multiple": false,
+                    "totalVotes": 10
+                }
+                """).RootElement.Clone(),
+        };
+
+        var json = ActivityJson.Serialize(note);
+        var roundTripped = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var roundTrippedNote = Assert.IsAssignableFrom<IObject>(roundTripped);
+
+        var poll = roundTrippedNote.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(2, poll!.Options.Count);
+        Assert.Equal("Alice", poll.Options[0].Title);
+        Assert.Equal(3, poll.Options[0].Votes);
+        Assert.Equal(10, poll.TotalVotes);
+    }
 }
