@@ -819,4 +819,197 @@ public class IriExtensionsTests
 
         Assert.True(note.IsPreRenderedHtmlContent());
     }
+
+    // --- GetCustomEmojis (58.1) ---
+
+    [Fact]
+    public void GetCustomEmojis_NullObject_ReturnsEmpty()
+    {
+        IObject? obj = null;
+
+        Assert.Empty(obj.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoEmojiProperty_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_EmptyEmojiArray_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("[]").RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SingleEmoji_ReturnsNameShortCodeAndUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"smile","shortCode":":smile:","staticUrl":"https://cdn.example.com/emoji/smile.png","url":"https://cdn.example.com/emoji/smile.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("smile", result[0].Name);
+        Assert.Equal(":smile:", result[0].ShortCode);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/smile.png"), result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_MultipleEmojis_ReturnsAllInOrder()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [
+                    {"name":"cat","shortCode":":cat:","staticUrl":"https://cdn.example.com/emoji/cat.png"},
+                    {"name":"dog","shortCode":":dog:","staticUrl":"https://cdn.example.com/emoji/dog.png"}
+                ]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("cat", result[0].Name);
+        Assert.Equal(":cat:", result[0].ShortCode);
+        Assert.Equal("dog", result[1].Name);
+        Assert.Equal(":dog:", result[1].ShortCode);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoShortCode_DerivesFromName()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"party","staticUrl":"https://cdn.example.com/emoji/party.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal(":party:", result[0].ShortCode);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoStaticUrl_FallsBackToUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"wave","shortCode":":wave:","url":"https://cdn.example.com/emoji/wave.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/wave.png"), result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoUrls_ReturnsNullUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"mystery","shortCode":":mystery:"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Null(result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SkipsEmojiWithoutName()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"shortCode":":unnamed:","staticUrl":"https://cdn.example.com/emoji/x.png"}]
+                """).RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NonArrayEmojiProperty_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("\"not-an-array\"").RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SkipsNonObjectEntries()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                ["not-an-object", {"name":"valid","shortCode":":valid:","staticUrl":"https://cdn.example.com/v.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("valid", result[0].Name);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_RoundTripsThroughJsonSerialization()
+    {
+        var note = new Note
+        {
+            Id = "https://a.domain.local/n/1",
+            Content = ["Hello :smile: world"],
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"smile","shortCode":":smile:","staticUrl":"https://cdn.example.com/emoji/smile.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var json = ActivityJson.Serialize(note);
+        var roundTripped = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var roundTrippedNote = Assert.IsAssignableFrom<IObject>(roundTripped);
+
+        var result = roundTrippedNote.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("smile", result[0].Name);
+        Assert.Equal(":smile:", result[0].ShortCode);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/smile.png"), result[0].Url);
+    }
 }

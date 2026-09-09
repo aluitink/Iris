@@ -756,6 +756,25 @@ ul.object-list li {
     text-decoration: underline;
 }
 
+.object-emojis {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.25rem;
+}
+
+.object-emoji {
+    height: 1.5rem;
+    width: auto;
+    vertical-align: middle;
+}
+
+.object-emoji-text {
+    font-size: 0.8rem;
+    color: var(--muted);
+    font-family: monospace;
+}
+
 .object-published {
     color: var(--muted);
     font-size: 0.75rem;

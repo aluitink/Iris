@@ -21,6 +21,7 @@ public partial class ObjectView
     private Iri? ParentIri => Obj?.GetParentIri();
     private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
     private IReadOnlyList<(string Name, Iri? Href)> HashtagTags => Obj?.GetHashtagTags() ?? [];
+    private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> EmojiTags => ResolveEmojiTags();
     private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
@@ -245,6 +246,14 @@ public partial class ObjectView
             return null;
         }
     }
+
+    /// <summary>
+    /// Resolves the custom emojis for this object, preferring the embedded content object (for
+    /// activity-wrapped items like <c>Create</c> where <c>Obj</c> is the activity, not the Note)
+    /// and falling back to <c>Obj</c> itself (for direct-object rendering).
+    /// </summary>
+    private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> ResolveEmojiTags()
+        => (ActivityEmbeddedObject ?? Obj)?.GetCustomEmojis() ?? [];
 
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);

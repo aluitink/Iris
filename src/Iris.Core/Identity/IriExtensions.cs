@@ -376,6 +376,72 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Resolves the custom emojis declared on an object (F-27).
+    /// </summary>
+    /// <remarks>
+    /// Mastodon and Pleroma carry custom emoji definitions in a top-level <c>emoji</c> array on the
+    /// content object (e.g. a <c>Note</c>), not in the <c>tag</c> array. Each entry is an object with
+    /// <c>name</c> (the emoji name, e.g. <c>"smile"</c>), <c>shortCode</c> (e.g. <c>":smile:"</c>),
+    /// and <c>staticUrl</c> / <c>url</c> (the image URL). Because the ActivityStreams library does not
+    /// model an <c>emoji</c> property, the array is preserved in
+    /// <see cref="IObject.ExtensionData"/> and this method is the single boundary read that surfaces
+    /// it for rendering. Returns an empty list when the object declares no custom emojis.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>emoji</c> array is read. May be null.</param>
+    /// <returns>
+    /// The custom emojis (name, short code, and image URL, in declaration order); possibly empty.
+    /// An emoji with no image URL (a server that omitted it) carries a <see langword="null"/> URL.
+    /// </returns>
+    public static IReadOnlyList<(string Name, string ShortCode, Iri? Url)> GetCustomEmojis(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext || !ext.TryGetValue("emoji", out var emojiElement))
+        {
+            return [];
+        }
+
+        if (emojiElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var emojis = new List<(string Name, string ShortCode, Iri? Url)>();
+        foreach (var item in emojiElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = item.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                ? nameProp.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var shortCode = item.TryGetProperty("shortCode", out var scProp) && scProp.ValueKind == JsonValueKind.String
+                ? scProp.GetString()!
+                : $":{name}:";
+
+            Iri? url = null;
+            var urlString = item.TryGetProperty("staticUrl", out var suProp) && suProp.ValueKind == JsonValueKind.String
+                ? suProp.GetString()
+                : item.TryGetProperty("url", out var uProp) && uProp.ValueKind == JsonValueKind.String
+                    ? uProp.GetString()
+                    : null;
+            if (urlString is { Length: > 0 } && Iri.TryParse(urlString, out var parsedUrl))
+            {
+                url = parsedUrl;
+            }
+
+            emojis.Add((name!, shortCode, url));
+        }
+
+        return emojis;
+    }
+
+    /// <summary>
     /// Resolves the IRIs of an object's <c>attachment</c> entries (F-12).
     /// </summary>
     /// <remarks>

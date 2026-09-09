@@ -208,6 +208,22 @@
                     <a href="@HashtagHref(hashtagName, hashtagHref)" title="@hashtagName" class="object-hashtag-link">@hashtagName</a>
                 </div>
             }
+            @if (EmojiTags.Count > 0)
+            {
+                <div class="object-emojis">
+                    @foreach (var (emojiName, emojiShortCode, emojiUrl) in EmojiTags)
+                    {
+                        @if (emojiUrl is { } url)
+                        {
+                            <img src="@RewriteMediaToSameOrigin(url.Value)" alt="@emojiShortCode" title="@emojiShortCode" class="object-emoji" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="object-emoji-text" title="@emojiShortCode">@emojiShortCode</span>
+                        }
+                    }
+                </div>
+            }
             @foreach (var media in MediaAttachments)
             {
                 <div class="object-media">
