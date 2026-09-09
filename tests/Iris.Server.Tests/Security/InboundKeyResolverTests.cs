@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
@@ -149,6 +150,48 @@ public class InboundKeyResolverTests
 
         var resolved = await resolver.ResolveAsync(new Iri($"https://{AHost}/ap/v1/u/carol#key-1"));
         Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task Resolve_PublicKeyWithReplaces_InvalidatesOldKeyCache()
+    {
+        // F-25: when the remote document's publicKey declares a `replaces` property, the old key's
+        // cache entry is invalidated so the next resolution of the old key triggers a refetch.
+        var oldKeyId = new Iri($"https://{AHost}/ap/v1/u/frank#key-1");
+        var newKeyId = new Iri($"https://{AHost}/ap/v1/u/frank#key-2");
+        var frankKey = KeyPairGenerator.GenerateEcP256(newKeyId);
+
+        // Build an actor document whose publicKey has a `replaces` field pointing at the old key.
+        var actor = ActorWithPublicKey(
+            id: newKeyId.Value,
+            owner: $"https://{AHost}/ap/v1/u/frank",
+            jwk: frankKey.GetPublicJwk());
+        var pk = actor.ExtensionData![ActivityPubExtensionNames.PublicKey];
+        var pkObj = pk.EnumerateObject().ToDictionary(
+            (JsonProperty p) => p.Name, p => p.Value, StringComparer.Ordinal);
+        pkObj["replaces"] = JsonSerializer.SerializeToElement(oldKeyId.Value);
+        actor.ExtensionData![ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(
+            pkObj.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal));
+
+        var cache = new RemoteKeyCache();
+        // Pre-populate the cache with the old key's JWK (simulating a prior resolution).
+        await cache.GetAsync(oldKeyId, bypassCache: false, async _ =>
+        {
+            await Task.Yield();
+            return new JwkKey(frankKey.GetPublicJwk(), Signatures.AlgorithmLabel(KeyAlgorithm.EcP256));
+        });
+        Assert.Equal(1, cache.Count);
+
+        var fetcher = new StubActorDocumentFetcher(actor);
+        var resolver = new RemoteInboundKeyResolver(fetcher, cache);
+
+        // Resolving the new key triggers the fetch, which discovers `replaces` and invalidates the old key.
+        var resolved = await resolver.ResolveAsync(newKeyId);
+        Assert.NotNull(resolved);
+        (resolved as IDisposable)?.Dispose();
+
+        // The cache holds exactly one entry: the new key (the old key was invalidated).
+        Assert.Equal(1, cache.Count);
     }
 
     [Fact]

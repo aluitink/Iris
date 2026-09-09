@@ -181,6 +181,57 @@ public sealed class MoveActivityHandlerTests
         Assert.Equal(0, keyCache.Count);
     }
 
+    [Fact]
+    public async Task HandleAsync_NonStandardKeyFragment_InvalidatesActualKeyIri()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalFollower);
+        await persistence.Follows.RecordFollowAsync(LocalFollower, OldActor);
+
+        var actorCache = new RemoteActorCache();
+        var keyCache = new RemoteKeyCache();
+        // The moving actor's document carries a non-standard key fragment (#main-key instead of #key-1).
+        var nonStandardKeyIri = new Iri($"{OldActor}#main-key");
+        var actorWithKey = BuildActorObjectWithKeyId(OldActor, nonStandardKeyIri);
+
+        // Pre-populate: actor doc (with the non-standard key id) + the key at that IRI.
+        await actorCache.GetAsync(OldActor, bypassCache: false, async _ => { await Task.Yield(); return actorWithKey; });
+        await keyCache.GetAsync(nonStandardKeyIri, bypassCache: false, async _ => { await Task.Yield(); return new JwkKey("{}", "ecdsa-p256"); });
+        Assert.Equal(1, actorCache.Count);
+        Assert.Equal(1, keyCache.Count);
+
+        var sut = new MoveActivityHandler(persistence, await persistence.Communities.GetAllCommunityIrisAsync(), keyCache, actorCache);
+        var move = BuildMove(OldActor, NewActor);
+        await sut.HandleAsync(new InboxDelivery(LocalFollower, move), move);
+
+        // The non-standard key IRI is invalidated (not the #key-1 fallback).
+        Assert.Equal(0, actorCache.Count);
+        Assert.Equal(0, keyCache.Count);
+    }
+
+    [Fact]
+    public async Task HandleAsync_NoCachedActorDoc_FallsBackToKeyIdConvention()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalFollower);
+        await persistence.Follows.RecordFollowAsync(LocalFollower, OldActor);
+
+        var actorCache = new RemoteActorCache();
+        var keyCache = new RemoteKeyCache();
+        var keyIri = new Iri($"{OldActor}#key-1");
+        // Only the key is cached (the actor doc is absent — the handler falls back to the #key-1 convention).
+        await keyCache.GetAsync(keyIri, bypassCache: false, async _ => { await Task.Yield(); return new JwkKey("{}", "ecdsa-p256"); });
+        Assert.Equal(0, actorCache.Count);
+        Assert.Equal(1, keyCache.Count);
+
+        var sut = new MoveActivityHandler(persistence, await persistence.Communities.GetAllCommunityIrisAsync(), keyCache, actorCache);
+        var move = BuildMove(OldActor, NewActor);
+        await sut.HandleAsync(new InboxDelivery(LocalFollower, move), move);
+
+        // The fallback #key-1 IRI is invalidated.
+        Assert.Equal(0, keyCache.Count);
+    }
+
     // --- Malformed: no resolvable actor or object ------------------------------------------
 
     [Fact]
@@ -250,6 +301,21 @@ public sealed class MoveActivityHandlerTests
         Id = actorIri.Value,
         PreferredUsername = new Uri(actorIri.Value).AbsolutePath.Trim('/').Split('/').Last(),
     };
+
+    private static IObject BuildActorObjectWithKeyId(Iri actorIri, Iri keyIri)
+    {
+        var actor = BuildActorObject(actorIri);
+        actor.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["publicKey"] = System.Text.Json.JsonSerializer.SerializeToElement(new
+            {
+                id = keyIri.Value,
+                owner = actorIri.Value,
+                publicKeyPem = "-----BEGIN PUBLIC KEY-----",
+            }),
+        };
+        return actor;
+    }
 
     private static Move BuildMove(Iri oldActorIri, Iri newActorIri) => new()
     {

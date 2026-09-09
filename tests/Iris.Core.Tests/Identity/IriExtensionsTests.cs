@@ -1437,4 +1437,116 @@ public class IriExtensionsTests
         IObject? none = null;
         Assert.Empty(none.GetRichAttachments());
     }
+
+    // --- GetPublicKeyIri (F-25) -------------------------------------------------------------
+
+    [Fact]
+    public void GetPublicKeyIri_WithPublicKeyId_ReturnsKeyId()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "https://a.domain.local/ap/v1/u/alice#key-1",
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                publicKeyPem = "-----BEGIN PUBLIC KEY-----",
+            }),
+        };
+
+        var keyIri = actor.GetPublicKeyIri();
+
+        Assert.NotNull(keyIri);
+        string expected = "https://a.domain.local/ap/v1/u/alice#key-1";
+        Assert.Equal(expected, keyIri!.ToString());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_WithJwkPublicKey_ReturnsKeyId()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "https://a.domain.local/ap/v1/u/alice#main-key",
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                kty = "RSA",
+                n = "abc123",
+                e = "AQAB",
+            }),
+        };
+
+        var keyIri = actor.GetPublicKeyIri();
+
+        Assert.NotNull(keyIri);
+        string expected = "https://a.domain.local/ap/v1/u/alice#main-key";
+        Assert.Equal(expected, keyIri!.ToString());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_NoPublicKey_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_PublicKeyWithoutId_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                publicKeyPem = "-----BEGIN PUBLIC KEY-----",
+            }),
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_PublicKeyWithEmptyId_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "",
+            }),
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_NullActor_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetPublicKeyIri());
+    }
 }

@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Logging;
 
@@ -28,11 +29,14 @@ namespace Iris.Server.Inbox;
 /// checks each community's follows set for the old IRI, re-pointing it to the new IRI when present.
 /// </para>
 /// <para>
-/// <strong>Key re-resolution (F-25).</strong> The handler also clears the moving actor's entries from the
+/// <strong>Key re-resolution (F-25).</strong> The handler clears the moving actor's entries from the
 /// outbound <c>RemoteKeyCache</c> and <c>RemoteActorCache</c> (when provided) so the next key resolution
-/// fetches the new actor document (with the new key) rather than serving the stale cached one. The old
-/// actor document may still be served until the cache TTL expires (or a <c>?refresh=true</c> bypass), which
-/// is the documented scope limit of this slice.
+/// fetches the new actor document (with the new key) rather than serving the stale cached one. The key
+/// IRI is read from the cached actor document's <c>publicKey.id</c> (via
+/// <see cref="IriExtensions.GetPublicKeyIri"/>) rather than hard-coded to <c>#key-1</c>, so a non-standard
+/// key fragment is invalidated correctly. The handler then fetches the new actor document to warm the
+/// <c>RemoteActorCache</c>, so subsequent reads of the new IRI resolve immediately. A fetch failure is
+/// non-fatal (the cache entry is absent and will be populated on the next resolution attempt).
 /// </para>
 public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
 {
@@ -40,6 +44,7 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
     private readonly IReadOnlyCollection<Iri> _localCommunities;
     private readonly RemoteKeyCache? _remoteKeys;
     private readonly RemoteActorCache? _remoteActors;
+    private readonly IActorDocumentFetcher? _actorDocuments;
 
     /// <summary>
     /// Initializes a new <see cref="MoveActivityHandler"/>.
@@ -51,7 +56,10 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
     /// <param name="remoteKeys">The outbound remote-key cache (invalidated for the moving actor's key so the
     /// next resolution fetches the new key). May be <see langword="null"/> (no cache to clear).</param>
     /// <param name="remoteActors">The outbound remote-actor cache (invalidated for the moving actor so the
-    /// next fetch retrieves the new actor document). May be <see langword="null"/>.</param>
+    /// next fetch retrieves the new actor document; warmed with the new actor's document after the move).
+    /// May be <see langword="null"/>.</param>
+    /// <param name="actorDocuments">The actor document fetcher (used to warm the new actor's document into
+    /// the <c>RemoteActorCache</c> after the move). May be <see langword="null"/> (no warming).</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localCommunities"/> is null.</exception>
@@ -60,6 +68,7 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
         IReadOnlyCollection<Iri> localCommunities,
         RemoteKeyCache? remoteKeys = null,
         RemoteActorCache? remoteActors = null,
+        IActorDocumentFetcher? actorDocuments = null,
         ILogger<MoveActivityHandler>? logger = null)
         : base(logger)
     {
@@ -69,6 +78,7 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
         _localCommunities = localCommunities;
         _remoteKeys = remoteKeys;
         _remoteActors = remoteActors;
+        _actorDocuments = actorDocuments;
     }
 
     /// <inheritdoc/>
@@ -93,14 +103,56 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
         await RePointCommunityFollowsAsync(oldIri.Value, newIri.Value, ct).ConfigureAwait(false);
 
         // Invalidate the moving actor's outbound cache entries so the next key resolution fetches the new
-        // key (F-25). A no-op when the caches are not provided. The actor-document cache is keyed by the
-        // actor IRI; the key cache is keyed by the actor's publicKey IRI (the actor IRI + the
-        // <c>#key-1</c> fragment, the ActivityPub convention), so the key is invalidated by that IRI.
+        // key (F-25). The key IRI is read from the cached actor document's publicKey.id (via
+        // IriExtensions.GetPublicKeyIri) rather than hard-coded to #key-1, so a non-standard key fragment
+        // is invalidated correctly.
         _remoteActors?.Invalidate(oldIri.Value);
-        if (Iri.TryParse($"{oldIri.Value}#key-1", out var keyIri))
+        var keyIri = ResolveOldKeyIri(oldIri.Value);
+        if (keyIri.HasValue)
         {
-            _remoteKeys?.Invalidate(keyIri);
+            _remoteKeys?.Invalidate(keyIri.Value);
         }
+
+        // Warm the new actor's document into the RemoteActorCache so subsequent reads resolve immediately
+        // (F-25 re-resolution). A fetch failure is non-fatal: the cache entry stays absent and the next
+        // key resolution will re-fetch.
+        if (_remoteActors is not null && _actorDocuments is not null)
+        {
+            try
+            {
+                await _remoteActors
+                    .GetAsync(newIri.Value, bypassCache: false, factory: async iri => await _actorDocuments.GetActorAsync(iri, ct).ConfigureAwait(false), ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                // A fetch failure (404, network error, not-an-actor) leaves the cache entry absent;
+                // the next resolution attempt will re-fetch.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Resolves the moving actor's key IRI: reads the cached actor document's <c>publicKey.id</c> (via
+    /// <see cref="IriExtensions.GetPublicKeyIri"/>) when available, falling back to the ActivityPub
+    /// convention <c>actorIri#key-1</c>.
+    /// </summary>
+    private Iri? ResolveOldKeyIri(Iri oldActorIri)
+    {
+        if (_remoteActors is not null)
+        {
+            var (cached, _, _) = _remoteActors
+                .GetAsync(oldActorIri, bypassCache: true, factory: _ => Task.FromResult<IObject?>(null))
+                .GetAwaiter()
+                .GetResult();
+            var fromDoc = cached?.GetPublicKeyIri();
+            if (fromDoc is not null)
+            {
+                return fromDoc;
+            }
+        }
+
+        return Iri.TryParse($"{oldActorIri}#key-1", out var fallback) ? fallback : null;
     }
 
     /// <summary>

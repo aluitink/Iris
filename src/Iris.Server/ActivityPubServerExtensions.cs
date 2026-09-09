@@ -346,7 +346,8 @@ public static class ActivityPubServerExtensions
                 .GetResult();
             var remoteKeys = sp.GetService<RemoteKeyCache>();
             var remoteActors = sp.GetService<RemoteActorCache>();
-            return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors);
+            var actorDocuments = sp.GetService<IActorDocumentFetcher>();
+            return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors, actorDocuments);
         });
         services.TryAddSingleton<IInboxProcessor>(sp => new InboxProcessor(
             sp.GetRequiredService<IPersistenceProvider>(),

@@ -1028,6 +1028,35 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Extracts the <c>id</c> of the <c>publicKey</c> from an actor's <see cref="IObject.ExtensionData"/>.
+    /// Returns <c>null</c> when the actor has no <c>publicKey</c> object or the <c>id</c> is absent/invalid.
+    /// </summary>
+    /// <remarks>
+    /// The <c>publicKey</c> is an ecosystem-convention object (not a core-AP term) carried in
+    /// <see cref="IObject.ExtensionData"/> under the bare key <c>"publicKey"</c> (see
+    /// <see cref="ActivityPubExtensionNames.PublicKey"/>). Its <c>id</c> is the key IRI
+    /// (typically <c>actorIri#key-1</c>). This helper is the single boundary point for reading that IRI,
+    /// replacing the previous hard-coded <c>#key-1</c> fragment in the <c>Move</c> handler (F-25).
+    /// </remarks>
+    /// <param name="actor">The actor document. May be <see langword="null"/>.</param>
+    /// <returns>The key IRI, or <see langword="null"/> when unavailable.</returns>
+    public static Iri? GetPublicKeyIri(this IObject? actor)
+    {
+        if (actor?.ExtensionData is { } ext
+            && ext.TryGetValue(ActivityPubExtensionNames.PublicKey, out var pk)
+            && pk.ValueKind == JsonValueKind.Object
+            && pk.TryGetProperty("id", out var idEl)
+            && idEl.ValueKind == JsonValueKind.String
+            && idEl.GetString() is { Length: > 0 } idStr
+            && Iri.TryParse(idStr, out var keyIri))
+        {
+            return keyIri;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Fallback IRI resolution for an attachment that is an embedded <see cref="Image"/> without an
     /// <c>Id</c>: reads the <c>url</c> of the image (the media IRI). Returns null when unavailable.
     /// </summary>

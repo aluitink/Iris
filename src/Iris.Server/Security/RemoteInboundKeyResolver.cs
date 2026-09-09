@@ -80,6 +80,19 @@ public sealed class RemoteInboundKeyResolver(
             return null;
         }
 
+        // F-25: honor key rotation — when the remote document's publicKey declares a `replaces`
+        // property, the old key has been superseded. Invalidate the old key's cache entry so the
+        // next inbound signature with the old key IRI triggers a refetch (which will find the new key
+        // or a 404). This is the read-side of key rotation: Iris does not store the mapping, it just
+        // ensures stale entries don't outlive the rotation.
+        if (publicKey.TryGetProperty("replaces", out var replacesEl)
+            && replacesEl.ValueKind == JsonValueKind.String
+            && replacesEl.GetString() is { Length: > 0 } replacedIri
+            && Iri.TryParse(replacedIri, out var replacedKeyIri))
+        {
+            _remoteKeys.Invalidate(replacedKeyIri);
+        }
+
         // Form 1: a JWK object (kty + n/e or crv/x/y) — the standard ActivityPub shape.
         if (publicKey.TryGetProperty("kty", out var kty) && kty.ValueKind == JsonValueKind.String)
         {
