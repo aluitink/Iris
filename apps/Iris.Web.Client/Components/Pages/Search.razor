@@ -1,15 +1,17 @@
 @page "/search"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using System.Text.Json
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
 
 <PageTitle>Search · Iris</PageTitle>
 
 <h1>Search</h1>
 
-<p class="muted">Search across the instance for people and posts.</p>
+<p class="muted">Search the instance and the fediverse for people and posts.</p>
 
 @if (Client is null)
 {
@@ -18,10 +20,10 @@
 else
 {
     <div class="card">
-        <label for="search-query">Search the instance</label>
+        <label for="search-query">Search the fediverse</label>
         <div class="search-controls">
             <input id="search-query" type="text" @bind="Query" @onkeydown="OnKeyDownAsync"
-                   placeholder="e.g. alice, or a word in a note" />
+                    placeholder="e.g. alice, user@mastodon.social, or a word" />
             <label class="search-actors-only">
                 <input type="checkbox" @bind="ActorsOnly" />
                 Actors only
@@ -49,6 +51,10 @@ else
             <h2>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "All content")</h2>
             <p class="muted">
                 @(ActorsOnly ? "Actors only." : "Actors, then matching notes.") @Results.Count result(s).
+                @if (RemoteSource is not null)
+                {
+                    <span class="muted"> (remote: @RemoteSource)</span>
+                }
             </p>
             @if (Results.Count == 0)
             {
@@ -94,6 +100,7 @@ else
     private bool Busy { get; set; }
     private IReadOnlyList<IObjectOrLink>? Results { get; set; }
     private string? Error { get; set; }
+    private string? RemoteSource { get; set; }
     private bool _initialized;
 
     protected override async Task OnInitializedAsync()
@@ -122,8 +129,7 @@ else
 
     /// <summary>
     /// The instance's versioned base (<c>{origin}/ap/v1</c>), derived from the signed-in actor's IRI
-    /// (<c>{origin}/ap/v1/u/{handle}</c>) by truncating at <c>/ap/v1</c>. This is the <c>instanceBase</c>
-    /// the global-search request dials (the server's <c>GET {instanceBase}/search</c>).
+    /// (<c>{origin}/ap/v1/u/{handle}</c>) by truncating at <c>/ap/v1</c>.
     /// </summary>
     private Iri? InstanceBase
     {
@@ -142,8 +148,9 @@ else
     }
 
     /// <summary>
-    /// Runs a global search (the <see cref="IActivityPubClient.SearchAsync"/> path). An <c>@onclick</c>
-    /// handler, so Blazor auto-renders the results when it completes.
+    /// Runs a search. When the query looks like a remote handle (<c>user@host</c>), resolves the
+    /// actor via WebFinger (through the home proxy) and also queries the remote instance's
+    /// <c>/search</c> endpoint (federated search). Local search always runs in parallel.
     /// </summary>
     private async Task RunSearchAsync(bool skipNavigate = false)
     {
@@ -161,15 +168,46 @@ else
         Busy = true;
         Error = null;
         Results = null;
+        RemoteSource = null;
         try
         {
-            var results = new List<IObjectOrLink>();
-            await foreach (var item in client.SearchAsync(
-                               baseIri,
-                               Query,
-                               new SearchOptions { Type = ActorsOnly ? "Actor" : null }))
+            var query = Query.Trim();
+            var localTask = RunLocalSearchAsync(client, baseIri);
+            var remoteTask = TryRunRemoteSearchAsync(query);
+            var localResults = await localTask;
+            var (remoteResults, remoteHost) = await remoteTask;
+
+            var results = new List<IObjectOrLink>(localResults);
+            var seenIris = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var r in localResults)
             {
-                results.Add(item);
+                if (r is IObject { Id: { } localId } && !string.IsNullOrWhiteSpace(localId))
+                {
+                    seenIris.Add(localId);
+                }
+            }
+
+            if (remoteResults is not null)
+            {
+                foreach (var item in remoteResults)
+                {
+                    if (item is IObject { Id: { } remoteId } && !string.IsNullOrWhiteSpace(remoteId))
+                    {
+                        if (seenIris.Contains(remoteId))
+                        {
+                            continue;
+                        }
+
+                        seenIris.Add(remoteId);
+                    }
+
+                    results.Add(item);
+                }
+
+                if (remoteResults.Count > 0 && remoteHost is not null)
+                {
+                    RemoteSource = remoteHost;
+                }
             }
 
             Results = results;
@@ -181,6 +219,293 @@ else
         finally
         {
             Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Runs the local instance search (the existing <see cref="IActivityPubClient.SearchAsync"/> path).
+    /// </summary>
+    private async Task<List<IObjectOrLink>> RunLocalSearchAsync(IActivityPubClient client, Iri baseIri)
+    {
+        var results = new List<IObjectOrLink>();
+        await foreach (var item in client.SearchAsync(
+                           baseIri,
+                           Query,
+                           new SearchOptions { Type = ActorsOnly ? "Actor" : null }))
+        {
+            results.Add(item);
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Attempts a remote search when the query looks like a remote handle (<c>user@host</c> or
+    /// <c>@user@host</c>). Resolves the actor via WebFinger (through the home proxy) and queries the
+    /// remote instance's <c>/search</c> endpoint. Returns the remote results (null when the query is
+    /// not a remote handle or the remote lookup fails) and the remote host (for display).
+    /// </summary>
+    private async Task<(List<IObjectOrLink>? results, string? host)> TryRunRemoteSearchAsync(string query)
+    {
+        var handle = ParseRemoteHandle(query);
+        if (handle is null)
+        {
+            return (null, null);
+        }
+
+        var user = handle.Value.user;
+        var host = handle.Value.host;
+
+        // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
+        var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
+        var webfingerBody = await Session.ProxyGetAsync(
+            webfingerUrl,
+            "application/jrd+json, application/json; q=0.9",
+            CancellationToken.None);
+
+        Iri? actorIri = null;
+        if (webfingerBody is not null)
+        {
+            actorIri = ParseWebFingerActorIri(webfingerBody);
+        }
+
+        // 2. Federated search: query the remote instance's /search endpoint (through the home proxy).
+        List<IObjectOrLink>? remoteResults = null;
+        if (!ActorsOnly)
+        {
+            var searchUrl = $"https://{host}/search?q={Uri.EscapeDataString(query)}&limit=20&type=any";
+            var searchBody = await Session.ProxyGetAsync(
+                searchUrl,
+                "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"; q=0.9, application/json; q=0.8",
+                CancellationToken.None);
+
+            if (searchBody is not null)
+            {
+                remoteResults = await ParseFederatedSearchResultsAsync(searchBody);
+            }
+        }
+
+        // 3. If WebFinger resolved the actor but federated search returned nothing (or was skipped),
+        //    fetch the actor document directly (through the IActivityPubClient, which handles proxy
+        //    fallback for cross-origin reads).
+        if (remoteResults is null || remoteResults.Count == 0)
+        {
+            if (actorIri is { } resolvedIri && Client is { } client)
+            {
+                try
+                {
+                    var actorObj = await client.GetObjectAsync(resolvedIri);
+                    if (actorObj is not null)
+                    {
+                        remoteResults = new List<IObjectOrLink> { actorObj };
+                    }
+                }
+                catch
+                {
+                    // Best-effort: the actor doc fetch failed (rate limit, network, etc.).
+                }
+            }
+        }
+
+        return (remoteResults, host);
+    }
+
+    /// <summary>
+    /// Parses a remote handle from the search query. Accepts <c>@user@host</c>, <c>user@host</c>,
+    /// or a full IRI (<c>https://host/@user</c>). Returns null when the query is not a recognizable
+    /// remote handle.
+    /// </summary>
+    private static (string user, string host)? ParseRemoteHandle(string query)
+    {
+        var q = query.Trim().TrimStart('@');
+        if (q.Length == 0)
+        {
+            return null;
+        }
+
+        // Full IRI: https://host/@user or https://host/users/user
+        if (q.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || q.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Uri.TryCreate(q, UriKind.Absolute, out var uri))
+            {
+                return null;
+            }
+
+            var path = uri.AbsolutePath.TrimStart('/');
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            if (segments.Length >= 1)
+            {
+                var handle = segments[^1].TrimStart('@');
+                if (handle.Length > 0 && !handle.Contains('@'))
+                {
+                    return (handle, uri.Host);
+                }
+            }
+
+            return null;
+        }
+
+        // user@host or @user@host (after TrimStart('@'))
+        var atIndex = q.LastIndexOf('@');
+        if (atIndex <= 0 || atIndex >= q.Length - 1)
+        {
+            return null;
+        }
+
+        var user = q[..atIndex];
+        var host = q[(atIndex + 1)..];
+
+        // Validate the host looks like a domain (has a dot or is "localhost").
+        if (host.Length == 0 || (!host.Contains('.') && host != "localhost"))
+        {
+            return null;
+        }
+
+        // Validate the user part (non-empty, no slashes).
+        if (user.Length == 0 || user.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return (user, host);
+    }
+
+    /// <summary>
+    /// Parses a WebFinger response (<c>application/jrd+json</c>) and extracts the actor IRI from the
+    /// <c>self</c> link (the link with <c>rel = "self"</c> and an ActivityPub content type).
+    /// </summary>
+    private static Iri? ParseWebFingerActorIri(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var link in links.EnumerateArray())
+            {
+                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
+                var type = link.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (rel is not "self")
+                {
+                    continue;
+                }
+
+                // Accept ActivityPub-specific or generic self links.
+                if (type is null || type.Contains("activity", StringComparison.OrdinalIgnoreCase) || type.Contains("ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
+                    if (href is not null && Iri.TryParse(href, out var iri))
+                    {
+                        return iri;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Parses a federated search response. Mastodon's <c>GET /search</c> returns a JSON array of
+    /// objects (accounts, statuses, hashtags). Each account has an <c>url</c> field (the actor IRI).
+    /// This method fetches the actor documents for the first few accounts via the home proxy.
+    ///
+    /// For ActivityPub-native search endpoints (Iris itself), the response is an
+    /// <c>OrderedCollection</c> or <c>OrderedCollectionPage</c> with an <c>items</c> array.
+    /// </summary>
+    private async Task<List<IObjectOrLink>?> ParseFederatedSearchResultsAsync(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // Case 1: ActivityPub collection (Iris, or an AP-native search endpoint).
+            if (root.TryGetProperty("type", out var typeEl)
+                && typeEl.ValueKind == JsonValueKind.String
+                && (typeEl.GetString() is "OrderedCollection" or "OrderedCollectionPage"))
+            {
+                JsonElement? items = null;
+                if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
+                {
+                    items = itemsEl;
+                }
+                else if (root.TryGetProperty("orderedItems", out var orderedEl) && orderedEl.ValueKind == JsonValueKind.Array)
+                {
+                    items = orderedEl;
+                }
+
+                if (items is { } itemsArr)
+                {
+                    var results = new List<IObjectOrLink>();
+                    foreach (var item in itemsArr.EnumerateArray())
+                    {
+                        var itemJson = item.GetRawText();
+                        var obj = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
+                        if (obj is not null)
+                        {
+                            results.Add(obj);
+                        }
+                    }
+
+                    return results.Count > 0 ? results : null;
+                }
+
+                return null;
+            }
+
+            // Case 2: Mastodon-style JSON array of {type, account, status, hashtag}.
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                var results = new List<IObjectOrLink>();
+                var actorIris = new List<string>();
+
+                foreach (var entry in root.EnumerateArray())
+                {
+                    var entryType = entry.TryGetProperty("type", out var t) ? t.GetString() : null;
+                    if (entryType is "account" && entry.TryGetProperty("account", out var acct))
+                    {
+                        var url = acct.TryGetProperty("url", out var u) ? u.GetString() : null;
+                        if (url is not null && !actorIris.Contains(url, StringComparer.OrdinalIgnoreCase))
+                        {
+                            actorIris.Add(url);
+                        }
+                    }
+                }
+
+                // Fetch the first few actor documents via the home proxy.
+                foreach (var actorUrl in actorIris.Take(5))
+                {
+                    var body = await Session.ProxyGetAsync(
+                        actorUrl,
+                        "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"; q=0.9, application/json; q=0.8",
+                        CancellationToken.None);
+                    if (body is not null)
+                    {
+                        var obj = ActivityJson.Deserialize<IObjectOrLink>(body);
+                        if (obj is not null)
+                        {
+                            results.Add(obj);
+                        }
+                    }
+                }
+
+                return results.Count > 0 ? results : null;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

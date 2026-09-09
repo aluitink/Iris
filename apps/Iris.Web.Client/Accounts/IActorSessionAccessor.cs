@@ -120,6 +120,21 @@ public interface IActorSessionAccessor
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A <see cref="MediaUploadResult"/> on success; null when signed out or the upload fails.</returns>
     Task<MediaUploadResult?> UploadMediaAsync(Iri actorId, byte[] bytes, string contentType, string fileName, CancellationToken ct = default);
+
+    /// <summary>
+    /// Routes a <c>GET</c> request to a remote instance through the home instance's proxy endpoint
+    /// (<c>POST /ap/v1/proxy/{target}</c>), authenticating by the site cookie. Used for cross-instance
+    /// reads the browser cannot make directly (CORS-blocked): WebFinger resolution, federated search,
+    /// and any other public GET on a remote ActivityPub server.
+    /// </summary>
+    /// <param name="target">The absolute IRI of the remote resource to fetch (e.g.
+    /// <c>https://mastodon.social/.well-known/webfinger?resource=acct:admin@mastodon.social</c>).</param>
+    /// <param name="accept">The <c>Accept</c> header to send (content negotiation). Null sends no
+    /// <c>Accept</c> header.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The remote response body as a string, or null when signed out, the proxy rejects the
+    /// request, or the remote returns a non-success status.</returns>
+    Task<string?> ProxyGetAsync(string target, string? accept, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -659,5 +674,37 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
         }
 
         return KeyAlgorithm.Rsa;
+    }
+
+    /// <inheritdoc/>
+    public async Task<string?> ProxyGetAsync(string target, string? accept, CancellationToken ct = default)
+    {
+        if (!IsSignedIn)
+        {
+            return null;
+        }
+
+        try
+        {
+            var proxyUri = $"{_browserBase.Scheme}://{_browserBase.Authority}/ap/v1/proxy/{Uri.EscapeDataString(target)}";
+            using var request = new HttpRequestMessage(HttpMethod.Post, proxyUri);
+            request.Headers.TryAddWithoutValidation("X-Iris-Proxy-Method", "GET");
+            if (accept is not null)
+            {
+                request.Headers.Accept.ParseAdd(accept);
+            }
+
+            using var response = await _sameOriginHttp.SendAsync(request, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            return await response.Content.ReadAsStringAsync(ct);
+        }
+        catch
+        {
+            return null;
+        }
     }
 }
