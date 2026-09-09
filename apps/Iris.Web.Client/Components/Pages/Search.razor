@@ -43,7 +43,7 @@ else
     {
         <div class="card"><div class="error" role="alert">@Error</div></div>
     }
-    else if (Results is not null)
+    else if (Results is not null && !Busy)
     {
         <div class="card">
             <h2>@(Query.Trim().Length > 0 ? $"Results for “{Query.Trim()}”" : "All content")</h2>
