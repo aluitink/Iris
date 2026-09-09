@@ -706,6 +706,23 @@ public static class ActivityPubServerExtensions
         // resolve another Iris instance's accounts. The versioned route above is retained for symmetry.
         endpoints.MapGet("/.well-known/webfinger", WebFingerHandler);
 
+        // NodeInfo at the RFC 8555 standard root path (/.well-known/nodeinfo). The NodeInfo discovery
+        // document (a list of links to versioned NodeInfo resources) MUST be served at the host root,
+        // not under a versioned prefix — federation software (Friendica, Lemmy, relays) probes this
+        // exact path. The versioned route above (/ap/v1/.well-known/nodeinfo) is retained for symmetry.
+        endpoints.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
+
+        // NodeInfo x-nodeinfo2 discovery path (/.well-known/x-nodeinfo2). Some federation software
+        // (notably newer Friendica and some relay implementations) probes this alternate discovery
+        // document, which links directly to the 2.0 NodeInfo resource without the intermediate
+        // discovery list. Served at the host root per the emerging convention.
+        endpoints.MapGet("/.well-known/x-nodeinfo2", NodeInfoXNodeInfo2Handler);
+
+        // host-meta (RFC 6415 Link header discovery): /.well-known/host-meta. Returns an XML document
+        // with a <Link> element pointing to the WebFinger endpoint. Some federation software (older
+        // Friendica, some Pleroma clients) still uses this as a discovery fallback.
+        endpoints.MapGet("/.well-known/host-meta", HostMetaHandler);
+
         // NodeInfo: GET /ap/v1/nodeinfo/2.0 (RFC 8555 instance metadata).
         group.MapGet("/nodeinfo/2.0", NodeInfoHandler);
 
@@ -5092,6 +5109,61 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(link),
             "application/json");
+    }
+
+    /// <summary>
+    /// The <c>GET /.well-known/x-nodeinfo2</c> handler. Returns a discovery document that links
+    /// directly to the 2.0 NodeInfo resource, used by federation software that probes this alternate
+    /// path (newer Friendica, some relays).
+    /// </summary>
+    /// <param name="optionsAccessor">The server options (for the <see cref="ActivityPubServerOptions.BaseUri"/>).</param>
+    /// <returns>A JSON discovery document linking to the NodeInfo 2.0 resource.</returns>
+    private static IResult NodeInfoXNodeInfo2Handler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the NodeInfo link.");
+        var trimmedBase = baseUrl.TrimEnd('/');
+        var doc = new
+        {
+            links = new[]
+            {
+                new
+                {
+                    rel = "http://nodeinfo.dpl.dev/ns/1.0/nodeinfo",
+                    version = "2.0",
+                    href = $"{trimmedBase}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
+                },
+            },
+        };
+
+        return Results.Text(
+            System.Text.Json.JsonSerializer.Serialize(doc),
+            "application/json");
+    }
+
+    /// <summary>
+    /// The <c>GET /.well-known/host-meta</c> handler (RFC 6415). Returns an XML document with a
+    /// <c>&lt;Link&gt;</c> element pointing to the WebFinger endpoint. Some federation software uses
+    /// this as a discovery fallback when WebFinger is not directly reachable.
+    /// </summary>
+    /// <param name="optionsAccessor">The server options (for the <see cref="ActivityPubServerOptions.BaseUri"/>).</param>
+    /// <returns>An XML host-meta document linking to the WebFinger endpoint.</returns>
+    private static IResult HostMetaHandler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the host-meta link.");
+        var trimmedBase = baseUrl.TrimEnd('/');
+        var xml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<XRD xmlns='http://docs.oasis-open.org/ns/xrd-1.0'\n" +
+            "     xmlns:dweb='http://docs.oasis-open.org/ns/dweb-1.0'\n" +
+            "     xmlns:lrdd='http://docs.oasis-open.org/ns/ldn-1.0'>\n" +
+            $"  <Link rel='lrdd:srv' targetType='application/json' template='{trimmedBase}/.well-known/webfinger?resource={{uri}}'/>\n" +
+            "</XRD>";
+
+        return Results.Text(xml, "application/xrd+xml");
     }
 
     /// <summary>

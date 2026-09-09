@@ -455,7 +455,17 @@ public static class WebAppFactory
         // OpenAPI 3.1 spec endpoint (49.3): GET /openapi/v1.json returns the auto-generated spec.
         app.MapOpenApi();
 
-        // The versioned ActivityPub endpoints (/.well-known/webfinger, /ap/v1/...).
+        // 404 unknown GET /.well-known/* paths instead of serving the SPA shell. Federated software
+        // (Friendica, Lemmy, relays) probes discovery endpoints; an unhandled path returning 200
+        // with HTML is confusing and can cause clients to misinterpret the response. Mapped BEFORE
+        // MapActivityPubEndpoints so the exact GET well-known routes (webfinger, nodeinfo,
+        // x-nodeinfo2, host-meta) registered by MapActivityPubEndpoints take precedence over this
+        // catch-all (exact routes beat parameterized routes in ASP.NET Core routing).
+        app.MapGet("/.well-known/{**rest}", () => Results.NotFound())
+            .ExcludeFromDescription();
+
+        // The versioned ActivityPub endpoints (/.well-known/webfinger, /.well-known/nodeinfo,
+        // /.well-known/x-nodeinfo2, /.well-known/host-meta, /ap/v1/...).
         app.MapActivityPubEndpoints();
 
         // SPA fallback: any non-API, non-static path serves the WASM client's index.html so the
