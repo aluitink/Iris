@@ -79,7 +79,7 @@ public static class CollectionPageFactory
             return null;
         }
 
-        var items = page.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+        var items = ResolveCollectionItems(page);
         return new CollectionPage
         {
             Page = page,
@@ -90,4 +90,18 @@ public static class CollectionPageFactory
             PageId = page.Id is { Length: > 0 } id ? new Iri(id) : null,
         };
     }
+
+    /// <summary>
+    /// Resolves the items of a collection or collection page, reading from both the
+    /// <c>orderedItems</c> (the ActivityPub canonical form, used by Mastodon and other major
+    /// implementations) and <c>items</c> (a less common variant) JSON properties. Prefers
+    /// <c>orderedItems</c> when present; falls back to <c>items</c>; returns an empty list when
+    /// neither is present.
+    /// </summary>
+    public static IReadOnlyList<IObjectOrLink> ResolveCollectionItems(Collection collection)
+        => collection.OrderedItems is { } ordered
+            ? ordered.ToList()
+            : collection.Items is { } items
+                ? items.ToList()
+                : [];
 }

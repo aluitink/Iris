@@ -170,9 +170,68 @@ else
         }
     }
 
-    private Iri? OutboxIri => ActorIri?.OutboxOf();
-    private Iri? FollowersIri => ActorIri?.FollowersOf();
-    private Iri? FollowingIri => ActorIri?.FollowingOf();
+    /// <summary>
+    /// The actor's outbox IRI — read from the actor document's <c>outbox</c> property when present
+    /// (a remote instance like Mastodon may serve the outbox at a different path than the
+    /// <c>{actor-iri}/outbox</c> convention), falling back to deriving <c>{actor-doc-id}/outbox</c>
+    /// from the document's canonical <c>id</c>.
+    /// </summary>
+    private Iri? OutboxIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Outbox, iri => iri.OutboxOf());
+
+    /// <summary>
+    /// The actor's followers IRI — read from the actor document's <c>followers</c> property when
+    /// present, falling back to deriving <c>{actor-doc-id}/followers</c> from the document's
+    /// canonical <c>id</c>.
+    /// </summary>
+    private Iri? FollowersIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Followers, iri => iri.FollowersOf());
+
+    /// <summary>
+    /// The actor's following IRI — read from the actor document's <c>following</c> property when
+    /// present, falling back to deriving <c>{actor-doc-id}/following</c> from the document's
+    /// canonical <c>id</c>.
+    /// </summary>
+    private Iri? FollowingIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Following, iri => iri.FollowingOf());
+
+    /// <summary>
+    /// Resolves a collection IRI from an actor document: prefers the document's typed property
+    /// (an <see cref="IObjectOrLink"/> — a <c>Link</c> by its <c>href</c>, an <c>Object</c> by its
+    /// <c>id</c>), falling back to deriving the IRI from the document's canonical <c>id</c> via
+    /// <paramref name="derive"/>. Returns <see langword="null"/> when the actor is not loaded or
+    /// has no usable <c>id</c>.
+    /// </summary>
+    private static Iri? ResolveCollectionIri(
+        Actor? actor,
+        Func<Actor, ICollectionOrLink?>? property,
+        Func<Iri, Iri> derive)
+    {
+        if (actor is null)
+        {
+            return null;
+        }
+
+        if (property is { } getter)
+        {
+            var collectionRef = getter(actor);
+            if (collectionRef is { } ref2)
+            {
+                var iri = ref2.ResolveCollectionIri();
+                if (iri is not null)
+                {
+                    return iri;
+                }
+            }
+        }
+
+        if (actor.Id is { Length: > 0 } id && Iri.TryParse(id, out var actorIri))
+        {
+            return derive(actorIri);
+        }
+
+        return null;
+    }
 
     private bool IsCommunity => ActorDoc is Actor actor && actor.Type?.FirstOrDefault() == "Group";
 

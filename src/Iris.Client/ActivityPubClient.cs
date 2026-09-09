@@ -1353,7 +1353,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             // page N>1 at {collection}?page=N, so fetching the bare collection IRI again would
             // re-serve page 1 and loop forever. When there is no `next` (single-page collection) the
             // collection's own IRI is the first page and the walk terminates.
-            var items = collection.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            var items = CollectionPageFactory.ResolveCollectionItems(collection);
             var nextLink = ResolveCollectionNextLink(collection);
             var firstPageIri = nextLink
                 ?? (collection.Id is { Length: > 0 } collectionId ? new Iri(collectionId) : null);
@@ -1380,7 +1380,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // the walk terminates after page 1 — acceptable for a rarely-used, low-priority shape.
         if (obj is Collection { Id: not null } unordered)
         {
-            var items = unordered.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            var items = CollectionPageFactory.ResolveCollectionItems(unordered);
             return new CollectionPage
             {
                 Page = new OrderedCollectionPage
