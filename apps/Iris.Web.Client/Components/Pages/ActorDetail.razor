@@ -47,18 +47,19 @@ else
         }
     </div>
 
-    <div class="tab-bar">
-        <a href="#outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
-        <a href="#followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
-        <a href="#following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
+    <div class="tab-bar" role="tablist" aria-label="Actor sections">
+        <a href="#outbox" id="tab-outbox" role="tab" aria-selected="@(ActiveTab == "outbox")" aria-controls="panel-outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
+        <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
+        <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
         @if (ShowJoinRequestsTab)
         {
-            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+            <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
         }
     </div>
 
     @if (ActiveTab == "outbox")
     {
+        <div role="tabpanel" id="panel-outbox" aria-labelledby="tab-outbox">
         <PagedCollection
             Client="Client"
             CollectionIri="OutboxIri"
@@ -68,9 +69,11 @@ else
             ShowRefreshButton="true"
             ItemFilter="OutboxFilter.IsContentItem"
             EmptyMessage="No posts yet." />
+        </div>
     }
     else if (ActiveTab == "followers")
     {
+        <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
         <PagedCollection
             Client="Client"
             CollectionIri="FollowersIri"
@@ -79,9 +82,11 @@ else
             PageSize="5"
             ShowRefreshButton="true"
             EmptyMessage="No followers yet." />
+        </div>
     }
     else if (ActiveTab == "following")
     {
+        <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
         <PagedCollection
             Client="Client"
             CollectionIri="FollowingIri"
@@ -90,10 +95,11 @@ else
             PageSize="5"
             ShowRefreshButton="true"
             EmptyMessage="Not following anyone yet." />
+        </div>
     }
     else if (ActiveTab == "requests" && ShowJoinRequestsTab)
     {
-        <div class="card">
+        <div class="card" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
             @if (JoinRequestsLoading)
             {
                 <p class="muted">Loading requests…</p>

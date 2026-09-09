@@ -4,14 +4,14 @@
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <div class="directory-card">
-    <div class="directory-card-header" @onclick="ToggleAsync">
+    <button type="button" class="directory-card-header" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") posts by @Actor.Name" @onclick="ToggleAsync">
         <ActorCard Actor="Actor" ActorId="Actor.Id">
-            <span class="directory-card-expand" aria-label="@(IsExpanded ? "Hide posts" : "Show posts")">
+            <span class="directory-card-expand" aria-hidden="true">
                 @(IsExpanded ? "−" : "+")
             </span>
             <FollowButton TargetActor="Actor" />
         </ActorCard>
-    </div>
+    </button>
     @if (IsExpanded && Posts is not null)
     {
         <div class="directory-card-posts">

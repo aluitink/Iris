@@ -21,9 +21,9 @@
 }
 else
 {
-    <div class="tab-bar" role="tablist">
-        <a href="#people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" role="tab" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
-        <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" role="tab" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+    <div class="tab-bar" role="tablist" aria-label="Directory sections">
+        <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
+        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
     </div>
 
     @if (Busy)

@@ -124,18 +124,19 @@ else
         </a>
     </div>
 
-    <div class="tab-bar">
-        <a href="#feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
-        <a href="#members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
+    <div class="tab-bar" role="tablist" aria-label="Community sections">
+        <a href="#feed" id="tab-feed" role="tab" aria-selected="@(ActiveTab == "feed")" aria-controls="panel-feed" class="tab @(ActiveTab == "feed" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("feed")'>Feed</a>
+        <a href="#members" id="tab-members" role="tab" aria-selected="@(ActiveTab == "members")" aria-controls="panel-members" class="tab @(ActiveTab == "members" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("members")'>Members@(MemberCount is { } mc2 ? $" ({mc2})" : string.Empty)</a>
         @if (IsCreator)
         {
-            <a href="#owners" class="tab @(ActiveTab == "owners" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("owners")'>Owners</a>
-            <a href="#requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
+            <a href="#owners" id="tab-owners" role="tab" aria-selected="@(ActiveTab == "owners")" aria-controls="panel-owners" class="tab @(ActiveTab == "owners" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("owners")'>Owners</a>
+            <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
         }
     </div>
 
     @if (ActiveTab == "feed")
     {
+        <div role="tabpanel" id="panel-feed" aria-labelledby="tab-feed">
         <PagedCollection
             Client="Client"
             CollectionIri="FeedIri"
@@ -144,9 +145,11 @@ else
             PageSize="5"
             ShowRefreshButton="true"
             EmptyMessage="No posts in this community yet." />
+        </div>
     }
     else if (ActiveTab == "members")
     {
+        <div role="tabpanel" id="panel-members" aria-labelledby="tab-members">
         <PagedCollection
             Client="Client"
             CollectionIri="MembersIri"
@@ -156,10 +159,11 @@ else
             ShowRefreshButton="true"
             EmptyMessage="No members yet."
             ItemTemplate="@MemberTemplate" />
+        </div>
     }
     else if (ActiveTab == "owners" && IsCreator)
     {
-        <div class="card">
+        <div class="card" role="tabpanel" id="panel-owners" aria-labelledby="tab-owners">
             @if (OwnersLoading)
             {
                 <p class="muted">Loading owners…</p>
@@ -195,7 +199,7 @@ else
     }
     else if (ActiveTab == "requests" && IsCreator)
     {
-        <div class="card">
+        <div class="card" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
             @if (JoinRequestsLoading)
             {
                 <p class="muted">Loading requests…</p>

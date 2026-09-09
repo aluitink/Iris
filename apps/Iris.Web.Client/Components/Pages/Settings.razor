@@ -17,18 +17,18 @@
 }
 else
 {
-    <div class="tab-bar">
-        <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
-        <a href="#notifications" class="tab @(ActiveTab == "notifications" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("notifications")'>Notifications</a>
-        <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
-        <a href="#relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
-        <a href="#moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
-        <a href="#danger" class="tab tab--danger @(ActiveTab == "danger" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("danger")'>Danger</a>
+    <div class="tab-bar" role="tablist" aria-label="Settings sections">
+        <a href="#account" id="tab-account" role="tab" aria-selected="@(ActiveTab == "account")" aria-controls="panel-account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
+        <a href="#notifications" id="tab-notifications" role="tab" aria-selected="@(ActiveTab == "notifications")" aria-controls="panel-notifications" class="tab @(ActiveTab == "notifications" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("notifications")'>Notifications</a>
+        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        <a href="#relays" id="tab-relays" role="tab" aria-selected="@(ActiveTab == "relays")" aria-controls="panel-relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
+        <a href="#moderation" id="tab-moderation" role="tab" aria-selected="@(ActiveTab == "moderation")" aria-controls="panel-moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
+        <a href="#danger" id="tab-danger" role="tab" aria-selected="@(ActiveTab == "danger")" aria-controls="panel-danger" class="tab tab--danger @(ActiveTab == "danger" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("danger")'>Danger</a>
     </div>
 
     @if (ActiveTab == "account")
     {
-        <div class="card">
+        <div class="card" id="panel-account" role="tabpanel" aria-labelledby="tab-account">
             <h2>Account</h2>
             @if (ActorDoc is not null)
             {
@@ -86,7 +86,7 @@ else
     }
     else if (ActiveTab == "notifications")
     {
-        <div class="card">
+        <div class="card" id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications">
             <h2>Notifications</h2>
             @if (NotifBusy)
             {
@@ -152,7 +152,7 @@ else
     }
     else if (ActiveTab == "communities")
     {
-        <div class="card">
+        <div class="card" id="panel-communities" role="tabpanel" aria-labelledby="tab-communities">
             <h2>Your communities</h2>
             @if (CommunitiesBusy)
             {
@@ -195,7 +195,7 @@ else
     }
     else if (ActiveTab == "relays")
     {
-        <div class="card">
+        <div class="card" id="panel-relays" role="tabpanel" aria-labelledby="tab-relays">
             <h2>Relay subscriptions</h2>
             <p class="muted" style="margin-bottom: 1rem;">
                 Relays are fan-out servers that receive a copy of your public posts.
@@ -247,7 +247,7 @@ else
     }
     else if (ActiveTab == "moderation")
     {
-        <div class="card">
+        <div class="card" id="panel-moderation" role="tabpanel" aria-labelledby="tab-moderation">
             <h2>Moderation</h2>
             @if (ModerationBusy)
             {
@@ -331,7 +331,7 @@ else
     }
     else if (ActiveTab == "danger")
     {
-        <div class="card card--danger">
+        <div class="card card--danger" id="panel-danger" role="tabpanel" aria-labelledby="tab-danger">
             <h2>Account deletion</h2>
             <p>Deleting your account is <strong>permanent and irreversible</strong>. All your posts will be
             removed, your profile will disappear, and you will be unable to log in. Followers will no
