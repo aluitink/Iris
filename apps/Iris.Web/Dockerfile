@@ -37,9 +37,12 @@ RUN groupadd --gid 1001 iris && useradd --uid 1001 --gid iris --home-dir /home/i
 WORKDIR /app
 COPY --from=build /app/publish .
 RUN chown -R iris:iris /app
-# Startup script: runs briefly as root to fix the DP keys volume ownership (Docker named
-# volumes are created root-owned), then drops to the iris user for the app process.
-RUN printf '#!/bin/sh\nchown -R 1001:1001 /home/iris/.aspnet 2>/dev/null || true\nexec setpriv --reuid=1001 --regid=1001 --clear-groups dotnet Iris.Web.dll\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+ # Startup script: runs briefly as root to fix the named-volume ownership (Docker named volumes
+ # are created root-owned) for BOTH the DP keys dir (/home/iris/.aspnet) and the media blob dir
+ # (/data/media, 54.16 — the EF media store writes one file per upload here), then drops to the
+ # iris user for the app process. Without the /data/media chown the non-root iris user gets
+ # UnauthorizedAccessException on every media upload (the volume is root-owned).
+ RUN printf '#!/bin/sh\nchown -R 1001:1001 /home/iris/.aspnet 2>/dev/null || true\nchown -R 1001:1001 /data/media 2>/dev/null || true\nexec setpriv --reuid=1001 --regid=1001 --clear-groups dotnet Iris.Web.dll\n' > /entrypoint.sh && chmod +x /entrypoint.sh
 USER root
 # The app binds in-container port 8080; the compose file publishes it on host port 8088 (the
 # iris.luit.ink reverse-proxy target). The advertised public base URI is set via the

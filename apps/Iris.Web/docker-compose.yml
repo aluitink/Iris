@@ -65,8 +65,15 @@ services:
       # (e.g. 00:00:15) or a bare integer (seconds). Blank -> the app's 15 s default (fits under the
       # host's 30 s ShutdownTimeout). Maps to Iris:Delivery:ShutdownDrainTimeout.
       Iris__Delivery__ShutdownDrainTimeout: ${IRIS_SHUTDOWN_DRAIN_TIMEOUT:-}
-      # The media volume is mounted for the (future) local-disk media backend; unused until that feature
-      # lands. The Media__* config section is not read by Iris.Web yet (no dead env vars are set).
+      # Media blob directory (54.16): the EF media store (EfMediaStore) persists uploaded image blobs as one
+      # file per media id under this directory, referenced by each Media row's StorageKey. Without this set
+      # it defaults to <AppContext.BaseDirectory>/media-blobs = /app/media-blobs in the container — an
+      # EPHEMERAL path, NOT the mounted volume. So every container recreation (docker compose up
+      # --force-recreate / a deploy) wiped every uploaded blob while its DB row (in the durable Postgres
+      # volume) survived, and every note/avatar image 404'd afterwards ("images don't render for notes").
+      # Pointing it at the mounted named volume (/data/media) makes blobs survive restarts. Maps to
+      # Iris:MediaBlobDir (read by EntityFrameworkPersistenceExtensions.AddEntityFrameworkPersistence).
+      Iris__MediaBlobDir: ${IRIS_MEDIA_BLOB_DIR:-/data/media}
       ASPNETCORE_ENVIRONMENT: Production
     ports:
       # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this

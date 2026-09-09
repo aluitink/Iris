@@ -38,6 +38,12 @@
                     <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
                 }
             }
+            @foreach (var media in ActivityMediaAttachments)
+            {
+                <div class="object-media">
+                    <img src="@media" alt="" loading="lazy" />
+                </div>
+            }
         </div>
     }
     else if (Item is Announce)
@@ -68,6 +74,12 @@
                     </div>
                 }
                 <EngagementBar ObjectIri="@targetIri" Object="ActivityEmbeddedObject" />
+                @foreach (var media in ActivityMediaAttachments)
+                {
+                    <div class="object-media">
+                        <img src="@media" alt="" loading="lazy" />
+                    </div>
+                }
             }
         </div>
     }

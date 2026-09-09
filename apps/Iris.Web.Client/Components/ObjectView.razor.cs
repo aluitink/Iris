@@ -52,6 +52,18 @@ public partial class ObjectView
             .ToList();
 
     /// <summary>
+    /// The media attachments of an activity's embedded object (the Note/Article a <c>Create</c> or
+    /// <c>Announce</c> wraps), each rewritten same-origin. The home timeline and profile outbox render
+    /// feed items as the wrapping activity (a <c>Create</c>), not the embedded Note, so the direct-object
+    /// <see cref="MediaAttachments"/> (which reads <c>Obj</c> — the activity itself, which carries no
+    /// <c>attachment</c>) is empty there; this reads the embedded object instead.
+    /// </summary>
+    private IReadOnlyList<string> ActivityMediaAttachments
+        => (ActivityEmbeddedObject?.GetMediaAttachments() ?? [])
+            .Select(m => RewriteMediaToSameOrigin(m.Iri.Value))
+            .ToList();
+
+    /// <summary>
     /// Rewrites a media IRI (an absolute HTTPS URL) into a same-origin path
     /// (e.g. <c>https://iris.luit.ink/ap/v1/media/{id}</c> → <c>/ap/v1/media/{id}</c>) so the browser's
     /// <c>&lt;img&gt;</c> loads it same-origin (no CORS, no mixed-content). A relative IRI or a non-HTTPS
