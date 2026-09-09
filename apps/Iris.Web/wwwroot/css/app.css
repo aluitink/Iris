@@ -775,6 +775,56 @@ ul.object-list li {
     font-family: monospace;
 }
 
+.object-attachment {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    background: var(--surface);
+}
+
+.object-attachment-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.object-attachment-preview {
+    width: 3rem;
+    height: 3rem;
+    object-fit: cover;
+    border-radius: 0.25rem;
+    flex-shrink: 0;
+}
+
+.object-attachment-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.object-attachment-link {
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.object-attachment-link:hover {
+    text-decoration: underline;
+}
+
+.object-attachment-type {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
 .object-poll {
     margin-top: 0.5rem;
     border: 1px solid var(--border);
