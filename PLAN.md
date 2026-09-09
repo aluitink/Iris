@@ -102,7 +102,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 56 — Cross-implementation federation compatibility (IN PROGRESS):**
+**Phase 57 — Performance, accessibility, and remaining interop (IN PROGRESS):**
+
+- 57.1: **Performance optimization — feed query profiling and index review** — profile the home feed, public feed, and outbox collection queries against the EF store. Check for N+1 queries, missing indexes, and suboptimal LINQ translations. Add indexes where needed. Integration tests verifying query plan efficiency.
+- 57.2: **Accessibility audit — WCAG 2.1 AA pass** — systematic review of all pages against WCAG 2.1 AA. Focus: color contrast, focus management, screen reader announcements, form labels, keyboard traps. Fix findings.
+- 57.3: **`conversationId` support — Pleroma thread grouping** — set `conversationId` on outbound notes (the thread root IRI). Read and preserve inbound `conversationId`. Integration tests.
+
+**Phase 56 — Cross-implementation federation compatibility (COMPLETE):**
 
 - 56.1: **Mastodon wire-compatibility gap analysis** (COMPLETE) — [changes/412](docs/changes/412-56.1-mastodon-wire-compatibility-gap-analysis.md)
 - 56.2: **Pleroma/Akko wire-compatibility check** (COMPLETE) — [changes/413](docs/changes/413-56.2-pleroma-akko-wire-compatibility.md)
