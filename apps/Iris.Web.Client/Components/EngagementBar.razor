@@ -40,6 +40,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
+            @if (_replyCount > 0)
+            {
+                <span class="engagement-count">@_replyCount</span>
+            }
         </a>
         @if (CanModerate)
         {
@@ -97,6 +101,7 @@
 
     private int _likeCount;
     private int _boostCount;
+    private int _replyCount;
     private bool _liked;
     private bool _boosted;
     private bool _busy;
@@ -154,6 +159,7 @@
             {
                 _likeCount = likedCount;
                 _boostCount = sharedCount;
+                _replyCount = obj.GetRepliedCount(ns) ?? 0;
                 _liked = obj.GetIsLiked(ns) is true;
                 _boosted = obj.GetIsShared(ns) is true;
                 _countsLoaded = true;
