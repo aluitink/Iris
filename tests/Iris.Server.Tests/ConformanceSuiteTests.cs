@@ -184,6 +184,58 @@ public sealed class ConformanceSuiteTests : IDisposable
         Assert.Equal(sharedInbox.Value, endpoints.GetProperty("sharedInbox").GetString());
     }
 
+    // --- ld+json content negotiation (F-31) ------------------------------------------
+
+    [Fact]
+    public async Task ActorDocument_DefaultAccept_ReturnsActivityJson()
+    {
+        var response = await _client.GetAsync("/ap/v1/u/alice");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ActorDocument_AcceptsLdJson_ReturnsLdJson()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/ap/v1/u/alice");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ActorDocument_AcceptsBoth_ReturnsLdJson()
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/ap/v1/u/alice");
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ObjectDocument_AcceptsLdJson_ReturnsLdJson()
+    {
+        // Seed a content object so the object endpoint can serve it.
+        var obj = new KristofferStrube.ActivityStreams.Note
+        {
+            Id = $"https://{Host}/ap/v1/u/{Handle}/posts/1",
+            Content = ["Test post"],
+        };
+        await _persistence.Objects.PutObjectAsync(obj, default);
+
+        var objectIri = new Iri($"https://{Host}/ap/v1/u/{Handle}/posts/1");
+        var relativePath = objectIri.Value.Replace($"https://{Host}", "");
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, relativePath);
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
     // --- Helpers --------------------------------------------------------------------
 
     private static string WebFingerQuery(string handle)

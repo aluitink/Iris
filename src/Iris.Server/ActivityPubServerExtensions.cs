@@ -1145,7 +1145,7 @@ public static class ActivityPubServerExtensions
             }
 
             var ownerDoc = BuildActorDocument(ownerActor, actorIri, authenticatedHandle, persistence, options);
-            var noStore = Results.Text(ActivityJson.Serialize(ownerDoc), ActivityJson.ActivityJsonContentType);
+            var noStore = Results.Text(ActivityJson.Serialize(ownerDoc), NegotiateContentType(context));
             context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
                 ActivityPubServerConstants.NoStoreCacheControl;
             return noStore;
@@ -1185,7 +1185,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(rendered, ActivityJson.ActivityJsonContentType);
+        return Results.Text(rendered, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -2291,14 +2291,14 @@ public static class ActivityPubServerExtensions
                     // Drop the cached render so the next public read re-renders (mirrors the outbox-page
                     // invalidation above — without it the 60s-TTL document cache serves a stale copy).
                     actorDocumentCache.Invalidate(actorIri);
-                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                    return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
                 }
 
                 if (activity is Remove personRemove)
                 {
                     await RecordPersonRemoveAsync(persistence, actorIri, personRemove, ct).ConfigureAwait(false);
                     actorDocumentCache.Invalidate(actorIri);
-                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                    return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
                 }
 
                 Iri? recipientIri = activity switch
@@ -2412,7 +2412,7 @@ public static class ActivityPubServerExtensions
         // authoring client can learn the id and reference the object later (an Undo, a delete, an Accept
         // of this follow). The body is the activity serialized as ActivityStreams JSON (a raw text body —
         // NOT Results.Accepted(string), which would JSON-serialize the string into a quoted JSON string).
-        return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+        return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
     }
 
     /// <summary>
@@ -2522,14 +2522,14 @@ public static class ActivityPubServerExtensions
             if (payload is Add add)
             {
                 await RecordCommunityAddAsync(persistence, communityIri, add, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
             if (payload is Remove remove)
             {
                 await RecordCommunityRemoveAsync(persistence, communityIri, remove, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
@@ -2539,7 +2539,7 @@ public static class ActivityPubServerExtensions
             if (payload is Update update)
             {
                 await HandleCommunityUpdateAsync(persistence, communityIri, update, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
@@ -2560,7 +2560,7 @@ public static class ActivityPubServerExtensions
                 return Results.BadRequest();
             }
 
-            return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, recipientIri, delivery, collectionCache, ct)
+            return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, recipientIri, delivery, collectionCache, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -2580,6 +2580,7 @@ public static class ActivityPubServerExtensions
     /// recipient (a local-only membership Add/Remove) records without delivering.
     /// </summary>
     private static async Task<IResult> FinishCommunityOutboxPublishAsync(
+        HttpContext context,
         IPersistenceProvider persistence,
         Iri communityIri,
         IObjectOrLink? payload,
@@ -2610,7 +2611,7 @@ public static class ActivityPubServerExtensions
 
         // Decision 055: return the created object (with its minted id) in the 2xx body so the client can
         // learn the id (for a future Undo of this activity, e.g. un-adding a member).
-        return Results.Text(ActivityJson.Serialize((Activity)payload), ActivityJson.ActivityJsonContentType, statusCode: 202);
+        return Results.Text(ActivityJson.Serialize((Activity)payload), NegotiateContentType(context), statusCode: 202);
     }
 
     /// <summary>
@@ -4591,7 +4592,7 @@ public static class ActivityPubServerExtensions
             ServeObjectDocument(
                 obj, objectIri, isLikedValue, isSharedValue, likedCountValue, sharedCountValue,
                 IrisExtensionNamespace(options)),
-            ActivityJson.ActivityJsonContentType);
+            NegotiateContentType(context));
     }
 
     /// <summary>
@@ -4949,7 +4950,7 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5169,7 +5170,7 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(ActivityJson.Serialize(collection), ActivityJson.ActivityJsonContentType);
+        return Results.Text(ActivityJson.Serialize(collection), NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5742,7 +5743,7 @@ public static class ActivityPubServerExtensions
 
         // Private, owner-scoped data: never cached (the same no-store treatment as the owner-only actor
         // document). Intermediates and the browser must not serve a stale copy of someone's inbox.
-        var result = Results.Text(document, ActivityJson.ActivityJsonContentType);
+        var result = Results.Text(document, NegotiateContentType(context));
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.NoStoreCacheControl;
         return result;
@@ -5832,7 +5833,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5953,7 +5954,7 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-         return Results.Text(document, ActivityJson.ActivityJsonContentType);
+         return Results.Text(document, NegotiateContentType(context));
      }
 
     /// <summary>
@@ -6002,7 +6003,7 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -6168,7 +6169,7 @@ public static class ActivityPubServerExtensions
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
-        return Results.Text(ActivityJson.Serialize(doc), ActivityJson.ActivityJsonContentType);
+        return Results.Text(ActivityJson.Serialize(doc), NegotiateContentType(context));
     }
 
     /// <summary>
@@ -6242,7 +6243,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document!, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document!, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -6357,7 +6358,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -7071,7 +7072,7 @@ public static class ActivityPubServerExtensions
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -7113,7 +7114,7 @@ public static class ActivityPubServerExtensions
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -7642,6 +7643,27 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IPersistenceProvider>(_ => new FileBackedPersistenceProvider(directory));
         services.AddSingleton<IKeyStore>(_ => new FileBackedKeyStore(Path.Combine(directory, "keys.json")));
         return services;
+    }
+
+    /// <summary>
+    /// Negotiates the response content type based on the request's <c>Accept</c> header (F-31).
+    /// Returns <c>application/ld+json</c> when the client accepts it; otherwise
+    /// <c>application/activity+json</c> (the default, spec-valid content type).
+    /// </summary>
+    private static string NegotiateContentType(HttpContext context)
+    {
+        if (context.Request.Headers.Accept is { Count: > 0 } accept)
+        {
+            foreach (var value in accept)
+            {
+                if (value is { Length: > 0 } v && v.Contains("ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ActivityJson.JsonLdContentType;
+                }
+            }
+        }
+
+        return ActivityJson.ActivityJsonContentType;
     }
 }
 

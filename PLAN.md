@@ -84,7 +84,7 @@ Iris.slnx
 
 ## Active Slice
 
-*(none — 59.3 COMPLETE; next: 59.4 `ld+json` production.)*
+*(none — Phase 59 COMPLETE; next: Phase 60 UI/UX Review.)*
 
 ### Loop protocol (WASM manual-test phase)
 
@@ -106,12 +106,12 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 - 60.1: **Review what the user is seeing on every page - login as 'andrew' - password 'Password1' and visually inspect all views - build additional items to address under phase 60.
 
-**Phase 59 — Remaining spec gaps & final interop (IN PROGRESS):**
+**Phase 59 — Remaining spec gaps & final interop (COMPLETE):**
 
 - 59.1: **`Move` re-resolution + key rotation (F-25)** (COMPLETE) — [changes/423](docs/changes/423-59.1-move-re-resolution-key-rotation.md)
 - 59.2: **OAuth2 bearer path (F-20)** (COMPLETE) — [changes/424](docs/changes/424-59.2-oauth2-bearer-path.md)
 - 59.3: **`Article`-specific fields (F-11 remainder)** (COMPLETE) — [changes/425](docs/changes/425-59.3-article-specific-fields.md)
-- 59.4: **`ld+json` production (F-31)** (Low/S) — content-type negotiation: serve `application/ld+json` when the client accepts it (currently always `application/activity+json`, which is spec-valid).
+- 59.4: **`ld+json` production (F-31)** (COMPLETE) — [changes/426](docs/changes/426-59.4-ld-json-production.md)
 
 **Phase 58 — Federation completeness & remaining spec gaps (COMPLETE):**
 
@@ -144,11 +144,11 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 59.4: **`ld+json` production (F-31)** (Phase 59) — `NegotiateContentType(context)` helper checks the `Accept` header; 18 response sites now return `application/ld+json` when the client accepts it (default remains `application/activity+json`). 4 new integration tests. Server 970/0. [changes/426](docs/changes/426-59.4-ld-json-production.md)
   - 59.3: **`Article`-specific fields (F-11 remainder)** (Phase 59) — `GetPublishedTime` + `GetInLanguage` extension methods read from `ExtensionData`; `duration` read from typed `Object.Duration`; `ObjectView` renders all three as a metadata line on `Article` objects. 10 new unit tests. Core 344/0. [changes/425](docs/changes/425-59.3-article-specific-fields.md)
   - 59.2: **OAuth2 bearer path (F-20)** (Phase 59) — actor document `endpoints` now advertises `oauthAuthorizationEndpoint` + `oauthTokenEndpoint`; inbox handler falls back to `Authorization: Bearer` token resolution when no valid HTTP signature is present (via `IOAuthTokenStore`); body-reading fixed to use `EnableBuffering` + `ReadAsBufferedStringAsync` (works for both signed and unsigned paths). 6 new integration tests. Server 966/0. [changes/424](docs/changes/424-59.2-oauth2-bearer-path.md)
   - 59.1: **`Move` re-resolution + key rotation (F-25)** (Phase 59) — `GetPublicKeyIri` helper extracts `publicKey.id` from actor ExtensionData; `MoveActivityHandler` resolves the old actor's actual key IRI (not `#key-1`) + warms the new actor doc into `RemoteActorCache`; `RemoteInboundKeyResolver` invalidates the old key's cache entry when a fetched document's `publicKey` declares `replaces`. 9 new unit tests. Core 334/0, Server 977/0. [changes/423](docs/changes/423-59.1-move-re-resolution-key-rotation.md)
   - 58.4: **Final conformance sweep** (Phase 58) — verified all F-01–F-31; updated `MISSING_FEATURES.md` (F-06/F-12/F-26/F-27/F-28 → resolved; F-11 partial; F-20/F-25/F-31 still open); all C-01–C-08 verified. Doc-only. [changes/422](docs/changes/422-58.4-final-conformance-sweep.md)
-  - 58.3: **Rich attachment rendering (F-11)** (Phase 58) — `GetRichAttachments` reads all attachment types (Image/Document/Audio/Video/Link) with type, name, URL, preview; `ObjectView` renders type-appropriate cards with icons + preview thumbnails + type labels. 8 new unit tests. Core 328/0, Server 957/0, Web 62/0. [changes/421](docs/changes/421-58.3-rich-attachment-rendering.md)
 Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
 
 ## Keeping the docs lean
