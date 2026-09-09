@@ -1,0 +1,38 @@
+@using Iris.Core.Identity
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+@inject UiContext Ui
+
+@if (ActorIri is { } iri)
+{
+    <span class="actor-bar">
+        <ActorAvatar ActorIri="iri" DisplayName="@DisplayName" IconIriOverride="@IconIriOverride" />
+        <a href="@ActorIdentityHelper.ActorHref(iri)" title="@iri" class="actor-bar-handle">@EffectiveHandle</a>
+    </span>
+}
+
+@code {
+    /// <summary>
+    /// The actor's IRI. The component fetches the actor document (via <see cref="UiContext"/>'s
+    /// per-circuit cache) to resolve the icon IRI and display name.
+    /// </summary>
+    [Parameter]
+    public Iri? ActorIri { get; set; }
+
+    /// <summary>
+    /// An optional display name override (e.g. from an already-fetched actor document). When
+    /// provided, the avatar fallback uses this name instead of fetching.
+    /// </summary>
+    [Parameter]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// An optional icon IRI override (e.g. from an already-fetched actor document). When
+    /// provided, the avatar uses this IRI directly instead of fetching.
+    /// </summary>
+    [Parameter]
+    public string? IconIriOverride { get; set; }
+
+    private string? EffectiveHandle => ActorIri is { } a ? ActorIdentityHelper.HandleOf(a) : null;
+}

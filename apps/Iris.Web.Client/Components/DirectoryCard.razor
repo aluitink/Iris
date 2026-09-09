@@ -5,28 +5,12 @@
 
 <div class="directory-card">
     <div class="directory-card-header" @onclick="ToggleAsync">
-        <span class="directory-card-avatar">
-            @if (IconIri is { } icon)
-            {
-                <img src="@RewriteMediaToSameOrigin(icon)" alt="" loading="lazy" />
-            }
-            else
-            {
-                <span class="directory-card-avatar-fallback">@AvatarInitial</span>
-            }
-        </span>
-        <div class="directory-card-info">
-            <a href="@ActorHref" class="directory-card-name">@Name</a>
-            <span class="directory-card-handle">@Handle</span>
-            @if (Summary is { Length: > 0 } summary)
-            {
-                <p class="directory-card-summary">@Truncate(summary, 150)</p>
-            }
-        </div>
-        <span class="directory-card-expand" aria-label="@(IsExpanded ? "Hide posts" : "Show posts")">
-            @(IsExpanded ? "−" : "+")
-        </span>
-        <FollowButton TargetActor="Actor" />
+        <ActorCard Actor="Actor" ActorId="Actor.Id">
+            <span class="directory-card-expand" aria-label="@(IsExpanded ? "Hide posts" : "Show posts")">
+                @(IsExpanded ? "−" : "+")
+            </span>
+            <FollowButton TargetActor="Actor" />
+        </ActorCard>
     </div>
     @if (IsExpanded && Posts is not null)
     {
@@ -61,79 +45,9 @@
     [Parameter]
     public HashSet<string>? ExpandedLoading { get; set; }
 
-    private string? ActorId => Actor.Id;
-    private string ActorHref => ActorId is { Length: > 0 } ? $"/actor?iri={Uri.EscapeDataString(ActorId)}" : "#";
-    private string? Name => Actor.Name?.FirstOrDefault() ?? Actor.PreferredUsername ?? "Unknown";
-    private string? Handle => HandleOf(Actor);
-    private string? Summary => Actor.Summary?.FirstOrDefault();
-    private bool IsExpanded => ExpandedPosts is { } map && map.ContainsKey(ActorId ?? string.Empty);
-    private List<IObjectOrLink>? Posts => ExpandedPosts is { } map && map.TryGetValue(ActorId ?? string.Empty, out var p) ? p : null;
-    private bool IsLoading => ExpandedLoading is { } set && set.Contains(ActorId ?? string.Empty);
-
-    private static string? HandleOf(Actor actor)
-    {
-        if (actor.Id is not { Length: > 0 } id)
-        {
-            return null;
-        }
-
-        try
-        {
-            var uri = new Uri(id);
-            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
-            return segments.Length > 0 ? segments[^1] : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private string? IconIri
-    {
-        get
-        {
-            if (Actor.Icon is not { } icons)
-            {
-                return null;
-            }
-
-            foreach (var icon in icons)
-            {
-                var iri = icon is IObject { Id: { Length: > 0 } id } ? id
-                    : icon is ILink { Href: { } href } ? href.ToString()
-                    : null;
-                if (iri is not null)
-                {
-                    return iri;
-                }
-            }
-
-            return null;
-        }
-    }
-
-    private static string RewriteMediaToSameOrigin(string mediaIri)
-    {
-        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri) || uri.Scheme != "https")
-        {
-            return mediaIri;
-        }
-
-        return uri.AbsolutePath + uri.Query;
-    }
-
-    private string AvatarInitial
-    {
-        get
-        {
-            var source = !string.IsNullOrWhiteSpace(Name) ? Name! : Handle;
-            return source is { Length: > 0 } ? source[0].ToString() : "?";
-        }
-    }
-
-    private static string Truncate(string value, int max)
-        => value.Length <= max ? value : value[..max] + "…";
+    private bool IsExpanded => ExpandedPosts is { } map && map.ContainsKey(Actor.Id ?? string.Empty);
+    private List<IObjectOrLink>? Posts => ExpandedPosts is { } map && map.TryGetValue(Actor.Id ?? string.Empty, out var p) ? p : null;
+    private bool IsLoading => ExpandedLoading is { } set && set.Contains(Actor.Id ?? string.Empty);
 
     private async Task ToggleAsync()
     {

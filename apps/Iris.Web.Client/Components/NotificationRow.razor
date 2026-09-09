@@ -22,14 +22,7 @@
 
         <div class="notification-body">
             <div class="notification-avatar">
-                @if (iconIri is { } icon)
-                {
-                    <img src="@RewriteMediaToSameOrigin(icon)" alt="" loading="lazy" />
-                }
-                else
-                {
-                    <span class="notification-avatar-fallback">@AvatarInitial(actorIri, displayName)</span>
-                }
+                <ActorAvatar ActorIri="actorIri" DisplayName="@displayName" IconIriOverride="@iconIri" />
             </div>
             <div class="notification-content">
                 <div class="notification-head">
