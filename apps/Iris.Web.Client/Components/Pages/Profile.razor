@@ -120,12 +120,21 @@ else
     private const string LikesKey = "profile-likes";
     private const string RequestsKey = "profile-requests";
 
+    /// <summary>
+    /// When <c>true</c> (set via <c>/profile?edit=true</c>, e.g. the Settings → Account "Edit your
+    /// profile" link), the profile opens directly in edit mode once the actor document has loaded —
+    /// the user skips the extra "Edit profile" click.
+    /// </summary>
+    [Microsoft.AspNetCore.Components.SupplyParameterFromQuery(Name = "edit")]
+    private bool? EditRequested { get; set; }
+
     private IObject? ActorDoc { get; set; }
     private string? LoadError { get; set; }
     private string? SaveError { get; set; }
     private bool _editing;
     private bool _saving;
     private bool _originalApproveFollowers;
+    private bool _pendingEdit;
     private string ActiveTab { get; set; } = "posts";
 
     private Actor? ActorObj => ActorDoc as Actor;
@@ -230,11 +239,20 @@ else
 
     protected override void OnParametersSet()
     {
+        if (EditRequested == true)
+        {
+            _pendingEdit = true;
+        }
+
         if (Session.ActorId is { } actorId
             && ActorDoc is null
             && LoadError is null)
         {
             _ = LoadActorAsync(actorId);
+        }
+        else if (ActorDoc is not null && _pendingEdit)
+        {
+            ConsumePendingEdit();
         }
     }
 
@@ -257,7 +275,25 @@ else
             LoadError = "Your profile could not be loaded. Please refresh and try again.";
         }
 
+        if (ActorDoc is not null && _pendingEdit)
+        {
+            ConsumePendingEdit();
+        }
+
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Starts edit mode once the actor document is available, if the page was opened with
+    /// <c>?edit=true</c>. Consumes the one-shot flag so a later re-render (e.g. after a save) does
+    /// not re-enter edit mode.
+    /// </summary>
+    private void ConsumePendingEdit()
+    {
+        _pendingEdit = false;
+        _originalApproveFollowers = ActorObj?.GetManuallyApprovesFollowers() ?? false;
+        _editing = true;
+        SaveError = null;
     }
 
     private void StartEdit()
