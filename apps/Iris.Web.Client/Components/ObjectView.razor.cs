@@ -1,8 +1,8 @@
 using System.Linq;
-using System.Net;
 using System.Text;
 using Iris.Core;
 using Iris.Core.Identity;
+using Iris.Core.Rendering;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
@@ -77,8 +77,11 @@ public partial class ObjectView
                 return new MarkupString(string.Empty);
             }
 
+            // Pre-rendered HTML is emitted verbatim; Markdown/plain text is run through the safe
+            // dependency-free Markdown renderer (HTML-escaped first, so raw markup is inert) so
+            // Markdown-sourced content displays as formatted HTML instead of literal source.
             return new MarkupString(
-                Obj is { } o && o.IsPreRenderedHtmlContent() ? content : WebUtility.HtmlEncode(content));
+                Obj is { } o && o.IsPreRenderedHtmlContent() ? content : Markdown.ToHtml(content));
         }
     }
 
@@ -150,7 +153,7 @@ public partial class ObjectView
             }
 
             return new MarkupString(
-                embedded.IsPreRenderedHtmlContent() ? content! : WebUtility.HtmlEncode(content!));
+                embedded.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
         }
     }
 

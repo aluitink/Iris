@@ -1,4 +1,5 @@
 using Iris.Core.Identity;
+using Iris.Core.Rendering;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.Components;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
@@ -27,6 +28,6 @@ public static class ObjectViewActivityRenderer
         }
 
         return new MarkupString(
-            IsPreRendered(obj) ? content! : System.Net.WebUtility.HtmlEncode(content!));
+            IsPreRendered(obj) ? content! : Markdown.ToHtml(content!));
     }
 }
