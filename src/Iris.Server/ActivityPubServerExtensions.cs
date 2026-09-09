@@ -353,6 +353,11 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IEnumerable<IActivityHandler>>(),
             sp.GetRequiredService<ILogger<InboxProcessor>>()));
 
+        // Instance stats (55.1): NodeInfo's usage.users.total. The default in-memory implementation
+        // returns 0; the EF Core persistence layer (Iris.Server.Data) registers a real implementation
+        // that queries the user account store. TryAdd means a host can override with its own.
+        services.TryAddSingleton<IInstanceStatsProvider, InMemoryInstanceStatsProvider>();
+
         // Object Update/Delete propagation (the federated half of F-02/F-03): schedules an object's
         // Update/Delete to the remote actors that hold a copy (the author's remote followers, the
         // remote attributedTo, and the remote parent's owner for a deleted reply) so their copies are
@@ -5112,15 +5117,19 @@ public static class ActivityPubServerExtensions
             "application/jrd+json");
     }
 
-    private static IResult NodeInfoHandler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    private static async Task<IResult> NodeInfoHandler(
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        IInstanceStatsProvider stats,
+        CancellationToken ct)
     {
         var options = optionsAccessor.Value;
+        var userCount = await stats.GetLocalUserCountAsync(ct).ConfigureAwait(false);
         var nodeInfo = new
         {
             version = "2.0",
             software = new { name = "iris", version = ActivityPubServerConstants.ApiVersion },
             protocols = new[] { "activitypub" },
-            usage = new { users = new { total = 0 } },
+            usage = new { users = new { total = userCount } },
             openRegistrations = false,
             metadata = new
             {

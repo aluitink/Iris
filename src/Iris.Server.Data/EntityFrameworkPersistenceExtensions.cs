@@ -1,3 +1,4 @@
+using Iris.Server;
 using Iris.Server.Data.Accounts;
 using Iris.Server.Data.Stores;
 using Iris.Server.Stores;
@@ -74,6 +75,11 @@ public static class EntityFrameworkPersistenceExtensions
 
         // The instance metadata store (EF Core).
         services.TryAddSingleton<IInstanceMetadataStore, EfInstanceMetadataStore>();
+
+        // Instance stats (55.1): real user count for NodeInfo's usage.users.total. Hard AddSingleton
+        // (not TryAdd) to override the in-memory default registered by AddActivityPubServer.
+        services.AddSingleton<IInstanceStatsProvider>(sp =>
+            new EfInstanceStatsProvider(sp.GetRequiredService<IUserAccountStore>()));
 
         // The aggregate provider. This MUST be a hard AddSingleton (not TryAddSingleton):
         // AddActivityPubServer registers a recursive fallback factory for IPersistenceProvider
