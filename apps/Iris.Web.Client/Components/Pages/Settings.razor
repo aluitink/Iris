@@ -19,7 +19,6 @@ else
 {
     <div class="tab-bar">
         <a href="#account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
-        <a href="#password" class="tab @(ActiveTab == "password" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("password")'>Password</a>
         <a href="#notifications" class="tab @(ActiveTab == "notifications" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("notifications")'>Notifications</a>
         <a href="#communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
         <a href="#relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
@@ -49,40 +48,40 @@ else
                     <span class="muted">Loading…</span>
                 </div>
             }
-        </div>
-    }
-    else if (ActiveTab == "password")
-    {
-        <div class="card">
-            <h2>Change password</h2>
-            @if (PasswordError is not null)
-            {
-                <div class="error" role="alert">@PasswordError</div>
-            }
-            @if (PasswordSuccess)
-            {
-                <div class="success" role="status">Password changed successfully.</div>
-            }
-            <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
-                <div>
-                    <label class="label" for="current-password">Current password</label>
-                    <input id="current-password" type="password" class="input" value="@CurrentPassword"
-                           @onchange="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
+
+            <details class="settings-subsection">
+                <summary class="settings-subsection-summary">Change password</summary>
+                <div class="settings-subsection-body">
+                    @if (PasswordError is not null)
+                    {
+                        <div class="error" role="alert">@PasswordError</div>
+                    }
+                    @if (PasswordSuccess)
+                    {
+                        <div class="success" role="status">Password changed successfully.</div>
+                    }
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
+                        <div>
+                            <label class="label" for="current-password">Current password</label>
+                            <input id="current-password" type="password" class="input" value="@CurrentPassword"
+                                   @onchange="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <div>
+                            <label class="label" for="new-password">New password</label>
+                            <input id="new-password" type="password" class="input" value="@NewPassword"
+                                   @onchange="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <div>
+                            <label class="label" for="confirm-password">Confirm new password</label>
+                            <input id="confirm-password" type="password" class="input" value="@ConfirmPassword"
+                                   @onchange="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <button class="button" disabled="@PasswordBusy" @onclick="ChangePasswordAsync">
+                            @(PasswordBusy ? "Changing…" : "Change password")
+                        </button>
+                    </div>
                 </div>
-                <div>
-                    <label class="label" for="new-password">New password</label>
-                    <input id="new-password" type="password" class="input" value="@NewPassword"
-                           @onchange="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
-                </div>
-                <div>
-                    <label class="label" for="confirm-password">Confirm new password</label>
-                    <input id="confirm-password" type="password" class="input" value="@ConfirmPassword"
-                           @onchange="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
-                </div>
-                <button class="button" disabled="@PasswordBusy" @onclick="ChangePasswordAsync">
-                    @(PasswordBusy ? "Changing…" : "Change password")
-                </button>
-            </div>
+            </details>
         </div>
     }
     else if (ActiveTab == "notifications")
