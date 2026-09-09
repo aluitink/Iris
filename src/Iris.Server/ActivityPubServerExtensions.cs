@@ -1779,14 +1779,24 @@ public static class ActivityPubServerExtensions
         IInboundRateLimiter rateLimiter,
         CancellationToken ct)
     {
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Iris.Server.Inbox");
+
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
+            var keyIdStr = outcome.KeyId.Uri is null ? "(none)" : outcome.KeyId.Value;
+            logger.LogInformation(
+                "Inbox rejected: invalid signature. Recipient: {Recipient}, KeyId: {KeyId}",
+                recipientIri, keyIdStr);
             return Results.Unauthorized();
         }
 
         if (!exists)
         {
+            logger.LogInformation(
+                "Inbox rejected: unknown recipient {Recipient}",
+                recipientIri);
             return Results.NotFound();
         }
 
@@ -1813,6 +1823,9 @@ public static class ActivityPubServerExtensions
                 // Fallback: the window already expired (race) — send a 1-second delta.
                 context.Response.Headers.Append("Retry-After", "1");
             }
+            logger.LogWarning(
+                "Inbox rate-limited: peer {Peer} exceeded budget. Recipient: {Recipient}",
+                senderHost, recipientIri);
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
@@ -1821,6 +1834,9 @@ public static class ActivityPubServerExtensions
         var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
+            logger.LogWarning(
+                "Inbox rejected: empty body. Recipient: {Recipient}, Peer: {Peer}",
+                recipientIri, senderHost);
             return Results.BadRequest();
         }
 
@@ -1839,6 +1855,9 @@ public static class ActivityPubServerExtensions
         {
             var persistence = context.RequestServices.GetRequiredService<IPersistenceProvider>();
             await TombstoneInbound.ApplyAsync(persistence, inboundTombstone, ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "Inbox accepted: Tombstone. Recipient: {Recipient}, Object: {ObjectIri}, Peer: {Peer}",
+                recipientIri, inboundTombstone.Id, senderHost);
             return Results.Accepted();
         }
 
@@ -1854,8 +1873,17 @@ public static class ActivityPubServerExtensions
         }
         else
         {
+            logger.LogWarning(
+                "Inbox rejected: unrecognizable payload. Recipient: {Recipient}, Peer: {Peer}",
+                recipientIri, senderHost);
             return Results.BadRequest();
         }
+
+        var activityType = activity.Type is { } types
+            ? string.Join(",", types)
+            : "Unknown";
+        var actorIri = ExtractActorIriFromActivity(activity);
+        var targetIri = ExtractTargetIriFromActivity(activity);
 
         try
         {
@@ -1869,10 +1897,35 @@ public static class ActivityPubServerExtensions
         }
         catch (Exception)
         {
+            logger.LogError(
+                "Inbox processing failed: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
+                activityType, actorIri, targetIri, recipientIri, senderHost);
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
 
+        logger.LogInformation(
+            "Inbox accepted: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
+            activityType, actorIri, targetIri, recipientIri, senderHost);
+
         return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Extracts the <c>actor</c> IRI from an activity for logging purposes.
+    /// </summary>
+    private static string? ExtractActorIriFromActivity(Activity activity)
+    {
+        var actor = activity.Actor;
+        return actor is IObject { Id: { } id } ? id : actor?.ToString();
+    }
+
+    /// <summary>
+    /// Extracts the <c>object</c> (target) IRI from an activity for logging purposes.
+    /// </summary>
+    private static string? ExtractTargetIriFromActivity(Activity activity)
+    {
+        var obj = activity.Object;
+        return obj is IObject { Id: { } id } ? id : obj?.ToString();
     }
 
     /// <summary>
