@@ -102,7 +102,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 55 — Federation metadata, interop, and operational depth (in progress):**
+**Phase 56 — Cross-implementation federation compatibility (IN PROGRESS):**
+
+- 56.1: **Mastodon wire-compatibility gap analysis** — review Iris's ActivityPub wire format against the [Mastodon ActivityPub spec](https://docs.joinmastodon.org/activity/) for the key flows (follow, create, like, announce, undo, block, mute, update, delete). Document gaps in a change doc. No code changes unless a defect is found.
+- 56.2: **Pleroma/Akko wire-compatibility check** — same gap analysis against Pleroma's AP implementation. Focus on differences from Mastodon (e.g. `to: ["as:Public"]` vs `to: "as:Public"`, `cc` array conventions, `attachment` vs `image`, `sensitive` flag handling).
+- 56.3: **Fix top-3 wire compatibility gaps** — implement fixes for the three highest-impact gaps identified in 56.1/56.2. Integration tests for each fix.
 
 *(Phase 55 COMPLETE — all three slices done. See ROADMAP.md.)*
 
