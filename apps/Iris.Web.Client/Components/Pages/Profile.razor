@@ -76,24 +76,24 @@ else
     {
         <PagedCollection
             @key="@RepliesKey"
-            Client="@InboxClient"
-            CollectionIri="@InboxIri"
+            Client="@OutboxClient"
+            CollectionIri="@OutboxIri"
             PageSize="10"
             ShowRefreshButton="true"
             ItemFilter="IsReply"
-            ItemTemplate="@NotificationTemplate"
+            ItemTemplate="@PostTemplate"
             EmptyMessage="No replies to your posts yet." />
     }
     else if (ActiveTab == "likes")
     {
         <PagedCollection
             @key="@LikesKey"
-            Client="@InboxClient"
-            CollectionIri="@InboxIri"
+            Client="@OutboxClient"
+            CollectionIri="@OutboxIri"
             PageSize="10"
             ShowRefreshButton="true"
             ItemFilter="IsLike"
-            ItemTemplate="@NotificationTemplate"
+            ItemTemplate="@PostTemplate"
             EmptyMessage="No likes on your posts yet." />
     }
     else if (ActiveTab == "requests")
