@@ -1,7 +1,10 @@
 @using Iris.Core
 @using Iris.Core.Identity
+@using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+@inject UiContext Ui
 
 <div class="notification-row">
     @if (Item is Activity activity)
@@ -11,32 +14,51 @@
         var objectIri = objectFirst?.ResolveObjectIri();
         var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
         var targetPreview = TargetPreview(objectFirst);
+        var actorDoc = actorIri is { } a ? _actorDocs.TryGetValue(a.Value, out var d) ? d : null : null;
+        var displayName = actorDoc is { } ad && ad is Actor actorObj && actorObj.Name is { } names
+            ? names.FirstOrDefault()
+            : null;
+        var iconIri = ActorIconIri(actorDoc);
 
-        <div class="notification-head">
-            @NotificationIcon(activity)
-            <span class="notification-verb">@VerbFor(activity)</span>
-            @if (actorIri is { } performer)
-            {
-                <span class="notification-actor">
-                    <a href="@ActorHref(performer)" title="@performer" class="object-actor">@HandleOf(performer)</a>
-                </span>
-            }
-            @if (Published is { } published)
-            {
-                <span class="notification-time" title="@published.ToString("o")">@RelativeTime(published)</span>
-            }
-        </div>
-        <div class="notification-target">
-            @if (objectIri is { } target)
-            {
-                <a href="@ObjectHref(target)" title="@target" class="notification-target-link">
-                    @(targetPreview ?? ShortLabel(target))
-                </a>
-            }
-            else if (targetIri is { } t)
-            {
-                <a href="@ActorHref(t)" title="@t" class="object-actor">@HandleOf(t)</a>
-            }
+        <div class="notification-body">
+            <div class="notification-avatar">
+                @if (iconIri is { } icon)
+                {
+                    <img src="@RewriteMediaToSameOrigin(icon)" alt="" loading="lazy" />
+                }
+                else
+                {
+                    <span class="notification-avatar-fallback">@AvatarInitial(actorIri, displayName)</span>
+                }
+            </div>
+            <div class="notification-content">
+                <div class="notification-head">
+                    @if (actorIri is { } performer)
+                    {
+                        <a href="@ActorHref(performer)" title="@performer" class="notification-name">
+                            @(displayName ?? HandleOf(performer))
+                        </a>
+                    }
+                    @NotificationIcon(activity)
+                    <span class="notification-verb">@VerbFor(activity)</span>
+                    @if (Published is { } published)
+                    {
+                        <span class="notification-time" title="@published.ToString("o")">@RelativeTime(published)</span>
+                    }
+                </div>
+                <div class="notification-target">
+                    @if (objectIri is { } target)
+                    {
+                        <a href="@ObjectHref(target)" title="@target" class="notification-target-link">
+                            @(targetPreview ?? ShortLabel(target))
+                        </a>
+                    }
+                    else if (targetIri is { } t)
+                    {
+                        <a href="@ActorHref(t)" title="@t" class="object-actor">@HandleOf(t)</a>
+                    }
+                </div>
+            </div>
         </div>
     }
     else
@@ -66,6 +88,90 @@
     /// The activity's <c>published</c> timestamp, when present.
     /// </summary>
     private DateTime? Published => Activity?.Published;
+
+    /// <summary>
+    /// Per-row cache of the actor document (keyed by actor IRI value), populated on init. The row
+    /// fetches the actor's document once so it can render the avatar + display name; the
+    /// <see cref="UiContext"/> already caches actor documents per-circuit (5-minute TTL), so repeated
+    /// rows for the same actor do not re-fetch.
+    /// </summary>
+    private readonly Dictionary<string, IObject?> _actorDocs = new();
+
+    /// <summary>
+    /// Fetches the actor's document (via the <see cref="UiContext"/>'s per-circuit cache) so the row
+    /// can render the avatar + display name. Runs after the <c>Item</c> parameter is set.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        if (Item is not Activity { Actor: { } actors } activity)
+        {
+            return;
+        }
+
+        var actorIri = actors.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            return;
+        }
+
+        var doc = await Ui.GetActorAsync(iri);
+        _actorDocs[iri.Value] = doc;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// The actor document's first <c>icon</c> as a same-origin IRI (an <see cref="IObject"/> icon by
+    /// its <c>id</c>, an <see cref="ILink"/> icon by its <c>href</c>), or null when the actor has no
+    /// icon. Mirrors <c>Profile.razor</c>'s <c>GetIconIri</c>.
+    /// </summary>
+    private static string? ActorIconIri(IObject? actorDoc)
+    {
+        if (actorDoc is not { Icon: { } icons })
+        {
+            return null;
+        }
+
+        foreach (var icon in icons)
+        {
+            var iri = icon is IObject { Id: { Length: > 0 } id } ? id
+                : icon is ILink { Href: { } href } ? href.ToString()
+                : null;
+            if (iri is { Length: > 0 })
+            {
+                return iri;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Rewrites a media IRI to a same-origin path (so the browser's cookie auth applies), mirroring
+    /// <c>ObjectView.RewriteMediaToSameOrigin</c>. Returns the IRI unchanged when it is not an
+    /// absolute https URL.
+    /// </summary>
+    private static string RewriteMediaToSameOrigin(string mediaIri)
+    {
+        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri) || uri.Scheme != "https")
+        {
+            return mediaIri;
+        }
+
+        return uri.AbsolutePath + uri.Query;
+    }
+
+    /// <summary>
+    /// A short display initial for the avatar fallback: the first character of the display name or
+    /// handle, uppercased. Mirrors <c>ObjectView.AvatarInitial</c>.
+    /// </summary>
+    private static string AvatarInitial(Iri? actorIri, string? displayName)
+    {
+        var source = !string.IsNullOrWhiteSpace(displayName) ? displayName
+            : actorIri is { } a ? HandleOf(a)
+            : "?";
+        var first = source.Trim().FirstOrDefault(c => char.IsLetterOrDigit(c));
+        return first != default ? char.ToUpperInvariant(first).ToString() : "?";
+    }
 
     /// <summary>
     /// The human-readable verb for the activity type: a follow request, an accepted follow, a like, a

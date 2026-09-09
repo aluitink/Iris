@@ -1199,6 +1199,54 @@ ul.object-list li {
     text-decoration: underline;
 }
 
+.notification-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+}
+
+.notification-avatar {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.notification-avatar img {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.notification-avatar-fallback {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.notification-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-name {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.notification-name:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
 /* Directory: actor rows with a follow button on the right. */
 .directory-list {
     display: flex;
