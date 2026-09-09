@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
 using Microsoft.Extensions.Logging;
@@ -44,6 +45,7 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
     private readonly IDeletePropagationService _propagation;
+    private readonly LocalActorDocumentCache? _actorDocumentCache;
 
     /// <summary>
     /// Initializes a new <see cref="UpdateActivityHandler"/>.
@@ -52,12 +54,17 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     /// <param name="localActors">Resolves whether the updating actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Update"/> to the
     /// author's remote followers, the federated half of F-02).</param>
+    /// <param name="actorDocumentCache">The local actor document cache, invalidated after the stored
+    /// actor (or community) is refreshed so the public <c>GET /ap/v1/u/{handle}</c> serves the updated
+    /// document (not a stale cached copy). May be null in unit-test seams that do not exercise the
+    /// document-serving path (the invalidation is then skipped).</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
-    /// <exception cref="ArgumentNullException">When any argument is null.</exception>
+    /// <exception cref="ArgumentNullException">When a required argument is null.</exception>
     public UpdateActivityHandler(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         IDeletePropagationService propagation,
+        LocalActorDocumentCache? actorDocumentCache = null,
         ILogger<UpdateActivityHandler>? logger = null)
         : base(logger)
     {
@@ -67,6 +74,7 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         _persistence = persistence;
         _localActors = localActors;
         _propagation = propagation;
+        _actorDocumentCache = actorDocumentCache;
     }
 
     /// <inheritdoc/>
@@ -174,9 +182,11 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
                 community.Summary = summary;
             }
 
-            if (updatedGroup.Icon is { } icon && icon.Any())
+            // Same icon-merge semantics as <see cref="MergeActorFields"/>: non-empty sets, empty clears,
+            // missing leaves unchanged.
+            if (updatedGroup.Icon is { } icon)
             {
-                community.Icon = icon;
+                community.Icon = icon.Any() ? icon : null;
             }
 
             if (updatedGroup.Endpoints is not null)
@@ -199,6 +209,12 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         {
             return;
         }
+
+        // Invalidate the local actor document cache so the public GET /ap/v1/u/{handle} serves the
+        // updated document (name, summary, icon, …) rather than a stale cached copy. Without this, a
+        // profile edit (e.g. setting the actor's icon) persists to the store but the served document
+        // keeps showing the pre-edit value until the cache entry expires (60s fresh / 300s stale).
+        _actorDocumentCache?.Invalidate(actorIri);
 
         var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri, ct).ConfigureAwait(false);
         if (actorIsLocal)
@@ -225,9 +241,13 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             stored.Summary = summary;
         }
 
-        if (updated.Icon is { } icon && icon.Any())
+        // Icon merge semantics: a non-empty icon array sets the icon; an **empty** icon array clears it
+        // (an explicit "remove avatar"); a missing icon field (null) leaves the stored icon unchanged
+        // (a partial update that does not touch the icon). This lets the edit-profile form both set and
+        // clear the avatar via the same Update path.
+        if (updated.Icon is { } icon)
         {
-            stored.Icon = icon;
+            stored.Icon = icon.Any() ? icon : null;
         }
 
         if (updated.Endpoints is not null)

@@ -23,11 +23,13 @@ else
         @if (_editing)
         {
             <EditProfileForm
+                InitialIconIri="@(GetIconIri())"
                 InitialName="@(ActorObj?.Name?.FirstOrDefault() ?? string.Empty)"
                 InitialSummary="@(ActorObj?.Summary?.FirstOrDefault() ?? string.Empty)"
                 InitialApproveFollowers="@(ActorObj?.GetManuallyApprovesFollowers() ?? false)"
                 Saving="_saving"
                 SaveError="@(SaveError)"
+                OnIconUpload="UploadIconAsync"
                 OnSubmit="SubmitEditAsync"
                 OnCancel="() => CancelEdit()" />
         }
@@ -140,6 +142,33 @@ else
     private Actor? ActorObj => ActorDoc as Actor;
 
     private bool ApprovesFollowers => ActorObj?.GetManuallyApprovesFollowers() == true;
+
+    /// <summary>
+    /// The actor's current avatar IRI (the first <c>icon</c>'s resolved IRI), or null when the actor has
+    /// no icon. Mirrors <see cref="ActorProfile"/>'s icon resolution (an <see cref="IObject"/> icon by its
+    /// <c>id</c>, an <see cref="ILink"/> icon by its <c>href</c>).
+    /// </summary>
+    private string? GetIconIri()
+    {
+        var actor = ActorObj;
+        if (actor?.Icon is not { } icons)
+        {
+            return null;
+        }
+
+        foreach (var icon in icons)
+        {
+            var iri = icon is IObject { Id: { Length: > 0 } id } ? id
+                : icon is ILink { Href: { } href } ? href.ToString()
+                : null;
+            if (iri is not null)
+            {
+                return iri;
+            }
+        }
+
+        return null;
+    }
 
     private IActivityPubClient? OutboxClient => Session.Client;
     private IActivityPubClient? InboxClient => Session.Client;
@@ -309,7 +338,7 @@ else
         SaveError = null;
     }
 
-    private async Task SubmitEditAsync(string name, string summary, bool approveFollowers)
+    private async Task SubmitEditAsync(string name, string summary, bool approveFollowers, string? iconIri)
     {
         if (Session.ActorId is not { } actorId || Session.Client is not { } client)
         {
@@ -330,6 +359,14 @@ else
                 Name = string.IsNullOrWhiteSpace(name) ? null : [name],
                 Summary = string.IsNullOrWhiteSpace(summary) ? null : [summary],
             };
+
+            // Set (or clear) the actor's icon (avatar). A non-null iconIri sets it; a null iconIri means
+            // the user removed the avatar, so we send an **empty** icon array — the server's merge
+            // interprets an empty array as "clear" (a missing field would leave the stored icon unchanged,
+            // which is the safe behavior for a partial update that does not touch the icon).
+            updated.Icon = string.IsNullOrWhiteSpace(iconIri)
+                ? []
+                : [new Link { Href = new Uri(iconIri) }];
 
             var result = await client.UpdateActorAsync(actorId, updated);
             if (!result.IsSuccess)
@@ -360,6 +397,47 @@ else
             _saving = false;
             StateHasChanged();
         }
+    }
+
+    /// <summary>
+    /// Uploads the chosen avatar file (via the session's cookie-auth media upload) and returns the upload
+    /// result (the same-origin media IRI to set as the actor's <c>icon</c>). Returns null on failure (the
+    /// form shows an error). The uploaded IRI is same-origin (served by this instance's media handler), so
+    /// the avatar loads in the browser without a cross-origin fetch.
+    /// </summary>
+    private async Task<MediaUploadResult?> UploadIconAsync(IBrowserFile file)
+    {
+        if (Session.ActorId is not { } actorId)
+        {
+            return null;
+        }
+
+        try
+        {
+            var bytes = await ReadAvatarBytesAsync(file);
+            return await Session.UploadMediaAsync(
+                actorId,
+                bytes,
+                file.ContentType ?? "application/octet-stream",
+                file.Name,
+                CancellationToken.None);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a browser file's bytes (capped at 10 MiB — matches the server's upload cap).
+    /// </summary>
+    private static async Task<byte[]> ReadAvatarBytesAsync(IBrowserFile file)
+    {
+        const long maxAvatarBytes = 10 * 1024 * 1024;
+        await using var stream = file.OpenReadStream(maxAvatarBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
     }
 
     private async Task LoadActorFreshAsync(Iri actorId)
