@@ -10,6 +10,7 @@ using Iris.Server.Identity;
 using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
@@ -1773,6 +1774,42 @@ public static class ActivityPubServerExtensions
     private static readonly TimeSpan MediaFetchTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Resolves the acting actor from an inbound inbox POST's <c>Authorization: Bearer</c> header (the
+    /// OAuth2 bearer path, F-20). A real client that obtained a token at <c>POST /ap/v1/oauth2/token</c>
+    /// presents it here; the token is resolved to its actor IRI via the <see cref="IOAuthTokenStore"/>.
+    /// Returns null when there is no Bearer header, no token store is configured, or the token is
+    /// unknown/revoked — in which case the caller rejects the request (401).
+    /// </summary>
+    /// <param name="context">The HTTP context (the <c>Authorization</c> header is read from it).</param>
+    /// <param name="tokenStore">The token store, or null when the host did not register one.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The actor IRI the Bearer token was issued for, or null when the request is not Bearer-authorized.</returns>
+    private static async Task<Iri?> TryResolveBearerActorAsync(
+        HttpContext context,
+        IOAuthTokenStore? tokenStore,
+        CancellationToken ct)
+    {
+        if (tokenStore is null)
+        {
+            return null;
+        }
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        if (!authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var token = authorization["Bearer ".Length..].Trim();
+        if (token.Length == 0)
+        {
+            return null;
+        }
+
+        return await tokenStore.ResolveTokenAsync(token, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
     /// existence check, inbound rate-limit check (Phase 17.4), body read + deserialize + cast, and
     /// inbox-processor dispatch.
@@ -1783,7 +1820,8 @@ public static class ActivityPubServerExtensions
         bool exists,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
-        CancellationToken ct)
+        IOAuthTokenStore? tokenStore = null,
+        CancellationToken ct = default)
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger("Iris.Server.Inbox");
@@ -1791,11 +1829,28 @@ public static class ActivityPubServerExtensions
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
-            var keyIdStr = outcome.KeyId.Uri is null ? "(none)" : outcome.KeyId.Value;
-            logger.LogInformation(
-                "Inbox rejected: invalid signature. Recipient: {Recipient}, KeyId: {KeyId}",
-                recipientIri, keyIdStr);
-            return Results.Unauthorized();
+            // F-20: a request that carries no valid HTTP signature may still be authorized by a Bearer
+            // token (the OAuth2 flow: a real client obtains a token at /ap/v1/oauth2/token and presents
+            // it as Authorization: Bearer). When the token resolves to an actor IRI, the request is
+            // treated as authenticated and the Bearer actor IRI stands in for the signature's keyId
+            // (used for the per-peer rate-limit key + logging). A missing/unknown token is rejected
+            // with 401 (the same outcome as an invalid signature).
+            var bearerActorIri = await TryResolveBearerActorAsync(context, tokenStore, ct).ConfigureAwait(false);
+            if (bearerActorIri is { } bearer)
+            {
+                outcome = new SignatureValidationResult(IsValid: true, KeyId: bearer, ActorIri: bearer);
+                logger.LogInformation(
+                    "Inbox authorized: Bearer token. Recipient: {Recipient}, Actor: {Actor}",
+                    recipientIri, bearer);
+            }
+            else
+            {
+                var keyIdStr = outcome.KeyId.Uri is null ? "(none)" : outcome.KeyId.Value;
+                logger.LogInformation(
+                    "Inbox rejected: invalid signature. Recipient: {Recipient}, KeyId: {KeyId}",
+                    recipientIri, keyIdStr);
+                return Results.Unauthorized();
+            }
         }
 
         if (!exists)
@@ -1835,9 +1890,12 @@ public static class ActivityPubServerExtensions
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
-        context.Request.Body.Position = 0;
-        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        // The signed path has already buffered the body (HttpSignatureValidator → EnableBuffering);
+        // the Bearer path (F-20) has not (no Signature header, so the middleware skipped buffering).
+        // EnableBuffering is idempotent on an already-buffered stream, so call it unconditionally and
+        // read through the safe buffered-string helper (handles both seekable and non-seekable cases).
+        context.Request.EnableBuffering();
+        var json = await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
             logger.LogWarning(
@@ -2008,6 +2066,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
+        IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -2017,7 +2076,7 @@ public static class ActivityPubServerExtensions
         var actorIri = BuildActorIri(baseUrl, handle);
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -4078,6 +4137,24 @@ public static class ActivityPubServerExtensions
             if (doc.Endpoints is Endpoints typedEndpoints)
             {
                 typedEndpoints.SharedInbox ??= sharedInbox.Uri;
+            }
+        }
+
+        // Advertise the OAuth2 endpoints (F-20): the authorization endpoint (the browser-redirect half of
+        // the authorization-code flow) and the token endpoint (the code→Bearer exchange). Both are served
+        // under the instance's /ap/v1 route prefix. A real client (Mastodon, Pleroma, a third-party app)
+        // discovers them from the actor document's `endpoints` object and walks the OAuth2 flow to obtain
+        // a Bearer token for authenticating as the actor, rather than using the Basic-auth privateKey.
+        {
+            var baseUri = options.BaseUri?.Value
+                ?? actorIri.Value[..actorIri.Value.LastIndexOf(ActivityPubServerConstants.RoutePrefix, StringComparison.Ordinal)];
+            var normalized = baseUri.TrimEnd('/');
+            doc.Endpoints ??= new Endpoints();
+            if (doc.Endpoints is Endpoints typedEndpoints)
+            {
+                var oauthPrefix = $"{normalized}{ActivityPubServerConstants.RoutePrefix}/oauth2";
+                typedEndpoints.OauthAuthorizationEndpoint ??= new Uri($"{oauthPrefix}/authorize");
+                typedEndpoints.OauthTokenEndpoint ??= new Uri($"{oauthPrefix}/token");
             }
         }
 
@@ -7050,6 +7127,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
+        IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
@@ -7059,7 +7137,7 @@ public static class ActivityPubServerExtensions
         var communityIri = BuildCommunityIri(baseUrl, name);
 
         var exists = await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
     }
 
     /// <summary>
