@@ -1278,4 +1278,163 @@ public class IriExtensionsTests
         Assert.Equal(3, poll.Options[0].Votes);
         Assert.Equal(10, poll.TotalVotes);
     }
+
+    [Fact]
+    public void GetRichAttachments_FromImage_ReturnsImageType()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Image { Id = "https://cdn.example.com/media/1.jpg", Name = ["photo.jpg"] }],
+        };
+
+        var attachments = note.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Image", attachments[0].Type);
+        Assert.Equal("photo.jpg", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/media/1.jpg"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromDocument_ReturnsDocumentType()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Document",
+                    "name": "report.pdf",
+                    "url": "https://cdn.example.com/files/report.pdf"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Document", attachments[0].Type);
+        Assert.Equal("report.pdf", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/files/report.pdf"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromAudioWithPreview_ReturnsPreview()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Audio",
+                    "name": "podcast.mp3",
+                    "url": "https://cdn.example.com/audio/podcast.mp3",
+                    "preview": {
+                        "type": "Image",
+                        "url": "https://cdn.example.com/preview/podcast.jpg"
+                    }
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Audio", attachments[0].Type);
+        Assert.Equal("podcast.mp3", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/audio/podcast.mp3"), attachments[0].Url);
+        Assert.NotNull(attachments[0].Preview);
+        Assert.Equal(new Iri("https://cdn.example.com/preview/podcast.jpg"), attachments[0].Preview!);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromVideo_ReturnsVideoType()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Video",
+                    "name": "clip.mp4",
+                    "url": "https://cdn.example.com/video/clip.mp4",
+                    "preview": "https://cdn.example.com/preview/clip.jpg"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Video", attachments[0].Type);
+        Assert.Equal("clip.mp4", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/video/clip.mp4"), attachments[0].Url);
+        Assert.NotNull(attachments[0].Preview);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromLink_ReturnsNullType()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Link { Href = new Uri("https://example.com/page") }],
+        };
+
+        var attachments = note.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Null(attachments[0].Type);
+        Assert.Equal(new Iri("https://example.com/page"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_MultipleMixedTypes_ReturnsAll()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                { "type": "Image", "id": "https://cdn.example.com/1.jpg", "name": ["a.jpg"] },
+                { "type": "Document", "name": "doc.pdf", "url": "https://cdn.example.com/doc.pdf" },
+                { "type": "Audio", "name": "song.mp3", "url": "https://cdn.example.com/song.mp3" }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Equal(3, attachments.Count);
+        Assert.Equal("Image", attachments[0].Type);
+        Assert.Equal("Document", attachments[1].Type);
+        Assert.Equal("Audio", attachments[2].Type);
+    }
+
+    [Fact]
+    public void GetRichAttachments_NoAttachments_ReturnsEmpty()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+        Assert.Empty(note.GetRichAttachments());
+    }
+
+    [Fact]
+    public void GetRichAttachments_Null_ReturnsEmpty()
+    {
+        IObject? none = null;
+        Assert.Empty(none.GetRichAttachments());
+    }
 }

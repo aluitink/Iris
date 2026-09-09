@@ -1,5 +1,6 @@
 using System.Text.Json;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Identity;
 
@@ -667,6 +668,110 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reads the rich attachments of an object (F-11): all <c>attachment</c> entries with their
+    /// type, name, URL, and optional preview URL.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetMediaAttachments"/> (which returns only <see cref="Image"/> attachments),
+    /// this returns every attachment entry — <c>Document</c>, <c>Audio</c>, <c>Video</c>, <c>Image</c>,
+    /// and plain <c>Link</c> — so a renderer can show type-appropriate icons and previews. The type is
+    /// the AS2.0 <c>type</c> of the attachment (e.g. <c>"Document"</c>, <c>"Audio"</c>, <c>"Video"</c>,
+    /// <c>"Image"</c>); a plain <c>Link</c> has type <c>null</c>. The preview URL is the attachment's
+    /// <c>preview</c> property (a <c>Link</c> or <c>Image</c> with an <c>href</c>), when present.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>attachment</c> is read. May be null.</param>
+    /// <returns>The rich attachments (type, name, URL, preview URL, in <c>attachment</c> order); possibly empty.</returns>
+    public static IReadOnlyList<RichAttachment> GetRichAttachments(this IObject? obj)
+    {
+        var attachments = obj?.Attachment;
+        if (attachments is null)
+        {
+            return [];
+        }
+
+        var list = new List<RichAttachment>();
+        foreach (var attachment in attachments)
+        {
+            // Resolve the media URL: prefer `id` (for embedded objects), then `url` (for
+            // Document/Audio/Video/Image), then `href` (for plain Link).
+            Iri? iri = attachment.ResolveObjectIri();
+            if (iri is null && attachment is IObject { } aoForUrl)
+            {
+                iri = ResolveAttachmentUrlIri(aoForUrl);
+            }
+
+            if (iri is not { } resolvedIri)
+            {
+                continue;
+            }
+
+            string? type = null;
+            string? name = null;
+            Iri? preview = null;
+
+            if (attachment is IObject { } ao)
+            {
+                var typeNames = ao.Type?.ToList();
+                if (typeNames is { Count: > 0 })
+                {
+                    type = typeNames[^1];
+                    if (string.Equals(type, "Object", StringComparison.OrdinalIgnoreCase))
+                    {
+                        type = typeNames.Count > 1 ? typeNames[^2] : null;
+                    }
+                }
+
+                if (ao is { Name: { } names } && names.Any())
+                {
+                    name = names.First();
+                }
+
+                // Preview: a `preview` property (Link or Image with href/id).
+                if (ao is ActivityObject actObj && actObj.Preview is { } previews)
+                {
+                    var firstPreview = previews.FirstOrDefault();
+                    preview = firstPreview?.ResolveObjectIri()
+                        ?? (firstPreview is IObject prevObj ? ResolveAttachmentUrlIri(prevObj) : null);
+                }
+                else if (ao.ExtensionData is { } ext && ext.TryGetValue("preview", out var prevEl))
+                {
+                    preview = ResolvePreviewIri(prevEl);
+                }
+            }
+
+            list.Add(new RichAttachment(type, name, resolvedIri, preview));
+        }
+
+        return list;
+    }
+
+    private static Iri? ResolvePreviewIri(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String
+            && element.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+        {
+            return iri;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String
+                && href.GetString() is { Length: > 0 } hrefStr && Iri.TryParse(hrefStr, out var h))
+            {
+                return h;
+            }
+
+            if (element.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String
+                && url.GetString() is { Length: > 0 } urlStr && Iri.TryParse(urlStr, out var u))
+            {
+                return u;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Resolves the audience IRIs of an object: the union of its <c>to</c> and <c>cc</c> entries,
     /// de-duplicated, in first-seen order (19.8.2 rendered object view quality).
     /// </summary>
@@ -937,6 +1042,52 @@ public static class IriExtensions
         return null;
     }
 
+    /// <summary>
+    /// Resolves the <c>url</c> of a non-Image attachment (Document/Audio/Video) or a generic object
+    /// carrying a <c>url</c> property. Reads the first <c>url</c> entry's <c>href</c>, falling back to
+    /// a bare-string <c>url</c> in <see cref="IObject.ExtensionData"/>. Returns null when unavailable.
+    /// </summary>
+    private static Iri? ResolveAttachmentUrlIri(IObject obj)
+    {
+        if (obj is ActivityObject actObj && actObj.Url is { } urls)
+        {
+            var first = urls.FirstOrDefault();
+            if (first is ILink { Href: { } href })
+            {
+                return new Iri(href);
+            }
+        }
+
+        if (obj.ExtensionData is { } ext && ext.TryGetValue("url", out var urlEl))
+        {
+            if (urlEl.ValueKind == JsonValueKind.String
+                && urlEl.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+            {
+                return iri;
+            }
+
+            if (urlEl.ValueKind == JsonValueKind.Array)
+            {
+                var first = urlEl.EnumerateArray().FirstOrDefault();
+                if (first.ValueKind == JsonValueKind.String
+                    && first.GetString() is { Length: > 0 } arrStr && Iri.TryParse(arrStr, out var arrIri))
+                {
+                    return arrIri;
+                }
+
+                if (first.ValueKind == JsonValueKind.Object
+                    && first.TryGetProperty("href", out var hrefEl)
+                    && hrefEl.ValueKind == JsonValueKind.String
+                    && hrefEl.GetString() is { Length: > 0 } hrefStr && Iri.TryParse(hrefStr, out var h))
+                {
+                    return h;
+                }
+            }
+        }
+
+        return null;
+    }
+
     private static Iri AppendSegment(Iri iri, string segment)
     {
         if (!iri.IsAbsolute)
@@ -983,3 +1134,12 @@ public sealed record PollData(
     DateTime? EndsAt,
     bool Expired,
     bool Multiple);
+
+/// <summary>
+/// A rich attachment with its type, name, URL, and optional preview URL (F-11).
+/// </summary>
+/// <param name="Type">The AS2.0 type (e.g. <c>"Document"</c>, <c>"Audio"</c>, <c>"Video"</c>, <c>"Image"</c>), or <c>null</c> for a plain <c>Link</c>.</param>
+/// <param name="Name">The attachment's display name, when present.</param>
+/// <param name="Url">The attachment's media URL.</param>
+/// <param name="Preview">The attachment's preview image URL, when present (for Audio/Video).</param>
+public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview);

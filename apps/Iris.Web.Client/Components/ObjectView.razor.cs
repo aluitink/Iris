@@ -53,6 +53,8 @@ public partial class ObjectView
             .Select(m => RewriteMediaToSameOrigin(m.Iri.Value))
             .ToList();
 
+    private IReadOnlyList<RichAttachment> RichAttachments => Obj?.GetRichAttachments() ?? [];
+
     /// <summary>
     /// The media attachments of an activity's embedded object (the Note/Article a <c>Create</c> or
     /// <c>Announce</c> wraps), each rewritten same-origin. The home timeline and profile outbox render
@@ -64,6 +66,8 @@ public partial class ObjectView
         => (ActivityEmbeddedObject?.GetMediaAttachments() ?? [])
             .Select(m => RewriteMediaToSameOrigin(m.Iri.Value))
             .ToList();
+
+    private IReadOnlyList<RichAttachment> ActivityRichAttachments => ActivityEmbeddedObject?.GetRichAttachments() ?? [];
 
     /// <summary>
     /// Rewrites a media IRI (an absolute HTTPS URL) into a same-origin path
@@ -258,6 +262,35 @@ public partial class ObjectView
 
     private PollData? ResolvePoll()
         => (ActivityEmbeddedObject ?? Obj)?.GetPollData();
+
+    /// <summary>
+    /// Returns the same-origin-rewritten URL for a rich attachment.
+    /// </summary>
+    private string RichAttachmentUrl(RichAttachment att) => RewriteMediaToSameOrigin(att.Url.Value);
+
+    /// <summary>
+    /// Returns the same-origin-rewritten preview URL for a rich attachment, or null.
+    /// </summary>
+    private string? RichAttachmentPreviewUrl(RichAttachment att)
+        => att.Preview is { } p ? RewriteMediaToSameOrigin(p.Value) : null;
+
+    /// <summary>
+    /// Returns the display icon for a rich attachment based on its type.
+    /// </summary>
+    private static string RichAttachmentIcon(string? type) => type?.ToLowerInvariant() switch
+    {
+        "document" => "📄",
+        "audio" => "🎵",
+        "video" => "🎬",
+        _ => "📎",
+    };
+
+    /// <summary>
+    /// Returns true when the attachment should be rendered as a plain <c>&lt;img&gt;</c>
+    /// (an <c>Image</c> type, or a null-type attachment with no preview).
+    /// </summary>
+    private static bool IsPlainImage(RichAttachment att)
+        => att.Type is null or "Image" && att.Preview is null;
 
     private static string? JoinStrings(IEnumerable<string>? values)
         => values is null ? null : string.Join(" ", values);
