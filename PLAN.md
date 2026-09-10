@@ -105,7 +105,8 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 **Phase 60 - UI/UX Review (IN PROGRESS):**
 
 - 60.1: **UI/UX review pass — all views inspected, 2 defects fixed** (COMPLETE) — [changes/427](docs/changes/427-60.1-ui-ux-review.md)
-- 60.2: **Suppress 410 Gone console noise on Notifications** (LOW) — proxy avatar/icon fetches for known-gone remote actors emit ~28 console 410s. Cache 410 responses or skip fetches for tombstoned remote actors.
+- 60.2: **Suppress 410 Gone console noise on Notifications** (COMPLETE) — `ProxyGoneCache` (LRU, 1h TTL) caches 410 targets; proxy returns 204 for cached-gone targets. 28 410s → 0 after first load. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
+- 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (LOW) — the `RateLimitingProxyPolicy` (60 req/min) is hit by parallel avatar fetches on the Notifications page, producing ~20 console 429s. Raise the limit or batch the client's avatar fetches.
 
 **Phase 59 — Remaining spec gaps & final interop (COMPLETE):**
 
@@ -145,6 +146,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 60.2: **Suppress 410 Gone console noise on Notifications** (Phase 60) — `ProxyGoneCache` (bounded LRU, 1h TTL, capacity 4096) caches targets that returned 410 Gone; proxy handler checks cache before forwarding and returns 204 No Content for cached-gone targets (2xx = no browser console error). Verified live: 28 410s on first load (cold cache) → 0 errors on second load (warm cache). 1651 passed / 0 failed / 17 skipped. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
   - 60.1: **UI/UX review pass** (Phase 60) — Playwright inspection of all 12 views; found + fixed 2 defects: (1) search 500 — `EF.Functions.Like` on jsonb → `FromSqlRaw` with `Document::text ILIKE`; (2) negative OFFSET in `GlobalSearchService` pagination → `Math.Max(0, …)` + `remaining` accounting. Noted: 410 console noise on Notifications (→ 60.2). 1651 passed / 0 failed / 17 skipped. [changes/427](docs/changes/427-60.1-ui-ux-review.md)
   - 59.4: **`ld+json` production (F-31)** (Phase 59) — `NegotiateContentType(context)` helper checks the `Accept` header; 18 response sites now return `application/ld+json` when the client accepts it (default remains `application/activity+json`). 4 new integration tests. Server 970/0. [changes/426](docs/changes/426-59.4-ld-json-production.md)
   - 59.3: **`Article`-specific fields (F-11 remainder)** (Phase 59) — `GetPublishedTime` + `GetInLanguage` extension methods read from `ExtensionData`; `duration` read from typed `Object.Duration`; `ObjectView` renders all three as a metadata line on `Article` objects. 10 new unit tests. Core 344/0. [changes/425](docs/changes/425-59.3-article-specific-fields.md)

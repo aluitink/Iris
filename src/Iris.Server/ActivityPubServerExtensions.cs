@@ -7,6 +7,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Server.Identity;
+using Iris.Server.Http.Proxy;
 using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
@@ -564,11 +565,12 @@ public static class ActivityPubServerExtensions
         {
             var settings = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.ProxySettings;
             return new CompositeProxyTargetPolicy(
-                [
-                    new AllowlistProxyTargetPolicy(settings?.AllowedHosts),
-                    new RateLimitingProxyPolicy(settings?.MaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute),
-                ]);
+            [
+                new AllowlistProxyTargetPolicy(settings?.AllowedHosts),
+                new RateLimitingProxyPolicy(settings?.MaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute),
+            ]);
         });
+        services.TryAddSingleton<ProxyGoneCache>();
 
         // Outbound account resolution (Phase 4): resolves a remote account (e.g. @bob@b.test) to its
         // actor IRI via WebFinger, reading through the Phase 3 WebFingerCache. The WebFingerClient is
@@ -1214,6 +1216,7 @@ public static class ActivityPubServerExtensions
         IActivityPubClientFactory clientFactory,
         Func<HttpMessageHandler> transportFactory,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ProxyGoneCache goneCache,
         CancellationToken ct)
     {
         // Buffer the request body so it is re-readable for the relay below (the SignatureValidation
@@ -1304,6 +1307,16 @@ public static class ActivityPubServerExtensions
             return Results.Json(new { error = reason }, statusCode: (int)status);
         }
 
+        // 3b. Short-circuit known-gone targets: if the remote returned 410 Gone for this target
+        // recently, return 204 No Content without re-fetching. A 204 is a success status (no browser
+        // console error) and signals "no content" — the client's fallback avatar/icon logic handles
+        // it the same as a 404. This avoids ~28 console 4xx errors per page load for dead remote
+        // actors' avatars/icons.
+        if (goneCache.IsGone(target.Value))
+        {
+            return Results.NoContent();
+        }
+
         // 4. Build the forwarded request. The proxy transport is always a POST to
         // /ap/v1/proxy/{target} (the target IRI rides in the path), so the client signals the REAL
         // method of the request it wants made via the X-Iris-Proxy-Method header (defaulting to GET
@@ -1361,7 +1374,15 @@ public static class ActivityPubServerExtensions
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
         // Relay the remote response's status and body (content type defaults to ActivityPub JSON-LD).
+        // A 410 Gone from the remote is recorded in the ProxyGoneCache so subsequent requests for the
+        // same target short-circuit to a 404 without re-fetching (reduces console 410 noise for dead
+        // remote actors' avatars/icons on every page load).
         var statusCode = (int)response.StatusCode;
+        if (statusCode == (int)HttpStatusCode.Gone)
+        {
+            goneCache.RecordGone(target.Value);
+        }
+
         var mediaType = response.Content.Headers.ContentType?.MediaType ?? ActivityJson.ActivityJsonContentType;
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = mediaType;
