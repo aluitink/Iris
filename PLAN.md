@@ -71,26 +71,32 @@ Iris.slnx
 
 ## Now
 
-**Phase 61 — Post-1.0 stability & operational depth (COMPLETE).** All 4 slices done: 61.1 (WASM perf audit), 61.2 (search relevance + FTS), 61.3 (notification filtering + grouping), 61.4 (media gallery + lightbox + media players).
+- No active phase. Awaiting direction.
 
 ## Active Slice
 
-- None currently. The next work item starts here once a defect or improvement is triaged.
+- None currently.
 
 ### Loop protocol (WASM manual-test phase)
 
-1. Build the app and verify the current slice in the browser.
-2. Triage any defects and record the repro/impact in the relevant change note.
-3. Fix only the in-scope issue, then re-verify it live.
-4. Keep the backlog short and prioritize defects before polish.
+Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
+
+1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
+2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web` — **avoid `--no-cache`** (repeated no-cache fills the host disk; if the build fails with `No space left on device`, run `docker builder prune -af` first).
+3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** (inline screenshot no files) visited - use public fqdn address "https://iris.luit.ink".
+4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
+5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
+6. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
+7. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (defects first).
+
 
 ## Up Next
 
-- *(Phase 61 complete — awaiting next phase definition or user direction.)*
+- *(empty)*
 
 ## Inbox
 
-- Empty.
+- *(empty)*
 
 ## Paused Questions
 
@@ -98,10 +104,7 @@ Iris.slnx
 
 ## Recently Completed
 
-- 61.4: **Media gallery on object detail** — `MediaGallery` component: responsive multi-image grid (1/2/3/4) with lightbox, inline `<video>`/`<audio>` players, document fallback. 1651/0/17. [changes/433](docs/changes/433-61.4-media-gallery-object-detail.md)
-- 61.3: **Notification filtering + grouping** — server-side `?type=` filter + prefs; WASM filter tabs + load more. 1651/0/17. [changes/432](docs/changes/432-61.3-notification-filtering-grouping.md)
-- 61.2: **Search relevance + FTS** — `tsvector` + GIN index, `ts_rank` ranked results. 1651/0/17. [changes/431](docs/changes/431-61.2-search-relevance-full-text-indexing.md)
-- 61.1: **WASM performance audit** — trimmed + invariant globalization; 29.92→13.13 MB total, 38.6→5.0 MB gzipped. 1651/0/17. [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
+- *(empty)*
 
 ## Keeping the docs lean
 
