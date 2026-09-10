@@ -310,9 +310,26 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <summary>
-    /// De-duplicates the merged items by IRI (keep the first occurrence) and truncates to
-    /// <see cref="FeedOptions.MaxItems"/>. Items without an IRI are kept (they cannot be de-duplicated).
+    /// De-duplicates the merged items and truncates to <see cref="FeedOptions.MaxItems"/>.
     /// </summary>
+    /// <remarks>
+    /// Two de-dup passes, applied in order, then the cap:
+    /// <list type="number">
+    /// <item><term>By item IRI</term> — keep the first occurrence of each activity IRI (a cross-post
+    /// scenario where the same activity IRI appears in two follows' outboxes).</item>
+    /// <item><term>By content object</term> — a single object can surface in the feed under more than one
+    /// activity type: an actor's own <c>Create</c> of a note, and a follower's <c>Announce</c> (boost) of
+    /// the same note, are two distinct activities with two distinct IRIs but one piece of content. Left
+    /// un-coalesced the home timeline renders the note twice (once as the author's post, once as the
+    /// boost). Items are grouped by the IRI of the object a <c>Create</c>/<c>Announce</c> references; per
+    /// group a single <em>representative</em> is kept — an item carrying the object <em>embedded</em>
+    /// (rich, renderable without an extra fetch) is preferred over a <em>link-only</em> reference, so the
+    /// author's content-bearing <c>Create</c> wins over a booster's bare <c>Announce</c>. Non-content
+    /// items (plain objects, and social activities such as <c>Like</c>/<c>Follow</c>) are never coalesced.</item>
+    /// </list>
+    /// The cap (<see cref="FeedOptions.MaxItems"/>) is applied last, so a duplicate consuming a slot does
+    /// not displace a legitimate item. Items without an IRI are kept (they cannot be de-duplicated).
+    /// </remarks>
     private IReadOnlyList<IObjectOrLink> TruncateDedup(IReadOnlyList<IObjectOrLink> items)
     {
         if (items.Count == 0)
@@ -320,26 +337,115 @@ public sealed class FeedService : IFollowFeedService
             return [];
         }
 
-        var seen = new HashSet<Iri>();
-        var result = new List<IObjectOrLink>(Math.Min(items.Count, _options.MaxItems));
+        // Pass 1: de-duplicate by item IRI (keep the first occurrence).
+        var seenIri = new HashSet<Iri>();
+        var iriDeduped = new List<IObjectOrLink>(items.Count);
         foreach (var item in items)
+        {
+            if (item is IObject { Id: { Length: > 0 } id })
+            {
+                if (!seenIri.Add(new Iri(id)))
+                {
+                    continue;
+                }
+            }
+
+            iriDeduped.Add(item);
+        }
+
+        // Pass 2: coalesce content items that reference the same object (a note surfaced as both a
+        // Create and an Announce renders once). The representative per object IRI is chosen below.
+        // repIndex[objIri] -> the index in `iriDeduped` of the item kept as the representative;
+        // repEmbedded[objIri] -> whether that representative carries the object embedded (a richer
+        // embedded item replaces an earlier link-only one, preserving the representative's position).
+        var repIndex = new Dictionary<Iri, int>();
+        var repEmbedded = new Dictionary<Iri, bool>();
+        var drop = new bool[iriDeduped.Count];
+        for (var i = 0; i < iriDeduped.Count; i++)
+        {
+            var (objIriOrNull, embedded) = ContentObjectIri(iriDeduped[i]);
+            if (objIriOrNull is not { } objIri)
+            {
+                continue; // not a content item referencing an object; never coalesced
+            }
+
+            // `objIri` is narrowed to a non-null Iri by the pattern above (the per-object key).
+
+            if (!repIndex.TryGetValue(objIri, out var existingIndex))
+            {
+                // First occurrence of this object: it is the representative.
+                repIndex[objIri] = i;
+                repEmbedded[objIri] = embedded;
+                continue;
+            }
+
+            // A later item references the same object. Keep the richer one as the representative.
+            if (embedded && !repEmbedded[objIri])
+            {
+                // The new item embeds the object and the current representative is link-only: promote the
+                // new item to the representative, but keep the representative's original position (the
+                // earlier slot) so the feed ordering is stable.
+                drop[existingIndex] = true;
+                repIndex[objIri] = i;
+                repEmbedded[objIri] = true;
+            }
+            else
+            {
+                // The new item is not strictly better (link-only, or the representative already embeds):
+                // it is a duplicate and is dropped.
+                drop[i] = true;
+            }
+        }
+
+        // Pass 3: emit the survivors (in order) capped to MaxItems.
+        var result = new List<IObjectOrLink>(Math.Min(iriDeduped.Count, _options.MaxItems));
+        for (var i = 0; i < iriDeduped.Count; i++)
         {
             if (result.Count >= _options.MaxItems)
             {
                 break;
             }
 
-            if (item is IObject { Id: { Length: > 0 } id })
+            if (drop[i])
             {
-                if (!seen.Add(new Iri(id)))
-                {
-                    continue;
-                }
+                continue;
             }
 
-            result.Add(item);
+            result.Add(iriDeduped[i]);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Resolves the content object a <c>Create</c>/<c>Announce</c> references, for the by-object
+    /// coalescing pass. Returns the referenced object's IRI and whether it is <em>embedded</em> (the
+    /// activity carries the full object, renderable without an extra fetch) rather than a link-only
+    /// reference. Non-content activities and activities with no resolvable object IRI return
+    /// <c>(null, false)</c> — they are never coalesced by object.
+    /// </summary>
+    private static (Iri? ObjectIri, bool Embedded) ContentObjectIri(IObjectOrLink item)
+    {
+        if (item is not Activity activity)
+        {
+            return (null, false);
+        }
+
+        var type = activity.Type?.FirstOrDefault();
+        if (type is not ("Create" or "Announce"))
+        {
+            return (null, false);
+        }
+
+        var first = activity.Object?.FirstOrDefault();
+        var objIri = first?.ResolveObjectIri();
+        if (objIri is null)
+        {
+            return (null, false);
+        }
+
+        // Embedded when the activity carries the object as a full object (not a bare link) — that item
+        // is the one that renders the content (and the server-rendered engagement counters) in place.
+        return (objIri, first is IObject);
     }
 }

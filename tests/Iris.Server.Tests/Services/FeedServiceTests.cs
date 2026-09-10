@@ -542,6 +542,168 @@ public sealed class FeedServiceTests
         Assert.Equal(1, feed.Count(i => IdOf(i) == "https://a.test/notes/shared"));
     }
 
+    // --- Content-object coalescing (a note surfaced as both a Create and an Announce) ----
+    //
+    // The same object can appear in the feed under two activity types: the author's own Create of a
+    // note, and a follower's Announce (boost) of the same note. They are two distinct activities with
+    // two distinct IRIs, so the by-IRI de-dup does not remove them — left un-coalesced the home
+    // timeline renders the note twice. The by-content-object pass keeps a single representative per
+    // object, preferring the item that carries the object EMBEDDED (the author's Create, which renders
+    // the content + the server-rendered engagement counters in place) over a link-only reference
+    // (a booster's bare Announce).
+
+    [Fact]
+    public async Task Feed_CreateAndAnnounceOfSameObject_AppearsOnce_PrefersEmbeddedCreate()
+    {
+        // alice follows a remote bob. bob's outbox (walked over the wire) carries the Create of a note
+        // (the note EMBEDDED). alice's OWN outbox carries an Announce (boost) of that same note (a
+        // bare LINK). The note must render once — as the embedded Create, not the link-only Announce.
+        var remoteNote = "https://b.test/notes/r-1";
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                var bob = Actor(RemoteHost, "bob");
+                persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+                // alice's own outbox: a boost (Announce) of the remote note (link-only object).
+                AddAnnounce(persistence, alice, "https://a.test/announces/a-1", remoteNote, embedded: false);
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages(
+                // bob's outbox carries the Create of the SAME note, with the note embedded.
+                Page($"{Actor(RemoteHost, "bob").Value}/outbox",
+                    [CreateItem(remoteNote, embedded: true)], next: null))));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The note appears exactly once.
+        Assert.Single(feed);
+        // It is the embedded Create (bob's), not the link-only Announce (alice's boost).
+        var survivor = feed[0];
+        Assert.IsType<Create>(survivor);
+        // The survivor carries the embedded note (rich, renderable in place).
+        Assert.IsType<Note>(((Create)survivor).Object!.First());
+    }
+
+    [Fact]
+    public async Task Feed_TwoAnnounceOfSameObject_AppearsOnce_FirstWins()
+    {
+        // Two follows each boost the same remote note (two Announce, both link-only). The note renders
+        // once (the first occurrence wins; neither embeds the object).
+        var remoteNote = "https://b.test/notes/r-1";
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var dave = Actor(LocalHost, "dave");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, dave, "Dave");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            persistence.Follows.RecordFollowAsync(alice, dave).GetAwaiter().GetResult();
+            // Both bob and dave boost the same remote note (link-only Announce in each outbox).
+            AddAnnounce(persistence, bob, "https://a.test/announces/b-1", remoteNote, embedded: false);
+            AddAnnounce(persistence, dave, "https://a.test/announces/d-1", remoteNote, embedded: false);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        Assert.Single(feed);
+        Assert.IsType<Announce>(feed[0]);
+    }
+
+    [Fact]
+    public async Task Feed_LinkOnlyAnnounceThenEmbeddedCreate_EmbeddedWins_RegardlessOfOrder()
+    {
+        // Even when the link-only Announce is merged before the embedded Create (own outbox first, the
+        // author's Create from a follow's outbox second), the embedded Create is promoted to the
+        // representative and the link-only Announce is dropped.
+        var remoteNote = "https://b.test/notes/r-1";
+        var (service, _) = Build(
+            persistence: SeedLocal(persistence =>
+            {
+                var alice = Actor(LocalHost, "alice");
+                var bob = Actor(RemoteHost, "bob");
+                persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+                // alice boosts the note first (own outbox, merged before the follow's outbox).
+                AddAnnounce(persistence, alice, "https://a.test/announces/a-1", remoteNote, embedded: false);
+            }),
+            actorDocs: new StubActorDocumentFetcher(remote =>
+            {
+                var actor = new Person { Id = remote.Value };
+                actor.Outbox = new Link { Href = new Uri($"{remote.Value}/outbox") };
+                return actor;
+            }),
+            client: new StubClient(Pages(
+                Page($"{Actor(RemoteHost, "bob").Value}/outbox",
+                    [CreateItem(remoteNote, embedded: true)], next: null))));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // One card, and it is the embedded Create.
+        Assert.Single(feed);
+        Assert.IsType<Create>(feed[0]);
+        Assert.IsType<Note>(((Create)feed[0]).Object!.First());
+    }
+
+    [Fact]
+    public async Task Feed_LikeAndCreateOfSameObject_BothKept()
+    {
+        // A Like of a note and the note's own Create are NOT coalesced: the Like is a social activity
+        // (not a Create/Announce), so the by-content-object pass leaves it alone. Both appear.
+        var noteIri = "https://a.test/notes/n-1";
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // bob posts the note and likes it (both in bob's outbox).
+            AddPost(persistence, bob, "n-1", "note 1");
+            AddLike(persistence, bob, "https://a.test/likes/l-1", noteIri);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Both the Create (note) and the Like survive — the Like is never coalesced by object.
+        Assert.Equal(2, feed.Count);
+        Assert.Contains(feed, i => i is Create);
+        Assert.Contains(feed, i => i is Like);
+    }
+
+    [Fact]
+    public async Task Feed_CreateOfTwoObjectsPlusAnnounceOfOne_NoOverDedup()
+    {
+        // bob posts two distinct notes; alice boosts one of them. The boosted note renders once (the
+        // embedded Create, not the link-only Announce) and the un-boosted note renders once — the
+        // coalescing must not drop the un-boosted note or over-coalesce across different objects.
+        var noteA = "https://a.test/notes/a-1";
+        var noteB = "https://a.test/notes/a-2";
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPostWithId(persistence, bob, noteA, "note A");
+            AddPostWithId(persistence, bob, noteB, "note B");
+            // alice boosts note A (link-only Announce in her own outbox).
+            AddAnnounce(persistence, alice, "https://a.test/announces/a-1", noteA, embedded: false);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Two notes total: note A once (coalesced with the boost), note B once.
+        Assert.Equal(2, feed.Count);
+        // note A survives as its embedded Create (the boost is dropped), note B survives as its Create.
+        Assert.Equal(0, feed.Count(i => i is Announce));
+        Assert.Equal(2, feed.Count(i => i is Create));
+    }
+
     [Fact]
     public async Task Feed_MaxItemsCapsTheFeed()
     {
@@ -606,6 +768,48 @@ public sealed class FeedServiceTests
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
             Object = [new Note { Id = $"{activityIri}#note", Content = [content] }],
         }).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Seeds an <c>Announce</c> (boost) of <paramref name="objectIri"/> into the actor's outbox. When
+    /// <paramref name="embedded"/> the object is carried as a full <see cref="Note"/>; otherwise it is a
+    /// bare <see cref="Link"/> (the common remote-boost shape, where the note is not re-embedded).
+    /// </summary>
+    private static void AddAnnounce(
+        InMemoryPersistenceProvider persistence, Iri actorIri, string activityIri, string objectIri, bool embedded)
+        => persistence.Activities.AddToOutboxAsync(actorIri, new Announce
+        {
+            Id = activityIri,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = embedded
+                ? [new Note { Id = objectIri, Content = ["boosted"] }]
+                : [new Link { Href = new Uri(objectIri) }],
+        }).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Seeds a <c>Like</c> of <paramref name="objectIri"/> into the actor's outbox (a social activity —
+    /// never coalesced by the by-content-object pass).
+    /// </summary>
+    private static void AddLike(InMemoryPersistenceProvider persistence, Iri actorIri, string activityIri, string objectIri)
+        => persistence.Activities.AddToOutboxAsync(actorIri, new Like
+        {
+            Id = activityIri,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [new Link { Href = new Uri(objectIri) }],
+        }).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Builds a <c>Create</c> of a note at <paramref name="noteIri"/> — used as a remote outbox page item
+    /// (the author's own post). When <paramref name="embedded"/> the note is a full <see cref="Note"/>
+    /// (rich, renderable in place); otherwise a bare <see cref="Link"/>.
+    /// </summary>
+    private static IObjectOrLink CreateItem(string noteIri, bool embedded) => new Create
+    {
+        Id = $"{noteIri}/activity",
+        Actor = [new Link { Href = new Uri($"https://{RemoteHost}/ap/v1/u/author") }],
+        Object = embedded
+            ? [new Note { Id = noteIri, Content = ["remote note"] }]
+            : [new Link { Href = new Uri(noteIri) }],
+    };
 
     private static string? IdOf(IObjectOrLink item) => item switch
     {
