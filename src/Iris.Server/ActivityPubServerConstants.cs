@@ -235,7 +235,7 @@ public static class ActivityPubServerConstants
     /// The default per-actor rate limit for the proxy endpoint (requests per minute) when
     /// <see cref="ActivityPubServerOptions.ProxySettings"/> does not override it.
     /// </summary>
-    public const int DefaultProxyMaxRequestsPerMinute = 60;
+    public const int DefaultProxyMaxRequestsPerMinute = 300;
 
     /// <summary>
     /// The route segment for the health-check endpoint (the <c>GET /ap/v1/health</c> observability

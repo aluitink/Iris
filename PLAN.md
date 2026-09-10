@@ -102,11 +102,17 @@ Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
 
 Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
 
-**Phase 60 - UI/UX Review (IN PROGRESS):**
+**Phase 61 — Post-1.0 stability & operational depth (IN PROGRESS):**
+
+- 61.1: **WASM performance audit** (MEDIUM) — measure + fix initial-load time, bundle size, and circuit reconnect latency. Profile the WASM build, identify top 3 bottlenecks, fix them. Verify via Playwright (Lighthouse or manual timing).
+- 61.2: **Search relevance + full-text indexing** (MEDIUM) — replace `ILIKE` with PostgreSQL `tsvector`/`tsquery` for ranked, faster search. Add a `tsvector` column + GIN index to the `Object` and `Actor` tables; migrate the search queries to use `to_tsquery` + `ts_rank`.
+- 61.3: **Notification filtering + grouping** (LOW) — filter by type (mentions/replies/likes/follows), group by actor, mark individual as read.
+
+**Phase 60 — UI/UX Review (COMPLETE):**
 
 - 60.1: **UI/UX review pass — all views inspected, 2 defects fixed** (COMPLETE) — [changes/427](docs/changes/427-60.1-ui-ux-review.md)
-- 60.2: **Suppress 410 Gone console noise on Notifications** (COMPLETE) — `ProxyGoneCache` (LRU, 1h TTL) caches 410 targets; proxy returns 204 for cached-gone targets. 28 410s → 0 after first load. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
-- 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (LOW) — the `RateLimitingProxyPolicy` (60 req/min) is hit by parallel avatar fetches on the Notifications page, producing ~20 console 429s. Raise the limit or batch the client's avatar fetches.
+- 60.2: **Suppress 410 Gone console noise on Notifications** (COMPLETE) — [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
+- 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (COMPLETE) — [changes/429](docs/changes/429-60.3-reduce-proxy-429-rate-limit-noise.md)
 
 **Phase 59 — Remaining spec gaps & final interop (COMPLETE):**
 
@@ -146,6 +152,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (Phase 60) — `DefaultProxyMaxRequestsPerMinute` raised 60→300; normal page loads no longer trigger 429s. Verified live: 0 errors on 2nd and 3rd loads (no 410s via 60.2's cache, no 429s via raised limit). 1651 passed / 0 failed / 17 skipped. [changes/429](docs/changes/429-60.3-reduce-proxy-429-rate-limit-noise.md)
   - 60.2: **Suppress 410 Gone console noise on Notifications** (Phase 60) — `ProxyGoneCache` (bounded LRU, 1h TTL, capacity 4096) caches targets that returned 410 Gone; proxy handler checks cache before forwarding and returns 204 No Content for cached-gone targets (2xx = no browser console error). Verified live: 28 410s on first load (cold cache) → 0 errors on second load (warm cache). 1651 passed / 0 failed / 17 skipped. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
   - 60.1: **UI/UX review pass** (Phase 60) — Playwright inspection of all 12 views; found + fixed 2 defects: (1) search 500 — `EF.Functions.Like` on jsonb → `FromSqlRaw` with `Document::text ILIKE`; (2) negative OFFSET in `GlobalSearchService` pagination → `Math.Max(0, …)` + `remaining` accounting. Noted: 410 console noise on Notifications (→ 60.2). 1651 passed / 0 failed / 17 skipped. [changes/427](docs/changes/427-60.1-ui-ux-review.md)
   - 59.4: **`ld+json` production (F-31)** (Phase 59) — `NegotiateContentType(context)` helper checks the `Accept` header; 18 response sites now return `application/ld+json` when the client accepts it (default remains `application/activity+json`). 4 new integration tests. Server 970/0. [changes/426](docs/changes/426-59.4-ld-json-production.md)
