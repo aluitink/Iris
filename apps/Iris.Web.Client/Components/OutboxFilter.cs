@@ -1,3 +1,4 @@
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Web.Client.Components;
@@ -39,5 +40,35 @@ internal static class OutboxFilter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether an outbox item is a content item (<see cref="IsContentItem"/>) **authored by a
+    /// specific actor**. Used by the signed-in user's "Your posts" tab: the server mirrors
+    /// followed (remote) content into the local actor's outbox as <c>Create</c> activities whose
+    /// <c>actor</c> is the **remote** author, not the local user. Without this filter those foreign
+    /// notes render in "Your posts" alongside the user's own (B-005). When <paramref name="authorIri"/>
+    /// is <c>null</c> the author check is skipped and the behavior matches <see cref="IsContentItem"/>.
+    /// </summary>
+    public static bool IsOwnContentItem(IObjectOrLink item, Iri? authorIri)
+    {
+        if (!IsContentItem(item))
+        {
+            return false;
+        }
+
+        if (authorIri is null)
+        {
+            return true;
+        }
+
+        if (item is not Activity activity)
+        {
+            return false;
+        }
+
+        var actorId = activity.Actor?.FirstOrDefault()?.Id;
+        var expected = authorIri.ToLibraryId();
+        return string.Equals(actorId, expected, StringComparison.Ordinal);
     }
 }

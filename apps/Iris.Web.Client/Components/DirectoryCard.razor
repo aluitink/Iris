@@ -5,7 +5,7 @@
 
 <div class="directory-card">
     <button type="button" class="directory-card-header" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") posts by @Actor.Name" @onclick="ToggleAsync">
-        <ActorCard Actor="Actor" ActorId="Actor.Id">
+        <ActorCard Actor="Actor" ActorId="@Actor.Id">
             <span class="directory-card-expand" aria-hidden="true">
                 @(IsExpanded ? "−" : "+")
             </span>

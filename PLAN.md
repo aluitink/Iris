@@ -80,7 +80,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **62.1 — Full-page deep-dive (documentation only) — ESSENTIALLY COMPLETE.** All 18 routes passed (authless gating + signed-in deep). Findings logged in the tracker (B-001…B-014). **Key methodology finding: MCP Playwright synthetic clicks/keystrokes do NOT drive the Blazor WASM app** — every "inert button/tab" finding from a plain MCP click is a false positive (B-002/B-004/B-006/B-007/B-008/B-009/B-012 closed `wontfix`); re-verified natively that the tabs/buttons work. **Valid findings carrying into 62.2/62.3: B-001 (S1, dead `Actor.Id` href in Directory), B-003 (S2, .NET type-name leak in card a11y), B-005 (S1, profile outbox shows foreign posts), B-010 (S3, Delete notif → actor IRI), B-011 (S3, raw numeric remote names), B-014 (S2, compose — inconclusive, re-verify in a real browser).** Phase 64 topics: rows 1–6 (N+1/dup request spam) + `/notifications` 410 console errors. **Remaining before 62.1 fully closes:** re-verify B-014 + the 4 admin routes' signed-in render in a real browser (MCP login is flaky). **Next active: 62.2 — fix the S1 blockers (B-001, B-005) + finish the admin/B-014 review.**
+- **62.3 — Fix the remaining bug-class findings (B-003, B-010, B-011; re-verify B-014).** 62.2 is done: the two S1 blockers are **fixed + live-verified** — **B-001** (Directory dead `Actor.Id` href; root cause `DirectoryCard.razor:8` `ActorId="Actor.Id"` was a Razor string literal → `@Actor.Id`) and **B-005** (profile "Your posts" showed 4 foreign RayvenMX posts; root cause `OutboxFilter.IsContentItem` didn't check author → added `IsOwnContentItem(item, authorIri)`, wired the Posts tab). Both verified on a clean rebuild (WASM `4tp13p70rg`); andrew's role confirmed `User` so the `/admin/*` routes are correctly role-gated (no longer "pending"). Build clean, full suite green. **62.3 work:** (1) **B-003** (S2) — `RangeSelectIterator` .NET type-name leaking into the Directory card's `aria-label`/accessible name (the card header binds a `ToString()` of a LINQ iterator instead of the actor's name). (2) **B-010** (S3) — Notifications Delete links point to the actor IRI, not the deleted object. (3) **B-011** (S3) — remote actors without a resolvable name show raw numeric IDs. (4) **B-014** (S2) — re-verify compose Post in a real browser (MCP input is flaky); promote to fixed or confirm. **Build gotcha to remember:** `apps/Iris.Web.Client/publish/` caches a stale WASM (the `BuildAndCopyClient` target skips re-publish if `blazor.webassembly.js` exists) — clear that dir before a Docker rebuild or you'll test an old client.
 
 ### Phase cadence (rolling 3-phase pattern)
 
@@ -132,8 +132,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 62.2 — fix S1 blockers (B-001 dead actor href, B-005 outbox foreign posts) + finish review (B-003, B-010, B-011, B-014 re-verify, admin signed-in render) ← active
-- 62.3 — fix remaining bug-class findings
+- 62.3 — fix remaining bug-class findings (B-003 a11y leak, B-010 Delete→actor IRI, B-011 raw numeric names) + re-verify B-014 (compose) in a real browser ← active
 - 62.4 — re-pass until clean; 62 closeout
 - 63 — UI/UX review (usability + presentation; detailed visual review)
 - 64 — request spam & network efficiency: cut duplicate/redundant calls on load (topics distilled from 62.1 network notes)
@@ -151,7 +150,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- *(empty)*
+- **62.2 — fixed the two S1 blockers, live-verified** ([tracker](docs/changes/620-bug-hunt-tracker.md)): **B-001** Directory actor links were the literal `Actor.Id` placeholder (`DirectoryCard.razor:8` `ActorId="Actor.Id"` — a Razor string literal, not a C# expression) → `@Actor.Id`; all 3 People cards now link to real IRIs. **B-005** profile "Your posts" showed 4 foreign RayvenMX posts (`OutboxFilter.IsContentItem` ignored author) → added `OutboxFilter.IsOwnContentItem(item, authorIri)`, Posts tab now filters to the signed-in user's own `Create`s (Replies/Likes/Requests unchanged). Also confirmed andrew's role is `User`, so the 4 `/admin/*` routes are correctly role-gated (closed the "admin render pending" question). Build clean + full suite green. **Build gotcha logged:** `apps/Iris.Web.Client/publish/` caches a stale WASM (the `BuildAndCopyClient` MSBuild target skips re-publish if `blazor.webassembly.js` exists) — clear that dir before a Docker rebuild or you test an old client.
 
 ## Keeping the docs lean
 

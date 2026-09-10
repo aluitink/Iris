@@ -69,7 +69,7 @@ else
             CollectionIri="@OutboxIri"
             PageSize="5"
             ShowRefreshButton="true"
-            ItemFilter="IsContentItem"
+            ItemFilter="IsOwnContentItem"
             ItemTemplate="@PostTemplate"
             EmptyMessage="You haven't posted anything yet. Compose a note to get started." />
         </div>
@@ -225,11 +225,13 @@ else
     }
 
     /// <summary>
-    /// Filters the outbox to content items only (Create of a Note/Article). Social activities
-    /// (Follow, Accept, Reject, Like, Announce, Undo, Delete) are excluded from the "Your posts"
-    /// tab — they belong in notifications.
+    /// Filters the outbox to the signed-in user's **own** content items: a <c>Create</c> of a
+    /// Note/Article whose <c>actor</c> is the signed-in user. The server mirrors followed (remote)
+    /// content into the local outbox as <c>Create</c> activities authored by the remote author, so a
+    /// plain content-item check would surface foreign notes in "Your posts" (B-005). Social
+    /// activities (Follow, Accept, Reject, Like, Announce, Undo, Delete) are also excluded.
     /// </summary>
-    private static bool IsContentItem(IObjectOrLink item) => OutboxFilter.IsContentItem(item);
+    private bool IsOwnContentItem(IObjectOrLink item) => OutboxFilter.IsOwnContentItem(item, Session.ActorId);
 
     private RenderFragment<IObjectOrLink> FollowRequestTemplate
         => item => builder =>
