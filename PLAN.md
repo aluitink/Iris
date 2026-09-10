@@ -80,7 +80,7 @@ Iris.slnx
 
 ## Active Slice
 
-- 62.1 — Full-page deep-dive (documentation only).
+- **62.1 — Full-page deep-dive (documentation only) — ESSENTIALLY COMPLETE.** All 18 routes passed (authless gating + signed-in deep). Findings logged in the tracker (B-001…B-014). **Key methodology finding: MCP Playwright synthetic clicks/keystrokes do NOT drive the Blazor WASM app** — every "inert button/tab" finding from a plain MCP click is a false positive (B-002/B-004/B-006/B-007/B-008/B-009/B-012 closed `wontfix`); re-verified natively that the tabs/buttons work. **Valid findings carrying into 62.2/62.3: B-001 (S1, dead `Actor.Id` href in Directory), B-003 (S2, .NET type-name leak in card a11y), B-005 (S1, profile outbox shows foreign posts), B-010 (S3, Delete notif → actor IRI), B-011 (S3, raw numeric remote names), B-014 (S2, compose — inconclusive, re-verify in a real browser).** Phase 64 topics: rows 1–6 (N+1/dup request spam) + `/notifications` 410 console errors. **Remaining before 62.1 fully closes:** re-verify B-014 + the 4 admin routes' signed-in render in a real browser (MCP login is flaky). **Next active: 62.2 — fix the S1 blockers (B-001, B-005) + finish the admin/B-014 review.**
 
 ### Phase cadence (rolling 3-phase pattern)
 
@@ -132,9 +132,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 62.1 — full-page deep-dive (documentation only) ← active
-- 62.2 — fix blockers + finish review
-- 62.3 — fix bugs
+- 62.2 — fix S1 blockers (B-001 dead actor href, B-005 outbox foreign posts) + finish review (B-003, B-010, B-011, B-014 re-verify, admin signed-in render) ← active
+- 62.3 — fix remaining bug-class findings
 - 62.4 — re-pass until clean; 62 closeout
 - 63 — UI/UX review (usability + presentation; detailed visual review)
 - 64 — request spam & network efficiency: cut duplicate/redundant calls on load (topics distilled from 62.1 network notes)
