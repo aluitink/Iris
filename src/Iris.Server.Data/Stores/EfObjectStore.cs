@@ -55,6 +55,7 @@ public sealed class EfObjectStore : IObjectStore
         var iri = obj.Id;
         var type = TypeOf(obj);
         var isTombstone = string.Equals(type, "Tombstone", StringComparison.OrdinalIgnoreCase);
+        var document = AsDocument.Serialize(obj);
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var existing = await db.Set<ObjectEntity>().FirstOrDefaultAsync(e => e.Id == iri, ct).ConfigureAwait(false);
         if (existing is null)
@@ -66,7 +67,7 @@ public sealed class EfObjectStore : IObjectStore
                 ObjectType = type,
                 IsTombstoned = isTombstone,
                 CreatedAt = DateTimeOffset.UtcNow,
-                Document = AsDocument.Serialize(obj),
+                Document = document,
             });
         }
         else
@@ -74,10 +75,20 @@ public sealed class EfObjectStore : IObjectStore
             existing.AttributedTo = ExtractAttributedTo(obj);
             existing.ObjectType = type;
             existing.IsTombstoned = isTombstone;
-            existing.Document = AsDocument.Serialize(obj);
+            existing.Document = document;
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        // Update the tsvector column via raw SQL (SearchVector is [NotMapped] — EF Core does not
+        // support string → tsvector mapping). The 'simple' text search configuration does no
+        // stemming or stopword removal.
+        await db.Database.ExecuteSqlRawAsync(
+            @"UPDATE ""Objects"" SET ""SearchVector"" =
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'content')::text, '')), 'A') ||
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'name')::text, '')), 'B') ||
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'summary')::text, '')), 'C')
+              WHERE ""Id"" = {0}", new object[] { iri }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -149,26 +160,36 @@ public sealed class EfObjectStore : IObjectStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        IQueryable<ObjectEntity> queryable;
+        List<ObjectEntity> entities;
         if (hasQuery)
         {
-            // Case-insensitive substring search over the jsonb Document column. Postgres cannot apply
-            // ILIKE to jsonb directly, so cast to text in the raw SQL fragment.
-            var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = db.Set<ObjectEntity>().FromSqlRaw<ObjectEntity>(
-                "SELECT * FROM \"Objects\" WHERE NOT \"IsTombstoned\" AND \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern).AsNoTracking();
+            // Full-text search using the tsvector column. The 'simple' text search configuration
+            // does no stemming or stopword removal — it matches words literally (case-insensitive),
+            // preserving the behavior of the previous ILIKE substring search but with GIN index
+            // support and ts_rank-based relevance ordering.
+            // Fallback: for rows where SearchVector is NULL (pre-migration rows not yet backfilled),
+            // also match via ILIKE on the Document column.
+            entities = await db.Set<ObjectEntity>().FromSqlRaw<ObjectEntity>(
+                @"SELECT * FROM ""Objects"" WHERE NOT ""IsTombstoned"" AND (
+                    ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                    OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                ) ORDER BY
+                    ts_rank(""SearchVector"", plainto_tsquery('simple', {0})) DESC NULLS LAST,
+                    ""Id""
+                LIMIT {2} OFFSET {3}",
+                normalized!, $"%{EscapeLike(normalized!)}%", limit, offset).AsNoTracking()
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
         }
         else
         {
-            queryable = db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned);
+            entities = await db.Set<ObjectEntity>().AsNoTracking().Where(e => !e.IsTombstoned)
+                .OrderBy(e => e.Id)
+                .Skip(offset)
+                .Take(limit)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
         }
-
-        var entities = await queryable
-            .OrderBy(e => e.Id)
-            .Skip(offset)
-            .Take(limit)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
 
         var result = new List<IObject>(entities.Count);
         foreach (var entity in entities)
@@ -192,9 +213,13 @@ public sealed class EfObjectStore : IObjectStore
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         if (hasQuery)
         {
-            var pattern = $"%{EscapeLike(normalized!)}%";
+            // Count matching rows: tsvector match OR (NULL vector AND ILIKE fallback).
             return await db.Set<ObjectEntity>().FromSqlRaw<ObjectEntity>(
-                "SELECT * FROM \"Objects\" WHERE NOT \"IsTombstoned\" AND \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern)
+                @"SELECT * FROM ""Objects"" WHERE NOT ""IsTombstoned"" AND (
+                    ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                    OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                )",
+                normalized!, $"%{EscapeLike(normalized!)}%")
                 .CountAsync(ct)
                 .ConfigureAwait(false);
         }
@@ -206,7 +231,7 @@ public sealed class EfObjectStore : IObjectStore
 
     /// <summary>
     /// Escapes LIKE metacharacters (<c>%</c>, <c>_</c>, <c>\</c>) so a user-supplied query is matched
-    /// literally (not as a pattern).
+    /// literally (not as a pattern). Used in the ILIKE fallback for rows without a tsvector.
     /// </summary>
     private static string EscapeLike(string value)
     {

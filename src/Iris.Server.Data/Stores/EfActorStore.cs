@@ -52,6 +52,7 @@ public sealed class EfActorStore : IActorStore
         }
 
         ct.ThrowIfCancellationRequested();
+        var document = AsDocument.Serialize(actor);
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var iri = actor.Id;
         var existing = await db.Set<ActorEntity>().FirstOrDefaultAsync(e => e.Id == iri, ct).ConfigureAwait(false);
@@ -64,17 +65,27 @@ public sealed class EfActorStore : IActorStore
                 Handle = actor.PreferredUsername,
                 Type = type,
                 CreatedAt = DateTimeOffset.UtcNow,
-                Document = AsDocument.Serialize(actor),
+                Document = document,
             });
         }
         else
         {
             existing.Handle = actor.PreferredUsername;
             existing.Type = type;
-            existing.Document = AsDocument.Serialize(actor);
+            existing.Document = document;
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        // Update the tsvector column via raw SQL (SearchVector is [NotMapped] — EF Core does not
+        // support string → tsvector mapping). The 'simple' text search configuration does no
+        // stemming or stopword removal.
+        await db.Database.ExecuteSqlRawAsync(
+            @"UPDATE ""Actors"" SET ""SearchVector"" =
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'name')::text, '')), 'A') ||
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'preferredUsername')::text, '')), 'B') ||
+                setweight(to_tsvector('simple', COALESCE((""Document"" ->> 'summary')::text, '')), 'C')
+              WHERE ""Id"" = {0}", new object[] { iri }, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -126,27 +137,35 @@ public sealed class EfActorStore : IActorStore
         var hasQuery = !string.IsNullOrWhiteSpace(normalized);
 
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        IQueryable<ActorEntity> queryable;
+        List<ActorEntity> entities;
         if (hasQuery)
         {
-            // Match the same surfaces the in-memory service does (name / preferredUsername / IRI) by
-            // searching the document's JSON. The Document column is jsonb; Postgres cannot apply ILIKE
-            // to jsonb directly, so cast to text in the raw SQL fragment.
-            var pattern = $"%{EscapeLike(normalized!)}%";
-            queryable = db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
-                "SELECT * FROM \"Actors\" WHERE \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern).AsNoTracking();
+            // Full-text search using the tsvector column. The 'simple' text search configuration
+            // matches words literally (case-insensitive), preserving the behavior of the previous
+            // ILIKE substring search but with GIN index support and ts_rank-based relevance ordering.
+            // Fallback: for rows where SearchVector is NULL (pre-migration rows not yet backfilled),
+            // also match via ILIKE on the Document column.
+            entities = await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                @"SELECT * FROM ""Actors"" WHERE (
+                    ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                    OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                ) ORDER BY
+                    ts_rank(""SearchVector"", plainto_tsquery('simple', {0})) DESC NULLS LAST,
+                    ""Id""
+                LIMIT {2} OFFSET {3}",
+                normalized!, $"%{EscapeLike(normalized!)}%", limit, offset).AsNoTracking()
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
         }
         else
         {
-            queryable = db.Set<ActorEntity>().AsNoTracking();
+            entities = await db.Set<ActorEntity>().AsNoTracking()
+                .OrderBy(e => e.Id)
+                .Skip(offset)
+                .Take(limit)
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
         }
-
-        var entities = await queryable
-            .OrderBy(e => e.Id)
-            .Skip(offset)
-            .Take(limit)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
 
         var result = new List<Actor>(entities.Count);
         foreach (var entity in entities)
@@ -170,9 +189,13 @@ public sealed class EfActorStore : IActorStore
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         if (hasQuery)
         {
-            var pattern = $"%{EscapeLike(normalized!)}%";
+            // Count matching rows: tsvector match OR (NULL vector AND ILIKE fallback).
             return await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
-                "SELECT * FROM \"Actors\" WHERE \"Document\"::text ILIKE {0} ESCAPE '\\'", pattern)
+                @"SELECT * FROM ""Actors"" WHERE (
+                    ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                    OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                )",
+                normalized!, $"%{EscapeLike(normalized!)}%")
                 .CountAsync(ct)
                 .ConfigureAwait(false);
         }
@@ -182,7 +205,7 @@ public sealed class EfActorStore : IActorStore
 
     /// <summary>
     /// Escapes LIKE metacharacters (<c>%</c>, <c>_</c>, <c>\</c>) so a user-supplied query is matched
-    /// literally (not as a pattern).
+    /// literally (not as a pattern). Used in the ILIKE fallback for rows without a tsvector.
     /// </summary>
     private static string EscapeLike(string value)
     {

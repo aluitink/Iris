@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace Iris.Server.Data.Entities;
 
 /// <summary>
@@ -37,4 +39,12 @@ public sealed class ObjectEntity
     /// The full object document, as canonical ActivityStreams JSON (a <c>jsonb</c> column).
     /// </summary>
     public string Document { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A full-text search vector (a <c>tsvector</c> column) built from the object's
+    /// <c>content</c> and <c>name</c> fields. Populated on write via raw SQL; indexed with a GIN
+    /// index for ranked full-text search. Not mapped by EF Core (handled in raw SQL).
+    /// </summary>
+    [NotMapped]
+    public string? SearchVector { get; set; }
 }
