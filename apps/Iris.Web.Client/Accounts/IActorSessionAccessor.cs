@@ -336,16 +336,28 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
 
     /// <inheritdoc/>
     /// <remarks>
-    /// The instance's canonical base is the advertised FQDN when set (the host the server advertises its
-    /// <c>NamespaceIri</c> from), otherwise the browser origin (the same-origin case, where the server
-    /// derives the namespace from the request's own base). The namespace is <c>{base}/ns#</c> — the same
+    /// Derived from the instance's <b>canonical</b> base — the advertised FQDN (the host the server
+    /// advertises its <c>NamespaceIri</c> from), otherwise the browser origin (the same-origin case, where
+    /// the server derives the namespace from the request's own base) — as <c>{base}/ns#</c>, the same
     /// derivation <c>WebAppFactory</c> uses for <c>ActivityPubServerOptions.NamespaceIri</c>.
+    ///
+    /// This must track the canonical FQDN, NOT the (possibly multi-instance-rewritten) dial base: the
+    /// server writes its <c>iris:</c> extension properties (the <c>likedCount</c> / <c>sharedCount</c> /
+    /// <c>isLiked</c> counters the engagement UI reads to skip the per-object collection walk) under the
+    /// namespace of its own <c>BaseUri</c> (the advertised FQDN). When the browser dials
+    /// that instance on a different origin (the multi-instance case), the session's <c>_advertiseBase</c>
+    /// is rewritten to the browser origin for dialing, but the counter extensions are still namespaced to
+    /// the canonical FQDN — so reading them off the (rewritten) dial base would find nothing and fall back
+    /// to the full <c>/likes</c> / <c>/shares</c> walk per object. <c>_rewriteBase</c> holds the canonical
+    /// FQDN (the pre-rewrite original), so it is the correct base for the namespace here; it equals
+    /// <c>_advertiseBase</c> in the single-instance case, so the behavior is unchanged when there is no
+    /// rewrite.
     /// </remarks>
     public Iri? IrisNamespaceBase
     {
         get
         {
-            var baseUri = _advertiseBase ?? _browserBase;
+            var baseUri = _rewriteBase ?? _browserBase;
             return Iri.TryParse($"{baseUri.Scheme}://{baseUri.Authority}/ns#", out var ns) ? ns : null;
         }
     }
