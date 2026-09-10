@@ -28,6 +28,7 @@
         {
             <h2>Public timeline</h2>
             <PagedCollection
+                @key="@PublicFeedKey"
                 CollectionIri="feedIri"
                 AnonymousHttpClient="Http"
                 PageSize="20"
@@ -58,6 +59,16 @@
     private NavigationManager Nav { get; set; } = default!;
 
     private HttpClient? Http => HttpClientFactory?.CreateClient("iris");
+
+    /// <summary>
+    /// Stable <c>@key</c> for the public feed's <c>PagedCollection</c>. The root page renders exactly
+    /// one collection (the instance public feed), so the key is a constant: it stops the parent from
+    /// disposing/recreating the component when the page re-renders after <see cref="OnInitializedAsync"/>
+    /// awaits the session. A keyless card would be rebuilt on that re-render, resetting its internal
+    /// loaded-for tracker and re-firing the first-page fetch — the public feed was loaded twice on mount
+    /// (620 tracker topic #6).
+    /// </summary>
+    private const string PublicFeedKey = "public-feed";
 
     protected override async Task OnInitializedAsync()
     {
