@@ -71,28 +71,66 @@ Iris.slnx
 
 ## Now
 
-- No active phase. Awaiting direction.
+- **Phase 62 — Bug hunt (in progress).** Full-system manual pass. App was modified without focus for several hours and has odd bugs. 62.1 documents defects only (no fixes), 62.2 clears blockers + finishes the review, 62.3 fixes, 62.4 re-passes until clean.
+- **Phase 63 — UI/UX review (next).** Usability + presentation: is the data well organized, readable, functional. Detailed visual review + brainstorming on what makes a good interface.
+- **Phase 64 — Performance & network efficiency (next-next).** Distilled from 62's network-tab notes: inefficiencies observed, root causes, and solutions. Topics added during 62.1.
+- **Phase 65 — (to be distilled from 63's findings at 63's closeout).**
 
 ## Active Slice
 
-- None currently.
+- 62.1 — Full-page deep-dive (documentation only).
 
-### Loop protocol (WASM manual-test phase)
+### Phase cadence (rolling 3-phase pattern)
 
-Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
+Work for **the phase after the next** is distilled from **the current phase**, while **the next phase** fixes problems found in the current. New work stays 1 phase ahead of fixing.
+
+| Phase | Role | Status |
+|---|---|---|
+| 62 | Bug hunt — find + document + fix | in progress |
+| 63 | UI/UX review — usability + presentation (fixes 62's UX-class findings) | queued |
+| 64 | Performance & network efficiency (distilled from 62's network notes) | queued |
+| 65 | distill from 63 | planned |
+
+- Each phase's closeout writes its change doc AND distills the next-next phase's topics into this file.
+- Defects found in a phase are fixed in that phase's fix slices (62.3/62.4); UX-class findings route to 63; inefficiency findings route to 64.
+
+### Loop protocol (Phase 62 — bug hunt)
+
+Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
 2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web` — **avoid `--no-cache`** (repeated no-cache fills the host disk; if the build fails with `No space left on device`, run `docker builder prune -af` first).
-3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** (inline screenshot no files) visited - use public fqdn address "https://iris.luit.ink".
-4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
-5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
-6. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
-7. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (defects first).
+3. **Clean entry (every slice, every re-verification)**: close the browser entirely, clear cookies + storage, reopen, enter the app fresh. Never carry state between slices or between a defect and its re-verification.
+4. **Manual test (MCP Playwright)** at `https://iris.luit.ink`:
+   - **Primary account: `andrew` / `Password1`** (has real content + external contacts — use it to evaluate every page).
+   - **Secondary accounts**: `bob`, `carol`, `dave` (register as needed) for multi-account flows (follows, communities, moderation, notifications).
+   - **Authless pass**: every page visited signed-out — verify gating (302 to login), no data leaks, no console errors, sensible signed-out UI.
+   - **Deep dive per page**: exercise every control, every state (empty/populated/error), deep links + hard refresh on each route.
+   - Capture **console errors** (`browser_console_messages`) + **screenshots of every screen** visited.
+   - **Network tab watch (always on)**: note every request — count, payload size, status, duplicates, N+1 patterns, slow calls, 4xx/5xx, waterfall gaps. These notes are the raw material for **Phase 64**.
+5. **Triage**: log every finding (page, repro, expected vs actual, severity, class: *blocker / bug / UX / perf*) in the **shared tracker** ([docs/changes/620-bug-hunt-tracker.md](docs/changes/620-bug-hunt-tracker.md)). Class routes the finding: blocker+bug → 62 fix slices; UX → 63; perf → 64.
+6. **Fix in scope** (62.2+ only — 62.1 documents only): implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3).
+7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
+8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics (62 → 64; 63 → 65) into this file.
 
+### Slices (Phase 62)
+
+| Slice | Scope |
+|---|---|
+| **62.1** | Full-page deep-dive — **documentation only, no fixes.** Every page, signed-in (as `andrew`) + authless, every control + state, deep links + refresh. Network-tab notes throughout. All findings → shared tracker. Phase 64 topics drafted from network notes. |
+| **62.2** | Fix blockers (anything holding up the review) + finish the review of pages 62.1 could not complete. |
+| **62.3** | Fix remaining bugs (non-blocker defects from the tracker). |
+| **62.4** | Re-pass (full deep-dive again from clean entries) until zero open blocker/bug findings; then 62 closeout (change doc + distill 64 topics). |
 
 ## Up Next
 
-- *(empty)*
+- 62.1 — full-page deep-dive (documentation only) ← active
+- 62.2 — fix blockers + finish review
+- 62.3 — fix bugs
+- 62.4 — re-pass until clean; 62 closeout
+- 63 — UI/UX review (usability + presentation; detailed visual review)
+- 64 — performance & network efficiency (topics distilled from 62.1 network notes)
+- 65 — (distilled from 63 at 63's closeout)
 
 ## Inbox
 
