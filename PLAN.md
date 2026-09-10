@@ -75,6 +75,8 @@ Iris.slnx
 - **Phase 63 — UI/UX review (next).** Usability + presentation: is the data well organized, readable, functional. Detailed visual review + brainstorming on what makes a good interface.
 - **Phase 64 — Performance & network efficiency (next-next).** Distilled from 62's network-tab notes: inefficiencies observed, root causes, and solutions. Topics added during 62.1.
 - **Phase 65 — (to be distilled from 63's findings at 63's closeout).**
+- **Phases 62–69 — exploratory buffer.** 66–69 are reserved slack: if any phase overruns (more blockers than expected, new issue classes found, re-passes needed), work rolls forward into the buffer instead of compressing later phases. Use them as needed.
+- **Phase 70 — Content & media improvement (the start of "improving").** After the exploratory buffer: ensure pictures/media render properly; ensure we can browse remote users and view their content; ensure we can post content and view it within our instance.
 
 ## Active Slice
 
@@ -90,9 +92,13 @@ Work for **the phase after the next** is distilled from **the current phase**, w
 | 63 | UI/UX review — usability + presentation (fixes 62's UX-class findings) | queued |
 | 64 | Performance & network efficiency (distilled from 62's network notes) | queued |
 | 65 | distill from 63 | planned |
+| 66–69 | exploratory buffer — overrun/slack for 62–65 (or later) phases | reserved |
+| 70 | Content & media improvement — media rendering, remote browsing, post-and-view-in-instance | queued |
 
 - Each phase's closeout writes its change doc AND distills the next-next phase's topics into this file.
 - Defects found in a phase are fixed in that phase's fix slices (62.3/62.4); UX-class findings route to 63; inefficiency findings route to 64.
+- **Buffer (66–69):** phases 62–65 may overrun into 66–69 without renumbering — if 62's re-passes don't converge, 62.5/62.6 land in the buffer; if 63/64 find more than planned, their extra slices do the same. The buffer is consumed in order and logged in this file when used.
+- **Operator latitude (binding for 62–69):** I am authorized to do whatever keeps testing moving — recreate containers, create new test users, seed content, restart services, adjust test data. Log significant interventions in the slice's tracker notes.
 
 ### Loop protocol (Phase 62 — bug hunt)
 
@@ -131,6 +137,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - 63 — UI/UX review (usability + presentation; detailed visual review)
 - 64 — performance & network efficiency (topics distilled from 62.1 network notes)
 - 65 — (distilled from 63 at 63's closeout)
+- 66–69 — exploratory buffer (consumed in order if any of 62–65 overruns)
+- 70 — content & media improvement: media/pictures render correctly · browse remote users + view their content · post content + view it within the instance
 
 ## Inbox
 
