@@ -2407,7 +2407,8 @@ body > #app {
     background: var(--surface-hover, rgba(128, 128, 128, 0.1));
 }
 
-.filter-tab[aria-pressed="true"] {
+.filter-tab[aria-pressed="true"],
+.filter-tab[aria-pressed=""] {
     background: var(--accent, #4a90d9);
     color: #fff;
     border-color: var(--accent, #4a90d9);

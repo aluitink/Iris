@@ -19,7 +19,7 @@
     @foreach (var (value, label) in FilterOptions)
     {
         <button class="filter-tab" @onclick="() => OnSelectFilter(value)"
-                aria-pressed="@(_selectedFilter == value)">
+                aria-pressed="@(_selectedFilter == value ? "true" : "false")">
             @label
         </button>
     }

@@ -86,6 +86,7 @@
 | 4 | GET `/ap/v1/u/{actor}/notes/{id}/likes` | 200 | 3 | `/home` initial load — one per alice post's card | `/home` | N+1 | Per-item likes-collection fan-out on load; 3 posts → 3 calls. Consider embedding like/share counts in the feed item (or a batch endpoint) instead of per-item fetches. |
 | 5 | GET `/ap/v1/u/{actor}/notes/{id}/shares` | 200 | 3 | `/home` initial load — one per alice post's card | `/home` | N+1 | Same as #4 for shares. |
 | 6 | GET `/ap/v1/public/feed?limit=20` | 200 | 2 | `/` (public timeline) initial load | `/` | dup | Same feed request fired twice on mount (likely a double component init / re-render). |
+| 7 | POST `/ap/v1/proxy/{remote-actor-iri}` (avatar) | 410 | 15 (page 1 of `/notifications`; 28 total in 62.1) | `/notifications` initial load — one per "deleted their account" notification whose remote actor no longer exists | `/notifications` | 4xx/5xx + N+1 | Every account-deletion notification fires an avatar proxy fetch that 410-Gones (the remote account is gone). UI degrades gracefully (initial-letter fallback), but it's pure network noise + console errors. **Fix (from 63.1 U-note):** skip the avatar fetch — or short-circuit to the initial-letter fallback — when the notification is an account-deletion with no cached avatar. Logged in the [630 UX tracker](630-ux-review-tracker.md#notes--deferred). |
 
 ## Console errors (raw log)
 
