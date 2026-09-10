@@ -104,7 +104,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 **Phase 61 — Post-1.0 stability & operational depth (IN PROGRESS):**
 
-- 61.1: **WASM performance audit** (MEDIUM) — measure + fix initial-load time, bundle size, and circuit reconnect latency. Profile the WASM build, identify top 3 bottlenecks, fix them. Verify via Playwright (Lighthouse or manual timing).
+- 61.1: **WASM performance audit** (COMPLETE) — `PublishTrimmed` + `InvariantGlobalization` on WASM client. 29.92 MB → 13.13 MB total transfer (-56%), 208 → 65 WASM files (-69%), 38.6 → 5.0 MB gzipped (-87%). BouncyCastle (5.14 MB) retained — requires `Iris.Core` conditional-reference change (future). [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
 - 61.2: **Search relevance + full-text indexing** (MEDIUM) — replace `ILIKE` with PostgreSQL `tsvector`/`tsquery` for ranked, faster search. Add a `tsvector` column + GIN index to the `Object` and `Actor` tables; migrate the search queries to use `to_tsquery` + `ts_rank`.
 - 61.3: **Notification filtering + grouping** (LOW) — filter by type (mentions/replies/likes/follows), group by actor, mark individual as read.
 
@@ -152,6 +152,7 @@ Questions the agent asked and is waiting on a real answer for — the loop shoul
 
 ## Recently Completed
 
+  - 61.1: **WASM performance audit** (Phase 61) — `PublishTrimmed` + `InvariantGlobalization` on WASM client; build pipeline switched to `Publish` target with stale-output cleanup. Total transfer 29.92 → 13.13 MB (-56%), WASM files 208 → 65 (-69%), gzipped 38.6 → 5.0 MB (-87%). BouncyCastle (5.14 MB) retained — needs `Iris.Core` conditional-reference change. 1651 passed / 0 failed / 17 skipped. [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
   - 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (Phase 60) — `DefaultProxyMaxRequestsPerMinute` raised 60→300; normal page loads no longer trigger 429s. Verified live: 0 errors on 2nd and 3rd loads (no 410s via 60.2's cache, no 429s via raised limit). 1651 passed / 0 failed / 17 skipped. [changes/429](docs/changes/429-60.3-reduce-proxy-429-rate-limit-noise.md)
   - 60.2: **Suppress 410 Gone console noise on Notifications** (Phase 60) — `ProxyGoneCache` (bounded LRU, 1h TTL, capacity 4096) caches targets that returned 410 Gone; proxy handler checks cache before forwarding and returns 204 No Content for cached-gone targets (2xx = no browser console error). Verified live: 28 410s on first load (cold cache) → 0 errors on second load (warm cache). 1651 passed / 0 failed / 17 skipped. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
   - 60.1: **UI/UX review pass** (Phase 60) — Playwright inspection of all 12 views; found + fixed 2 defects: (1) search 500 — `EF.Functions.Like` on jsonb → `FromSqlRaw` with `Document::text ILIKE`; (2) negative OFFSET in `GlobalSearchService` pagination → `Math.Max(0, …)` + `remaining` accounting. Noted: 410 console noise on Notifications (→ 60.2). 1651 passed / 0 failed / 17 skipped. [changes/427](docs/changes/427-60.1-ui-ux-review.md)

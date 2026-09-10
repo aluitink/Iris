@@ -8,9 +8,21 @@
          (the .lib.module.js file is not produced). Disable it to avoid a 404 on load. -->
     <WasmEnableHotReload>false</WasmEnableHotReload>
     <!-- No PDB files: the WASM runtime requests .pdb downloads at startup, and the server's
-         static-file middleware cannot serve them (extension maps to null content type). -->
+          static-file middleware cannot serve them (extension maps to null content type). -->
     <DebugType>none</DebugType>
     <WasmDebugLevel>0</WasmDebugLevel>
+    <!-- Aggressive WASM trimming: removes unused BCL assemblies (System.Private.Xml 3 MB,
+         System.Data.Common 1 MB, DataContractSerialization 850 KB, etc.) and shrinks
+         System.Private.CoreLib by 61%. The client uses crypto.subtle (Iris.WebCrypto) for
+         signing, not the BCL crypto stack. No reflection in Iris.Core/Iris.Client/Iris.WebCrypto.
+         BouncyCastle (5 MB, Ed25519 in Iris.Core) is retained — removing it requires a
+         conditional-reference change to Iris.Core (future work). Gzipped: 38.6 MB -> 5.6 MB. -->
+    <PublishTrimmed>true</PublishTrimmed>
+    <TrimmerSingleWarn>false</TrimmerSingleWarn>
+    <!-- Invariant globalization: the client does not need locale-specific formatting
+         (dates/numbers use invariant culture). This eliminates the ICU data dependency
+         that the trimmer's output would otherwise require at runtime. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
     <Description>
       The Iris Blazor WebAssembly client: the product UI that runs in the browser. Talks to the
       Iris.Web server's ActivityPub API + auth endpoints via cookie-auth (same-origin). The signing
