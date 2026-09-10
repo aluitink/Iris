@@ -995,6 +995,12 @@ ul.object-list li {
     background: #2b3748;
 }
 
+.object-content--blurred {
+    filter: blur(8px);
+    user-select: none;
+    pointer-events: none;
+}
+
 /* Card loading state (a compact spinner + label so a fetching card never renders blank). */
 .card-loading {
     display: flex;

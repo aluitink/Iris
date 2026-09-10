@@ -183,3 +183,17 @@ bundle. After rebuilding `iris-ui`, the browser kept serving a *stale* cached
 the ObjectPage. `Network.clearBrowserCache` + a fresh boot loaded the current bundle and the Boost
 button rendered in the correct position (Like / **Boost** / Delete). Live UI checks must clear the
 browser cache (or use a fresh context) after a rebuild.
+
+**Harness note (not a code bug) — production-app login 400:** when driving the production Blazor
+WASM app (`https://iris.luit.ink`) via MCP Playwright, the `/login` form POST can fail with a silent
+**HTTP 400** (the browser navigates to `chrome-error://chromewebdata/` and the session never
+establishes). This is **not** a code bug and **not** a reverse-proxy misconfiguration — the proxy
+passes `Set-Cookie` + forwarded headers + TLS correctly. The cause is a **stale/desynced
+anti-forgery pair** in the persistent Playwright browser context: the `/login` form is a traditional
+HTML POST guarded by ASP.NET Core anti-forgery, which requires the `__RequestVerificationToken`
+form field to match the `.AspNetCore.Antiforgery.*` cookie. Repeated sign-in/sign-out, clearing
+cookies, or re-fetching `/local/v1/antiforgery` (which rotates the pair) in a long-lived context can
+leave the field and cookie out of sync → 400. **Fix:** log out first (or use a **fresh Playwright
+context** / clear cookies) to reset the anti-forgery state, then re-login normally (navigate
+`/login` → fill `handle` + `password` → click "Sign in" → **302** to `/home`). If a login 400s mid-
+session, do not assume the credentials or proxy are wrong — reset the context and retry.

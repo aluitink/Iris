@@ -4,6 +4,7 @@
 @using Iris.Core.Compose
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
 @using Microsoft.AspNetCore.Components.Web
 @using KristofferStrube.ActivityStreams
 
@@ -167,6 +168,9 @@
 @code {
     [Inject]
     private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
 
     [SupplyParameterFromQuery(Name = "replyTo")]
     private string? ReplyToParam { get; set; }
@@ -492,6 +496,7 @@
     private AutocompleteState? Autocomplete { get; set; }
     private CancellationTokenSource? _autocompleteSearchCts;
     private Timer? _autocompleteDebounce;
+    private List<AutocompleteCandidate>? _knownActors;
 
     /// <summary>
     /// The textarea's input handler: detects an in-progress <c>@handle</c> or <c>#hashtag</c> token at
@@ -568,7 +573,7 @@
             List<AutocompleteCandidate> candidates;
             if (mode is AutocompleteMode.Mention)
             {
-                candidates = await SearchMentionCandidatesAsync(tokenText, cts.Token);
+                candidates = await GetMentionCandidatesAsync(tokenText, cts.Token);
             }
             else
             {
@@ -605,7 +610,14 @@
         }
     }
 
-    private async Task<List<AutocompleteCandidate>> SearchMentionCandidatesAsync(string query, CancellationToken ct)
+    /// <summary>
+    /// Resolves mention candidates for the compose <c>@handle</c> autocomplete (71.5): the
+    /// signed-in actor's known actors (their follows) as the default list, merged with live
+    /// instance-search results as the user types. An empty query (the user just typed <c>@</c>)
+    /// returns the follows; a non-empty query filters the follows and supplements with search
+    /// results (de-duplicated by handle, known actors first).
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> GetMentionCandidatesAsync(string query, CancellationToken ct)
     {
         var list = new List<AutocompleteCandidate>();
         if (Session.ActorId is not { } actorId || Session.Client is not { } client)
@@ -613,31 +625,104 @@
             return list;
         }
 
-        // The instance base for SearchAsync is the actor IRI minus the /u/{handle} suffix (the
-        // {origin}/ap/v1 base the search endpoint hangs off).
-        var baseUri = new Uri(actorId.Value);
-        var path = baseUri.AbsolutePath;
-        var uIndex = path.LastIndexOf("/u/", StringComparison.Ordinal);
-        var basePath = uIndex >= 0 ? path[..uIndex] : path;
-        if (string.IsNullOrEmpty(basePath))
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            // Empty token: show the signed-in actor's known actors (their follows) as the
+            // default list — the accounts the user actually knows.
+            _knownActors ??= await LoadKnownActorsAsync(ct);
+            list.AddRange(_knownActors);
+            return list;
+        }
+
+        // Non-empty query: filter the known actors, then supplement with live search results.
+        if (_knownActors is null)
+        {
+            _knownActors = await LoadKnownActorsAsync(ct);
+        }
+
+        var lowerQuery = query.ToLowerInvariant();
+        var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in _knownActors)
+        {
+            if (candidate.Handle is { } h && h.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(candidate);
+                seenHandles.Add(h);
+            }
+        }
+
+        // Supplement with live instance-search results not already in the known-actor list.
+        try
+        {
+            var baseUri = new Uri(actorId.Value);
+            var path = baseUri.AbsolutePath;
+            var uIndex = path.LastIndexOf("/u/", StringComparison.Ordinal);
+            var basePath = uIndex >= 0 ? path[..uIndex] : path;
+            if (string.IsNullOrEmpty(basePath))
+            {
+                return list;
+            }
+
+            var instanceBase = new Iri(new UriBuilder(baseUri) { Path = basePath }.Uri.GetLeftPart(UriPartial.Path));
+
+            await foreach (var item in client.SearchAsync(
+                instanceBase,
+                query,
+                new SearchOptions { Type = "Actor", Limit = 5 },
+                ct))
+            {
+                if (item is Actor actor && actor.Id is { Length: > 0 } id)
+                {
+                    var handle = actor.PreferredUsername
+                        ?? new Uri(id).AbsolutePath.Trim('/').Split('/').LastOrDefault();
+                    if (handle is { Length: > 0 } && seenHandles.Add(handle))
+                    {
+                        var name = actor.Name?.FirstOrDefault();
+                        list.Add(new AutocompleteCandidate("@" + handle, handle, name));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: the known-actor list is still shown.
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Loads the signed-in actor's known actors (their follows) as autocomplete candidates,
+    /// fetching each followed actor's document (name + handle) via the UI context's coalesced
+    /// actor cache. Non-actor follows (communities, etc.) are skipped.
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> LoadKnownActorsAsync(CancellationToken ct)
+    {
+        var list = new List<AutocompleteCandidate>();
+        if (Session.ActorId is not { } actorId)
         {
             return list;
         }
 
-        var instanceBase = new Iri(new UriBuilder(baseUri) { Path = basePath }.Uri.GetLeftPart(UriPartial.Path));
-
-        await foreach (var item in client.SearchAsync(
-            instanceBase,
-            string.IsNullOrWhiteSpace(query) ? null : query,
-            new SearchOptions { Type = "Actor", Limit = 5 },
-            ct))
+        var followingIris = await Ui.GetFollowingActorIrisAsync();
+        foreach (var iri in followingIris)
         {
-            if (item is Actor actor && actor.Id is { Length: > 0 } id)
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
+            var doc = await Ui.GetActorAsync(iri);
+            if (doc is Actor actor && actor.Id is { Length: > 0 } id)
             {
                 var handle = actor.PreferredUsername
                     ?? new Uri(id).AbsolutePath.Trim('/').Split('/').LastOrDefault();
-                var name = actor.Name?.FirstOrDefault();
-                list.Add(new AutocompleteCandidate("@" + (handle ?? ""), handle, name));
+                if (handle is { Length: > 0 })
+                {
+                    var name = actor.Name?.FirstOrDefault();
+                    list.Add(new AutocompleteCandidate("@" + handle, handle, name));
+                }
             }
         }
 

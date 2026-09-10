@@ -107,6 +107,7 @@ public partial class ObjectView
     }
 
     private bool Revealed;
+    private bool ActivityRevealed;
 
     private string? ActivityVerb => Item switch
     {
@@ -254,6 +255,30 @@ public partial class ObjectView
             return null;
         }
     }
+
+    // ---- Activity-scoped (Create/Announce branch) metadata ----
+    //
+    // The home timeline and profile outbox render feed items as the wrapping activity (a Create),
+    // not the embedded Note, so the direct-object properties above (which read Obj — the activity,
+    // which carries no tag/attachment/poll of its own) are empty there. These read the embedded
+    // content object instead, so the feed card can be built from all of the note's available
+    // content (71.1) rather than just its text + image attachments.
+
+    private IObject? ActivityContentObject => ActivityEmbeddedObject ?? Obj;
+
+    private Iri? ActivityParentIri => ActivityEmbeddedObject?.GetParentIri();
+
+    private IReadOnlyList<Iri> ActivityAudienceIris => ActivityEmbeddedObject?.GetAudienceIris() ?? [];
+
+    private IReadOnlyList<Iri> ActivityMentionIris => ActivityEmbeddedObject?.GetMentionIris() ?? [];
+
+    private IReadOnlyList<(string Name, Iri? Href)> ActivityHashtagTags => ActivityEmbeddedObject?.GetHashtagTags() ?? [];
+
+    private DateTime? ActivityUpdated => ActivityEmbeddedObject?.GetUpdated();
+
+    private bool ActivityIsSensitive => ActivityEmbeddedObject?.IsSensitive() ?? false;
+
+    private string? ActivitySummary => ActivityEmbeddedObject?.GetSummary();
 
     /// <summary>
     /// Resolves the custom emojis for this object, preferring the embedded content object (for

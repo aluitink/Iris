@@ -19,7 +19,7 @@ public sealed class UiContext
     private static readonly TimeSpan ActorTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MembershipTtl = TimeSpan.FromMinutes(2);
 
-    private sealed record FollowingEntry(HashSet<string> Set, DateTime At);
+    private sealed record FollowingEntry(HashSet<string> Set, List<Iri> List, DateTime At);
     private sealed record ActorEntry(IObject Doc, DateTime At);
     private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
 
@@ -52,16 +52,31 @@ public sealed class UiContext
     /// the full set for the TTL window. Subsequent checks for other targets are O(1) lookups.
     /// </summary>
     public async Task<bool> IsFollowingAsync(Iri targetIri)
+        => (await GetFollowingActorIrisAsync()).Contains(targetIri);
+
+    /// <summary>
+    /// Resolves the IRIs of the actors the signed-in actor follows (the following collection),
+    /// de-duplicated, in first-seen order. Consults the per-circuit following-set cache; on a miss,
+    /// walks the following collection once and caches the full set for the TTL window. Returns an
+    /// empty list when signed out, the client is unavailable, or the collection cannot be read.
+    /// </summary>
+    /// <remarks>
+    /// The compose <c>@handle</c> autocomplete (71.5) uses this as the default candidate list (the
+    /// accounts the signed-in user actually knows), merged with live instance-search results as the
+    /// user types. The result is also the source of truth for <see cref="IsFollowingAsync"/>.
+    /// </remarks>
+    /// <returns>The followed actors' IRIs; possibly empty.</returns>
+    public async Task<IReadOnlyList<Iri>> GetFollowingActorIrisAsync()
     {
         if (_session.ActorId is not { } me || _session.Client is not { } client)
         {
-            return false;
+            return [];
         }
 
         if (_following.TryGetValue(me.Value, out var entry)
             && DateTime.UtcNow - entry.At < FollowingTtl)
         {
-            return entry.Set.Contains(targetIri.Value);
+            return entry.List;
         }
 
         await _followingGate.WaitAsync();
@@ -71,28 +86,29 @@ public sealed class UiContext
             if (_following.TryGetValue(me.Value, out var fresh)
                 && DateTime.UtcNow - fresh.At < FollowingTtl)
             {
-                return fresh.Set.Contains(targetIri.Value);
+                return fresh.List;
             }
 
-            var following = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var list = new List<Iri>();
             try
             {
                 await foreach (var item in client.GetCollectionItemsAsync(me.FollowingOf()))
                 {
                     var iri = item.ResolveObjectIri()?.Value;
-                    if (iri is not null)
+                    if (iri is not null && set.Add(iri))
                     {
-                        following.Add(iri);
+                        list.Add(new Iri(iri));
                     }
                 }
             }
             catch
             {
-                // Non-fatal: return the (possibly empty) set we have so far.
+                // Non-fatal: return the (possibly empty) list we have so far.
             }
 
-            _following[me.Value] = new FollowingEntry(following, DateTime.UtcNow);
-            return following.Contains(targetIri.Value);
+            _following[me.Value] = new FollowingEntry(set, list, DateTime.UtcNow);
+            return list;
         }
         finally
         {

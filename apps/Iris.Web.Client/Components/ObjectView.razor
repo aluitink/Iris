@@ -12,32 +12,141 @@
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
             </div>
-            @if (CreatedObjectIri is { } objIri)
+            @if (ActivityContentObject is { } contentObj)
             {
-                <a href="@ObjectHref(objIri)" class="object-post-link">
-                    <div class="object-content">@ActivityContent</div>
-                </a>
-                @if (IsContentCreate)
+                @if (contentObj is KristofferStrube.ActivityStreams.Object ao && JoinStrings(ao.Content) is { Length: > 0 } content)
                 {
-                    <EngagementBar ObjectIri="@objIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
+                    @if (ActivityIsSensitive)
+                    {
+                        <div class="object-sensitive">
+                            <div class="object-sensitive-notice">
+                                @if (ActivitySummary is { Length: > 0 } warning)
+                                {
+                                    <span class="object-sensitive-summary">@warning</span>
+                                }
+                                <span class="object-sensitive-label">This content may be sensitive.</span>
+                                <button type="button" class="object-sensitive-reveal" @onclick="() => ActivityRevealed = !ActivityRevealed">
+                                    @(ActivityRevealed ? "Hide" : "Show")
+                                </button>
+                            </div>
+                            <div class="object-content @(ActivityRevealed ? "" : "object-content--blurred")">@ActivityContent</div>
+                        </div>
+                    }
+                    else if (CreatedObjectIri is { } objIri)
+                    {
+                        <a href="@ObjectHref(objIri)" class="object-post-link">
+                            <div class="object-content">@ActivityContent</div>
+                        </a>
+                    }
+                    else
+                    {
+                        <div class="object-content">@ActivityContent</div>
+                    }
+                }
+                else if (CreatedObjectIri is { } linkIri)
+                {
+                    <a href="@ObjectHref(linkIri)" title="@linkIri" class="object-iri">@linkIri</a>
+                }
+                @if (ActivityParentIri is { } parent)
+                {
+                    <div class="object-parent">
+                        in reply to
+                        <a href="@ObjectHref(parent)" title="@parent" class="object-iri">@parent</a>
+                    </div>
+                }
+                @foreach (var audience in ActivityAudienceIris)
+                {
+                    <div class="object-audience">
+                        to
+                        <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                    </div>
+                }
+                @if (ActivityUpdated is { } updated)
+                {
+                    <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
+                }
+                @if (ArticleDuration is { } duration)
+                {
+                    <div class="object-article-meta">
+                        <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
+                    </div>
+                }
+                @if (ArticleInLanguage is { Length: > 0 } lang)
+                {
+                    <div class="object-article-meta">
+                        <span class="object-article-language">@lang</span>
+                    </div>
+                }
+                @foreach (var mention in ActivityMentionIris)
+                {
+                    <div class="object-mention">
+                        mentions
+                        <a href="@ActorHref(mention)" title="@mention" class="object-actor">@HandleOf(mention)</a>
+                    </div>
+                }
+                @foreach (var (hashtagName, hashtagHref) in ActivityHashtagTags)
+                {
+                    <div class="object-hashtag">
+                        <a href="@HashtagHref(hashtagName, hashtagHref)" title="@hashtagName" class="object-hashtag-link">@hashtagName</a>
+                    </div>
+                }
+                @if (EmojiTags.Count > 0)
+                {
+                    <div class="object-emojis">
+                        @foreach (var (emojiName, emojiShortCode, emojiUrl) in EmojiTags)
+                        {
+                            @if (emojiUrl is { } url)
+                            {
+                                <img src="@RewriteMediaToSameOrigin(url.Value)" alt="@emojiShortCode" title="@emojiShortCode" class="object-emoji" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="object-emoji-text" title="@emojiShortCode">@emojiShortCode</span>
+                            }
+                        }
+                    </div>
+                }
+                <MediaGallery Attachments="ActivityRichAttachments" />
+                @if (Poll is { } poll)
+                {
+                    <div class="object-poll">
+                        @foreach (var option in poll.Options)
+                        {
+                            var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
+                            <div class="object-poll-option">
+                                <div class="object-poll-option-bar" style="width:@pct%"></div>
+                                <div class="object-poll-option-content">
+                                    <span class="object-poll-option-title">@option.Title</span>
+                                    <span class="object-poll-option-votes">@option.Votes</span>
+                                </div>
+                            </div>
+                        }
+                        <div class="object-poll-footer">
+                            @if (poll.Expired)
+                            {
+                                <span class="object-poll-ended">Poll ended</span>
+                            }
+                            else if (poll.EndsAt is { } ends)
+                            {
+                                <span class="object-poll-ends">Ends @RelativeTime(ends)</span>
+                            }
+                            @if (poll.Multiple)
+                            {
+                                <span class="object-poll-multiple">Multiple answers allowed</span>
+                            }
+                            <span class="object-poll-total">@poll.TotalVotes votes</span>
+                        </div>
+                    </div>
                 }
             }
-            else if (ActivityEmbeddedObject is not null)
+            else if (CreateIri is { } cri)
             {
-                <div class="object-content">@ActivityContent</div>
-                @if (IsContentCreate && CreatedObjectIri is { } embeddedIri)
-                {
-                    <EngagementBar ObjectIri="@embeddedIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
-                }
+                <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
             }
-            else
+            @if (IsContentCreate)
             {
-                @if (CreateIri is { } cri)
-                {
-                    <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
-                }
+                <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
             }
-            <MediaGallery Attachments="ActivityRichAttachments" />
         </div>
     }
     else if (Item is Announce)
@@ -154,10 +263,7 @@
                                 @(Revealed ? "Hide" : "Show")
                             </button>
                         </div>
-                        @if (Revealed)
-                        {
-                            <div class="object-content">@RenderedContent</div>
-                        }
+                        <div class="object-content @(Revealed ? "" : "object-content--blurred")">@RenderedContent</div>
                     </div>
                 }
                 else
