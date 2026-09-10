@@ -13,7 +13,15 @@
         var objectFirst = activity.Object?.FirstOrDefault();
         var objectIri = objectFirst?.ResolveObjectIri();
         var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
-        var targetPreview = TargetPreview(objectFirst);
+        // A <c>Delete</c> activity references the actor's <em>own</em> IRI as its <c>object</c> (the
+        // remote instance sends <c>object == actor</c>, not a separate deleted-object IRI — the object
+        // being deleted is the account itself). For those, the row's target link would point at the
+        // actor's IRI via /object (which 410s), and the name would fall back to the raw IRI last
+        // segment (a numeric remote ID) — B-010/B-011. Such rows render a "deleted their account"
+        // caption (linking the actor) instead of a bogus object link.
+        var isSelfDelete = activity.Type?.FirstOrDefault() == "Delete"
+            && objectIri is { } o && actorIri is { } ai && o == ai;
+        var targetPreview = isSelfDelete ? null : TargetPreview(objectFirst);
         var actorDoc = actorIri is { } a ? _actorDocs.TryGetValue(a.Value, out var d) ? d : null : null;
         var displayName = actorDoc is { } ad && ad is Actor actorObj && actorObj.Name is { } names
             ? names.FirstOrDefault()
@@ -29,7 +37,7 @@
                     @if (actorIri is { } performer)
                     {
                         <a href="@ActorHref(performer)" title="@performer" class="notification-name">
-                            @(displayName ?? HandleOf(performer))
+                            @(displayName ?? DisplayNameFallback(performer))
                         </a>
                     }
                     @NotificationIcon(activity)
@@ -40,7 +48,14 @@
                     }
                 </div>
                 <div class="notification-target">
-                    @if (objectIri is { } target)
+                    @if (isSelfDelete && actorIri is { } deleted)
+                    {
+                        // The account itself is the deleted object: show a "deleted their account"
+                        // caption (with the actor link already in the head) rather than a bogus
+                        // /object?iri=<actor> link that 410s. (B-010)
+                        <span class="notification-self-delete" title="@deleted">deleted their account</span>
+                    }
+                    else if (objectIri is { } target)
                     {
                         <a href="@ObjectHref(target)" title="@target" class="notification-target-link">
                             @(targetPreview ?? ShortLabel(target))
@@ -275,6 +290,25 @@
         var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
         var last = path.Split('/').LastOrDefault();
         return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
+    }
+
+    /// <summary>
+    /// A human-readable fallback for an actor's display name when the document could not be resolved
+    /// (e.g. the proxy 410s for a deleted remote account). The raw IRI last segment is used only when it
+    /// is a plausible handle — i.e. not a bare numeric ID (remote accounts whose handle is a numeric
+    /// snowflake/ID would otherwise surface as a wall of digits, B-011). When the segment is numeric or
+    /// empty, the IRI's host is shown instead (the instance the account belongs to).
+    /// </summary>
+    private static string DisplayNameFallback(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var last = path.Split('/').LastOrDefault();
+        if (!string.IsNullOrWhiteSpace(last) && last.Any(c => !char.IsDigit(c)))
+        {
+            return last;
+        }
+
+        return Uri.TryCreate(iri.Value, UriKind.Absolute, out var uri) ? uri.Host : iri.Value;
     }
 
     private static string RelativeTime(DateTime utc) => TimeFormatting.Relative(utc);

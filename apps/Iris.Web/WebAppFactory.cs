@@ -174,7 +174,8 @@ public static class WebAppFactory
         // bound to the durable EfKeyStore (so a local actor's signing key survives a restart — slice
         // 33.2); under in-memory it is a fresh InMemoryKeyStore (the default, ephemeral by design). The
         // signer is wired to the SAME IKeyStore instance so it signs with whatever key is registered.
-        if (string.IsNullOrWhiteSpace(builder.Configuration.GetConnectionString("Iris") ?? builder.Configuration["Iris:ConnectionString"]))
+        var connString = builder.Configuration.GetConnectionString("Iris") ?? builder.Configuration["Iris:ConnectionString"];
+        if (string.IsNullOrWhiteSpace(connString))
         {
             // In-memory (the default): bind the concrete instance so resolving IPersistenceProvider
             // returns it verbatim and never triggers AddActivityPubServer's fallback factory.
@@ -182,6 +183,14 @@ public static class WebAppFactory
             var keyStore = new InMemoryKeyStore();
             builder.Services.AddSingleton<IKeyStore>(keyStore);
             builder.Services.AddSingleton<ISignatureSigner>(new HttpSignatureSigner(keyStore));
+            // In-memory backends for the browser-session account + instance-metadata stores (the bare
+            // host / integration-test default). These are registered here — NOT unconditionally later —
+            // so that under EF persistence AddEntityFrameworkPersistence's TryAddSingleton of the EF
+            // stores wins (DI TryAdd is first-registration-wins; an unconditional in-memory binding
+            // earlier in the pipeline would shadow the durable EF stores and leave accounts in Postgres
+            // unfindable, so logins always report "unknown username").
+            builder.Services.AddSingleton<IUserAccountStore, InMemoryUserAccountStore>();
+            builder.Services.AddSingleton<IInstanceMetadataStore, InMemoryInstanceMetadataStore>();
         }
         else
         {
@@ -208,9 +217,9 @@ public static class WebAppFactory
             }));
 
         // 7. Local auth (slice 32.3). Cookie authentication for the browser session + the account/
-        //    actor services. The in-memory account store is the default; the EF path registers its own
-        //    IUserAccountStore via AddEntityFrameworkPersistence (registered later, so it wins for the
-        //    EF provider — the in-memory one is only used when the EF provider is not registered).
+        //    actor services. The account store (IUserAccountStore) is bound by the persistence branch
+        //    above: the in-memory backend under in-memory persistence, the durable EF backend (via
+        //    AddEntityFrameworkPersistence) when a connection string is set. See the registration there.
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
             .AddCookie(options =>
@@ -263,8 +272,12 @@ public static class WebAppFactory
             sp.GetRequiredService<IKeyStore>(),
             sp.GetRequiredService<IKeyProvider>(),
             baseUri));
-        builder.Services.TryAddSingleton<IUserAccountStore, InMemoryUserAccountStore>();
-        builder.Services.TryAddSingleton<IInstanceMetadataStore, InMemoryInstanceMetadataStore>();
+        // IUserAccountStore / IInstanceMetadataStore are bound by the persistence branch above: the
+        // in-memory backends under in-memory persistence, and the durable EF backends (registered by
+        // AddEntityFrameworkPersistence) when a connection string is set. They must NOT be bound
+        // unconditionally here — an in-memory TryAddSingleton placed before AddEntityFrameworkPersistence
+        // would shadow the EF stores (DI TryAdd is first-registration-wins) and leave Postgres-backed
+        // accounts unfindable.
         builder.Services.AddSingleton<RegistrationService>();
         builder.Services.AddSingleton<LoginService>();
         builder.Services.AddSingleton<ChangePasswordService>();

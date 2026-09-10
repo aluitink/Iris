@@ -25,12 +25,19 @@ var serverBaseUri = new Uri(builder.HostEnvironment.BaseAddress);
 // browser can sign writes and read the owner-only key (a cross-origin request would be CORS-blocked and
 // cannot carry the site cookie). Null when unset (the client dials the same origin it advertises).
 var advertiseBaseSetting = builder.Configuration["Iris:AdvertiseBase"];
-Uri? advertiseBase = !string.IsNullOrWhiteSpace(advertiseBaseSetting) ? new Uri(advertiseBaseSetting) : null;
+// The canonical (public FQDN) advertised base, as configured in the WASM's appsettings.json. This is the
+// host local actor IRIs use and what the SameOriginApHandler matches-and-rewrites to same-origin.
+var canonicalAdvertiseBase =
+    !string.IsNullOrWhiteSpace(advertiseBaseSetting) ? new Uri(advertiseBaseSetting) : null;
 
 // Multi-instance: when the static AdvertiseBase host differs from the browser's origin (the same WASM
 // build is deployed to multiple instances, each with its own FQDN), use the browser's origin as the
-// advertise base. This ensures the session's ActivityPub clients rewrite the correct host to
-// same-origin and route cross-instance reads through the correct proxy.
+// EFFECTIVE advertise base. The effective base drives DialBaseUri / ProxyBaseUrl / NamespaceIri, so the
+// session treats the browser's origin as its home instance (correct proxy routing + namespace for this
+// instance). The ORIGINAL canonical FQDN is kept separately (canonicalAdvertiseBase) and passed to the
+// session as the rewrite base, so the SameOriginApHandler still rewrites FQDN-addressed requests to
+// same-origin (a cross-origin FQDN request would be CORS-blocked). No-op for single-instance deployments.
+var advertiseBase = canonicalAdvertiseBase;
 if (advertiseBase is not null
     && !string.Equals(advertiseBase.DnsSafeHost, serverBaseUri.DnsSafeHost, StringComparison.OrdinalIgnoreCase))
 {
@@ -73,7 +80,8 @@ builder.Services.AddScoped<IActorSessionAccessor>(sp =>
         sp.GetRequiredService<IActivityPubClientFactory>(),
         sp.GetRequiredService<IJSRuntime>(),
         advertiseBase,
-        serverBaseUri);
+        serverBaseUri,
+        canonicalAdvertiseBase);
 });
 builder.Services.AddScoped<NotificationService>(sp =>
 {

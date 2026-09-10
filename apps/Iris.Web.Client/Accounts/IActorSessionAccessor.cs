@@ -166,6 +166,7 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     private readonly IActivityPubClientFactory _clientFactory;
     private readonly IJSRuntime? _js;
     private readonly Uri? _advertiseBase;
+    private readonly Uri? _rewriteBase;
     private readonly Uri _browserBase;
     private readonly HttpClient _sameOriginHttp;
     private AuthenticationState? _state;
@@ -195,6 +196,13 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     /// BaseAddress for the same-origin key-fetch client so relative (rewritten) requests resolve to the
     /// browser's own origin.
     /// </param>
+    /// <param name="rewriteBase">
+    /// The host the <see cref="SameOriginApHandler"/> matches-and-rewrites to same-origin. Defaults to
+    /// <paramref name="advertiseBase"/> (the single-instance case). Program.cs passes the ORIGINAL
+    /// (pre-multi-instance-override) FQDN when it differs from <paramref name="advertiseBase"/>, so the
+    /// rewriter still rewrites FQDN-addressed requests even though the effective base is the browser
+    /// origin (a cross-origin FQDN request would otherwise be CORS-blocked).
+    /// </param>
     public ActorSessionAccessor(
         AuthenticationStateProvider authentication,
         HttpClient http,
@@ -203,7 +211,8 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
         IActivityPubClientFactory clientFactory,
         IJSRuntime? js = null,
         Uri? advertiseBase = null,
-        Uri? browserBaseAddress = null)
+        Uri? browserBaseAddress = null,
+        Uri? rewriteBase = null)
     {
         _authentication = authentication ?? throw new ArgumentNullException(nameof(authentication));
         _http = http ?? throw new ArgumentNullException(nameof(http));
@@ -212,12 +221,17 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
         _clientFactory = clientFactory ?? throw new ArgumentNullException(nameof(clientFactory));
         _js = js;
         _advertiseBase = advertiseBase is null ? null : new Uri(TrimTrailingSlash(advertiseBase.ToString()));
+        // The host the SameOriginApHandler matches-and-rewrites to same-origin. Defaults to the
+        // advertise base (the common single-instance case); Program.cs passes the ORIGINAL (pre-
+        // multi-instance-override) FQDN when it differs, so the rewriter still knows which FQDN host to
+        // rewrite even though _advertiseBase (used for DialBase/Proxy/Namespace) is the browser origin.
+        _rewriteBase = rewriteBase is null ? _advertiseBase : new Uri(TrimTrailingSlash(rewriteBase.ToString()));
         // A dedicated same-origin client for the owner-only actor-document read (the privateKey fetch).
         // It carries the site cookie (cookie auth) and rewrites FQDN IRIs to same-origin (the browser
         // cannot read a cross-origin owner-only resource — CORS). BaseAddress is the browser origin so a
         // rewritten (relative) request resolves to the browser's own origin.
         _browserBase = browserBaseAddress ?? new Uri("http://localhost/");
-        _sameOriginHttp = new HttpClient(new SameOriginApHandler(new HttpClientHandler(), _advertiseBase, _browserBase), disposeHandler: true)
+        _sameOriginHttp = new HttpClient(new SameOriginApHandler(new HttpClientHandler(), _rewriteBase, _browserBase), disposeHandler: true)
         {
             BaseAddress = _browserBase,
         };
@@ -241,7 +255,7 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     /// (the browser sends the site's dial host because <c>Host</c> is a forbidden header it cannot
     /// override — see <see cref="SameOriginApHandler"/>).
     /// </summary>
-    private SameOriginApHandler BuildSameOriginRewriter() => new(new HttpClientHandler(), _advertiseBase, _browserBase);
+    private SameOriginApHandler BuildSameOriginRewriter() => new(new HttpClientHandler(), _rewriteBase, _browserBase);
 
     /// <summary>
     /// Builds the <see cref="ActivityPubClientOptions"/> for the session's signed ActivityPub client,

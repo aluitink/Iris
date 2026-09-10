@@ -1424,6 +1424,12 @@ ul.object-list li {
     text-decoration: underline;
 }
 
+.notification-self-delete {
+    color: var(--muted);
+    font-style: italic;
+    display: block;
+}
+
 .notification-body {
     display: flex;
     align-items: flex-start;
