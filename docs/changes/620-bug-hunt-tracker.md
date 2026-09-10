@@ -16,34 +16,36 @@
 
 | Route | Signed-in pass | Authless pass | Notes / skipped reason |
 |---|---|---|---|
-| `/` (Home) | ☐ | ☐ | |
-| `/home` (HomeTimeline) | ☐ | ☐ | |
-| `/directory` | ☐ | ☐ | |
-| `/search` | ☐ | ☐ | |
-| `/profile` | ☐ | ☐ | |
-| `/settings` | ☐ | ☐ | |
-| `/notifications` | ☐ | ☐ | |
-| `/compose` | ☐ | ☐ | |
-| `/object` (deep link + params) | ☐ | ☐ | |
-| `/actor` (deep link + params) | ☐ | ☐ | |
-| `/community` (deep link + params) | ☐ | ☐ | |
-| `/communities` | ☐ | ☐ | |
-| `/login` | ☐ | ☐ | |
-| `/register` | ☐ | ☐ | |
-| `/admin/dashboard` | ☐ | ☐ | |
-| `/admin/users` | ☐ | ☐ | |
-| `/admin/moderation` | ☐ | ☐ | |
-| `/admin/instance` | ☐ | ☐ | |
+| `/` (Home) | ☑ | ☑ | Signed-in: signed-in card + shortcuts; deep-refresh clean. Authless: hero + public timeline (4 posts), Refresh + Load more work. |
+| `/home` (HomeTimeline) | ☑ | ☑ | Authless: 302 → login (correct gating). Signed-in: own + followed posts, boosts render as "View boosted post →", engagement state correct (like/boost pressed on boosted items). Heavy request spam on load — see 64 rows 1–5. |
+| `/directory` | ☑ | ☑ | Authless: 302 → login. Signed-in: People tab lists 3 actors. **Defects B-001 (actor links dead), B-002 (Communities tab inert).** |
+| `/search` | ☐ | ☑ | Authless: 302 → login (gating OK). Signed-in pass pending. |
+| `/profile` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/settings` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/notifications` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/compose` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/object` (deep link + params) | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending (deep link + hard refresh). |
+| `/actor` (deep link + params) | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending (deep link + hard refresh). |
+| `/community` (deep link + params) | ☐ | ☐ | Pending both passes. Communities exist: `owner-test-5428`, `test-community-541`. |
+| `/communities` | ☑ | ☑ | Authless: 302 → login. Signed-in: 2 communities listed + create form. |
+| `/login` | ☑ | ☑ | Renders sign-in form; andrew/Password1 login works, lands on `/` signed-in. |
+| `/register` | ☑ | ☑ | Renders create-account form with validation hints. |
+| `/admin/dashboard` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending (andrew may lack admin role — record outcome). |
+| `/admin/users` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/admin/moderation` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
+| `/admin/instance` | ☐ | ☑ | Authless: 302 → login. Signed-in pass pending. |
 
-**Resume checkpoint** (last completed page + state, updated at end of each slice): `—`
+**Resume checkpoint** (last completed page + state, updated at end of each slice): Authless pass complete for all 18 routes (all gating routes 302 → login, no data leaks, no console errors). Signed-in pass: `/`, `/home`, `/directory` (deep), `/communities` done; next = `/search` signed-in, then `/profile`, `/settings`, `/notifications`, `/compose`, `/object`, `/actor`, `/community` deep links, then the 4 admin routes. **Turn interrupted by Playwright MCP process death — next turn must re-establish the browser (clean entry, re-login as andrew) before continuing.**
 
-**Data-state note** (instance data can drift between slices; record what exists at slice start so repros are interpretable): `—`
+**Data-state note** (instance data can drift between slices; record what exists at slice start so repros are interpretable): Actors: alice, andrew (display name "Andrew Luitink"), bob. andrew follows alice (directory shows Unfollow), not bob (Follow). Communities: `owner-test-5428` ("Testing community owner management."), `test-community-541` ("Created during the 54.1 regression pass."). Public timeline: 4 alice posts. andrew's home: own post "Neato misquito", 4 boosts (3 alice posts + 1 mastodon.world RayvenMX status), 3 RayvenMX posts (1 liked+boosted by andrew, 1 mentions @andrew "yoo"). No console errors observed on any pass so far.
 
 ## Findings
 
 | ID | Sev | Class | Status | Slice | Page | Repro | Expected | Actual | Verify (`console-clean + <state> works`, + screenshot path if taken) |
 |---|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | | |
+| B-001 | S1 | bug | open | 62.3 | `/directory` | Sign in → Directory → People tab → click any actor's name (e.g. "alice"). | Navigates to that actor's detail page. | Click is a no-op: URL stays `/directory`, no network request. Every actor link's href is the literal string `/actor?iri=Actor.Id` (a placeholder that was never substituted with the actor's IRI). | — |
+| B-002 | S2 | bug | open | 62.3 | `/directory` | Sign in → Directory → click the "Communities" tab. | Tab switches to list the instance's communities (2 exist: owner-test-5428, test-community-541). | Tab is inert: click fires zero network requests, `aria-selected` is never set on either tab, content stays on the People list. No error, no console message. | — |
+| B-003 | S2 | bug | open | 62.3 | `/directory` | Sign in → Directory → People tab → inspect the card wrapper (a11y tree / screen reader). | Each card exposes a sensible accessible name (e.g. the actor's name). | Each card button's accessible name is `Show posts by System.Linq.Enumerable+RangeSelectIterator`2[System.Int32,System.String]` — an unrendered .NET type name is leaking into the DOM (the card's aria-label/title is bound to a `ToString()` of a LINQ iterator instead of the actor). | — |
 
 ## Phase 64 — request spam & network efficiency (draft topics)
 
@@ -55,7 +57,12 @@
 
 | # | Method + path (pattern) | Status | Count (×) | Trigger (what load/control fires it) | Where (page) | Cause tag | Root-cause hypothesis |
 |---|---|---|---|---|---|---|---|
-| | | | | | | | |
+| 1 | GET `/ap/v1/u/{actor}` | 200 | 5 | `/home` initial load — once per post card that shows andrew (own post + 3 own-boosts + session) | `/home` | N+1 / dup | Per-card actor fetch with no client-side actor cache; same actor (andrew) fetched 5× on one page load. A shared actor cache keyed by IRI would collapse this to 1. |
+| 2 | POST `/ap/v1/proxy/https://mastodon.world/users/RayvenMX` | 200 | 4 | `/home` initial load — one per card referencing the remote actor RayvenMX (3 posts + 1 boost) | `/home` | N+1 / dup | Remote actor fetched via proxy per-card, never cached; same remote IRI proxied 4× in one load. |
+| 3 | POST `/ap/v1/proxy/{remote-iri}/likes` | 200 | 2 | `/home` initial load — engagement state for the RayvenMX boosted status | `/home` | dup | Same remote likes-collection request issued twice with no new data (re-render or double-init of the engagement state loader). |
+| 4 | GET `/ap/v1/u/{actor}/notes/{id}/likes` | 200 | 3 | `/home` initial load — one per alice post's card | `/home` | N+1 | Per-item likes-collection fan-out on load; 3 posts → 3 calls. Consider embedding like/share counts in the feed item (or a batch endpoint) instead of per-item fetches. |
+| 5 | GET `/ap/v1/u/{actor}/notes/{id}/shares` | 200 | 3 | `/home` initial load — one per alice post's card | `/home` | N+1 | Same as #4 for shares. |
+| 6 | GET `/ap/v1/public/feed?limit=20` | 200 | 2 | `/` (public timeline) initial load | `/` | dup | Same feed request fired twice on mount (likely a double component init / re-render). |
 
 ## Console errors (raw log)
 
