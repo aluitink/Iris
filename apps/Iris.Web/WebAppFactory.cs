@@ -614,6 +614,56 @@ public static class WebAppFactory
             return Results.Json(new { unread });
         }).RequireAuthorization();
 
+        // Notification list (61.3): GET returns the filtered, paged notification items.
+        // Applies user prefs (disabled types, muted actors) + optional ?type= filter.
+        // Returns { items: [...], totalItems: N, nextPage: "..." | null }.
+        endpoints.MapGet("/local/v1/notifications", async (
+            HttpContext ctx,
+            IUserAccountStore accounts,
+            IPersistenceProvider persistence,
+            string? type,
+            int? limit,
+            int? offset,
+            CancellationToken ct) =>
+        {
+            var sub = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(sub, out var accountId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var account = await accounts.FindByIdAsync(accountId, ct);
+            if (account is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
+            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs);
+
+            // Optional type filter (e.g. ?type=Like for likes only).
+            if (!string.IsNullOrWhiteSpace(type))
+            {
+                filtered = filtered.Where(item =>
+                    item is Activity { Type: { } t } act &&
+                    t.FirstOrDefault() is string firstType &&
+                    string.Equals(firstType, type, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+            }
+
+            var safeLimit = Math.Clamp(limit ?? 20, 1, 100);
+            var safeOffset = Math.Max(0, offset ?? 0);
+            var page = filtered.Skip(safeOffset).Take(safeLimit).ToList();
+            var hasMore = safeOffset + safeLimit < filtered.Count;
+
+            return Results.Json(new
+            {
+                items = page,
+                totalItems = filtered.Count,
+                nextPage = hasMore ? $"/local/v1/notifications?limit={safeLimit}&offset={safeOffset + safeLimit}{(string.IsNullOrWhiteSpace(type) ? "" : $"&type={type}")}" : null,
+            });
+        }).RequireAuthorization();
+
         // Notification preferences (53.2): GET returns the current prefs, PUT replaces them.
         endpoints.MapGet("/local/v1/account/notification-preferences", async (
             HttpContext ctx,

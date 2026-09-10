@@ -4,6 +4,7 @@
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using KristofferStrube.ActivityStreams
+@using System.Text.Json
 
 <PageTitle>Notifications · Iris</PageTitle>
 
@@ -14,29 +15,51 @@
     </button>
 </div>
 
-<p class="muted">
-    A unified "what happened to me" feed: the activities in your inbox (follows, follow requests,
-    likes, boosts, replies, mentions), newest first — paged with next-link walking.
-</p>
+<div class="notif-filter-tabs">
+    @foreach (var (value, label) in FilterOptions)
+    {
+        <button class="filter-tab" @onclick="() => OnSelectFilter(value)"
+                aria-pressed="@(_selectedFilter == value)">
+            @label
+        </button>
+    }
+</div>
 
-<PagedCollection
-    @key="@InboxKey"
-    Client="@Client"
-    CollectionIri="@InboxIri"
-    PageSize="10"
-    ShowRefreshButton="true"
-    ItemTemplate="@ItemTemplate">
-    <EmptyContent>
-        <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            <p>No notifications yet.</p>
-            <p>When someone follows you, replies, or mentions you, it shows up here.</p>
+@if (_loading)
+{
+    <p class="muted">Loading notifications…</p>
+}
+else if (_items is null || _items.Count == 0)
+{
+    <div class="empty-state">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
+        <p>No notifications yet.</p>
+        <p>When someone follows you, replies, or mentions you, it shows up here.</p>
+    </div>
+}
+else
+{
+    <ul class="notif-list">
+        @foreach (var item in _items)
+        {
+            <li class="notif-item">
+                <NotificationRow Item="@DeserializeItem(item)" SelfId="@SelfIri" />
+            </li>
+        }
+    </ul>
+
+    @if (_nextPage is not null)
+    {
+        <div class="notif-pagination">
+            <button class="btn btn--secondary" @onclick="OnLoadMoreAsync" disabled="@_loading">
+                @(_loading ? "Loading…" : "Load more")
+            </button>
         </div>
-    </EmptyContent>
-</PagedCollection>
+    }
+}
 
 @code {
     [Inject]
@@ -46,15 +69,76 @@
     private NotificationService NotificationService { get; set; } = default!;
 
     private bool _markingRead;
+    private bool _loading;
+    private List<JsonElement>? _items;
+    private int _offset;
+    private string? _nextPage;
+    private string? _selectedFilter;
 
-    /// <summary>
-    /// Primes the session's signing key so <c>Session.Client</c>/<c>Session.ActorId</c> resolve before
-    /// the inbox <c>PagedCollection</c> renders.
-    /// </summary>
+    private static readonly (string? Value, string Label)[] FilterOptions =
+    [
+        (null, "All"),
+        ("Follow", "Follows"),
+        ("Like", "Likes"),
+        ("Announce", "Boosts"),
+        ("Create", "Replies"),
+    ];
+
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
+        await LoadNotificationsAsync();
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _loading = true;
+        _offset = 0;
+        _items = [];
+        _nextPage = null;
         StateHasChanged();
+
+        var page = await NotificationService.GetNotificationsAsync(
+            _selectedFilter, limit: 20, offset: 0);
+        _items = page.Items.Select(e => e).ToList();
+        _offset = _items.Count;
+        _nextPage = page.NextPage;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnLoadMoreAsync()
+    {
+        if (Session.UserId is not { } uid || _loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        var page = await NotificationService.GetNotificationsAsync(
+            _selectedFilter, limit: 20, offset: _offset);
+        if (_items is null)
+        {
+            _items = [];
+        }
+        _items.AddRange(page.Items);
+        _offset += page.Items.Count;
+        _nextPage = page.NextPage;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnSelectFilter(string? value)
+    {
+        _selectedFilter = value;
+        await LoadNotificationsAsync();
     }
 
     private async Task OnMarkAllReadAsync()
@@ -70,42 +154,16 @@
         StateHasChanged();
     }
 
-    /// <summary>
-    /// A stable <c>@key</c> for the inbox's <c>PagedCollection</c> (the notifications list is a single,
-    /// fixed collection — the session actor's inbox — so the key is a constant).
-    /// </summary>
-    private const string InboxKey = "inbox";
-
-    /// <summary>
-    /// The client to dial (the signed-in session's client), or <c>null</c> when signed out.
-    /// </summary>
-    private IActivityPubClient? Client => Session.Client;
-
-    /// <summary>
-    /// The session actor's own IRI (used to recognize self-referential items), or <c>null</c> when
-    /// signed out.
-    /// </summary>
     private Iri? SelfIri => Session.ActorId;
 
-    /// <summary>
-    /// The inbox collection IRI (the session actor's <c>{actor}/inbox</c>), or <c>null</c> when signed
-    /// out. Derived via <see cref="IriExtensions.InboxOf(Iri)"/>.
-    /// </summary>
-    private Iri? InboxIri
-        => Session.ActorId is { } actor ? actor.InboxOf() : null;
-
-    /// <summary>
-    /// The per-item template for the notifications list: renders each inbox activity as a
-    /// <see cref="NotificationRow"/> (the classified "who did what" line). Built as a
-    /// <see cref="RenderFragment{T}"/> (a delegate), since a <c>RenderFragment&lt;T&gt;</c> child-element
-    /// does not bind <c>T</c> the way a non-generic <c>RenderFragment</c> does.
-    /// </summary>
-    private RenderFragment<IObjectOrLink> ItemTemplate
-        => item => builder =>
+    private static IObjectOrLink? DeserializeItem(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
         {
-            builder.OpenComponent<NotificationRow>(0);
-            builder.AddComponentParameter(1, nameof(NotificationRow.Item), item);
-            builder.AddComponentParameter(2, nameof(NotificationRow.SelfId), SelfIri);
-            builder.CloseComponent();
-        };
+            return null;
+        }
+
+        var json = element.GetRawText();
+        return ActivityJson.Deserialize<IObjectOrLink>(json);
+    }
 }

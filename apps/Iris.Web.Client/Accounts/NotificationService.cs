@@ -53,5 +53,39 @@ public sealed class NotificationService
         return body?.Unread ?? 0;
     }
 
+    /// <summary>
+    /// Fetches a page of notifications from the server's filtered list endpoint.
+    /// </summary>
+    /// <param name="type">Optional activity type filter (e.g. "Like", "Follow").</param>
+    /// <param name="limit">Page size (default 20, max 100).</param>
+    /// <param name="offset">Offset into the result set.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The notification page (items, total count, next-page URL or null).</returns>
+    public async Task<NotificationPage> GetNotificationsAsync(
+        string? type = null, int limit = 20, int offset = 0, CancellationToken ct = default)
+    {
+        var query = $"limit={limit}&offset={offset}";
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            query += $"&type={Uri.EscapeDataString(type)}";
+        }
+
+        var json = await _http.GetStringAsync($"/local/v1/notifications?{query}", ct);
+        var page = System.Text.Json.JsonSerializer.Deserialize<NotificationPage>(json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        return page ?? new NotificationPage([], 0, null);
+    }
+
     private sealed record UnreadCountDto(int Unread);
 }
+
+/// <summary>
+/// A page of notifications from the server's <c>GET /local/v1/notifications</c> endpoint.
+/// </summary>
+/// <param name="Items">The notification items (ActivityStreams activities).</param>
+/// <param name="TotalItems">The total number of matching notifications (before paging).</param>
+/// <param name="NextPage">The URL for the next page, or null when there is no next page.</param>
+public sealed record NotificationPage(
+    IReadOnlyList<System.Text.Json.JsonElement> Items,
+    int TotalItems,
+    string? NextPage);

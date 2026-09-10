@@ -106,7 +106,7 @@ Short, bounded list — only the next few items, not the whole roadmap. Defects 
 
 - 61.1: **WASM performance audit** (COMPLETE) — `PublishTrimmed` + `InvariantGlobalization` on WASM client. 29.92 MB → 13.13 MB total transfer (-56%), 208 → 65 WASM files (-69%), 38.6 → 5.0 MB gzipped (-87%). BouncyCastle (5.14 MB) retained — requires `Iris.Core` conditional-reference change (future). [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
 - 61.2: **Search relevance + full-text indexing** (COMPLETE) — `tsvector` + GIN index on `Objects`/`Actors`; search queries use `plainto_tsquery('simple', …)` + `ts_rank` for ranked results; ILIKE fallback for NULL-vector rows. Migration backfills existing rows. `[NotMapped]` + raw SQL (EF Core doesn't map string→tsvector). 1651 passed / 0 failed / 17 skipped. [changes/431](docs/changes/431-61.2-search-relevance-full-text-indexing.md)
-- 61.3: **Notification filtering + grouping** (LOW) — filter by type (mentions/replies/likes/follows), group by actor, mark individual as read.
+- 61.3: **Notification filtering + grouping** (COMPLETE) — `GET /local/v1/notifications?type=&limit=&offset=` with server-side type filtering + prefs; WASM client with filter tabs (All/Follows/Likes/Boosts/Replies) + "Load more" pagination. 1651 passed / 0 failed / 17 skipped. [changes/432](docs/changes/432-61.3-notification-filtering-grouping.md)
 
 **Phase 60 — UI/UX Review (COMPLETE):**
 
