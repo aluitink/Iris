@@ -71,12 +71,12 @@ Iris.slnx
 
 ## Now
 
-- **Phase 71 — Note card + compose polish (in progress).** Distilled from a review of the feed/outbox note card (`ObjectView.razor`) and the compose page (`Compose.razor`). Six items (details under Up Next): (1) note card built from all available content; (2) attachments/documents rendered inline with the text, after the text; (3) interaction bar at the bottom of the post; (4) sensitive content blurred until reveal (not just hidden); (5) compose `@handle` autocomplete dropdown shows known actors; (6) review external/remote user content that contains attachments.
-- **Phase 72 — (to be distilled from 71's findings at 71's closeout).**
+- **Phase 71 — Note card + compose polish (COMPLETE).** All six slices done (71.1–71.6). Change doc: [711](docs/changes/711-note-card-compose-polish.md).
+- **Phase 72 — Efficiency + UX residuals (distilled from 63/64/70/71 closeouts).** Four items: (1) shared per-object engagement-count cache on `UiContext` (Phase 64/70 residual — eliminates the 2× `/likes`+`/shares` walk when `ActorAvatar`'s async fetch re-renders the page); (2) minted-id extension (Phase 64 residual — render the minted Like/Announce activity IRI on the object so the client skips the id-recovery walk); (3) richer inline document rendering (Phase 71.2 residual — non-image documents like PDFs render as a link-card, not an inline preview); (4) IA-03 nav grouping (Phase 63 residual — flat 9-link nav, low priority, revisit only if nav grows past ~11 links).
 
 ## Active Slice
 
-- **71 — Note card + compose polish (in progress).** Five of six slices implemented (71.1–71.5); 71.6 (review remote user content with attachments) is a live-verification pass remaining. **No new coded tests** (WASM manual-test policy) — build 0 warn/0 err; `Iris.Web.Tests` 63/63. Change doc: [711](docs/changes/711-note-card-compose-polish.md).
+- **72 — Efficiency + UX residuals (in progress).** Distilled from Phase 63/64/70/71 closeouts. Four slices (details under Slices table): (1) engagement-count cache; (2) minted-id extension; (3) richer inline document rendering; (4) nav grouping. **No new coded tests** (WASM manual-test policy) — build 0 warn/0 err; `Iris.Web.Tests` 63/63.
 
   **Slice 71.1 — Note card built from all available content — DONE.** The feed/outbox `Create` branch of `ObjectView.razor` previously showed only the note's **text** + a `MediaGallery` for image attachments. Now builds the card from the full embedded object: in-reply-to, audience, updated timestamp, article duration/language, mentions, hashtags, custom emojis, media (all types), poll. Activity-scoped computed properties added to `ObjectView.razor.cs` (read the embedded content object, not the activity wrapper).
 
@@ -109,7 +109,7 @@ Work for **the phase after the next** is distilled from **the current phase**, w
 | Phase | Role | Status |
 |---|---|---|
 | 71 | Note card + compose polish — card built from all content, inline attachments, interaction bar at bottom, sensitive-blur, mention dropdown | **COMPLETE** — all 6 slices done |
-| 72 | distill from 71 | planned |
+| 72 | Efficiency + UX residuals — engagement-count cache, minted-id extension, inline document rendering, nav grouping | **in progress** — see Slices table |
 
 - Each phase's closeout writes its change doc AND distills the next-next phase's topics into this file.
 - **Operator latitude:** I am authorized to do whatever keeps testing moving — recreate containers, create new test users, seed content, restart services, adjust test data. Log significant interventions in the slice's tracker notes.
@@ -135,21 +135,21 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 
-### Slices (Phase 71)
+### Slices (Phase 72)
 
 | Slice | Scope |
 |---|---|
-| **71.1** | Note card renders from all available content: in the feed/outbox `Create` branch (`ObjectView.razor:2-42`), the card currently shows only the note's **text** (`@ActivityContent`) + a `MediaGallery` for image attachments — it does not render hashtags/mentions/audience/in-reply-to/emojis/poll/article-meta the way the `IObject` branch (`ObjectView.razor:129-272`) does. Build the feed/outbox card from the full embedded object: parse `#hashtag` + `@handle` into inline links in the body, surface the remaining metadata, and handle every attachment type (documents, video, audio) — not just images. |
-| **71.2** | Attachments render **inline with the text, after the text**: `MediaGallery` already sits after the content in the `IObject` branch but its **document** handling (the `📄`-icon + name + open-in-new-tab card, `MediaGallery.razor:57-73`) is a link-card, not an inline document. Render documents inline with the text (after it) — preview + name + download/link — consistent with the image grid, so an attached document reads as part of the post, not a separate footer row. |
-| **71.3** | Interaction bar at the **bottom of the post**: the `EngagementBar` (like/boost/reply) sits between the content and the `MediaGallery` in the feed/outbox `Create` branch (`ObjectView.razor:15-41`), so media renders *below* the bar. Reorder so the card is header → content → attachments → **interaction bar last** (the bar is the post's footer). |
-| **71.4** | Sensitive content is **blurred until reveal**: today a `sensitive` note renders a notice + "Show" button and the content is only *hidden* (absent from the DOM until revealed, `ObjectView.razor:144-168`) — it is not blurred. Render the content **blurred** (e.g. CSS `filter: blur()`) behind the notice so the shape of the post is visible, and un-blur on reveal (keep the click-to-reveal interaction). |
-| **71.5** | Compose `@handle` autocomplete dropdown shows **known actors**: the dropdown already exists and queries instance search for `@` (`Compose.razor:555-645`, 54.14), but it is **local-actors-only** and offers nothing for an empty token / unknown handles. Surface the **known actors** — the signed-in actor's **follows** (the accounts the user actually knows) as the default dropdown list, then merge live search results as the user types; show handle + display name. |
-| **71.6** | Review **external/remote user content that contains attachments**: drive a remote post that carries attached documents/media and confirm the object-detail view (`/object?iri=…`) and the actor-outbox view render the attachments correctly (remote media rewritten same-origin, documents shown inline after the text per 71.2, no console errors). **Live example:** `https://iris.luit.ink/object?iri=https://mastodon.world/users/RayvenMX/statuses/116182691592848717` (a RayvenMX status with attachments). **Unblocked** (the login 400 was stale Playwright context state, not a code/proxy bug — see Paused Questions). |
+| **72.1** | **Shared per-object engagement-count cache on `UiContext`** (Phase 64/70 residual). Each remote post's `EngagementBar` fires its `/likes`+`/shares` walk **2×** (14 posts → 56 round-trips instead of 28) because `ActorAvatar`'s async actor-fetch completion triggers a page `StateHasChanged` that **recreates** the `EngagementBar` as a fresh instance (a per-instance `_countsLoaded` guard — attempted, verified as a no-op, reverted — cannot catch it). **Fix:** a shared per-object engagement-count cache on `UiContext` (key by object IRI), mirroring the 64.1 actor-coalescing gate. A re-created `EngagementBar` for the same post reuses already-loaded counts. **Caveat:** local-feed engagement state (like/boost) optimistically mutates the per-instance count — the shared cache must not stale those (the cache stores the *server-derived* count; the optimistic delta is applied on top in the component). |
+| **72.2** | **Minted-id extension** (Phase 64 residual). The residual 5+5 `/likes`+`/shares` walks that remain after 64.2 — one collection walk per card the viewer actually engaged (liked/boosted), to recover the minted Like/Announce activity IRI that an unlike/un-boost (Undo) references. **Fix:** bounded server addition — render the minted Like/Announce activity IRI on the object alongside `isLiked`/`isShared` (a per-(requester, object) activity lookup in `EnrichCollectionItemsAsync`) — plus a new client extension read so the client never needs the id-recovery walk. |
+| **72.3** | **Richer inline document rendering** (Phase 71.2 residual). Non-image documents (PDFs, etc.) still render as a link-card (icon + name + open-in-new-tab) rather than a fully inline document preview. **Fix:** render non-image documents with a preview image (if `Preview` is present) + name + download link, consistent with the image grid, so an attached document reads as part of the post. For PDFs, consider an embedded `<iframe>` or `<object>` preview (bounded height, click-to-expand). |
+| **72.4** | **IA-03 nav grouping** (Phase 63 residual, low priority). The top nav is a flat row of 9 links with no visual grouping — actions, navigation, and account links are interleaved. **Fix:** a visual grouping (a divider before the account links, or a right-aligned account cluster). **Only action if the nav grows past ~11 links** — currently fits at all desktop widths and the mobile hamburger already groups. |
 
 ## Up Next
 
-- 71.2 (residual) — Richer inline document rendering (non-image documents like PDFs still render as a link-card; a fully inline document preview is deferred).
-- 72 — (to be distilled from 71's findings at 71's closeout)
+- 72.1 — Shared per-object engagement-count cache on `UiContext` (eliminates the 2× `/likes`+`/shares` walk on re-render).
+- 72.2 — Minted-id extension (render the minted Like/Announce IRI on the object; client skips the id-recovery walk).
+- 72.3 — Richer inline document rendering (non-image documents get a preview + name + download link, not just a link-card).
+- 72.4 — IA-03 nav grouping (low priority; only if nav grows past ~11 links).
 
 ## Inbox
 

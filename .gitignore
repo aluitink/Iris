@@ -85,3 +85,6 @@ probe_*.txt
 
 ## Backups (local backup archives — never commit)
 backups/
+
+## Scratch (removed WASM client + throwaway work)
+.scratch/

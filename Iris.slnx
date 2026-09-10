@@ -1,7 +1,6 @@
 <Solution>
   <Folder Name="/apps/">
     <Project Path="apps/Iris.Web/Iris.Web.csproj" />
-    <Project Path="apps/Iris.Web.Client/Iris.Web.Client.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/IrisStaticHost/IrisStaticHost.csproj" />
