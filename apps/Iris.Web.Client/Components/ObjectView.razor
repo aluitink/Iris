@@ -37,32 +37,7 @@
                     <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
                 }
             }
-            @foreach (var att in ActivityRichAttachments)
-            {
-                @if (IsPlainImage(att))
-                {
-                    <div class="object-media">
-                        <img src="@RichAttachmentUrl(att)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" />
-                    </div>
-                }
-                else
-                {
-                    <div class="object-attachment">
-                        <div class="object-attachment-icon">@RichAttachmentIcon(att.Type)</div>
-                        @if (RichAttachmentPreviewUrl(att) is { } previewUrl)
-                        {
-                            <img class="object-attachment-preview" src="@previewUrl" alt="" loading="lazy" />
-                        }
-                        <div class="object-attachment-info">
-                            <a href="@RichAttachmentUrl(att)" target="_blank" rel="noopener" class="object-attachment-link">@(att.Name ?? att.Url.Value)</a>
-                            @if (att.Type is { } attType)
-                            {
-                                <span class="object-attachment-type">@attType</span>
-                            }
-                        </div>
-                    </div>
-                }
-            }
+            <MediaGallery Attachments="ActivityRichAttachments" />
         </div>
     }
     else if (Item is Announce)
@@ -92,32 +67,7 @@
                     </div>
                 }
                 <EngagementBar ObjectIri="@targetIri" Object="ActivityEmbeddedObject" />
-                @foreach (var att in ActivityRichAttachments)
-                {
-                    @if (IsPlainImage(att))
-                    {
-                        <div class="object-media">
-                            <img src="@RichAttachmentUrl(att)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" />
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="object-attachment">
-                            <div class="object-attachment-icon">@RichAttachmentIcon(att.Type)</div>
-                            @if (RichAttachmentPreviewUrl(att) is { } previewUrl2)
-                            {
-                                <img class="object-attachment-preview" src="@previewUrl2" alt="" loading="lazy" />
-                            }
-                            <div class="object-attachment-info">
-                                <a href="@RichAttachmentUrl(att)" target="_blank" rel="noopener" class="object-attachment-link">@(att.Name ?? att.Url.Value)</a>
-                                @if (att.Type is { } attType2)
-                                {
-                                    <span class="object-attachment-type">@attType2</span>
-                                }
-                            </div>
-                        </div>
-                    }
-                }
+                <MediaGallery Attachments="ActivityRichAttachments" />
             }
         </div>
     }
@@ -282,32 +232,7 @@
                     }
                 </div>
             }
-            @foreach (var att in RichAttachments)
-            {
-                @if (IsPlainImage(att))
-                {
-                    <div class="object-media">
-                        <img src="@RichAttachmentUrl(att)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" />
-                    </div>
-                }
-                else
-                {
-                    <div class="object-attachment">
-                        <div class="object-attachment-icon">@RichAttachmentIcon(att.Type)</div>
-                        @if (RichAttachmentPreviewUrl(att) is { } previewUrl3)
-                        {
-                            <img class="object-attachment-preview" src="@previewUrl3" alt="" loading="lazy" />
-                        }
-                        <div class="object-attachment-info">
-                            <a href="@RichAttachmentUrl(att)" target="_blank" rel="noopener" class="object-attachment-link">@(att.Name ?? att.Url.Value)</a>
-                            @if (att.Type is { } attType3)
-                            {
-                                <span class="object-attachment-type">@attType3</span>
-                            }
-                        </div>
-                    </div>
-                }
-            }
+            <MediaGallery Attachments="RichAttachments" />
             @if (Poll is { } poll)
             {
                 <div class="object-poll">

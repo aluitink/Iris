@@ -71,97 +71,37 @@ Iris.slnx
 
 ## Now
 
-**Phase 60 — UI/UX Review (IN PROGRESS).** Playwright-driven inspection of every view; defects triaged and fixed in-slice. **Phase 59 — Remaining spec gaps & final interop (COMPLETE).** 4 slices from the last open F-items: 59.1 (`Move` re-resolution + key rotation, F-25), 59.2 (OAuth2 bearer path, F-20), 59.3 (`Article`-specific fields, F-11 remainder), 59.4 (`ld+json` production, F-31). **Phase 58 — Federation completeness & remaining spec gaps (COMPLETE).** 4 slices: 58.1 (custom emoji, F-27), 58.2 (Question/poll, F-26), 58.3 (rich attachments, F-11), 58.4 (final conformance sweep) — all COMPLETE. **Phase 57 COMPLETE** (57.1–57.4). **54.15 (Markdown content rendering)**: the production `ObjectView` was treating non-pre-rendered-HTML `content` as inert text (`WebUtility.HtmlEncode`), so Markdown-sourced notes displayed their literal source. Reused the app's existing dependency-free Markdown renderer by moving it to the shared `Iris.Core.Rendering.Markdown` (both the sample and the production client already reference `Iris.Core` transitively), and switched the three production render sites (`ObjectView.RenderedContent`/`ActivityContent`, `ObjectViewActivityRenderer.SafeContent`) from `HtmlEncode` to `Markdown.ToHtml` for non-HTML content (pre-rendered HTML still emitted verbatim). Live-verified: a Markdown note renders to `<h1>/<strong>/<em>/<ul>/<ol>/<a>/<code>/<pre>/<br>`; an XSS note's raw `<script>` is escaped inert and a `javascript:` link is dropped while a `https` link is kept; a pre-rendered-HTML note renders verbatim. Core 293/0, Server 952/0, Web 63/0, SampleBlazorClient 17/17. **54.14 (mention/hashtag autocomplete popover + `tag` round-tripping)**: the composer's `tag` field now round-trips `Hashtag` entries end to end — `IriExtensions.GetHashtagTags` reads them back, `ComposeNote.Build`/`PostReplyAsync` write them (a generic `Object` of `Type=["Hashtag"]`, `Name`, optional `href`), all four compose post paths detect `#hashtag` and pass them through, and `ObjectView` renders them as links to the local hashtag search; plus a live-verified autocomplete popover (debounced `@onkeyup` token detection → actor search for `@`, typed-token offer for `#`, splice-on-accept). A subtle store-round-trip quirk (a `tag` item whose `type` is an array lacking the `"Object"` base deserializes to null and is dropped; the write path's bare-string `"Hashtag"` form round-trips cleanly) is guarded by `HashtagStoreRoundTripTests`. Core 293/0, Server 952/0, Web 63/0. **54.6 (search stale-results cosmetic)** — the Search page's results branch was guarded only by `Results is not null`; a CDP-throttled re-search + MutationObserver showed the stale results were already hidden in practice (because `RunSearchAsync` nulls `Results` in the same synchronous chunk as `Busy = true`), but the correctness was timing-dependent. Made it structural: the results branch is now gated on `!Busy` too, so a re-search never renders the prior result set while in flight. Live-verified: the observer never saw the spinner with results present. **54.13 (media upload 400)** fixed: the 400 was Kestrel's global 1 MiB `MaxRequestBodySize` cap (not nginx) — `LocalMediaUploadHandler` now sets `IHttpMaxRequestBodySizeFeature.MaxRequestBodySize = MaxMediaUploadBytes` (10 MiB) before reading the form (exempting the authenticated media endpoint from the 1 MiB federation-inbox DoS bound) and propagates the `BadHttpRequestException` status (413 for oversized, 400 for malformed) instead of a blanket 400. Live-verified: 1 MiB / 1.3 MiB / 2 MB / 9 MiB → 201 (were 400), 11 MiB → 413. **54.5 (responsive at 768px/1024px)** was a clean verification pass (no overflow/clipping, no code change). **Active slice: 54.14 (mention/hashtag autocomplete popover + `tag` round-tripping)**. 54.12 (No way to set actor icon/image via edit profile) added an avatar control to `EditProfileForm` (preview + `InputFile` upload-on-select + "Remove avatar"), wired `Profile.razor` to upload via `Session.UploadMediaAsync` and set/clear `updated.Icon` (a `Link`, or `[]` to remove) on the embedded `Person`, and fixed two server gaps in `UpdateActivityHandler`: icon-merge semantics (an empty icon array clears the icon; a missing one leaves it unchanged) and — the key fix — `LocalActorDocumentCache` invalidation after `PutActorAsync` (without it a profile edit persisted to the store but the public actor document kept serving a stale cached copy, so the new icon/name were invisible to federation, other clients, and a fresh load). 54.11 (Settings → Account → Edit profile two clicks) deep-linked the Settings Account-tab "Edit your profile" link to `/profile?edit=true`; `Profile.razor` reads the `?edit` query param and a one-shot flag auto-enters edit mode on load, so the user skips the extra "Edit profile" click. 54.10 (Settings tab bar overcrowded) dropped the Password tab and folded its change-password form into the Account tab as a native `<details>` collapsible (7→6 tabs). 54.9 (duplicate home-feed fetch) fixed the client's `GetCollectionAsync` double-fetch: a self-`first` collection (an `OrderedCollection` served as its own first page) was fetched twice (once to read `first`, once for the first page) — now the fetched collection document is reused as the first page, so the first page costs one `GET`. 54.8 (redundant per-object likes/shares fetch) made the server stamp `iris:likedCount`/`sharedCount`/`repliedCount` (+ per-requester `isLiked`/`isShared`) onto feed/outbox/object-doc objects and gave `EngagementBar` a fast path that skips both collection walks when the counts are present — also fixed a `KristofferStrube.ActivityStreams` `OneOrMultipleConverter` bug that clones + drops `ExtensionData` on nested objects. Next slice 54.13 (Media upload 400s on a 1.3 MiB image — cause unconfirmed) is Active.
-
-*(Phases 32–53 complete — one-line ledger per phase in [docs/ROADMAP.md](docs/ROADMAP.md).)*
-
-**Test policy for these phases (user-directed, binding):**
-
-- **No new coded tests** — all verification is manual via MCP Playwright (live app, real browser).
-- **Existing web tests (`tests/Iris.Web.Tests`) are expendable:** keep what passes; if a change breaks one, **delete that test** (log it in the change doc) — never fix the app to satisfy it, never write a replacement.
-- **15-second rule:** any single test taking longer than 15 s is **skipped**; if the suite stalls on timing-out tests, use blame (detailed per-test timings) to find the offenders and **comment them out**.
-- **Done = live-verified:** build clean + Docker rebuild + Playwright pass over the slice's scope + screenshots; broken/slow tests handled per the rules above.
+**Phase 61 — Post-1.0 stability & operational depth (COMPLETE).** All 4 slices done: 61.1 (WASM perf audit), 61.2 (search relevance + FTS), 61.3 (notification filtering + grouping), 61.4 (media gallery + lightbox + media players).
 
 ## Active Slice
 
-*(none — 60.1 COMPLETE; next: 60.2 proxy 410 console noise or further UI polish.)*
+- None currently. The next work item starts here once a defect or improvement is triaged.
 
 ### Loop protocol (WASM manual-test phase)
 
-Each slice is a **Playwright-driven pass**, not a code-first slice. Per slice:
-
-1. **Build**: `cd /workspace && dotnet build apps/Iris.Web/Iris.Web.csproj -c Release`
-2. **Docker**: `cd /workspace/apps/Iris.Web && docker compose build iris-web && docker compose up -d --force-recreate iris-web` — **avoid `--no-cache`** (repeated no-cache fills the host disk; if the build fails with `No space left on device`, run `docker builder prune -af` first).
-3. **Manual test (MCP Playwright)**: create/use test accounts (`alice`/`alice-password` seeded; register more as the slice needs — `bob`, `carol`, `dave`), create test content (posts, replies, follows, communities, media, CW), exercise the slice's scope (see [docs/plans/wasm-stabilization.md](docs/plans/wasm-stabilization.md)). Capture **console errors** (`browser_console_messages`) and **screenshots of every screen** (inline screenshot no files) visited - use public fqdn address "https://iris.luit.ink".
-4. **Triage**: log every defect (page, repro, expected vs actual, severity) in the slice's change doc; any defect not fixed this slice becomes a numbered **Up Next** item.
-5. **Fix in scope**: implement fixes for the defects assigned to this slice; re-verify each fix live.
-6. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
-7. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (defects first).
+1. Build the app and verify the current slice in the browser.
+2. Triage any defects and record the repro/impact in the relevant change note.
+3. Fix only the in-scope issue, then re-verify it live.
+4. Keep the backlog short and prioritize defects before polish.
 
 ## Up Next
 
-Short, bounded list — only the next few items, not the whole roadmap. Defects triaged from test passes are prepended here (highest severity first).
-
-**Phase 61 — Post-1.0 stability & operational depth (IN PROGRESS):**
-
-- 61.1: **WASM performance audit** (COMPLETE) — `PublishTrimmed` + `InvariantGlobalization` on WASM client. 29.92 MB → 13.13 MB total transfer (-56%), 208 → 65 WASM files (-69%), 38.6 → 5.0 MB gzipped (-87%). BouncyCastle (5.14 MB) retained — requires `Iris.Core` conditional-reference change (future). [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
-- 61.2: **Search relevance + full-text indexing** (COMPLETE) — `tsvector` + GIN index on `Objects`/`Actors`; search queries use `plainto_tsquery('simple', …)` + `ts_rank` for ranked results; ILIKE fallback for NULL-vector rows. Migration backfills existing rows. `[NotMapped]` + raw SQL (EF Core doesn't map string→tsvector). 1651 passed / 0 failed / 17 skipped. [changes/431](docs/changes/431-61.2-search-relevance-full-text-indexing.md)
-- 61.3: **Notification filtering + grouping** (COMPLETE) — `GET /local/v1/notifications?type=&limit=&offset=` with server-side type filtering + prefs; WASM client with filter tabs (All/Follows/Likes/Boosts/Replies) + "Load more" pagination. 1651 passed / 0 failed / 17 skipped. [changes/432](docs/changes/432-61.3-notification-filtering-grouping.md)
-
-**Phase 60 — UI/UX Review (COMPLETE):**
-
-- 60.1: **UI/UX review pass — all views inspected, 2 defects fixed** (COMPLETE) — [changes/427](docs/changes/427-60.1-ui-ux-review.md)
-- 60.2: **Suppress 410 Gone console noise on Notifications** (COMPLETE) — [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
-- 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (COMPLETE) — [changes/429](docs/changes/429-60.3-reduce-proxy-429-rate-limit-noise.md)
-
-**Phase 59 — Remaining spec gaps & final interop (COMPLETE):**
-
-- 59.1: **`Move` re-resolution + key rotation (F-25)** (COMPLETE) — [changes/423](docs/changes/423-59.1-move-re-resolution-key-rotation.md)
-- 59.2: **OAuth2 bearer path (F-20)** (COMPLETE) — [changes/424](docs/changes/424-59.2-oauth2-bearer-path.md)
-- 59.3: **`Article`-specific fields (F-11 remainder)** (COMPLETE) — [changes/425](docs/changes/425-59.3-article-specific-fields.md)
-- 59.4: **`ld+json` production (F-31)** (COMPLETE) — [changes/426](docs/changes/426-59.4-ld-json-production.md)
-
-**Phase 58 — Federation completeness & remaining spec gaps (COMPLETE):**
-
-- 58.1: **Custom emoji / `Emoji` tag support (F-27)** (COMPLETE) — [changes/419](docs/changes/419-58.1-custom-emoji-emoji-tag-support.md)
-- 58.2: **Question / poll support (F-26)** (COMPLETE) — [changes/420](docs/changes/420-58.2-question-poll-support.md)
-- 58.3: **Rich attachment rendering (F-11)** (COMPLETE) — [changes/421](docs/changes/421-58.3-rich-attachment-rendering.md)
-- 58.4: **Final conformance sweep** (COMPLETE) — [changes/422](docs/changes/422-58.4-final-conformance-sweep.md)
-
-**Phase 56 — Cross-implementation federation compatibility (COMPLETE):**
-
-- 56.1: **Mastodon wire-compatibility gap analysis** (COMPLETE) — [changes/412](docs/changes/412-56.1-mastodon-wire-compatibility-gap-analysis.md)
-- 56.2: **Pleroma/Akko wire-compatibility check** (COMPLETE) — [changes/413](docs/changes/413-56.2-pleroma-akko-wire-compatibility.md)
-- 56.3: **Fix top-3 wire compatibility gaps** (COMPLETE) — [changes/414](docs/changes/414-56.3-fix-top3-wire-compatibility-gaps.md)
-
-**Phase 56 COMPLETE.**
-
-*(Phase 55 COMPLETE — all three slices done. See ROADMAP.md.)*
-
-**Phase 45–52** (all COMPLETE — see [docs/ROADMAP.md](docs/ROADMAP.md)).
+- *(Phase 61 complete — awaiting next phase definition or user direction.)*
 
 ## Inbox
 
-User-injected requests that arrived mid-workstream. Actioned in order at the top of the *next* turn's "select the next work item" step, ahead of **Up Next** (unless a slice is already in progress — finish that first). Cleared once actioned; the resulting slice gets its own **Recently Completed** entry.
-
-*(empty — Phase 31's 10 user-review items (2026-09-05) are all COMPLETE; see docs/changes/274–283.)*
+- Empty.
 
 ## Paused Questions
 
-Questions the agent asked and is waiting on a real answer for — the loop should not silently proceed past these. *(none currently)*
+- None currently.
 
 ## Recently Completed
 
-  - 61.2: **Search relevance + full-text indexing** (Phase 61) — `tsvector` + GIN index on `Objects`/`Actors`; search uses `plainto_tsquery('simple', …)` + `ts_rank` for ranked results with ILIKE fallback for NULL-vector rows. Migration backfills existing rows. `[NotMapped]` + raw SQL. 1651 passed / 0 failed / 17 skipped. [changes/431](docs/changes/431-61.2-search-relevance-full-text-indexing.md)
-  - 61.1: **WASM performance audit** (Phase 61) — `PublishTrimmed` + `InvariantGlobalization` on WASM client; build pipeline switched to `Publish` target with stale-output cleanup. Total transfer 29.92 → 13.13 MB (-56%), WASM files 208 → 65 (-69%), gzipped 38.6 → 5.0 MB (-87%). BouncyCastle (5.14 MB) retained — needs `Iris.Core` conditional-reference change. 1651 passed / 0 failed / 17 skipped. [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
-  - 60.3: **Reduce proxy 429 rate-limit console noise on Notifications** (Phase 60) — `DefaultProxyMaxRequestsPerMinute` raised 60→300; normal page loads no longer trigger 429s. Verified live: 0 errors on 2nd and 3rd loads (no 410s via 60.2's cache, no 429s via raised limit). 1651 passed / 0 failed / 17 skipped. [changes/429](docs/changes/429-60.3-reduce-proxy-429-rate-limit-noise.md)
-  - 60.2: **Suppress 410 Gone console noise on Notifications** (Phase 60) — `ProxyGoneCache` (bounded LRU, 1h TTL, capacity 4096) caches targets that returned 410 Gone; proxy handler checks cache before forwarding and returns 204 No Content for cached-gone targets (2xx = no browser console error). Verified live: 28 410s on first load (cold cache) → 0 errors on second load (warm cache). 1651 passed / 0 failed / 17 skipped. [changes/428](docs/changes/428-60.2-suppress-410-gone-console-noise.md)
-  - 60.1: **UI/UX review pass** (Phase 60) — Playwright inspection of all 12 views; found + fixed 2 defects: (1) search 500 — `EF.Functions.Like` on jsonb → `FromSqlRaw` with `Document::text ILIKE`; (2) negative OFFSET in `GlobalSearchService` pagination → `Math.Max(0, …)` + `remaining` accounting. Noted: 410 console noise on Notifications (→ 60.2). 1651 passed / 0 failed / 17 skipped. [changes/427](docs/changes/427-60.1-ui-ux-review.md)
-  - 59.4: **`ld+json` production (F-31)** (Phase 59) — `NegotiateContentType(context)` helper checks the `Accept` header; 18 response sites now return `application/ld+json` when the client accepts it (default remains `application/activity+json`). 4 new integration tests. Server 970/0. [changes/426](docs/changes/426-59.4-ld-json-production.md)
-  - 59.3: **`Article`-specific fields (F-11 remainder)** (Phase 59) — `GetPublishedTime` + `GetInLanguage` extension methods read from `ExtensionData`; `duration` read from typed `Object.Duration`; `ObjectView` renders all three as a metadata line on `Article` objects. 10 new unit tests. Core 344/0. [changes/425](docs/changes/425-59.3-article-specific-fields.md)
-  - 59.2: **OAuth2 bearer path (F-20)** (Phase 59) — actor document `endpoints` now advertises `oauthAuthorizationEndpoint` + `oauthTokenEndpoint`; inbox handler falls back to `Authorization: Bearer` token resolution when no valid HTTP signature is present (via `IOAuthTokenStore`); body-reading fixed to use `EnableBuffering` + `ReadAsBufferedStringAsync` (works for both signed and unsigned paths). 6 new integration tests. Server 966/0. [changes/424](docs/changes/424-59.2-oauth2-bearer-path.md)
-  - 59.1: **`Move` re-resolution + key rotation (F-25)** (Phase 59) — `GetPublicKeyIri` helper extracts `publicKey.id` from actor ExtensionData; `MoveActivityHandler` resolves the old actor's actual key IRI (not `#key-1`) + warms the new actor doc into `RemoteActorCache`; `RemoteInboundKeyResolver` invalidates the old key's cache entry when a fetched document's `publicKey` declares `replaces`. 9 new unit tests. Core 334/0, Server 977/0. [changes/423](docs/changes/423-59.1-move-re-resolution-key-rotation.md)
-Rolling window of the last ~5 slices. When a new entry pushes this over 5, move the oldest entry's one-liner into [docs/ROADMAP.md](docs/ROADMAP.md)'s ledger and drop it here.
+- 61.4: **Media gallery on object detail** — `MediaGallery` component: responsive multi-image grid (1/2/3/4) with lightbox, inline `<video>`/`<audio>` players, document fallback. 1651/0/17. [changes/433](docs/changes/433-61.4-media-gallery-object-detail.md)
+- 61.3: **Notification filtering + grouping** — server-side `?type=` filter + prefs; WASM filter tabs + load more. 1651/0/17. [changes/432](docs/changes/432-61.3-notification-filtering-grouping.md)
+- 61.2: **Search relevance + FTS** — `tsvector` + GIN index, `ts_rank` ranked results. 1651/0/17. [changes/431](docs/changes/431-61.2-search-relevance-full-text-indexing.md)
+- 61.1: **WASM performance audit** — trimmed + invariant globalization; 29.92→13.13 MB total, 38.6→5.0 MB gzipped. 1651/0/17. [changes/430](docs/changes/430-61.1-wasm-performance-audit.md)
 
 ## Keeping the docs lean
 
