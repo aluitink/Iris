@@ -26,22 +26,16 @@
        css/, favicon.svg) into our wwwroot. This makes UseStaticFiles serve everything from a single
        location (the server's wwwroot, which is copied to bin by the SDK). -->
     <Target Name="BuildAndCopyClient" BeforeTargets="Build" Inputs="..\Iris.Web.Client\Iris.Web.Client.csproj" Outputs="wwwroot\_framework\blazor.webassembly.js;wwwroot\index.html">
-     <!-- Clear the stale publish dir so the trimmed publish always re-runs (dotnet clean does not
-          remove the publish output). -->
-     <RemoveDir Directories="..\Iris.Web.Client\publish" />
-     <MSBuild Projects="..\Iris.Web.Client\Iris.Web.Client.csproj" Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=..\Iris.Web.Client\publish\;PublishTrimmed=true" />
-     <ItemGroup>
-       <!-- _framework publish output (trimmed via PublishTrimmed in Iris.Web.Client.csproj) -->
-       <_WasmFramework Include="..\Iris.Web.Client\publish\wwwroot\_framework\**\*" />
-       <!-- Source wwwroot files (index.html, css/, favicon.svg) — not in publish output due to static web assets -->
-       <_WasmWebRoot Include="..\Iris.Web.Client\wwwroot\**\*" Exclude="..\Iris.Web.Client\wwwroot\_framework\**" />
-     </ItemGroup>
-     <!-- Clear the old _framework before copying the trimmed publish output (SkipUnchangedFiles
-          would keep stale untrimmed files from a previous non-trimmed build). -->
-     <RemoveDir Directories="wwwroot\_framework" />
-     <Copy SourceFiles="@(_WasmFramework)" DestinationFolder="wwwroot\_framework\%(RecursiveDir)" />
-     <Copy SourceFiles="@(_WasmWebRoot)" DestinationFolder="wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" />
-   </Target>
+      <MSBuild Projects="..\Iris.Web.Client\Iris.Web.Client.csproj" Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=..\Iris.Web.Client\publish\" Condition="!Exists('..\Iris.Web.Client\publish\wwwroot\_framework\blazor.webassembly.js')" />
+      <ItemGroup>
+        <!-- _framework publish output (trimmed via PublishTrimmed in Iris.Web.Client.csproj) -->
+        <_WasmFramework Include="..\Iris.Web.Client\publish\wwwroot\_framework\**\*" />
+        <!-- Source wwwroot files (index.html, css/, favicon.svg) — not in publish output due to static web assets -->
+        <_WasmWebRoot Include="..\Iris.Web.Client\wwwroot\**\*" Exclude="..\Iris.Web.Client\wwwroot\_framework\**" />
+      </ItemGroup>
+      <Copy SourceFiles="@(_WasmFramework)" DestinationFolder="wwwroot\_framework\%(RecursiveDir)" SkipUnchangedFiles="true" />
+      <Copy SourceFiles="@(_WasmWebRoot)" DestinationFolder="wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    </Target>
   <!-- Patch the WASM config after the build (the dotnet.js is copied from the client's build
        output during BuildAndCopyClient, which runs before Build). Set debugLevel to 0 and
        globalizationMode to invariant so the runtime does not request .pdb or .dat files
