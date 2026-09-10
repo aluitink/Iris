@@ -46,6 +46,16 @@
     [Parameter]
     public string? CssClass { get; set; }
 
+    /// <summary>
+    /// When <c>true</c>, the component does not fetch the actor's document — it renders the
+    /// initial-letter fallback from <see cref="DisplayName"/>/the handle, using
+    /// <see cref="IconIriOverride"/> for the icon when one is supplied. Used for accounts that no
+    /// longer exist (e.g. an account-deletion notification whose remote actor is gone): fetching the
+    /// document would 410 (pure network noise + a console error) — 620 tracker topic #7.
+    /// </summary>
+    [Parameter]
+    public bool SkipFetch { get; set; }
+
     private string? _iconIri;
     private string? _fetchedName;
 
@@ -62,7 +72,10 @@
             return;
         }
 
-        if (IconIriOverride is not null && DisplayName is not null)
+        // The caller has already resolved both the icon and the name (the actor document is in hand),
+        // or the account is gone and an explicit skip was requested (a deleted account's document
+        // 410s — 620 tracker topic #7). Either way, there is nothing to fetch.
+        if (SkipFetch || (IconIriOverride is not null && DisplayName is not null))
         {
             return;
         }

@@ -19,8 +19,7 @@
         // actor's IRI via /object (which 410s), and the name would fall back to the raw IRI last
         // segment (a numeric remote ID) — B-010/B-011. Such rows render a "deleted their account"
         // caption (linking the actor) instead of a bogus object link.
-        var isSelfDelete = activity.Type?.FirstOrDefault() == "Delete"
-            && objectIri is { } o && actorIri is { } ai && o == ai;
+        var isSelfDelete = IsSelfDelete(activity);
         var targetPreview = isSelfDelete ? null : TargetPreview(objectFirst);
         var actorDoc = actorIri is { } a ? _actorDocs.TryGetValue(a.Value, out var d) ? d : null : null;
         var displayName = actorDoc is { } ad && ad is Actor actorObj && actorObj.Name is { } names
@@ -30,7 +29,11 @@
 
         <div class="notification-body">
             <div class="notification-avatar">
-                <ActorAvatar ActorIri="actorIri" DisplayName="@displayName" IconIriOverride="@iconIri" />
+                <ActorAvatar
+                    ActorIri="actorIri"
+                    DisplayName="@(isSelfDelete && actorIri is { } del ? DisplayNameFallback(del) : displayName)"
+                    IconIriOverride="@iconIri"
+                    SkipFetch="@isSelfDelete" />
             </div>
             <div class="notification-content">
                 <div class="notification-head">
@@ -122,9 +125,38 @@
             return;
         }
 
+        // An account-deletion notification references the actor's own IRI as its object (the remote
+        // instance sends object == actor — the account itself is the deleted object). That actor no
+        // longer exists, so fetching its document 410-Gones (a doomed proxy fetch, pure network noise
+        // + a console error) — 620 tracker topic #7. Skip the fetch: the row renders the initial-letter
+        // avatar fallback and the "deleted their account" caption, no document needed.
+        if (IsSelfDelete(activity))
+        {
+            return;
+        }
+
         var doc = await Ui.GetActorAsync(iri);
         _actorDocs[iri.Value] = doc;
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Whether the activity is an account deletion — a <c>Delete</c> whose <c>object</c> is the
+    /// actor's own IRI (the remote instance sends <c>object == actor</c>: the account itself is the
+    /// deleted object, not a separate object IRI). Such a row renders the "deleted their account"
+    /// caption (B-010) and — because the account is gone — must not fetch the actor's document (which
+    /// 410s; 620 tracker topic #7).
+    /// </summary>
+    private static bool IsSelfDelete(Activity activity)
+    {
+        if (activity.Type?.FirstOrDefault() != "Delete")
+        {
+            return false;
+        }
+
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        var objectIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+        return actorIri is { } ai && objectIri is { } o && o == ai;
     }
 
     /// <summary>
