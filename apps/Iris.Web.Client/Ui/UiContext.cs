@@ -26,6 +26,11 @@ public sealed class UiContext
     private readonly ConcurrentDictionary<string, FollowingEntry> _following = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ActorEntry> _actors = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, MembershipEntry> _memberships = new(StringComparer.OrdinalIgnoreCase);
+    // In-flight actor fetches, keyed by actor IRI value. Coalesces concurrent requests for the
+    // same actor (e.g. N feed cards rendering the same author at once) into a single network
+    // call — without this, each concurrent caller misses the TTL cache and fires its own GET
+    // (local) / POST-proxy (remote) for the same IRI.
+    private readonly ConcurrentDictionary<string, Task<IObject?>> _actorInFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _membershipGate = new(1, 1);
 
     private readonly IActorSessionAccessor _session;
@@ -144,6 +149,9 @@ public sealed class UiContext
     /// <summary>
     /// Gets an actor document by IRI, consulting the per-circuit actor cache (5-minute TTL).
     /// Returns null when the actor is not found or the client is unavailable.
+    /// Concurrent calls for the same IRI are coalesced into a single network request, so N feed
+    /// cards rendering the same author at once issue one GET (local) / POST-proxy (remote) rather
+    /// than N.
     /// </summary>
     public async Task<IObject?> GetActorAsync(Iri actorIri)
     {
@@ -158,6 +166,31 @@ public sealed class UiContext
             return cached.Doc;
         }
 
+        // Coalesce in-flight fetches for this IRI: the first caller starts the fetch and publishes
+        // its Task; concurrent callers await the same Task instead of each hitting the network.
+        var fetchTask = _actorInFlight.GetOrAdd(actorIri.Value, _ => FetchActorAsync(client, actorIri));
+        try
+        {
+            return await fetchTask;
+        }
+        finally
+        {
+            // Clear the in-flight marker so a later call (e.g. after the TTL expires) can re-fetch.
+            // TryRemove returns the value that was present; we only care that the marker is gone
+            // by the time this caller finishes, which is safe because any concurrent caller that
+            // already grabbed `fetchTask` holds its own reference to it.
+            _actorInFlight.TryRemove(actorIri.Value, out _);
+        }
+    }
+
+    /// <summary>
+    /// Performs a single actor fetch for <paramref name="actorIri"/>: reads the document from the
+    /// network and, on success, stores it in the per-circuit actor cache for the TTL window.
+    /// Returns null when the fetch fails or the actor is not found (nothing is cached on failure,
+    /// so a later call can retry).
+    /// </summary>
+    private async Task<IObject?> FetchActorAsync(IActivityPubClient client, Iri actorIri)
+    {
         IObject? doc;
         try
         {

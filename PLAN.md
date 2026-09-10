@@ -80,7 +80,10 @@ Iris.slnx
 
 ## Active Slice
 
-- *(none — 63 is complete; next slice is 64, see Up Next).*
+- **64 — request spam & network efficiency.** Reduce the *number* of calls the WASM client makes (not latency). Topics are the 7 rows in the [620 tracker §Phase 64](docs/changes/620-bug-hunt-tracker.md#phase-64--request-spam--network-efficiency-draft-topics). Work them by value (N+1/dup first). **No new coded tests** (WASM manual-test policy) — verify live by counting requests on a fresh origin.
+
+  **Checkpoint (turn 1): 64.1 actor-fetch coalescing — topics #1 + #2 done.** The actor cache already existed in `UiContext.GetActorAsync` (IRI-keyed, 5-min TTL) but had **no in-flight coalescing** — N concurrent cards rendering the same author each missed the cache and fired their own GET (local) / POST-proxy (remote). Added a per-IRI in-flight `ConcurrentDictionary<string, Task<IObject?>>` (`_actorInFlight`) so concurrent calls for the same IRI await one shared fetch task (first caller starts it, `finally` clears the marker). **Verified live on fresh origin `:8091`** (hard reload of `/home` as `andrew`): local actor `GET /ap/v1/u/{actor}` **5× → 1×**; remote actor `POST /ap/v1/proxy/{host}/users/RayvenMX` **4× → 1×**. No regression: home timeline renders (andrew + RayvenMX avatars/names resolve), **0 console errors**. Build 0 warn/0 err; full suite green (one known-flaky delivery test fails in the full run, passes in isolation).
+  **remaining:** topics #3 (remote likes dup, 2×), #4/#5 (per-item likes/shares fan-out — now the dominant spam at 10+10 calls on `/home`), #6 (public feed double-fetch), #7 (deleted-account avatar 410s). These are separate fixes (EngagementBar.razor, PagedCollection.razor, NotificationRow.razor).
 
 **Phase 63 — COMPLETE** (63.1 visual/usability pass + 63.2 design/IA review).
 Change docs: [630 tracker](docs/changes/630-ux-review-tracker.md) (63.1: 3 findings
@@ -108,7 +111,7 @@ Work for **the phase after the next** is distilled from **the current phase**, w
 |---|---|---|
 | 62 | Bug hunt — find + document + fix | **complete** (62.4 re-pass converged; [621](docs/changes/621-phase62-closeout-bug-hunt.md)) |
 | 63 | UI/UX review — usability + presentation + design/IA | **complete** (63.1 visual pass [630](docs/changes/630-ux-review-tracker.md); 63.2 design/IA [632](docs/changes/632-ux-ia-design-review.md)) |
-| 64 | Request spam & network efficiency — cut redundant/duplicate calls on load (7 topics drafted in [620 tracker](docs/changes/620-bug-hunt-tracker.md#phase-64--request-spam--network-efficiency-draft-topics)) | **next** |
+| 64 | Request spam & network efficiency — cut redundant/duplicate calls on load (7 topics in [620 tracker](docs/changes/620-bug-hunt-tracker.md#phase-64--request-spam--network-efficiency-draft-topics)) | **in progress** (64.1 actor-coalescing done: #1+#2; #3–#7 remaining) |
 | 65 | distill from 63 | planned |
 | 66–69 | exploratory buffer — overrun/slack for 62–65 (or later) phases | reserved |
 | 70 | Content & media improvement — media rendering, remote browsing, post-and-view-in-instance | queued |
@@ -152,7 +155,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 - 63.1 — UI/UX visual/usability pass, route-by-route — **complete** (3 findings U-01/U-02/U-03 fixed in-slice + verified; [630 tracker](docs/changes/630-ux-review-tracker.md))
 - 63.2 — UI/UX design/IA review — **complete** (3 IA findings; IA-01 root-redirect + IA-02 hide-admin-links implemented in-slice + verified live on `:8090`; IA-03 nav grouping deferred; [632 change doc](docs/changes/632-ux-ia-design-review.md))
-- 64 — request spam & network efficiency: 6 topics already drafted in the [620 tracker](docs/changes/620-bug-hunt-tracker.md#phase-64--request-spam--network-efficiency-draft-topics) (actor N+1, proxy N+1, per-item likes/shares fan-out, public-feed double-fetch) **+ 1 new from 63.1:** deleted-account notifications fire avatar proxy fetches that 410-Gone (noisy; skip when no cached avatar)
+- 64 — request spam & network efficiency (**in progress**): 7 topics in the [620 tracker](docs/changes/620-bug-hunt-tracker.md#phase-64--request-spam--network-efficiency-draft-topics). **64.1 done** — actor-fetch coalescing fixes #1 (local actor N+1, 5×→1×) + #2 (remote actor proxy N+1, 4×→1×) via an in-flight gate in `UiContext.GetActorAsync`. **remaining:** #3 (remote likes dup), #4/#5 (per-item likes/shares fan-out — now the dominant spam), #6 (public-feed double-fetch), #7 (deleted-account avatar 410s).
 - 65 — (distilled from 63 at 63's closeout)
 - 66–69 — exploratory buffer (consumed in order if any of 62–65 overruns)
 - 70 — content & media improvement: media/pictures render correctly · browse remote users + view their content · post content + view it within the instance
