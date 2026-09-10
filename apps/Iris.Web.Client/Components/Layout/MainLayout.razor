@@ -2,6 +2,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.JSInterop
 @using Iris.Web.Client.Components
+@using Iris.Web.Client.Accounts
 
 <div class="page">
     <header class="main-header">
@@ -68,9 +69,12 @@
                 <a href="/ap/v1/nodeinfo/2.0">NodeInfo</a>
                 <a href="/ap/v1/webfinger?resource=acct%3Aadmin%40iris.luit.ink">WebFinger</a>
                 <a href="/ap/v1/health">Status</a>
-                <a href="/admin/instance">Admin</a>
-                <a href="/admin/moderation">Moderation</a>
-                <a href="/admin/dashboard">Dashboard</a>
+                @if (IsAdmin)
+                {
+                    <a href="/admin/instance">Admin</a>
+                    <a href="/admin/moderation">Moderation</a>
+                    <a href="/admin/dashboard">Dashboard</a>
+                }
             </span>
         </div>
     </footer>
@@ -80,7 +84,15 @@
     [Inject]
     private IJSRuntime Js { get; set; } = default!;
 
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
     private bool _menuOpen;
+
+    // Only show the admin links to administrators; a regular user clicking them would
+    // just be bounced to sign-in (they're already signed in), which is confusing.
+    private bool IsAdmin => Session.IsSignedIn &&
+        string.Equals(Session.Role, AdminGuard.AdminRole, StringComparison.Ordinal);
 
     private void ToggleMenu() => _menuOpen = !_menuOpen;
 

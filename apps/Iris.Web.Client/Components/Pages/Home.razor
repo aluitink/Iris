@@ -8,16 +8,9 @@
 
 <AuthorizeView>
     <Authorized>
-        <p>
-            You're signed in.
-            <a class="button" href="/home">Go to your timeline →</a>
-        </p>
-        <p class="muted">
-            <a href="/notifications">Notifications</a> ·
-            <a href="/directory">Directory</a> ·
-            <a href="/profile">Profile</a> ·
-            <a href="/search">Search</a>
-        </p>
+        <!-- Signed-in users are redirected to /home in OnInitializedAsync; this
+             branch only paints for the brief frame before the redirect lands. -->
+        <p class="muted">Taking you to your timeline…</p>
     </Authorized>
     <NotAuthorized>
         <div class="landing-hero">
@@ -61,11 +54,24 @@
     [Inject]
     private IHttpClientFactory HttpClientFactory { get; set; } = default!;
 
+    [Inject]
+    private NavigationManager Nav { get; set; } = default!;
+
     private HttpClient? Http => HttpClientFactory?.CreateClient("iris");
 
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
+
+        // A signed-in user landing on the root (the domain root, the most-visited
+        // URL) expects their feed, not an interstitial. Send them straight to the
+        // home timeline; the authless landing (hero + public feed) is unchanged.
+        if (Session.IsSignedIn)
+        {
+            Nav.NavigateTo("/home", forceLoad: false);
+            return;
+        }
+
         StateHasChanged();
     }
 
