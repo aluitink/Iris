@@ -40,6 +40,7 @@ bld/
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+publish/
 
 ## OS
 .DS_Store
