@@ -1,9 +1,8 @@
-# 71.1–71.5 — Note card + compose polish (implementation)
+# 71.1–71.6 — Note card + compose polish (implementation)
 
 Phase 71 (Note card + compose polish) is a distillation of a review of the feed/outbox
 note card (`ObjectView.razor`) and the compose page (`Compose.razor`). This change
-implements five of the six slices (71.1–71.5); 71.6 (review remote user content with
-attachments) is a live-verification pass and is not code.
+implements all six slices (71.1–71.6).
 
 **No new coded tests** (WASM manual-test policy) — verified by build (0 warn/0 err)
 and the existing web test suite (63/63 green).
@@ -92,6 +91,7 @@ nothing for an empty token or unknown handles.
 | `apps/Iris.Web.Client/Components/ObjectView.razor` | Rebuilt `Create` branch (71.1, 71.3, 71.4); sensitive-blur in `IObject` branch (71.4) |
 | `apps/Iris.Web.Client/Components/ObjectView.razor.cs` | Activity-scoped computed properties (71.1); `ActivityRevealed` field (71.4) |
 | `apps/Iris.Web.Client/Components/Pages/Compose.razor` | `@using Iris.Web.Client.Ui`; `UiContext` injection; `_knownActors` field; `GetMentionCandidatesAsync` + `LoadKnownActorsAsync` (71.5) |
+| `apps/Iris.Web.Client/Components/MediaGallery.razor` | `IsImage` now treats `Document` attachments with image file extensions as images (71.6) |
 | `apps/Iris.Web.Client/Ui/UiContext.cs` | `FollowingEntry` record now carries `List<Iri>`; `GetFollowingActorIrisAsync` (71.5); `IsFollowingAsync` delegates |
 | `apps/Iris.Web.Client/wwwroot/css/app.css` | `.object-content--blurred` (71.4) |
 
@@ -115,15 +115,30 @@ nothing for an empty token or unknown handles.
   that don't match a known handle are appended. This ensures the user's own contacts
   are always visible even if the instance search is slow or incomplete.
 
+## 71.6 — Remote user content with attachments (live verification + fix)
+
+Drove the remote-browse path live on a fresh origin (`:8088`, fresh WASM publish,
+cookie-auth as `andrew`): (1) `/actor?iri=https://mastodon.world/users/RayvenMX`
+renders the remote profile + the actor's outbox with 14 posts, **0 console errors**;
+(2) `/object?iri=…/statuses/116182691592848717` (the RayvenMX "Doggo" status with a
+`.jpg` document attachment) renders the attachment.
+
+**Finding + fix:** the "Doggo" attachment (a `.jpg` file) was being rendered as a
+link-card (`📄` icon + name + "Document" label) instead of an inline `<img>`. The root
+cause was in `MediaGallery.razor:138-139` — the `IsImage` check required
+`att.Type is null or "Image" && att.Preview is null`, but Mastodon sends image
+attachments as `Document` type with a `Preview` image. **Fix:** `IsImage` now also
+treats `Document` attachments with image file extensions (`.jpg`, `.jpeg`, `.png`,
+`.gif`, `.webp`, `.svg`, `.avif`, `.bmp`) as images. After the fix, the "Doggo"
+attachment renders as an `<img>` in the media gallery (the image 404s because the
+proxy can't reach mastodon.world from this environment, but the rendering logic is
+correct).
+
 ## Residual (not fixed this pass)
 
-- **71.2 (attachments inline with text):** documents already render after the text in
-  the `MediaGallery` (which is now positioned after all content in the `Create` branch
-  per 71.1). The document card style (icon + name + open-in-new-tab) is a link-card
-  rather than a fully inline document preview; a richer inline rendering (e.g. a PDF
-  preview) is deferred as a follow-up.
-- **71.6 (remote user content with attachments):** live-verification pass (no code
-  change expected — the render path is the same `ObjectView` component).
+- **71.2 (richer inline document rendering):** non-image documents (PDFs, etc.) still
+  render as a link-card (icon + name + open-in-new-tab). A fully inline document
+  preview (e.g. embedded PDF viewer) is deferred as a follow-up.
 - **Playwright verification:** the compose textarea is not drivable via MCP Playwright
   (Blazor `@bind` never registers synthetic input — a known automation limitation from
   Phase 70.3). The autocomplete (71.5) and sensitive-blur (71.4) interactions should be

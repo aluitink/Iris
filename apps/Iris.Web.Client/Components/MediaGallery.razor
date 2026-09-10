@@ -136,7 +136,23 @@
     }
 
     private static bool IsImage(RichAttachment att)
-        => att.Type is null or "Image" && att.Preview is null;
+        => att.Type is null or "Image" && att.Preview is null
+            || att.Type is "Document" && IsImageUrl(att.Url.Value);
+
+    private static bool IsImageUrl(string url)
+    {
+        var lower = url.ToLowerInvariant();
+        // Strip query string + fragment for the extension check.
+        var q = lower.IndexOfAny(['?', '#']);
+        if (q >= 0)
+        {
+            lower = lower[..q];
+        }
+        return lower is { Length: > 0 }
+            && (lower.EndsWith(".jpg") || lower.EndsWith(".jpeg") || lower.EndsWith(".png")
+                || lower.EndsWith(".gif") || lower.EndsWith(".webp") || lower.EndsWith(".svg")
+                || lower.EndsWith(".avif") || lower.EndsWith(".bmp"));
+    }
 
     private static bool IsVideo(RichAttachment att)
         => att.Type is not null && att.Type.Contains("Video", StringComparison.OrdinalIgnoreCase);
