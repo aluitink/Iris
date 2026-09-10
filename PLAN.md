@@ -73,7 +73,7 @@ Iris.slnx
 
 - **Phase 62 — Bug hunt (in progress).** Full-system manual pass. App was modified without focus for several hours and has odd bugs. 62.1 documents defects only (no fixes), 62.2 clears blockers + finishes the review, 62.3 fixes, 62.4 re-passes until clean.
 - **Phase 63 — UI/UX review (next).** Usability + presentation: is the data well organized, readable, functional. Detailed visual review + brainstorming on what makes a good interface.
-- **Phase 64 — Performance & network efficiency (next-next).** Distilled from 62's network-tab notes: inefficiencies observed, root causes, and solutions. Topics added during 62.1.
+- **Phase 64 — Request spam & network efficiency (next-next).** Distilled from 62's network notes. **Priority: reduce the *number* of calls the client makes** (duplicate/redundant fetches on load, refetch-on-re-render, N+1 fan-outs) — raw latency is secondary. Topics added during 62.1.
 - **Phase 65 — (to be distilled from 63's findings at 63's closeout).**
 - **Phases 62–69 — exploratory buffer.** 66–69 are reserved slack: if any phase overruns (more blockers than expected, new issue classes found, re-passes needed), work rolls forward into the buffer instead of compressing later phases. Use them as needed.
 - **Phase 70 — Content & media improvement (the start of "improving").** After the exploratory buffer: ensure pictures/media render properly; ensure we can browse remote users and view their content; ensure we can post content and view it within our instance.
@@ -90,7 +90,7 @@ Work for **the phase after the next** is distilled from **the current phase**, w
 |---|---|---|
 | 62 | Bug hunt — find + document + fix | in progress |
 | 63 | UI/UX review — usability + presentation (fixes 62's UX-class findings) | queued |
-| 64 | Performance & network efficiency (distilled from 62's network notes) | queued |
+| 64 | Request spam & network efficiency — cut redundant/duplicate calls on load (distilled from 62's network notes) | queued |
 | 65 | distill from 63 | planned |
 | 66–69 | exploratory buffer — overrun/slack for 62–65 (or later) phases | reserved |
 | 70 | Content & media improvement — media rendering, remote browsing, post-and-view-in-instance | queued |
@@ -111,22 +111,23 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
    - **Primary account: `andrew` / `Password1`** (has real content + external contacts — use it to evaluate every page).
    - **Secondary accounts**: `bob`, `carol`, `dave` (register as needed) for multi-account flows (follows, communities, moderation, notifications).
    - **Authless pass**: every page visited signed-out — verify gating (302 to login), no data leaks, no console errors, sensible signed-out UI.
-   - **Deep dive per page**: exercise every control, every state (empty/populated/error), deep links + hard refresh on each route.
-   - Capture **console errors** (`browser_console_messages`) + **screenshots of every screen** visited.
-   - **Network tab watch (always on)**: note every request — count, payload size, status, duplicates, N+1 patterns, slow calls, 4xx/5xx, waterfall gaps. These notes are the raw material for **Phase 64**.
-5. **Triage**: log every finding (page, repro, expected vs actual, severity, class: *blocker / bug / UX / perf*) in the **shared tracker** ([docs/changes/620-bug-hunt-tracker.md](docs/changes/620-bug-hunt-tracker.md)). Class routes the finding: blocker+bug → 62 fix slices; UX → 63; perf → 64.
-6. **Fix in scope** (62.2+ only — 62.1 documents only): implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3).
-7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests.
+    - **Work the page inventory, not "every page"**: the tracker's **Page coverage** table lists all 18 routes. Work it top-to-bottom; mark each route's signed-in + authless boxes as done, or `skipped(<reason>)`. Update the tracker's **Resume checkpoint** at the end of the slice so the next slice continues where this one stopped — never restart from scratch.
+    - **Deep dive per page**: exercise every control, every state (empty/populated/error), deep links + hard refresh on each route.
+    - Capture **console errors** (`browser_console_messages`). For screenshots, call the Playwright screenshot tool **with no `filename`** (it can't write to an arbitrary path); it auto-saves to `tmp/.playwright-mcp/page-<ts>.png` and returns that path — cite the returned path in the tracker rather than promising to attach a file.
+    - **Network watch — count calls, not bytes (always on)**: the point is to catch **request spam** — duplicate/redundant calls fired when a page or control loads (same fetch twice on mount, a refetch on re-render, an N+1 fan-out). For each distinct request pattern record: method+path, status, **how many times it fired (the count is the spam signal)**, and *what triggered it* (which load/control). These notes are the raw material for **Phase 64** (request-spam reduction).
+5. **Triage**: log every finding (page, repro, expected vs actual, **class** + **severity**) in the **shared tracker** ([docs/changes/620-bug-hunt-tracker.md](docs/changes/620-bug-hunt-tracker.md)). Class is the routing axis (blocker→62.2, bug→62.3, UX→63, perf→64); severity (S1/S2/S3) sets priority *within* the class. Set both on every row.
+6. **Fix in scope** (62.2+ only — 62.1 documents only): implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence in the finding's `Verify` cell (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
+7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged in the tracker's Test-debt ledger** (test name, action, reason, restore-by) — no silent deletions; 62.4 closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics (62 → 64; 63 → 65) into this file.
 
 ### Slices (Phase 62)
 
 | Slice | Scope |
 |---|---|
-| **62.1** | Full-page deep-dive — **documentation only, no fixes.** Every page, signed-in (as `andrew`) + authless, every control + state, deep links + refresh. Network-tab notes throughout. All findings → shared tracker. Phase 64 topics drafted from network notes. |
+| **62.1** | Full-page deep-dive — **documentation only, no fixes.** Work the tracker's Page-coverage inventory (all 18 routes), signed-in (as `andrew`) + authless, every control + state, deep links + refresh. Network watch throughout (count calls per distinct request pattern — the spam signal). All findings → shared tracker. Phase 64 topics drafted from network notes. **Timebox: ~5 routes or ~45 min per turn — stop, checkpoint, and continue next turn; roll overflow into the buffer, don't marathon.** |
 | **62.2** | Fix blockers (anything holding up the review) + finish the review of pages 62.1 could not complete. |
 | **62.3** | Fix remaining bugs (non-blocker defects from the tracker). |
-| **62.4** | Re-pass (full deep-dive again from clean entries) until zero open blocker/bug findings; then 62 closeout (change doc + distill 64 topics). |
+| **62.4** | Re-pass (full deep-dive again from clean entries) until zero open blocker/bug findings; then 62 closeout (change doc + distill 64 topics + review Test-debt ledger). **Stop condition: two consecutive clean re-passes, or 3 re-passes max — whichever first. If still dirty at 3, stop and roll the remainder into the buffer (66–69) rather than looping.** |
 
 ## Up Next
 
@@ -135,7 +136,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - 62.3 — fix bugs
 - 62.4 — re-pass until clean; 62 closeout
 - 63 — UI/UX review (usability + presentation; detailed visual review)
-- 64 — performance & network efficiency (topics distilled from 62.1 network notes)
+- 64 — request spam & network efficiency: cut duplicate/redundant calls on load (topics distilled from 62.1 network notes)
 - 65 — (distilled from 63 at 63's closeout)
 - 66–69 — exploratory buffer (consumed in order if any of 62–65 overruns)
 - 70 — content & media improvement: media/pictures render correctly · browse remote users + view their content · post content + view it within the instance
