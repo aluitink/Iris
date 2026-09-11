@@ -3,9 +3,11 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Server.Media;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Iris.Server.Tests;
@@ -126,7 +128,8 @@ public sealed class ObjectEndpointIntegrationTests : IAsyncLifetime
     {
         // The local owner updates the stored object (an embedded updated Note).
         var update = BuildUpdate(NoteIri, "hello (edited)");
-        await new UpdateActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence), BuildNoopPropagation(_persistence))
+        await new UpdateActivityHandler(_persistence, new DefaultLocalActorResolver(_persistence), BuildNoopPropagation(_persistence),
+            new NoOpMediaWarmer(), Options.Create(new ActivityPubServerOptions()))
             .HandleAsync(new InboxDelivery(ActorIri, update), update);
 
         var response = await _http.GetAsync(ObjectPath(NoteIri));
@@ -443,6 +446,7 @@ public sealed class ObjectEndpointSharedHost : SharedHostFixture
         ObjectEndpointIntegrationTests.SeedForFixture(persistence);
         return persistence;
     }
+
 }
 
 /// <summary>
@@ -451,4 +455,13 @@ public sealed class ObjectEndpointSharedHost : SharedHostFixture
 [CollectionDefinition("ObjectEndpoint")]
 public sealed class ObjectEndpointCollection : ICollectionFixture<ObjectEndpointSharedHost>
 {
+}
+
+/// <summary>
+/// A no-op <see cref="IMediaWarmer"/> for the integration tests (they do not exercise media warming).
+/// </summary>
+file sealed class NoOpMediaWarmer : IMediaWarmer
+{
+    public Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default)
+        => Task.CompletedTask;
 }

@@ -1,8 +1,10 @@
 using Iris.Core;
+using Iris.Server.Media;
 using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Inbox;
 
@@ -45,6 +47,8 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
     private readonly IDeletePropagationService _propagation;
+    private readonly IMediaWarmer _mediaWarmer;
+    private readonly IOptions<ActivityPubServerOptions> _options;
     private readonly LocalActorDocumentCache? _actorDocumentCache;
 
     /// <summary>
@@ -54,6 +58,10 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     /// <param name="localActors">Resolves whether the updating actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Update"/> to the
     /// author's remote followers, the federated half of F-02).</param>
+    /// <param name="mediaWarmer">The media warmer (eager-warms the updated object's cross-origin media
+    /// attachments so the media proxy serves them instantly; a no-op when eager-warm is disabled).</param>
+    /// <param name="options">The server options (the instance base IRI, used to classify an attachment
+    /// as same-origin when warming).</param>
     /// <param name="actorDocumentCache">The local actor document cache, invalidated after the stored
     /// actor (or community) is refreshed so the public <c>GET /ap/v1/u/{handle}</c> serves the updated
     /// document (not a stale cached copy). May be null in unit-test seams that do not exercise the
@@ -64,6 +72,8 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         IDeletePropagationService propagation,
+        IMediaWarmer mediaWarmer,
+        IOptions<ActivityPubServerOptions> options,
         LocalActorDocumentCache? actorDocumentCache = null,
         ILogger<UpdateActivityHandler>? logger = null)
         : base(logger)
@@ -71,9 +81,13 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
         ArgumentNullException.ThrowIfNull(propagation);
+        ArgumentNullException.ThrowIfNull(mediaWarmer);
+        ArgumentNullException.ThrowIfNull(options);
         _persistence = persistence;
         _localActors = localActors;
         _propagation = propagation;
+        _mediaWarmer = mediaWarmer;
+        _options = options;
         _actorDocumentCache = actorDocumentCache;
     }
 
@@ -146,6 +160,14 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
         }
 
         await _persistence.Objects.PutObjectAsync(updated, ct).ConfigureAwait(false);
+
+        // Eager-warm the updated object's cross-origin media attachments (best-effort; a no-op when
+        // eager-warm is disabled, the object has none, or the instance base is unset). An Update that
+        // adds new attachments must re-warm them so the media proxy serves them instantly.
+        if (_options.Value.BaseUri is { } instanceBase)
+        {
+            await _mediaWarmer.WarmAsync(updated, instanceBase, ct).ConfigureAwait(false);
+        }
 
         // F-02 (federated half): propagate the Update to the author's remote followers so their copies
         // of the object are refreshed (a local refresh alone leaves remote instances serving stale

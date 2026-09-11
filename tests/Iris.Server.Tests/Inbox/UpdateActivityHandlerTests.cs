@@ -1,6 +1,8 @@
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Server.Media;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Tests.Inbox;
 
@@ -366,7 +368,9 @@ public sealed class UpdateActivityHandlerTests
         => new(
             persistence,
             new DefaultLocalActorResolver(persistence),
-            new DeletePropagationService(persistence, delivery ?? new NoopDeliveryService(), new DefaultLocalActorResolver(persistence)));
+            new DeletePropagationService(persistence, delivery ?? new NoopDeliveryService(), new DefaultLocalActorResolver(persistence)),
+            new NoOpMediaWarmer(),
+            Options.Create(new ActivityPubServerOptions()));
 
     /// <summary>
     /// An <see cref="IDeliveryService"/> that records every scheduled delivery (instead of enqueuing) so
@@ -475,5 +479,14 @@ public sealed class UpdateActivityHandlerTests
         Assert.NotNull(note.Updated);
         Assert.True(note.Updated! >= beforeEdit, $"Updated ({note.Updated}) should be >= {beforeEdit}");
         Assert.True(note.Updated! >= originalNote.Published!, $"Updated ({note.Updated}) should be >= published ({originalNote.Published})");
+    }
+
+    /// <summary>
+    /// A no-op <see cref="IMediaWarmer"/> for the unit tests (they do not exercise media warming).
+    /// </summary>
+    private sealed class NoOpMediaWarmer : IMediaWarmer
+    {
+        public Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 }
