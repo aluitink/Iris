@@ -140,8 +140,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 78.3 — Lemmy Group doc rendering: handle `attributedTo` → `/moderators`; use `preferredUsername` + host for display; handle nested `source` object.
-- 78.4 — Lemmy Page (post) rendering: render `name` as title, `attachment` as link list, `audience` as community badge.
 - 79 — Next-next phase: TBD (distill at Phase 78 closeout).
 - 77.3 — Thread context: consider "show more" for deep threads (currently capped at 2 levels).
 
@@ -158,11 +156,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **78.4 — Lemmy Page (post) rendering (Phase 78, slice 4) — DONE** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): ObjectView renders `name` as title for non-Actor objects (Lemmy Page posts). **Phase 78 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
+- **78.3 — Lemmy Group doc rendering (Phase 78, slice 3) — DONE (no code changes)** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): Verified existing ActorProfile + ActorDetail handle Lemmy Group docs correctly. Full suite: 1666 passed, 0 failed, 17 skipped.
 - **78.2 — Lemmy community handle support (Phase 78, slice 2) — DONE** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): Directory + Search accept `!community@domain` handles; `!` stripped before WebFinger; `preferGroup` flag selects `Group` from dual WebFinger response. Full suite: 1666 passed, 0 failed, 17 skipped.
 - **78.1 — Lemmyverse investigation (Phase 78, slice 1) — DONE** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): Investigated Lemmy AP wire format — Group/Person docs, Page posts, vote scores (not in AP), outbox pagination. Full suite: 1666 passed, 0 failed, 17 skipped.
 - **77.2 — Thread context (Phase 77, slice 2) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail shows 2 levels of parent chain. Full suite: 1666 passed, 0 failed, 17 skipped.
-- **77.1 — Replied-to content rendering (Phase 77, slice 1) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail parent context renders full HTML/Markdown; ObjectView feed cards show 120-char parent preview. Full suite: 1666 passed, 0 failed, 17 skipped.
-- **76.4 — Directory external actor discovery (Phase 76, slice 4) — DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): Directory page "Find someone on another server" input. **Phase 76 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.

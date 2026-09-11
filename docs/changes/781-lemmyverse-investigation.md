@@ -151,17 +151,52 @@ Lemmy uses a custom context: `["https://join-lemmy.org/context.json", "https://w
 
 | Feature | Status | Action Needed |
 |---------|--------|---------------|
-| WebFinger for `!community@domain` | **BROKEN** | Strip `!` before WebFinger; prefer `Group` from dual-response |
+| WebFinger for `!community@domain` | **FIXED (78.2)** | `!` stripped before WebFinger; `preferGroup` selects `Group` from dual-response |
 | WebFinger for `user@domain` | Works | `acct:user@domain` → `Person` (no `!` needed) |
-| Group doc rendering | Partial | Handle `attributedTo` → `/moderators` (use `preferredUsername`); nested `source` object |
-| Person doc rendering | Partial | No `name`/`summary`/`icon` on bare Person; may need HTML page or Lemmy REST for avatar |
-| Page (post) rendering | Partial | Handle `name` (title), `attachment` (links), `audience` (community), `tag` (hashtags) |
+| Group doc rendering | **Works (78.3)** | `ActorProfile` already renders `preferredUsername`, `name`, `summary`, `icon`. `attributedTo` → `/moderators` is not read for display. |
+| Person doc rendering | Limitation | No `name`/`summary`/`icon` on bare Person doc; fallback avatar + handle shown. Acceptable. |
+| Page (post) rendering | **78.4 pending** | Handle `name` (title), `attachment` (links), `audience` (community), `tag` (hashtags) |
 | Vote scores | Not available via AP | Accept limitation; no action |
 | Outbox pagination | Compatible | Standard `OrderedCollection` + `?page=N` |
 | `@context` | Compatible | Standard AS2 types used; Lemmy-specific terms ignored |
 
+## 78.3 — Lemmy Group Doc Rendering (verification)
+
+Verified that the existing `ActorProfile` + `ActorDetail` components handle Lemmy Group docs correctly:
+
+- **`type: "Group"`** — `ActorDetail.IsCommunity` detects via `actor.Type?.FirstOrDefault() == "Group"`. The join-requests tab is shown when `manuallyApprovesMembers` is true (Lemmy-specific; defaults to false).
+- **`preferredUsername`** — Rendered as the handle link in `ActorProfile`.
+- **`name`** — Rendered as the display name (e.g., "Rust Programming"). `NameIsRedundant` correctly returns false when `name` ≠ `preferredUsername`.
+- **`summary`** — Rendered as HTML (Lemmy uses `<p>` tags in `summary`).
+- **`icon`** — Lemmy Group icons use `{"type":"Image","url":"..."}`. `ActorIdentityHelper.IconIri` already checks `IObject.Url` (the `url` property mapped to `IEnumerable<ILink>`).
+- **`attributedTo`** → `/moderators` — Not read by `ActorProfile` for display. `CommunityDetail` reads it for membership checks, but the `/moderators` URL is not a valid actor IRI for `GetActorAsync`, so the membership check gracefully fails (no crash).
+- **`outbox`/`followers`** — Standard collection IRIs; `ResolveCollectionIri` reads them correctly.
+
+**No code changes needed.** The existing rendering is compatible with Lemmy Group docs.
+
+**Known limitation:** Lemmy Person docs lack `name`, `summary`, and `icon` in the AP document. The `ActorProfile` component shows the handle + fallback avatar initial. This is acceptable — full user info requires Lemmy's private REST API.
+
 ## Next Steps (for implementation)
 
-1. **78.2 — Lemmy community handle in Directory/Search:** Strip `!` from community handles before WebFinger; when WebFinger returns both `Person` and `Group`, prefer `Group` for `!`-prefixed queries.
-2. **78.3 — Lemmy Group doc rendering:** Handle `attributedTo` pointing to `/moderators`; use `preferredUsername` + host for display; handle nested `source` object.
-3. **78.4 — Lemmy Page (post) rendering:** Render `name` as title, `attachment` as link list, `audience` as community badge.
+1. **78.2 — Lemmy community handle in Directory/Search — DONE:** Strip `!` from community handles before WebFinger; when WebFinger returns both `Person` and `Group`, prefer `Group` for `!`-prefixed queries.
+2. **78.3 — Lemmy Group doc rendering — DONE (no code changes needed):** Verified existing `ActorProfile` + `ActorDetail` handle Lemmy Group docs correctly. See "78.3" section above.
+3. **78.4 — Lemmy Page (post) rendering — DONE:** `ObjectView` now renders the `name` property as a title above the content for non-Actor objects. Lemmy Page posts have a `name` (title) + `content` (body); the title is now displayed. `attachment` (links) and `audience` (community) were already handled by existing code.
+
+## 78.4 — Lemmy Page (Post) Rendering
+
+Lemmy posts are AS `Page` objects with:
+- `name` = post title (e.g., "Announcing Rust 1.98.1")
+- `content` = post body (HTML)
+- `attachment` = linked URLs (link posts)
+- `audience` = the community the post belongs to
+- `tag` = hashtags
+
+**Changes made:**
+- `ObjectView.razor.cs`: Added `Name` (reads `Obj?.Name?.FirstOrDefault()`) and `ActivityName` (reads `ActivityEmbeddedObject?.Name?.FirstOrDefault()`) properties.
+- `ObjectView.razor`: Added title rendering (`<div class="object-title">`) before the content in both the `Create` branch (embedded object) and the direct object branch. Actor objects are excluded (their `name` is the display name, already rendered by `ActorProfile`).
+- `app.css`: Added `.object-title` class (bold, 0.95rem, slight bottom margin).
+
+**Already handled (no changes needed):**
+- `attachment` — `GetRichAttachments()` / `MediaGallery` already reads the `attachment` property.
+- `audience` — `GetAudienceIris()` / `ActivityAudienceIris` already reads the `audience` property.
+- `tag` (hashtags) — `GetHashtagTags()` already reads the `tag` property.
