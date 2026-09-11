@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **76 — Other AP servers (in progress).** **76.1 DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): live Playwright pass browsing `@Gargron@mastodon.social` — actor profile, outbox, object detail all work via proxy. **76.2 DONE** (commit `e8e5660`): removed unreliable remote `/search` call from fediverse search. **76.3 DONE** (commit `76a79b4`): `ActorIdentityHelper.IconIri` now resolves remote actor icons via the `url` property. **76.4 DONE** (commit `0bd9f25`): Directory page now has a "Find someone on another server" input — WebFinger + actor doc fetch, result shown as a card with avatar/name/handle linking to actor detail. **All 4 slices complete. Phase 76 is COMPLETE.**
+- **77 — Replied-to items (in progress).** **77.1 DONE** (commit `f212084`): ObjectDetail parent context renders full HTML/Markdown (pre-rendered HTML verbatim, Markdown via `Markdown.ToHtml`); ObjectView feed cards show 120-char parent preview instead of raw IRI. **Next: 77.2 — thread context (1-2 levels of parent chain).**
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -140,7 +140,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 77 — Replied-to items could be fetched and content shown under the reply.
+- 77.2 — Replied-to items: investigate thread context (show 1-2 levels of parent chain, not just the immediate parent).
 - 78 — Investigate Lemmyverse conventions (communities via `!community@domain.tld`, ranked posts, batched streams).
 - 79 — Next-next phase: TBD (distill at Phase 77 closeout).
 
@@ -157,11 +157,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **76.4 — Directory external actor discovery (Phase 76, slice 4) — DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): Directory page "Find someone on another server" input — WebFinger + actor doc fetch, result card with avatar/name/handle. **Phase 76 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
-- **75.3 — Proxy-fetch sync gap (Phase 75, slice 3) — DONE** ([change doc 753](docs/changes/753-proxy-fetch-sync.md)): proxy-fallback stores + warms fetched objects on successful GETs of AP JSON. **Phase 75 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
-- **75.2 — Warmer all types + Update warm (Phase 75, slice 2) — DONE** ([change doc 752](docs/changes/752-warmer-all-types-update-warm.md)): warmer covers all attachment types; Update handler now warms updated objects. Full suite: 1665 passed, 0 failed, 17 skipped.
+- **77.1 — Replied-to content rendering (Phase 77, slice 1) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail parent context renders full HTML/Markdown; ObjectView feed cards show 120-char parent preview instead of raw IRI. Full suite: 1666 passed, 0 failed, 17 skipped.
+- **76.4 — Directory external actor discovery (Phase 76, slice 4) — DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): Directory page "Find someone on another server" input. **Phase 76 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
+- **75.3 — Proxy-fetch sync gap (Phase 75, slice 3) — DONE** ([change doc 753](docs/changes/753-proxy-fetch-sync.md)): proxy-fallback stores + warms fetched objects. **Phase 75 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
+- **75.2 — Warmer all types + Update warm (Phase 75, slice 2) — DONE** ([change doc 752](docs/changes/752-warmer-all-types-update-warm.md)): warmer covers all attachment types. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **75.1 — External media proxy rewrite (Phase 75, slice 1) — DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy. Full suite: 1665 passed, 0 failed, 17 skipped.
-- **74.4 — likes/shares Collections + inReplyToAtomUri (Phase 74, slice 4) — DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections + `inReplyToAtomUri`. **Phase 74 COMPLETE.** Full suite: 1665 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
