@@ -244,9 +244,16 @@
             case "Mention":
                 return "mentioned you";
             case "Create":
-                // A Create in the inbox is a reply to one of your posts (the note's inReplyTo is your
-                // object) or a new note addressed to you.
-                return "replied to you";
+                // A Create in the inbox is either a reply (the note has an inReplyTo) or a new note
+                // addressed to you. A reply is only "replied to you" if the inReplyTo is one of your
+                // own notes (a path under your actor IRI); a reply to someone else's note (delivered
+                // via the follower fan-out) is just "replied" — it is not addressed to you. (85)
+                if (activity.Object?.FirstOrDefault() is IObject replyNote
+                    && replyNote.InReplyTo?.FirstOrDefault()?.ResolveObjectIri() is { } inReplyTo)
+                {
+                    return IsSelfNote(inReplyTo) ? "replied to you" : "replied";
+                }
+                return "posted";
             case "Undo":
                 return "undid";
             case "Flag":
@@ -276,6 +283,16 @@
     {
         var nested = activity.Object?.FirstOrDefault() as Activity;
         return nested?.Type?.FirstOrDefault() == "Follow";
+    }
+
+    /// <summary>
+    /// Whether a note IRI is one of the signed-in user's own notes. Local notes are minted as a path
+    /// under the author's actor IRI (<c>{actorIri}/notes/{ulid}</c>), so a note IRI that starts with
+    /// the user's actor IRI is the user's own note. (85)
+    /// </summary>
+    private bool IsSelfNote(Iri noteIri)
+    {
+        return SelfId is { } self && noteIri.Value.StartsWith(self.Value, StringComparison.Ordinal);
     }
 
     /// <summary>
