@@ -12,8 +12,11 @@ namespace Iris.Web.Client.Components;
 public static class ActorIdentityHelper
 {
     /// <summary>
-    /// Resolves the actor's first <c>icon</c> IRI (an <see cref="IObject"/> icon by its <c>id</c>,
-    /// an <see cref="ILink"/> icon by its <c>href</c>), or null when the actor has no icon.
+    /// Resolves the actor's first <c>icon</c> IRI. Checks, in order: an <see cref="IObject"/> icon's
+    /// <c>id</c> (Iris-local), then its <c>url</c> (Mastodon/remote — the AS vocabulary's
+    /// <c>url</c> property, mapped to the library's <c>Url</c> property as
+    /// <see cref="IEnumerable{T}"/>{<see cref="ILink"/>}), then an <see cref="ILink"/> icon's
+    /// <c>href</c>. Returns null when the actor has no icon or no resolvable IRI.
     /// </summary>
     public static string? IconIri(IObject? actorDoc)
     {
@@ -24,12 +27,27 @@ public static class ActorIdentityHelper
 
         foreach (var icon in icons)
         {
-            var iri = icon is IObject { Id: { Length: > 0 } id } ? id
-                : icon is ILink { Href: { } href } ? href.ToString()
-                : null;
-            if (iri is { Length: > 0 })
+            // Iris-local icons carry an `id` (the /ap/v1/media/{id} IRI).
+            if (icon is IObject { Id: { Length: > 0 } id })
             {
-                return iri;
+                return id;
+            }
+
+            // Remote icons (Mastodon, etc.) carry a `url` instead of an `id`. The library maps the
+            // AS vocabulary's `url` property to the `Url` property (IEnumerable<ILink>?), so read
+            // the first link's href.
+            if (icon is IObject { Url: { } urls } && urls.FirstOrDefault() is ILink { Href: { } urlHref })
+            {
+                if (urlHref.ToString() is { Length: > 0 } urlIri)
+                {
+                    return urlIri;
+                }
+            }
+
+            // A bare link icon (a server that emits the icon as a plain IRI string).
+            if (icon is ILink { Href: { } href })
+            {
+                return href.ToString();
             }
         }
 
