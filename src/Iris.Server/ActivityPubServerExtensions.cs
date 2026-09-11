@@ -569,6 +569,17 @@ public static class ActivityPubServerExtensions
         // IReadinessGate (TryAdd — an extra/override registration wins).
         services.TryAddSingleton<IReadinessGate, DefaultReadinessGate>();
 
+        // 83.4: graceful degradation. The degraded-mode gate (stateful — flipped by the probe) + the
+        // persistence-degraded-mode probe (a hosted service that, on a failed persistence read, logs a
+        // structured degraded_mode_entered event + flips the gate so the write paths refuse mutations with
+        // 503 instead of throwing). A host that manages its own degraded-state detection may override the
+        // gate (TryAdd — an extra/override registration wins). The probe is registered as an IHostedService
+        // so it runs for the host's lifetime (startup probe + periodic re-probe for recovery).
+        services.TryAddSingleton<Observability.IDegradedModeGate, Observability.DefaultDegradedModeGate>();
+        services.TryAddSingleton<Observability.PersistenceDegradedModeProbe>();
+        services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
+            sp => sp.GetRequiredService<Observability.PersistenceDegradedModeProbe>());
+
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
         // rate limit (how often). Both come from ActivityPubServerOptions.ProxySettings (defaults:
@@ -2370,8 +2381,26 @@ public static class ActivityPubServerExtensions
         IInboundRateLimiter rateLimiter,
         IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
+        // Degraded (read-only) mode (Phase 83.4): when the durable store is unreachable the instance
+        // serves reads but refuses writes (inbound federation activities are a write). Refuse with 503
+        // before touching the store — a degraded store would throw on the write anyway, and 503 tells the
+        // peer to retry later (a transient outage), not 4xx (a permanent rejection).
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
@@ -2413,12 +2442,30 @@ public static class ActivityPubServerExtensions
         LocalCollectionPageCache collectionCache,
         LocalActorDocumentCache actorDocumentCache,
         IActivityPubClient? objectFetch,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
             return Results.Unauthorized();
+        }
+
+        // Degraded (read-only) mode (Phase 83.4): outbox publish is a write (it records + delivers the
+        // authored activity). Refuse with 503 (not 4xx) when the durable store is unreachable — the
+        // signature is still valid, but the write cannot be durably recorded, so the client should retry
+        // later rather than treat the activity as permanently rejected.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
         }
 
         var options = optionsAccessor.Value;
@@ -2747,6 +2794,8 @@ public static class ActivityPubServerExtensions
     /// <param name="optionsAccessor">The server options (the base URL, for the community IRI).</param>
     /// <param name="collectionCache">The local collection-page response cache (invalidated on the outbox
     /// write so the community's outbox card reflects the new activity immediately).</param>
+    /// <param name="degraded">The degraded-mode gate (Phase 83.4): when degraded (read-only), the write is
+    /// refused with <see cref="StatusCodes.Status503ServiceUnavailable"/> before touching the store.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>
     /// <see cref="StatusCodes.Status202Accepted"/> when the activity was recorded + (for a remote target)
@@ -2765,12 +2814,29 @@ public static class ActivityPubServerExtensions
         IdMinter idMinter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         LocalCollectionPageCache collectionCache,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
             return Results.Unauthorized();
+        }
+
+        // Degraded (read-only) mode (Phase 83.4): a community outbox publish is a write (it records +
+        // delivers the community-authored activity). Refuse with 503 (not 4xx) when the durable store is
+        // unreachable — the signature is still valid, but the write cannot be durably recorded.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
         }
 
         var options = optionsAccessor.Value;
@@ -7772,8 +7838,25 @@ public static class ActivityPubServerExtensions
         IInboundRateLimiter rateLimiter,
         IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
+        // Degraded (read-only) mode (Phase 83.4): a community inbox write is refused with 503 (not 4xx)
+        // when the durable store is unreachable — the peer should retry later, not treat it as a permanent
+        // rejection.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
