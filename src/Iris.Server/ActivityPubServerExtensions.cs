@@ -723,6 +723,14 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
             sp => sp.GetRequiredService<Identity.KeyProviderRefreshService>());
 
+        // 84.6: cache-invalidation channel (the scale-out half for the in-memory actor/edge caches). The
+        // publisher seam defaults to a no-op (the single-instance default: with one instance there is no
+        // other instance's cache to invalidate, and the in-process caches are invalidated directly by the
+        // update path). A host that wants multi-instance cache coherence calls UseCacheInvalidationChannel,
+        // which registers the file-backed CacheInvalidationChannel as ICacheInvalidationPublisher + the
+        // CacheInvalidationService hosted service (the poller that applies events to the local caches).
+        services.TryAddSingleton<Caching.ICacheInvalidationPublisher, Caching.NoopCacheInvalidationPublisher>();
+
         var inboundSection = configuration.GetSection("Iris:Inbound");
         if (inboundSection.Exists())
         {
@@ -8719,6 +8727,64 @@ public static class ActivityPubServerExtensions
         // dead-letter store, so an exhausted delivery on A is visible to an operator inspecting B).
         services.AddSingleton<IDeliveryQueue>(_ => new SharedDeliveryQueue(deliveryJournalPath, visibilityTimeout, dropHorizon));
         services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterJournalPath, deadLetterCapacity));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the file-backed <see cref="Caching.CacheInvalidationChannel"/> (Phase 84.6, shared-state
+    /// scale-out): a shared, cross-process invalidation journal two (or more) Iris instances over the same
+    /// origin publish to and poll from, so an actor-document change (a key rotation re-stamping the
+    /// document's <c>publicKey</c>, a profile change) on instance A invalidates the in-memory actor/edge
+    /// caches on instance B within one poll interval — without a restart or a cache TTL expiry.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="journalPath">
+    /// The path of the invalidation journal file. All instances that share this channel must be configured
+    /// with the same path. The directory must already exist; the file is created if it does not exist.
+    /// </param>
+    /// <param name="retention">
+    /// How long an event is retained in the journal before it is purged. Defaults to
+    /// <see cref="Caching.CacheInvalidationChannel.DefaultRetention"/> (1 hour).
+    /// </param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to replace the no-op
+    /// <see cref="Caching.NoopCacheInvalidationPublisher"/> default with the file-backed channel. This is
+    /// the scale-out counterpart to the in-process cache invalidation (a local actor update invalidates the
+    /// in-process caches directly; the channel extends that to the other instances over the same origin).
+    /// The channel registers the <see cref="Caching.CacheInvalidationService"/> hosted service (the poller
+    /// that applies events to the local <c>RemoteActorCache</c> + <c>LocalActorDocumentCache</c>); the poll
+    /// interval is <see cref="ActivityPubServerOptions.CacheInvalidationPollInterval"/> (default 5 s). Use
+    /// this when running two or more instances over the same origin (see the 84.5 single-instance guard,
+    /// which this scale-out path is the convergence half of, alongside the shared delivery queue + the
+    /// document-derived key provider).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or <paramref name="journalPath"/>
+    /// is null or empty.</exception>
+    public static IServiceCollection UseCacheInvalidationChannel(
+        this IServiceCollection services,
+        string journalPath,
+        TimeSpan? retention = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (string.IsNullOrWhiteSpace(journalPath))
+        {
+            throw new ArgumentNullException(nameof(journalPath));
+        }
+
+        var channel = new Caching.CacheInvalidationChannel(journalPath, retention);
+
+        // Replace the no-op ICacheInvalidationPublisher default with the file-backed channel (the publisher
+        // seam the actor-update paths call), and register the channel itself (the poller resolves it by type).
+        services.AddSingleton<Caching.ICacheInvalidationPublisher>(channel);
+        services.AddSingleton(channel);
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp =>
+            new Caching.CacheInvalidationService(
+                channel,
+                sp.GetRequiredService<Security.RemoteActorCache>(),
+                sp.GetRequiredService<Security.LocalActorDocumentCache>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Caching.CacheInvalidationService>>()));
         return services;
     }
 

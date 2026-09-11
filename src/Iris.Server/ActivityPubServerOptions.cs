@@ -91,6 +91,18 @@ public sealed class ActivityPubServerOptions
     /// default), so this interval has no effect on the common single-process deployment.
     /// </summary>
     public TimeSpan KeyProviderRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How often the <strong>cache-invalidation</strong> hosted service (Phase 84.6) polls the shared
+    /// <see cref="Caching.CacheInvalidationChannel"/> for new invalidation events: an actor-document change
+    /// (a key rotation re-stamping the document, a profile change) on another instance over the same origin
+    /// invalidates this instance's in-memory actor/edge caches within one interval, without a restart or a
+    /// cache TTL expiry. Defaults to 5 s. A non-positive value disables the periodic poll (the startup poll
+    /// pass still runs). The service is registered only when a <see cref="Caching.CacheInvalidationChannel"/>
+    /// is registered (via <c>UseCacheInvalidationChannel</c>), so this interval has no effect on the common
+    /// single-process deployment.
+    /// </summary>
+    public TimeSpan CacheInvalidationPollInterval { get; set; } = TimeSpan.FromSeconds(5);
 }
 
 /// <summary>

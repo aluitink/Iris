@@ -36,6 +36,7 @@ public sealed class KeyRotationService
     private readonly IPersistenceProvider _persistence;
     private readonly IKeyStore _keyStore;
     private readonly IKeyProvider _keyProvider;
+    private readonly Caching.ICacheInvalidationPublisher? _cacheInvalidation;
     private readonly ILogger<KeyRotationService> _logger;
 
     /// <summary>
@@ -45,12 +46,21 @@ public sealed class KeyRotationService
     /// <param name="keyStore">The key store the new signing key is written to.</param>
     /// <param name="keyProvider">The server's key provider (so the proxy / delivery worker sign with the
     /// new key after rotation).</param>
+    /// <param name="cacheInvalidation">
+    /// The cache-invalidation publisher (Phase 84.6, shared-state scale-out): when set (the scale-out
+    /// deployment, via <c>UseCacheInvalidationChannel</c>), a rotation re-stamps the actor document's
+    /// <c>publicKey</c> and publishes an invalidation event so the other instances over the same origin
+    /// invalidate their in-memory actor/edge caches for this actor. When null (the single-instance default,
+    /// the no-op publisher), the publish is a no-op (the in-process caches are invalidated directly by the
+    /// update path).
+    /// </param>
     /// <param name="logger">A logger.</param>
     public KeyRotationService(
         IPersistenceProvider persistence,
         IKeyStore keyStore,
         IKeyProvider keyProvider,
-        ILogger<KeyRotationService> logger)
+        ILogger<KeyRotationService> logger,
+        Caching.ICacheInvalidationPublisher? cacheInvalidation = null)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(keyStore);
@@ -59,6 +69,7 @@ public sealed class KeyRotationService
         _persistence = persistence;
         _keyStore = keyStore;
         _keyProvider = keyProvider;
+        _cacheInvalidation = cacheInvalidation;
         _logger = logger;
     }
 
@@ -106,6 +117,30 @@ public sealed class KeyRotationService
             replaces = oldKeyIri.Value,
         });
         await _persistence.Actors.PutActorAsync(actor, ct).ConfigureAwait(false);
+
+        // 84.6 (shared-state scale-out): the actor document changed (the publicKey extension was
+        // re-stamped), so the other instances over the same origin must invalidate their in-memory
+        // actor/edge caches for this actor (their cached copy of the document still carries the old
+        // publicKey.id, and a re-resolve from the stale document would bind the old key). Best-effort:
+        // a publish failure is logged and does not fail the rotation (the in-process caches are already
+        // consistent; the other instances converge on their next poll or TTL expiry).
+        if (_cacheInvalidation is { } publisher)
+        {
+            try
+            {
+                await publisher.PublishActorInvalidationAsync(actorIri, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "cache_invalidation_publish_failed: the rotation succeeded but the cross-instance invalidation publish failed; the other instances converge on their next poll or TTL expiry.");
+            }
+        }
 
         _logger.LogInformation(
             "Rotated the signing key for {Actor} from {OldKey} to {NewKey}.",
