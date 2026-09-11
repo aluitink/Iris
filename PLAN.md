@@ -142,6 +142,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
+- **86 — Community-type interop (Feed → Group mapping) (next phase).** The documented "candidate follow-up" from 81.2: PieFed's `Feed` community type is not mapped to `Group` in the deserializer/cast path, so PieFed/Pleroma-fork communities don't render as communities.
+  - **86.1** — Map the `Feed` type to `Group` (the `as Group` cast sites + a decision doc on how to detect `Feed` vs `Group` vs other fork-specific community terms).
+  - **86.2** — Live/fixture verification: a PieFed `Feed` community actor now resolves as a community (community detail renders, follow/join work); re-run the 81.2 fixture through the new mapping.
 - ~~**80 — UI/UX polish + defect hunt**~~ — **COMPLETE** (5 findings P-001…P-005 all resolved). [800](docs/changes/800-phase80-bug-hunt-tracker.md) · [801](docs/changes/801-phase80-defect-hunt-fixes.md)
 - ~~**81 — Federation hardening & real-world interop**~~ — **COMPLETE** (81.1 Mastodon + 81.2 Misskey/Pleroma round-trips, no code changes; 81.3 pagination + `Delete`/`Tombstone` conformance, 2 fixes). [811](docs/changes/811-phase81-mastodon-interop-roundtrip.md) · [812](docs/changes/812-phase81-misskey-pleroma-interop-roundtrip.md) · [813](docs/changes/813-phase81-pagination-delete-tombstone-conformance.md)
 - ~~**83 — Iri identity correctness + production readiness**~~ — **COMPLETE** (83.1 Iri fragment-awareness, 83.2 config validation + observability, 83.3 dead-letter retry + observability, 83.4 graceful degradation). [831](docs/changes/831-phase83-iri-fragment-awareness.md) · [832](docs/changes/832-phase83-deployment-hardening-config-validation.md) · [833](docs/changes/833-phase83-outbound-delivery-dead-letter-observability.md) · [834](docs/changes/834-phase83-graceful-degradation-readonly-mode.md)
