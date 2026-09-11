@@ -55,7 +55,7 @@
                 {
                     <div class="object-parent">
                         in reply to
-                        <a href="@ObjectHref(parent)" title="@parent">@_parentPreview ?? parent.Value</a>
+                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
                     </div>
                 }
                 @foreach (var audience in ActivityAudienceIris)

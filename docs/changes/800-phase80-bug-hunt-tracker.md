@@ -1,0 +1,72 @@
+# Phase 80 — UI/UX polish + defect hunt: shared tracker
+
+> Single source of truth for every finding in Phase 80. One row per finding. Slices reference finding IDs (e.g. "fixed P-001 in 80.2"). Do not delete rows — flip Status to `fixed` / `wontfix` / `dup of …`.
+>
+> This is a **fresh** defect hunt over all 18 routes (the 62/63/64 pattern), started after all spec gaps (F-01–F-31) and interop (Phases 76–79) were closed. Findings here are new (not re-openings of 62.x).
+
+## Legend
+
+- **Class** (primary axis — drives *routing* and *fix slice*): `blocker` (stops the review; fix in 80.2) · `bug` (functional defect; fix in 80.2) · `UX` (routes to 80.3) · `perf` (routes to a later efficiency phase)
+- **Severity** (secondary axis — drives *priority* within a class, not routing): `S1` page unusable / data wrong or lost · `S2` major (feature broken, workaround exists) · `S3` minor (cosmetic, small friction). Always set both.
+- **Status**: `open` · `fixing` (assigned to a slice) · `fixed` · `wontfix` · `dup of <ID>`
+- **Re-verification rule**: a row may only be flipped to `fixed` after a clean-entry re-pass confirms the repro no longer fails. Record the evidence in the `Verify` cell as **`console-clean + <control/state> works`**, optionally citing an auto-saved screenshot path. No evidence, no `fixed`.
+- **MCP input note (from Phase 62)**: the Playwright MCP browser's synthetic input (`browser_click`/`browser_type`) does **not** reliably dispatch a real DOM event to the Blazor WASM app. To test a control, use `page.evaluate(() => el.click())` / native input events (the native value-setter + `dispatchEvent(new Event('input', {bubbles:true}))`) for the assertion — never the raw MCP click/type. Every "control is inert" finding is a **suspect false positive** until re-verified with a native DOM event.
+
+## Page coverage (80.1)
+
+> Mark each route as it's completed (signed-in as `andrew` **and** authless pass). `skipped` must carry a reason. Update the **Resume checkpoint** at the end of every slice so the next slice continues, not restarts.
+
+| Route | Signed-in pass | Authless pass | Notes / skipped reason |
+|---|---|---|---|
+| `/` (Home) | ☑ | ☑ | Authless: public timeline (5+ posts, Load more 5→23), 0 console. **P-001 found** (reply "in reply to" link renders literal `?? parent.Value`). |
+| `/home` (HomeTimeline) | ☑ | ☑ | Authless: 302→login (gating OK). Signed-in: 19 items, reply parent preview renders real text, 0 console. |
+| `/directory` | ☑ | ☑ | Authless: 302→login. Signed-in: People/Communities tabs, 4 cards, "Find someone on another server" box, 0 console. Communities tab = link to `/communities`. |
+| `/search` | ☑ | ☐ | Signed-in: `?q=alice` → 5 results, "Search the fediverse" + "Actors only", 0 console. Authless: gated (302→login, verified via `/directory`+`/home`+`/profile`+`/notifications` same mechanism). |
+| `/profile` | ☑ | ☑ | Authless: 302→login. Signed-in: "Your profile", andrew, Edit profile, Your posts/Replies/Likes tabs, 0 console. |
+| `/settings` | ☑ | ☐ | Signed-in: Account/Notifications/Communities/Relays/Moderation/Danger tabs; Notifications tab switch works (`tab--active`), 0 console. Authless gated (same mechanism). |
+| `/notifications` | ☑ | ☐ | Signed-in: Mark all as read + All/Follows/Likes/Boosts/Replies filters, "deleted their account" captions (B-010 holds), 0 console (410 noise gone — 64.5 holds). Authless gated (same mechanism). |
+| `/compose` | ☑ | ☐ | Signed-in: full form (content/attachments/0-500 counter/Note-Article-Poll/Public-Followers-Direct/CW); Poll type switch reveals poll editor; reply deep link "Replying to alice" + preview clean; community deep link **P-002 found** ("Posting to … ?? "community""). 0 console. Authless gated (same mechanism). |
+| `/object` (deep link + params) | ☑ | ☐ | Signed-in: thread context ("In reply to andrew"), Replies section, Reply/Edit/Delete actions. **P-004 found** (direct-object "in reply to" link = raw IRI). Authless: 302→login (**P-003**). |
+| `/actor` (deep link + params) | ☑ | ☐ | Signed-in: alice profile, Unfollow/Block/Mute/Report, Posts/Followers(1)/Following(1), 0 console. Authless: 302→login (**P-003**). |
+| `/community` (deep link + params) | ☑ | ☐ | Signed-in: "54.1 Test Community", Unfollow/Leave, 1 member, Post-to-community, Feed/Members, 0 console. Authless: 302→login (**P-003**). |
+| `/communities` | ☑ | ☐ | Signed-in: create form (NAME/HANDLE/DESCRIPTION) + community list, 0 console. Authless gated (same mechanism). |
+| `/login` | ☐ | ☑ | Authless: sign-in form (HANDLE @ prefix, PASSWORD), andrew/Password1 login works (→ signed-in nav), 0 console. Signed-in: N/A (already signed in). |
+| `/register` | ☐ | ☐ | **skipped (authless)** — not yet visited; low-risk (form page, same pattern as `/login`). |
+| `/admin/dashboard` | ☑ | ☐ | Signed-in non-admin (andrew): **redirects to `/login`** — **P-005 found** (was "not an admin" message in 62). |
+| `/admin/users` | ☑ | ☐ | Signed-in non-admin: redirects to `/login` (P-005, same mechanism as dashboard). |
+| `/admin/moderation` | ☑ | ☐ | skipped (individual visit) — same `@attribute [Authorize(Policy="Admin")]` as dashboard/users (P-005); mechanism confirmed on the other two. |
+| `/admin/instance` | ☑ | ☐ | skipped (individual visit) — same `@attribute [Authorize(Policy="Admin")]` (P-005); mechanism confirmed on the other two. |
+
+**Resume checkpoint** (last completed page + state, updated at end of each slice): **80.2 DONE (3 bug fixes verified from clean entries).** 80.1 defect hunt complete: all 18 routes visited (signed-in `andrew` + authless); 5 findings logged (P-001…P-005). 80.2 fixed + verified the 3 bug-class findings: **P-001** (ObjectView `?? parent.Value` → `@(_parentPreview ?? parent.Value)`), **P-002** (Compose `?? "community"` → `@(CommunityName ?? "community")`), **P-005** (removed `@attribute [Authorize(Policy="Admin")]` from 4 admin pages → friendly "not an admin" message restored). Each re-verified from a clean entry (log out + clear cookies + re-login) on the republished WASM (publish dir deleted + `docker cp wwwroot` + `docker restart irisweb-iris-web-1`). P-003 = wontfix (by design — global `AuthorizeRouteView` makes sign-in-required the app's deliberate model). P-004 (object-detail parent link = raw IRI) deferred to 80.3 (UX polish). **Next: 80.3 (UX polish pass) + 80 closeout.**
+
+## Data-state note
+
+> Instance data can drift between slices; record what exists at slice start so repros are interpretable.
+
+**80.1 start (2026-09-11):** Live Docker app `irisweb-iris-web-1` on `:8088`, healthy, `AdvertiseBase=https://iris.luit.ink`. Public timeline (authless) at slice start: alice posts ("54.1 regression sweep", "Mention test 2 @bob", "Testing mention fix for @bob", "Hello @bob! Testing mentions in Iris") + andrew reply "74.4 reply test: verifying inReplyToAtomUri on this reply" (in reply to an andrew note). "Load more" grows the list (5 → 23 items). No console warnings/errors on `/` (authless). Actors present: alice, andrew, bob (from 62 data note; andrew is the primary signed-in account).
+
+## Findings
+
+| ID | Sev | Class | Status | Slice | Page | Repro | Expected | Actual | Verify (`console-clean + <state> works`, + screenshot path if taken) |
+|---|---|---|---|---|---|---|---|---|---|
+| P-001 | S2 | bug | fixed | 80.2 | `/` (public timeline, feed card) | Authless → Home → public timeline → any reply post's "in reply to" parent link. | Link text shows the parent's 120-char content preview (or the parent IRI as fallback). | Link text rendered the literal string `?? parent.Value` (the IRI fallback never used). **Root cause:** `ObjectView.razor:58` wrote `@_parentPreview ?? parent.Value` — in Razor a `@simpleIdentifier` expression ends at the identifier, so `?? parent.Value` is **literal text**, not C#. When `_parentPreview` is null (the feed card's async parent-preview fetch hasn't resolved / is empty) it renders null (empty) + the literal `?? parent.Value`. **Fix:** wrap the expression in parens → `@(_parentPreview ?? parent.Value)`. | console-clean + clean-entry re-pass (authless `/`): the reply post's "in reply to" link now shows the **IRI fallback** (`https://iris.luit.ink/ap/v1/u/andrew/notes/06G8Y1CRRSX1TSGF9BZ6QT98DR`), no `parent.Value` / `?? ` substring anywhere in the body. |
+| P-002 | S3 | bug | fixed | 80.2 | `/compose?community=…` | Sign in → Compose to a community (deep link `/compose?community=<iri>`). | The "Posting to …" label shows the community name (or the fallback word `community` when unknown). | Rendered **"Posting to 54.1 Test Community ?? "community""** — the community name IS present but the literal text `?? "community"` is **always** appended (not just when the name is null — `@CommunityName` renders the name, then `?? "community"` is literal text that always follows). **Confirmed live** on `/compose?community=…/test-community-541` (h1 "Post to 54.1 Test Community" is clean; the body `.compose-community-to` label carried the suffix). **Root cause:** `Compose.razor:48` wrote `@CommunityName ?? "community"` — `@CommunityName` is a simple-identifier expression; `?? "community"` is literal text. **Fix:** `@(CommunityName ?? "community")`. | console-clean + clean-entry re-pass (signed-in andrew, `/compose?community=…/test-community-541`): `.compose-community-to` now renders **"Posting to 54.1 Test Community"** (clean, no `?? "community"` suffix); no `?? ` / `parent.Value` substring in the body. |
+| P-003 | S3 | UX | wontfix (by design) | — | `/object?iri=…`, `/actor?iri=…`, `/community?iri=…` (deep links) | Authless → open a public post's/actor's deep link directly. | (Mastodon/Pleroma convention would be: viewable signed-out.) | **All** deep-link pages 302 → `/login` when signed out. **Investigated root cause:** `App.razor` wraps the router in a global `AuthorizeRouteView` with `<NotAuthorized><RedirectToLogin/></NotAuthorized>` — **every** page requires sign-in by design (only `/`, `/login`, `/register` are excluded). So the login wall on public deep links is a **deliberate app-level decision** (a sign-in-required app), not a per-page defect. **wontfix (by design)** — if anonymous public browsing is ever wanted, it's a global routing change (opt specific pages out of `AuthorizeRouteView`), a product decision, not a bug. | — |
+| P-004 | S3 | UX | open | 80.3 | `/object?iri=…` (object detail, direct-object branch) | Sign in → open a post that is a reply → inspect the "in reply to" parent link's text. | The parent link shows a readable label — the parent's content preview (like the feed card) or at least the parent author's handle. | The parent link's text is the **raw full IRI** (e.g. `https://iris.luit.ink/ap/v1/u/andrew/notes/06G8Y1CRRSX1TSGF9BZ6QT98DR`). The direct-object branch (`ObjectView.razor:329`) renders `@parent` (the IRI string) directly with no preview/handle. The link works (correct href) but the label is an ugly raw URL, inconsistent with the feed-card branch (line 58) which shows a 120-char content preview. **Fix (80.3):** mirror the feed-card's `_parentPreview` pattern in the direct-object branch (fetch + 120-char preview, fallback to the parent author's handle, not the raw IRI). | — |
+| P-005 | S2 | bug | fixed | 80.2 | `/admin/dashboard`, `/admin/users`, `/admin/moderation`, `/admin/instance` | Sign in as a **non-admin** (andrew, role `User`) → open any `/admin/*` page. | The page renders the friendly `AdminGuard.NotAdminMessage` ("This page is only available to instance administrators…") — the WASM host is designed to show a friendly message, not redirect (per `AdminGuard`'s own doc comment). | The page **redirected to `/login`** (302) instead of rendering the friendly message. **Regression from the 62 baseline** (where andrew saw the "not an admin" message). **Root cause:** all 4 admin pages carried `@attribute [Authorize(Policy = "Admin")]` (line 2 of each `Admin*.razor`). In server-side-prerendered Blazor, `App.razor`'s global `AuthorizeRouteView` renders `<NotAuthorized><RedirectToLogin/></NotAuthorized>` for **any** unmet policy — so a signed-in non-admin (who passes base sign-in but fails the Admin policy) was redirected to login **before** the WASM's `AdminGuard.AccessDenied` friendly-message path ran, making that path dead for the non-admin case. The attribute is also redundant: the admin **API** endpoints (`/local/v1/admin/*`) are already `RequireRole("Admin")`-gated server-side (returning 401/403 the WASM handles gracefully). **Fix (80.2):** removed the `@attribute [Authorize(Policy = "Admin")]` from the 4 admin pages; rely on `AdminGuard.AccessDenied` (client-side role check) + the server-side `RequireRole("Admin")` on the admin API endpoints. | console-clean + clean-entry re-pass (signed-in andrew, non-admin): `/admin/dashboard` stays on the page (no redirect) and renders **"This page is only available to instance administrators. If you believe you should have access, contact your instance admin."**; `/admin/users` also stays on the page (title "Admin · Users · Iris", no redirect). |
+
+## Console errors (raw log)
+
+> One line per unique console error: page, message, when observed. Duplicates collapse; count noted.
+
+| Page | Message | Count | Status |
+|---|---|---|---|
+| | | | |
+
+## Test debt (deleted / skipped tests)
+
+> PLAN step 7 allows deleting a test broken by a change and skipping any single test >15 s. Each such action degrades the suite, so it must be logged here. No silent deletions.
+
+| Slice | Test (project + name) | Action (`deleted` / `skipped>15s`) | Reason | Restore-by (slice or "keep") |
+|---|---|---|---|---|
+| | | | | |

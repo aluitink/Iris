@@ -45,7 +45,7 @@
     {
         <div class="compose-community-context">
             <p class="compose-community-to">
-                Posting to <a href="@($"/community?iri={Uri.EscapeDataString(cIri.Value)}")">@CommunityName ?? "community"</a>
+                Posting to <a href="@($"/community?iri={Uri.EscapeDataString(cIri.Value)}")">@(CommunityName ?? "community")</a>
             </p>
         </div>
     }
