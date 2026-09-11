@@ -4658,6 +4658,14 @@ public static class ActivityPubServerExtensions
                         embedded.Published = DateTime.UtcNow;
                     }
 
+                    // Mastodon wire-format compatibility (Phase 74): enrich the minted Note with
+                    // properties Mastodon always emits, so remote Mastodon clients render the object
+                    // correctly (status URL, explicit sensitivity flag, replies collection pointer).
+                    if (embedded is KristofferStrube.ActivityStreams.Object noteObj)
+                    {
+                        EnrichNoteForMastodon(noteObj);
+                    }
+
                     mintedItems.Add(embedded);
                 }
                 else
@@ -4667,6 +4675,45 @@ public static class ActivityPubServerExtensions
             }
             create.Object = mintedItems;
         }
+    }
+
+    /// <summary>
+    /// Enriches a minted <see cref="KristofferStrube.ActivityStreams.Object"/> with the properties
+    /// Mastodon always emits on a Note (Phase 74 — Mastodon wire-format compatibility): the object's
+    /// <c>url</c> (the note's own IRI, which Mastodon clients use to link to the status page), an
+    /// explicit <c>sensitive</c> flag (always present, defaulting to <c>false</c>, so remote
+    /// visibility logic is unambiguous), and an empty <c>replies</c> <see cref="OrderedCollection"/>
+    /// (the replies-collection IRI, so Mastodon clients can poll for thread replies). These are
+    /// additive: they do not alter the existing Iris extension terms (<c>iris:likedCount</c>, etc.)
+    /// or the note's content/audience/tags.
+    /// </summary>
+    /// <param name="note">The minted note (its <c>id</c> must already be set).</param>
+    private static void EnrichNoteForMastodon(KristofferStrube.ActivityStreams.Object note)
+    {
+        if (string.IsNullOrWhiteSpace(note.Id))
+        {
+            return;
+        }
+
+        // `url`: the note's own IRI. Mastodon sets this to the HTML page URL; for AP interop the
+        // object IRI is the canonical, resolvable address (the /notes/{ulid} endpoint).
+        note.Url ??= [new Link { Href = new Uri(note.Id) }];
+
+        // `sensitive`: always emit (Mastodon convention — the field is present even when false, so
+        // remote clients need not treat a missing field as ambiguous). Written via ExtensionData
+        // (Rule 6) since the library does not model it as a typed property.
+        note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(
+            note.ExtensionData.ContainsKey("sensitive")
+                && note.ExtensionData["sensitive"].ValueKind == System.Text.Json.JsonValueKind.True);
+
+        // `replies`: an empty OrderedCollection pointing at the replies-collection IRI
+        // ({noteId}/replies), matching Mastodon's shape. The server already serves this collection
+        // (the interaction-collection endpoint), so this is a pure pointer.
+        note.Replies = new OrderedCollection
+        {
+            Id = note.Id + "/replies",
+        };
     }
 
     /// <summary>
