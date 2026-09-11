@@ -429,16 +429,22 @@
         => value.Length <= max ? value : value[..max] + "…";
 
     /// <summary>
-    /// Detects <c>@handle</c> mentions in the composed text. A mention is an <c>@</c> followed by a
-    /// handle (alphanumerics + underscores) at the start of the text or after whitespace. The handle is
-    /// resolved to an actor IRI using the signed-in actor's origin (same-instance mentions only —
-    /// cross-instance mentions would require a WebFinger lookup, which is deferred).
-    /// Returns an empty list when no mentions are found or the client is unavailable.
+    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text. A mention is an
+    /// <c>@</c> followed by a handle (alphanumerics + underscores), optionally followed by <c>@domain</c>
+    /// (a remote instance host), at the start of the text or after whitespace. Same-instance mentions
+    /// (<c>@handle</c>, no domain) are resolved to the signed-in actor's origin. Cross-instance mentions
+    /// (<c>@user@domain</c>) are resolved via WebFinger (RFC 8410) through the home instance's proxy
+    /// endpoint (the browser cannot reach a remote instance directly — CORS). An unresolvable
+    /// cross-instance mention (WebFinger 404, network failure, or no <c>self</c> link) is silently
+    /// dropped. Returns an empty list when no mentions are found or the session is unavailable.
     /// </summary>
     private async Task<List<Iri>> DetectMentionsAsync(string text, Iri actorId)
     {
         var mentions = new List<Iri>();
-        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_]+)");
+        // Matches @handle (same-instance) and @user@domain (cross-instance). The domain part is
+        // optional: @user@domain has the domain after the second @; @handle has no second @.
+        // The domain is alphanumerics + hyphens + dots (a valid host, possibly with a port).
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.\-]+(?::\d+)?))?");
         if (matches.Count == 0)
         {
             return mentions;
@@ -450,14 +456,86 @@
         foreach (System.Text.RegularExpressions.Match match in matches)
         {
             var handle = match.Groups[1].Value;
-            var actorIri = new Iri($"{baseOrigin}/ap/v1/u/{handle}");
-            if (!mentions.Contains(actorIri))
+            var domain = match.Groups[2].Success ? match.Groups[2].Value : null;
+
+            Iri? resolved;
+            if (domain is null)
             {
-                mentions.Add(actorIri);
+                // Same-instance mention: resolve against the signed-in actor's origin.
+                resolved = new Iri($"{baseOrigin}/ap/v1/u/{handle}");
+            }
+            else
+            {
+                // Cross-instance mention: resolve via WebFinger through the proxy.
+                resolved = await ResolveRemoteMentionAsync(handle, domain);
+            }
+
+            if (resolved is { } iri)
+            {
+                if (!mentions.Contains(iri))
+                {
+                    mentions.Add(iri);
+                }
             }
         }
 
         return mentions;
+    }
+
+    /// <summary>
+    /// Resolves a cross-instance mention (<c>@user@domain</c>) to an actor IRI via WebFinger
+    /// (RFC 8410), routing the request through the home instance's proxy endpoint (the browser
+    /// cannot reach a remote instance directly — CORS). Returns null when the WebFinger lookup
+    /// fails (404, network error, or no <c>self</c> link in the response).
+    /// </summary>
+    private async Task<Iri?> ResolveRemoteMentionAsync(string handle, string domain)
+    {
+        if (Session is null)
+        {
+            return null;
+        }
+
+        var resource = $"acct:{handle}@{domain}";
+        var webFingerUrl = $"https://{domain}/.well-known/webfinger?resource={Uri.EscapeDataString(resource)}";
+        var body = await Session.ProxyGetAsync(webFingerUrl, "application/jrd+json");
+        if (body is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var link in links.EnumerateArray())
+            {
+                if (link.TryGetProperty("rel", out var rel)
+                    && rel.ValueKind == System.Text.Json.JsonValueKind.String
+                    && string.Equals(rel.GetString(), "self", StringComparison.Ordinal)
+                    && link.TryGetProperty("type", out var type)
+                    && type.ValueKind == System.Text.Json.JsonValueKind.String
+                    && (string.Equals(type.GetString(), "application/activity+json", StringComparison.Ordinal)
+                        || string.Equals(type.GetString(), "application/ld+json", StringComparison.Ordinal)
+                        || string.Equals(type.GetString(), "application/json", StringComparison.Ordinal))
+                    && link.TryGetProperty("href", out var href)
+                    && href.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Iri.TryParse(href.GetString()!, out var iri))
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     /// <summary>
