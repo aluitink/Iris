@@ -2068,6 +2068,11 @@ ul.object-list li {
     border-radius: 4px;
 }
 
+.replies-more {
+    text-align: center;
+    padding-top: 0.5rem;
+}
+
 .compose-reply-context {
     margin-bottom: 0.75rem;
 }

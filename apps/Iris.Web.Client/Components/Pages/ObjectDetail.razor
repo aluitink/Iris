@@ -134,6 +134,14 @@ else if (ObjectDoc is null)
                         <li><ObjectView Item="reply" /></li>
                     }
                 </ul>
+                @if (HasMoreReplies)
+                {
+                    <div class="replies-more">
+                        <button type="button" class="button button--secondary" disabled="@LoadingMoreReplies" @onclick="LoadMoreRepliesAsync">
+                            @(LoadingMoreReplies ? "Loading…" : "Show more replies")
+                        </button>
+                    </div>
+                }
             }
             else
             {
@@ -160,6 +168,10 @@ else if (ObjectDoc is null)
     private string? LoadError { get; set; }
     private bool RepliesLoading { get; set; }
     private List<IObject?> Replies { get; set; } = [];
+    private int RepliesLoaded { get; set; }
+    private bool HasMoreReplies { get; set; }
+    private bool LoadingMoreReplies { get; set; }
+    private Iri? RepliesObjectIri { get; set; }
     private int LikeCount { get; set; }
     private int BoostCount { get; set; }
     private bool ConfirmingDelete { get; set; }
@@ -349,9 +361,11 @@ else if (ObjectDoc is null)
     private async Task LoadRepliesAsync(IActivityPubClient client, Iri iri)
     {
         RepliesLoading = true;
+        RepliesObjectIri = iri;
         try
         {
             var resolved = new List<IObject?>();
+            var count = 0;
             await foreach (var item in client.GetRepliesAsync(iri, new CollectionQuery { Limit = 20 }, CancellationToken.None))
             {
                 var replyIri = item.ResolveObjectIri();
@@ -366,6 +380,7 @@ else if (ObjectDoc is null)
                     if (replyObj is not null)
                     {
                         resolved.Add(replyObj);
+                        count++;
                     }
                 }
                 catch
@@ -375,6 +390,8 @@ else if (ObjectDoc is null)
             }
 
             Replies = resolved;
+            RepliesLoaded = count;
+            HasMoreReplies = count >= 20;
         }
         catch
         {
@@ -383,6 +400,58 @@ else if (ObjectDoc is null)
         finally
         {
             RepliesLoading = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadMoreRepliesAsync()
+    {
+        if (RepliesObjectIri is not { } iri || LoadingMoreReplies)
+        {
+            return;
+        }
+
+        LoadingMoreReplies = true;
+        try
+        {
+            var newLimit = RepliesLoaded + 20;
+            var allItems = new List<IObject?>();
+            var count = 0;
+            await foreach (var item in Client!.GetRepliesAsync(iri, new CollectionQuery { Limit = newLimit }, CancellationToken.None))
+            {
+                var replyIri = item.ResolveObjectIri();
+                if (replyIri is not { } ri)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var replyObj = await Client!.GetObjectAsync(ri, CancellationToken.None);
+                    if (replyObj is not null)
+                    {
+                        allItems.Add(replyObj);
+                        count++;
+                    }
+                }
+                catch
+                {
+                    // Skip unresolvable replies.
+                }
+            }
+
+            Replies = allItems;
+            RepliesLoaded = count;
+            HasMoreReplies = count >= newLimit;
+        }
+        catch
+        {
+            // Non-fatal: keep the existing replies.
+        }
+        finally
+        {
+            LoadingMoreReplies = false;
         }
 
         StateHasChanged();
