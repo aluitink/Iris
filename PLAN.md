@@ -140,8 +140,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 79.3 — Remaining interop gaps: spot-check Pleroma/PeerTube wire format for inbound compatibility; fix any gaps found.
-- 80 — Next phase: TBD (distill at Phase 79 closeout).
+- 80 — Next phase: TBD (distill at Phase 79 closeout). Candidate directions: outbound Pleroma `conversationId`/`emoji` (deferred from 56.2), outbound Lemmy score/vote parity, or a UI/UX polish pass.
 
 
 ## Inbox
@@ -156,11 +155,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **79.3 — Remaining interop gaps (Phase 79, slice 3) — DONE** ([change doc 793](docs/changes/793-pleroma-peertube-interop.md)): Pleroma inbound verified clean (ExtensionData round-trip); fixed PeerTube `Video` self-contained media rendering (`GetSelfMediaIri` + ObjectView player). 3 new tests. **Phase 79 COMPLETE.** Full suite green.
 - **79.2 — Lemmy interop verification (Phase 79, slice 2) — DONE (no code changes)** ([change doc 792](docs/changes/792-lemmy-interop-verification.md)): Verified Lemmy WebFinger/handle/Group/Page code paths via inspection; live lemmy.ml testing blocked by Docker network isolation (not a code bug). Full suite: 1666 passed, 0 failed, 17 skipped.
 - **79.1 — Thread depth: "show more" for deep threads (Phase 79, slice 1) — DONE** ([change doc 791](docs/changes/791-thread-depth-show-more.md)): ObjectDetail replies section now shows a "Show more replies" button when 20+ replies are loaded; loads 20 more per click. Full suite: 1666 passed, 0 failed, 17 skipped.
 - **78.4 — Lemmy Page (post) rendering (Phase 78, slice 4) — DONE** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): ObjectView renders `name` as title for non-Actor objects (Lemmy Page posts). **Phase 78 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
 - **78.3 — Lemmy Group doc rendering (Phase 78, slice 3) — DONE (no code changes)** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): Verified existing ActorProfile + ActorDetail handle Lemmy Group docs correctly. Full suite: 1666 passed, 0 failed, 17 skipped.
-- **78.2 — Lemmy community handle support (Phase 78, slice 2) — DONE** ([change doc 781](docs/changes/781-lemmyverse-investigation.md)): Directory + Search accept `!community@domain` handles; `!` stripped before WebFinger; `preferGroup` flag selects `Group` from dual WebFinger response. Full suite: 1666 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
