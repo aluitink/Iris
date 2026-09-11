@@ -11,7 +11,7 @@ namespace Iris.Core.Identity;
 /// <c>InboxOf</c>/<c>OutboxOf</c>/<c>FollowersOf</c>/<c>FollowingOf</c> helpers to derive
 /// the standard ActivityPub collection endpoints from an actor or object IRI.
 /// </remarks>
-public readonly record struct Iri
+public readonly struct Iri
 {
     private readonly Uri _uri;
 
@@ -61,6 +61,46 @@ public readonly record struct Iri
     /// Gets the IRI as an absolute URI string (the canonical wire form).
     /// </summary>
     public string Value => _uri.IsAbsoluteUri ? _uri.AbsoluteUri : _uri.ToString();
+
+    /// <summary>
+    /// Two IRIs are equal when their <see cref="Value"/> (the canonical absolute-URI string, which
+    /// <em>includes</em> the fragment) are equal, case-sensitively per RFC 3986.
+    /// </summary>
+    /// <remarks>
+    /// This deliberately overrides the <see cref="System.Uri"/> default equality, which is
+    /// fragment-<em>insensitive</em> by design (a URI fragment is not part of the resource identifier
+    /// under the W3C definition — <c>Uri</c> compares two URIs as equal when their schemes, hosts,
+    /// paths, and queries match, ignoring the fragment). ActivityPub IRIs use fragments that are
+    /// <em>semantically significant</em>: a key IRI (<c>{actor}#key-1</c>), the public-audience IRI
+    /// (<c>…#Public</c>), or a named key (<c>{actor}#main-key</c>) are <em>distinct</em> resources from
+    /// the bare actor IRI and from each other. Comparing by <see cref="Value"/> keeps the fragment in
+    /// the identity, which is the behavior the rest of the codebase already relies on (the
+    /// <c>IriEqualityComparer</c> compares <see cref="Value"/> for the same reason).
+    /// </remarks>
+    public bool Equals(Iri other) => string.Equals(_value(), other._value(), StringComparison.Ordinal);
+
+    /// <inheritdoc/>
+    public override bool Equals(object? obj) => obj is Iri other && Equals(other);
+
+    /// <inheritdoc/>
+    public override int GetHashCode() => _value()?.GetHashCode(StringComparison.Ordinal) ?? 0;
+
+    /// <summary>
+    /// The canonical absolute-URI string (which includes the fragment), or <see langword="null"/> for
+    /// the <see langword="default"/> value (an <see cref="Iri"/> with no underlying <see cref="Uri"/>).
+    /// Comparing by this keeps the fragment in the identity and is null-safe for <c>default(Iri)</c>.
+    /// </summary>
+    private string? _value() => _uri is null ? null : (_uri.IsAbsoluteUri ? _uri.AbsoluteUri : _uri.ToString());
+
+    /// <summary>
+    /// Determines whether two IRIs are equal (see <see cref="Equals(Iri)"/> — fragment-aware).
+    /// </summary>
+    public static bool operator ==(Iri left, Iri right) => left.Equals(right);
+
+    /// <summary>
+    /// Determines whether two IRIs are not equal (see <see cref="Equals(Iri)"/> — fragment-aware).
+    /// </summary>
+    public static bool operator !=(Iri left, Iri right) => !left.Equals(right);
 
     /// <summary>
     /// The public audience IRI, <c>https://www.w3.org/ns/activitystreams#Public</c>.

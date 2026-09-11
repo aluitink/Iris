@@ -766,7 +766,7 @@ public sealed class FeedServiceTests
         {
             Id = activityIri,
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
-            Object = [new Note { Id = $"{activityIri}#note", Content = [content] }],
+            Object = [new Note { Id = activityIri, Content = [content] }],
         }).GetAwaiter().GetResult();
 
     /// <summary>

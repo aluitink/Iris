@@ -6,17 +6,14 @@ namespace Iris.Core.Identity;
 /// fragment) are equal, case-sensitively per RFC 3986.
 /// </summary>
 /// <remarks>
-/// <see cref="Iri"/> itself uses the default <see cref="System.Uri"/> equality, which is
-/// fragment-<em>insensitive</em> by design (a URI fragment is not part of the resource identifier under
-/// the W3C definition). That is the right default for most ActivityPub uses — the public-audience IRI
-/// (<c>…#Public</c>) and collection IRIs are compared without regard to incidental fragment spelling.
-/// But it is <em>wrong</em> for a key store: a key IRI's fragment (<c>{actor}#key-1</c>,
-/// <c>{actor}#key-2</c>) is semantically significant — different fragments name different keys. With the
-/// fragment-blind default, an <c>Iri</c>-keyed <c>Dictionary</c> conflates <c>#key-1</c> with
-/// <c>#key-2</c> and with the bare actor IRI, so a key stored under one fragment is "found" for a
-/// different fragment (a silent key-management corruption). The durable Postgres store
-/// (<c>EfKeyStore</c>) already compares by <c>Iri.Value</c> (string-based, fragment-aware); this
-/// comparer gives the in-memory and file-backed stores the same fragment-aware behavior.
+/// Since Phase 83.1, <see cref="Iri"/> itself is fragment-aware: its <see cref="Iri.Equals(Iri)"/>
+/// compares <see cref="Iri.Value"/> (which includes the fragment), so a key IRI (<c>{actor}#key-1</c>)
+/// is distinct from the bare actor IRI and from a different fragment (<c>{actor}#key-2</c>). This
+/// comparer is now an <em>explicit</em> declaration of that same fragment-aware, <see cref="Iri.Value"/>-based
+/// semantics — it is the comparer the in-memory and file-backed key stores (and the durable Postgres
+/// store's equivalent) pass to their <c>Iri</c>-keyed dictionaries so the fragment-aware behavior is
+/// documented at the call site and does not depend on the struct's default equality being chosen
+/// correctly. Its behavior is identical to the default <see cref="Iri"/> equality.
 /// </remarks>
 public sealed class IriEqualityComparer : IEqualityComparer<Iri>
 {

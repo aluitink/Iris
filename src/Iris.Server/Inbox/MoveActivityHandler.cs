@@ -106,8 +106,12 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
         // key (F-25). The key IRI is read from the cached actor document's publicKey.id (via
         // IriExtensions.GetPublicKeyIri) rather than hard-coded to #key-1, so a non-standard key fragment
         // is invalidated correctly.
-        _remoteActors?.Invalidate(oldIri.Value);
+        // Resolve the moving actor's key IRI from the cached actor document BEFORE invalidating it — the
+        // doc's publicKey.id is the real key IRI (a non-standard fragment such as #main-key, not the
+        // #key-1 convention). Reading it after the actor-doc invalidation would find no doc and fall back
+        // to #key-1, which only works by fragment-blind coincidence for a non-standard fragment.
         var keyIri = ResolveOldKeyIri(oldIri.Value);
+        _remoteActors?.Invalidate(oldIri.Value);
         if (keyIri.HasValue)
         {
             _remoteKeys?.Invalidate(keyIri.Value);
@@ -141,8 +145,12 @@ public sealed class MoveActivityHandler : ActivityHandlerBase<Move>
     {
         if (_remoteActors is not null)
         {
+            // Read the cached actor doc (bypassCache: false) without forcing a fetch: the factory
+            // returns null, so a cache hit yields the doc (whose publicKey.id is the real key IRI) and
+            // a miss yields null (fall back to the #key-1 convention). bypassCache: true would skip the
+            // cache read entirely and always fall back — never invalidating a non-standard key fragment.
             var (cached, _, _) = _remoteActors
-                .GetAsync(oldActorIri, bypassCache: true, factory: _ => Task.FromResult<IObject?>(null))
+                .GetAsync(oldActorIri, bypassCache: false, factory: _ => Task.FromResult<IObject?>(null))
                 .GetAwaiter()
                 .GetResult();
             var fromDoc = cached?.GetPublicKeyIri();
