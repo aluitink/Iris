@@ -114,7 +114,7 @@
                 </select>
             }
         }
-        @if (ReplyToIri is null && CommunityIri is null)
+        @if (ReplyToIri is null)
         {
             <label class="compose-sensitive-toggle">
                 <input type="checkbox" @bind="IsSensitive" disabled="@Busy" />
@@ -1142,7 +1142,7 @@
             }
             else if (CommunityIri is { } community)
             {
-                result = await PostToCommunityAsync(client, actorId, community, mentionArg, hashtagArg);
+                result = await PostToCommunityAsync(client, actorId, community, media, mentionArg, hashtagArg, IsSensitive, SensitiveSummary);
             }
             else if (ContentType == "Poll")
             {
@@ -1250,7 +1250,7 @@
     /// (the "followed content" half of the community feed). When <paramref name="mentions"/> is
     /// non-empty, each mentioned actor becomes a <c>Mention</c> <c>tag</c> entry.
     /// </summary>
-    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<Iri>? mentions = null, List<string>? hashtags = null)
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, bool sensitive = false, string? summary = null)
     {
         var followersIri = communityIri.FollowersOf();
         var note = new KristofferStrube.ActivityStreams.Note
@@ -1268,6 +1268,54 @@
             Content = [Content.Trim()],
             Published = DateTime.UtcNow
         };
+
+        if (sensitive)
+        {
+            note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+            if (summary is { Length: > 0 } s)
+            {
+                note.Summary = [s];
+            }
+        }
+
+        if (media.Count > 0)
+        {
+            var attachments = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
+            foreach (var m in media)
+            {
+                var isImage = string.Equals(m.ContentType, "image", StringComparison.Ordinal)
+                    || m.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+                if (isImage)
+                {
+                    var image = new Image
+                    {
+                        Url = [new Link { Href = m.MediaIri.Uri }],
+                        Id = m.MediaIri.Value,
+                        MediaType = m.ContentType,
+                    };
+                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                    {
+                        image.Name = [m.FileName];
+                    }
+                    attachments.Add(image);
+                }
+                else
+                {
+                    var document = new Document
+                    {
+                        Url = [new Link { Href = m.MediaIri.Uri }],
+                        MediaType = m.ContentType,
+                    };
+                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                    {
+                        document.Name = [m.FileName];
+                    }
+                    attachments.Add(document);
+                }
+            }
+            note.Attachment = attachments;
+        }
 
         var tags = BuildTagList(mentions, hashtags ?? [], actorId);
         if (tags is { Count: > 0 })
