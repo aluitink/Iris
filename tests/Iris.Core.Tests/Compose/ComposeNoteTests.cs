@@ -139,9 +139,7 @@ public class ComposeNoteTests
         var note = ComposeNote.Build(
             Alice,
             "with a picture",
-            mediaIri: media,
-            mediaType: "image/png",
-            mediaName: "cat.png");
+            media: [new MediaAttachment(media, "image/png", "cat.png")]);
 
         var image = Assert.IsType<Image>(note.Attachment?.Single());
         // The url is the same-origin media IRI (the feed's GetMediaAttachments reads it back).
@@ -162,9 +160,7 @@ public class ComposeNoteTests
         var note = ComposeNote.Build(
             Alice,
             "no file name",
-            mediaIri: media,
-            mediaType: "image/png",
-            mediaName: "   ");
+            media: [new MediaAttachment(media, "image/png", "   ")]);
 
         var image = Assert.IsType<Image>(note.Attachment?.Single());
         Assert.Equal(media, image.Url?.Single()?.ResolveObjectIri());
@@ -179,9 +175,7 @@ public class ComposeNoteTests
         var note = ComposeNote.Build(
             Alice,
             "wire media",
-            mediaIri: media,
-            mediaType: "image/jpeg",
-            mediaName: "photo.jpg");
+            media: [new MediaAttachment(media, "image/jpeg", "photo.jpg")]);
         var json = ActivityJson.Serialize(note);
         var back = ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
 
@@ -202,12 +196,101 @@ public class ComposeNoteTests
             "both",
             sensitive: true,
             summary: "graphic",
-            mediaIri: media,
-            mediaType: "image/png");
+            media: [new MediaAttachment(media, "image/png", "cat.png")]);
 
         Assert.True(((IObject)note).IsSensitive());
         Assert.Equal("graphic", ((IObject)note).GetSummary());
         Assert.NotNull(note.Attachment);
+    }
+
+    // --- Multiple + mixed media attachments (73.2) ---
+
+    [Fact]
+    public void Build_SetsMultipleImageAttachments_WhenMediaProvided()
+    {
+        var img1 = new Iri("https://a.domain.local/ap/v1/media/img-1");
+        var img2 = new Iri("https://a.domain.local/ap/v1/media/img-2");
+        var note = ComposeNote.Build(
+            Alice,
+            "two pictures",
+            media:
+            [
+                new MediaAttachment(img1, "image/png", "one.png"),
+                new MediaAttachment(img2, "image/jpeg", "two.jpg"),
+            ]);
+
+        var images = note.Attachment?.OfType<Image>().ToList();
+        Assert.NotNull(images);
+        Assert.Equal(2, images!.Count);
+        Assert.Equal(img1, images[0].Url?.Single()?.ResolveObjectIri());
+        Assert.Equal(img2, images[1].Url?.Single()?.ResolveObjectIri());
+        Assert.Equal("one.png", images[0].Name?.Single());
+        Assert.Equal("two.jpg", images[1].Name?.Single());
+        // The feed's single read boundary resolves each image attachment to its media IRI + file name.
+        var mediaAttachments = ((IObject)note).GetMediaAttachments().ToList();
+        Assert.Equal(2, mediaAttachments.Count);
+        Assert.Equal(img1, mediaAttachments[0].Iri);
+        Assert.Equal(img2, mediaAttachments[1].Iri);
+    }
+
+    [Fact]
+    public void Build_SetsDocumentAttachment_WhenNonImageContentType()
+    {
+        var pdfIri = new Iri("https://a.domain.local/ap/v1/media/doc-1");
+        var note = ComposeNote.Build(
+            Alice,
+            "a pdf",
+            media: [new MediaAttachment(pdfIri, "application/pdf", "whitepaper.pdf")]);
+
+        var doc = Assert.IsType<Document>(note.Attachment?.Single());
+        Assert.Equal(pdfIri, doc.Url?.Single()?.ResolveObjectIri());
+        Assert.Equal("application/pdf", doc.MediaType);
+        Assert.Equal("whitepaper.pdf", doc.Name?.Single());
+        // The rich-attachment read boundary resolves the Document to its media IRI + name + type.
+        var rich = ((IObject)note).GetRichAttachments().Single();
+        Assert.Equal(pdfIri, rich.Url);
+        Assert.Equal("whitepaper.pdf", rich.Name);
+        Assert.Equal("Document", rich.Type);
+    }
+
+    [Fact]
+    public void Build_MixedMedia_ProducesImagesAndDocuments()
+    {
+        var imgIri = new Iri("https://a.domain.local/ap/v1/media/mix-img");
+        var videoIri = new Iri("https://a.domain.local/ap/v1/media/mix-vid");
+        var note = ComposeNote.Build(
+            Alice,
+            "mixed",
+            media:
+            [
+                new MediaAttachment(imgIri, "image/png", "shot.png"),
+                new MediaAttachment(videoIri, "video/mp4", "clip.mp4"),
+            ]);
+
+        var attachments = note.Attachment?.ToList();
+        Assert.NotNull(attachments);
+        Assert.Equal(2, attachments!.Count);
+        Assert.IsType<Image>(attachments[0]);
+        Assert.IsType<Document>(attachments[1]);
+
+        // The image is readable via the media boundary; the video via the rich boundary (as a Document
+        // with a video mediaType — the feed renders it through the rich-attachment path).
+        var mediaAttachments = ((IObject)note).GetMediaAttachments();
+        Assert.Single(mediaAttachments);
+        Assert.Equal(imgIri, mediaAttachments.Single().Iri);
+
+        var rich = ((IObject)note).GetRichAttachments().ToList();
+        Assert.Equal(2, rich.Count);
+        Assert.Equal(videoIri, rich[1].Url);
+        Assert.Equal("clip.mp4", rich[1].Name);
+    }
+
+    [Fact]
+    public void Build_NoAttachment_WhenMediaEmpty()
+    {
+        var note = ComposeNote.Build(Alice, "content", media: []);
+
+        Assert.Null(note.Attachment);
     }
 
     // --- Hashtag (tag) round-tripping (54.14) ---

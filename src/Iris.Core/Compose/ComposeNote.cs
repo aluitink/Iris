@@ -6,6 +6,19 @@ using ActivityObject = KristofferStrube.ActivityStreams.Object;
 namespace Iris.Core.Compose;
 
 /// <summary>
+/// A single uploaded media file to attach to a composed note (the same-origin media IRI minted on
+/// upload, its content-type, and its original file name). An <c>image/*</c> upload becomes an
+/// <see cref="Image"/> attachment; any other content type (video, audio, document, …) becomes a
+/// <see cref="Document"/> attachment (73.2 — multiple, mixed media per post).
+/// </summary>
+/// <param name="MediaIri">The same-origin media IRI (<c>{base}/ap/v1/media/{id}</c>) — set as the
+/// attachment's <c>url</c> (and the mirroring <c>id</c>).</param>
+/// <param name="ContentType">The stored media's <c>Content-Type</c> (e.g. <c>image/png</c>,
+/// <c>video/mp4</c>) — set as the attachment's <c>mediaType</c>.</param>
+/// <param name="FileName">The uploaded file's original name — set as the attachment's <c>name</c>.</param>
+public sealed record MediaAttachment(Iri MediaIri, string ContentType, string? FileName);
+
+/// <summary>
 /// Builds an authored <see cref="Note"/> from raw authoring inputs (22.3 US-11: a note with optional
 /// Markdown content and a content-sensitivity flag + summary). This is the client-side composition of a
 /// note's wire shape (content, attribution, sensitivity, and optional audience) before it is published
@@ -45,20 +58,15 @@ public static class ComposeNote
     /// The optional audience link(s) (e.g. the public <c>as:Public</c> address). When null or empty the
     /// note carries no explicit <c>to</c>.
     /// </param>
-    /// <param name="mediaIri">
-    /// The same-origin media IRI (the <c>/ap/v1/media/{id}</c> path minted on upload) of the note's image
-    /// attachment (Phase 20.4 (a) / F-27), when one was uploaded. When set (non-null) the note carries a
-    /// single <see cref="Image"/> <c>attachment</c> whose <c>url</c> (and mirroring <c>id</c>) is this IRI,
-    /// with <c>mediaType</c> and <c>name</c> from <paramref name="mediaType"/> and
-    /// <paramref name="mediaName"/>. When null the note carries no <c>attachment</c>.
-    /// </param>
-    /// <param name="mediaType">
-    /// The attachment image's <c>mediaType</c> (the file's content type, e.g. <c>image/png</c>), as
-    /// returned by the media upload. Used only when <paramref name="mediaIri"/> is set.
-    /// </param>
-    /// <param name="mediaName">
-    /// The attachment image's <c>name</c> (the file's original name), as returned by the media upload.
-    /// Used only when <paramref name="mediaIri"/> is set.
+    /// <param name="media">
+    /// The uploaded media files to attach (73.2 — multiple, mixed media per post), when any were
+    /// uploaded. Each entry becomes a single <c>attachment</c> whose <c>url</c> (and mirroring
+    /// <c>id</c>) is the entry's <see cref="MediaAttachment.MediaIri"/>, with <c>mediaType</c> and
+    /// <c>name</c> from the entry's <see cref="MediaAttachment.ContentType"/> and
+    /// <see cref="MediaAttachment.FileName"/>. An <c>image/*</c> content type yields an
+    /// <see cref="Image"/> attachment (rendered in the feed's media gallery); any other content type
+    /// (video, audio, document, …) yields a <see cref="Document"/> attachment (rendered via the rich
+    /// attachment path). When null or empty the note carries no <c>attachment</c>.
     /// </param>
     /// <param name="mentions">
     /// The IRIs of actors mentioned in the note (the <c>@handle</c> convention). When non-empty, each
@@ -92,9 +100,7 @@ public static class ComposeNote
         bool sensitive = false,
         string? summary = null,
         IEnumerable<Iri>? to = null,
-        Iri? mediaIri = null,
-        string? mediaType = null,
-        string? mediaName = null,
+        IEnumerable<MediaAttachment>? media = null,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<string>? hashtags = null,
         Func<string, string?>? hashtagHrefFactory = null)
@@ -152,26 +158,29 @@ public static class ComposeNote
             }
         }
 
-        if (mediaIri is { } media)
+        if (media is { } mediaList)
         {
-            // A note's image attachment (Phase 20.4 (a) / F-27): a single Image whose url is the
-            // same-origin media IRI minted on upload (and whose id mirrors it, so a reader can resolve
-            // the media without the url). mediaType + name come from the upload (Decision 056 (b): the
-            // url is same-origin, never a cross-origin media host). The feed's ObjectView renders it via
-            // GetMediaAttachments.
-            var image = new Image
+            // A note's media attachments (Phase 20.4 (a) / F-27, extended to multiple + mixed types in
+            // 73.2): one attachment object per uploaded file, in order. Each's url is the same-origin
+            // media IRI minted on upload (and its id mirrors it, so a reader can resolve the media
+            // without the url); mediaType + name come from the upload (Decision 056 (b): the url is
+            // same-origin, never a cross-origin media host). An image/* upload becomes an Image
+            // (rendered in the feed's media gallery); any other content type becomes a Document
+            // (rendered via the rich-attachment path — video/audio players, PDF/other doc cards).
+            var attachments = new List<IObjectOrLink>();
+            foreach (var entry in mediaList)
             {
-                Url = [new Link { Href = media.Uri }],
-                Id = media.Value,
-                MediaType = mediaType,
-            };
-            // A blank (null/whitespace) file name yields no name entry; the Image.Name property is left
-            // at its default. (A `{ Length: > 0 }` pattern alone would not catch a whitespace-only name.)
-            if (mediaName is { } rawName && !string.IsNullOrWhiteSpace(rawName))
-            {
-                image.Name = [rawName];
+                var attachment = BuildMediaAttachment(entry);
+                if (attachment is not null)
+                {
+                    attachments.Add(attachment);
+                }
             }
-            note.Attachment = [image];
+
+            if (attachments.Count > 0)
+            {
+                note.Attachment = attachments;
+            }
         }
 
         // Combine mention and hashtag tags into a single `tag` array (the AP convention: a note's
@@ -220,5 +229,60 @@ public static class ComposeNote
         }
 
         return note;
+    }
+
+    /// <summary>
+    /// Builds a single attachment object from an uploaded media file (73.2): an <see cref="Image"/>
+    /// for <c>image/*</c> content, a <see cref="Document"/> for anything else (video, audio,
+    /// application/pdf, …). The attachment's <c>url</c> (and mirroring <c>id</c>) is the same-origin
+    /// media IRI, with <c>mediaType</c> and (when present) <c>name</c> from the upload. Returns null
+    /// when the entry carries no usable media IRI (a defensive guard — uploads always mint one).
+    /// </summary>
+    /// <param name="entry">The uploaded media file to attach.</param>
+    /// <returns>The attachment object, or null when <paramref name="entry"/> is null/invalid.</returns>
+    private static IObjectOrLink? BuildMediaAttachment(MediaAttachment? entry)
+    {
+        if (entry is null || string.IsNullOrWhiteSpace(entry.MediaIri.Value))
+        {
+            return null;
+        }
+
+        var isImage = string.Equals(entry.ContentType, "image", StringComparison.Ordinal)
+            || entry.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+        if (isImage)
+        {
+            var image = new Image
+            {
+                Url = [new Link { Href = entry.MediaIri.Uri }],
+                Id = entry.MediaIri.Value,
+                MediaType = entry.ContentType,
+            };
+            SetAttachmentName(image, entry.FileName);
+            return image;
+        }
+
+        var document = new Document
+        {
+            Url = [new Link { Href = entry.MediaIri.Uri }],
+            MediaType = entry.ContentType,
+        };
+        SetAttachmentName(document, entry.FileName);
+        return document;
+    }
+
+    /// <summary>
+    /// Sets an attachment's <c>name</c> (a single-element <c>Name</c> list) from a file name, leaving
+    /// it unset (null) when the file name is null or whitespace (a blank name yields no <c>name</c>
+    /// entry on the wire).
+    /// </summary>
+    /// <param name="attachment">The attachment whose <c>Name</c> is set.</param>
+    /// <param name="fileName">The file name, or null/whitespace to leave the name unset.</param>
+    private static void SetAttachmentName(ActivityObject attachment, string? fileName)
+    {
+        if (fileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(fileName))
+        {
+            attachment.Name = [fileName];
+        }
     }
 }

@@ -1,0 +1,386 @@
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+@if (ObjectIri is { } iri)
+{
+    <div class="engagement-bar">
+        <button type="button"
+                class="engagement-btn @(_liked ? "engagement-btn--active" : "")"
+                title="Like"
+                aria-label="Like"
+                aria-pressed="@(_liked ? "true" : "false")"
+                disabled="@_busy"
+                @onclick="() => ToggleLikeAsync(iri)">
+            <svg viewBox="0 0 24 24" fill="@(_liked ? "currentColor" : "none")" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+            </svg>
+            <span class="engagement-count">@_likeCount</span>
+        </button>
+        <button type="button"
+                class="engagement-btn @(_boosted ? "engagement-btn--active" : "")"
+                title="Boost"
+                aria-label="Boost"
+                aria-pressed="@(_boosted ? "true" : "false")"
+                disabled="@_busy"
+                @onclick="() => ToggleBoostAsync(iri)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M17 1l4 4-4 4" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <path d="M7 23l-4-4 4-4" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+            </svg>
+            <span class="engagement-count">@_boostCount</span>
+        </button>
+        <a class="engagement-btn"
+           href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
+           title="Reply"
+           aria-label="Reply">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            @if (_replyCount > 0)
+            {
+                <span class="engagement-count">@_replyCount</span>
+            }
+        </a>
+        @if (CanModerate)
+        {
+            <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="_showModeration"
+                 @onclick="() => _showModeration = !_showModeration"
+                 @onkeydown="OnMoreKeyDown">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <circle cx="12" cy="5" r="1.5" />
+                    <circle cx="12" cy="12" r="1.5" />
+                    <circle cx="12" cy="19" r="1.5" />
+                </svg>
+                @if (_showModeration)
+                {
+                    <div class="engagement-menu" @onclick:stopPropagation>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => BlockAsync()">Block</button>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => MuteAsync()">Mute</button>
+                        <button type="button" class="engagement-menu-item" disabled="@_busy" @onclick="() => FlagAsync()">Report</button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    /// <summary>
+    /// The IRI of the object to engage with (like, boost, reply).
+    /// </summary>
+    [Parameter]
+    public Iri? ObjectIri { get; set; }
+
+    /// <summary>
+    /// The IRI of the post's author (the moderation target). When null or equal to the
+    /// signed-in user's actor, the moderation menu is hidden.
+    /// </summary>
+    [Parameter]
+    public Iri? AuthorIri { get; set; }
+
+    /// <summary>
+    /// The content object this bar is rendered for (a <see cref="Note"/>/<see cref="Article"/>), when the
+    /// caller has it in hand (a collection item or an object document). When the object carries the
+    /// server-rendered <c>iris:likedCount</c> / <c>iris:sharedCount</c> / <c>iris:isLiked</c> /
+    /// <c>iris:isShared</c> extensions, the bar seeds its counts and the signed-in user's like/boost state
+    /// from them and skips the per-object <c>/likes</c> / <c>/shares</c> collection walk (54.8). With the
+    /// 72.2 extensions (<c>iris:likeActivityIri</c> / <c>iris:announceActivityIri</c>) the bar also seeds
+    /// the minted activity id an unlike / un-boost (an <c>Undo</c>) references directly off the item — so
+    /// an engaged post fires ZERO collection walks (no id-recovery walk at all). Only when the minted-id
+    /// extension is absent (a non-Iris instance, or a read the server did not enrich with per-requester
+    /// state) does the bar fall back to a single shared-cache walk to recover the id. When the counters
+    /// are entirely absent the bar falls back to the full walk for both collections, as before.
+    /// </summary>
+    [Parameter]
+    public IObject? Object { get; set; }
+
+    private int _likeCount;
+    private int _boostCount;
+    private int _replyCount;
+    private bool _liked;
+    private bool _boosted;
+    private bool _busy;
+    private bool _countsLoaded;
+    private bool _showModeration;
+    private Iri? _likeIri;
+    private Iri? _announceIri;
+
+    /// <summary>
+    /// Keyboard handler for the "More options" toggle (Enter/Space activates).
+    /// </summary>
+    private void OnMoreKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "Enter" or " ")
+        {
+            _showModeration = !_showModeration;
+        }
+    }
+
+    /// <summary>
+    /// Whether the activity's actor/attributedTo is the given user (tolerating trailing-slash IRI variants).
+    /// </summary>
+    private bool CanModerate
+        => AuthorIri is { } author && Session.ActorId is { } me && author != me;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Seed the like/boost counts AND the signed-in user's own like/boost state from the server.
+        //
+        // Fast path (54.8 + 72.2): the server renders the per-object counters (iris:likedCount /
+        // iris:sharedCount) and — for an authenticated (signed) read — the requester's net like/boost
+        // state (iris:isLiked / iris:isShared) directly onto the content object (a collection item in a
+        // feed, or the object document). When the object carries BOTH counters, they are authoritative
+        // (the server derives them live from the reverse index), so the bar seeds _likeCount /
+        // _boostCount from them and does NOT re-walk the /likes and /shares collections just to count
+        // items (the two per-object fetches that used to fire for every rendered object). The viewer's
+        // like/boost state is read from isLiked / isShared. With 72.2 the server ALSO renders the
+        // requester's minted Like/Announce activity id (iris:likeActivityIri / iris:announceActivityIri)
+        // alongside isLiked / isShared, so the bar seeds the unlike/un-boost (Undo) reference directly
+        // off the item — an engaged post fires ZERO collection walks. Only when the minted-id extension
+        // is absent (a non-Iris instance, or a read the server did not enrich with per-requester state)
+        // does the bar fall back to a single shared-cache walk (72.1) to recover the id. When the
+        // counters are entirely absent (a non-Iris instance, a cached outbox item the server did not
+        // enrich, or an unsigned read) the bar falls back to the full walk for both collections, again
+        // via the shared cache.
+        if (ObjectIri is not { } iri || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        var me = Session.ActorId;
+        var ns = Session.IrisNamespaceBase?.Value;
+        if (ns is not null
+            && Object is { } obj
+            && obj.GetLikedCount(ns) is { } likedCount
+            && obj.GetSharedCount(ns) is { } sharedCount)
+        {
+            try
+            {
+                _likeCount = likedCount;
+                _boostCount = sharedCount;
+                _replyCount = obj.GetRepliedCount(ns) ?? 0;
+                _liked = obj.GetIsLiked(ns) is true;
+                _boosted = obj.GetIsShared(ns) is true;
+                _countsLoaded = true;
+
+                // 72.2: seed the minted Like/Announce id(s) directly from the server-rendered
+                // extensions (iris:likeActivityIri / iris:announceActivityIri) — no collection walk.
+                if (_liked)
+                {
+                    _likeIri = obj.GetLikeActivityIri(ns);
+                }
+                if (_boosted)
+                {
+                    _announceIri = obj.GetAnnounceActivityIri(ns);
+                }
+
+                // Residual (72.2 fallback): an engaged post whose minted-id extension is absent (a
+                // non-Iris instance, or a read the server did not enrich with per-requester state) still
+                // recovers the id via the shared per-object engagement cache (72.1) — a single walk, and
+                // a re-created bar reuses the already-loaded walk.
+                if (me is { } meIri &&
+                    ((_liked && _likeIri is null) || (_boosted && _announceIri is null)))
+                {
+                    var counts = await Ui.GetEngagementCountsAsync(iri, meIri);
+                    if (_likeIri is null)
+                    {
+                        _likeIri = counts.LikeActivityIri is { } l ? new Iri(l) : null;
+                    }
+                    if (_announceIri is null)
+                    {
+                        _announceIri = counts.AnnounceActivityIri is { } a ? new Iri(a) : null;
+                    }
+                }
+            }
+            catch
+            {
+                // Non-fatal: the counts are already seeded from the extensions; only the (optional) id
+                // recovery fails, so an unlike/un-boost would simply re-fetch on the next interaction.
+            }
+            return;
+        }
+
+        // Fallback: no server-rendered counters (non-Iris / un-enriched / unsigned). Walk both
+        // collections to derive the counts AND the viewer's own like/boost state (and the minted ids),
+        // via the shared per-object engagement cache (72.1) so a re-created bar reuses the walk.
+        try
+        {
+            var counts = await Ui.GetEngagementCountsAsync(iri, me);
+            _likeCount = counts.LikeCount;
+            _boostCount = counts.BoostCount;
+            _liked = counts.Liked;
+            _boosted = counts.Boosted;
+            _likeIri = counts.LikeActivityIri is { } l ? new Iri(l) : null;
+            _announceIri = counts.AnnounceActivityIri is { } a ? new Iri(a) : null;
+            _countsLoaded = true;
+        }
+        catch
+        {
+            // Non-fatal: counts simply won't show until a later render re-fetches.
+        }
+    }
+
+    private async Task ToggleLikeAsync(Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_liked && _likeIri is { } likeId)
+            {
+                await client.UnlikeAsync(me, likeId);
+                _liked = false;
+                _likeIri = null;
+                // Invalidate the shared engagement cache so a later re-render re-walks (the cached minted
+                // id + net state are stale once the viewer un-likes).
+                Ui.InvalidateEngagement(iri);
+                // Adjust from the seeded total only once it's known (a pre-load click is a no-op delta).
+                if (_countsLoaded)
+                {
+                    _likeCount = Math.Max(0, _likeCount - 1);
+                }
+            }
+            else
+            {
+                var result = await client.LikeAsync(me, iri);
+                if (result.IsSuccess && result.MintedId is { } minted)
+                {
+                    _liked = true;
+                    _likeIri = new Iri(minted);
+                    Ui.InvalidateEngagement(iri);
+                    if (_countsLoaded)
+                    {
+                        _likeCount++;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Revert on failure (optimistic update rollback is implicit: state only changes on success).
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ToggleBoostAsync(Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            if (_boosted && _announceIri is { } announceId)
+            {
+                await client.UnannounceAsync(me, announceId);
+                _boosted = false;
+                _announceIri = null;
+                // Invalidate the shared engagement cache so a later re-render re-walks.
+                Ui.InvalidateEngagement(iri);
+                if (_countsLoaded)
+                {
+                    _boostCount = Math.Max(0, _boostCount - 1);
+                }
+            }
+            else
+            {
+                var result = await client.AnnounceAsync(me, iri);
+                if (result.IsSuccess && result.MintedId is { } minted)
+                {
+                    _boosted = true;
+                    _announceIri = new Iri(minted);
+                    Ui.InvalidateEngagement(iri);
+                    if (_countsLoaded)
+                    {
+                        _boostCount++;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Revert on failure.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task BlockAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await client.BlockAsync(me, target);
+            _showModeration = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task MuteAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.LocalModeration is not { } mod || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await mod.MuteAsync(me, target);
+            _showModeration = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task FlagAsync()
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client || AuthorIri is not { } target)
+        {
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            await client.FlagAsync(me, target);
+            _showModeration = false;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

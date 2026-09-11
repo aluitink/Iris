@@ -1,0 +1,218 @@
+@page "/directory"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
+@using KristofferStrube.ActivityStreams
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+<PageTitle>Directory · Iris</PageTitle>
+
+<h1>Directory</h1>
+
+<p class="muted">
+    Browse people and communities on this instance.
+</p>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to browse the directory.</p></div>
+}
+else
+{
+    <div class="tab-bar" role="tablist" aria-label="Directory sections">
+        <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
+        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+    </div>
+
+    @if (Busy)
+    {
+        <div class="card card-loading">
+            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+            </svg>
+            <span class="muted">Loading…</span>
+        </div>
+    }
+    else if (Error is not null)
+    {
+        <div class="card"><div class="error" role="alert">@Error</div></div>
+    }
+    else if (Actors is not null)
+    {
+        @if (ActiveTab == "people")
+        {
+            @if (People.Count == 0)
+            {
+                <div class="card">
+                    <p class="muted">No local accounts yet. Be the first — <a href="/register">create an account</a>.</p>
+                </div>
+            }
+            else
+            {
+                <div class="directory-cards">
+                    @foreach (var person in People)
+                    {
+                        <DirectoryCard Actor="person"
+                                       OnExpandPosts="ExpandAsync"
+                                       ExpandedPosts="@_expandedPosts"
+                                       ExpandedLoading="@_expandedLoading" />
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            @if (Communities.Count == 0)
+            {
+                <div class="card">
+                    <p class="muted">No communities yet. <a href="/communities">Create one</a>.</p>
+                </div>
+            }
+            else
+            {
+                <div class="directory-cards">
+                    @foreach (var community in Communities)
+                    {
+                        <DirectoryCard Actor="community"
+                                       OnExpandPosts="ExpandAsync"
+                                       ExpandedPosts="@_expandedPosts"
+                                       ExpandedLoading="@_expandedLoading" />
+                    }
+                </div>
+            }
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private string ActiveTab { get; set; } = "people";
+    private bool Busy { get; set; }
+    private IReadOnlyList<Actor>? Actors { get; set; }
+    private string? Error { get; set; }
+
+    private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
+    private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
+
+    private readonly Dictionary<string, List<IObjectOrLink>> _expandedPosts = new();
+    private readonly HashSet<string> _expandedLoading = new();
+    private Dictionary<string, List<IObjectOrLink>> ExpandedPosts => _expandedPosts;
+    private HashSet<string> ExpandedLoading => _expandedLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        await LoadActorsAsync();
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+    }
+
+    private async Task LoadActorsAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } actor)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        Actors = null;
+        try
+        {
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            Iri? baseIri = index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+
+            if (baseIri is null)
+            {
+                Error = "Could not determine the instance address.";
+                return;
+            }
+
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                               baseIri.Value,
+                               string.Empty,
+                               new SearchOptions { Type = "Actor" }))
+            {
+                results.Add(item);
+            }
+
+            Actors = results
+                .OfType<Actor>()
+                .OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            Error = "We couldn't load the directory. Please check your connection and try again.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task ExpandAsync(Actor actor)
+    {
+        var iri = actor.Id;
+        if (string.IsNullOrEmpty(iri) || Client is not { } client)
+        {
+            return;
+        }
+
+        if (_expandedPosts.ContainsKey(iri) || _expandedLoading.Contains(iri))
+        {
+            return;
+        }
+
+        _expandedLoading.Add(iri);
+        StateHasChanged();
+
+        try
+        {
+            var outboxIri = new Iri(iri).OutboxOf();
+            var posts = new List<IObjectOrLink>();
+            await foreach (var page in client.GetCollectionAsync(outboxIri, ct: CancellationToken.None))
+            {
+                foreach (var item in page.Items)
+                {
+                    if (OutboxFilter.IsContentItem(item))
+                    {
+                        posts.Add(item);
+                        if (posts.Count >= 3)
+                        {
+                            break;
+                        }
+                    }
+                }
+
+                if (posts.Count >= 3)
+                {
+                    break;
+                }
+            }
+
+            _expandedPosts[iri] = posts;
+        }
+        catch (Exception)
+        {
+            _expandedPosts[iri] = [];
+        }
+        finally
+        {
+            _expandedLoading.Remove(iri);
+            StateHasChanged();
+        }
+    }
+}

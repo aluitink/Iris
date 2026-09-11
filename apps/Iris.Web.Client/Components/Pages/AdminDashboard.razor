@@ -1,0 +1,129 @@
+@page "/admin/dashboard"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize(Policy = "Admin")]
+@using System.Net.Http.Json
+@using Iris.Web.Client.Accounts
+
+<PageTitle>Admin · Dashboard · Iris</PageTitle>
+
+<h1>Instance dashboard</h1>
+
+@if (LoadError is not null)
+{
+    <div class="error" role="alert">@LoadError</div>
+}
+else if (Stats is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading dashboard…</span>
+    </div>
+}
+else
+{
+    <div class="stats-grid">
+        <div class="card stat-card">
+            <div class="stat-value">@Stats.UserCount</div>
+            <div class="stat-label">Local users</div>
+        </div>
+        <div class="card stat-card">
+            <div class="stat-value">@Stats.PostCount</div>
+            <div class="stat-label">Posts (objects)</div>
+        </div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+        <h2 style="margin-top: 0;">Recent registrations</h2>
+        @if (Stats.RecentRegistrations.Count == 0)
+        {
+            <p class="muted">No registrations yet.</p>
+        }
+        else
+        {
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>Handle</th>
+                        <th>Role</th>
+                        <th>Registered</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var user in Stats.RecentRegistrations)
+                    {
+                        <tr>
+                            <td>@user.Username</td>
+                            <td><span class="badge @RoleBadgeClass(user.Role)">@RoleLabel(user.Role)</span></td>
+                            <td>@user.CreatedAt.ToString("yyyy-MM-dd HH:mm")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
+}
+
+@code {
+    private readonly IHttpClientFactory _factory;
+    private readonly IActorSessionAccessor _session;
+    private HttpClient? _http;
+    private DashboardStats? Stats { get; set; }
+    private string? LoadError { get; set; }
+
+    public AdminDashboard(IHttpClientFactory factory, IActorSessionAccessor session)
+    {
+        _factory = factory;
+        _session = session;
+    }
+
+    protected override void OnInitialized()
+    {
+        _http = _factory.CreateClient("iris");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Prime the session's auth state (WASM cannot block on GetAuthenticationStateAsync during
+        // render). Without this, IsSignedIn/Role read the unprimed cache and report "signed out",
+        // mis-routing a signed-in non-admin to the wrong message.
+        await _session.EnsureReadyAsync();
+
+        var denied = AdminGuard.AccessDenied(_session);
+        if (denied is not null)
+        {
+            LoadError = denied;
+            return;
+        }
+
+        await LoadStatsAsync();
+    }
+
+    private async Task LoadStatsAsync()
+    {
+        try
+        {
+            var response = await _http!.GetAsync("/local/v1/admin/stats");
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = (int)response.StatusCode is 401 or 403
+                    ? AdminGuard.NotAdminMessage
+                    : AdminGuard.FriendlyLoadError("the dashboard");
+                return;
+            }
+            Stats = System.Text.Json.JsonSerializer.Deserialize<DashboardStats>(
+                await response.Content.ReadAsStringAsync(),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            LoadError = AdminGuard.FriendlyLoadError("the dashboard");
+        }
+    }
+
+    private static string RoleLabel(int role) => role == 1 ? "Admin" : "User";
+    private static string RoleBadgeClass(int role) => role == 1 ? "badge--admin" : "badge--user";
+
+    private sealed record DashboardStats(int UserCount, int PostCount, List<DashboardUser> RecentRegistrations);
+    private sealed record DashboardUser(Guid Id, string Username, string ActorIri, int Role, DateTimeOffset CreatedAt);
+}

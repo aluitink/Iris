@@ -1,0 +1,198 @@
+@using KristofferStrube.ActivityStreams
+
+@if (Attachments.Count == 0)
+{
+    return;
+}
+
+@{
+    var images = Attachments.Where(a => IsImage(a)).ToList();
+    var videos = Attachments.Where(a => IsVideo(a)).ToList();
+    var audios = Attachments.Where(a => IsAudio(a)).ToList();
+    var documents = Attachments.Where(a => !IsImage(a) && !IsVideo(a) && !IsAudio(a)).ToList();
+}
+
+@if (images.Count > 0)
+{
+    <div class="media-gallery media-gallery--@MediaGridClass(images.Count)">
+        @for (var i = 0; i < images.Count; i++)
+        {
+            var att = images[i];
+            var idx = i;
+            <div class="media-gallery-item" @onclick="() => OpenLightbox(idx)">
+                <img src="@Rewrite(att.Url.Value)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" />
+            </div>
+        }
+    </div>
+}
+
+@foreach (var vid in videos)
+{
+    <div class="media-player">
+        <video controls preload="metadata" class="media-player-video">
+            <source src="@Rewrite(vid.Url.Value)" />
+            Your browser does not support the video tag.
+        </video>
+        @if (vid.Name is { Length: > 0 } vname)
+        {
+            <div class="media-player-label">@vname</div>
+        }
+    </div>
+}
+
+@foreach (var aud in audios)
+{
+    <div class="media-player">
+        <audio controls preload="metadata" class="media-player-audio">
+            <source src="@Rewrite(aud.Url.Value)" />
+            Your browser does not support the audio tag.
+        </audio>
+        @if (aud.Name is { Length: > 0 } aname)
+        {
+            <div class="media-player-label">@aname</div>
+        }
+    </div>
+}
+
+@if (documents.Count > 0)
+{
+    <div class="doc-gallery doc-gallery--@MediaGridClass(documents.Count)">
+        @foreach (var doc in documents)
+        {
+            <div class="doc-gallery-item">
+                @if (doc.Preview is { } p && IsImagePreview(p.Value))
+                {
+                    <img class="doc-gallery-preview" src="@Rewrite(p.Value)" alt="" loading="lazy" />
+                }
+                else if (IsPdf(doc))
+                {
+                    <iframe class="doc-gallery-pdf" src="@Rewrite(doc.Url.Value)" title="@(doc.Name ?? doc.Url.Value)" loading="lazy"></iframe>
+                }
+                else
+                {
+                    <div class="doc-gallery-placeholder">@IconFor(doc.Type)</div>
+                }
+                <div class="doc-gallery-label">
+                    <a href="@Rewrite(doc.Url.Value)" target="_blank" rel="noopener" class="doc-gallery-link" download>@(doc.Name ?? doc.Url.Value)</a>
+                    @if (doc.Type is { } dt)
+                    {
+                        <span class="doc-gallery-type">@dt</span>
+                    }
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@if (_lightboxIndex is { } li)
+{
+    var cur = li;
+    <div class="lightbox-overlay" @onclick="CloseLightbox">
+        <div class="lightbox-content" @onclick:stopPropagation="true">
+            <button class="lightbox-close" @onclick="CloseLightbox" aria-label="Close">&times;</button>
+            @if (cur > 0)
+            {
+                <button class="lightbox-nav lightbox-nav--prev" @onclick="PrevImage" aria-label="Previous">&#8249;</button>
+            }
+            <img class="lightbox-img" src="@Rewrite(_images[cur].Url.Value)" alt="@(_images[cur].Name ?? _images[cur].Url.Value)" />
+            @if (cur < _images.Count - 1)
+            {
+                <button class="lightbox-nav lightbox-nav--next" @onclick="NextImage" aria-label="Next">&#8250;</button>
+            }
+            @if (cur + 1 < _images.Count)
+            {
+                <div class="lightbox-counter">@(cur + 1) / @_images.Count</div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public IReadOnlyList<RichAttachment> Attachments { get; set; } = [];
+
+    private List<RichAttachment> _images = [];
+    private int? _lightboxIndex;
+
+    protected override void OnParametersSet()
+    {
+        _images = Attachments.Where(a => IsImage(a)).ToList();
+    }
+
+    private string MediaGridClass(int count) => count switch
+    {
+        1 => "single",
+        2 => "two",
+        3 => "three",
+        _ => "four",
+    };
+
+    private void OpenLightbox(int index) => _lightboxIndex = index;
+
+    private void CloseLightbox() => _lightboxIndex = null;
+
+    private void PrevImage()
+    {
+        if (_lightboxIndex is { } idx && idx > 0)
+        {
+            _lightboxIndex = idx - 1;
+        }
+    }
+
+    private void NextImage()
+    {
+        if (_lightboxIndex is { } idx && idx < _images.Count - 1)
+        {
+            _lightboxIndex = idx + 1;
+        }
+    }
+
+    private static bool IsImage(RichAttachment att)
+        => att.Type is null or "Image" && att.Preview is null
+            || att.Type is "Document" && IsImageUrl(att.Url.Value);
+
+    private static bool IsImageUrl(string url)
+    {
+        var lower = url.ToLowerInvariant();
+        // Strip query string + fragment for the extension check.
+        var q = lower.IndexOfAny(['?', '#']);
+        if (q >= 0)
+        {
+            lower = lower[..q];
+        }
+        return lower is { Length: > 0 }
+            && (lower.EndsWith(".jpg") || lower.EndsWith(".jpeg") || lower.EndsWith(".png")
+                || lower.EndsWith(".gif") || lower.EndsWith(".webp") || lower.EndsWith(".svg")
+                || lower.EndsWith(".avif") || lower.EndsWith(".bmp"));
+    }
+
+    private static bool IsVideo(RichAttachment att)
+        => att.Type is not null && att.Type.Contains("Video", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAudio(RichAttachment att)
+        => att.Type is not null && att.Type.Contains("Audio", StringComparison.OrdinalIgnoreCase);
+
+    private static string IconFor(string? type) => type?.ToLowerInvariant() switch
+    {
+        "document" => "📄",
+        "audio" => "🎵",
+        "video" => "🎬",
+        _ => "📎",
+    };
+
+    private static bool IsPdf(RichAttachment att)
+    {
+        var lower = att.Url.Value.ToLowerInvariant();
+        var q = lower.IndexOfAny(['?', '#']);
+        if (q >= 0)
+        {
+            lower = lower[..q];
+        }
+        return lower.EndsWith(".pdf");
+    }
+
+    private static bool IsImagePreview(string url) => IsImageUrl(url);
+
+    private static string Rewrite(string url)
+        => ObjectView.RewriteMediaToSameOrigin(url);
+}

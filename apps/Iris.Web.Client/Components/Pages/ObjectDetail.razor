@@ -1,0 +1,605 @@
+@page "/object"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Components.Web
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+<PageTitle>@PageHeading · Iris</PageTitle>
+
+<h1>@PageHeading</h1>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to view objects.</p></div>
+}
+else if (string.IsNullOrEmpty(IriParam))
+{
+    <div class="card"><p class="muted">No object specified.</p></div>
+}
+else if (LoadError is not null)
+{
+    <div class="card"><div class="error" role="alert">@LoadError</div></div>
+}
+else if (ObjectDoc is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading object…</span>
+    </div>
+}
+    else
+{
+    @if (ParentDoc is not null && ParentHref is not null)
+    {
+        <div class="card object-parent-context">
+            <div class="object-parent-label">
+                In reply to <a href="@ParentHref">@ParentAuthor</a>
+            </div>
+            <div class="object-parent-content">@ParentPreview</div>
+        </div>
+    }
+
+    <div class="card object-detail">
+        @if (IsEdit)
+        {
+            <div class="object-edit">
+                <label for="edit-content">Edit post</label>
+                <textarea id="edit-content" class="compose-content" rows="4" @bind="EditContent"
+                          disabled="@Editing"></textarea>
+                <div class="object-edit-actions">
+                    <button type="button" class="button" disabled="@Editing" @onclick="SaveEditAsync">
+                        @(Editing ? "Saving…" : "Save")
+                    </button>
+                    <button type="button" class="button button--secondary" disabled="@Editing" @onclick="() => IsEdit = false">Cancel</button>
+                </div>
+                @if (EditError is not null)
+                {
+                    <div class="error" role="alert">@EditError</div>
+                }
+            </div>
+        }
+        else
+        {
+            <ObjectView Item="ObjectDoc" />
+            @if (EngagementText is not null)
+            {
+                <div class="object-detail-engagement">@EngagementText</div>
+            }
+        }
+        <div class="object-detail-actions">
+            @if (ReplyHref is not null)
+            {
+                <a class="button button--secondary" href="@ReplyHref">Reply</a>
+            }
+            @if (IsOwnPost)
+            {
+                @if (!IsEdit)
+                {
+                    <button type="button" class="button button--secondary" @onclick="() => BeginEditAsync()">Edit</button>
+                }
+                @if (!ConfirmingDelete)
+                {
+                    <button type="button" class="button button--danger" @onclick="() => ConfirmingDelete = true">Delete</button>
+                }
+                else
+                {
+                    <span class="delete-confirm">
+                        <span class="muted">Delete this post?</span>
+                        <button type="button" class="button button--danger" disabled="@Deleting" @onclick="DeleteAsync">
+                            @(Deleting ? "Deleting…" : "Confirm")
+                        </button>
+                        <button type="button" class="button button--secondary" disabled="@Deleting" @onclick="() => ConfirmingDelete = false">Cancel</button>
+                    </span>
+                }
+            }
+        </div>
+        @if (DeleteError is not null)
+        {
+            <div class="error" role="alert">@DeleteError</div>
+        }
+    </div>
+
+    @if (ShowRepliesSection)
+    {
+        <div class="card replies-section">
+            <h2>Replies</h2>
+            @if (RepliesLoading)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading replies…</span>
+                </div>
+            }
+            else if (Replies is { Count: > 0 })
+            {
+                <ul class="object-list">
+                    @foreach (var reply in Replies)
+                    {
+                        <li><ObjectView Item="reply" /></li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="muted">No replies yet.</p>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private NavigationManager Navigation { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "iri")]
+    public string? IriParam { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private IObject? ObjectDoc { get; set; }
+    private IObject? ParentDoc { get; set; }
+    private string? LoadError { get; set; }
+    private bool RepliesLoading { get; set; }
+    private List<IObject?> Replies { get; set; } = [];
+    private int LikeCount { get; set; }
+    private int BoostCount { get; set; }
+    private bool ConfirmingDelete { get; set; }
+    private bool Deleting { get; set; }
+    private string? DeleteError { get; set; }
+
+    private bool IsEdit { get; set; }
+    private bool Editing { get; set; }
+    private string EditContent { get; set; } = string.Empty;
+    private string? EditError { get; set; }
+
+    private string? EngagementText
+    {
+        get
+        {
+            if (LikeCount == 0 && BoostCount == 0)
+            {
+                return null;
+            }
+
+            var parts = new List<string>();
+            if (LikeCount > 0)
+            {
+                parts.Add($"{LikeCount} like{(LikeCount == 1 ? "" : "s")}");
+            }
+
+            if (BoostCount > 0)
+            {
+                parts.Add($"{BoostCount} boost{(BoostCount == 1 ? "" : "s")}");
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private string PageHeading
+    {
+        get
+        {
+            if (ObjectDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return px;
+            }
+
+            var subject = SubjectObject;
+            if (subject?.AttributedTo is { } attr)
+            {
+                var first = attr.FirstOrDefault();
+                if (first is Actor { PreferredUsername: { Length: > 0 } apx })
+                {
+                    return "@" + apx;
+                }
+
+                var iri = first?.ResolveObjectIri();
+                if (iri is { } i)
+                {
+                    var path = Uri.UnescapeDataString(new Uri(i.Value).AbsolutePath).TrimEnd('/');
+                    var last = path.Split('/').LastOrDefault();
+                    if (!string.IsNullOrWhiteSpace(last))
+                    {
+                        return "@" + last;
+                    }
+                }
+            }
+
+            var type = subject?.Type?.FirstOrDefault() ?? ObjectDoc?.GetType().Name;
+            return string.IsNullOrEmpty(type) ? "Object" : type;
+        }
+    }
+
+    private Iri? ObjectIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(IriParam) || !Iri.TryParse(IriParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The href for the "Reply" button, or null when the object is not a replyable content type
+    /// (a Note, or any non-actor content object).
+    /// </summary>
+    private string? ReplyHref
+    {
+        get
+        {
+            if (ObjectDoc is Actor)
+            {
+                return null;
+            }
+
+            if (ObjectIri is not { } iri)
+            {
+                return null;
+            }
+
+            return $"/compose?replyTo={Uri.EscapeDataString(iri.Value)}";
+        }
+    }
+
+    /// <summary>
+    /// Whether the replies section should be rendered (the object is a content object, not an actor).
+    /// </summary>
+    private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor;
+
+    private string? ParentHref
+    {
+        get
+        {
+            if (ParentDoc?.Id is not { } id)
+            {
+                return null;
+            }
+
+            return $"/object?iri={Uri.EscapeDataString(id)}";
+        }
+    }
+
+    private string ParentAuthor
+    {
+        get
+        {
+            if (ParentDoc is null)
+            {
+                return "unknown";
+            }
+
+            if (ParentDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return "@" + px;
+            }
+
+            if (ParentDoc is ActivityObject { AttributedTo: { } attr } && attr.FirstOrDefault() is { } first)
+            {
+                if (first is Actor { PreferredUsername: { Length: > 0 } apx })
+                {
+                    return "@" + apx;
+                }
+
+                string? actorIriStr = first is ILink { Href: { } href } ? href.ToString() : first.Id;
+                if (actorIriStr is not null && Iri.TryParse(actorIriStr, out var attrIri))
+                {
+                    var segments = attrIri.Value.Split('/');
+                    return segments.Length > 1 ? segments[^1] : "unknown";
+                }
+            }
+
+            return "unknown";
+        }
+    }
+
+    private string ParentPreview
+    {
+        get
+        {
+            var content = (ParentDoc as ActivityObject)?.Content?.FirstOrDefault();
+            if (string.IsNullOrEmpty(content))
+            {
+                return "(no content)";
+            }
+
+            var text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(content, " ").Trim();
+            return text.Length > 200 ? text[..200] + "…" : text;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.EnsureReadyAsync();
+        if (Client is not { } client || ObjectIri is not { } iri || LoadError is not null)
+        {
+            return;
+        }
+
+        if (ObjectDoc is not null && ObjectDoc.Id == iri.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = await client.GetObjectAsync(iri, CancellationToken.None);
+            if (obj is not null)
+            {
+                ObjectDoc = obj;
+            }
+            else
+            {
+                LoadError = "Object not found.";
+            }
+        }
+        catch (Exception)
+        {
+            LoadError = "Failed to load object. It may not exist or the server is unreachable.";
+        }
+
+        if (ObjectDoc is not null && ObjectDoc is not Actor)
+        {
+            await LoadParentAsync(client);
+            await LoadRepliesAsync(client, iri);
+            await LoadEngagementAsync(client, iri);
+        }
+    }
+
+    private async Task LoadRepliesAsync(IActivityPubClient client, Iri iri)
+    {
+        RepliesLoading = true;
+        try
+        {
+            var resolved = new List<IObject?>();
+            await foreach (var item in client.GetRepliesAsync(iri, new CollectionQuery { Limit = 20 }, CancellationToken.None))
+            {
+                var replyIri = item.ResolveObjectIri();
+                if (replyIri is not { } ri)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var replyObj = await client.GetObjectAsync(ri, CancellationToken.None);
+                    if (replyObj is not null)
+                    {
+                        resolved.Add(replyObj);
+                    }
+                }
+                catch
+                {
+                    // Skip unresolvable replies (404, network error, etc.).
+                }
+            }
+
+            Replies = resolved;
+        }
+        catch
+        {
+            // Non-fatal: the object still renders; replies simply won't show.
+        }
+        finally
+        {
+            RepliesLoading = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task LoadParentAsync(IActivityPubClient client)
+    {
+        if (ObjectDoc.GetParentIri() is not { } parentIri)
+        {
+            return;
+        }
+
+        try
+        {
+            var parent = await client.GetObjectAsync(parentIri, CancellationToken.None);
+            ParentDoc = parent;
+        }
+        catch
+        {
+            // Non-fatal: parent context simply won't show.
+        }
+    }
+
+    private async Task LoadEngagementAsync(IActivityPubClient client, Iri iri)
+    {
+        // Fast path (54.8): the object document this page already fetched (GetObjectAsync) carries the
+        // server-rendered iris:likedCount / iris:sharedCount counters, so read the header counts from it
+        // instead of re-walking the /likes and /shares collections (two extra per-object fetches). When
+        // the counters are absent (a non-Iris instance, or a read the server did not enrich) fall back to
+        // the walk, as before.
+        var ns = Session.IrisNamespaceBase?.Value;
+        if (ns is not null && ObjectDoc is { } doc
+            && doc.GetLikedCount(ns) is { } liked
+            && doc.GetSharedCount(ns) is { } shared)
+        {
+            LikeCount = liked;
+            BoostCount = shared;
+            return;
+        }
+
+        try
+        {
+            // Bypass the client collection-page cache: the count must reflect likes/boosts made moments
+            // ago (the server derives it live from the reverse index, so a fresh read is authoritative).
+            int likes = 0;
+            await foreach (var _ in client.GetLikesAsync(iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+            {
+                likes++;
+            }
+
+            int boosts = 0;
+            await foreach (var _ in client.GetSharesAsync(iri, new CollectionQuery { Limit = 100, BypassCache = true }, CancellationToken.None))
+            {
+                boosts++;
+            }
+
+            LikeCount = likes;
+            BoostCount = boosts;
+        }
+        catch
+        {
+            // Non-fatal: engagement counts simply won't show.
+        }
+    }
+
+    /// <summary>
+    /// The object the page is actually about: for a Create/Update/Delete activity, the embedded object
+    /// (the Note); otherwise the object itself. The activity's own <c>Id</c>/<c>Content</c>/
+    /// <c>AttributedTo</c>/<c>To</c> are null (they live on the embedded Note), so every read that
+    /// depends on those fields must go through this unwrap.
+    /// </summary>
+    private ActivityObject? SubjectObject
+        => ObjectDoc switch
+        {
+            KristofferStrube.ActivityStreams.Create c => c.Object?.FirstOrDefault() as ActivityObject,
+            KristofferStrube.ActivityStreams.Update u => u.Object?.FirstOrDefault() as ActivityObject,
+            _ => ObjectDoc as ActivityObject,
+        };
+
+    private bool IsOwnPost
+    {
+        get
+        {
+            if (SubjectObject is not { AttributedTo: { } attr } || Session.ActorId is not { } me)
+            {
+                return false;
+            }
+
+            return attr.Any(a =>
+            {
+                var iri = a.ResolveObjectIri();
+                return iri is not null && iri!.ToString() == me.ToString();
+            });
+        }
+    }
+
+    /// <summary>
+    /// Enters edit mode for the object's own post, pre-filling the editor with the note's current
+    /// content (HTML stripped, so the user edits plain text).
+    /// </summary>
+    private void BeginEditAsync()
+    {
+        if (SubjectObject is not { Content: { } content })
+        {
+            return;
+        }
+
+        var text = string.Join(" ", content);
+        text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(text, " ").Trim();
+        EditContent = text;
+        EditError = null;
+        IsEdit = true;
+    }
+
+    /// <summary>
+    /// Saves the edited note as the signed-in actor: builds an updated <see cref="Note"/> (same IRI,
+    /// author, and audience — only the content changes) and posts it via <c>UpdateNoteAsync</c>. The
+    /// server's <c>UpdateActivityHandler</c> refreshes the stored object in place and federates the
+    /// change to remote followers (F-02).
+    /// </summary>
+    private async Task SaveEditAsync()
+    {
+        if (Editing
+            || Session.Client is not { } client
+            || Session.ActorId is not { } me
+            || SubjectObject is not { Id: { Length: > 0 } id, AttributedTo: { } attributed }
+            || string.IsNullOrWhiteSpace(EditContent))
+        {
+            return;
+        }
+
+        Editing = true;
+        EditError = null;
+        try
+        {
+            var updated = new Note
+            {
+                Id = id,
+                Content = [EditContent.Trim()],
+                AttributedTo = attributed,
+            };
+
+            if (SubjectObject is { To: { } to })
+            {
+                updated.To = to;
+            }
+
+            var result = await client.UpdateNoteAsync(me, updated);
+            if (result.IsSuccess)
+            {
+                // Re-fetch to render the server's refreshed copy (the stored object is now updated).
+                var iri = new Iri(id);
+                ObjectDoc = await client.GetObjectAsync(iri, CancellationToken.None);
+                IsEdit = false;
+            }
+            else
+            {
+                EditError = $"Edit failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            EditError = "Your edit couldn't be saved. Please try again.";
+        }
+        finally
+        {
+            Editing = false;
+        }
+    }
+
+    private async Task DeleteAsync()
+    {
+        // Delete the SUBJECT object (the embedded Note), not the Create activity: the server's
+        // DeleteActivityHandler tombstones by the object's IRI (the note), and the object store keys by
+        // the note's IRI — deleting the Create IRI would be a no-op (no object is stored under it).
+        var subjectIri = SubjectObject?.Id is { Length: > 0 } sId ? new Iri(sId) : ObjectIri;
+        if (Session.Client is not { } client || Session.ActorId is not { } me || subjectIri is not { } iri)
+        {
+            return;
+        }
+
+        Deleting = true;
+        DeleteError = null;
+        try
+        {
+            var result = await client.DeleteAsync(me, iri);
+            if (result.IsSuccess)
+            {
+                Navigation.NavigateTo("/home");
+            }
+            else
+            {
+                DeleteError = $"Delete failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            DeleteError = "The post couldn't be deleted. Please try again.";
+        }
+        finally
+        {
+            Deleting = false;
+        }
+    }
+}

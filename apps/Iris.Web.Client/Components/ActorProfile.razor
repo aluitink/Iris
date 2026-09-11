@@ -1,0 +1,70 @@
+@using Iris.Core.Identity
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+
+@if (ActorObj is { } actor)
+{
+    <div class="actor-profile">
+        <ActorAvatar ActorIri="@(ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null)"
+                     DisplayName="@Name"
+                     IconIriOverride="@IconIri"
+                     CssClass="actor-profile-avatar" />
+
+        <div class="actor-profile-body">
+            @if (PreferredUsername is { Length: > 0 } username)
+            {
+                <a href="@ActorHref" title="@ActorIdValue" class="actor-profile-handle-link">@username</a>
+            }
+            else
+            {
+                <span class="actor-profile-handle">@actor.Id</span>
+            }
+            @if (Name is { Length: > 0 } name && !Redundant)
+            {
+                <span class="actor-profile-name">@name</span>
+            }
+            @if (Summary is { Length: > 0 } summary)
+            {
+                <div class="actor-profile-summary">@summary</div>
+            }
+        </div>
+    </div>
+}
+else
+{
+    <span class="muted">No actor document.</span>
+}
+
+@code {
+    /// <summary>
+    /// The actor document to present (an <see cref="Actor"/>: a person, community, application, …).
+    /// Pattern-matched per the 3rd-Party ActivityStreams rules — never a concrete type. A non-actor
+    /// document (a note) or null renders a muted placeholder (not a profile header).
+    /// </summary>
+    [Parameter]
+    public IObject? Actor { get; set; }
+
+    /// <summary>
+    /// The actor's IRI, for the handle link's href + tooltip. Defaults to the document's own <c>id</c>.
+    /// </summary>
+    [Parameter]
+    public string? ActorId { get; set; }
+
+    private Actor? ActorObj => Actor as Actor;
+
+    private string ActorIdValue => ActorId ?? ActorObj?.Id ?? string.Empty;
+
+    private string ActorHref => ActorIdValue.Length > 0
+        ? $"/actor?iri={Uri.EscapeDataString(ActorIdValue)}"
+        : "/directory";
+
+    private string? PreferredUsername => ActorObj?.PreferredUsername;
+
+    private string? Name => ActorObj?.Name?.FirstOrDefault();
+
+    private string? Summary => ActorObj?.Summary?.FirstOrDefault();
+
+    private bool Redundant => ActorIdentityHelper.NameIsRedundant(Name, PreferredUsername);
+
+    private string? IconIri => ActorIdentityHelper.IconIri(Actor);
+}

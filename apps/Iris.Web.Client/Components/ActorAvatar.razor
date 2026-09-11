@@ -1,0 +1,99 @@
+@using Iris.Core.Identity
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+@inject UiContext Ui
+
+@if (ActorIri is { } iri)
+{
+    <span class="actor-avatar @CssClass">
+        @if (_iconIri is { } icon)
+        {
+            <img src="@ActorIdentityHelper.RewriteMediaToSameOrigin(icon)" alt="" loading="lazy" />
+        }
+        else
+        {
+            <span class="actor-avatar-fallback">@ActorIdentityHelper.AvatarInitial(DisplayName, Handle)</span>
+        }
+    </span>
+}
+
+@code {
+    /// <summary>
+    /// The actor's IRI. The component fetches the actor document (via <see cref="UiContext"/>'s
+    /// per-circuit cache) to resolve the icon IRI and display name.
+    /// </summary>
+    [Parameter]
+    public Iri? ActorIri { get; set; }
+
+    /// <summary>
+    /// An optional display name override (e.g. from an already-fetched actor document). When
+    /// provided, the component skips its own fetch and uses this name for the avatar fallback.
+    /// </summary>
+    [Parameter]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// An optional icon IRI override (e.g. from an already-fetched actor document). When
+    /// provided, the component skips its own fetch and uses this IRI directly.
+    /// </summary>
+    [Parameter]
+    public string? IconIriOverride { get; set; }
+
+    /// <summary>
+    /// An optional CSS class to apply to the avatar <c>&lt;span&gt;</c> (e.g. a size modifier).
+    /// </summary>
+    [Parameter]
+    public string? CssClass { get; set; }
+
+    /// <summary>
+    /// When <c>true</c>, the component does not fetch the actor's document — it renders the
+    /// initial-letter fallback from <see cref="DisplayName"/>/the handle, using
+    /// <see cref="IconIriOverride"/> for the icon when one is supplied. Used for accounts that no
+    /// longer exist (e.g. an account-deletion notification whose remote actor is gone): fetching the
+    /// document would 410 (pure network noise + a console error) — 620 tracker topic #7.
+    /// </summary>
+    [Parameter]
+    public bool SkipFetch { get; set; }
+
+    private string? _iconIri;
+    private string? _fetchedName;
+
+    private string? Handle => ActorIri is { } a ? ActorIdentityHelper.HandleOf(a) : null;
+
+    private string? EffectiveDisplayName => DisplayName ?? _fetchedName;
+
+    private string? EffectiveIconIri => IconIriOverride ?? _iconIri;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ActorIri is not { } iri)
+        {
+            return;
+        }
+
+        // The caller has already resolved both the icon and the name (the actor document is in hand),
+        // or the account is gone and an explicit skip was requested (a deleted account's document
+        // 410s — 620 tracker topic #7). Either way, there is nothing to fetch.
+        if (SkipFetch || (IconIriOverride is not null && DisplayName is not null))
+        {
+            return;
+        }
+
+        var doc = await Ui.GetActorAsync(iri);
+        if (doc is null)
+        {
+            return;
+        }
+
+        if (IconIriOverride is null)
+        {
+            _iconIri = ActorIdentityHelper.IconIri(doc);
+        }
+
+        if (DisplayName is null && doc is Actor { Name: { } names })
+        {
+            _fetchedName = names.FirstOrDefault();
+        }
+    }
+}

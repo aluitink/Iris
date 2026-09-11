@@ -124,9 +124,7 @@ public sealed class MediaComposeIntegrationTests : IDisposable
             _actorIri,
             "Look at this picture",
             to: [Public],
-            mediaIri: media.MediaIri,
-            mediaType: media.ContentType,
-            mediaName: media.FileName);
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName)]);
 
         var result = await client.PostNoteAsync(_actorIri, note);
         Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
@@ -162,9 +160,7 @@ public sealed class MediaComposeIntegrationTests : IDisposable
             _actorIri,
             "Wire media check",
             to: [Public],
-            mediaIri: media.MediaIri,
-            mediaType: media.ContentType,
-            mediaName: media.FileName);
+            media: [new MediaAttachment(media.MediaIri, media.ContentType, media.FileName)]);
 
         var result = await client.PostNoteAsync(_actorIri, note);
         Assert.True(result.IsSuccess, $"Post should succeed, got HTTP {(int)result.StatusCode}: {result.Body}");
