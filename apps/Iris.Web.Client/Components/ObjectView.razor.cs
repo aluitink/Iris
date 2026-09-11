@@ -466,11 +466,16 @@ public partial class ObjectView
 
     protected override async Task OnInitializedAsync()
     {
-        if (ActivityParentIri is { } parentIri && Session.Client is { } client)
+        // Fetch a short content preview of the parent post for the "in reply to" link. This covers
+        // both the activity branch (a Create/Announce wrapping a Note — `ActivityParentIri`) and the
+        // direct-object branch (a Note rendered on its own detail page — `ParentIri`), so the link
+        // shows a readable preview rather than the raw IRI in either case (P-004).
+        var parentIri = ActivityParentIri ?? ParentIri;
+        if (parentIri is { } iri && Session.Client is { } client)
         {
             try
             {
-                var parent = await client.GetObjectAsync(parentIri, CancellationToken.None);
+                var parent = await client.GetObjectAsync(iri, CancellationToken.None);
                 var content = (parent as ActivityObject)?.Content?.FirstOrDefault();
                 if (!string.IsNullOrWhiteSpace(content))
                 {
