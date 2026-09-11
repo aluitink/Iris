@@ -171,7 +171,7 @@ else
         var handle = ParseRemoteHandle(query);
         if (handle is null)
         {
-            _externalError = "Enter a handle like <code>user@domain</code> (e.g. <code>alice@mastodon.social</code>).";
+            _externalError = "Enter a handle like <code>user@domain</code> or <code>!community@domain</code> (e.g. <code>alice@mastodon.social</code>, <code>!rust@lemmy.ml</code>).";
             _externalResult = null;
             return;
         }
@@ -183,6 +183,7 @@ else
         {
             var user = handle.Value.user;
             var host = handle.Value.host;
+            var preferGroup = handle.Value.preferGroup;
 
             // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
             var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
@@ -197,10 +198,10 @@ else
                 return;
             }
 
-            var actorIri = ParseWebFingerActorIri(webfingerBody);
+            var actorIri = ParseWebFingerActorIri(webfingerBody, preferGroup);
             if (actorIri is null)
             {
-                _externalError = $"No account found for @{user}@{host}.";
+                _externalError = $"No account found for {(preferGroup ? "!" : "@")}{user}@{host}.";
                 return;
             }
 
@@ -233,12 +234,21 @@ else
     }
 
     /// <summary>
-    /// Parses a remote handle (<c>user@host</c> or <c>@user@host</c>) into its user and host parts.
-    /// Returns null when the input is not a recognizable remote handle.
+    /// Parses a remote handle (<c>user@host</c>, <c>@user@host</c>, or <c>!community@host</c>) into
+    /// its user, host, and preferGroup parts. The <c>preferGroup</c> flag is true when the input
+    /// had a <c>!</c> prefix (Lemmy community handle). Returns null when the input is not a
+    /// recognizable remote handle.
     /// </summary>
-    private static (string user, string host)? ParseRemoteHandle(string query)
+    private static (string user, string host, bool preferGroup)? ParseRemoteHandle(string query)
     {
-        var q = query.Trim().TrimStart('@');
+        var q = query.Trim();
+        var preferGroup = false;
+        if (q.StartsWith('!'))
+        {
+            preferGroup = true;
+            q = q[1..];
+        }
+        q = q.TrimStart('@');
         var atIndex = q.LastIndexOf('@');
         if (atIndex <= 0 || atIndex >= q.Length - 1)
         {
@@ -258,13 +268,15 @@ else
             return null;
         }
 
-        return (user, host);
+        return (user, host, preferGroup);
     }
 
     /// <summary>
-    /// Parses a WebFinger response and extracts the actor IRI from the <c>self</c> link.
+    /// Parses a WebFinger response and extracts the actor IRI from the <c>self</c> link. When
+    /// <paramref name="preferGroup"/> is true (Lemmy community handles), prefers a <c>Group</c>
+    /// type over a <c>Person</c> type when both are present.
     /// </summary>
-    private static Iri? ParseWebFingerActorIri(string json)
+    private static Iri? ParseWebFingerActorIri(string json, bool preferGroup = false)
     {
         try
         {
@@ -275,6 +287,7 @@ else
                 return null;
             }
 
+            Iri? fallback = null;
             foreach (var link in links.EnumerateArray())
             {
                 var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
@@ -289,12 +302,26 @@ else
                     var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
                     if (href is not null && Iri.TryParse(href, out var iri))
                     {
-                        return iri;
+                        var properties = link.TryGetProperty("properties", out var p) ? p : default;
+                        var apType = properties.ValueKind == System.Text.Json.JsonValueKind.Object
+                            && properties.TryGetProperty("https://www.w3.org/ns/activitystreams#type", out var at)
+                            ? at.GetString()
+                            : null;
+
+                        if (preferGroup && apType is not null)
+                        {
+                            if (apType.Equals("Group", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return iri;
+                            }
+                        }
+
+                        fallback ??= iri;
                     }
                 }
             }
 
-            return null;
+            return fallback;
         }
         catch
         {

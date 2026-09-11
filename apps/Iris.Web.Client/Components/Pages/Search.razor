@@ -255,6 +255,7 @@ else
 
         var user = handle.Value.user;
         var host = handle.Value.host;
+        var preferGroup = handle.Value.preferGroup;
 
         // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
         var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
@@ -266,7 +267,7 @@ else
         Iri? actorIri = null;
         if (webfingerBody is not null)
         {
-            actorIri = ParseWebFingerActorIri(webfingerBody);
+            actorIri = ParseWebFingerActorIri(webfingerBody, preferGroup);
         }
 
         // 2. Fetch the actor document directly (through the IActivityPubClient, which handles proxy
@@ -297,12 +298,19 @@ else
 
     /// <summary>
     /// Parses a remote handle from the search query. Accepts <c>@user@host</c>, <c>user@host</c>,
-    /// or a full IRI (<c>https://host/@user</c>). Returns null when the query is not a recognizable
-    /// remote handle.
+    /// <c>!community@host</c> (Lemmy), or a full IRI (<c>https://host/@user</c>). Returns null
+    /// when the query is not a recognizable remote handle.
     /// </summary>
-    private static (string user, string host)? ParseRemoteHandle(string query)
+    private static (string user, string host, bool preferGroup)? ParseRemoteHandle(string query)
     {
-        var q = query.Trim().TrimStart('@');
+        var q = query.Trim();
+        var preferGroup = false;
+        if (q.StartsWith('!'))
+        {
+            preferGroup = true;
+            q = q[1..];
+        }
+        q = q.TrimStart('@');
         if (q.Length == 0)
         {
             return null;
@@ -323,7 +331,7 @@ else
                 var handle = segments[^1].TrimStart('@');
                 if (handle.Length > 0 && !handle.Contains('@'))
                 {
-                    return (handle, uri.Host);
+                    return (handle, uri.Host, preferGroup);
                 }
             }
 
@@ -352,14 +360,16 @@ else
             return null;
         }
 
-        return (user, host);
+        return (user, host, preferGroup);
     }
 
     /// <summary>
     /// Parses a WebFinger response (<c>application/jrd+json</c>) and extracts the actor IRI from the
-    /// <c>self</c> link (the link with <c>rel = "self"</c> and an ActivityPub content type).
+    /// <c>self</c> link (the link with <c>rel = "self"</c> and an ActivityPub content type). When
+    /// <paramref name="preferGroup"/> is true (Lemmy community handles), prefers a <c>Group</c>
+    /// type over a <c>Person</c> type when both are present.
     /// </summary>
-    private static Iri? ParseWebFingerActorIri(string json)
+    private static Iri? ParseWebFingerActorIri(string json, bool preferGroup = false)
     {
         try
         {
@@ -370,6 +380,7 @@ else
                 return null;
             }
 
+            Iri? fallback = null;
             foreach (var link in links.EnumerateArray())
             {
                 var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
@@ -385,12 +396,26 @@ else
                     var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
                     if (href is not null && Iri.TryParse(href, out var iri))
                     {
-                        return iri;
+                        var properties = link.TryGetProperty("properties", out var p) ? p : default;
+                        var apType = properties.ValueKind == JsonValueKind.Object
+                            && properties.TryGetProperty("https://www.w3.org/ns/activitystreams#type", out var at)
+                            ? at.GetString()
+                            : null;
+
+                        if (preferGroup && apType is not null)
+                        {
+                            if (apType.Equals("Group", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return iri;
+                            }
+                        }
+
+                        fallback ??= iri;
                     }
                 }
             }
 
-            return null;
+            return fallback;
         }
         catch
         {
