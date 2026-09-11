@@ -1148,11 +1148,14 @@ public static class WebAppFactory
     }
 
     /// <summary>
-    /// Re-registers each local account's signing key with the server's <see cref="IKeyProvider"/>, so a
-    /// local actor can sign outbound federation after a restart (slice 33.2). The keys themselves live
-    /// in the (durable) <see cref="IKeyStore"/>; only the actor→key-IRI mapping in the in-process
-    /// <see cref="IKeyProvider"/> is lost on restart, so this pass rebuilds it from the persisted
-    /// accounts. No-op for accounts whose key is not present in the key store.
+    /// Re-registers each local actor's signing key with the server's <see cref="IKeyProvider"/>, so a
+    /// local actor can sign outbound federation after a restart (slice 33.2; hardened in 84.4). The keys
+    /// themselves live in the (durable) <see cref="IKeyStore"/>; only the actor→key-IRI mapping in the
+    /// in-process <see cref="IKeyProvider"/> is lost on restart, so this pass rebuilds it from the
+    /// durable actor documents. Since 84.4 the key IRI is re-derived from each actor's persisted
+    /// <c>publicKey.id</c> (via <see cref="Iris.Server.Identity.KeyProviderRehydration"/>) rather than a
+    /// hard-coded <c>#key-1</c> convention — so a rotated key (84.2/84.3) survives a restart. No-op for
+    /// actors whose resolved key is not present in the key store.
     /// </summary>
     /// <param name="services">The application service provider.</param>
     public static void RestoreLocalSigningKeys(IServiceProvider services)
@@ -1160,16 +1163,14 @@ public static class WebAppFactory
         ArgumentNullException.ThrowIfNull(services);
         var keyStore = services.GetRequiredService<IKeyStore>();
         var keyProvider = services.GetRequiredService<IKeyProvider>();
-        var accounts = services.GetRequiredService<IUserAccountStore>().GetAllAsync(CancellationToken.None).GetAwaiter().GetResult();
-        foreach (var account in accounts)
-        {
-            // The key IRI follows the same convention ActorProvisioner / SeedActor use: {actor}#key-1.
-            var keyIri = new Iri($"{account.ActorId}#key-1");
-            if (keyStore.TryGetKey(keyIri, out _))
-            {
-                keyProvider.RegisterKey(account.ActorId, keyIri);
-            }
-        }
+        // The actor store is reached via the persistence provider seam (IActorStore is not registered
+        // directly in DI — the codebase reads IPersistenceProvider.Actors, not a concrete IActorStore).
+        var actorStore = services.GetRequiredService<IPersistenceProvider>().Actors;
+        // Synchronous startup bridge (the host is not yet accepting requests); the app's other startup
+        // paths use the same .GetAwaiter().GetResult() idiom.
+        Iris.Server.Identity.KeyProviderRehydration
+            .RehydrateFromActorsAsync(keyProvider, actorStore, keyStore, CancellationToken.None)
+            .GetAwaiter().GetResult();
     }
 
     /// <summary>

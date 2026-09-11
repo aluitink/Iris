@@ -6244,13 +6244,15 @@ public static class ActivityPubServerExtensions
     // --- Operator key-rotation endpoints (Phase 84.3) --------------------------
 
     /// <summary>
-    /// <c>POST /ap/v1/keys/rotate</c> (Phase 84.3): rotates the instance actor's signing key via
-    /// <see cref="Identity.KeyRotationService.RotateAsync"/>. Admin-gated — the caller's authenticated
-    /// actor (Basic auth via <see cref="IActorCredentialValidator"/> or the Blazor cookie's
-    /// <c>actor_iri</c> claim) must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>);
-    /// otherwise the request is refused (401 unauthenticated, 403 not the instance actor). In degraded
-    /// (read-only) mode (Phase 83.4) the write is refused with 503. On success returns <c>200</c> with a
-    /// JSON body carrying the new key IRI + the replaced (old) key IRI.
+    /// <c>POST /ap/v1/keys/rotate</c> (Phase 84.3; extended in 84.4): rotates a local actor's signing key
+    /// via <see cref="Identity.KeyRotationService.RotateAsync"/>. By default (no <c>?actor=</c>) it rotates
+    /// the <strong>instance actor's</strong> key; with <c>?actor=</c> it rotates that specific local actor's
+    /// key (an unknown / non-local actor → <c>404</c>). Admin-gated — the caller's authenticated actor
+    /// (Basic auth via <see cref="IActorCredentialValidator"/> or the Blazor cookie's <c>actor_iri</c> claim)
+    /// must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>); otherwise the
+    /// request is refused (401 unauthenticated, 403 not the instance actor). In degraded (read-only) mode
+    /// (Phase 83.4) the write is refused with 503. On success returns <c>200</c> with a JSON body carrying
+    /// the rotated actor IRI + the new key IRI.
     /// </summary>
     private static async Task<IResult> KeyRotateHandler(
         HttpContext context,
@@ -6274,13 +6276,30 @@ public static class ActivityPubServerExtensions
         // The admin gate (AuthorizeInstanceActorAsync) already refused the request when no instance actor
         // is configured, so InstanceActorId is guaranteed non-null here (.Value extracts the Iri).
         var instanceActorIri = optionsAccessor.Value.InstanceActorId!.Value;
+
+        // 84.4: an optional ?actor= names a specific local actor to rotate; the default is the instance actor.
+        var actorQuery = context.Request.Query["actor"].FirstOrDefault();
+        Iri targetActorIri = instanceActorIri;
+        if (!string.IsNullOrWhiteSpace(actorQuery))
+        {
+            if (!Iri.TryParse(actorQuery, out var parsedActor))
+            {
+                return Problem(
+                    StatusCodes.Status400BadRequest,
+                    "Bad Request",
+                    $"The 'actor' query parameter is not a valid IRI: '{actorQuery}'.");
+            }
+
+            targetActorIri = parsedActor;
+        }
+
         try
         {
-            var newKeyIri = await rotation.RotateAsync(instanceActorIri, ct).ConfigureAwait(false);
+            var newKeyIri = await rotation.RotateAsync(targetActorIri, ct).ConfigureAwait(false);
             return Results.Content(
                 System.Text.Json.JsonSerializer.Serialize(new
                 {
-                    actor = instanceActorIri.Value,
+                    actor = targetActorIri.Value,
                     newKeyIri = newKeyIri.Value,
                 }),
                 "application/json",
@@ -6292,7 +6311,9 @@ public static class ActivityPubServerExtensions
             return Problem(
                 StatusCodes.Status404NotFound,
                 "Not Found",
-                "No instance actor is stored; there is no key to rotate.");
+                targetActorIri == instanceActorIri
+                    ? "No instance actor is stored; there is no key to rotate."
+                    : "No local actor with that IRI is stored; there is no key to rotate.");
         }
     }
 
