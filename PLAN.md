@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **75 — External media serving (COMPLETE).** All three slices done: **75.1** (client render boundary routes cross-origin media through the media proxy), **75.2** (warmer covers all attachment types + Update handler warms), **75.3** (proxy-fallback stores + warms fetched objects). Full suite: 1666 passed, 0 failed, 17 skipped.
+- **76 — Other AP servers (in progress).** **76.1 DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): live Playwright pass browsing `@Gargron@mastodon.social` — actor profile, outbox, object detail all work via proxy (zero console errors, no request spam). **76.2 DONE** (commit `e8e5660`): removed unreliable remote `/search` call from fediverse search — WebFinger + actor doc fetch is sufficient for handle-form queries. Live-verified: `Gargron@mastodon.social` search returns actor in ~3s (previously hung). Remaining gaps: (1) no discoverable path to external actors from the Directory; (2) external actor avatar not loaded. **Next: 76.3 — external actor avatar via media proxy.**
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
