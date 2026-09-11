@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **77 — Replied-to items (in progress).** **77.1 DONE** (commit `f212084`): ObjectDetail parent context renders full HTML/Markdown (pre-rendered HTML verbatim, Markdown via `Markdown.ToHtml`); ObjectView feed cards show 120-char parent preview instead of raw IRI. **Next: 77.2 — thread context (1-2 levels of parent chain).**
+- **77 — Replied-to items (in progress).** **77.1 DONE** (commit `f212084`): ObjectDetail parent context renders full HTML/Markdown; ObjectView feed cards show 120-char parent preview. **77.2 DONE** (commit `9deab6b`): thread context shows 2 levels of parent chain. **Next: 77.3 — "show more" for deep threads.**
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -140,9 +140,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 77.2 — Replied-to items: investigate thread context (show 1-2 levels of parent chain, not just the immediate parent).
 - 78 — Investigate Lemmyverse conventions (communities via `!community@domain.tld`, ranked posts, batched streams).
 - 79 — Next-next phase: TBD (distill at Phase 77 closeout).
+- 77.3 — Thread context: consider "show more" for deep threads (currently capped at 2 levels).
 
 
 ## Inbox
@@ -157,11 +157,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **77.1 — Replied-to content rendering (Phase 77, slice 1) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail parent context renders full HTML/Markdown; ObjectView feed cards show 120-char parent preview instead of raw IRI. Full suite: 1666 passed, 0 failed, 17 skipped.
+- **77.2 — Thread context (Phase 77, slice 2) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail shows 2 levels of parent chain. Full suite: 1666 passed, 0 failed, 17 skipped.
+- **77.1 — Replied-to content rendering (Phase 77, slice 1) — DONE** ([change doc 771](docs/changes/771-replied-to-content-rendering.md)): ObjectDetail parent context renders full HTML/Markdown; ObjectView feed cards show 120-char parent preview. Full suite: 1666 passed, 0 failed, 17 skipped.
 - **76.4 — Directory external actor discovery (Phase 76, slice 4) — DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): Directory page "Find someone on another server" input. **Phase 76 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
 - **75.3 — Proxy-fetch sync gap (Phase 75, slice 3) — DONE** ([change doc 753](docs/changes/753-proxy-fetch-sync.md)): proxy-fallback stores + warms fetched objects. **Phase 75 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
 - **75.2 — Warmer all types + Update warm (Phase 75, slice 2) — DONE** ([change doc 752](docs/changes/752-warmer-all-types-update-warm.md)): warmer covers all attachment types. Full suite: 1665 passed, 0 failed, 17 skipped.
-- **75.1 — External media proxy rewrite (Phase 75, slice 1) — DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy. Full suite: 1665 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.

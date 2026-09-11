@@ -41,6 +41,19 @@ initializes components that are rendered.
   `_parentPreview ?? parent.Value`.
 - `app.css`: `.object-parent-content img/pre/blockquote` styles.
 
+## 77.2 — Thread context (2 levels of parent chain)
+
+The ObjectDetail page now shows up to 2 levels of parent context (the immediate
+parent + grandparent) instead of just the immediate parent. Each ancestor is
+rendered with its author and content, separated by a subtle divider.
+
+- `LoadParentAsync` now fetches the parent, then checks if the parent has its
+  own parent and fetches that too (max 2 levels).
+- Replaced single `ParentDoc`/`ParentHref`/`ParentAuthor`/`ParentRenderedContent`
+  with a `ThreadContext` list + `AncestorAuthor`/`RenderAncestorContent` helpers
+  that work for any ancestor in the chain.
+- Added `.object-parent-separator` CSS for the divider between levels.
+
 ## Test counts
 
 Full suite: 1666 passed, 0 failed, 17 skipped (1 known-flaky Server test in
