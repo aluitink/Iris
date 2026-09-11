@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **75 — External media serving (in progress).** **75.1 DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy. **75.2 DONE** ([change doc 752](docs/changes/752-warmer-all-types-update-warm.md)): warmer covers all attachment types (Document/Audio/Video/Image/Link + previews); Update handler now warms updated objects. Build 0 warn/0 err; full suite: 1665 passed, 0 failed, 17 skipped. **Next: 75.3 — proxy-fetch sync gap (AP proxy-fallback doesn't store/warm fetched objects). Lower priority — the reactive media proxy works (75.1).**
+- **75 — External media serving (COMPLETE).** All three slices done: **75.1** (client render boundary routes cross-origin media through the media proxy), **75.2** (warmer covers all attachment types + Update handler warms), **75.3** (proxy-fallback stores + warms fetched objects). Full suite: 1666 passed, 0 failed, 17 skipped.
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -140,7 +140,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 75 — Investigate external media serving: content from external actors does not serve properly; sync attachment content when we see an item and when we proxy-fetch an item.
 - 76 — Other AP servers: find other AP servers/actors to browse content, document differences, follow Mastodon's example.
 - 77 — Replied-to items could be fetched and content shown under the reply.
 - 78 — Investigate Lemmyverse conventions (communities via `!community@domain.tld`, ranked posts, batched streams).
@@ -158,11 +157,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **75.3 — Proxy-fetch sync gap (Phase 75, slice 3) — DONE** ([change doc 753](docs/changes/753-proxy-fetch-sync.md)): proxy-fallback stores + warms fetched objects on successful GETs of AP JSON. **Phase 75 COMPLETE.** Full suite: 1666 passed, 0 failed, 17 skipped.
 - **75.2 — Warmer all types + Update warm (Phase 75, slice 2) — DONE** ([change doc 752](docs/changes/752-warmer-all-types-update-warm.md)): warmer covers all attachment types (Document/Audio/Video/Image/Link + previews); Update handler now warms updated objects. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **75.1 — External media proxy rewrite (Phase 75, slice 1) — DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy. Live-verified: external S3 image loads via proxy. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.4 — likes/shares Collections + inReplyToAtomUri (Phase 74, slice 4) — DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections + `inReplyToAtomUri`. **Phase 74 COMPLETE.** Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.3 — atomUri, context/conversation, contentMap (Phase 74, slice 3) — DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri`, `context`/`conversation`, `contentMap`. Full suite: 1665 passed, 0 failed, 17 skipped.
-- **74.2 — Mastodon wire-format fields (Phase 74, slice 2) — DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. Full suite: 1665 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
