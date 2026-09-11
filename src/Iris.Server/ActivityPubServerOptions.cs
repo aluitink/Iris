@@ -80,6 +80,17 @@ public sealed class ActivityPubServerOptions
     /// common single-process deployment and the multi-host test harnesses are unaffected.
     /// </summary>
     public string? InstanceLockPath { get; set; }
+
+    /// <summary>
+    /// How often the <strong>key-provider refresh</strong> hosted service (Phase 84.6) re-converges a
+    /// <see cref="Identity.DocumentDerivedKeyProvider"/> to the durable actor documents: a rotation performed
+    /// on another instance over the same persistence becomes visible to this instance's signer within one
+    /// interval, without a restart. Defaults to 30 s. A non-positive value disables the periodic refresh
+    /// (the startup convergence pass still runs). The service is inert when the instance's
+    /// <c>IKeyProvider</c> is not a <see cref="Identity.DocumentDerivedKeyProvider"/> (the single-instance
+    /// default), so this interval has no effect on the common single-process deployment.
+    /// </summary>
+    public TimeSpan KeyProviderRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>

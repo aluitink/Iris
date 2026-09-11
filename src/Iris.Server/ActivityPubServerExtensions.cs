@@ -659,6 +659,16 @@ public static class ActivityPubServerExtensions
             // registered below) acquires the lock on startup + fails fast on a second live instance.
             if (irisSection["InstanceLockPath"] is { } lockPath and not "") o.InstanceLockPath = lockPath;
 
+            // 84.6: key-provider refresh interval. When Iris:KeyProviderRefreshInterval is set (a .NET
+            // TimeSpan string, e.g. "00:00:10" or "30s"), the refresh hosted service re-converges a
+            // DocumentDerivedKeyProvider on that cadence (a non-positive value disables the periodic pass).
+            // Unset keeps the 30 s default.
+            if (irisSection["KeyProviderRefreshInterval"] is { } refreshInterval
+                && TimeSpan.TryParse(refreshInterval, out var parsedRefreshInterval))
+            {
+                o.KeyProviderRefreshInterval = parsedRefreshInterval;
+            }
+
             var proxySection = irisSection.GetSection("ProxySettings");
             if (proxySection.Exists())
             {
@@ -701,6 +711,17 @@ public static class ActivityPubServerExtensions
         {
             services.AddHostedService<Bootstrap.SingleInstanceGuardHostedService>();
         }
+
+        // 84.6: key-provider convergence (the "when" of the refresh). The service re-runs
+        // DocumentDerivedKeyProvider.RefreshFromActorsAsync on a fixed interval so a rotation performed on
+        // another instance over the same persistence becomes visible to this instance's signer without a
+        // restart. It is registered unconditionally but is a no-op unless the instance's IKeyProvider is a
+        // DocumentDerivedKeyProvider — the single-instance default (InMemoryKeyProvider) and every existing
+        // test harness are unaffected. A host that wants multi-instance convergence registers the
+        // DocumentDerivedKeyProvider as its IKeyProvider and (optionally) sets Iris:KeyProviderRefreshInterval.
+        services.TryAddSingleton<Identity.KeyProviderRefreshService>();
+        services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
+            sp => sp.GetRequiredService<Identity.KeyProviderRefreshService>());
 
         var inboundSection = configuration.GetSection("Iris:Inbound");
         if (inboundSection.Exists())
