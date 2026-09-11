@@ -7732,6 +7732,12 @@ public static class ActivityPubServerExtensions
             slice.Add(items[i - 1]);
         }
 
+        // The final page of the collection. A multi-page collection's last page is `?page={pageCount}`;
+        // a single-page collection's only page is the collection document itself, so `last` points at
+        // the collection IRI. `last` is emitted on every page so a client on any page can jump to the
+        // end (AS2.0 `OrderedCollection.last`).
+        var lastIri = pageCount > 1 ? $"{collectionIri.Value}/?page={pageCount}" : collectionIri.Value;
+
         if (page == 1)
         {
             // Page 1 is the collection document itself: it carries its own first page of items and a
@@ -7746,6 +7752,7 @@ public static class ActivityPubServerExtensions
                 slice: slice,
                 total: total,
                 first: collectionIri.Value,
+                last: lastIri,
                 partOf: null,
                 startIndex: null,
                 next: pageCount > 1 ? $"{collectionIri.Value}/?page=2" : null,
@@ -7762,6 +7769,7 @@ public static class ActivityPubServerExtensions
             slice: slice,
             total: total,
             first: null,
+            last: lastIri,
             partOf: collectionIri.Value,
             startIndex: start,
             next: page < pageCount ? $"{collectionIri.Value}/?page={page + 1}" : null,
@@ -7788,6 +7796,9 @@ public static class ActivityPubServerExtensions
     /// <param name="slice">This page's items, in order.</param>
     /// <param name="total">The full collection size (for <c>totalItems</c>).</param>
     /// <param name="first">The <c>first</c> IRI (page 1 only; null otherwise).</param>
+    /// <param name="last">The <c>last</c> page IRI (the final page of the collection). Emitted on every
+    /// page so a client on any page can jump to the end; null when there is no collection (should not
+    /// occur).</param>
     /// <param name="partOf">The <c>partOf</c> IRI (page N&gt;1 only; null otherwise).</param>
     /// <param name="startIndex">The 1-based <c>startIndex</c> (page N&gt;1 only; null otherwise).</param>
     /// <param name="next">The <c>next</c> page IRI, or null when this is the last page.</param>
@@ -7807,6 +7818,7 @@ public static class ActivityPubServerExtensions
         IReadOnlyList<IObjectOrLink> slice,
         int total,
         string? first,
+        string? last,
         string? partOf,
         int? startIndex,
         string? next,
@@ -7842,6 +7854,11 @@ public static class ActivityPubServerExtensions
             if (first is not null)
             {
                 writer.WriteString("first", first);
+            }
+
+            if (last is not null)
+            {
+                writer.WriteString("last", last);
             }
 
             if (partOf is not null)

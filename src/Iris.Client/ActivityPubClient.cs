@@ -1354,16 +1354,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             return null;
         }
 
-        // The inbox page is an OrderedCollectionPage (or, on a single page, an OrderedCollection). Both
-        // carry `items`; read them via the shared IObject/Collection pattern.
+        // The inbox page is an OrderedCollectionPage (or, on a single page, an OrderedCollection).
+        // Both carry their items under `orderedItems` (the ActivityPub canonical form, used by
+        // Mastodon and other major implementations) or, less commonly, `items`. Read via the shared
+        // ResolveCollectionItems so the inbox path is symmetric with the outbox/feed paths (which
+        // prefer orderedItems and fall back to items) — a server that serves its inbox with
+        // orderedItems would otherwise yield an empty page here.
         var obj = ActivityJson.Deserialize<IObjectOrLink>(json);
         if (obj is not IObject pageObj || pageObj is not Collection)
         {
             return null;
         }
 
-        var items = (pageObj as OrderedCollectionPage)?.Items ?? (pageObj as Collection)?.Items;
-        var itemList = items is { } i ? i.ToList() : [];
+        var itemList = CollectionPageFactory.ResolveCollectionItems((Collection)pageObj);
 
         // The `next` pointer lives on the page (ExtensionData for an OrderedCollection, typed on an
         // OrderedCollectionPage).

@@ -73,6 +73,15 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         // totalItems reflects the full collection size, not the page size.
         Assert.Equal(5, doc.RootElement.GetProperty("totalItems").GetInt32());
 
+        // The collection document carries a self-referencing `first` link and a `last` link to the
+        // final page (5 items / limit 2 = 3 pages, so `last` points at page 3) — AS2.0 conformance.
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/outbox",
+            doc.RootElement.GetProperty("first").GetString());
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/outbox/?page=3",
+            doc.RootElement.GetProperty("last").GetString());
+
         // The response carries the collection Cache-Control header.
         Assert.Equal(
             ActivityPubServerConstants.CollectionCacheControl,
@@ -111,6 +120,11 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.Equal(
             $"{_base}/ap/v1/u/{Alice}/outbox/?page=3",
             doc.RootElement.GetProperty("next").GetString());
+
+        // `last` points at the final page (page 3) so a client on any page can jump to the end.
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/outbox/?page=3",
+            doc.RootElement.GetProperty("last").GetString());
         Assert.Equal(5, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
@@ -135,6 +149,11 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
             $"{_base}/ap/v1/u/{Alice}/outbox/?page=2",
             doc.RootElement.GetProperty("prev").GetString());
         Assert.False(doc.RootElement.TryGetProperty("next", out _));
+
+        // `last` points at the final page — which is this page (page 3), so it is self-referential.
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/outbox/?page=3",
+            doc.RootElement.GetProperty("last").GetString());
     }
 
     // --- ?limit caps the page size and ?page out-of-range clamps -------------------
@@ -182,6 +201,13 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Single(items);
         Assert.Equal($"https://{AHost}/ap/v1/u/dave", items[0]);
+
+        // A single-page collection has no `?page=N` final page, so `last` points at the collection
+        // IRI itself (self-referential), and `next` is absent.
+        Assert.Equal(
+            $"{_base}/ap/v1/u/{Alice}/following",
+            doc.RootElement.GetProperty("last").GetString());
+        Assert.False(doc.RootElement.TryGetProperty("next", out _));
     }
 
     // --- items is always a JSON array (never a bare one-or-many scalar) ------------
