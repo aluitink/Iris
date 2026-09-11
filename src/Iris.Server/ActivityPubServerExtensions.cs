@@ -776,6 +776,13 @@ public static class ActivityPubServerExtensions
         // from GET /ap/v1/health (liveness): an instance can be up but not yet ready.
         group.MapGet($"/{ActivityPubServerConstants.ReadyRouteSegment}", ReadyHandler);
 
+        // Dead letters: GET /ap/v1/dead-letters — the outbound-delivery dead-letter queue (Phase 83.3).
+        // Exposes the deliveries that exhausted their retry budget (count + a bounded peek, newest-first)
+        // so an operator can inspect them. Read-only (does not re-drive); no authentication (an operator's
+        // monitoring scrape reaches it without a signature), like the health endpoint.
+        group.MapGet($"/{ActivityPubServerConstants.DeadLetterRouteSegment}", DeadLetterHandler)
+            .WithName("dead-letters-endpoint");
+
         // Media serve (Phase 20.4 (a)): GET /ap/v1/media/{id} — serves a stored note attachment (an image
         // or document) by its same-origin media IRI. Public (the browser's <img>/<a> loads it), and
         // long-cacheable (the media is immutable per id; the id is a minted, unguessable GUID). The
@@ -6062,6 +6069,79 @@ public static class ActivityPubServerExtensions
             "application/json",
             System.Text.Encoding.UTF8,
             status);
+    }
+
+    /// <summary>
+    /// The default number of most-recent dead-lettered deliveries the <c>GET /ap/v1/dead-letters</c>
+    /// endpoint peeks (the <c>limit</c> query parameter's default). Bounded so a monitoring scrape does
+    /// not load the store's entire (bounded) backlog into the response; an operator that wants more can
+    /// raise <c>limit</c> (capped at <see cref="MaxDeadLetterPeekLimit"/>).
+    /// </summary>
+    public const int DefaultDeadLetterPeekLimit = 25;
+
+    /// <summary>
+    /// The maximum <c>limit</c> the <c>GET /ap/v1/dead-letters</c> endpoint honors (a scrape that asks for
+    /// more than this is clamped, so the response is bounded).
+    /// </summary>
+    public const int MaxDeadLetterPeekLimit = 500;
+
+    /// <summary>
+    /// Handles GET /ap/v1/dead-letters — the outbound-delivery dead-letter queue (Phase 83.3). Exposes
+    /// the deliveries that exhausted their retry budget so an operator can inspect them: the
+    /// <c>count</c> (how many are currently held) + a bounded <c>peek</c> of the most recent entries,
+    /// newest-first (each with the recipient inbox IRI, the activity IRI, the failure kind, the failure
+    /// detail, the attempt count, and the dead-lettered-at timestamp). The <c>limit</c> query parameter
+    /// bounds the peek (<see cref="DefaultDeadLetterPeekLimit"/> default, capped at
+    /// <see cref="MaxDeadLetterPeekLimit"/>).
+    /// <para>
+    /// Read-only: it does NOT re-drive deliveries (re-driving is an explicit operator action — call
+    /// <see cref="Iris.Server.Delivery.DeadLetterEntry.ToJob"/> and enqueue the result). No authentication
+    /// (an operator's monitoring scrape reaches it without an ActivityPub signature), like the health
+    /// endpoint. Returns <c>200 { "count": N, "deadLetters": [ ... ] }</c>.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> DeadLetterHandler(
+        Delivery.IDeliveryDeadLetterStore deadLetters,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        var entries = await deadLetters.ListAsync(ct).ConfigureAwait(false);
+        var limit = ResolveDeadLetterPeekLimit(httpContext);
+        var peek = entries.Take(limit)
+            .Select(e => new
+            {
+                inbox = e.InboxIri.Value,
+                activityId = e.Activity.Id,
+                actor = e.ActorIri?.Value,
+                failureKind = e.FailureKind.ToString().ToLowerInvariant(),
+                failureDetail = e.FailureDetail,
+                attempts = e.Attempts,
+                deadLetteredAt = e.DeadLetteredAtUtc,
+            });
+
+        var payload = new { count = deadLetters.Count, limit, deadLetters = peek.ToList() };
+        return Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// Resolves the dead-letter peek <c>limit</c> from the request's query string: the
+    /// <c>limit</c> parameter, defaulting to <see cref="DefaultDeadLetterPeekLimit"/> and clamped to
+    /// [<c>1</c>, <see cref="MaxDeadLetterPeekLimit"/>]. A missing, empty, or non-positive value uses the
+    /// default.
+    /// </summary>
+    private static int ResolveDeadLetterPeekLimit(HttpContext httpContext)
+    {
+        if (httpContext is not null &&
+            int.TryParse(httpContext.Request.Query["limit"], out var requested) && requested > 0)
+        {
+            return Math.Min(requested, MaxDeadLetterPeekLimit);
+        }
+
+        return DefaultDeadLetterPeekLimit;
     }
 
     // --- OAuth2 token endpoints ------------------------------------------------

@@ -261,4 +261,15 @@ public static class ActivityPubServerConstants
     /// defaults to <c>{BaseUri}/ns#</c>, so the document is served at <c>{BaseUri}/ns</c>.
     /// </summary>
     public const string NamespaceRouteSegment = "ns";
+
+    /// <summary>
+    /// The route segment for the outbound-delivery dead-letter queue (the <c>GET /ap/v1/dead-letters</c>
+    /// endpoint, Phase 83.3). Mapped as <c>{RoutePrefix}/dead-letters</c> — under the versioned prefix,
+    /// like the health endpoint. It exposes the dead-lettered outbound deliveries (those that exhausted
+    /// their retry budget) so an operator can inspect them: the <c>count</c> + a bounded <c>peek</c> of
+    /// the most recent entries (inbox IRI, activity IRI, failure kind, failure detail, attempt count,
+    /// dead-lettered-at). Read-only (it does not re-drive deliveries; re-driving is an explicit operator
+    /// action). No authentication: an operator's monitoring scrape reaches it without a signature.
+    /// </summary>
+    public const string DeadLetterRouteSegment = "dead-letters";
 }
