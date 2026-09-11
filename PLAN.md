@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **74 — Better Mastodon compatibility (in progress).** **74.1 DONE** ([change doc 741](docs/changes/741-sensitive-blur-includes-image.md)): sensitive-content blur covers the image/media gallery. **74.2 DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. **74.3 DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri` (own IRI), `context`/`conversation` (parent IRI for replies, own IRI for top-level), `contentMap` (`{"en": <content>}`). Build 0 warn/0 err; full suite: 1665 passed, 0 failed, 17 skipped. **Next: remaining 74 gaps — `likes`/`shares` as Collections (vs `iris:` count extensions), `inReplyToAtomUri`. These are lower-impact (Mastodon clients can fall back to the collection endpoints) — evaluate whether to proceed or close Phase 74.**
+- **74 — Better Mastodon compatibility (in progress).** **74.1 DONE** ([change doc 741](docs/changes/741-sensitive-blur-includes-image.md)): sensitive-content blur covers the image/media gallery. **74.2 DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. **74.3 DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri`, `context`/`conversation`, `contentMap`. **74.4 DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections (totalItems=0) + `inReplyToAtomUri` (parent IRI for replies). Build 0 warn/0 err; full suite: 1665 passed, 0 failed, 17 skipped. **All Mastodon wire-format fields now present on minted Notes — Phase 74 COMPLETE.** Next: Phase 75 (external media serving).
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -99,7 +99,7 @@ Work for **the phase after the next** is distilled from **the current phase**, w
 | 71 | Note card + compose polish — card built from all content, inline attachments, interaction bar at bottom, sensitive-blur, mention dropdown | **COMPLETE** — all 6 slices done |
 | 72 | Efficiency + UX residuals — engagement-count cache, minted-id extension, inline document rendering, nav grouping (deferred) | **COMPLETE** — 72.1–72.3 done, 72.4 accepted-as-is |
 | 73 | Compose feature completion — poll creation, multi-media, audience selector, community media+CW, cross-instance mentions, poll voting | **COMPLETE** — all 6 slices done |
-| 74 | Better Mastodon compatibility — standardize activity minting, sensitive content blur fix | **up next** — see Up Next |
+| 74 | Better Mastodon compatibility — standardize activity minting, sensitive content blur fix | **COMPLETE** — all 4 slices done |
 
 - Each phase's closeout writes its change doc AND distills the next-next phase's topics into this file.
 - **Operator latitude:** I am authorized to do whatever keeps testing moving — recreate containers, create new test users, seed content, restart services, adjust test data. Log significant interventions in the slice's tracker notes.
@@ -140,7 +140,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- 74 — Better Mastodon compatibility: standardize activity minting to match Mastodon's wire format. See `docs/reference/ExampleWithTagAndMentionAndAttachedImage.json`. Walk random outboxes, explore RayvenMX@mastodon.world followings, use the UI to drive this effort.
 - 75 — Investigate external media serving: content from external actors does not serve properly; sync attachment content when we see an item and when we proxy-fetch an item.
 - 76 — Other AP servers: find other AP servers/actors to browse content, document differences, follow Mastodon's example.
 - 77 — Replied-to items could be fetched and content shown under the reply.
@@ -159,11 +158,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **74.3 — atomUri, context/conversation, contentMap (Phase 74, slice 3) — DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri` (own IRI), `context`/`conversation` (parent IRI for replies, own for top-level), `contentMap` (`{"en": <content>}`). Live-verified: reply context = parent IRI. Full suite: 1665 passed, 0 failed, 17 skipped.
+- **74.4 — likes/shares Collections + inReplyToAtomUri (Phase 74, slice 4) — DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections (totalItems=0) + `inReplyToAtomUri` (parent IRI for replies). **Phase 74 COMPLETE** — all Mastodon wire-format fields present. Full suite: 1665 passed, 0 failed, 17 skipped.
+- **74.3 — atomUri, context/conversation, contentMap (Phase 74, slice 3) — DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri` (own IRI), `context`/`conversation` (parent IRI for replies, own for top-level), `contentMap` (`{"en": <content>}`). Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.2 — Mastodon wire-format fields (Phase 74, slice 2) — DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.1 — Sensitive blur includes image (Phase 74, slice 1) — DONE** ([change doc 741](docs/changes/741-sensitive-blur-includes-image.md)): `MediaGallery` `Blurred` param; media blurred when sensitive + not revealed. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **73.6 — Poll voting (Phase 73, slice 6) — DONE** ([change doc 736](docs/changes/736-poll-voting.md)): server vote endpoint + client `VoteAsync` + interactive poll UI. **Phase 73 COMPLETE.** Full suite: 1665 passed, 0 failed, 17 skipped.
-- **73.5 — Cross-instance @mention resolution (Phase 73, slice 5) — DONE** ([change doc 735](docs/changes/735-cross-instance-mention-resolution.md)): WebFinger lookup for `@user@domain`. Full suite: 1665 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
