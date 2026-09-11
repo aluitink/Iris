@@ -8640,6 +8640,89 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Registers the <strong>shared</strong> <see cref="IDeliveryQueue"/> (Phase 84.6, shared-state
+    /// scale-out): a single durable journal that two (or more) instances over the same origin enqueue
+    /// into and consume from, so a delivery scheduled on instance A is delivered by A-or-B — not dropped.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="deliveryJournalPath">
+    /// The path of the shared delivery-queue journal file. All instances that share this queue must be
+    /// configured with the same path. The directory must already exist; the file is created if it does
+    /// not exist. A <c>.lock</c> file is created alongside it (the cross-process lock).
+    /// </param>
+    /// <param name="deadLetterJournalPath">The path of the shared dead-letter journal file. The directory
+    /// must already exist; the file is created if it does not exist.</param>
+    /// <param name="visibilityTimeout">
+    /// How long a claim is exclusive before the job is reclaimable by another instance. Defaults to
+    /// <see cref="SharedDeliveryQueue.DefaultVisibilityTimeout"/> (10 min).
+    /// </param>
+    /// <param name="dropHorizon">
+    /// How long a <c>Claimed</c> record is retained before it is purged from the journal. Defaults to
+    /// <see cref="SharedDeliveryQueue.DefaultDropHorizon"/> (24 h).
+    /// </param>
+    /// <param name="deadLetterCapacity">The dead-letter store's bounded view capacity (newest-first).
+    /// Defaults to <see cref="FileBackedDeliveryDeadLetterStore.DefaultCapacity"/>.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to override the in-memory
+    /// default. This is the scale-out counterpart to <see cref="UseFileBackedDelivery"/>: the
+    /// file-backed queue is <em>per-instance</em> (each instance replays its own channel), whereas the
+    /// shared queue is a single journal with a visibility-timeout claim protocol (a job claimed by a live
+    /// instance is not re-claimed within the visibility window; a crashed claimer's job is reclaimable).
+    /// The delivery guarantee is at-least-once (a successfully-delivered job may be re-delivered when its
+    /// visibility window lapses; the receiver dedupes by its <c>Id</c>, C-07). Use this when running two
+    /// or more instances over the same origin (see the 84.5 single-instance guard, which this scale-out
+    /// path is the convergence half of).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or a path is null or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">When a capacity is less than or equal to 0 or a
+    /// horizon is invalid.</exception>
+    public static IServiceCollection UseSharedDelivery(
+        this IServiceCollection services,
+        string deliveryJournalPath,
+        string deadLetterJournalPath,
+        TimeSpan? visibilityTimeout = null,
+        TimeSpan? dropHorizon = null,
+        int deadLetterCapacity = FileBackedDeliveryDeadLetterStore.DefaultCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (string.IsNullOrWhiteSpace(deliveryJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deliveryJournalPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(deadLetterJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deadLetterJournalPath));
+        }
+
+        if (deadLetterCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(deadLetterCapacity), deadLetterCapacity, "Capacity must be greater than zero.");
+        }
+
+        // Validate the horizons (the SharedDeliveryQueue constructor does this; surface it here for a
+        // clearer message at the call site).
+        var visibility = visibilityTimeout ?? SharedDeliveryQueue.DefaultVisibilityTimeout;
+        var drop = dropHorizon ?? SharedDeliveryQueue.DefaultDropHorizon;
+        if (visibility <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(visibilityTimeout), visibility, "The visibility timeout must be greater than zero.");
+        }
+
+        if (drop < visibility)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dropHorizon), drop, "The drop horizon must be greater than or equal to the visibility timeout.");
+        }
+
+        // Replace the in-memory defaults with the shared implementations (a single journal + a shared
+        // dead-letter store, so an exhausted delivery on A is visible to an operator inspecting B).
+        services.AddSingleton<IDeliveryQueue>(_ => new SharedDeliveryQueue(deliveryJournalPath, visibilityTimeout, dropHorizon));
+        services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterJournalPath, deadLetterCapacity));
+        return services;
+    }
+
+    /// <summary>
     /// Registers the file-backed <see cref="IPersistenceProvider"/> (Phase 16.4, production persistence):
     /// every store (actors, activities, follows, likes, replies, moderation, relays, objects, communities)
     /// and the local instance's signing keys are persisted to one JSON file per store under
