@@ -41,7 +41,7 @@ else if (ObjectDoc is null)
             <div class="object-parent-label">
                 In reply to <a href="@ParentHref">@ParentAuthor</a>
             </div>
-            <div class="object-parent-content">@ParentPreview</div>
+            <div class="object-parent-content">@ParentRenderedContent</div>
         </div>
     }
 
@@ -308,18 +308,19 @@ else if (ObjectDoc is null)
         }
     }
 
-    private string ParentPreview
+    private MarkupString ParentRenderedContent
     {
         get
         {
-            var content = (ParentDoc as ActivityObject)?.Content?.FirstOrDefault();
-            if (string.IsNullOrEmpty(content))
+            var parent = ParentDoc as ActivityObject;
+            var content = parent?.Content?.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(content))
             {
-                return "(no content)";
+                return new MarkupString("(no content)");
             }
 
-            var text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(content, " ").Trim();
-            return text.Length > 200 ? text[..200] + "…" : text;
+            return new MarkupString(
+                parent.IsPreRenderedHtmlContent() ? content : global::Iris.Core.Rendering.Markdown.ToHtml(content));
         }
     }
 

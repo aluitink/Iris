@@ -31,6 +31,7 @@ public partial class ObjectView
     private bool _pollVoted;
     private int _pollVotedOption = -1;
     private bool _pollBusy;
+    private string? _parentPreview;
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
@@ -426,6 +427,31 @@ public partial class ObjectView
         {
             _pollBusy = false;
             StateHasChanged();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (ActivityParentIri is { } parentIri && Session.Client is { } client)
+        {
+            try
+            {
+                var parent = await client.GetObjectAsync(parentIri, CancellationToken.None);
+                var content = (parent as ActivityObject)?.Content?.FirstOrDefault();
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    var text = System.Text.RegularExpressions.Regex.Replace(content, "<[^>]+>", " ").Trim();
+                    _parentPreview = text.Length > 120 ? text[..120] + "…" : text;
+                }
+            }
+            catch
+            {
+                // Non-fatal: parent preview simply won't show.
+            }
+            finally
+            {
+                StateHasChanged();
+            }
         }
     }
 }

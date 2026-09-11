@@ -1994,6 +1994,26 @@ ul.object-list li {
     line-height: 1.4;
 }
 
+.object-parent-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 4px;
+}
+
+.object-parent-content pre {
+    background: var(--surface);
+    padding: 0.5rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.object-parent-content blockquote {
+    border-left: 3px solid var(--border);
+    margin-left: 0;
+    padding-left: 0.75rem;
+    color: var(--muted);
+}
+
 .object-detail-engagement {
     margin-top: 0.75rem;
     padding-top: 0.5rem;
