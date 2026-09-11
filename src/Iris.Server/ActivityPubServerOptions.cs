@@ -69,6 +69,17 @@ public sealed class ActivityPubServerOptions
     /// the media proxy serves them instantly).
     /// </summary>
     public MediaOptions? Media { get; set; }
+
+    /// <summary>
+    /// The path of the <strong>single-instance lock file</strong> (Phase 84.5): when set, the host acquires
+    /// a cross-process lock on startup and <em>fails fast</em> if a live different instance already holds
+    /// it. Only one Iris instance per persistence is supported (the in-memory + file-backed providers are
+    /// not safe for two processes, and even the shared EF provider leaves the actor→key binding map +
+    /// delivery queue divergent), so this guard converts a silent second-instance divergence into an
+    /// actionable startup error. When null (the default), the guard is inert (no lock, no check) — the
+    /// common single-process deployment and the multi-host test harnesses are unaffected.
+    /// </summary>
+    public string? InstanceLockPath { get; set; }
 }
 
 /// <summary>

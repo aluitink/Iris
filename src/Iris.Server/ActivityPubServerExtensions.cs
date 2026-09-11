@@ -655,6 +655,9 @@ public static class ActivityPubServerExtensions
             if (irisSection["SharedInboxIri"] is { } inbox) o.SharedInboxIri = new Iri(inbox);
             if (irisSection["InstanceName"] is { } name) o.InstanceName = name;
             if (irisSection["NamespaceIri"] is { } ns) o.NamespaceIri = new Iri(ns);
+            // 84.5: single-instance lock. When Iris:InstanceLockPath is set, the guard (a hosted service
+            // registered below) acquires the lock on startup + fails fast on a second live instance.
+            if (irisSection["InstanceLockPath"] is { } lockPath and not "") o.InstanceLockPath = lockPath;
 
             var proxySection = irisSection.GetSection("ProxySettings");
             if (proxySection.Exists())
@@ -688,6 +691,15 @@ public static class ActivityPubServerExtensions
             {
                 services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterPath));
             }
+        }
+
+        // 84.5: single-instance guard. When Iris:InstanceLockPath is configured, register the guard as a
+        // hosted service (it acquires the cross-process lock on startup + fails fast on a second live
+        // instance; it releases the lock on shutdown). When not configured, the guard is not registered —
+        // the common single-process deployment + the multi-host test harnesses are unaffected.
+        if (irisSection["InstanceLockPath"] is { } guardLockPath and not "")
+        {
+            services.AddHostedService<Bootstrap.SingleInstanceGuardHostedService>();
         }
 
         var inboundSection = configuration.GetSection("Iris:Inbound");
