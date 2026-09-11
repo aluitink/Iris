@@ -106,7 +106,7 @@
                         }
                     </div>
                 }
-                <MediaGallery Attachments="ActivityRichAttachments" />
+                <MediaGallery Attachments="ActivityRichAttachments" Blurred="@ActivityMediaBlurred" />
                 @if (Poll is { } poll)
                 {
                     var canVote = !poll.Expired && !_pollVoted && Session.IsSignedIn;
@@ -350,7 +350,7 @@
                     }
                 </div>
             }
-            <MediaGallery Attachments="RichAttachments" />
+            <MediaGallery Attachments="RichAttachments" Blurred="@ObjectMediaBlurred" />
             @if (Poll is { } poll)
             {
                 var canVote2 = !poll.Expired && !_pollVoted && Session.IsSignedIn;

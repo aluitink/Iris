@@ -1071,6 +1071,10 @@ ul.object-list li {
     pointer-events: none;
 }
 
+.media-gallery-wrap {
+    /* No visual effect by default; the blur class overrides when sensitive. */
+}
+
 /* Card loading state (a compact spinner + label so a fetching card never renders blank). */
 .card-loading {
     display: flex;

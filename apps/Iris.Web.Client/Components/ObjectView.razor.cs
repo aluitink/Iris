@@ -285,6 +285,10 @@ public partial class ObjectView
 
     private bool ActivityIsSensitive => ActivityEmbeddedObject?.IsSensitive() ?? false;
 
+    private bool ActivityMediaBlurred => ActivityIsSensitive && !ActivityRevealed;
+
+    private bool ObjectMediaBlurred => IsSensitive && !Revealed;
+
     private string? ActivitySummary => ActivityEmbeddedObject?.GetSummary();
 
     /// <summary>

@@ -12,6 +12,7 @@
     var documents = Attachments.Where(a => !IsImage(a) && !IsVideo(a) && !IsAudio(a)).ToList();
 }
 
+<div class="media-gallery-wrap @(Blurred ? "object-content--blurred" : "")">
 @if (images.Count > 0)
 {
     <div class="media-gallery media-gallery--@MediaGridClass(images.Count)">
@@ -83,6 +84,7 @@
         }
     </div>
 }
+</div>
 
 @if (_lightboxIndex is { } li)
 {
@@ -110,6 +112,10 @@
 @code {
     [Parameter]
     public IReadOnlyList<RichAttachment> Attachments { get; set; } = [];
+
+    /// <summary>When true, applies a blur filter to all media (used for sensitive content before reveal).</summary>
+    [Parameter]
+    public bool Blurred { get; set; }
 
     private List<RichAttachment> _images = [];
     private int? _lightboxIndex;
