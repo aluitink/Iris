@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **76 — Other AP servers (in progress).** **76.1 DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): live Playwright pass browsing `@Gargron@mastodon.social` — actor profile, outbox, object detail all work via proxy (zero console errors, no request spam). **76.2 DONE** (commit `e8e5660`): removed unreliable remote `/search` call from fediverse search — WebFinger + actor doc fetch is sufficient for handle-form queries. Live-verified: `Gargron@mastodon.social` search returns actor in ~3s (previously hung). Remaining gaps: (1) no discoverable path to external actors from the Directory; (2) external actor avatar not loaded. **Next: 76.3 — external actor avatar via media proxy.**
+- **76 — Other AP servers (in progress).** **76.1 DONE** ([change doc 761](docs/changes/761-external-mastodon-browse.md)): live Playwright pass browsing `@Gargron@mastodon.social` — actor profile, outbox, object detail all work via proxy. **76.2 DONE** (commit `e8e5660`): removed unreliable remote `/search` call from fediverse search. **76.3 DONE** (commit `76a79b4`): `ActorIdentityHelper.IconIri` now resolves remote actor icons via the `url` property (Mastodon emits `url` not `id`; the library maps `url` to `IObject.Url`). Media proxy verified working for cross-origin avatars. Live verification blocked by WASM caching. Remaining gap: no discoverable path to external actors from the Directory. **Next: 76.4 — external actor discovery from the Directory page.**
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when

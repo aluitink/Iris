@@ -58,6 +58,17 @@ works and what doesn't, and identify gaps to fix.
   `Gargron@mastodon.social` now returns Gargron's actor doc in ~3s (previously hung
   indefinitely). Zero console errors. Commit `e8e5660`.
 
+- **External actor avatar (76.3) — IMPLEMENTED**: Mastodon and other remote AP
+  servers emit the actor's icon as an Image object with a `url` property instead
+  of an `id`. The ActivityStreams library maps `url` to `IObject.Url`
+  (`IEnumerable<ILink>?`), not `Id`. `ActorIdentityHelper.IconIri` now checks, in
+  order: `IObject.Id` (Iris-local), `IObject.Url` first link's href (Mastodon/remote),
+  `ILink.Href` (bare link). The media proxy already handles cross-origin avatar URLs
+  (verified: returns 200 image/png for Gargron's avatar at
+  `files.mastodon.social`). Live verification blocked by Blazor WASM content-hash
+  caching (browser loads stale WASM even after rebuild + new port). Code is correct
+  by inspection. Commit `76a79b4`.
+
 ## Test counts
 
 No code changes this slice (investigation only). Full suite: 1666 passed, 0 failed,
