@@ -69,7 +69,19 @@ works and what doesn't, and identify gaps to fix.
   caching (browser loads stale WASM even after rebuild + new port). Code is correct
   by inspection. Commit `76a79b4`.
 
+- **Directory external actor discovery (76.4) — IMPLEMENTED**: the Directory page
+  now has a "Find someone on another server" input above the People/Communities
+  tabs. The user types a `user@domain` handle and presses Enter. The flow:
+  (1) WebFinger via the home proxy to resolve the handle to an actor IRI,
+  (2) fetch the actor document via `IActivityPubClient.GetObjectAsync`. The result
+  is displayed as a card with avatar (via `ActorAvatar` + `ActorIdentityHelper.IconIri`),
+  preferred username, and display name, linking to the actor detail page
+  (`/actor?iri=...`). Reuses the same WebFinger parsing logic as the Search page
+  fix (76.2). Error states: unreachable host, no account found, not signed in,
+  network errors. CSS added for the lookup card, input, spinner, error, and
+  result link. Commit `0bd9f25`.
+
 ## Test counts
 
-No code changes this slice (investigation only). Full suite: 1666 passed, 0 failed,
-17 skipped (unchanged from Phase 75 closeout).
+Full suite: 1666 passed, 0 failed, 17 skipped (1 flaky Server test in full-suite
+run, green in isolation — known timing-dependent delivery test).
