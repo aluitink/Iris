@@ -4757,6 +4757,37 @@ public static class ActivityPubServerExtensions
                 note.ContentMap = [new Dictionary<string, string> { ["en"] = firstContent }];
             }
         }
+
+        // `likes` / `shares`: empty Collection pointers to the interaction-collection IRIs
+        // ({noteId}/likes, {noteId}/shares), matching Mastodon's shape. The server already serves
+        // these collections (the interaction-collection endpoints), so these are pure pointers.
+        // A newly-minted note has 0 likes and 0 shares.
+        note.Likes = new Collection
+        {
+            Id = note.Id + "/likes",
+            TotalItems = 0,
+        };
+        note.Shares = new Collection
+        {
+            Id = note.Id + "/shares",
+            TotalItems = 0,
+        };
+
+        // `inReplyToAtomUri`: the AP IRI of the parent note (Mastodon/Pleroma convention). For
+        // replies, this is the same as `inReplyTo` (the parent's IRI). For top-level posts, it is
+        // absent (null). Written via ExtensionData (Rule 6) since the library does not model it.
+        if (note.InReplyTo is { } inReplyTo2)
+        {
+            var first = inReplyTo2.FirstOrDefault();
+            if (first is ILink link2 && link2.Href is { } href2)
+            {
+                note.ExtensionData["inReplyToAtomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(href2.ToString());
+            }
+            else if (first is IObject parentObj2 && !string.IsNullOrWhiteSpace(parentObj2.Id))
+            {
+                note.ExtensionData["inReplyToAtomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(parentObj2.Id);
+            }
+        }
     }
 
     /// <summary>
