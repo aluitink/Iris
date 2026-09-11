@@ -1981,6 +1981,12 @@ ul.object-list li {
     margin-bottom: 0.75rem;
 }
 
+.object-parent-separator {
+    height: 1px;
+    background: var(--border);
+    margin: 0.5rem 0;
+}
+
 .object-parent-label {
     font-size: 0.8rem;
     color: var(--muted);

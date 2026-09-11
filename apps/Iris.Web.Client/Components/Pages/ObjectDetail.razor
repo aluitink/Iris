@@ -35,13 +35,21 @@ else if (ObjectDoc is null)
 }
     else
 {
-    @if (ParentDoc is not null && ParentHref is not null)
+    @if (ThreadContext is { Count: > 0 })
     {
         <div class="card object-parent-context">
-            <div class="object-parent-label">
-                In reply to <a href="@ParentHref">@ParentAuthor</a>
-            </div>
-            <div class="object-parent-content">@ParentRenderedContent</div>
+            @for (var i = 0; i < ThreadContext.Count; i++)
+            {
+                var ancestor = ThreadContext[i];
+                @if (i > 0)
+                {
+                    <div class="object-parent-separator" aria-hidden="true"></div>
+                }
+                <div class="object-parent-label">
+                    In reply to <a href="/object?iri=@Uri.EscapeDataString(ancestor.Id ?? string.Empty)">@AncestorAuthor(ancestor)</a>
+                </div>
+                <div class="object-parent-content">@RenderAncestorContent(ancestor)</div>
+            }
         </div>
     }
 
@@ -148,7 +156,7 @@ else if (ObjectDoc is null)
     private IActivityPubClient? Client => Session.Client;
 
     private IObject? ObjectDoc { get; set; }
-    private IObject? ParentDoc { get; set; }
+    private List<IObject> ThreadContext { get; } = [];
     private string? LoadError { get; set; }
     private bool RepliesLoading { get; set; }
     private List<IObject?> Replies { get; set; } = [];
@@ -262,66 +270,42 @@ else if (ObjectDoc is null)
     /// </summary>
     private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor;
 
-    private string? ParentHref
+    private string AncestorAuthor(IObject ancestor)
     {
-        get
+        if (ancestor is Actor { PreferredUsername: { Length: > 0 } px })
         {
-            if (ParentDoc?.Id is not { } id)
+            return "@" + px;
+        }
+
+        if (ancestor is ActivityObject { AttributedTo: { } attr } && attr.FirstOrDefault() is { } first)
+        {
+            if (first is Actor { PreferredUsername: { Length: > 0 } apx })
             {
-                return null;
+                return "@" + apx;
             }
 
-            return $"/object?iri={Uri.EscapeDataString(id)}";
+            string? actorIriStr = first is ILink { Href: { } href } ? href.ToString() : first.Id;
+            if (actorIriStr is not null && Iri.TryParse(actorIriStr, out var attrIri))
+            {
+                var segments = attrIri.Value.Split('/');
+                return segments.Length > 1 ? segments[^1] : "unknown";
+            }
         }
+
+        return "unknown";
     }
 
-    private string ParentAuthor
+    private MarkupString RenderAncestorContent(IObject ancestor)
     {
-        get
+        var obj = ancestor as ActivityObject;
+        var content = obj?.Content?.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(content))
         {
-            if (ParentDoc is null)
-            {
-                return "unknown";
-            }
-
-            if (ParentDoc is Actor { PreferredUsername: { Length: > 0 } px })
-            {
-                return "@" + px;
-            }
-
-            if (ParentDoc is ActivityObject { AttributedTo: { } attr } && attr.FirstOrDefault() is { } first)
-            {
-                if (first is Actor { PreferredUsername: { Length: > 0 } apx })
-                {
-                    return "@" + apx;
-                }
-
-                string? actorIriStr = first is ILink { Href: { } href } ? href.ToString() : first.Id;
-                if (actorIriStr is not null && Iri.TryParse(actorIriStr, out var attrIri))
-                {
-                    var segments = attrIri.Value.Split('/');
-                    return segments.Length > 1 ? segments[^1] : "unknown";
-                }
-            }
-
-            return "unknown";
+            return new MarkupString("(no content)");
         }
-    }
 
-    private MarkupString ParentRenderedContent
-    {
-        get
-        {
-            var parent = ParentDoc as ActivityObject;
-            var content = parent?.Content?.FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                return new MarkupString("(no content)");
-            }
-
-            return new MarkupString(
-                parent.IsPreRenderedHtmlContent() ? content : global::Iris.Core.Rendering.Markdown.ToHtml(content));
-        }
+        return new MarkupString(
+            obj.IsPreRenderedHtmlContent() ? content : global::Iris.Core.Rendering.Markdown.ToHtml(content));
     }
 
     protected override async Task OnParametersSetAsync()
@@ -406,15 +390,30 @@ else if (ObjectDoc is null)
 
     private async Task LoadParentAsync(IActivityPubClient client)
     {
-        if (ObjectDoc.GetParentIri() is not { } parentIri)
+        if (ObjectDoc.GetParentIri() is not { } firstIri)
         {
             return;
         }
 
         try
         {
-            var parent = await client.GetObjectAsync(parentIri, CancellationToken.None);
-            ParentDoc = parent;
+            var current = await client.GetObjectAsync(firstIri, CancellationToken.None);
+            if (current is null)
+            {
+                return;
+            }
+
+            ThreadContext.Add(current);
+
+            // Fetch one more level up (grandparent) for deeper thread context.
+            if (current.GetParentIri() is { } secondIri)
+            {
+                var grandparent = await client.GetObjectAsync(secondIri, CancellationToken.None);
+                if (grandparent is not null && grandparent.Id != current.Id)
+                {
+                    ThreadContext.Add(grandparent);
+                }
+            }
         }
         catch
         {
