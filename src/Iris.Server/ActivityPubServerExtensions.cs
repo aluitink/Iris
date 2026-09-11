@@ -4682,10 +4682,13 @@ public static class ActivityPubServerExtensions
     /// Mastodon always emits on a Note (Phase 74 — Mastodon wire-format compatibility): the object's
     /// <c>url</c> (the note's own IRI, which Mastodon clients use to link to the status page), an
     /// explicit <c>sensitive</c> flag (always present, defaulting to <c>false</c>, so remote
-    /// visibility logic is unambiguous), and an empty <c>replies</c> <see cref="OrderedCollection"/>
-    /// (the replies-collection IRI, so Mastodon clients can poll for thread replies). These are
-    /// additive: they do not alter the existing Iris extension terms (<c>iris:likedCount</c>, etc.)
-    /// or the note's content/audience/tags.
+    /// visibility logic is unambiguous), an empty <c>replies</c> <see cref="OrderedCollection"/>
+    /// (the replies-collection IRI, so Mastodon clients can poll for thread replies), <c>atomUri</c>
+    /// (the AP IRI, same as <c>url</c> for Iris), <c>context</c> (the conversation/thread context IRI —
+    /// the parent's IRI for replies, the note's own IRI for top-level posts), and <c>contentMap</c>
+    /// (a locale-keyed content map with a single <c>"en"</c> entry matching the note's content).
+    /// These are additive: they do not alter the existing Iris extension terms
+    /// (<c>iris:likedCount</c>, etc.) or the note's content/audience/tags.
     /// </summary>
     /// <param name="note">The minted note (its <c>id</c> must already be set).</param>
     private static void EnrichNoteForMastodon(KristofferStrube.ActivityStreams.Object note)
@@ -4714,6 +4717,46 @@ public static class ActivityPubServerExtensions
         {
             Id = note.Id + "/replies",
         };
+
+        // `atomUri`: the ActivityPub IRI of the object (Mastodon/Pleroma convention). For Iris the
+        // AP IRI is the same as the object's own IRI (the /notes/{ulid} endpoint), so it mirrors
+        // `url`. Written via ExtensionData (Rule 6) since the library does not model it.
+        note.ExtensionData["atomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(note.Id);
+
+        // `context`: the conversation/thread context IRI. For replies, Mastodon uses the thread's
+        // root context; the closest Iris equivalent is the parent note's IRI (the thread the reply
+        // belongs to). For top-level posts, the context is the note's own IRI (a degenerate
+        // single-item context). Mastodon also emits `conversation` with the same value; both are
+        // written via ExtensionData (Rule 6) since the library models `Context` as
+        // IEnumerable<IObjectOrLink> (a multi-valued property, not a single IRI link).
+        var contextIri = note.Id;
+        if (note.InReplyTo is { } inReplyTo)
+        {
+            var first = inReplyTo.FirstOrDefault();
+            if (first is ILink link && link.Href is { } href)
+            {
+                contextIri = href.ToString();
+            }
+            else if (first is IObject parentObj && !string.IsNullOrWhiteSpace(parentObj.Id))
+            {
+                contextIri = parentObj.Id;
+            }
+        }
+        note.ExtensionData["context"] = System.Text.Json.JsonSerializer.SerializeToElement(contextIri);
+        note.ExtensionData["conversation"] = System.Text.Json.JsonSerializer.SerializeToElement(contextIri);
+
+        // `contentMap`: a locale-keyed content map (Mastodon convention). Iris content is not
+        // localized, so emit a single "en" entry with the note's content (the same HTML/plain-text
+        // string). Written as a typed property (the library models ContentMap as
+        // IEnumerable<IDictionary<string, string>>).
+        if (note.Content is { } content)
+        {
+            var firstContent = content.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(firstContent))
+            {
+                note.ContentMap = [new Dictionary<string, string> { ["en"] = firstContent }];
+            }
+        }
     }
 
     /// <summary>
