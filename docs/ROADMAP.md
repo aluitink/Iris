@@ -141,3 +141,5 @@
 - **73.1 — Poll creation (outbound) (Phase 73, slice 1) — DONE:** `PostQuestionAsync` on `IActivityPubClient` builds a `Question` with a Mastodon `poll` extension; compose UI "Poll" type + poll editor. [changes/731](changes/731-poll-creation.md)
 - **Phase 72 — Efficiency + UX residuals (COMPLETE):** 72.1–72.3 done; 72.4 accepted-as-is. [changes/721](changes/721-engagement-count-cache.md) · [changes/722](changes/722-minted-id-extension.md) · [changes/723](changes/723-rich-document-rendering.md)
 - **72.3 — Richer inline document rendering (Phase 72, slice 3) — DONE:** `.doc-gallery` grid (image Preview, PDF iframe, icon placeholder). [changes/723](changes/723-rich-document-rendering.md)
+- **73.3 — Audience/visibility selector (Phase 73, slice 3) — DONE:** Public/Followers/Direct `<select>` in compose; `PostAudience` + `BuildAudience` map to `to`/`cc` per AP §5.1.2. [changes/733](changes/733-audience-selector.md)
+- **73.4 — Community posts carry media + CW (Phase 73, slice 4) — DONE:** relaxed CW gate; `PostToCommunityAsync` extended with media/sensitive/summary. [changes/734](changes/734-community-media-cw.md)
