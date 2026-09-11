@@ -708,6 +708,13 @@ ul.object-list li {
     color: var(--accent);
 }
 
+.object-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text);
+    margin-bottom: 0.25rem;
+}
+
 .object-content {
     color: var(--text);
     font-size: 0.9rem;

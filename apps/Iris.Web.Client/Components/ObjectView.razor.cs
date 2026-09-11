@@ -41,6 +41,18 @@ public partial class ObjectView
     private string? Summary => Obj?.GetSummary();
     private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
 
+    /// <summary>
+    /// The object's <c>name</c> property (the first string). For Lemmy Page objects this is the post
+    /// title; for most other object types it is null or redundant with the content.
+    /// </summary>
+    private string? Name => Obj?.Name?.FirstOrDefault();
+
+    /// <summary>
+    /// The embedded object's <c>name</c> property (the first string). Used for the Create/Announce
+    /// branches where the content object is nested inside the activity.
+    /// </summary>
+    private string? ActivityName => ActivityEmbeddedObject?.Name?.FirstOrDefault();
+
     private bool NameIsRedundant
     {
         get

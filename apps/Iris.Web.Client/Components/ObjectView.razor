@@ -14,6 +14,10 @@
             </div>
             @if (ActivityContentObject is { } contentObj)
             {
+                @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor))
+                {
+                    <div class="object-title">@title</div>
+                }
                 @if (contentObj is KristofferStrube.ActivityStreams.Object ao && JoinStrings(ao.Content) is { Length: > 0 } content)
                 {
                     @if (ActivityIsSensitive)
@@ -260,6 +264,10 @@
                     <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
                 }
             </div>
+            @if (Name is { Length: > 0 } title && !(obj is Actor))
+            {
+                <div class="object-title">@title</div>
+            }
             @if (JoinStrings(obj.Content) is { Length: > 0 } content)
             {
                 @if (IsSensitive)
