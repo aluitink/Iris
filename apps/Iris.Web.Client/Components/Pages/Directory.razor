@@ -12,7 +12,7 @@
 <h1>Directory</h1>
 
 <p class="muted">
-    Browse people and communities on this instance.
+    Browse people and communities on this instance, or find someone on another server.
 </p>
 
 @if (Client is null)
@@ -21,6 +21,42 @@
 }
 else
 {
+    <div class="card directory-external-lookup">
+        <p class="muted">Find someone on another server (e.g. <code>user@mastodon.social</code>):</p>
+        <div class="directory-external-form">
+            <input type="text" class="directory-external-input" placeholder="user@domain"
+                   value="@_externalQuery" @oninput="OnExternalInput" @onkeydown="OnExternalKeydown" />
+            @if (_externalBusy)
+            {
+                <span class="directory-external-spinner" aria-hidden="true">
+                    <svg class="loading-spinner" viewBox="25 25 50 50"><circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" /></svg>
+                </span>
+            }
+        </div>
+        @if (_externalError is not null)
+        {
+            <p class="directory-external-error" role="alert">@_externalError</p>
+        }
+        @if (_externalResult is { } found)
+        {
+            <div class="directory-external-result">
+                <a href="@ActorIdentityHelper.ActorHref(new Iri(found.Id ?? string.Empty))" class="directory-external-link">
+                    <ActorAvatar ActorIri="new Iri(found.Id ?? string.Empty)"
+                                 DisplayName="@found.Name?.FirstOrDefault()"
+                                 IconIriOverride="@ActorIdentityHelper.IconIri(found)"
+                                 CssClass="directory-external-avatar" />
+                    <span class="directory-external-name">
+                        @((found.PreferredUsername ?? found.Id ?? "?").ToString())
+                        @if (found.Name is { } names && names.Any())
+                        {
+                            <span class="muted"> — @names.FirstOrDefault()</span>
+                        }
+                    </span>
+                </a>
+            </div>
+        }
+    </div>
+
     <div class="tab-bar" role="tablist" aria-label="Directory sections">
         <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
         <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
@@ -99,6 +135,172 @@ else
 
     private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
     private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
+
+    private string _externalQuery = string.Empty;
+    private bool _externalBusy;
+    private string? _externalError;
+    private Actor? _externalResult;
+
+    private void OnExternalInput(ChangeEventArgs e)
+    {
+        _externalQuery = e.Value?.ToString() ?? string.Empty;
+        _externalResult = null;
+        _externalError = null;
+    }
+
+    private void OnExternalKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _externalQuery.Length > 0 && !_externalBusy)
+        {
+            _ = LookupExternalAsync();
+        }
+    }
+
+    /// <summary>
+    /// Resolves a <c>user@domain</c> handle via WebFinger (through the home proxy) and fetches the
+    /// actor document. The result is displayed as a card linking to the actor detail page.
+    /// </summary>
+    private async Task LookupExternalAsync()
+    {
+        var query = _externalQuery.Trim().TrimStart('@');
+        if (query.Length == 0)
+        {
+            return;
+        }
+
+        var handle = ParseRemoteHandle(query);
+        if (handle is null)
+        {
+            _externalError = "Enter a handle like <code>user@domain</code> (e.g. <code>alice@mastodon.social</code>).";
+            _externalResult = null;
+            return;
+        }
+
+        _externalBusy = true;
+        _externalError = null;
+        _externalResult = null;
+        try
+        {
+            var user = handle.Value.user;
+            var host = handle.Value.host;
+
+            // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
+            var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
+            var webfingerBody = await Session.ProxyGetAsync(
+                webfingerUrl,
+                "application/jrd+json, application/json; q=0.9",
+                CancellationToken.None);
+
+            if (webfingerBody is null)
+            {
+                _externalError = $"Could not reach {host}. Check the domain and try again.";
+                return;
+            }
+
+            var actorIri = ParseWebFingerActorIri(webfingerBody);
+            if (actorIri is null)
+            {
+                _externalError = $"No account found for @{user}@{host}.";
+                return;
+            }
+
+            var resolvedIri = new Iri(actorIri.ToString()!);
+
+            // 2. Fetch the actor document (through the client, which handles proxy fallback).
+            if (Client is { } client)
+            {
+                var obj = await client.GetObjectAsync(resolvedIri);
+                if (obj is not Actor fetchedActor)
+                {
+                    _externalError = "Found the account but could not load their profile.";
+                    return;
+                }
+                _externalResult = fetchedActor;
+            }
+            else
+            {
+                _externalError = "Not signed in.";
+            }
+        }
+        catch
+        {
+            _externalError = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _externalBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Parses a remote handle (<c>user@host</c> or <c>@user@host</c>) into its user and host parts.
+    /// Returns null when the input is not a recognizable remote handle.
+    /// </summary>
+    private static (string user, string host)? ParseRemoteHandle(string query)
+    {
+        var q = query.Trim().TrimStart('@');
+        var atIndex = q.LastIndexOf('@');
+        if (atIndex <= 0 || atIndex >= q.Length - 1)
+        {
+            return null;
+        }
+
+        var user = q[..atIndex];
+        var host = q[(atIndex + 1)..];
+
+        if (host.Length == 0 || (!host.Contains('.') && host != "localhost"))
+        {
+            return null;
+        }
+
+        if (user.Length == 0 || user.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return (user, host);
+    }
+
+    /// <summary>
+    /// Parses a WebFinger response and extracts the actor IRI from the <c>self</c> link.
+    /// </summary>
+    private static Iri? ParseWebFingerActorIri(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var link in links.EnumerateArray())
+            {
+                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
+                var type = link.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (rel is not "self")
+                {
+                    continue;
+                }
+
+                if (type is null || type.Contains("activity", StringComparison.OrdinalIgnoreCase) || type.Contains("ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
+                    if (href is not null && Iri.TryParse(href, out var iri))
+                    {
+                        return iri;
+                    }
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     private readonly Dictionary<string, List<IObjectOrLink>> _expandedPosts = new();
     private readonly HashSet<string> _expandedLoading = new();

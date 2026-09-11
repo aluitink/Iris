@@ -1670,6 +1670,81 @@ ul.object-list li {
 }
 
 /* Directory: actor rows with a follow button on the right. */
+.directory-external-lookup {
+    margin-bottom: 1rem;
+}
+
+.directory-external-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.directory-external-input {
+    flex: 1;
+    max-width: 24rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 6px);
+    background: var(--surface);
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.directory-external-input:focus {
+    outline: none;
+    border-color: var(--accent, #4a90d9);
+}
+
+.directory-external-spinner {
+    display: inline-flex;
+    align-items: center;
+}
+
+.directory-external-error {
+    color: var(--danger, #d9534f);
+    font-size: 0.85rem;
+    margin: 0.4rem 0 0;
+}
+
+.directory-external-result {
+    margin-top: 0.6rem;
+}
+
+.directory-external-link {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius, 6px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 0.15s;
+}
+
+.directory-external-link:hover {
+    border-color: var(--accent, #4a90d9);
+    color: var(--text);
+}
+
+.directory-external-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.directory-external-avatar img {
+    width: 100%;
+    height: 100%;
+}
+
+.directory-external-name {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
 .directory-list {
     display: flex;
     flex-direction: column;
