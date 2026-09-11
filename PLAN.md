@@ -78,7 +78,7 @@ Iris.slnx
 
 ## Active Slice
 
-- **74 — Better Mastodon compatibility (in progress).** **74.1 DONE** ([change doc 741](docs/changes/741-sensitive-blur-includes-image.md)): sensitive-content blur covers the image/media gallery. **74.2 DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. **74.3 DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri`, `context`/`conversation`, `contentMap`. **74.4 DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections (totalItems=0) + `inReplyToAtomUri` (parent IRI for replies). Build 0 warn/0 err; full suite: 1665 passed, 0 failed, 17 skipped. **All Mastodon wire-format fields now present on minted Notes — Phase 74 COMPLETE.** Next: Phase 75 (external media serving).
+- **75 — External media serving (in progress).** **75.1 DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy (was: stripped host → 404). Live-verified: external wasabi S3 image loads via proxy. Build 0 warn/0 err; full suite: 1665 passed, 0 failed, 17 skipped. **Next: 75.2 — warmer media-type gap (Document/Audio/Video not pre-downloaded), proxy-fetch sync gap (AP proxy-fallback doesn't store/warm), Update handler warm gap.**
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -158,11 +158,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **74.4 — likes/shares Collections + inReplyToAtomUri (Phase 74, slice 4) — DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections (totalItems=0) + `inReplyToAtomUri` (parent IRI for replies). **Phase 74 COMPLETE** — all Mastodon wire-format fields present. Full suite: 1665 passed, 0 failed, 17 skipped.
-- **74.3 — atomUri, context/conversation, contentMap (Phase 74, slice 3) — DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri` (own IRI), `context`/`conversation` (parent IRI for replies, own for top-level), `contentMap` (`{"en": <content>}`). Full suite: 1665 passed, 0 failed, 17 skipped.
+- **75.1 — External media proxy rewrite (Phase 75, slice 1) — DONE** ([change doc 751](docs/changes/751-external-media-proxy-rewrite.md)): client render boundary routes cross-origin media through the media proxy (was: stripped host → 404). Live-verified: external S3 image loads via proxy. Full suite: 1665 passed, 0 failed, 17 skipped.
+- **74.4 — likes/shares Collections + inReplyToAtomUri (Phase 74, slice 4) — DONE** ([change doc 744](docs/changes/744-likes-shares-inreplytoatomuri.md)): minted Notes carry `likes`/`shares` Collections (totalItems=0) + `inReplyToAtomUri` (parent IRI for replies). **Phase 74 COMPLETE.** Full suite: 1665 passed, 0 failed, 17 skipped.
+- **74.3 — atomUri, context/conversation, contentMap (Phase 74, slice 3) — DONE** ([change doc 743](docs/changes/743-atomuri-context-contentmap.md)): minted Notes carry `atomUri`, `context`/`conversation`, `contentMap`. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.2 — Mastodon wire-format fields (Phase 74, slice 2) — DONE** ([change doc 742](docs/changes/742-mastodon-wire-format-fields.md)): minted Notes carry `url`, explicit `sensitive`, `replies` `OrderedCollection`. Full suite: 1665 passed, 0 failed, 17 skipped.
 - **74.1 — Sensitive blur includes image (Phase 74, slice 1) — DONE** ([change doc 741](docs/changes/741-sensitive-blur-includes-image.md)): `MediaGallery` `Blurred` param; media blurred when sensitive + not revealed. Full suite: 1665 passed, 0 failed, 17 skipped.
-- **73.6 — Poll voting (Phase 73, slice 6) — DONE** ([change doc 736](docs/changes/736-poll-voting.md)): server vote endpoint + client `VoteAsync` + interactive poll UI. **Phase 73 COMPLETE.** Full suite: 1665 passed, 0 failed, 17 skipped.
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
