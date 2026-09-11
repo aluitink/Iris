@@ -241,4 +241,17 @@ public interface ILocalModerationClient
     /// Demotes an owner with explicit Basic-auth credentials.
     /// </summary>
     public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a poll vote: a local, non-federated write that records the actor's choice on a stored
+    /// <c>Question</c> object (<c>POST /local/v1/u/{handle}/votes/{**pollIri}</c>). The body is
+    /// <c>{"option": &lt;index&gt;}</c>. Returns 200 with the updated poll data on success; 409 when
+    /// the poll is expired; 404 when the poll is not found; 400 for a bad option index.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor voting.</param>
+    /// <param name="pollIri">The IRI of the stored <c>Question</c> object (the poll).</param>
+    /// <param name="optionIndex">The zero-based index of the selected option.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (the updated poll data).</returns>
+    public Task<DeliveryResult> VoteAsync(Iri actorId, Iri pollIri, int optionIndex, CancellationToken ct = default);
 }

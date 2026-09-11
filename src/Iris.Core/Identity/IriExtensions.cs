@@ -481,6 +481,61 @@ public static class IriExtensions
         return null;
     }
 
+    /// <summary>
+    /// Parses poll data from a JSON string (the server's poll-vote response body). The expected
+    /// shape is <c>{"options": [{"title": "...", "votes": N}], "totalVotes": N, "endsAt": "...",
+    /// "expired": bool, "multiple": bool}</c>. Returns null when the JSON is malformed or does not
+    /// carry poll data.
+    /// </summary>
+    /// <param name="json">The JSON string to parse.</param>
+    /// <returns>The parsed <see cref="PollData"/>, or <c>null</c> when parsing fails.</returns>
+    public static PollData? GetPollDataFromJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("options", out var optionsEl) || optionsEl.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var options = new List<PollOption>();
+            foreach (var opt in optionsEl.EnumerateArray())
+            {
+                var title = opt.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                var votes = opt.TryGetProperty("votes", out var v) && v.TryGetInt32(out var vi) ? vi : 0;
+                options.Add(new PollOption(title, votes));
+            }
+
+            if (options.Count == 0)
+            {
+                return null;
+            }
+
+            var totalVotes = root.TryGetProperty("totalVotes", out var tv) && tv.TryGetInt32(out var tvi) ? tvi : options.Sum(o => o.Votes);
+            DateTime? endsAt = null;
+            if (root.TryGetProperty("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+                && DateTime.TryParse(ea.GetString(), out var dt))
+            {
+                endsAt = dt;
+            }
+            var expired = root.TryGetProperty("expired", out var ex) && ex.ValueKind == JsonValueKind.True;
+            var multiple = root.TryGetProperty("multiple", out var mu) && mu.ValueKind == JsonValueKind.True;
+
+            return new PollData(options, totalVotes, endsAt, expired, multiple);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static PollData? ParsePollFromExtension(JsonElement poll)
     {
         if (!poll.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array)

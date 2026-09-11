@@ -141,6 +141,62 @@ public sealed class LocalModerationClient : ILocalModerationClient
     public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
         => LocalCommunityOwnerDecisionAsync(communityId, actorId, "demote", credentials, ct);
 
+    /// <inheritdoc/>
+    public async Task<DeliveryResult> VoteAsync(Iri actorId, Iri pollIri, int optionIndex, CancellationToken ct = default)
+    {
+        var configured = _localAuth;
+        HttpMessageHandler handler;
+        bool ownsHandler;
+        if (configured is not null)
+        {
+            handler = configured;
+            ownsHandler = false;
+        }
+        else if (_passthrough is not null)
+        {
+            handler = _passthrough;
+            ownsHandler = false;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Poll voting requires LocalCredentials or a passthrough handler.");
+        }
+
+        var requestUri = BuildPollVoteUri(actorId, pollIri);
+        var payload = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new { option = optionIndex });
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = new ByteArrayContent(payload)
+            {
+                Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json") },
+            },
+        };
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, body);
+    }
+
+    private static Uri BuildPollVoteUri(Iri actorId, Iri pollIri)
+    {
+        var actor = actorId.Value;
+        var actorSegmentStart = actor.IndexOf("/u/", StringComparison.Ordinal);
+        if (actorSegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a poll-vote route for actor IRI '{actorId}' (expected a path containing /u/).");
+        }
+
+        var actorSegment = actor[actorSegmentStart..];
+        var host = new Uri(actorId.Value).GetLeftPart(UriPartial.Authority);
+        return new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}/votes/{pollIri.Value.TrimStart('/')}");
+    }
+
     /// <summary>
     /// Performs a local, Basic-authenticated GET of the community's owners:
     /// <c>GET /local/v1/c/{name}/owners</c>.

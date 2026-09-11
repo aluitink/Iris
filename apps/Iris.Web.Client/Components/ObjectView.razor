@@ -109,13 +109,21 @@
                 <MediaGallery Attachments="ActivityRichAttachments" />
                 @if (Poll is { } poll)
                 {
+                    var canVote = !poll.Expired && !_pollVoted && Session.IsSignedIn;
                     <div class="object-poll">
-                        @foreach (var option in poll.Options)
+                        @for (var i = 0; i < poll.Options.Count; i++)
                         {
+                            var option = poll.Options[i];
                             var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
-                            <div class="object-poll-option">
+                            var isSelected = _pollVoted && i == _pollVotedOption;
+                            <div class="object-poll-option @(canVote ? "object-poll-option-votable" : "") @(isSelected ? "object-poll-option-selected" : "")"
+                                 @onclick="@(() => { if (canVote) { _ = VotePollAsync(i); } })">
                                 <div class="object-poll-option-bar" style="width:@pct%"></div>
                                 <div class="object-poll-option-content">
+                                    @if (isSelected)
+                                    {
+                                        <span class="object-poll-option-check">&#10003;</span>
+                                    }
                                     <span class="object-poll-option-title">@option.Title</span>
                                     <span class="object-poll-option-votes">@option.Votes</span>
                                 </div>
@@ -133,6 +141,10 @@
                             @if (poll.Multiple)
                             {
                                 <span class="object-poll-multiple">Multiple answers allowed</span>
+                            }
+                            @if (_pollVoted)
+                            {
+                                <span class="object-poll-voted">You voted</span>
                             }
                             <span class="object-poll-total">@poll.TotalVotes votes</span>
                         </div>
@@ -341,13 +353,21 @@
             <MediaGallery Attachments="RichAttachments" />
             @if (Poll is { } poll)
             {
+                var canVote2 = !poll.Expired && !_pollVoted && Session.IsSignedIn;
                 <div class="object-poll">
-                    @foreach (var option in poll.Options)
+                    @for (var i = 0; i < poll.Options.Count; i++)
                     {
+                        var option = poll.Options[i];
                         var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
-                        <div class="object-poll-option">
+                        var isSelected = _pollVoted && i == _pollVotedOption;
+                        <div class="object-poll-option @(canVote2 ? "object-poll-option-votable" : "") @(isSelected ? "object-poll-option-selected" : "")"
+                             @onclick="@(() => { if (canVote2) { _ = VotePollAsync(i); } })">
                             <div class="object-poll-option-bar" style="width:@pct%"></div>
                             <div class="object-poll-option-content">
+                                @if (isSelected)
+                                {
+                                    <span class="object-poll-option-check">&#10003;</span>
+                                }
                                 <span class="object-poll-option-title">@option.Title</span>
                                 <span class="object-poll-option-votes">@option.Votes</span>
                             </div>
@@ -365,6 +385,10 @@
                         @if (poll.Multiple)
                         {
                             <span class="object-poll-multiple">Multiple answers allowed</span>
+                        }
+                        @if (_pollVoted)
+                        {
+                            <span class="object-poll-voted">You voted</span>
                         }
                         <span class="object-poll-total">@poll.TotalVotes votes</span>
                     </div>

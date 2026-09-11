@@ -922,6 +922,28 @@ ul.object-list li {
     font-size: 0.8rem;
 }
 
+.object-poll-option-votable {
+    cursor: pointer;
+}
+
+.object-poll-option-votable:hover .object-poll-option-bar {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.object-poll-option-selected .object-poll-option-bar {
+    background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.object-poll-option-check {
+    color: var(--accent);
+    font-weight: 700;
+    margin-right: 0.25rem;
+}
+
+.object-poll-voted {
+    color: var(--accent);
+}
+
 .object-poll-footer {
     display: flex;
     gap: 0.75rem;

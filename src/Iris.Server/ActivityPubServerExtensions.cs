@@ -3,6 +3,8 @@ using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
@@ -1100,6 +1102,11 @@ public static class ActivityPubServerExtensions
             .MapPost($"/u/{{handle}}/{Iris.Client.MediaConstants.UploadSegment}", LocalMediaUploadHandler)
             .WithName("local-media-upload-endpoint");
 
+        // Local poll vote: POST /local/v1/u/{handle}/votes/{**pollIri} — a local actor records a vote
+        // on a poll (a stored Question object). The body is {"option": <index>}. Not an ActivityStreams
+        // activity (a local, non-federated write), so it is on the /local/v1 tree.
+        localGroup.MapPost("/u/{handle}/votes/{**pollIri}", LocalPollVoteHandler).WithName("local-poll-vote-endpoint");
+
         return endpoints;
     }
 
@@ -1478,6 +1485,228 @@ public static class ActivityPubServerExtensions
 
         return Results.NoContent();
     }
+
+    /// <summary>
+    /// Records a local poll vote. The requesting actor is identified by Basic auth or cookie auth;
+    /// the poll is the <c>{**pollIri}</c> catch-all route value (the stored Question object's IRI).
+    /// The body is <c>{"option": &lt;index&gt;}</c>. The handler fetches the stored object, verifies
+    /// it is a poll (has a <c>poll</c> extension or <c>options</c> array), checks it is not expired,
+    /// records the voter in the poll's <c>voters</c> array, increments the option's vote count, and
+    /// stores the updated object. Returns 200 with the updated poll data, or 404/400/409 on failure.
+    /// </summary>
+    private static async Task<IResult> LocalPollVoteHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate (Basic auth or cookie auth — same pattern as LocalMuteHandler).
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the poll IRI from the catch-all route value.
+        const string pollRouteKey = "pollIri";
+        if (context.Request.RouteValues[pollRouteKey] is not string pollValue
+            || string.IsNullOrWhiteSpace(pollValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(pollValue, out var pollIri))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Read the option index from the JSON body.
+        var body = await JsonSerializer.DeserializeAsync<PollVoteRequest>(context.Request.Body).ConfigureAwait(false);
+        if (body is null || body.Option < 0)
+        {
+            return Results.BadRequest();
+        }
+
+        // 4. Fetch the stored object.
+        if (!await persistence.Objects.TryGetObjectAsync(pollIri, out var stored, ct).ConfigureAwait(false)
+            || stored is null)
+        {
+            return Results.NotFound();
+        }
+
+        // 5. Parse the poll data to verify it is a poll and check expiry.
+        var pollData = stored.GetPollData();
+        if (pollData is null)
+        {
+            return Results.BadRequest();
+        }
+
+        if (pollData.Expired)
+        {
+            return Results.Conflict();
+        }
+
+        if (body.Option >= pollData.Options.Count)
+        {
+            return Results.BadRequest();
+        }
+
+        // 6. Check if the voter has already voted (idempotency: re-voting is a no-op).
+        var extensionData = stored.ExtensionData ?? new Dictionary<string, JsonElement>();
+        var voters = new List<string>();
+        if (extensionData.TryGetValue("poll", out var pollExt)
+            && pollExt.ValueKind == JsonValueKind.Object
+            && pollExt.TryGetProperty("voters", out var votersEl)
+            && votersEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var v in votersEl.EnumerateArray())
+            {
+                voters.Add(v.GetString() ?? "");
+            }
+        }
+
+        if (voters.Contains(actorIri.Value))
+        {
+            // Already voted — return the current poll data (idempotent).
+            return Results.Json(SerializePollData(pollData));
+        }
+
+        // 7. Record the vote: add the voter to poll.voters and increment the option's vote count.
+        if (extensionData.TryGetValue("poll", out var pollObj)
+            && pollObj.ValueKind == JsonValueKind.Object
+            && pollObj.TryGetProperty("options", out var optionsEl)
+            && optionsEl.ValueKind == JsonValueKind.Array)
+        {
+            var optionArray = optionsEl.EnumerateArray().ToList();
+            if (body.Option < optionArray.Count)
+            {
+                var optEl = optionArray[body.Option];
+                if (optEl.ValueKind == JsonValueKind.Object)
+                {
+                    // Increment the vote count (Mastodon: votesCount; AS2: votes).
+                    if (optEl.TryGetProperty("votesCount", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votesCount", 1);
+                    }
+                    else if (optEl.TryGetProperty("votes", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votes", 1);
+                    }
+
+                    optionArray[body.Option] = optEl;
+                }
+            }
+
+            // Rebuild the poll extension with the updated options and voters.
+            var updatedVoters = new List<string>(voters) { actorIri.Value };
+            var pollJson = JsonSerializer.SerializeToElement(new
+            {
+                options = optionArray,
+                voters = updatedVoters,
+                expired = pollData.Expired,
+                multiple = pollData.Multiple,
+                totalVotes = pollData.TotalVotes + 1,
+                endsAt = pollData.EndsAt,
+            });
+            extensionData["poll"] = pollJson;
+        }
+        else if (extensionData.TryGetValue("options", out var as2Options)
+            && as2Options.ValueKind == JsonValueKind.Array)
+        {
+            // AS2/Pleroma shape: options directly in ExtensionData.
+            var optionArray = as2Options.EnumerateArray().ToList();
+            if (body.Option < optionArray.Count)
+            {
+                var optEl = optionArray[body.Option];
+                if (optEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (optEl.TryGetProperty("votes", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votes", 1);
+                    }
+                    else if (optEl.TryGetProperty("votesCount", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votesCount", 1);
+                    }
+
+                    optionArray[body.Option] = optEl;
+                }
+            }
+
+            extensionData["options"] = JsonSerializer.SerializeToElement(optionArray);
+            var as2Voters = new List<string>(voters) { actorIri.Value };
+            extensionData["voters"] = JsonSerializer.SerializeToElement(as2Voters);
+            extensionData["totalVotes"] = JsonSerializer.SerializeToElement(pollData.TotalVotes + 1);
+        }
+
+        stored.ExtensionData = extensionData;
+        await persistence.Objects.PutObjectAsync(stored, ct).ConfigureAwait(false);
+
+        // 8. Return the updated poll data.
+        var updatedPoll = stored.GetPollData();
+        return Results.Json(SerializePollData(updatedPoll ?? pollData));
+    }
+
+    /// <summary>
+    /// Increments a numeric property on a JSON object element by <paramref name="delta"/>.
+    /// </summary>
+    private static JsonElement IncrementJsonNumber(JsonElement obj, string property, int delta)
+    {
+        if (!obj.TryGetProperty(property, out var numEl))
+        {
+            return obj;
+        }
+
+        var current = numEl.TryGetInt32(out var v) ? v : 0;
+        var updated = current + delta;
+
+        var clone = obj.Clone();
+        var raw = JsonSerializer.SerializeToNode(obj);
+        if (raw is JsonNode node)
+        {
+            node[property] = updated;
+            return node.Deserialize<JsonElement>();
+        }
+
+        return obj;
+    }
+
+    /// <summary>
+    /// Serializes poll data to a JSON-serializable dictionary for the API response.
+    /// </summary>
+    private static Dictionary<string, object?> SerializePollData(PollData poll) => new()
+    {
+        ["options"] = poll.Options.Select(o => new { o.Title, o.Votes }).ToArray(),
+        ["totalVotes"] = poll.TotalVotes,
+        ["endsAt"] = poll.EndsAt,
+        ["expired"] = poll.Expired,
+        ["multiple"] = poll.Multiple,
+    };
+
+    /// <summary>
+    /// The JSON request body for a poll vote: the zero-based index of the selected option.
+    /// </summary>
+    private sealed record PollVoteRequest(int Option);
 
     /// <summary>
     /// Records (or removes) a local relay subscription (F-06). The requesting actor is identified by

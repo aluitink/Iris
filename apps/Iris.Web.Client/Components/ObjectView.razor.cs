@@ -15,6 +15,9 @@ public partial class ObjectView
     [Parameter]
     public IObjectOrLink? Item { get; set; }
 
+    [Microsoft.AspNetCore.Components.Inject]
+    private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
+
     private IObject? Obj => Item as IObject;
 
     private Iri? AuthorIri => (Obj as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
@@ -22,8 +25,12 @@ public partial class ObjectView
     private IReadOnlyList<Iri> MentionIris => Obj?.GetMentionIris() ?? [];
     private IReadOnlyList<(string Name, Iri? Href)> HashtagTags => Obj?.GetHashtagTags() ?? [];
     private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> EmojiTags => ResolveEmojiTags();
-    private PollData? Poll => ResolvePoll();
+    private PollData? Poll => _pollOverride ?? ResolvePoll();
     private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
+    private PollData? _pollOverride;
+    private bool _pollVoted;
+    private int _pollVotedOption = -1;
+    private bool _pollBusy;
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
@@ -362,4 +369,50 @@ public partial class ObjectView
     }
 
     private static string RelativeTime(DateTime utc) => TimeFormatting.Relative(utc);
+
+    private async Task VotePollAsync(int optionIndex)
+    {
+        if (_pollBusy || Poll is not { } poll || poll.Expired)
+        {
+            return;
+        }
+
+        if (Session.ActorId is not { } me || Session.LocalModeration is not { } local)
+        {
+            return;
+        }
+
+        var pollIri = (ActivityEmbeddedObject ?? Obj)?.Id;
+        if (pollIri is null || !Iri.TryParse(pollIri, out var iri))
+        {
+            return;
+        }
+
+        _pollBusy = true;
+        try
+        {
+            var result = await local.VoteAsync(me, iri, optionIndex);
+            if (result.IsSuccess)
+            {
+                _pollVoted = true;
+                _pollVotedOption = optionIndex;
+                var updated = Iris.Core.Identity.IriExtensions.GetPollDataFromJson(result.Body);
+                if (updated is not null)
+                {
+                    _pollOverride = updated;
+                }
+                else
+                {
+                    var options = poll.Options.Select((o, i) =>
+                        i == optionIndex ? new PollOption(o.Title, o.Votes + 1) : o).ToList();
+                    _pollOverride = new PollData(options, poll.TotalVotes + 1, poll.EndsAt, poll.Expired, poll.Multiple);
+                }
+            }
+        }
+        finally
+        {
+            _pollBusy = false;
+            StateHasChanged();
+        }
+    }
 }
