@@ -70,6 +70,14 @@ public static class ActivityPubServerExtensions
 
         services.Configure(configure);
 
+        // Fail fast at host start when a configured option is malformed (a relative or non-http(s)
+        // BaseUri / InstanceActorId / SharedInboxIri) instead of surfacing later as a runtime 500 or a
+        // silently-misrouted federation request (Phase 83.2). Null options are allowed (a host may
+        // configure a subset); the validator only rejects a present-but-malformed value.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<ActivityPubServerOptions>, ActivityPubServerOptionsValidator>());
+        services.AddOptions<ActivityPubServerOptions>().ValidateOnStart();
+
         // Mute is an Iris-specific activity (there is no ActivityStreams Mute type), so the ActivityStreams
         // library does not know it: its ObjectConverter would serialize a MuteActivity as a generic object
         // (dropping the @context and type) and deserialize an inbound "type": "Mute" to a plain Object.
@@ -551,6 +559,9 @@ public static class ActivityPubServerExtensions
         // IEnumerable<IHealthCheck> at the GET /ap/v1/health endpoint.
         services.AddSingleton<IHealthCheck, PersistenceHealthCheck>();
         services.AddSingleton<IHealthCheck, DeliveryWorkerHealthCheck>();
+        // 83.2: federation observability — the resolvable-actor count (stored actors with a resolvable
+        // signing identity) + the delivery dead-letter count, surfaced on GET /ap/v1/health.
+        services.AddSingleton<IHealthCheck, InstanceObservabilityHealthCheck>();
 
         // 30.2: readiness gate. Ready once the instance actor's signing key is registered + resolvable
         // (a freshly-started instance is not ready until its key material is loaded). The GET /ap/v1/ready
