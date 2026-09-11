@@ -800,6 +800,81 @@ public static class IriExtensions
         return list;
     }
 
+    /// <summary>
+    /// Resolves the self-contained media IRI of an object whose body IS the media (F-11 / PeerTube
+    /// interop). A PeerTube post is a single <c>Video</c> (or <c>Audio</c>/<c>Image</c>) object whose
+    /// <c>url</c> points at the media file itself — unlike an Iris/Mastodon note that carries media as
+    /// <c>attachment</c> entries. This returns the object's own <c>url</c> IRI (via
+    /// <see cref="IObject.Url"/> or the <c>url</c> extension) so a renderer can emit a media player.
+    /// </summary>
+    /// <param name="obj">The object to inspect. May be null.</param>
+    /// <returns>
+    /// The object's own media IRI when the object is a media type (<c>Video</c>, <c>Audio</c>, or
+    /// <c>Image</c>) that carries a <c>url</c>; otherwise null (the object's media, if any, is in its
+    /// <c>attachment</c> entries and is handled by <see cref="GetRichAttachments"/>).
+    /// </returns>
+    public static Iri? GetSelfMediaIri(this IObject? obj)
+    {
+        if (obj is not ActivityObject { Url: { } urls })
+        {
+            // Fall back to the `url` extension (a bare string or array) when the typed property is unset.
+            if (obj?.ExtensionData is { } ext && ext.TryGetValue("url", out var urlEl))
+            {
+                var iri = ResolveBareUrlIri(urlEl);
+                if (iri is not null && IsSelfMediaType(obj))
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+
+        if (!IsSelfMediaType(obj))
+        {
+            return null;
+        }
+
+        var first = urls.FirstOrDefault();
+        return first is ILink { Href: { } href } ? new Iri(href)
+            : first is IObject urlObj ? ResolveAttachmentUrlIri(urlObj)
+            : null;
+    }
+
+    private static bool IsSelfMediaType(IObject obj)
+    {
+        var types = obj.Type?.ToList();
+        if (types is null)
+        {
+            return false;
+        }
+
+        return types.Any(t => string.Equals(t, "Video", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "Audio", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "Image", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Iri? ResolveBareUrlIri(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String
+            && element.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+        {
+            return iri;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            var first = element.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind == JsonValueKind.String
+                && first.GetString() is { Length: > 0 } arrStr && Iri.TryParse(arrStr, out var arrIri))
+            {
+                return arrIri;
+            }
+        }
+
+        return null;
+    }
+
     private static Iri? ResolvePreviewIri(JsonElement element)
     {
         if (element.ValueKind == JsonValueKind.String

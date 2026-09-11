@@ -79,6 +79,28 @@ public partial class ObjectView
     private IReadOnlyList<RichAttachment> RichAttachments => Obj?.GetRichAttachments() ?? [];
 
     /// <summary>
+    /// The self-contained media IRI of an object whose body IS the media (a PeerTube <c>Video</c>/
+    /// <c>Audio</c>/<c>Image</c> object whose <c>url</c> points at the media file), rewritten
+    /// same-origin. Null when the object is not a self-contained media object (its media, if any, is in
+    /// <c>attachment</c> and is rendered by <see cref="MediaGallery"/>).
+    /// </summary>
+    private string? SelfMediaSrc
+    {
+        get
+        {
+            if (Obj?.GetSelfMediaIri() is not { } iri)
+            {
+                return null;
+            }
+
+            return RewriteMediaToSameOrigin(iri.Value);
+        }
+    }
+
+    private bool IsVideoObject => Obj is KristofferStrube.ActivityStreams.Video;
+    private bool IsAudioObject => Obj is KristofferStrube.ActivityStreams.Audio;
+
+    /// <summary>
     /// The media attachments of an activity's embedded object (the Note/Article a <c>Create</c> or
     /// <c>Announce</c> wraps), each rewritten same-origin. The home timeline and profile outbox render
     /// feed items as the wrapping activity (a <c>Create</c>), not the embedded Note, so the direct-object

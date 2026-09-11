@@ -358,6 +358,29 @@
                     }
                 </div>
             }
+            @if (SelfMediaSrc is { Length: > 0 } selfMedia)
+            {
+                <div class="media-player @(ObjectMediaBlurred ? "object-content--blurred" : "")">
+                    @if (IsAudioObject)
+                    {
+                        <audio controls preload="metadata" class="media-player-audio">
+                            <source src="@selfMedia" />
+                            Your browser does not support the audio tag.
+                        </audio>
+                    }
+                    else
+                    {
+                        <video controls preload="metadata" class="media-player-video">
+                            <source src="@selfMedia" />
+                            Your browser does not support the video tag.
+                        </video>
+                    }
+                    @if (Name is { Length: > 0 } selfMediaName)
+                    {
+                        <div class="media-player-label">@selfMediaName</div>
+                    }
+                </div>
+            }
             <MediaGallery Attachments="RichAttachments" Blurred="@ObjectMediaBlurred" />
             @if (Poll is { } poll)
             {
