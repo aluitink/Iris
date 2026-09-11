@@ -28,7 +28,13 @@ RUN dotnet restore apps/Iris.Web/Iris.Web.csproj && dotnet restore apps/Iris.Web
 # Copy the full source tree and publish. UseAppHost=false -> a portable apphost-less DLL (the runtime
 # stage's shared framework provides the host), matching the sample Dockerfiles.
 COPY . .
-RUN dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
+# The context copies the repo's (gitignored) bin/ + obj/ + the stale Client publish/ output + the
+# stale wwwroot/_framework. Left in place, the BuildAndCopyClient target (Iris.Web.csproj) sees its
+# Outputs (wwwroot/_framework/blazor.webassembly.js) already present and SKIPS the WASM publish, then
+# copies the OLD _framework — so the new UI code never reaches the browser. Remove the Client's stale
+# publish/ (and intermediates) so the MSBuild Publish target runs and regenerates the WASM from the
+# (new) source; the BuildAndCopyClient target then copies the fresh _framework.
+RUN rm -rf apps/Iris.Web.Client/obj apps/Iris.Web.Client/bin apps/Iris.Web.Client/publish apps/Iris.Web/obj apps/Iris.Web/bin && dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 # Create a non-root user to run the app (50.1 security hardening). The Data Protection keys

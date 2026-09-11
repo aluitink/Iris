@@ -58,6 +58,10 @@ public static class ComposeNote
     /// The optional audience link(s) (e.g. the public <c>as:Public</c> address). When null or empty the
     /// note carries no explicit <c>to</c>.
     /// </param>
+    /// <param name="cc">
+    /// The optional cc'd audience link(s) (e.g. the author's followers collection and/or the public
+    /// address). When null or empty the note carries no explicit <c>cc</c>.
+    /// </param>
     /// <param name="media">
     /// The uploaded media files to attach (73.2 — multiple, mixed media per post), when any were
     /// uploaded. Each entry becomes a single <c>attachment</c> whose <c>url</c> (and mirroring
@@ -100,6 +104,7 @@ public static class ComposeNote
         bool sensitive = false,
         string? summary = null,
         IEnumerable<Iri>? to = null,
+        IEnumerable<Iri>? cc = null,
         IEnumerable<MediaAttachment>? media = null,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<string>? hashtags = null,
@@ -155,6 +160,20 @@ public static class ComposeNote
             if (audience.Count > 0)
             {
                 note.To = audience;
+            }
+        }
+
+        // cc (73.3): the secondary audience (the author's followers and/or the public). Written via
+        // ExtensionData (Rule 6) since the library has no `cc` property; serialized verbatim on the
+        // wire so a remote client's visibility logic (public in cc ⇒ public; else followers-only)
+        // resolves it.
+        if (cc is not null)
+        {
+            var ccIris = cc.Where(i => i != default).Select(i => i.Value).ToList();
+            if (ccIris.Count > 0)
+            {
+                note.ExtensionData ??= new Dictionary<string, JsonElement>();
+                note.ExtensionData["cc"] = JsonSerializer.SerializeToElement(ccIris);
             }
         }
 

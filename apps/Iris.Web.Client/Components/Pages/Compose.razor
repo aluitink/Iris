@@ -105,6 +105,14 @@
                 <option value="Article">Article (long-form)</option>
                 <option value="Poll">Poll</option>
             </select>
+            @if (CommunityIri is null)
+            {
+                <select class="compose-visibility-select" @bind="Visibility" disabled="@Busy">
+                    <option value="public">Public</option>
+                    <option value="followers">Followers</option>
+                    <option value="direct">Direct</option>
+                </select>
+            }
         }
         @if (ReplyToIri is null && CommunityIri is null)
         {
@@ -865,6 +873,14 @@
     /// </summary>
     private string SensitiveSummary { get; set; } = string.Empty;
 
+    /// <summary>
+    /// The chosen audience / visibility for new posts (73.3) — <c>"public"</c> (the public timeline),
+    /// <c>"followers"</c> (the actor's followers only), or <c>"direct"</c> (the actor's followers + the
+    /// mentioned actors, a private message). Ignored for replies (which stay public) and community posts
+    /// (whose audience is the community's own, set by the community path).
+    /// </summary>
+    private string Visibility { get; set; } = "public";
+
     private const int MaxChars = 500;
 
     // --- Poll authoring (73.1) ---
@@ -1114,6 +1130,11 @@
             // hashtag lands on the instance's search results for that tag).
             Func<string, string?> hashtagHref = name => $"{new Uri(actorId.Value).GetLeftPart(UriPartial.Authority)}/search?q={Uri.EscapeDataString(name)}";
 
+            // 73.3: the audience the chosen visibility maps to (public / followers / direct). Replies and
+            // community posts ignore this (a reply stays public; a community post's audience is the
+            // community's own, set by the community path below).
+            var audience = BuildAudience(actorId, mentionArg);
+
             DeliveryResult result;
             if (ReplyToIri is { } parent)
             {
@@ -1125,11 +1146,11 @@
             }
             else if (ContentType == "Poll")
             {
-                result = await PostPollAsync(client, actorId, mentionArg, hashtagArg, hashtagHref);
+                result = await PostPollAsync(client, actorId, mentionArg, hashtagArg, hashtagHref, audience);
             }
             else if (ContentType == "Article")
             {
-                result = await PostArticleAsync(client, actorId, media, mentionArg, hashtagArg);
+                result = await PostArticleAsync(client, actorId, media, mentionArg, hashtagArg, audience);
             }
             else
             {
@@ -1138,7 +1159,8 @@
                     Content.Trim(),
                     sensitive: IsSensitive,
                     summary: SensitiveSummary,
-                    to: [AsPublic],
+                    to: audience.To,
+                    cc: audience.Cc,
                     media: media.Count > 0 ? media : null,
                     mentions: mentionArg,
                     hashtags: hashtagArg,
@@ -1177,6 +1199,51 @@
     }
 
     /// <summary>
+    /// The audience (73.3) a chosen visibility maps to: the note's <c>to</c> link(s) and its <c>cc</c>
+    /// link(s). The remote-visibility convention (ActivityPub §5.1.2, Mastodon's public-in-cc test):
+    /// public posts put the public address in <c>cc</c> (so they appear on the public timeline),
+    /// followers-only posts put only the author's followers in <c>cc</c> (no public), and direct posts
+    /// put the author's followers + the mentioned actors in <c>to</c> (a private message, no public).
+    /// </summary>
+    private sealed record PostAudience(IReadOnlyList<Iri> To, IReadOnlyList<Iri> Cc)
+    {
+        /// <summary>
+        /// The <c>to</c> links for the note (empty for public / followers posts; the mentioned actors for
+        /// direct posts).
+        /// </summary>
+        public IReadOnlyList<Link> ToLinks => To.Select(i => (Link)new Link { Href = i.Uri }).ToList();
+
+        /// <summary>
+        /// The <c>cc</c> links for the note (public → the public address; followers → the author's
+        /// followers; direct → the author's followers; empty is never produced).
+        /// </summary>
+        public IReadOnlyList<Link> CcLinks => Cc.Select(i => (Link)new Link { Href = i.Uri }).ToList();
+    }
+
+    /// <summary>
+    /// Maps the chosen <see cref="Visibility"/> (73.3) to its <see cref="PostAudience"/>. Public:
+    /// <c>to</c> = public, <c>cc</c> = the author's followers. Followers: <c>to</c> = the author's
+    /// followers, <c>cc</c> = the author's followers (the public is NOT cc'd, so the post is not public).
+    /// Direct: <c>to</c> = the author's followers + the mentioned actors, <c>cc</c> = the author's
+    /// followers. A blank/unknown visibility falls back to public (the historical behavior).
+    /// </summary>
+    private PostAudience BuildAudience(Iri actorId, List<Iri>? mentions)
+    {
+        var followers = actorId.FollowersOf();
+        return Visibility switch
+        {
+            "followers" => new PostAudience([followers], [followers]),
+            "direct" => new PostAudience(
+                new List<Iri> { followers }
+                    .Concat(mentions is null ? [] : mentions)
+                    .Distinct()
+                    .ToList(),
+                [followers]),
+            _ => new PostAudience([AsPublic], [followers]),
+        };
+    }
+
+    /// <summary>
     /// Posts a note to a community: the note's <c>attributedTo</c> carries both the author and the
     /// community, and its <c>to</c> is the community's followers collection + the public. The
     /// receiving server's <c>Create</c> handler records the post in the community's members' outboxes
@@ -1211,15 +1278,21 @@
         return await client.PostNoteAsync(actorId, note);
     }
 
-    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null)
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, PostAudience? audience = null)
     {
         var article = new Article
         {
             AttributedTo = [new Link { Href = new Uri(actorId.Value) }],
-            To = [new Link { Href = new Uri(AsPublic.Value) }],
+            To = audience?.ToLinks ?? [new Link { Href = new Uri(AsPublic.Value) }],
             Content = [Content.Trim()],
             Published = DateTime.UtcNow
         };
+
+        if (audience is { CcLinks.Count: > 0 })
+        {
+            article.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            article.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(audience.CcLinks.Select(l => l.Href?.AbsoluteUri ?? string.Empty).ToList());
+        }
 
         if (media.Count > 0)
         {
@@ -1296,7 +1369,8 @@
         Iri actorId,
         List<Iri>? mentions,
         List<string>? hashtags,
-        Func<string, string?> hashtagHref)
+        Func<string, string?> hashtagHref,
+        PostAudience? audience = null)
     {
         var options = GetValidPollOptions();
         if (options is null)
@@ -1317,7 +1391,8 @@
             options,
             endsAt: endsAt,
             multiple: PollMultiple,
-            to: [AsPublic],
+            to: audience?.To,
+            cc: audience?.Cc,
             mentions: pollMentions.Count > 0 ? pollMentions : null,
             hashtags: pollHashtags.Count > 0 ? pollHashtags : null,
             hashtagHrefFactory: hashtagHref);

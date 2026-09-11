@@ -996,6 +996,150 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> PostQuestionAsync(
+        Iri actorId,
+        string content,
+        IEnumerable<string> options,
+        DateTime? endsAt = null,
+        bool multiple = false,
+        IEnumerable<Iri>? to = null,
+        IEnumerable<Iri>? cc = null,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<string>? hashtags = null,
+        Func<string, string?>? hashtagHrefFactory = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var optionNames = options
+            .Where(o => !string.IsNullOrWhiteSpace(o))
+            .Select(o => o.Trim())
+            .ToList();
+
+        if (optionNames.Count < 2)
+        {
+            throw new ArgumentException("A poll requires at least two non-empty options.", nameof(options));
+        }
+
+        // F-26 outbound: the embedded object is an AS2.0 `Question` — a generic ActivityStreams object
+        // of type Question (the library has no concrete Question class) carrying the poll in a
+        // top-level `poll` object in ExtensionData (the Mastodon extension shape: `options` of
+        // `{title, votesCount}`, `endsAt`, `expired`, `multiple`, `totalVotes`). This is exactly the
+        // shape IriExtensions.GetPollData's Mastodon branch (ParsePollFromExtension) parses back, so
+        // an Iris-created poll round-trips through the same parser and renders via ObjectView's poll
+        // UI. The `poll` object is the single reliable round-trip form: the library's deserializer
+        // drops individual `endTime`/`closed` keys from ExtensionData on `IObject` (a JsonElement
+        // property survives intact, which is why the nested `poll` object is the safe carrier).
+        var question = new KristofferStrube.ActivityStreams.Object
+        {
+            Type = ["Question"],
+            Content = [content],
+            AttributedTo = [new Link { Href = actorId.Uri }],
+        };
+
+        // The poll is serialized as a RAW JSON string and parsed into a single element — NOT by
+        // serializing ActivityStreams objects directly (SerializeToElement of a runtime
+        // ActivityStreams type would inject a @context into each option, polluting the wire). This
+        // mirrors how ParsePollFromExtension reads the fields back (options: [{title, votesCount}],
+        // endsAt: an ISO-8601 string, expired/multiple: booleans, totalVotes: number).
+        var optionsJson = string.Join(
+            ",",
+            optionNames.Select(name => $"{{\"title\":{System.Text.Json.JsonSerializer.Serialize(name)},\"votesCount\":0}}"));
+
+        var endsAtJson = endsAt is { } end
+            ? $",\"endsAt\":{System.Text.Json.JsonSerializer.Serialize(end.ToUniversalTime().ToString("O"))}"
+            : string.Empty;
+
+        var pollJson =
+            $"{{\"options\":[{optionsJson}],\"expired\":false,\"multiple\":{(multiple ? "true" : "false")},\"totalVotes\":0{endsAtJson}}}";
+
+        question.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["poll"] = System.Text.Json.JsonDocument.Parse(pollJson).RootElement.Clone(),
+        };
+
+        // Audience (mirrors PostReplyAsync / ComposeNote.Build).
+        if (to is not null)
+        {
+            var audience = to.Where(i => i != default).Select(i => new Link { Href = i.Uri }).ToList();
+            if (audience.Count > 0)
+            {
+                question.To = audience;
+            }
+        }
+
+        // cc (73.3): the secondary audience (the author's followers and/or the public). Written via
+        // ExtensionData (the library has no `cc` property); serialized verbatim on the wire.
+        if (cc is not null)
+        {
+            var ccIris = cc.Where(i => i != default).Select(i => i.Value).ToList();
+            if (ccIris.Count > 0)
+            {
+                question.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                question.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(ccIris);
+            }
+        }
+
+        // Mention + hashtag tags (the AP convention), combined into a single `tag` array.
+        var tags = new List<IObjectOrLink>();
+        if (mentions is not null)
+        {
+            foreach (var mentionIri in mentions.Where(i => i != default))
+            {
+                tags.Add(new Mention { Href = mentionIri.Uri });
+            }
+        }
+
+        if (hashtags is not null)
+        {
+            var baseOrigin = actorId.Uri.GetLeftPart(UriPartial.Authority);
+            foreach (var rawName in hashtags)
+            {
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                var hashtag = new KristofferStrube.ActivityStreams.Object
+                {
+                    Type = ["Hashtag"],
+                    Name = [rawName],
+                };
+                var href = hashtagHrefFactory is { } factory ? factory(rawName) : null;
+                if (href is { Length: > 0 } && Iri.TryParse(href, out _))
+                {
+                    hashtag.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    hashtag.ExtensionData["href"] = System.Text.Json.JsonSerializer.SerializeToElement(href);
+                }
+                else
+                {
+                    hashtag.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["href"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                            $"{baseOrigin}/search?q={Uri.EscapeDataString(rawName)}")
+                    };
+                }
+                tags.Add(hashtag);
+            }
+        }
+
+        if (tags.Count > 0)
+        {
+            question.Tag = tags;
+        }
+
+        // Decision 055: the client sends only the Create's shape (actor + the embedded Question); the
+        // server mints the Create's id and the question's id (unguessable ULIDs) and returns the
+        // created Create in the 2xx body. Published to the author's OWN outbox.
+        var create = new Create
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [question],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), create, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);

@@ -276,6 +276,46 @@ public static class IrisDocumentExtensions
         => GetBool(document, namespaceIri + IrisExtensionTerms.IsShared);
 
     /// <summary>
+    /// Reads the <c>iris:likeActivityIri</c> extension property from a content object (including a nested
+    /// object in a collection item), returning the IRI of the <see cref="KristofferStrube.ActivityStreams.Like"/>
+    /// activity the <em>requesting</em> user issued against the object (72.2). Present only when the
+    /// requester currently has a (net) like on the object (the <c>isLiked</c> edge stands). This is the
+    /// minted activity id an unlike (an <c>Undo</c>) references: with it, a client un-likes by referencing
+    /// the IRI directly instead of walking the object's <c>/likes</c> collection to recover it. Returns
+    /// <see langword="null"/> when the property is absent (the request was anonymous, or the requester has
+    /// not liked the object).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The requester's minted Like activity IRI, or <see langword="null"/> when absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetLikeActivityIri(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + IrisExtensionTerms.LikeActivityIri);
+
+    /// <summary>
+    /// Reads the <c>iris:announceActivityIri</c> extension property from a content object (including a
+    /// nested object in a collection item), returning the IRI of the <see cref="KristofferStrube.ActivityStreams.Announce"/>
+    /// activity the <em>requesting</em> user issued against the object (72.2). Present only when the
+    /// requester currently has a (net) boost on the object (the <c>isShared</c> edge stands). This is the
+    /// minted activity id an un-boost (an <c>Undo</c>) references: with it, a client un-boosts by
+    /// referencing the IRI directly instead of walking the object's <c>/shares</c> collection to recover
+    /// it. Returns <see langword="null"/> when the property is absent (the request was anonymous, or the
+    /// requester has not boosted the object).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The requester's minted Announce activity IRI, or <see langword="null"/> when absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetAnnounceActivityIri(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + IrisExtensionTerms.AnnounceActivityIri);
+
+    /// <summary>
     /// Reads the <c>manuallyApprovesFollowers</c> gate state from a person (actor) document, returning
     /// <see langword="true"/> when the gate is set (inbound follows require manual approval),
     /// <see langword="false"/> when the term is present but not <c>true</c> (disabled), and

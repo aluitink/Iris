@@ -358,6 +358,105 @@ public class ActivityPubClientTests
         Assert.Equal(400, result.StatusCode);
     }
 
+    // --- PostQuestionAsync (73.1): the client's one-call "create a poll" ----------------
+
+    [Fact]
+    public async Task PostQuestionAsync_BuildsAs2Question_ThatRoundTripsThroughGetPollData()
+    {
+        // A fresh response per call: DeliverAsync disposes the response it receives.
+        var fake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var author = new Iri("https://a.domain.local/u/alice");
+        var publicIri = new Iri("https://www.w3.org/ns/activitystreams#Public");
+        var endsAt = new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc);
+        var result = await client.PostQuestionAsync(
+            author,
+            "Who wins?",
+            options: ["Option A", "Option B"],
+            endsAt: endsAt,
+            multiple: true,
+            to: [publicIri]);
+
+        Assert.Equal(202, result.StatusCode);
+        // The poll is published to the author's OWN outbox (the "local post" path).
+        Assert.Equal("https://a.domain.local/u/alice/outbox", fake.LastUri!.ToString());
+        Assert.Equal(ActivityJson.ActivityJsonContentType, fake.LastRequest!.Content!.Headers.ContentType!.MediaType);
+
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        Assert.Equal("Create", root.GetProperty("type").GetString());
+        Assert.Equal(author.Value, root.GetProperty("actor").GetString());
+
+        // The embedded object is an AS2.0 Question carrying the poll in a top-level `poll` object.
+        var question = root.GetProperty("object");
+        // A generic Object's multi-valued slots (type, attributedTo, to) serialize as single-element
+        // arrays (the AS multi-value form); content is a plain string. FirstValue normalizes both.
+        Assert.Equal("Question", FirstValue(question.GetProperty("type")));
+        Assert.Equal("Who wins?", FirstValue(question.GetProperty("content")));
+        Assert.Equal(author.Value, FirstValue(question.GetProperty("attributedTo")));
+        Assert.Equal(publicIri.Value, FirstValue(question.GetProperty("to")));
+
+        // Round-trip: deserialize the embedded object into an IObject and parse it with the same
+        // GetPollData the feed uses — it must come back as a 2-option poll with the right endsAt +
+        // multiple flag (votes are zero on a fresh poll).
+        var questionRaw = question.GetRawText();
+        var embedded = ActivityJson.Deserialize<IObject>(questionRaw)!;
+        var poll = embedded.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(2, poll!.Options.Count);
+        Assert.Equal("Option A", poll.Options[0].Title);
+        Assert.Equal(0, poll.Options[0].Votes);
+        Assert.Equal("Option B", poll.Options[1].Title);
+        Assert.Equal(0, poll.Options[1].Votes);
+        Assert.Equal(0, poll.TotalVotes);
+        Assert.False(poll.Expired);
+        Assert.True(poll.Multiple);
+        Assert.True(questionRaw.Contains("endsAt"), "embedded question must carry endsAt. Got: " + questionRaw);
+        Assert.Equal(endsAt, poll.EndsAt);
+    }
+
+    [Fact]
+    public async Task PostQuestionAsync_SetsCc_WhenCcProvided()
+    {
+        // 73.3: a followers-only / direct poll cc's the author's followers (and, for direct, the
+        // mentioned actors). The `cc` must serialize verbatim on the wire (written via ExtensionData,
+        // the library has no `cc` property).
+        var fake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var author = new Iri("https://a.domain.local/u/alice");
+        var followers = new Iri("https://a.domain.local/u/alice/followers");
+        var result = await client.PostQuestionAsync(
+            author,
+            "Followers-only poll?",
+            options: ["Yes", "No"],
+            to: [followers],
+            cc: [followers]);
+
+        Assert.Equal(202, result.StatusCode);
+        var body = Encoding.UTF8.GetString(fake.LastBody);
+        using var doc = System.Text.Json.JsonDocument.Parse(body);
+        var question = doc.RootElement.GetProperty("object");
+        Assert.Equal(followers.Value, FirstValue(question.GetProperty("to")));
+        Assert.True(question.TryGetProperty("cc", out var cc));
+        Assert.Equal(followers.Value, FirstValue(cc));
+    }
+
+    [Fact]
+    public async Task PostQuestionAsync_FewerThanTwoOptions_Throws()
+    {
+        var fake = new FakeHttpHandler(_ => new HttpResponseMessage(HttpStatusCode.Accepted));
+        var client = new ActivityPubClient(new HttpClient(fake));
+
+        var author = new Iri("https://a.domain.local/u/alice");
+        // A poll requires at least two non-empty options; one is rejected client-side.
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            client.PostQuestionAsync(author, "Who wins?", options: ["Only one"]));
+    }
+
     // --- UpdateActorAsync (37.2): the client's one-call "edit profile" --------------------
 
     [Fact]
@@ -404,4 +503,15 @@ public class ActivityPubClientTests
         Assert.Equal(400, result.StatusCode);
         Assert.False(result.IsSuccess);
     }
+
+    /// <summary>
+    /// Returns the first value of an ActivityStreams element whether it serializes as a single string
+    /// (the concrete-type form) or a single-element array (the generic-Object multi-value form) —
+    /// used to assert multi-valued slots (type, attributedTo, to) without depending on the exact
+    /// serialization shape.
+    /// </summary>
+    private static string FirstValue(System.Text.Json.JsonElement element)
+        => element.ValueKind is System.Text.Json.JsonValueKind.Array
+            ? element[0].GetString()!
+            : element.GetString()!;
 }

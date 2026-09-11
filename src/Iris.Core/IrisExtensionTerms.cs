@@ -118,4 +118,32 @@ public static class IrisExtensionTerms
     /// key is <c>{NamespaceIri}repliedCount</c>.
     /// </summary>
     public const string RepliedCount = "repliedCount";
+
+    /// <summary>
+    /// The <c>likeActivityIri</c> extension (72.2): the IRI of the <see cref="KristofferStrube.ActivityStreams.Like"/>
+    /// activity the <em>requesting</em> user issued against the object, rendered on the object's document
+    /// (including nested objects in collection items) <em>only when</em> the requester currently has a (net)
+    /// like on it (the <c>isLiked</c> edge stands). This is the minted activity id an unlike (an
+    /// <c>Undo</c>) references: with it, a client can un-like by referencing the IRI directly instead of
+    /// walking the object's <c>/likes</c> collection to recover it. Per-requester, read-time state (like
+    /// <c>isLiked</c> / <c>isShared</c>) — the object document is served to each requester with their own
+    /// value, so it is only ever added to a serving-time deep copy, never stored. Absent (omitted) when the
+    /// request is unauthenticated or the requester has not liked the object. The full wire key is
+    /// <c>{NamespaceIri}likeActivityIri</c>.
+    /// </summary>
+    public const string LikeActivityIri = "likeActivityIri";
+
+    /// <summary>
+    /// The <c>announceActivityIri</c> extension (72.2): the IRI of the <see cref="KristofferStrube.ActivityStreams.Announce"/>
+    /// activity the <em>requesting</em> user issued against the object, rendered on the object's document
+    /// (including nested objects in collection items) <em>only when</em> the requester currently has a (net)
+    /// boost on it (the <c>isShared</c> edge stands). This is the minted activity id an un-boost (an
+    /// <c>Undo</c>) references: with it, a client can un-boost by referencing the IRI directly instead of
+    /// walking the object's <c>/shares</c> collection to recover it. Per-requester, read-time state (like
+    /// <c>isLiked</c> / <c>isShared</c>) — the object document is served to each requester with their own
+    /// value, so it is only ever added to a serving-time deep copy, never stored. Absent (omitted) when the
+    /// request is unauthenticated or the requester has not boosted the object. The full wire key is
+    /// <c>{NamespaceIri}announceActivityIri</c>.
+    /// </summary>
+    public const string AnnounceActivityIri = "announceActivityIri";
 }

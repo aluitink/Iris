@@ -729,6 +729,72 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> PostNoteAsync(Iri actorId, KristofferStrube.ActivityStreams.Note note, CancellationToken ct = default);
 
     /// <summary>
+    /// Posts a **poll** (an AS2.0 <c>Question</c> object) as <paramref name="actorId"/>: builds a
+    /// <see cref="Create"/> carrying an embedded <c>Question</c> whose <c>ExtensionData</c> carries a
+    /// top-level <c>poll</c> object (the Mastodon extension shape) whose <c>options</c> are the
+    /// <paramref name="options"/> (each <c>{title, votesCount: 0}</c>), plus the poll's <c>endsAt</c>,
+    /// <c>multiple</c>, <c>expired</c> (false), and <c>totalVotes</c> (0), then publishes it through the
+    /// signed pipeline to the actor's own outbox (F-26 outbound — the mirror of
+    /// <see cref="IriExtensions.GetPollData"/>'s Mastodon read shape, so an Iris-created poll renders
+    /// back through the same parser). This is the client's one-call "create a poll" (the caller
+    /// supplies the options, the end time, the multiple-answer flag, the audience, and any
+    /// mentions/hashtags — the <see cref="Create"/>, the embedded <c>Question</c>, and the delivery
+    /// target are all derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor authoring the poll (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="content">The poll's content/question text (plain text or HTML) — the
+    /// <c>Question</c>'s <c>content</c>.</param>
+    /// <param name="options">The poll options (the choice texts; at least two are required for a
+    /// meaningful poll). Each becomes a <c>poll.options</c> entry whose <c>title</c> is the text and
+    /// whose <c>votesCount</c> is zero (a fresh poll has no votes yet).</param>
+    /// <param name="endsAt">The poll's end time (UTC). When null the poll carries no
+    /// <c>endsAt</c> (an open-ended poll).</param>
+    /// <param name="multiple"><c>true</c> when voters may select more than one option (the
+    /// <c>multiple</c> term).</param>
+    /// <param name="to">Optional audience link(s) for the question (e.g. the public <c>as:Public</c>
+    /// address). When null the question carries no explicit <c>to</c>.</param>
+    /// <param name="cc">Optional cc'd audience link(s) (e.g. the author's followers collection and/or
+    /// the public address). When null the question carries no explicit <c>cc</c>.</param>
+    /// <param name="mentions">Optional IRIs of actors to <c>@mention</c> (each becomes a
+    /// <see cref="Mention"/> <c>tag</c> whose <c>href</c> is the actor IRI). When null/empty the
+    /// question carries no mention tags.</param>
+    /// <param name="hashtags">Optional hashtag names (each including the leading <c>#</c>, e.g.
+    /// <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c> <c>tag</c> entry. When
+    /// null/empty the question carries no hashtag tags.</param>
+    /// <param name="hashtagHrefFactory">
+    /// An optional factory that maps a hashtag name (e.g. <c>"#hello"</c>) to its browse/search URL
+    /// (the <c>href</c> of the <c>Hashtag</c> tag). When null, the <c>Hashtag</c> tags carry no
+    /// <c>href</c>. See <c>PostReplyAsync</c> for the convention.
+    /// </param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// Mirrors <c>PostNoteAsync</c> but the embedded object is a <c>Question</c> (a generic
+    /// ActivityStreams object of type <c>Question</c> — the library has no concrete <c>Question</c>
+    /// class) carrying a top-level <c>poll</c> object (the Mastodon extension shape) in
+    /// <c>ExtensionData</c>. The <c>poll</c> object is the single reliable round-trip form: the
+    /// library's deserializer drops individual <c>endTime</c>/<c>closed</c> keys from <c>ExtensionData</c>
+    /// on <c>IObject</c>, but a nested <c>JsonElement</c> property survives intact. The receiving
+    /// server's <c>Create</c> handler stores the embedded object (any object type is accepted), so a
+    /// poll round-trips: the object is later served and <see cref="IriExtensions.GetPollData"/> parses
+    /// it back into <c>PollData</c> for rendering. The <see cref="Create"/> is published to
+    /// <c>actorId.OutboxOf()</c> (the author's own outbox).
+    /// </remarks>
+    public Task<DeliveryResult> PostQuestionAsync(
+        Iri actorId,
+        string content,
+        IEnumerable<string> options,
+        DateTime? endsAt = null,
+        bool multiple = false,
+        IEnumerable<Iri>? to = null,
+        IEnumerable<Iri>? cc = null,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<string>? hashtags = null,
+        Func<string, string?>? hashtagHrefFactory = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
     /// builds a <see cref="Create"/> carrying an embedded <see cref="Note"/> whose <c>inReplyTo</c> is
     /// the parent note and whose <c>tag</c> carries an <see cref="Mention"/> per <c>@mention</c> in

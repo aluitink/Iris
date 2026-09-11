@@ -112,6 +112,35 @@ public class ComposeNoteTests
     }
 
     [Fact]
+    public void Build_SetsCc_VerbatimOnTheWire()
+    {
+        // 73.3: the `cc` (secondary audience — the author's followers / the public) is written via
+        // ExtensionData (the library has no `cc` property) and must serialize verbatim so a remote
+        // client's public-in-cc test resolves the visibility.
+        var followers = new Iri("https://a.domain.local/u/alice/followers");
+        var @public = new Iri("https://www.w3.org/ns/activitystreams#Public");
+        var note = ComposeNote.Build(Alice, "content", to: [followers], cc: [followers, @public]);
+
+        var json = ActivityJson.Serialize(note);
+        Assert.Contains("\"cc\"", json);
+
+        var parsed = JsonDocument.Parse(json);
+        var cc = parsed.RootElement.GetProperty("cc");
+        Assert.Equal(2, cc.GetArrayLength());
+        Assert.Equal(followers.Value, cc[0].GetString());
+        Assert.Equal(@public.Value, cc[1].GetString());
+    }
+
+    [Fact]
+    public void Build_OmitsCc_WhenCcNull()
+    {
+        var note = ComposeNote.Build(Alice, "content", cc: null);
+        var json = ActivityJson.Serialize(note);
+
+        Assert.DoesNotContain("\"cc\"", json);
+    }
+
+    [Fact]
     public void Build_SerializesSensitiveAndSummary_RoundTrip()
     {
         var note = ComposeNote.Build(Alice, "content", sensitive: true, summary: "Warning");

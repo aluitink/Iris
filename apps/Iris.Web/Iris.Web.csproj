@@ -5,11 +5,10 @@
     <RootNamespace>Iris.Web</RootNamespace>
     <IsPackable>false</IsPackable>
     <Description>
-      The Iris production server: ASP.NET Core host that serves the ActivityPub API
-      (Iris.Server), local auth (cookie), notification + session + admin endpoints.
-      The Blazor WebAssembly client (Iris.Web.Client) has been removed from the active
-      build (operator direction: the WASM app is not the project under development);
-      this host now serves the API surface only.
+      The Iris production social platform server: ASP.NET Core host that serves the ActivityPub API
+      (Iris.Server), local auth (cookie), notification + session + admin endpoints, and the static
+      files for the Blazor WebAssembly client (Iris.Web.Client). The UI runs entirely in the browser;
+      this process is the backend.
     </Description>
   </PropertyGroup>
 
@@ -23,12 +22,32 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
 
-  <!-- The Blazor WebAssembly client (Iris.Web.Client) is no longer part of the active build.
-       The BuildAndCopyClient / PatchWasmConfig targets that published + copied the client's
-       _framework output into this host's wwwroot were removed (operator direction: the WASM
-       app is not the project under development). The host now serves the API surface only. -->
+  <!-- Build the WASM client, then copy its _framework output + source wwwroot files (index.html,
+       css/, favicon.svg) into our wwwroot. This makes UseStaticFiles serve everything from a single
+       location (the server's wwwroot, which is copied to bin by the SDK). -->
+    <Target Name="BuildAndCopyClient" BeforeTargets="Build" Inputs="..\Iris.Web.Client\Iris.Web.Client.csproj" Outputs="wwwroot\_framework\blazor.webassembly.js;wwwroot\index.html">
+      <MSBuild Projects="..\Iris.Web.Client\Iris.Web.Client.csproj" Targets="Publish" Properties="Configuration=$(Configuration);PublishDir=..\Iris.Web.Client\publish\" Condition="!Exists('..\Iris.Web.Client\publish\wwwroot\_framework\blazor.webassembly.js')" />
+      <ItemGroup>
+        <!-- _framework publish output (trimmed via PublishTrimmed in Iris.Web.Client.csproj) -->
+        <_WasmFramework Include="..\Iris.Web.Client\publish\wwwroot\_framework\**\*" />
+        <!-- Source wwwroot files (index.html, css/, favicon.svg) — not in publish output due to static web assets -->
+        <_WasmWebRoot Include="..\Iris.Web.Client\wwwroot\**\*" Exclude="..\Iris.Web.Client\wwwroot\_framework\**" />
+      </ItemGroup>
+      <Copy SourceFiles="@(_WasmFramework)" DestinationFolder="wwwroot\_framework\%(RecursiveDir)" SkipUnchangedFiles="true" />
+      <Copy SourceFiles="@(_WasmWebRoot)" DestinationFolder="wwwroot\%(RecursiveDir)" SkipUnchangedFiles="true" />
+    </Target>
+  <!-- Patch the WASM config after the build (the dotnet.js is copied from the client's build
+       output during BuildAndCopyClient, which runs before Build). Set debugLevel to 0 and
+       globalizationMode to invariant so the runtime does not request .pdb or .dat files
+       (the server's static-file middleware cannot serve those extensions). -->
+  <Target Name="PatchWasmConfig" AfterTargets="Build" Condition="Exists('wwwroot/_framework/dotnet.js')">
+    <Exec Command="perl -0777 -pi -e 's/&quot;debugLevel&quot;: -1/&quot;debugLevel&quot;: 0/; s/&quot;mainAssemblyName&quot;: &quot;Iris.Web.Client&quot;/&quot;mainAssemblyName&quot;: &quot;Iris.Web.Client&quot;, &quot;globalizationMode&quot;: &quot;invariant&quot;/; s/&quot;icu&quot;: \[[^\]]*\],?//g' wwwroot/_framework/dotnet.js" />
+  </Target>
 
-
+  <!-- The UI (Blazor components, IActorSessionAccessor, NotificationService, UiContext) moved to
+       Iris.Web.Client (WASM); the server keeps only the auth surface in Accounts/
+       (ClaimsFactory, ActorClaims, ActorProvisioner, AdminBootstrapper, Login/Registration services,
+       PasswordHasher, LoginRateLimiter, HandleRules). -->
 
 
 

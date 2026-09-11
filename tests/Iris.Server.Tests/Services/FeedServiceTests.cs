@@ -962,6 +962,20 @@ public sealed class FeedServiceTests
         public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
+        public Task<DeliveryResult> PostQuestionAsync(
+            Iri actorId,
+            string content,
+            IEnumerable<string> options,
+            DateTime? endsAt = null,
+            bool multiple = false,
+            IEnumerable<Iri>? to = null,
+            IEnumerable<Iri>? cc = null,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<string>? hashtags = null,
+            Func<string, string?>? hashtagHrefFactory = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId,
             Iri parentIri,
