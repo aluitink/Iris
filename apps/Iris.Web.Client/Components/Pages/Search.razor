@@ -269,26 +269,11 @@ else
             actorIri = ParseWebFingerActorIri(webfingerBody);
         }
 
-        // 2. Federated search: query the remote instance's /search endpoint (through the home proxy).
+        // 2. Fetch the actor document directly (through the IActivityPubClient, which handles proxy
+        //    fallback for cross-origin reads). The remote instance's /search endpoint is unreliable
+        //    (Mastodon requires remote auth; other servers may not have it), so we skip it entirely
+        //    and rely on WebFinger + actor doc fetch for handle-form queries.
         List<IObjectOrLink>? remoteResults = null;
-        if (!ActorsOnly)
-        {
-            var searchUrl = $"https://{host}/search?q={Uri.EscapeDataString(query)}&limit=20&type=any";
-            var searchBody = await Session.ProxyGetAsync(
-                searchUrl,
-                "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"; q=0.9, application/json; q=0.8",
-                CancellationToken.None);
-
-            if (searchBody is not null)
-            {
-                remoteResults = await ParseFederatedSearchResultsAsync(searchBody);
-            }
-        }
-
-        // 3. If WebFinger resolved the actor but federated search returned nothing (or was skipped),
-        //    fetch the actor document directly (through the IActivityPubClient, which handles proxy
-        //    fallback for cross-origin reads).
-        if (remoteResults is null || remoteResults.Count == 0)
         {
             if (actorIri is { } resolvedIri && Client is { } client)
             {
@@ -403,102 +388,6 @@ else
                         return iri;
                     }
                 }
-            }
-
-            return null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Parses a federated search response. Mastodon's <c>GET /search</c> returns a JSON array of
-    /// objects (accounts, statuses, hashtags). Each account has an <c>url</c> field (the actor IRI).
-    /// This method fetches the actor documents for the first few accounts via the home proxy.
-    ///
-    /// For ActivityPub-native search endpoints (Iris itself), the response is an
-    /// <c>OrderedCollection</c> or <c>OrderedCollectionPage</c> with an <c>items</c> array.
-    /// </summary>
-    private async Task<List<IObjectOrLink>?> ParseFederatedSearchResultsAsync(string json)
-    {
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            // Case 1: ActivityPub collection (Iris, or an AP-native search endpoint).
-            if (root.TryGetProperty("type", out var typeEl)
-                && typeEl.ValueKind == JsonValueKind.String
-                && (typeEl.GetString() is "OrderedCollection" or "OrderedCollectionPage"))
-            {
-                JsonElement? items = null;
-                if (root.TryGetProperty("items", out var itemsEl) && itemsEl.ValueKind == JsonValueKind.Array)
-                {
-                    items = itemsEl;
-                }
-                else if (root.TryGetProperty("orderedItems", out var orderedEl) && orderedEl.ValueKind == JsonValueKind.Array)
-                {
-                    items = orderedEl;
-                }
-
-                if (items is { } itemsArr)
-                {
-                    var results = new List<IObjectOrLink>();
-                    foreach (var item in itemsArr.EnumerateArray())
-                    {
-                        var itemJson = item.GetRawText();
-                        var obj = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
-                        if (obj is not null)
-                        {
-                            results.Add(obj);
-                        }
-                    }
-
-                    return results.Count > 0 ? results : null;
-                }
-
-                return null;
-            }
-
-            // Case 2: Mastodon-style JSON array of {type, account, status, hashtag}.
-            if (root.ValueKind == JsonValueKind.Array)
-            {
-                var results = new List<IObjectOrLink>();
-                var actorIris = new List<string>();
-
-                foreach (var entry in root.EnumerateArray())
-                {
-                    var entryType = entry.TryGetProperty("type", out var t) ? t.GetString() : null;
-                    if (entryType is "account" && entry.TryGetProperty("account", out var acct))
-                    {
-                        var url = acct.TryGetProperty("url", out var u) ? u.GetString() : null;
-                        if (url is not null && !actorIris.Contains(url, StringComparer.OrdinalIgnoreCase))
-                        {
-                            actorIris.Add(url);
-                        }
-                    }
-                }
-
-                // Fetch the first few actor documents via the home proxy.
-                foreach (var actorUrl in actorIris.Take(5))
-                {
-                    var body = await Session.ProxyGetAsync(
-                        actorUrl,
-                        "application/activity+json, application/ld+json; profile=\"https://www.w3.org/ns/activitystreams\"; q=0.9, application/json; q=0.8",
-                        CancellationToken.None);
-                    if (body is not null)
-                    {
-                        var obj = ActivityJson.Deserialize<IObjectOrLink>(body);
-                        if (obj is not null)
-                        {
-                            results.Add(obj);
-                        }
-                    }
-                }
-
-                return results.Count > 0 ? results : null;
             }
 
             return null;
