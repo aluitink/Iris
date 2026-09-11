@@ -103,6 +103,11 @@ public static class ActivityPubServerExtensions
         // The signing key provider for the local actor (Phase 4 delivery signs with the actor's key).
         services.TryAddSingleton<IKeyProvider, InMemoryKeyProvider>();
 
+        // The local key-rotation lifecycle (Phase 84.2): rotates a local actor's signing key (mints a new
+        // key at the next free fragment, re-registers the actor→key binding, re-stamps the actor document's
+        // publicKey with a replaces pointer, keeps the old key for the overlap window, then retires it).
+        services.TryAddSingleton<Identity.KeyRotationService>();
+
         // The server-side id authority (decision 055): mints the collision-resistant, unguessable id
         // for every object/activity this instance creates (the outbox write path and the inbound
         // response paths). The authoring client sends the activity shape without an id; the server mints
