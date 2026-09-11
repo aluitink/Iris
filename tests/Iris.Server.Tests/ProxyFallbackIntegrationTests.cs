@@ -42,6 +42,7 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
     private readonly TestServer _a;
     private readonly TestServer _b;
+    private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
 
     private readonly Iri AliceActorIri;
@@ -51,6 +52,7 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     {
         var aPersistence = new InMemoryPersistenceProvider();
         var bPersistence = new InMemoryPersistenceProvider();
+        _aPersistence = aPersistence;
         _bPersistence = bPersistence;
 
         var aSeeded = TestSeeder.SeedPersonWithKey(aPersistence, AHost, Alice);
@@ -199,6 +201,36 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
     {
         var response = await ProxyGetAsync(BobActorIri, username: "mallory", password: Password);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    // --- 75.3: a proxied GET of a remote Note stores the object in the local store -------------
+    //
+    // The proxy-fallback (AP proxy) relays a remote GET verbatim. Since 75.3, when the relayed
+    // response is a successful GET of an ActivityPub JSON object (a Note, Article, etc.), the
+    // handler parses it, stores it in the local IObjectStore, and warms its cross-origin media
+    // attachments. This test seeds a Note in B's store, proxy-GETs it from A, and asserts the
+    // Note is now in A's store (the sync gap is closed).
+
+    [Fact]
+    public async Task Proxy_GetOfRemoteNote_StoresObjectInLocalStore()
+    {
+        // Seed a Note in B's persistence so B serves it at its IRI.
+        var noteIri = new Iri($"https://{BHost}/ap/v1/u/bob/notes/753");
+        var note = new Note
+        {
+            Id = noteIri.Value,
+            Content = new[] { "<p>proxied note for 75.3</p>" },
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+        await _bPersistence.Objects.PutObjectAsync(note);
+
+        // A proxies a GET to the Note's IRI. The relayed response is the Note (200, AP JSON).
+        var response = await ProxyGetAsync(noteIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The proxied Note is now stored in A's local object store (the 75.3 sync).
+        Assert.True(await _aPersistence.Objects.TryGetObjectAsync(noteIri, out var stored));
+        Assert.Equal("<p>proxied note for 75.3</p>", stored!.Content?.First());
     }
 
     // --- The proxy relays a write (POST + body) as a POST to the target -------------------------

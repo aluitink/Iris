@@ -1224,6 +1224,8 @@ public static class ActivityPubServerExtensions
         Func<HttpMessageHandler> transportFactory,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         ProxyGoneCache goneCache,
+        IPersistenceProvider persistence,
+        IMediaWarmer mediaWarmer,
         CancellationToken ct)
     {
         // Buffer the request body so it is re-readable for the relay below (the SignatureValidation
@@ -1390,7 +1392,39 @@ public static class ActivityPubServerExtensions
             goneCache.RecordGone(target.Value);
         }
 
+        // Sync the fetched object into the local store (75.3): when the proxy relays a successful GET
+        // of an ActivityPub JSON object (a Note, Article, Profile, etc. — not a write, not a collection
+        // page), parse it, store it in the IObjectStore, and warm its cross-origin media attachments.
+        // This closes the gap where a proxied read (the AP proxy-fallback for browsing remote outboxes)
+        // served the content verbatim without persisting it — a subsequent local fetch of the same
+        // IRI would re-hit the remote instead of serving from the local store, and the object's media
+        // would not be pre-fetched (the reactive media proxy would fetch lazily on first hit).
+        // Best-effort: a parse failure (the body is a collection, an activity, or malformed) or a store
+        // failure never breaks the relay — the object is simply not cached.
         var mediaType = response.Content.Headers.ContentType?.MediaType ?? ActivityJson.ActivityJsonContentType;
+        if (method == HttpMethod.Get
+            && statusCode >= 200 && statusCode < 300
+            && (mediaType == ActivityJson.ActivityJsonContentType || mediaType == ActivityJson.JsonLdContentType)
+            && !string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                var parsed = ActivityJson.Deserialize<IObjectOrLink>(body);
+                if (parsed is IObject obj && !string.IsNullOrWhiteSpace(obj.Id))
+                {
+                    await persistence.Objects.PutObjectAsync(obj, ct).ConfigureAwait(false);
+                    if (options.BaseUri is { } instanceBase)
+                    {
+                        await mediaWarmer.WarmAsync(obj, instanceBase, ct).ConfigureAwait(false);
+                    }
+                }
+            }
+            catch
+            {
+                // Best-effort: a parse or store failure does not break the relay.
+            }
+        }
+
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = mediaType;
         return Results.Content(body, mediaType);
