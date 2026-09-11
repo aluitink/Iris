@@ -80,19 +80,28 @@ public partial class ObjectView
     private IReadOnlyList<RichAttachment> ActivityRichAttachments => ActivityEmbeddedObject?.GetRichAttachments() ?? [];
 
     /// <summary>
-    /// Rewrites a media IRI (an absolute HTTPS URL) into a same-origin path
-    /// (e.g. <c>https://iris.luit.ink/ap/v1/media/{id}</c> → <c>/ap/v1/media/{id}</c>) so the browser's
-    /// <c>&lt;img&gt;</c> loads it same-origin (no CORS, no mixed-content). A relative IRI or a non-HTTPS
-    /// URL is returned unchanged.
+    /// Rewrites a media IRI to its browser-loadable same-origin form. Local media (the instance's own
+    /// <c>/ap/v1/media/{id}</c>) is stripped to a relative path. Cross-origin external media is routed
+    /// through the media proxy (<c>/ap/v1/media/proxy?url={encoded}</c>) so the browser loads it from
+    /// the instance's own origin (no CORS, no mixed-content). A relative IRI or a non-HTTP(S) URL is
+    /// returned unchanged.
     /// </summary>
     internal static string RewriteMediaToSameOrigin(string mediaIri)
     {
-        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri) || uri.Scheme != "https")
+        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return mediaIri;
         }
 
-        return uri.AbsolutePath + uri.Query;
+        // Local media (the instance's own /ap/v1/media/{id}) → strip to a relative path.
+        if (uri.AbsolutePath.StartsWith("/ap/v1/media/", StringComparison.Ordinal))
+        {
+            return uri.AbsolutePath + uri.Query;
+        }
+
+        // Cross-origin external media → route through the media proxy.
+        return $"/ap/v1/media/proxy?url={Uri.EscapeDataString(mediaIri)}";
     }
 
     private MarkupString RenderedContent

@@ -186,18 +186,23 @@
     }
 
     /// <summary>
-    /// Rewrites a media IRI to a same-origin path (so the browser's cookie auth applies), mirroring
-    /// <c>ObjectView.RewriteMediaToSameOrigin</c>. Returns the IRI unchanged when it is not an
-    /// absolute https URL.
+    /// Rewrites a media IRI to its browser-loadable same-origin form (local media → relative path,
+    /// cross-origin → media proxy), mirroring <c>ObjectView.RewriteMediaToSameOrigin</c>.
     /// </summary>
     private static string RewriteMediaToSameOrigin(string mediaIri)
     {
-        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri) || uri.Scheme != "https")
+        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return mediaIri;
         }
 
-        return uri.AbsolutePath + uri.Query;
+        if (uri.AbsolutePath.StartsWith("/ap/v1/media/", StringComparison.Ordinal))
+        {
+            return uri.AbsolutePath + uri.Query;
+        }
+
+        return $"/ap/v1/media/proxy?url={Uri.EscapeDataString(mediaIri)}";
     }
 
     /// <summary>

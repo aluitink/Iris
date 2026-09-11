@@ -37,18 +37,24 @@ public static class ActorIdentityHelper
     }
 
     /// <summary>
-    /// Rewrites a media IRI (an absolute HTTPS URL) into a same-origin path so the browser's
-    /// <c>&lt;img&gt;</c> loads it same-origin (no CORS, no mixed-content). A relative IRI or a
-    /// non-HTTPS URL is returned unchanged.
+    /// Rewrites a media IRI to its browser-loadable same-origin form. Local media (the instance's own
+    /// <c>/ap/v1/media/{id}</c>) is stripped to a relative path. Cross-origin external media is routed
+    /// through the media proxy. A relative IRI or a non-HTTP(S) URL is returned unchanged.
     /// </summary>
     public static string RewriteMediaToSameOrigin(string mediaIri)
     {
-        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri) || uri.Scheme != "https")
+        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
         {
             return mediaIri;
         }
 
-        return uri.AbsolutePath + uri.Query;
+        if (uri.AbsolutePath.StartsWith("/ap/v1/media/", StringComparison.Ordinal))
+        {
+            return uri.AbsolutePath + uri.Query;
+        }
+
+        return $"/ap/v1/media/proxy?url={Uri.EscapeDataString(mediaIri)}";
     }
 
     /// <summary>
