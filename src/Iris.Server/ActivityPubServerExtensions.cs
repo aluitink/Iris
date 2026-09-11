@@ -673,6 +673,16 @@ public static class ActivityPubServerExtensions
             services.Configure<DeliveryWorkerOptions>(deliverySection.GetSection("Worker"));
             services.Configure<DeliveryRateLimitOptions>(deliverySection.GetSection("RateLimit"));
             services.Configure<DeliveryCircuitBreakerOptions>(deliverySection.GetSection("CircuitBreaker"));
+
+            // 84.1: config-driven durable dead-letter store. When Iris:Delivery:DeadLetterJournalPath
+            // is set, rebind the IDeliveryDeadLetterStore to the file-backed implementation (journaling
+            // to that path) so dead letters survive a restart — independent of the delivery queue (the
+            // queue stays its in-memory default unless a host separately opts into UseFileBackedDelivery).
+            // A later UseFileBackedDelivery / explicit AddSingleton still wins (registration order).
+            if (deliverySection["DeadLetterJournalPath"] is { } deadLetterPath and not "")
+            {
+                services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterPath));
+            }
         }
 
         var inboundSection = configuration.GetSection("Iris:Inbound");
