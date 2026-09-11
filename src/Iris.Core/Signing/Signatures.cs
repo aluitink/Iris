@@ -156,6 +156,29 @@ public static class Signatures
     }
 
     /// <summary>
+    /// Converts an HTTP-date (RFC 1123, e.g. <c>Tue, 26 Aug 2026 12:00:00 GMT</c>) to a Unix epoch
+    /// timestamp in whole seconds, for the <c>created</c> parameter of a <c>Signature</c> header.
+    /// </summary>
+    /// <param name="httpDate">The <c>Date</c> header value the request is signed over.</param>
+    /// <returns>The epoch seconds, or 0 when the value cannot be parsed (a defensive fallback; real
+    /// <c>Date</c> values produced by <see cref="System.DateTimeOffset"/> always parse).</returns>
+    /// <remarks>
+    /// Deriving <c>created</c> from the signed <c>date</c> (rather than the wall clock at signing
+    /// time) keeps the header value deterministic for a given request and consistent with the
+    /// <c>date</c> component that is actually covered by the signature.
+    /// </remarks>
+    public static long ToUnixSeconds(string? httpDate)
+    {
+        if (!string.IsNullOrWhiteSpace(httpDate)
+            && DateTimeOffset.TryParse(httpDate, null, System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal, out var parsed))
+        {
+            return parsed.ToUnixTimeSeconds();
+        }
+
+        return 0;
+    }
+
+    /// <summary>
     /// Builds the signature base (the bytes that are SHA-256 hashed and signed) from the raw
     /// request, given the declared component list.
     /// </summary>

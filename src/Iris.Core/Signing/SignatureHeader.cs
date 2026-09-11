@@ -15,7 +15,8 @@ public sealed record SignatureHeader(
     string KeyId,
     string Algorithm,
     string Headers,
-    string Signature)
+    string Signature,
+    long Created = 0)
 {
     /// <summary>
     /// Parses a <c>Signature</c> header value into a <see cref="SignatureHeader"/>.
@@ -39,6 +40,11 @@ public sealed record SignatureHeader(
             ["signature"] = null!,
         };
 
+        // "created" is an optional parameter (draft-cavage-03). It is parsed when present but is not
+        // required: legacy peers (and this library's pre-Phase-82.1 headers) omit it, and a missing
+        // created must not make an otherwise-valid header unparseable.
+        long created = 0;
+
         foreach (var part in SplitTopLevel(header, ','))
         {
             var trimmed = part.Trim();
@@ -49,6 +55,20 @@ public sealed record SignatureHeader(
             }
 
             var name = trimmed[..eq].Trim();
+
+            // The numeric parameters (created, expires, ...) are unquoted integers, unlike the
+            // quoted string parameters. Handle them before the Unquote step, which would reject them.
+            if (name is "created" or "expires" or "expiresIn")
+            {
+                if (name is "created"
+                    && long.TryParse(trimmed[(eq + 1)..].Trim(), out var createdValue))
+                {
+                    created = createdValue;
+                }
+
+                continue;
+            }
+
             var value = Unquote(trimmed[(eq + 1)..].Trim());
             if (value is null)
             {
@@ -66,7 +86,12 @@ public sealed record SignatureHeader(
             }
         }
 
-        parsed = new SignatureHeader(fields["keyId"], fields["algorithm"], fields["headers"], fields["signature"]);
+        parsed = new SignatureHeader(
+            fields["keyId"],
+            fields["algorithm"],
+            fields["headers"],
+            fields["signature"],
+            created);
         return true;
     }
 
@@ -81,6 +106,12 @@ public sealed record SignatureHeader(
         builder.Append(", algorithm=\"").Append(Algorithm).Append('"');
         builder.Append(", headers=\"").Append(Headers).Append('"');
         builder.Append(", signature=\"").Append(Signature).Append('"');
+        if (Created > 0)
+        {
+            // The created parameter is a Unix timestamp in seconds (unquoted), per draft-cavage-03.
+            builder.Append(", created=").Append(Created);
+        }
+
         return builder.ToString();
     }
 

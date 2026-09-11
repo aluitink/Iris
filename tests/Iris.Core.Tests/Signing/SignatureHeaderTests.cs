@@ -54,7 +54,8 @@ public class SignatureHeaderTests
             "https://a.domain.local/u/alice#main-key",
             "ecdsa-p256-sha256",
             "(request-target) host date digest content-type",
-            "c2lnYXR1cmU=");
+            "c2lnYXR1cmU=",
+            1756200000);
 
         var wire = header.Format();
         Assert.True(SignatureHeader.TryParse(wire, out var reparsed));
