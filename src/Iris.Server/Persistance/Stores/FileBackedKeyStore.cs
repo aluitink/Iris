@@ -101,7 +101,10 @@ public sealed class FileBackedKeyStore : IKeyStore, IDisposable
     /// The key index for the current state (key IRI → stored key), created on demand.
     /// </summary>
     private static ConcurrentDictionary<Iri, StoredKey> KeyIndex(ConcurrentDictionary<string, object> state)
-        => (ConcurrentDictionary<Iri, StoredKey>)(state.TryGetValue(KeysSection, out var k) ? k! : state[KeysSection] = new ConcurrentDictionary<Iri, StoredKey>());
+        // Key IRIs are compared by their full Value (fragment-aware) so that {actor}#key-1 and
+        // {actor}#key-2 (and the bare {actor}) are distinct entries — the default Iri equality is
+        // fragment-blind (Uri semantics) and would otherwise conflate them. See IriEqualityComparer.
+        => (ConcurrentDictionary<Iri, StoredKey>)(state.TryGetValue(KeysSection, out var k) ? k! : state[KeysSection] = new ConcurrentDictionary<Iri, StoredKey>(IriEqualityComparer.Instance));
 
     /// <summary>
     /// Reconstructs a live <see cref="ISigningKey"/> from its stored PEM. Returns null when the stored
