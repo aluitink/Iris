@@ -272,4 +272,14 @@ public static class ActivityPubServerConstants
     /// action). No authentication: an operator's monitoring scrape reaches it without a signature.
     /// </summary>
     public const string DeadLetterRouteSegment = "dead-letters";
+
+    /// <summary>
+    /// The route segment for the operator key-rotation endpoints (Phase 84.3): <c>POST
+    /// {RoutePrefix}/keys/rotate</c> (rotate the instance actor's signing key via the
+    /// <see cref="Identity.KeyRotationService"/>) and <c>POST {RoutePrefix}/keys/retire</c> (retire a
+    /// specific key IRI). Mapped under the versioned prefix, like every other endpoint. Admin-gated: the
+    /// caller's authenticated actor IRI must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>);
+    /// otherwise the request is refused (401 unauthenticated / 403 not the instance actor).
+    /// </summary>
+    public const string KeysRouteSegment = "keys";
 }

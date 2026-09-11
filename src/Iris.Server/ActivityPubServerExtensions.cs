@@ -809,6 +809,22 @@ public static class ActivityPubServerExtensions
         group.MapGet($"/{ActivityPubServerConstants.DeadLetterRouteSegment}", DeadLetterHandler)
             .WithName("dead-letters-endpoint");
 
+        // Key rotation (Phase 84.3): POST /ap/v1/keys/rotate — rotates the instance actor's signing key
+        // (KeyRotationService.RotateAsync): mints a new key at the next free fragment, re-binds the
+        // actor→key, re-stamps the actor document's publicKey (with a replaces pointer), keeps the old
+        // key for the overlap window. Admin-gated (the caller's authenticated actor must be the instance
+        // actor). Returns the new + replaced key IRIs.
+        group.MapPost($"/{ActivityPubServerConstants.KeysRouteSegment}/rotate", KeyRotateHandler)
+            .WithName("keys-rotate-endpoint");
+
+        // Key retirement (Phase 84.3): POST /ap/v1/keys/retire — retires a specific key IRI
+        // (KeyRotationService.RetireKey): removes + disposes it from the store once the rotation is
+        // confirmed (the already-advertised public key still lets peers verify pre-retirement signatures).
+        // Admin-gated (the caller's authenticated actor must be the instance actor). 204 on success, 404
+        // if the key was not in the store.
+        group.MapPost($"/{ActivityPubServerConstants.KeysRouteSegment}/retire", KeyRetireHandler)
+            .WithName("keys-retire-endpoint");
+
         // Media serve (Phase 20.4 (a)): GET /ap/v1/media/{id} — serves a stored note attachment (an image
         // or document) by its same-origin media IRI. Public (the browser's <img>/<a> loads it), and
         // long-cacheable (the media is immutable per id; the id is a minted, unguessable GUID). The
@@ -6224,6 +6240,213 @@ public static class ActivityPubServerExtensions
 
         return DefaultDeadLetterPeekLimit;
     }
+
+    // --- Operator key-rotation endpoints (Phase 84.3) --------------------------
+
+    /// <summary>
+    /// <c>POST /ap/v1/keys/rotate</c> (Phase 84.3): rotates the instance actor's signing key via
+    /// <see cref="Identity.KeyRotationService.RotateAsync"/>. Admin-gated — the caller's authenticated
+    /// actor (Basic auth via <see cref="IActorCredentialValidator"/> or the Blazor cookie's
+    /// <c>actor_iri</c> claim) must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>);
+    /// otherwise the request is refused (401 unauthenticated, 403 not the instance actor). In degraded
+    /// (read-only) mode (Phase 83.4) the write is refused with 503. On success returns <c>200</c> with a
+    /// JSON body carrying the new key IRI + the replaced (old) key IRI.
+    /// </summary>
+    private static async Task<IResult> KeyRotateHandler(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Identity.KeyRotationService rotation,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var denied = await AuthorizeInstanceActorAsync(context, credentialValidator, optionsAccessor, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        if (degraded.IsDegraded)
+        {
+            return DegradedModeProblem();
+        }
+
+        // The admin gate (AuthorizeInstanceActorAsync) already refused the request when no instance actor
+        // is configured, so InstanceActorId is guaranteed non-null here (.Value extracts the Iri).
+        var instanceActorIri = optionsAccessor.Value.InstanceActorId!.Value;
+        try
+        {
+            var newKeyIri = await rotation.RotateAsync(instanceActorIri, ct).ConfigureAwait(false);
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    actor = instanceActorIri.Value,
+                    newKeyIri = newKeyIri.Value,
+                }),
+                "application/json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status200OK);
+        }
+        catch (KeyNotFoundException)
+        {
+            return Problem(
+                StatusCodes.Status404NotFound,
+                "Not Found",
+                "No instance actor is stored; there is no key to rotate.");
+        }
+    }
+
+    /// <summary>
+    /// <c>POST /ap/v1/keys/retire</c> (Phase 84.3): retires a specific key IRI via
+    /// <see cref="Identity.KeyRotationService.RetireKey"/> (removes + disposes it from the store once its
+    /// rotation is confirmed). Admin-gated like <see cref="KeyRotateHandler"/>. The key IRI is read from
+    /// the request body (a JSON object <c>{ "keyIri": "..." }</c>). In degraded mode (Phase 83.4) the
+    /// write is refused with 503. <c>204</c> on success, <c>400</c> on a missing/blank <c>keyIri</c>,
+    /// <c>404</c> when the key was not in the store.
+    /// </summary>
+    private static async Task<IResult> KeyRetireHandler(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Identity.KeyRotationService rotation,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var denied = await AuthorizeInstanceActorAsync(context, credentialValidator, optionsAccessor, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        if (degraded.IsDegraded)
+        {
+            return DegradedModeProblem();
+        }
+
+        // The key IRI may arrive as a JSON body ({"keyIri": "...", case-insensitive}) or as ?keyIri=.
+        // Read it case-insensitively (JsonDocument) so the operator's casing doesn't matter.
+        string? keyIriString = null;
+        using var reader = new System.IO.StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (string.Equals(prop.Name, "keyIri", StringComparison.OrdinalIgnoreCase)
+                            && prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            keyIriString = prop.Value.GetString();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Not valid JSON → fall through to the query-string form.
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(keyIriString))
+        {
+            keyIriString = context.Request.Query["keyIri"].FirstOrDefault();
+        }
+
+        if (string.IsNullOrWhiteSpace(keyIriString))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                "Bad Request",
+                "A non-empty 'keyIri' is required (JSON body { \"keyIri\": \"...\" } or ?keyIri=...).");
+        }
+
+        var retired = rotation.RetireKey(new Iri(keyIriString));
+        return retired
+            ? Results.NoContent()
+            : Problem(
+                StatusCodes.Status404NotFound,
+                "Not Found",
+                "No key with that IRI was in the store (it may already have been retired).");
+    }
+
+    /// <summary>
+    /// The admin gate for the operator key-rotation endpoints (Phase 84.3): verifies the caller's
+    /// authenticated actor is the instance actor. Returns <c>null</c> when authorized, else the 401/403
+    /// result to return. Basic auth is validated for the instance actor's IRI via
+    /// <see cref="IActorCredentialValidator"/>; the Blazor WASM cookie (which cannot carry Basic auth) is
+    /// honored via its <c>actor_iri</c> claim when it matches the instance actor's IRI. When no instance
+    /// actor is configured, no one can be authorized (403). An authenticated caller that is not the
+    /// instance actor gets 403; an unauthenticated caller gets 401.
+    /// </summary>
+    private static async Task<IResult?> AuthorizeInstanceActorAsync(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var configuredInstanceActor = optionsAccessor.Value.InstanceActorId;
+        if (configuredInstanceActor is null)
+        {
+            return Problem(
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "No instance actor is configured on this instance; key rotation is unavailable.");
+        }
+        var instanceActorIri = configuredInstanceActor.Value;
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var handle = await credentialValidator
+            .TryValidateAsync(instanceActorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        var cookieActorIri = context.User.Identity is { IsAuthenticated: true }
+            ? context.User.FindFirst("actor_iri")?.Value
+            : null;
+        if (handle is null && cookieActorIri is not null && cookieActorIri == instanceActorIri.Value)
+        {
+            handle = "instance";
+        }
+
+        if (handle is not null)
+        {
+            return null;
+        }
+
+        // The caller presented some credential (a Basic header or a cookie actor_iri) but it is not the
+        // instance actor → 403 (authenticated, not authorized). No credential at all → 401.
+        return (!string.IsNullOrEmpty(authorization) || cookieActorIri is not null)
+            ? Problem(
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "Key rotation is reserved for the instance actor.")
+            : Results.Unauthorized();
+    }
+
+    /// <summary>
+    /// The 503 <c>application/problem+json</c> body returned by the operator key-rotation endpoints when
+    /// the instance is in degraded (read-only) mode (Phase 83.4): the write cannot be durably recorded,
+    /// so the operator should retry later rather than treat the rotation as permanently rejected.
+    /// </summary>
+    private static IResult DegradedModeProblem() => Problem(
+        StatusCodes.Status503ServiceUnavailable,
+        "Service Unavailable",
+        "The instance is in degraded (read-only) mode: its durable store is unreachable. Key-rotation writes are temporarily refused; retry later.");
+
+    /// <summary>
+    /// Builds an <c>application/problem+json</c> <see cref="IResult"/> (the inline idiom the federation
+    /// write surfaces use — there is no shared problem helper). The body is <c>{ "error": title,
+    /// "description": description }</c>.
+    /// </summary>
+    private static IResult Problem(int statusCode, string error, string description) => Results.Content(
+        System.Text.Json.JsonSerializer.Serialize(new { error, description }),
+        "application/problem+json",
+        System.Text.Encoding.UTF8,
+        statusCode);
 
     // --- OAuth2 token endpoints ------------------------------------------------
 
