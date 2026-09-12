@@ -87,7 +87,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Join / leave | ✅ | ✅ | ☐ | |
 | Post to a community | ✅ | ✅ | ☐ | |
 | Member list | ✅ | ✅ | ☐ | |
-| Community moderation (block/mute within community) | 🟡 | ☐ | ☐ | **PARTIAL:** Server has `CommunityMuteHandler` + `CommunityRemoveMemberHandler` + owner promote/demote + join-requests; client UI covers remove-member + owner promote/demote + join requests, but **no community-scoped block/mute UI** surfaced. |
+| Community moderation (block/mute within community) | ✅ | ✅ | ☐ | Full set: mute (Phase 109), block (Phase 112), remove-member, owner promote/demote, join-requests. Server handlers + client methods + CommunityDetail Members-tab buttons (creator-only). |
 | Community search | ✅ | ✅ | ✅ | Server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box (Phase 99) driving `PagedCollection` with a query-carrying IRI. The server's paged links now carry `?q=` (the `PageLink` fix) so the filter is preserved across infinite-scroll pages. |
 
 ## Moderation (per-user)
@@ -121,7 +121,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 |---|---|---|---|---|
 | Instance metadata edit (name, description) | ✅ | ✅ | ☐ | |
 | Moderation queue (all flags, action buttons) | ✅ | ✅ | ☐ | |
-| User list / role management | 🟡 | ☐ | ☐ | **PARTIAL:** User table + reset-password + delete exist; **role management** (promote/demote user to Admin) is NOT present. |
+| User list / role management | ✅ | ✅ | ☐ | `AdminUsers.razor` user table + reset-password + delete + role promote/demote (`POST /local/v1/admin/users/{id}/role`, Phase 88.5; refuses to demote the last admin). |
 
 ## Cross-cutting (apply once broadly, not per-feature)
 
