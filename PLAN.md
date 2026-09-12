@@ -100,7 +100,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-**99 - Community search UI** - Wire the existing server `GET /ap/v1/c/{name}/search` endpoint (added in Phase 88's matrix reconciliation, no client UI yet) into the CommunityDetail page: a search box that filters the community's posts/members by query, reusing `PagedCollection` for the results. Closes the "Community search PARTIAL" feature-matrix gap.
+**100 - Follow-request (follow-approval) queue endpoint** - Carried forward from Phase 88's gap list. Expose the pending inbound `Follow` requests that require approval (the require-approval privacy flag) as a queryable endpoint (`GET /ap/v1/.../follow-requests`) + a client surface to list and accept/reject them, so a user with "require approval" can actually manage their queue today (the flag exists but there is no queue UI/endpoint). Reuses the existing Follow/Accept edge model + the `Undo`/`Reject` authoring path.
+
 ## Inbox
 
 - *(empty)*
@@ -110,6 +111,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **99 — Community search UI (DONE)** — wired the existing server `GET /ap/v1/c/{name}/search` endpoint into the CommunityDetail Feed tab: a search box (live-enabling Search button via `@bind:event="oninput"`, a Clear button) that drives the shared `PagedCollection` with a query-carrying collection IRI (`{community}/search?q=…`), with conditional title/description/empty-state ("Posts matching …" / "No posts … match your search."). **Server fix (the load-bearing part):** the shared `BuildSearchPageDocument` now threads `?q=` through every generated paged link (`first`/`partOf`/`prev`/`next`/`id`) via a new `PageLink` helper, so walking `next` to page 2 no longer drops the filter — previously page 2+ silently returned the *unfiltered* feed; the no-query link format is byte-for-byte preserved (global search paging assertions unchanged). **4 new server integration tests** (query-carrying page-1 + page-2 links, a paged-`next`-walk-still-filters end-to-end, and a percent-escaped multi-word query with un-escaped `iris:searchQuery`) + 2 pre-existing assertions updated to the new format. Client is WASM → 0 new coded web tests (policy). Live Playwright-verified on `test-community-541`: `phone`→21 matches all filtered, page-2 request carried `?q=phone&offset=20` (filter preserved across infinite scroll), `foldable phone`→4 (URL-encoding round-trips), no-match→search empty state, Clear restores the normal feed, 0 new console errors. Full fast suite **1864 passed / 0 failed / 1 skipped**. [changes/991](docs/changes/991-phase99-community-search-ui.md)
 
 - **98 — Improve collection scrolling (infinite scroll) (DONE)** — replaced the static "Load more" button in the shared `PagedCollection` component (home/public timelines, notifications, outbox, actor/profile/community lists) with **infinite scroll**: a page-level passive `scroll`/`resize` listener in `index.html` finds `.paged-collection-sentinel` elements within 200px of the viewport bottom and clicks them to fire the Blazor `@onclick` (`LoadMoreAsync`), with a `data-busy` flag that re-arms as new content pushes the sentinel below the trigger line. A ghost "Load more" fallback button remains (accessibility / no-scroll fallback). Chose pure-client JS over `IJSRuntime`/`OnAfterRender` because the component's JS-interop attach path did not reliably fire in the live WASM app. UI-only (WASM), 0 new coded web tests (WASM policy). Live Playwright-verified on the signed-out public timeline: 36→56→71→79 on successive scrolls, fallback button 79→91, 0 new console errors. Full fast suite 1093 passed / 0 failed. [changes/981](docs/changes/981-phase98-infinite-scroll.md)
 

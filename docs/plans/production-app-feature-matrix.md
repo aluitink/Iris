@@ -5,6 +5,8 @@
 Legend: **A** = functionality pass done, **C** = experience pass done, **D** = polish pass done. An autonomous agent picking up a slice should check this table, find the first unchecked box in the earliest pass across all features (finish Phase A broadly before starting Phase C anywhere), and update it as work completes. "Done" for any box means a live MCP Playwright functional + visual pass, not an automated test — see [production-app-web-host.md](production-app-web-host.md) §6 (no `Iris.Web` UI test project exists yet, by design). Before building any screen below, check [production-app-ui-guidelines.md](production-app-ui-guidelines.md) for an existing component that already covers it — most rows here compose a handful of shared components rather than needing bespoke UI.
 
 > **Reconciled 2026-09-12 (Phase 88.1):** All boxes below reflect a code-inspection + live-app verification pass against Phases 32–87. 33 rows fully implemented, 6 partial (scope/exposure gaps, not missing functionality), 1 missing (key/algorithm info). The two most notable gaps: (1) no read-only key/algorithm info surface, (2) "View others' profile" is `@attribute [Authorize]`-gated (the matrix originally said "Public, no auth required").
+>
+> **Updated (Phase 99):** **Community search** promoted 🟡 → ✅ (server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box, with the server's paged links now carrying `?q=` so the filter survives infinite-scroll). Tally now **34 fully implemented, 5 partial, 0 missing**.
 
 ## Onboarding & account
 
@@ -86,7 +88,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Post to a community | ✅ | ✅ | ☐ | |
 | Member list | ✅ | ✅ | ☐ | |
 | Community moderation (block/mute within community) | 🟡 | ☐ | ☐ | **PARTIAL:** Server has `CommunityMuteHandler` + `CommunityRemoveMemberHandler` + owner promote/demote + join-requests; client UI covers remove-member + owner promote/demote + join requests, but **no community-scoped block/mute UI** surfaced. |
-| Community search | 🟡 | ☐ | ☐ | **PARTIAL:** Server endpoint exists (`GET /c/{name}/search`); **no client UI** calls it — community discovery is via the `/communities` list + global `/search`. |
+| Community search | ✅ | ✅ | ✅ | Server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box (Phase 99) driving `PagedCollection` with a query-carrying IRI. The server's paged links now carry `?q=` (the `PageLink` fix) so the filter is preserved across infinite-scroll pages. |
 
 ## Moderation (per-user)
 
