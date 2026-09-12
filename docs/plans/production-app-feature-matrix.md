@@ -113,7 +113,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Account (change password) | ✅ | ✅ | ☐ | |
 | Profile edit | ✅ | ✅ | ☐ | duplicate entry point with Profile section — same feature |
 | Relay subscriptions | ✅ | ✅ | ☐ | F-06 |
-| Key/algorithm info (read-only) | ❌ | ☐ | ☐ | **MISSING:** No UI surface displays key type/algorithm. Only internal key *loading* logic exists (`IActorSessionAccessor.ExtractKeyAlgorithm`, `WebCrypto.js`) — nothing rendered to the user. |
+| Key/algorithm info (read-only) | ✅ | ✅ | ☐ | Settings > Account > Security section (fetches `GET /local/v1/account/key-info`: algorithm, key IRI, JWK thumbprint). Verified live 2026-09-12. |
 
 ## Instance admin (Admin role)
 

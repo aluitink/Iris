@@ -717,14 +717,27 @@ public static class WebAppFactory
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
             var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs, account.ActorId);
 
-            // Optional type filter (e.g. ?type=Like for likes only).
+            // Optional type filter (e.g. ?type=Like for likes only). "Mention" is a
+            // composite filter: Create activities whose content mentions the actor.
             if (!string.IsNullOrWhiteSpace(type))
             {
-                filtered = filtered.Where(item =>
-                    item is Activity { Type: { } t } act &&
-                    t.FirstOrDefault() is string firstType &&
-                    string.Equals(firstType, type, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
+                if (string.Equals(type, "Mention", StringComparison.OrdinalIgnoreCase))
+                {
+                    filtered = filtered.Where(item =>
+                        item is Activity { Type: { } t } act &&
+                        t.FirstOrDefault() is string firstType &&
+                        string.Equals(firstType, "Create", StringComparison.OrdinalIgnoreCase) &&
+                        (act.Object?.Any(o => MentionsSelf(o, account.ActorId)) ?? false))
+                        .ToList();
+                }
+                else
+                {
+                    filtered = filtered.Where(item =>
+                        item is Activity { Type: { } t } act &&
+                        t.FirstOrDefault() is string firstType &&
+                        string.Equals(firstType, type, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
             }
 
             var safeLimit = Math.Clamp(limit ?? 20, 1, 100);
@@ -1322,6 +1335,22 @@ public static class WebAppFactory
         });
 
         return result;
+    }
+
+    /// <summary>
+    /// True when a Create activity's object content (or summary) mentions the given actor IRI.
+    /// Matches <c>mention</c> links whose <c>href</c> equals the actor's IRI.
+    /// </summary>
+    internal static bool MentionsSelf(IObjectOrLink? objectOrLink, Iri? selfIri)
+    {
+        if (objectOrLink is not IObject obj || selfIri is not { } self)
+        {
+            return false;
+        }
+
+        var selfValue = self.Value;
+        var mentionIris = obj.GetMentionIris();
+        return mentionIris.Any(m => string.Equals(m.Value.TrimEnd('/'), selfValue.TrimEnd('/'), StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
