@@ -59,6 +59,14 @@ services:
       # consumer cross-origin access to the instance's API. Never AllowAnyOrigin. Blank -> same-origin-only.
       # Maps to Iris:Cors:Origins.
       Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
+      # Antiforgery toggle (Phase 94): the ASP.NET Core antiforgery middleware is ON by default
+      # (production). Set to "false" to disable the UseAntiforgery middleware so login/register form
+      # POSTs are not gated on a per-session token — useful for development / Playwright testing, where
+      # a stale token (signed with a previous Data Protection key ring, e.g. after a container rebuild)
+      # would otherwise make the login/register forms 400 until the token is re-fetched. Blank / unset /
+      # any non-"false" value keeps antiforgery ON. NEVER set this to "false" in production. Maps to
+      # Iris:Security:EnableAntiforgery.
+      Iris__Security__EnableAntiforgery: ${IRIS_SECURITY_ENABLEANTIFORGERY:-}
       # Graceful-shutdown drain timeout (slice 33.6): bounds the time the DeliveryWorker waits for
       # in-flight outbound deliveries to settle on a SIGTERM. A delivery that does not finish in time
       # is dropped (journaled / dead-lettered per the F-22 at-least-once policy). Accepts a TimeSpan

@@ -127,6 +127,42 @@ public static class WebAppFactory
     public const string CorsOriginsConfigKey = "Iris:Cors:Origins";
 
     /// <summary>
+    /// The configuration key that toggles ASP.NET Core antiforgery <em>validation</em> (Phase 94). Bound
+    /// from <c>Iris:Security:EnableAntiforgery</c> (env <c>IRIS_SECURITY_ENABLEANTIFORGERY</c>). When
+    /// unset or any non-false value, antiforgery validation is enabled (the production default —
+    /// login/register form POSTs are validated against a per-session token). Set to <c>false</c>
+    /// (case-insensitive) to disable validation: a <c>PermissiveAntiforgery</c> (a no-op
+    /// <c>IAntiforgery</c>) is registered so the <c>UseAntiforgery</c> middleware's
+    /// <c>IsRequestValidAsync</c> always passes, and POSTs go through without a valid token. The
+    /// middleware itself is always applied (the endpoints carry antiforgery metadata, so removing it
+    /// would throw); only the token check is turned off. This exists for development / Playwright
+    /// testing, where a stale antiforgery token (one signed with a previous Data Protection key ring,
+    /// e.g. after a container rebuild) would otherwise make the login/register forms fail with a 400
+    /// until the token is re-fetched. When disabled, the <c>/local/v1/antiforgery</c> token-issuance
+    /// endpoint still works (the client can fetch a token harmlessly).
+    /// </summary>
+    public const string EnableAntiforgeryConfigKey = "Iris:Security:EnableAntiforgery";
+
+    /// <summary>
+    /// Reads the antiforgery toggle from <paramref name="configuration"/> (Phase 94). Antiforgery is
+    /// enabled unless the value bound to <see cref="EnableAntiforgeryConfigKey"/> parses to <c>false</c>
+    /// (case-insensitive). Unset/blank or any non-<c>false</c> value → enabled (the production default),
+    /// so a misconfiguration can never silently disable the protection.
+    /// </summary>
+    /// <param name="configuration">The application configuration.</param>
+    /// <returns><c>true</c> when the antiforgery middleware should be applied.</returns>
+    internal static bool IsAntiforgeryEnabled(IConfiguration configuration)
+    {
+        var raw = configuration[EnableAntiforgeryConfigKey];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        return !bool.TryParse(raw, out var enabled) || enabled;
+    }
+
+    /// <summary>
     /// Wires the services (Blazor, ActivityPub server, in-memory persistence, seeded actor, key
     /// registration) onto <paramref name="builder"/>'s service collection.
     /// </summary>
@@ -139,7 +175,22 @@ public static class WebAppFactory
     public static void ConfigureServices(WebApplicationBuilder builder, string? advertisedBase = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        // Antiforgery (Phase 94): always register the service (the POST endpoints carry antiforgery
+        // metadata and the /local/v1/antiforgery token-issuance endpoint depends on it), and the
+        // UseAntiforgery middleware is always applied in the pipeline (removing it would make the
+        // metadata-carrying POST endpoints throw "endpoint contains anti-forgery metadata, but a
+        // middleware was not found"). Validation is enabled by default (production). An operator can
+        // disable it for development / Playwright testing via Iris:Security:EnableAntiforgery=false (env
+        // IRIS_SECURITY_ENABLEANTIFORGERY=false): a PermissiveAntiforgery (a no-op IAntiforgery that
+        // always reports the request valid and issues dummy tokens) is registered AFTER the real one, so
+        // it wins DI resolution and the middleware's IsRequestValidAsync always passes — POSTs go
+        // through without a valid token (a stale token signed with a previous Data Protection key ring
+        // would otherwise make the login/register forms 400).
         builder.Services.AddAntiforgery();
+        if (!IsAntiforgeryEnabled(builder.Configuration))
+        {
+            builder.Services.AddSingleton<Microsoft.AspNetCore.Antiforgery.IAntiforgery, PermissiveAntiforgery>();
+        }
         // OpenAPI 3.1 spec generation (49.3). The built-in Microsoft.AspNetCore.OpenApi package
         // (part of the ASP.NET Core shared framework tooling) inspects the minimal-API endpoints
         // and emits a spec at /openapi/v1.json. A Swagger UI page is served at /api/ (wwwroot/api/index.html).
@@ -430,6 +481,18 @@ public static class WebAppFactory
         // — no extra package. It must run before UseAuthentication so the cookie + redirects see the real
         // scheme. When not behind a proxy the headers are absent and this is a no-op.
         app.UseForwardedHeaders();
+        // Antiforgery (Phase 94): the ASP.NET Core antiforgery middleware gates every non-GET request
+        // (notably the login/register form POSTs) on a per-session token. It is enabled by default
+        // (production). The middleware is ALWAYS applied (the endpoints carry antiforgery metadata, so
+        // removing the middleware would throw "endpoint contains anti-forgery metadata, but a
+        // middleware was not found"); instead, when an operator sets
+        // Iris:Security:EnableAntiforgery=false (env IRIS_SECURITY_ENABLEANTIFORGERY=false) for
+        // development / Playwright testing, ConfigureServices registers a PermissiveAntiforgery (a no-op
+        // IAntiforgery) that wins DI resolution, so this middleware's IsRequestValidAsync always passes
+        // and POSTs go through without a valid token (a stale token signed with a previous Data
+        // Protection key ring, e.g. after a container rebuild, would otherwise make the login/register
+        // forms fail with a 400). The /local/v1/antiforgery token-issuance endpoint still works (the
+        // client can fetch a token harmlessly); only the validation is a no-op.
         app.UseAntiforgery();
         // Inbound federation signature validation (a signed POST to a local inbox is verified; unsigned
         // inbox POSTs are rejected 401 by the inbox handler).
@@ -1400,6 +1463,50 @@ public static class WebAppFactory
     /// </summary>
     private static string HostLabel(string baseString)
         => Uri.TryCreate(baseString, UriKind.Absolute, out var uri) ? uri.Host : baseString;
+
+    /// <summary>
+    /// A no-op <c>IAntiforgery</c> that always reports a request as valid and issues dummy (non-crypto)
+    /// tokens (Phase 94). Registered in place of the real antiforgery service when
+    /// <c>Iris:Security:EnableAntiforgery=false</c> (development / Playwright testing), so the
+    /// <c>UseAntiforgery</c> middleware's validation always passes and POSTs go through without a valid
+    /// token. It is registered AFTER <c>AddAntiforgery()</c>'s real service, so it wins
+    /// <c>GetRequiredService&lt;IAntiforgery&gt;</c> resolution. The token-issuance endpoint
+    /// (<c>/local/v1/antiforgery</c>) still works (it returns a dummy token); only the validation is a
+    /// no-op. Never used in production (the flag defaults to enabled).
+    /// </summary>
+    private sealed class PermissiveAntiforgery : Microsoft.AspNetCore.Antiforgery.IAntiforgery
+    {
+        private const string FormFieldName = "__RequestVerificationToken";
+        private const string HeaderName = "RequestVerificationToken";
+
+        public Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet GetAndStoreTokens(
+            Microsoft.AspNetCore.Http.HttpContext httpContext)
+            => NewTokenSet();
+
+        public Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet GetTokens(
+            Microsoft.AspNetCore.Http.HttpContext httpContext)
+            => NewTokenSet();
+
+        public System.Threading.Tasks.Task<bool> IsRequestValidAsync(
+            Microsoft.AspNetCore.Http.HttpContext httpContext)
+            => System.Threading.Tasks.Task.FromResult(true);
+
+        public System.Threading.Tasks.Task ValidateRequestAsync(
+            Microsoft.AspNetCore.Http.HttpContext httpContext)
+            => System.Threading.Tasks.Task.CompletedTask;
+
+        public void SetCookieTokenAndHeader(Microsoft.AspNetCore.Http.HttpContext httpContext)
+        {
+            // No-op: no real token is stored (the permissive validator never checks it).
+        }
+
+        private static Microsoft.AspNetCore.Antiforgery.AntiforgeryTokenSet NewTokenSet()
+            => new(
+                System.Guid.NewGuid().ToString("N"),
+                System.Guid.NewGuid().ToString("N"),
+                FormFieldName,
+                HeaderName);
+    }
 }
 
 /// <summary>Request body for <c>POST /local/v1/admin/flags/dismiss</c> (51.4).</summary>
