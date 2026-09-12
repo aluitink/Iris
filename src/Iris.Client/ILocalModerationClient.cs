@@ -120,6 +120,47 @@ public interface ILocalModerationClient
     public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
+    /// Mutes a member within a community (community-scoped moderation): a local, Basic-authenticated
+    /// request to the community's home instance (<c>POST /local/v1/c/{name}/mutes/{targetId}</c>) that
+    /// hides the member's content from the community's feed without removing their membership.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to mute.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mutes a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to mute.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes a member within a community: the inverse of <see cref="MuteCommunityMemberAsync(Iri,
+    /// Iri, CancellationToken)"/> — <c>POST /local/v1/c/{name}/mutes/{targetId}?unmute=true</c>.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-mute.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-mute.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
     /// Removes a member from a community, on behalf of the community's creator: a local,
     /// Basic-authenticated request to the community's home instance
     /// (<c>POST /local/v1/c/{name}/members/remove/{memberId}</c>) that removes the membership edge.

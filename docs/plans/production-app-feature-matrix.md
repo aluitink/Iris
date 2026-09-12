@@ -48,7 +48,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Home feed (followed actors + communities) | ✅ | ✅ | ☐ | F-14 |
 | View an actor's outbox as a feed | ✅ | ✅ | ☐ | |
 | View a community's feed | ✅ | ✅ | ☐ | |
-| Infinite-scroll / pagination | 🟡 | ☐ | ☐ | **PARTIAL:** `PagedCollection` uses a "Load more" **button**, not true infinite scroll (auto-observe). Functional pagination is present. |
+| Infinite-scroll / pagination | ✅ | ✅ | ☐ | `PagedCollection` uses infinite scroll (scroll listener + sentinel, Phase 98) with a ghost "Load more" fallback button for accessibility/no-scroll. |
 | Optimistic UI on like/boost/reply | ✅ | ✅ | ☐ | Polish-pass item |
 
 ## Follow graph
@@ -75,7 +75,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Unified notification list (inbox projection) | ✅ | ✅ | ☐ | See [production-app-feature-set.md](production-app-feature-set.md) §2 |
 | Unread badge/count | ✅ | ✅ | ☐ | Derived client-side from `UserAccount.NotificationsReadAt` vs. each item's timestamp |
 | Mark as read | ✅ | ✅ | ☐ | MVP (Phase A) = bump `UserAccount.NotificationsReadAt` on view, **not** a per-item read store; see [production-app-feature-set.md](production-app-feature-set.md) §2 for why a dedicated `INotificationStore` is deferred to Phase 2 |
-| Filter by type (follows/likes/replies/mentions) | 🟡 | ☐ | ☐ | **PARTIAL:** Tabs exist (All/Follows/Likes/Boosts/Replies) + server `?type=` filter, but **no "Mentions" tab**. |
+| Filter by type (follows/likes/replies/mentions) | ✅ | ✅ | ☐ | All six filter tabs (All/Follows/Likes/Boosts/Replies/Mentions) + server `?type=` filter (Mentions = composite filter on Create activities with matching Mention tags, Phase 108). |
 
 ## Communities
 

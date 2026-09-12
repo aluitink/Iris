@@ -86,6 +86,22 @@ public sealed class LocalModerationClient : ILocalModerationClient
         => LocalDecisionAsync(actorId, relayId, path: "relays", remove: true, removeQuery: "unsubscribe", credentials, ct);
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityMuteAsync(communityId, targetId, unmute: false, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityMuteAsync(communityId, targetId, unmute: false, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityMuteAsync(communityId, targetId, unmute: true, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityMuteAsync(communityId, targetId, unmute: true, credentials, ct);
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
         => LocalCommunityMemberRemoveAsync(communityId, memberId, credentials: null, ct);
 
@@ -427,6 +443,58 @@ public sealed class LocalModerationClient : ILocalModerationClient
 
         throw new InvalidOperationException(
             "Community owner operations require LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+    }
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated community mute/unmute:
+    /// <c>POST /local/v1/c/{name}/mutes/{targetId}</c> (with <c>?unmute=true</c> to remove).
+    /// </summary>
+    private Task<DeliveryResult> LocalCommunityMuteAsync(
+        Iri communityId,
+        Iri targetId,
+        bool unmute,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var query = unmute ? "?unmute=true" : string.Empty;
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/mutes/{targetId.Value.TrimStart('/')}{query}");
+
+        var configured = _localAuth;
+        LocalAuthHandler handler;
+        bool ownsHandler;
+        if (credentials is not null && configured is null)
+        {
+            handler = new LocalAuthHandler(credentials, new HttpClientHandler());
+            ownsHandler = true;
+        }
+        else if (credentials is not null)
+        {
+            handler = new LocalAuthHandler(credentials, configured!);
+            ownsHandler = false;
+        }
+        else if (configured is not null)
+        {
+            handler = configured;
+            ownsHandler = false;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Community mute requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+        }
+
+        return SendLocalPostAsync(handler, requestUri, ownsHandler, ct);
     }
 
     /// <summary>
