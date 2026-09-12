@@ -142,6 +142,55 @@ public sealed class LocalModerationClient : ILocalModerationClient
         => LocalCommunityOwnerDecisionAsync(communityId, actorId, "demote", credentials, ct);
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityFollowAsync(communityId, targetId, unfollow: false, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityFollowAsync(communityId, targetId, unfollow: false, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityFollowAsync(communityId, targetId, unfollow: true, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityFollowAsync(communityId, targetId, unfollow: true, credentials, ct);
+
+    /// <summary>
+    /// Performs a local, creator-gated community follow/unfollow (community peering, 89):
+    /// <c>POST /local/v1/c/{name}/follow/{targetIri}</c> (or <c>?unfollow=true</c> to remove the edge).
+    /// The server authors + delivers the community's <c>Follow</c>/<c>Undo</c> and records/removes the
+    /// edge in the community's <c>following</c> set.
+    /// </summary>
+    private async Task<DeliveryResult> LocalCommunityFollowAsync(
+        Iri communityId,
+        Iri targetId,
+        bool unfollow,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        // A removal is signalled by ?unfollow=true (the same route records the edge otherwise).
+        var target = targetId.Value.TrimStart('/');
+        var followPath = unfollow ? $"follow/{target}?unfollow=true" : $"follow/{target}";
+
+        var (requestUri, handler, ownsHandler) = BuildCommunityLocalRequest(
+            communityId,
+            followPath,
+            targetId: null,
+            credentials);
+
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <inheritdoc/>
     public async Task<DeliveryResult> VoteAsync(Iri actorId, Iri pollIri, int optionIndex, CancellationToken ct = default)
     {
         var configured = _localAuth;

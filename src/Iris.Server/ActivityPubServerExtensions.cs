@@ -1194,6 +1194,17 @@ public static class ActivityPubServerExtensions
         localGroup.MapPost("/c/{name}/owners/promote/{**actorIri}", CommunityPromoteOwnerHandler).WithName("community-promote-owner-endpoint");
         localGroup.MapPost("/c/{name}/owners/demote/{**actorIri}", CommunityDemoteOwnerHandler).WithName("community-demote-owner-endpoint");
 
+        // Community peering (89): POST /local/v1/c/{name}/follow/{**targetIri} — a community's operator
+        // makes the community follow the target actor (a person or another community). The community
+        // (a Group actor) cannot sign its own outbox from the browser (it holds no client key), so the
+        // owner authenticates here via the same credential seam as the other local community endpoints
+        // (IActorCredentialValidator / cookie) and the server records the community-authored Follow in
+        // the community's follows set + outbox and delivers it to a remote target. The community's
+        // unified feed then surfaces the followed actor's content to its members. The same route with
+        // ?unfollow=true undoes the follow (Undo of the community-authored Follow). {targetIri} is a
+        // catch-all of the absolute IRI of the actor being followed.
+        localGroup.MapPost("/c/{name}/follow/{**targetIri}", CommunityFollowHandler).WithName("community-follow-endpoint");
+
         // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
         // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
         // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
@@ -8001,6 +8012,141 @@ public static class ActivityPubServerExtensions
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Makes the community follow (or, with <c>?unfollow=true</c>, unfollow) the target actor
+    /// (POST /local/v1/c/{name}/follow/{**targetIri}). Owner-only (the same credential seam as the other
+    /// local community endpoints). The community is a Group actor that holds no client key, so it cannot
+    /// sign its own outbox from the browser; the owner authenticates here and the server authors the
+    /// community's <see cref="Follow"/> (or <see cref="Undo"/>), records it in the community's follows set
+    /// + outbox, and delivers it to a remote target. Following makes the community's unified feed surface
+    /// the followed actor's content to its members (the peering behavior).
+    /// </summary>
+    private static async Task<IResult> CommunityFollowHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        IdMinter idMinter,
+        LocalCollectionPageCache collectionCache,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        // A follow is a write; refuse it in degraded (read-only) mode (mirrors the outbox publish handler).
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var targetIri = ParseCatchAllIri(context, "targetIri");
+        if (targetIri is not { } target)
+        {
+            return Results.BadRequest();
+        }
+
+        // A community cannot follow itself.
+        if (target == communityIri)
+        {
+            return Results.BadRequest();
+        }
+
+        var unfollow = context.Request.Query.ContainsKey("unfollow");
+
+        if (unfollow)
+        {
+            // Find the community-authored Follow to this target (the most recent in the community's
+            // outbox). The Undo references it by IRI (decision 055 — the server-minted follow id).
+            Iri? followIri = null;
+            foreach (var activity in await persistence.Activities.GetOutboxAsync(communityIri, ct).ConfigureAwait(false))
+            {
+                if (activity is Follow f
+                    && f.Actor?.FirstOrDefault().ResolveObjectIri() == communityIri
+                    && f.Object?.FirstOrDefault().ResolveObjectIri() == target
+                    && f.Id is { Length: > 0 } id)
+                {
+                    followIri = new Iri(id);
+                    break;
+                }
+            }
+
+            if (followIri is not { } foundFollowIri)
+            {
+                // The community does not (or no longer) follows the target: nothing to undo.
+                return Results.NotFound();
+            }
+
+            var undo = new Undo
+            {
+                Actor = [new Link { Href = communityIri.Uri }],
+                Object = [new Link { Href = foundFollowIri.Uri }],
+            };
+            undo.Id = idMinter.Mint(communityIri, undo).Value;
+
+            await persistence.Communities.RemoveFollowAsync(communityIri, target, ct).ConfigureAwait(false);
+            await persistence.Activities.AddToOutboxAsync(communityIri, undo, ct).ConfigureAwait(false);
+            await persistence.Activities.PutActivityAsync(undo, ct).ConfigureAwait(false);
+            InvalidateLocalOutboxPage(collectionCache, communityIri);
+
+            // A remote target removes the edge it recorded (the inverse of its inbound follow handling);
+            // a local target needs no cross-instance hop (the local edge is already removed above).
+            if (!await IsLocalCommunityAsync(persistence, target, ct).ConfigureAwait(false)
+                && !await IsLocalActorAsync(persistence, target, ct).ConfigureAwait(false))
+            {
+                await delivery.DeliverToActorAsync(target, undo, communityIri, ct).ConfigureAwait(false);
+            }
+
+            return Results.NoContent();
+        }
+
+        // Follow: author the community's Follow to the target.
+        var follow = new Follow
+        {
+            Actor = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = target.Uri }],
+        };
+        follow.Id = idMinter.Mint(communityIri, follow).Value;
+
+        await persistence.Communities.AddFollowAsync(communityIri, target, ct).ConfigureAwait(false);
+        await persistence.Activities.AddToOutboxAsync(communityIri, follow, ct).ConfigureAwait(false);
+        await persistence.Activities.PutActivityAsync(follow, ct).ConfigureAwait(false);
+        InvalidateLocalOutboxPage(collectionCache, communityIri);
+
+        // A remote target receives the Follow (it records the edge + may accept); a local target needs no
+        // cross-instance hop (the local edge is already recorded above).
+        if (!await IsLocalCommunityAsync(persistence, target, ct).ConfigureAwait(false)
+            && !await IsLocalActorAsync(persistence, target, ct).ConfigureAwait(false))
+        {
+            await delivery.DeliverToActorAsync(target, follow, communityIri, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
     }
 
     /// <summary>

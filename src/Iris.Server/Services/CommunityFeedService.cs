@@ -111,10 +111,6 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         var memberIris = await _persistence.Communities.GetMembersAsync(communityIri, ct).ConfigureAwait(false);
-        if (memberIris.Count == 0)
-        {
-            return [];
-        }
 
         // 19.5.4 (apply the community's moderation edges): a member the community has blocked or muted
         // is excluded from the feed (the moderation is applied on the community's side — a blocked/muted
@@ -158,40 +154,86 @@ public sealed class CommunityFeedService : ICommunityFeedService
         // tagged are dropped before the merge.
         var communityIriValue = communityIri.Value;
         var seen = new HashSet<Iri>();
-        var merged = new List<(int Position, Iri MemberIri, IObjectOrLink Item)>();
+        var merged = new List<(int Position, Iri ContributorIri, IObjectOrLink Item)>();
+
+        // Member branch: a member's content is admitted only when it is tagged to this community
+        // (40.3 — the note's attributedTo carries the community IRI).
         foreach (var memberIri in orderedMembers)
         {
-            IReadOnlyList<IObjectOrLink> outbox =
-                await ReadOutboxAsync(memberIri, ct).ConfigureAwait(false);
-            for (var position = 0; position < outbox.Count; position++)
-            {
-                var item = outbox[position];
+            ct.ThrowIfCancellationRequested();
+            await MergeContributorOutboxAsync(
+                memberIri, communityIriValue, requireCommunityTagged: true,
+                seen, merged, ct).ConfigureAwait(false);
+        }
 
-                // 40.3: skip items that are not community-tagged.
-                if (!IsCommunityTagged(item, communityIriValue))
-                {
-                    continue;
-                }
-
-                if (item is IObject { Id: { Length: > 0 } id })
-                {
-                    // Keep the newest (first) occurrence of a repeated IRI; drop the rest.
-                    if (!seen.Add(new Iri(id)))
-                    {
-                        continue;
-                    }
-                }
-                merged.Add((position, memberIri, item));
-            }
+        // Peering (89): the actors (communities or persons) the community follows contribute their
+        // content to the feed too. A followed actor's content is attributed to <em>that</em> actor, not
+        // this community, so it is admitted without the community-tagged filter — that is what makes the
+        // community's unified feed a federated (peered) feed. A member the community also follows
+        // contributes only once (deduplicated by activity IRI below).
+        var follows = await _persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false);
+        var orderedFollows = follows
+            .OrderBy(f => f.Value, StringComparer.Ordinal)
+            .ToList();
+        foreach (var followedIri in orderedFollows)
+        {
+            ct.ThrowIfCancellationRequested();
+            await MergeContributorOutboxAsync(
+                followedIri, communityIriValue, requireCommunityTagged: false,
+                seen, merged, ct).ConfigureAwait(false);
         }
 
         var feed = merged
             .OrderBy(m => m.Position)
-            .ThenBy(m => m.MemberIri.Value, StringComparer.Ordinal)
+            .ThenBy(m => m.ContributorIri.Value, StringComparer.Ordinal)
             .Select(m => m.Item)
             .ToList();
 
         return TruncateDedup(feed);
+    }
+
+    /// <summary>
+    /// Reads a single contributor's outbox (a member or a followed actor) and appends its items to the
+    /// merge list, subject to the contributor's community-tag filter and the shared activity-IRI dedup
+    /// set. A contributor whose outbox cannot be read contributes nothing.
+    /// </summary>
+    /// <param name="contributorIri">The IRI of the actor whose outbox is read.</param>
+    /// <param name="communityIriValue">The community's IRI (the community-tag filter's target).</param>
+    /// <param name="requireCommunityTagged">When true, only items tagged to the community are admitted
+    /// (the member branch); when false, the contributor's own content is admitted (the peered/followed
+    /// branch).</param>
+    /// <param name="seen">The shared set of activity IRIs already admitted (dedup across contributors).</param>
+    /// <param name="merged">The accumulating merge list (position, contributor, item).</param>
+    /// <param name="ct">Cancellation token.</param>
+    private async Task MergeContributorOutboxAsync(
+        Iri contributorIri,
+        string communityIriValue,
+        bool requireCommunityTagged,
+        HashSet<Iri> seen,
+        List<(int Position, Iri ContributorIri, IObjectOrLink Item)> merged,
+        CancellationToken ct)
+    {
+        IReadOnlyList<IObjectOrLink> outbox =
+            await ReadOutboxAsync(contributorIri, ct).ConfigureAwait(false);
+        for (var position = 0; position < outbox.Count; position++)
+        {
+            var item = outbox[position];
+
+            if (requireCommunityTagged && !IsCommunityTagged(item, communityIriValue))
+            {
+                continue;
+            }
+
+            if (item is IObject { Id: { Length: > 0 } id })
+            {
+                // Keep the newest (first) occurrence of a repeated IRI; drop the rest.
+                if (!seen.Add(new Iri(id)))
+                {
+                    continue;
+                }
+            }
+            merged.Add((position, contributorIri, item));
+        }
     }
 
     /// <inheritdoc/>
@@ -245,22 +287,33 @@ public sealed class CommunityFeedService : ICommunityFeedService
     /// wire (walking the outbox's pages, capped by <see cref="FeedOptions.PagesPerActor"/>). A remote
     /// outbox that cannot be fetched contributes nothing.
     /// </summary>
-    private async Task<IReadOnlyList<IObjectOrLink>> ReadOutboxAsync(Iri memberIri, CancellationToken ct)
+    private async Task<IReadOnlyList<IObjectOrLink>> ReadOutboxAsync(Iri contributorIri, CancellationToken ct)
     {
-        // When the local-actor resolver is not configured, every member is treated as local (the
+        // When the local-actor resolver is not configured, every contributor is treated as local (the
         // legacy behavior: the outbox is read from the local activity store).
         if (_localActors is null || _actorDocs is null || _client is null)
         {
-            return await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
+            return await _persistence.Activities.GetOutboxAsync(contributorIri, ct).ConfigureAwait(false);
         }
 
-        var isLocal = await _localActors.IsLocalActorAsync(memberIri, ct).ConfigureAwait(false);
+        // Peering (89): a community (Group) contributor's outbox is read from the local activity store
+        // when it is a local community. A community's outbox is always resolvable locally (a community
+        // the reader's community follows is a local community with a local outbox); routing it through
+        // the remote-wire path (which would fail for an in-process test host, or be an unnecessary
+        // round-trip) is avoided by treating a known local community as local regardless of the
+        // person-actor resolver (which only consults the person store).
+        if (await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false))
+        {
+            return await _persistence.Activities.GetOutboxAsync(contributorIri, ct).ConfigureAwait(false);
+        }
+
+        var isLocal = await _localActors.IsLocalActorAsync(contributorIri, ct).ConfigureAwait(false);
         if (isLocal)
         {
-            return await _persistence.Activities.GetOutboxAsync(memberIri, ct).ConfigureAwait(false);
+            return await _persistence.Activities.GetOutboxAsync(contributorIri, ct).ConfigureAwait(false);
         }
 
-        return await FetchRemoteOutboxAsync(memberIri, ct).ConfigureAwait(false);
+        return await FetchRemoteOutboxAsync(contributorIri, ct).ConfigureAwait(false);
     }
 
     /// <summary>

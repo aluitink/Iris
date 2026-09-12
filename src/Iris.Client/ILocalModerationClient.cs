@@ -254,4 +254,55 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (the updated poll data).</returns>
     public Task<DeliveryResult> VoteAsync(Iri actorId, Iri pollIri, int optionIndex, CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows an actor as the community (community peering, 89): a local, creator-gated request to the
+    /// community's home instance (<c>POST /local/v1/c/{name}/follow/{targetIri}</c>) that records the
+    /// follow edge in the community's <c>following</c> set and has the server author + deliver the
+    /// community's <c>Follow</c> activity to the target. The community's unified feed then surfaces the
+    /// target's content (the Lemmy "replica" behavior).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) performing the follow.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to follow.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 400 self-follow; 503 degraded).</returns>
+    /// <remarks>
+    /// The request is authenticated by the community creator's credentials (supplied at construction) or
+    /// the cookie-auth passthrough (the Blazor WASM client). The server verifies the authenticated person
+    /// is the community's creator (the Group's <c>attributedTo</c>) before recording the edge.
+    /// </remarks>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows an actor as the community (community peering, 89) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) performing the follow.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to follow.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 400 self-follow; 503 degraded).</returns>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unfollows an actor as the community (community peering, 89): the inverse of
+    /// <see cref="FollowAsCommunityAsync(Iri, Iri, CancellationToken)"/> — a local, creator-gated request
+    /// to the community's home instance (<c>POST /local/v1/c/{name}/follow/{targetIri}?unfollow=true</c>)
+    /// that removes the follow edge from the community's <c>following</c> set and has the server author +
+    /// deliver the community's <c>Undo</c> of the <c>Follow</c> to the target.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) unfollowing.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to unfollow (previously followed).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not followed; 503 degraded).</returns>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unfollows an actor as the community (community peering, 89) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) unfollowing.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to unfollow.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not followed; 503 degraded).</returns>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
 }

@@ -172,4 +172,69 @@ public sealed class LocalModerationClientTests
         Assert.Equal("https://b.domain.local/local/v1/c/iris/mutes/" + TargetIri, inner.LastUri!.ToString());
         Assert.DoesNotContain("/ap/v1/c/iris/mutes", inner.LastUri!.ToString());
     }
+
+    // --- Community peering (89): follow/unfollow an actor as the community --------------------
+    //
+    // A community's operator (its creator) can make the community (a Group actor) follow another
+    // community or person so the followed actor's content surfaces in the community's unified feed.
+    // The write is a local, creator-gated request to the community's home instance on the /local/v1
+    // tree (POST /local/v1/c/{name}/follow/{targetIri}, ?unfollow=true to remove the edge) — never a
+    // signed inbox delivery and never on the /ap/v1 AP tree.
+
+    private const string CommunityIri = "https://b.domain.local/ap/v1/c/iris";
+    private const string LocalCommunityBase = "https://b.domain.local/local/v1/c/iris";
+    private const string PeerCommunityIri = "https://a.domain.local/ap/v1/c/peer";
+
+    [Fact]
+    public async Task FollowAsCommunityAsync_PostsToFollowRoute_BasicAuth_NoBody()
+    {
+        var inner = Ok();
+        var client = BuildClient(new ProxyCredentials("iris", "iris-password"), inner);
+
+        var result = await client.FollowAsCommunityAsync(new Iri(CommunityIri), new Iri(PeerCommunityIri));
+
+        Assert.Equal(204, result.StatusCode);
+        Assert.True(result.IsSuccess);
+        Assert.Equal(HttpMethod.Post, inner.LastRequest!.Method);
+        Assert.Equal($"{LocalCommunityBase}/follow/{PeerCommunityIri}", inner.LastUri!.ToString());
+        Assert.DoesNotContain("/ap/v1/c/iris/follow", inner.LastUri!.ToString());
+        Assert.Equal("Basic", inner.LastRequest.Headers.Authorization!.Scheme);
+        Assert.Empty(inner.LastBody);
+    }
+
+    [Fact]
+    public async Task FollowAsCommunityAsync_PersonTarget_PostsToFollowRoute()
+    {
+        var inner = Ok();
+        var client = BuildClient(new ProxyCredentials("iris", "iris-password"), inner);
+
+        var result = await client.FollowAsCommunityAsync(new Iri(CommunityIri), new Iri(TargetIri));
+
+        Assert.Equal(204, result.StatusCode);
+        Assert.Equal($"{LocalCommunityBase}/follow/{TargetIri}", inner.LastUri!.ToString());
+    }
+
+    [Fact]
+    public async Task UnfollowAsCommunityAsync_PostsToFollowRoute_WithUnfollowQuery()
+    {
+        var inner = Ok();
+        var client = BuildClient(new ProxyCredentials("iris", "iris-password"), inner);
+
+        var result = await client.UnfollowAsCommunityAsync(new Iri(CommunityIri), new Iri(PeerCommunityIri));
+
+        Assert.Equal(204, result.StatusCode);
+        Assert.Equal($"{LocalCommunityBase}/follow/{PeerCommunityIri}?unfollow=true", inner.LastUri!.ToString());
+    }
+
+    [Fact]
+    public async Task FollowAsCommunityAsync_NonSuccessStatusCode_PropagatesFailure()
+    {
+        var inner = new FakeHttpHandler(Unauthorized());
+        var client = BuildClient(new ProxyCredentials("not-the-creator", "x"), inner);
+
+        var result = await client.FollowAsCommunityAsync(new Iri(CommunityIri), new Iri(PeerCommunityIri));
+
+        Assert.Equal(401, result.StatusCode);
+        Assert.False(result.IsSuccess);
+    }
 }

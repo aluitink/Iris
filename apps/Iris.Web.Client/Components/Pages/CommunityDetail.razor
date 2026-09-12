@@ -1,6 +1,7 @@
 @page "/community"
 @attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
+@using Iris.Client.Collections
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
@@ -130,6 +131,7 @@ else
         @if (IsCreator)
         {
             <a href="#owners" id="tab-owners" role="tab" aria-selected="@(ActiveTab == "owners")" aria-controls="panel-owners" class="tab @(ActiveTab == "owners" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("owners")'>Owners</a>
+            <a href="#peers" id="tab-peers" role="tab" aria-selected="@(ActiveTab == "peers")" aria-controls="panel-peers" class="tab @(ActiveTab == "peers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("peers")'>Peers@(PeerActors is { Count: > 0 } pc ? $" ({pc.Count})" : string.Empty)</a>
             <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(JoinRequestCount is { } jrc && jrc > 0 ? $" ({jrc})" : string.Empty)</a>
         }
     </div>
@@ -194,6 +196,57 @@ else
                         </div>
                     }
                 }
+            }
+        </div>
+    }
+    else if (ActiveTab == "peers" && IsCreator)
+    {
+        <div class="card" role="tabpanel" id="panel-peers" aria-labelledby="tab-peers">
+            <h2>Peers</h2>
+            <p class="muted">
+                Actors this community follows. Their content appears in the community feed — the
+                community "replicates" the followed actors (Lemmy-style peering).
+            </p>
+            <form class="peers-add-form" @onsubmit="SubmitAddPeerAsync">
+                <div class="form-group">
+                    <label for="peer-iri">Follow a community or actor</label>
+                    <input id="peer-iri" type="text" @bind="PeerIriInput"
+                           placeholder="https://host/ap/v1/c/name  or  https://host/ap/v1/u/handle"
+                           autocomplete="off" />
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary" disabled="@(IsAddingPeer || string.IsNullOrWhiteSpace(PeerIriInput))">
+                        @if (IsAddingPeer) { <span>Following…</span> } else { <span>Follow as this community</span> }
+                    </button>
+                    <button type="button" class="btn" @onclick="LoadPeersAsync" disabled="@IsAddingPeer">Refresh</button>
+                </div>
+                @if (PeerError is not null)
+                {
+                    <div class="error" role="alert">@PeerError</div>
+                }
+            </form>
+            @if (PeersLoading)
+            {
+                <p class="muted">Loading peers…</p>
+            }
+            else if (PeerActors is { Count: 0 })
+            {
+                <p class="muted">This community follows no one yet.</p>
+            }
+            else if (PeerActors is { } peers)
+            {
+                <div class="peers-list">
+                    @foreach (var peerIri in peers)
+                    {
+                        <div class="member-row">
+                            <a href="@($"/actor?iri={Uri.EscapeDataString(peerIri)}")" class="object-actor-handle">@DisplayHandle(peerIri)</a>
+                            <button class="btn btn-small btn-danger" @onclick="() => UnfollowPeerAsync(peerIri)"
+                                    disabled="@(IsUnfollowingPeer && UnfollowingPeerIri == peerIri)">
+                                @(IsUnfollowingPeer && UnfollowingPeerIri == peerIri ? "Unfollowing…" : "Unfollow")
+                            </button>
+                        </div>
+                    }
+                </div>
             }
         </div>
     }
@@ -554,6 +607,10 @@ else
         {
             _ = LoadOwnersAsync();
         }
+        if (tab == "peers" && IsCreator && PeerActors is null)
+        {
+            _ = LoadPeersAsync();
+        }
     }
 
     private RenderFragment<IObjectOrLink> MemberTemplate
@@ -833,6 +890,17 @@ else
     private bool IsChangingOwner { get; set; }
     private string? ChangingOwnerIri { get; set; }
 
+    // Community peering (89): the actors the community follows (its "peers"). Their content is
+    // replicated into the community feed. A community operator (the creator) follows/unfollows them
+    // via the local, creator-gated endpoint (POST /local/v1/c/{name}/follow/{targetIri}).
+    private List<string>? PeerActors { get; set; }
+    private bool PeersLoading { get; set; }
+    private string? PeerError { get; set; }
+    private bool IsAddingPeer { get; set; }
+    private string PeerIriInput { get; set; } = string.Empty;
+    private bool IsUnfollowingPeer { get; set; }
+    private string? UnfollowingPeerIri { get; set; }
+
     private async Task LoadOwnersAsync()
     {
         var localModeration = Session.LocalModeration;
@@ -941,6 +1009,130 @@ else
         {
             IsChangingOwner = false;
             ChangingOwnerIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPeersAsync()
+    {
+        var client = Client;
+        if (client is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        PeersLoading = true;
+        PeerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var iris = new List<string>();
+            // Bypass the collection cache so a fresh read reflects a just-performed follow/unfollow.
+            await foreach (var item in client.GetCollectionItemsAsync(communityIri.FollowingOf(), new CollectionQuery(BypassCache: true)))
+            {
+                var iri = item switch
+                {
+                    ILink { Href: { } href } => href.ToString(),
+                    IObject { Id: { Length: > 0 } id } => id,
+                    _ => null,
+                };
+                if (!string.IsNullOrEmpty(iri))
+                {
+                    iris.Add(iri);
+                }
+            }
+            PeerActors = iris;
+        }
+        catch (Exception)
+        {
+            PeerError = "We couldn't load this community's peers. Please try again.";
+        }
+        finally
+        {
+            PeersLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task SubmitAddPeerAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        var raw = PeerIriInput.Trim();
+        if (string.IsNullOrWhiteSpace(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out _))
+        {
+            PeerError = "Enter a valid actor or community IRI (a full https:// URL).";
+            return;
+        }
+
+        IsAddingPeer = true;
+        PeerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.FollowAsCommunityAsync(communityIri, new Iri(raw));
+            if (result.IsSuccess)
+            {
+                PeerIriInput = string.Empty;
+                Ui.InvalidateActor(communityIri);
+                await LoadPeersAsync();
+            }
+            else
+            {
+                PeerError = $"Couldn't follow that actor (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            PeerError = "The community couldn't follow that actor. Please try again.";
+        }
+        finally
+        {
+            IsAddingPeer = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task UnfollowPeerAsync(string peerIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || CommunityIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsUnfollowingPeer = true;
+        UnfollowingPeerIri = peerIri;
+        PeerError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.UnfollowAsCommunityAsync(communityIri, new Iri(peerIri));
+            if (result.IsSuccess)
+            {
+                Ui.InvalidateActor(communityIri);
+                await LoadPeersAsync();
+            }
+            else
+            {
+                PeerError = $"Couldn't unfollow that actor (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            PeerError = "The community couldn't unfollow that actor. Please try again.";
+        }
+        finally
+        {
+            IsUnfollowingPeer = false;
+            UnfollowingPeerIri = null;
             StateHasChanged();
         }
     }
