@@ -102,6 +102,22 @@ public sealed class LocalModerationClient : ILocalModerationClient
         => LocalCommunityMuteAsync(communityId, targetId, unmute: true, credentials, ct);
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityBlockAsync(communityId, targetId, unblock: false, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityBlockAsync(communityId, targetId, unblock: false, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default)
+        => LocalCommunityBlockAsync(communityId, targetId, unblock: true, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalCommunityBlockAsync(communityId, targetId, unblock: true, credentials, ct);
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
         => LocalCommunityMemberRemoveAsync(communityId, memberId, credentials: null, ct);
 
@@ -492,6 +508,58 @@ public sealed class LocalModerationClient : ILocalModerationClient
         {
             throw new InvalidOperationException(
                 "Community mute requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
+        }
+
+        return SendLocalPostAsync(handler, requestUri, ownsHandler, ct);
+    }
+
+    /// <summary>
+    /// Performs a local, Basic-authenticated community block/unblock:
+    /// <c>POST /local/v1/c/{name}/blocks/{targetId}</c> (with <c>?unblock=true</c> to remove).
+    /// </summary>
+    private Task<DeliveryResult> LocalCommunityBlockAsync(
+        Iri communityId,
+        Iri targetId,
+        bool unblock,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var community = communityId.Value;
+        var communitySegmentStart = community.IndexOf("/" + LocalModerationConstants.CommunitySegment + "/", StringComparison.Ordinal);
+        if (communitySegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a local-moderation route for community IRI '{communityId}' (expected a path containing /c/).");
+        }
+
+        var communitySegment = community[communitySegmentStart..];
+        var host = new Uri(communityId.Value).GetLeftPart(UriPartial.Authority);
+        var query = unblock ? "?unblock=true" : string.Empty;
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{communitySegment.TrimEnd('/')}/blocks/{targetId.Value.TrimStart('/')}{query}");
+
+        var configured = _localAuth;
+        LocalAuthHandler handler;
+        bool ownsHandler;
+        if (credentials is not null && configured is null)
+        {
+            handler = new LocalAuthHandler(credentials, new HttpClientHandler());
+            ownsHandler = true;
+        }
+        else if (credentials is not null)
+        {
+            handler = new LocalAuthHandler(credentials, configured!);
+            ownsHandler = false;
+        }
+        else if (configured is not null)
+        {
+            handler = configured;
+            ownsHandler = false;
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "Community block requires LocalCredentials (set ActivityPubClientOptions.LocalCredentials) or explicit credentials.");
         }
 
         return SendLocalPostAsync(handler, requestUri, ownsHandler, ct);

@@ -1173,6 +1173,13 @@ public static class ActivityPubServerExtensions
         // of the actor being muted.
         localGroup.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
 
+        // Local block (community): POST /local/v1/c/{name}/blocks/{target} — a community's operator
+        // records a community-scoped block (the community hides a member's content from its unified
+        // feed and severs the relationship, stronger than a mute); the same route with ?unblock=true
+        // removes it. The community's IRI is the credential seam (IActorCredentialValidator).
+        // {target} is a catch-all of the absolute IRI of the actor being blocked.
+        localGroup.MapPost("/c/{name}/blocks/{**target}", CommunityBlockHandler).WithName("community-block-endpoint");
+
         // Local member removal (community): POST /local/v1/c/{name}/members/remove/{**target} — the
         // community's creator (a local person) removes a member from the community. The person's IRI is
         // the credential seam (IActorCredentialValidator); the server verifies the person is the
@@ -7802,6 +7809,79 @@ public static class ActivityPubServerExtensions
         // reflect the mute it just recorded (or removed) until the TTL lapses or a ?refresh=true bypass
         // is issued. Drop the mutes page-1 entry so the next non-?refresh read re-renders.
         InvalidateLocalCollectionPage(collectionCache, communityIri, "mutes");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Records (or removes) a community-scoped block, on behalf of the community's creator, for
+    /// <c>POST /local/v1/c/{name}/blocks/{**target}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <see cref="CommunityMuteHandler"/> but records a <c>CommunityBlock</c> edge (stronger
+    /// than a mute: the blocked member's content is hidden from the community feed and the
+    /// relationship is severed). The requesting community (Basic auth) must exist; the target IRI is
+    /// the catch-all <c>{target}</c> segment. <c>?unblock=true</c> removes the block. Idempotent:
+    /// re-blocking or unblocking a non-existent block is a no-op (204).
+    /// </remarks>
+    private static async Task<IResult> CommunityBlockHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The community must exist (an unknown community 404s, mirroring the other community endpoints).
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 1. Authenticate the requesting community (Basic auth) for this community's IRI.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticated = await credentialValidator
+            .TryValidateAsync(communityIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticated is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Record or remove the block edge (?unblock=true removes). Idempotent, like the mute.
+        var remove = context.Request.Query.TryGetValue("unblock", out var unblockValues)
+            && unblockValues.Count > 0
+            && string.Equals(unblockValues[0], "true", StringComparison.OrdinalIgnoreCase);
+        if (remove)
+        {
+            await persistence.Communities.RemoveBlockAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Communities.AddBlockAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+
+        // Invalidate the blocks collection page-1 cache so the next read reflects the change (19.6.2).
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "blocks");
 
         return Results.NoContent();
     }

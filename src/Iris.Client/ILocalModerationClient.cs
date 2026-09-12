@@ -161,6 +161,48 @@ public interface ILocalModerationClient
     public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
+    /// Blocks a member within a community (community-scoped moderation): a local, Basic-authenticated
+    /// request to the community's home instance (<c>POST /local/v1/c/{name}/blocks/{targetId}</c>) that
+    /// hides the member's content from the community's feed and severs the relationship (stronger than
+    /// a mute).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to block.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Blocks a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to block.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-blocks a member within a community: the inverse of <see cref="BlockCommunityMemberAsync(Iri,
+    /// Iri, CancellationToken)"/> — <c>POST /local/v1/c/{name}/blocks/{targetId}?unblock=true</c>.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-block.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-blocks a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-block.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
     /// Removes a member from a community, on behalf of the community's creator: a local,
     /// Basic-authenticated request to the community's home instance
     /// (<c>POST /local/v1/c/{name}/members/remove/{memberId}</c>) that removes the membership edge.

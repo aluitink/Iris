@@ -24,7 +24,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
 | View own profile | ✅ | ✅ | ☐ | |
-| View others' profile | 🟡 | ☐ | ☐ | **GAP:** `ActorDetail.razor` is `@attribute [Authorize]`-gated — the matrix originally said "Public, no auth required". Anonymous viewing is NOT wired. |
+| View others' profile | ✅ | ✅ | ☐ | Anonymous viewing wired (Phase 88.4): `SameOriginApHandler` rewrites FQDN IRIs to same-origin for signed-out readers. Live-verified: `/actor?iri=…alice` renders profile + Posts/Followers/Following tabs without login. |
 | Edit profile (name, summary, avatar/header) | ✅ | ✅ | ☐ | `Update` on own actor doc |
 | View outbox/liked tabs | ✅ | ✅ | ☐ | Port `ActorProfile` + tabs from the sample |
 
@@ -58,7 +58,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Follow / unfollow | ✅ | ✅ | ☐ | |
 | Followers / following lists | ✅ | ✅ | ☐ | |
 | Manually-approve-followers toggle | ✅ | ✅ | ☐ | Settings |
-| Follow-request queue (accept/reject) | 🟡 | ☐ | ☐ | **PARTIAL:** Own-profile Requests tab + `FollowRequestRow` exist; relies on AP `Accept`/`Reject` to the remote inbox (no dedicated server-side accept/reject endpoint). |
+| Follow-request queue (accept/reject) | ✅ | ✅ | ☐ | Dedicated local endpoints (Phase 100): `GET/POST /local/v1/u/{handle}/requests[/accept|reject]/{**actorIri}`. Profile Requests tab + ActorDetail join-request queue both wired. |
 
 ## Engagement
 
