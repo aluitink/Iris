@@ -99,8 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **113 — (in progress)** — Phase D (polish). 113.1 (design-token system) + 113.2 (visual consistency + subtle motion) done. Remaining: continue Phase D — finish the design-token migration of odd spacing values, or a visual-consistency deep pass (card spacing, iconography), or a distribution feature item.
-- **114 — (candidate)** — Next Phase D slice: (a) odd-spacing-value token migration + spacing audit, (b) iconography/visual-consistency pass, or (c) a concrete matrix ☐ distribution feature. Replenish before selecting.
+- **113 — (in progress)** — Phase D (polish). 113.1 (design-token system) + 113.2 (visual consistency + motion) + 113.3 (complete spacing/type token migration) done — the design-token system is now complete. Remaining: iconography/visual-consistency deep pass, or a distribution feature item.
+- **114 — (candidate)** — Next Phase D slice: (a) iconography/visual-consistency deep pass (card spacing rhythm, icon set, empty-state illustrations), or (b) a concrete matrix ☐ distribution feature. Replenish before selecting.
 
 ## Inbox
 
@@ -112,15 +112,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **113.2 — Visual Consistency + Subtle Motion (DONE)** — 0.15s hover transitions on buttons/links; secondary-button hover state; danger button text `#fff`→`--btn-fg` (WCAG AA); global `prefers-reduced-motion` guard (WCAG 2.3.3); `color-mix` success hover; cleaned stale `var()` fallbacks. Presentational no-op. Build clean, Web.Tests 95/95, live-verified. [changes/1132](docs/changes/1132-phase113-visual-consistency-motion.md)
+- **113.3 — Complete Token Migration (DONE)** — Extended spacing scale (off-ramp `--space-25/35/45/55/60/65/90/125`) + type scale (`--font-size-3xl/4xl`); migrated the remaining raw rem spacing values (~150) + heading font-sizes. `app.css` now has zero raw rem spacing values. Presentational no-op. Build clean, Web.Tests 95/95, live-verified. [changes/1133](docs/changes/1133-phase113-complete-token-migration.md)
 
-- **113.1 — Design-Token System (DONE)** — Semantic color tokens (danger/warning/success/btn-fg/surface-inset/border-strong), 4px spacing scale (`--space-1…7`), type scale (`--font-size-xs…2xl`); migrated ~430 lines of raw hex+rem onto tokens. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
+- **113.2 — Visual Consistency + Subtle Motion (DONE)** — 0.15s hover transitions on buttons/links; secondary-button hover; danger text `#fff`→`--btn-fg` (AA); global `prefers-reduced-motion` guard; `color-mix` success hover; cleaned stale `var()` fallbacks. [changes/1132](docs/changes/1132-phase113-visual-consistency-motion.md)
 
-- **112 — Community Block + Matrix Reconciliation (DONE)** — `CommunityBlockHandler` + block endpoint + client methods + Block button. Reconciled 3 stale matrix entries. Matrix fully ✅. [changes/1121](docs/changes/1121-phase112-community-block.md)
+- **113.1 — Design-Token System (DONE)** — Semantic color tokens, 4px spacing scale, type scale; migrated ~430 lines of raw hex+rem. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
+
+- **112 — Community Block + Matrix Reconciliation (DONE)** — `CommunityBlockHandler` + block endpoint + client methods + Block button. Reconciled 3 stale matrix entries. [changes/1121](docs/changes/1121-phase112-community-block.md)
 
 - **111 — Color Contrast Audit (DONE)** — WCAG AA audit; fixed 2 white-on-accent failures. [changes/1111](docs/changes/1111-phase111-color-contrast-audit.md)
-
-- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all tab bars. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
 
 
 
