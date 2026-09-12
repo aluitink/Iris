@@ -1219,6 +1219,24 @@ public static class ActivityPubServerExtensions
         // activity (a local, non-federated write), so it is on the /local/v1 tree.
         localGroup.MapPost("/u/{handle}/votes/{**pollIri}", LocalPollVoteHandler).WithName("local-poll-vote-endpoint");
 
+        // Local follow-request queue (person, Phase 100): GET /local/v1/u/{handle}/requests — the actor
+        // lists the pending inbound Follow requests held for approval (manuallyApprovesFollowers set).
+        // Owner-only (Basic or cookie auth, the actor's own IRI). Returns a JSON array of requester IRIs
+        // (newest-first). Not an ActivityStreams activity (a local, non-federated read), so it is on the
+        // /local/v1 tree. The queue drains when the operator Accepts/Rejects (the follow-decision outbox
+        // write removes the pending request edge — RecordFollowDecisionLocalAsync).
+        localGroup.MapGet("/u/{handle}/requests", LocalListFollowRequestsHandler).WithName("local-list-follow-requests-endpoint");
+
+        // Local follow-request accept (person, Phase 100): POST /local/v1/u/{handle}/requests/accept/{**actorIri}
+        // — the actor accepts a pending inbound follow request: the follower→actor follow edge is recorded
+        // (confirming the held follow) and the pending request is drained from the queue. Owner-only.
+        localGroup.MapPost("/u/{handle}/requests/accept/{**actorIri}", LocalAcceptFollowRequestHandler).WithName("local-accept-follow-request-endpoint");
+
+        // Local follow-request reject (person, Phase 100): POST /local/v1/u/{handle}/requests/reject/{**actorIri}
+        // — the actor rejects a pending inbound follow request: the provisional follow edge is removed and
+        // the pending request is drained from the queue (no follow granted). Owner-only.
+        localGroup.MapPost("/u/{handle}/requests/reject/{**actorIri}", LocalRejectFollowRequestHandler).WithName("local-reject-follow-request-endpoint");
+
         return endpoints;
     }
 
@@ -1628,6 +1646,155 @@ public static class ActivityPubServerExtensions
         // the mute it just recorded (or removed) until the TTL lapses or a ?refresh=true bypass is
         // issued. Drop the mutes page-1 entry so the next non-?refresh read re-renders.
         InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Lists the actor's pending inbound follow requests (Phase 100) — the follow-approval queue: the
+    /// remote actors who sent a <c>Follow</c> while the actor has <c>manuallyApprovesFollowers</c> set
+    /// (so the follow is held, not auto-accepted). Owner-only (Basic auth or the Blazor WASM cookie, the
+    /// actor's own IRI). Returns 200 with a JSON array of requester IRIs (newest-first); 401 when the
+    /// caller is not the actor; 404 when the handle is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalListFollowRequestsHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the requesting actor (Basic auth or the Blazor WASM cookie — the same pattern
+        // as LocalMuteHandler). The queue is private: only the actor themselves may list it.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. The handle must resolve to a known local actor (a community has no person follow queue —
+        // community join requests live on the /local/v1/c/{name}/requests surface).
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 3. List the pending follow-request edges (requester → this actor), newest-first.
+        var requests = await persistence.Follows.GetFollowRequestsAsync(actorIri, ct).ConfigureAwait(false);
+        return Results.Json(requests.Select(r => r.Value).ToArray());
+    }
+
+    /// <summary>
+    /// Accepts a pending inbound follow request (Phase 100): the actor approves a held follow. The
+    /// follower→actor follow edge is recorded (confirming the held follow) and the pending request is
+    /// drained from the queue. Owner-only (Basic or cookie auth, the actor's own IRI). Returns 204 on
+    /// success; 401 unauthenticated; 404 when the handle or the request is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalAcceptFollowRequestHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+        => await LocalFollowRequestDecisionAsync(context, handle, credentialValidator, persistence, optionsAccessor, accept: true, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Rejects a pending inbound follow request (Phase 100): the actor refuses a held follow. The
+    /// provisional follower→actor follow edge is removed and the pending request is drained from the
+    /// queue (no follow granted). Owner-only (Basic or cookie auth, the actor's own IRI). Returns 204 on
+    /// success; 401 unauthenticated; 404 when the handle or the request is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalRejectFollowRequestHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+        => await LocalFollowRequestDecisionAsync(context, handle, credentialValidator, persistence, optionsAccessor, accept: false, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Shared body for the local follow-request accept/reject endpoints (Phase 100): authenticates the
+    /// acting actor, verifies a pending follow request from the <c>{**actorIri}</c> requester exists, and
+    /// applies the follow-decision edge effect (record/confirm the follow edge + drain the request edge,
+    /// or remove the follow edge + drain the request edge).
+    /// </summary>
+    private static async Task<IResult> LocalFollowRequestDecisionAsync(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        bool accept,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the acting actor (Basic auth or the Blazor WASM cookie — same as the list
+        // handler). The decision is private: only the actor themselves may accept/reject their requests.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. The handle must resolve to a known local actor.
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 3. The requester ({**actorIri}) must have a pending follow request for this actor.
+        var requesterIri = ParseCatchAllIri(context, "actorIri");
+        if (requesterIri is not { } requester)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Follows.HasFollowRequestAsync(requester, actorIri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 4. Apply the decision: record/confirm (accept) or remove (reject) the follow edge, and drain the
+        // pending request edge (the queue no longer lists the decided requester).
+        await ApplyFollowDecisionEdgeAsync(persistence, actorIri, requester, accept, ct).ConfigureAwait(false);
 
         return Results.NoContent();
     }
@@ -3417,6 +3584,17 @@ public static class ActivityPubServerExtensions
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
             await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
         }
+        else if (await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
+        {
+            // A local follow of a person who manually approves followers is held for approval (Phase 100):
+            // record a pending follow-request edge so the target’s follow-approval queue
+            // (GET /local/v1/u/{handle}/requests) lists it. The provisional Follow edge (recorded above)
+            // is independent and is drained/confirmed when the target Accepts or Rejects (the follow-
+            // decision path). Mirrors the inbox-side FollowActivityHandler gate (the remote-follow path).
+            await persistence.Follows
+                .RecordFollowRequestAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
+        }
 
         return targetIri.Value;
     }
@@ -3549,19 +3727,50 @@ public static class ActivityPubServerExtensions
             return null;
         }
 
+        await ApplyFollowDecisionEdgeAsync(persistence, targetIri.Value, followerIri.Value, accept, ct).ConfigureAwait(false);
+
+        return followerIri.Value;
+    }
+
+    /// <summary>
+    /// Applies the local follow-decision edge effect (Phase 100): given the followed actor
+    /// (<paramref name="actorIri"/>), the follower (<paramref name="followerIri"/>), and the decision
+    /// (<paramref name="accept"/>), records (accept) or removes (reject) the follower→actor follow edge,
+    /// and — when the target is a local person — drains the pending follow-request edge (the
+    /// follow-approval queue). Shared by the outbox (AP-native) decision path
+    /// (<see cref="RecordFollowDecisionLocalAsync"/>) and the local follow-request accept/reject endpoints
+    /// (which key the decision by the requester IRI, not a signed Accept/Reject activity).
+    /// </summary>
+    private static async Task ApplyFollowDecisionEdgeAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        Iri followerIri,
+        bool accept,
+        CancellationToken ct)
+    {
+        // When the target is a local person (not a community), the inbound follow — if it was held for
+        // approval — recorded a pending follow-request edge (Phase 100). Accepting or Rejecting drains
+        // it so the actor's follow-approval queue no longer lists the decided request. (A community
+        // target uses the separate CommunityJoinRequest edge, not this one.)
+        var isPersonTarget = !await persistence.Communities.TryGetCommunityAsync(actorIri, out _, ct).ConfigureAwait(false);
+        if (isPersonTarget)
+        {
+            await persistence.Follows.RemoveFollowRequestAsync(followerIri, actorIri, ct).ConfigureAwait(false);
+        }
+
         if (accept)
         {
             // Accept: ensure the follower → actor edge (idempotent). A local community target records the
             // community's follows/followers sets (the inverse of the inbound FollowActivityHandler's
             // community branch); a person target records the person follow edge.
-            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            if (!isPersonTarget)
             {
-                await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
-                await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.AddFollowAsync(actorIri, followerIri, ct).ConfigureAwait(false);
+                await persistence.Communities.AddFollowerAsync(actorIri, followerIri, ct).ConfigureAwait(false);
             }
             else
             {
-                await persistence.Follows.RecordFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
+                await persistence.Follows.RecordFollowAsync(followerIri, actorIri, ct).ConfigureAwait(false);
             }
         }
         else
@@ -3570,15 +3779,47 @@ public static class ActivityPubServerExtensions
             // edge is the inverse of a remote follow: the follower is the remote actor, the target (this
             // actor) is local, so the edge lives in this actor's follow store (or the community's
             // follows/followers sets when the target is a local community).
-            await persistence.Follows.RemoveFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
-            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            await persistence.Follows.RemoveFollowAsync(followerIri, actorIri, ct).ConfigureAwait(false);
+            if (!isPersonTarget)
             {
-                await persistence.Communities.RemoveFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
-                await persistence.Communities.RemoveFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.RemoveFollowAsync(actorIri, followerIri, ct).ConfigureAwait(false);
+                await persistence.Communities.RemoveFollowerAsync(actorIri, followerIri, ct).ConfigureAwait(false);
             }
         }
+    }
 
-        return followerIri.Value;
+    /// <summary>
+    /// Reports whether a local <em>person</em> (not a community) has <c>manuallyApprovesFollowers</c> set
+    /// — i.e. should hold an inbound follow for approval rather than auto-accepting it (Phase 100). The
+    /// flag lives in the stored actor's <c>ExtensionData</c> dictionary
+    /// (the ActivityStreams <c>Object</c> deserializer captures the unknown top-level property there). A
+    /// community target, an unknown actor, or a missing/false value means auto-accept (the default). This
+    /// is the outbox-side twin of <see cref="Inbox.FollowActivityHandler"/>’s gate check: local follows are
+    /// recorded via <see cref="RecordFollowLocalAsync"/> (the outbox-publish path), not the inbox handler,
+    /// so the pending follow-request edge must be recorded here too or a local follower of a gated actor
+    /// would never appear in the actor’s follow-approval queue.
+    /// </summary>
+    private static async Task<bool> IsManuallyApprovingPersonAsync(
+        IPersistenceProvider persistence,
+        Iri targetIri,
+        CancellationToken ct)
+    {
+        // A community target gates its inbound follows through the separate CommunityJoinRequest
+        // mechanism, not the person follow-request queue — exclude it here.
+        if (await persistence.Communities.TryGetCommunityAsync(targetIri, out _, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (await persistence.Actors.TryGetActorAsync(targetIri, out var actor, ct).ConfigureAwait(false)
+            && actor is { } localActor)
+        {
+            return localActor.ExtensionData is { } ext
+                && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+
+        return false;
     }
 
     /// <summary>

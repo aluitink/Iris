@@ -38,4 +38,20 @@ public sealed class EfFollowStore : IFollowStore
     /// <inheritdoc/>
     public Task<bool> IsFollowingAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)
         => _edges.ContainsAsync(EdgeKind.Follow, followerIri.Value, targetIri.Value, ct);
+
+    /// <inheritdoc/>
+    public Task RecordFollowRequestAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)
+        => _edges.AddAsync(EdgeKind.FollowRequest, followerIri.Value, targetIri.Value, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> RemoveFollowRequestAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)
+        => _edges.RemoveAsync(EdgeKind.FollowRequest, followerIri.Value, targetIri.Value, ct);
+
+    /// <inheritdoc/>
+    public Task<bool> HasFollowRequestAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)
+        => _edges.ContainsAsync(EdgeKind.FollowRequest, followerIri.Value, targetIri.Value, ct);
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Iri>> GetFollowRequestsAsync(Iri actorIri, CancellationToken ct = default)
+        => _edges.InSourcesDescendingAsync(EdgeKind.FollowRequest, actorIri.Value, ct);
 }

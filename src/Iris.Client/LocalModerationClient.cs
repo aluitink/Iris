@@ -126,6 +126,22 @@ public sealed class LocalModerationClient : ILocalModerationClient
         => LocalCommunityOwnersGetAsync(communityId, credentials, ct);
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, CancellationToken ct = default)
+        => LocalFollowRequestsGetAsync(actorId, credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, ProxyCredentials credentials, CancellationToken ct = default)
+        => LocalFollowRequestsGetAsync(actorId, credentials, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> AcceptFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default)
+        => LocalFollowRequestDecisionAsync(actorId, requesterId, "accept", credentials: null, ct);
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RejectFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default)
+        => LocalFollowRequestDecisionAsync(actorId, requesterId, "reject", credentials: null, ct);
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default)
         => LocalCommunityOwnerDecisionAsync(communityId, actorId, "promote", credentials: null, ct);
 
@@ -261,6 +277,77 @@ public sealed class LocalModerationClient : ILocalModerationClient
             Timeout = Timeout.InfiniteTimeSpan,
         };
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Performs a local, owner-authenticated GET of the actor's pending follow requests:
+    /// <c>GET /local/v1/u/{handle}/requests</c> (the follow-approval queue, Phase 100). The actor
+    /// segment is derived from the actor IRI's <c>/u/</c> path (the same derivation as the poll-vote
+    /// and mute routes).
+    /// </summary>
+    private async Task<DeliveryResult> LocalFollowRequestsGetAsync(
+        Iri actorId,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var actor = actorId.Value;
+        var actorSegmentStart = actor.IndexOf("/u/", StringComparison.Ordinal);
+        if (actorSegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a follow-request route for actor IRI '{actorId}' (expected a path containing /u/).");
+        }
+
+        var actorSegment = actor[actorSegmentStart..];
+        var host = new Uri(actorId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}/requests");
+
+        var (handler, ownsHandler) = ResolveLocalHandler(credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
+        var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);
+    }
+
+    /// <summary>
+    /// Performs a local, owner-authenticated POST for a follow-request decision (Phase 100):
+    /// <c>POST /local/v1/u/{handle}/requests/{accept|reject}/{requesterId}</c>. The actor segment is
+    /// derived from the actor IRI's <c>/u/</c> path (the same derivation as the follow-request list).
+    /// </summary>
+    private async Task<DeliveryResult> LocalFollowRequestDecisionAsync(
+        Iri actorId,
+        Iri requesterId,
+        string action,
+        ProxyCredentials? credentials,
+        CancellationToken ct)
+    {
+        var actor = actorId.Value;
+        var actorSegmentStart = actor.IndexOf("/u/", StringComparison.Ordinal);
+        if (actorSegmentStart < 0)
+        {
+            throw new InvalidOperationException(
+                $"Cannot derive a follow-request route for actor IRI '{actorId}' (expected a path containing /u/).");
+        }
+
+        var actorSegment = actor[actorSegmentStart..];
+        var host = new Uri(actorId.Value).GetLeftPart(UriPartial.Authority);
+        var requestUri = new Uri(
+            $"{host}{LocalModerationConstants.LocalRoutePrefix}{actorSegment.TrimEnd('/')}/requests/{action}/{requesterId.Value.TrimStart('/')}");
+
+        var (handler, ownsHandler) = ResolveLocalHandler(credentials);
+        using var localHttp = new HttpClient(handler, disposeHandler: ownsHandler)
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
         using var response = await localHttp.SendAsync(request, ct).ConfigureAwait(false);
         var bodyText = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
         return new DeliveryResult((int)response.StatusCode, response.IsSuccessStatusCode, bodyText);

@@ -173,6 +173,14 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
 
             if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
             {
+                // The follow is held for approval: record a pending follow-request edge (Phase 100) so
+                // the actor's follow-approval queue (GET /local/v1/u/{handle}/requests) lists it. The
+                // edge is independent of the provisional Follow edge (already recorded above) and is
+                // removed when the operator Accepts or Rejects (RecordFollowDecisionLocalAsync).
+                await _persistence.Follows
+                    .RecordFollowRequestAsync(followerIri.Value, delivery.RecipientIri, ct)
+                    .ConfigureAwait(false);
+
                 return;
             }
         }

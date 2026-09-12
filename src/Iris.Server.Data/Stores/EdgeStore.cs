@@ -119,6 +119,24 @@ public sealed class EdgeStore
     }
 
     /// <summary>
+    /// Enumerates the sources of a target's incoming edges of a kind (reverse direction), as IRIs,
+    /// newest-first (descending by <see cref="EdgeEntity.CreatedAt"/>). Used by the pending-request queues
+    /// (Phase 100) where the most recent request should surface first.
+    /// </summary>
+    public async Task<IReadOnlyList<Iri>> InSourcesDescendingAsync(EdgeKind kind, string target, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var sources = await db.Set<EdgeEntity>()
+            .Where(e => e.Kind == kind && e.Target == target)
+            .OrderByDescending(e => e.CreatedAt)
+            .Select(e => e.Source)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        return sources.Select(s => new Iri(s)).ToList();
+    }
+
+    /// <summary>
     /// Enumerates all edges of a kind whose target is in the given set (batch reverse direction),
     /// grouped by target. Used by the enrichment batch to avoid N+1 queries.
     /// </summary>

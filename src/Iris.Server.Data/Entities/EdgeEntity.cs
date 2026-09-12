@@ -127,4 +127,12 @@ public enum EdgeKind
     /// dedupe index, Phase 20.4 (d)).
     /// </summary>
     MediaContentHash = 16,
+
+    /// <summary>
+    /// A pending person follow request: requesting follower → local actor (the actor's follow-approval
+    /// queue, Phase 100). Recorded only when the actor has <c>manuallyApprovesFollowers</c> set and an
+    /// inbound <c>Follow</c> is therefore held (not auto-accepted); removed when the operator Accepts or
+    /// Rejects the request. The inverse of the community's <see cref="CommunityJoinRequest"/>.
+    /// </summary>
+    FollowRequest = 17,
 }

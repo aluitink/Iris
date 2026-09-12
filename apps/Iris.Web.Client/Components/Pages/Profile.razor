@@ -56,7 +56,7 @@ else
         <a href="#likes" id="tab-likes" role="tab" aria-selected="@(ActiveTab == "likes")" aria-controls="panel-likes" class="tab @(ActiveTab == "likes" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("likes")'>Likes</a>
         @if (ApprovesFollowers)
         {
-            <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+            <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(FollowRequestCount is { } frc && frc > 0 ? $" ({frc})" : string.Empty)</a>
         }
     </div>
 
@@ -104,16 +104,42 @@ else
     }
     else if (ActiveTab == "requests")
     {
-        <div role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
-        <PagedCollection
-            @key="@RequestsKey"
-            Client="@OutboxClient"
-            CollectionIri="@OutboxIri"
-            PageSize="10"
-            ShowRefreshButton="true"
-            ItemFilter="IsFollow"
-            ItemTemplate="@FollowRequestTemplate"
-            EmptyMessage="No pending follow requests." />
+        <div class="card" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
+            @if (FollowRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (FollowRequestError is not null)
+            {
+                <div class="error" role="alert">@FollowRequestError</div>
+            }
+            else if (FollowRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending follow requests.</p>
+            }
+            else
+            {
+                @if (FollowRequestActors is { } actors)
+                {
+                    @foreach (var actorIri in actors)
+                    {
+                        <div class="follow-request-row">
+                            <div class="follow-request-info">
+                                <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri)}")" class="follow-request-actor">@FollowDisplayHandle(actorIri)</a>
+                                <span class="muted">wants to follow you</span>
+                            </div>
+                            <div class="follow-request-actions">
+                                <button class="btn btn-primary btn-sm" disabled="@IsDecidingFollowRequest" @onclick="() => AcceptFollowRequestAsync(actorIri)">
+                                    @(IsDecidingFollowRequest && DecidingFollowActorIri == actorIri ? "Accepting…" : "Accept")
+                                </button>
+                                <button class="btn btn-sm" disabled="@IsDecidingFollowRequest" @onclick="() => RejectFollowRequestAsync(actorIri)">
+                                    @(IsDecidingFollowRequest && DecidingFollowActorIri == actorIri ? "Rejecting…" : "Reject")
+                                </button>
+                            </div>
+                        </div>
+                    }
+                }
+            }
         </div>
     }
 }
@@ -128,7 +154,6 @@ else
     private const string PostsKey = "profile-posts";
     private const string RepliesKey = "profile-replies";
     private const string LikesKey = "profile-likes";
-    private const string RequestsKey = "profile-requests";
 
     /// <summary>
     /// When <c>true</c> (set via <c>/profile?edit=true</c>, e.g. the Settings → Account "Edit your
@@ -226,16 +251,6 @@ else
         return activity.Type?.FirstOrDefault() == "Like";
     }
 
-    private static bool IsFollow(IObjectOrLink item)
-    {
-        if (item is not Activity activity)
-        {
-            return false;
-        }
-
-        return activity.Type?.FirstOrDefault() == "Follow";
-    }
-
     /// <summary>
     /// Filters the outbox to the signed-in user's **own** content items: a <c>Create</c> of a
     /// Note/Article whose <c>actor</c> is the signed-in user. The server mirrors followed (remote)
@@ -244,14 +259,6 @@ else
     /// activities (Follow, Accept, Reject, Like, Announce, Undo, Delete) are also excluded.
     /// </summary>
     private bool IsOwnContentItem(IObjectOrLink item) => OutboxFilter.IsOwnContentItem(item, Session.ActorId);
-
-    private RenderFragment<IObjectOrLink> FollowRequestTemplate
-        => item => builder =>
-        {
-            builder.OpenComponent<FollowRequestRow>(0);
-            builder.AddComponentParameter(1, nameof(FollowRequestRow.Item), item);
-            builder.CloseComponent();
-        };
 
     private RenderFragment<IObjectOrLink> PostTemplate
         => item => builder =>
@@ -274,6 +281,145 @@ else
     {
         ActiveTab = tab;
         StateHasChanged();
+
+        // The follow-request queue is a local (non-paginated) read — load it lazily when the tab opens
+        // (mirrors CommunityDetail's join-request load). The queue only exists when the actor has
+        // manuallyApprovesFollowers set (the tab is hidden otherwise).
+        if (tab == "requests" && ApprovesFollowers && FollowRequestActors is null)
+        {
+            _ = LoadFollowRequestsAsync();
+        }
+    }
+
+    private List<string>? FollowRequestActors { get; set; }
+    private int? FollowRequestCount { get; set; }
+    private bool FollowRequestsLoading { get; set; }
+    private string? FollowRequestError { get; set; }
+    private bool IsDecidingFollowRequest { get; set; }
+    private string? DecidingFollowActorIri { get; set; }
+
+    private async Task LoadFollowRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || Session.ActorId is not { } actorId)
+        {
+            return;
+        }
+
+        FollowRequestsLoading = true;
+        FollowRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetFollowRequestsAsync(actorId);
+            if (result.IsSuccess)
+            {
+                var actors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+                FollowRequestActors = actors;
+                FollowRequestCount = actors.Count;
+            }
+            else
+            {
+                FollowRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            FollowRequestError = "We couldn't load the follow requests. Please try again.";
+        }
+        finally
+        {
+            FollowRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptFollowRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        IsDecidingFollowRequest = true;
+        DecidingFollowActorIri = actorIri;
+        FollowRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptFollowRequestAsync(me, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadFollowRequestsAsync();
+            }
+            else
+            {
+                FollowRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            FollowRequestError = "The follow request couldn't be approved. Please try again.";
+        }
+        finally
+        {
+            IsDecidingFollowRequest = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectFollowRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || Session.ActorId is not { } me)
+        {
+            return;
+        }
+
+        IsDecidingFollowRequest = true;
+        DecidingFollowActorIri = actorIri;
+        FollowRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectFollowRequestAsync(me, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadFollowRequestsAsync();
+            }
+            else
+            {
+                FollowRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            FollowRequestError = "The follow request couldn't be rejected. Please try again.";
+        }
+        finally
+        {
+            IsDecidingFollowRequest = false;
+            StateHasChanged();
+        }
+    }
+
+    private static string FollowDisplayHandle(string actorIri)
+    {
+        try
+        {
+            var uri = new Uri(actorIri);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
     }
 
     /// <summary>

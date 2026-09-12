@@ -221,6 +221,55 @@ public interface ILocalModerationClient
     public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
 
     /// <summary>
+    /// Lists the actor's pending inbound follow requests (the follow-approval queue, Phase 100): a local,
+    /// owner-only request to the actor's own instance (<c>GET /local/v1/u/{handle}/requests</c>) that
+    /// returns the IRIs of the remote actors who sent a <c>Follow</c> while the actor has
+    /// <c>manuallyApprovesFollowers</c> set (held, not auto-accepted). Newest-first.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor whose follow requests are listed.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of requester IRIs).</returns>
+    /// <remarks>
+    /// The queue is private to the actor (401 for any other caller). It drains when the operator
+    /// Accepts/Rejects a request: the follow-decision outbox write removes the pending request edge, so
+    /// a subsequent call no longer lists the decided requester.
+    /// </remarks>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the actor's pending inbound follow requests with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor whose follow requests are listed.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of requester IRIs).</returns>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending inbound follow request (Phase 100): a local, owner-only request to the actor's
+    /// own instance (<c>POST /local/v1/u/{handle}/requests/accept/{requesterId}</c>) that records the
+    /// requester→actor follow edge (confirming the held follow) and drains the pending request from the
+    /// queue.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor accepting the follow request.</param>
+    /// <param name="requesterId">The IRI of the requester (the actor who sent the held Follow).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle/request).</returns>
+    public Task<DeliveryResult> AcceptFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending inbound follow request (Phase 100): a local, owner-only request to the actor's
+    /// own instance (<c>POST /local/v1/u/{handle}/requests/reject/{requesterId}</c>) that removes the
+    /// provisional requester→actor follow edge and drains the pending request from the queue (no follow
+    /// granted).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor rejecting the follow request.</param>
+    /// <param name="requesterId">The IRI of the requester (the actor who sent the held Follow).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle/request).</returns>
+    public Task<DeliveryResult> RejectFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default);
+
+    /// <summary>
     /// Promotes a member to owner (POST /local/v1/c/{name}/owners/promote/{**actorIri}). Owner-only.
     /// Adds the actor's IRI to the Group's AttributedTo list.
     /// </summary>
