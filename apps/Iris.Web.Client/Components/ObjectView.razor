@@ -14,6 +14,48 @@
             </div>
             @if (ActivityContentObject is { } contentObj)
             {
+                @if (ActivityAudienceIris.Count > 0)
+                {
+                    <div class="object-recipient">
+                        <span class="object-recipient-label">To</span>
+                        @for (var a = 0; a < ActivityAudienceIris.Count; a++)
+                        {
+                            var audience = ActivityAudienceIris[a];
+                            @if (a > 0)
+                            {
+                                <span class="object-recipient-sep">,</span>
+                            }
+                            <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                        }
+                    </div>
+                }
+                @if (ActivityParentIri is { } parent)
+                {
+                    @if (HasParentContext)
+                    {
+                        <div class="object-parent-context">
+                            <div class="object-parent-label">
+                                In reply to
+                                @if (ParentAuthorIri is { } pauthor)
+                                {
+                                    <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                                }
+                                else
+                                {
+                                    <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                                }
+                            </div>
+                            <div class="object-parent-content">@ParentContent</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="object-parent">
+                            in reply to
+                            <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                        </div>
+                    }
+                }
                 @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor))
                 {
                     <div class="object-title">@title</div>
@@ -50,20 +92,6 @@
                 else if (CreatedObjectIri is { } linkIri)
                 {
                     <a href="@ObjectHref(linkIri)" title="@linkIri" class="object-iri">@linkIri</a>
-                }
-                @if (ActivityParentIri is { } parent)
-                {
-                    <div class="object-parent">
-                        in reply to
-                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
-                    </div>
-                }
-                @foreach (var audience in ActivityAudienceIris)
-                {
-                    <div class="object-audience">
-                        to
-                        <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
-                    </div>
                 }
                 @if (ActivityUpdated is { } updated)
                 {
@@ -167,32 +195,63 @@
     }
     else if (Item is Announce)
     {
-        <div class="object-item">
-            <div class="object-header">
-                <span class="object-action">Boosted</span>
-                @if (ActivityActorIri is { } actor)
-                {
-                    <ActorBar ActorIri="actor" />
-                }
-                @if (ActivityPublished is { } pub)
-                {
-                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
-                }
-            </div>
+        <div class="object-item object-item--boost">
+            @if (ActivityActorIri is { } booster)
+            {
+                <div class="object-boost-by">
+                    <span class="object-action">Boosted by</span>
+                    <ActorBar ActorIri="booster" />
+                </div>
+            }
             @if (AnnounceTargetIri is { } targetIri)
             {
-                @if (HasAnnounceContent)
+                @if (ActivityEmbeddedObject is { } boosted)
                 {
-                    <div class="object-content">@ActivityContent</div>
+                    <div class="object-item object-item--boosted">
+                        <div class="object-header">
+                            @if (AnnounceAuthorIri is { } author)
+                            {
+                                <ActorBar ActorIri="author" />
+                            }
+                            @if (ActivityPublished is { } pub)
+                            {
+                                <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                            }
+                        </div>
+                        @if (ActivityName is { Length: > 0 } title && !(boosted is Actor))
+                        {
+                            <div class="object-title">@title</div>
+                        }
+                        @if (boosted is KristofferStrube.ActivityStreams.Object bao && JoinStrings(bao.Content) is { Length: > 0 } content)
+                        {
+                            @if (CreatedObjectIri is { } objIri)
+                            {
+                                <a href="@ObjectHref(objIri)" class="object-post-link">
+                                    <div class="object-content">@ActivityContent</div>
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="object-content">@ActivityContent</div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="object-content">
+                                <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                            </div>
+                        }
+                        <MediaGallery Attachments="ActivityRichAttachments" Blurred="false" />
+                        <EngagementBar ObjectIri="@targetIri" Object="boosted" />
+                    </div>
                 }
                 else
                 {
                     <div class="object-content">
                         <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
                     </div>
+                    <EngagementBar ObjectIri="@targetIri" />
                 }
-                <EngagementBar ObjectIri="@targetIri" Object="ActivityEmbeddedObject" />
-                <MediaGallery Attachments="ActivityRichAttachments" />
             }
         </div>
     }
@@ -264,6 +323,48 @@
                     <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
                 }
             </div>
+            @if (AudienceIris.Count > 0)
+            {
+                <div class="object-recipient">
+                    <span class="object-recipient-label">To</span>
+                    @for (var a = 0; a < AudienceIris.Count; a++)
+                    {
+                        var audience = AudienceIris[a];
+                        @if (a > 0)
+                        {
+                            <span class="object-recipient-sep">,</span>
+                        }
+                        <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                    }
+                </div>
+            }
+            @if (ParentIri is { } parent)
+            {
+                @if (HasParentContext)
+                {
+                    <div class="object-parent-context">
+                        <div class="object-parent-label">
+                            In reply to
+                            @if (ParentAuthorIri is { } pauthor)
+                            {
+                                <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                            }
+                            else
+                            {
+                                <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                            }
+                        </div>
+                        <div class="object-parent-content">@ParentContent</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="object-parent">
+                        in reply to
+                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                    </div>
+                }
+            }
             @if (Name is { Length: > 0 } title && !(obj is Actor))
             {
                 <div class="object-title">@title</div>
@@ -293,13 +394,6 @@
                     </a>
                 }
             }
-            @foreach (var audience in AudienceIris)
-            {
-                <div class="object-audience">
-                    to
-                    <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
-                </div>
-            }
             @if (Updated is { } updated)
             {
                 <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
@@ -320,13 +414,6 @@
             {
                 <div class="object-article-meta">
                     <span class="object-article-language">@lang</span>
-                </div>
-            }
-            @if (ParentIri is { } parent)
-            {
-                <div class="object-parent">
-                    in reply to
-                    <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
                 </div>
             }
             @foreach (var mention in MentionIris)

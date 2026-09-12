@@ -32,6 +32,12 @@ public partial class ObjectView
     private int _pollVotedOption = -1;
     private bool _pollBusy;
     private string? _parentPreview;
+
+    // Phase 90.1 — the fetched parent ("in reply to") object, rendered inline as a muted context
+    // card above the content instead of the previous one-line preview.
+    private IObject? _parentObject;
+    private Iri? _parentAuthorIri;
+
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
@@ -159,6 +165,37 @@ public partial class ObjectView
 
     private bool Revealed;
     private bool ActivityRevealed;
+
+    /// <summary>
+    /// The author of the fetched parent ("in reply to") object, for the context card's "In reply to
+    /// @author" label. Null until the parent is fetched or when the parent has no author.
+    /// </summary>
+    private Iri? ParentAuthorIri => _parentAuthorIri;
+
+    /// <summary>
+    /// The rendered content of the fetched parent ("in reply to") object, shown muted above the
+    /// reply so the reader has context for what is being answered.
+    /// </summary>
+    private MarkupString ParentContent
+    {
+        get
+        {
+            if (_parentObject is not ActivityObject po)
+            {
+                return new MarkupString(string.Empty);
+            }
+
+            var content = JoinStrings(po.Content);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new MarkupString(string.Empty);
+            }
+
+            return new MarkupString(po.IsPreRenderedHtmlContent() ? content : Markdown.ToHtml(content));
+        }
+    }
+
+    private bool HasParentContext => _parentObject is not null;
 
     private string? ActivityVerb => Item switch
     {
@@ -289,6 +326,34 @@ public partial class ObjectView
         }
     }
 
+    /// <summary>
+    /// The author of the boosted (announced) post — its <c>attributedTo</c>, falling back to the
+    /// embedded object's own IRI when no author is present. Used for the inline boosted-post header so
+    /// a boost reads as the original post (with a small "Boosted by" line) rather than the booster.
+    /// </summary>
+    private Iri? AnnounceAuthorIri
+    {
+        get
+        {
+            if (ActivityEmbeddedObject is not { } embedded)
+            {
+                return null;
+            }
+
+            if (embedded is ActivityObject eo && eo.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } author)
+            {
+                return author;
+            }
+
+            if (embedded.Id is { Length: > 0 } id)
+            {
+                return new Iri(id);
+            }
+
+            return null;
+        }
+    }
+
     private Iri? BareObjectIri
     {
         get
@@ -318,6 +383,13 @@ public partial class ObjectView
     private IObject? ActivityContentObject => ActivityEmbeddedObject ?? Obj;
 
     private Iri? ActivityParentIri => ActivityEmbeddedObject?.GetParentIri();
+
+    /// <summary>
+    /// The parent ("in reply to") IRI for whichever branch is rendering: the activity-wrapped
+    /// embedded object for <c>Create</c>/<c>Announce</c> (the home timeline renders the wrapping
+    /// activity) or the bare object itself (a <c>Note</c> rendered on its own detail page).
+    /// </summary>
+    private Iri? EffectiveParentIri => ActivityParentIri ?? ParentIri;
 
     private IReadOnlyList<Iri> ActivityAudienceIris => ActivityEmbeddedObject?.GetAudienceIris() ?? [];
 
@@ -466,26 +538,37 @@ public partial class ObjectView
 
     protected override async Task OnInitializedAsync()
     {
-        // Fetch a short content preview of the parent post for the "in reply to" link. This covers
-        // both the activity branch (a Create/Announce wrapping a Note — `ActivityParentIri`) and the
-        // direct-object branch (a Note rendered on its own detail page — `ParentIri`), so the link
-        // shows a readable preview rather than the raw IRI in either case (P-004).
-        var parentIri = ActivityParentIri ?? ParentIri;
+        // Fetch the parent ("in reply to") object so the reply card can render it inline as a muted
+        // context card (Phase 90.1). This covers both the activity branch (a Create/Announce wrapping
+        // a Note — `ActivityParentIri`) and the direct-object branch (a Note rendered on its own
+        // detail page — `ParentIri`). A short text preview is kept as a fallback link label when the
+        // parent can't be rendered inline.
+        var parentIri = EffectiveParentIri;
         if (parentIri is { } iri && Session.Client is { } client)
         {
             try
             {
                 var parent = await client.GetObjectAsync(iri, CancellationToken.None);
-                var content = (parent as ActivityObject)?.Content?.FirstOrDefault();
-                if (!string.IsNullOrWhiteSpace(content))
+                if (parent is { } parentObj)
                 {
-                    var text = System.Text.RegularExpressions.Regex.Replace(content, "<[^>]+>", " ").Trim();
-                    _parentPreview = text.Length > 120 ? text[..120] + "…" : text;
+                    _parentObject = parentObj;
+                    _parentAuthorIri = (parentObj as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+                    if (_parentAuthorIri is null && parentObj is Actor { Id: { Length: > 0 } actorId })
+                    {
+                        _parentAuthorIri = new Iri(actorId);
+                    }
+
+                    var content = (parentObj as ActivityObject)?.Content?.FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(content))
+                    {
+                        var text = System.Text.RegularExpressions.Regex.Replace(content, "<[^>]+>", " ").Trim();
+                        _parentPreview = text.Length > 120 ? text[..120] + "…" : text;
+                    }
                 }
             }
             catch
             {
-                // Non-fatal: parent preview simply won't show.
+                // Non-fatal: parent context simply won't show.
             }
             finally
             {

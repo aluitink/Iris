@@ -2051,6 +2051,64 @@ ul.object-list li {
     color: var(--muted);
 }
 
+/* Phase 90 — email-style recipient line at the top of a post card. */
+.object-recipient {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.4rem;
+    font-size: 0.82rem;
+    color: var(--muted);
+}
+
+.object-recipient-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.72rem;
+    color: var(--muted);
+}
+
+.object-recipient-sep {
+    color: var(--muted);
+}
+
+/* Phase 90 — inline "in reply to" context card (used by feed + detail cards). */
+.object-item .object-parent-context {
+    padding: 0.5rem 0.75rem;
+    background: var(--surface, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    margin-bottom: 0.5rem;
+}
+
+/* Phase 90 — boosts render the boosted post inline; the "Boosted by" line is a small muted tag. */
+.object-item--boost {
+    position: relative;
+}
+
+.object-boost-by {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.object-item--boosted {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
+.object-item--boosted .object-header {
+    margin-bottom: 0.5rem;
+}
+
 .object-detail-engagement {
     margin-top: 0.75rem;
     padding-top: 0.5rem;
