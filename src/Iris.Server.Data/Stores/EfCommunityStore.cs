@@ -39,7 +39,11 @@ public sealed class EfCommunityStore : ICommunityStore
         ct.ThrowIfCancellationRequested();
         community = null;
         using var db = _factory.CreateDbContext();
-        var entity = db.Set<ActorEntity>().AsNoTracking().FirstOrDefault(e => e.Id == communityIri.Value && e.Type == "Group");
+        // A community row is stored under the wire type of its document: "Group" (standard ActivityPub
+        // and locally-created communities) or "Feed" (a PieFed/Pleroma-fork community whose document
+        // carries the non-standard "Feed" type — see ActivityJson.FeedCommunityType).
+        var entity = db.Set<ActorEntity>().AsNoTracking()
+            .FirstOrDefault(e => e.Id == communityIri.Value && (e.Type == "Group" || e.Type == ActivityJson.FeedCommunityType));
         if (entity is null)
         {
             return Task.FromResult(false);
@@ -61,6 +65,9 @@ public sealed class EfCommunityStore : ICommunityStore
         ct.ThrowIfCancellationRequested();
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var iri = community.Id;
+        // Store the document's actual wire type so a PieFed "Feed" community round-trips as a Feed and
+        // a standard community as a Group (both are queryable as communities — see TryGetCommunityAsync).
+        var wireType = CommunityWireType(community);
         var existing = await db.Set<ActorEntity>().FirstOrDefaultAsync(e => e.Id == iri, ct).ConfigureAwait(false);
         if (existing is null)
         {
@@ -68,7 +75,7 @@ public sealed class EfCommunityStore : ICommunityStore
             {
                 Id = iri,
                 Handle = community.PreferredUsername,
-                Type = "Group",
+                Type = wireType,
                 CreatedAt = DateTimeOffset.UtcNow,
                 Document = AsDocument.Serialize(community),
             });
@@ -76,7 +83,7 @@ public sealed class EfCommunityStore : ICommunityStore
         else
         {
             existing.Handle = community.PreferredUsername;
-            existing.Type = "Group";
+            existing.Type = wireType;
             existing.Document = AsDocument.Serialize(community);
         }
 
@@ -144,7 +151,9 @@ public sealed class EfCommunityStore : ICommunityStore
     {
         ct.ThrowIfCancellationRequested();
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
-        var ids = await db.Set<ActorEntity>().Where(e => e.Type == "Group").Select(e => e.Id).ToListAsync(ct).ConfigureAwait(false);
+        var ids = await db.Set<ActorEntity>()
+            .Where(e => e.Type == "Group" || e.Type == ActivityJson.FeedCommunityType)
+            .Select(e => e.Id).ToListAsync(ct).ConfigureAwait(false);
         return ids.Select(id => new Iri(id)).ToList();
     }
 
@@ -183,4 +192,15 @@ public sealed class EfCommunityStore : ICommunityStore
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetMutesAsync(Iri communityIri, CancellationToken ct = default)
         => await _edges.OutTargetsAsync(EdgeKind.CommunityMute, communityIri.Value, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Resolves the wire type to store for a community document: <c>"Feed"</c> when the document's
+    /// <c>Type</c> is the PieFed <c>Feed</c> community type, otherwise <c>"Group"</c> (the standard
+    /// ActivityStreams community type). Storing the actual wire type lets a re-read re-emit the
+    /// document exactly as it was authored (a PieFed Feed stays a Feed).
+    /// </summary>
+    private static string CommunityWireType(Group community)
+        => community.Type is { } type && type.Contains(ActivityJson.FeedCommunityType)
+            ? ActivityJson.FeedCommunityType
+            : "Group";
 }

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using KristofferStrube.ActivityStreams;
 using KristofferStrube.ActivityStreams.JsonConverters;
 
 namespace Iris.Core;
@@ -27,6 +28,14 @@ public static class ActivityJson
     /// </summary>
     public const string JsonLdContentType = "application/ld+json";
 
+    /// <summary>
+    /// The PieFed (Pleroma-fork) wire type for a community/group actor. PieFed emits
+    /// <c>"type":"Feed"</c> where standard Pleroma/ActivityPub emits <c>"type":"Group"</c>. Iris maps
+    /// this to the library's <see cref="Group"/> so a PieFed community is recognized as a community
+    /// (Phase 86.1). Exposed so the EF community store can treat a stored <c>Feed</c> row as a community.
+    /// </summary>
+    public const string FeedCommunityType = "Feed";
+
     private static readonly JsonSerializerOptions _options = CreateOptions();
 
     /// <summary>
@@ -52,6 +61,20 @@ public static class ActivityJson
         // The polymorphic converter dispatches on the "type" property to the concrete
         // ActivityStreams type and is the root of all (de)serialization.
         options.Converters.Add(new ObjectOrLinkConverter());
+
+        // PieFed (a Pleroma fork) uses the wire type "Feed" for its community/group actor instead of
+        // the standard ActivityStreams "Group". The library's ObjectTypes registry has no "Feed"
+        // entry, so a "Feed" document would deserialize to a generic Object and every downstream
+        // `as Group` / `is Group` (the community stores, the community Update/Create handlers) would
+        // fail to recognize it as a community. Registering "Feed" -> Group makes the polymorphic
+        // converter materialize a "Feed" actor as a Group so it is recognized everywhere (Phase 86.1).
+        // The registry is a shared mutable dictionary; the idempotent guard makes this safe to run
+        // from every ActivityJson consumer (mirrors the MuteActivity registration pattern).
+        if (!ObjectTypes.Types.ContainsKey(FeedCommunityType))
+        {
+            ObjectTypes.Types[FeedCommunityType] = typeof(Group);
+        }
+
         return options;
     }
 

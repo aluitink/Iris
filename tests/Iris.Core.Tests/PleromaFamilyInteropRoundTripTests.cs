@@ -26,28 +26,31 @@ public class PleromaFamilyInteropRoundTripTests
         => File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "InteropFixtures", name));
 
     /// <summary>
-    /// A real PieFed <c>Feed</c> (community) actor: it deserializes to a valid <see cref="IObject"/>
-    /// (not a <see cref="Group"/> — <c>Feed</c> is a PieFed-specific term, not the standard AS
-    /// <c>Group</c> type), with <c>preferredUsername</c>/<c>name</c> populated and the single-valued
-    /// <c>outbox</c> resolving to a <see cref="ILink"/>. All fields survive a serialize round-trip.
+    /// A real PieFed <c>Feed</c> (community) actor: it deserializes to a <see cref="Group"/> (Phase
+    /// 86.1 maps the PieFed-specific <c>Feed</c> wire type to the standard AS <c>Group</c> class),
+    /// with <c>preferredUsername</c>/<c>name</c> populated and the single-valued <c>outbox</c>
+    /// resolving to a <see cref="ILink"/>. All fields survive a serialize round-trip, and the
+    /// original <c>Feed</c> wire type is preserved on re-serialization (no data loss).
     /// </summary>
     [Fact]
     public void PleromaFamily_FeedCommunityActor_DeserializesAndRoundTrips()
     {
         IObjectOrLink payload = ActivityJson.Deserialize<IObjectOrLink>(ReadFixture("piefed-group-actor.json"))!;
 
-        // The deserializer produces a valid object (the polymorphic converter does not map the
-        // PieFed-specific "Feed" term to the standard Group class — it is a non-standard actor type).
+        // The polymorphic converter now maps the PieFed-specific "Feed" wire type to the standard
+        // Group class (Phase 86.1), so a PieFed community is recognized as a community by Iris's
+        // `as Group` / `is Group` cast sites (the community stores, the community handlers).
         Assert.IsAssignableFrom<IObject>(payload);
+        Assert.IsAssignableFrom<Group>(payload);
         var actor = (IObject)payload;
 
         Assert.Equal("https://piefed.social/f/piefed", actor.Id);
 
-        // The core interop guarantee: the round-trip (deserialize -> serialize) preserves the type +
-        // every Pleroma-family field — preferredUsername, name, outbox, moderators, childFeeds,
-        // publicKey, endpoints. This proves Iris can ingest + re-emit a real PieFed community actor
-        // without losing data, regardless of how the polymorphic converter maps the non-standard
-        // "Feed" type to a concrete class.
+        // The core interop guarantee: the round-trip (deserialize -> serialize) preserves the wire
+        // type ("Feed") + every Pleroma-family field — preferredUsername, name, outbox, moderators,
+        // childFeeds, publicKey, endpoints. Even though the payload is now a Group (Phase 86.1), the
+        // library preserves the original "Feed" Type on re-serialization, so Iris can ingest + re-emit
+        // a real PieFed community actor without losing the non-standard wire type or any data.
         var reserialized = ActivityJson.Serialize(payload);
         using var doc = JsonDocument.Parse(reserialized);
         Assert.Equal("Feed", doc.RootElement.GetProperty("type").GetString());
