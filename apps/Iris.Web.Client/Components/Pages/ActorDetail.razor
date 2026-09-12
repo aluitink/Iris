@@ -1,5 +1,4 @@
 @page "/actor"
-@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
@@ -11,11 +10,7 @@
 
 <h1>@PageHeading</h1>
 
-@if (Client is null)
-{
-    <div class="card"><p class="muted">Sign in to view actors.</p></div>
-}
-else if (string.IsNullOrEmpty(IriParam))
+@if (string.IsNullOrEmpty(IriParam))
 {
     <div class="card"><p class="muted">No actor specified. Use the directory to find people.</p></div>
 }
@@ -40,10 +35,14 @@ else
         {
             <p class="muted">This is you.</p>
         }
-        else
+        else if (Session.IsSignedIn)
         {
             <FollowButton TargetActor="ActorDoc" />
             <ModerationActions TargetActor="ActorDoc" />
+        }
+        else
+        {
+            <p class="muted"><a href="/login">Sign in</a> to follow or moderate.</p>
         }
     </div>
 
@@ -62,11 +61,12 @@ else
         <div role="tabpanel" id="panel-outbox" aria-labelledby="tab-outbox">
         <PagedCollection
             Client="Client"
+            AnonymousHttpClient="Http"
             CollectionIri="OutboxIri"
             Title="Posts"
             Description="This actor's notes and articles. Social activities (follows, boosts, moderation) are filtered out."
             PageSize="5"
-            ShowRefreshButton="true"
+            ShowRefreshButton="@(Client is not null)"
             ItemFilter="OutboxFilter.IsContentItem"
             EmptyMessage="No posts yet." />
         </div>
@@ -76,11 +76,12 @@ else
         <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
         <PagedCollection
             Client="Client"
+            AnonymousHttpClient="Http"
             CollectionIri="FollowersIri"
             Title="Followers"
             Description="Actors following this person."
             PageSize="5"
-            ShowRefreshButton="true"
+            ShowRefreshButton="@(Client is not null)"
             EmptyMessage="No followers yet." />
         </div>
     }
@@ -89,11 +90,12 @@ else
         <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
         <PagedCollection
             Client="Client"
+            AnonymousHttpClient="Http"
             CollectionIri="FollowingIri"
             Title="Following"
             Description="Actors this person follows."
             PageSize="5"
-            ShowRefreshButton="true"
+            ShowRefreshButton="@(Client is not null)"
             EmptyMessage="Not following anyone yet." />
         </div>
     }
@@ -138,10 +140,20 @@ else
     [Inject]
     private UiContext Ui { get; set; } = default!;
 
+    [Inject]
+    private IHttpClientFactory HttpFactory { get; set; } = default!;
+
     [SupplyParameterFromQuery(Name = "iri")]
     public string? IriParam { get; set; }
 
     private IActivityPubClient? Client => Session.Client;
+
+    /// <summary>
+    /// The same-origin <c>iris</c> client used for anonymous (signed-out) public reads of the actor's
+    /// outbox/followers/following collections (88.4). Always available, unlike <see cref="Client"/>
+    /// which is null when signed out.
+    /// </summary>
+    private HttpClient? Http => HttpFactory?.CreateClient("iris");
 
     private IObject? ActorDoc { get; set; }
     private string? LoadError { get; set; }
@@ -275,6 +287,13 @@ else
         try
         {
             var obj = await Ui.GetActorAsync(iri);
+            if (obj is null && Client is null)
+            {
+                // Signed-out visitor: the per-circuit actor cache is only reachable through a
+                // signed-in client, so fetch the public actor document directly over HTTP (88.4).
+                obj = await FetchActorAnonymousAsync(iri);
+            }
+
             if (obj is not null)
             {
                 ActorDoc = obj;
@@ -294,21 +313,51 @@ else
     private async Task LoadCountsAsync(Iri actorIri)
     {
         var client = Client;
-        if (client is null)
-        {
-            return;
-        }
-
         try
         {
-            FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
-            FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
+            if (client is not null)
+            {
+                FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
+                FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
+            }
+            else
+            {
+                // Signed-out: read the public collection pages over plain HTTP (88.4).
+                FollowerCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowersOf());
+                FollowingCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowingOf());
+            }
+
             StateHasChanged();
         }
         catch
         {
             // Counts are best-effort; a failure to fetch them should not break the page.
         }
+    }
+
+    /// <summary>
+    /// Reads the <c>totalItems</c> of the first page of a public collection over plain HTTP when
+    /// signed out (88.4). Returns null when the collection is absent or unreachable.
+    /// </summary>
+    private async Task<int?> GetFirstPageTotalAnonymousAsync(Iri? collectionIri)
+    {
+        if (collectionIri is not { } iri || Http is not { } http)
+        {
+            return null;
+        }
+
+        var url = iri.Value + (iri.Value.Contains('?') ? '&' : '?') + "limit=1";
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        return doc.RootElement.TryGetProperty("totalItems", out var total) && total.ValueKind == System.Text.Json.JsonValueKind.Number
+            ? total.GetInt32()
+            : null;
     }
 
     private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri? collectionIri, CancellationToken ct = default)
@@ -324,6 +373,29 @@ else
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Fetches a public actor document over plain HTTP when signed out (88.4). The ActivityPub
+    /// actor IRI is publicly readable, so a same-origin GET returns the actor JSON, which is
+    /// deserialized with the shared ActivityStreams options. Returns null when the document cannot
+    /// be retrieved (404, unreachable, or non-actor payload).
+    /// </summary>
+    private async Task<IObject?> FetchActorAnonymousAsync(Iri actorIri)
+    {
+        if (Http is not { } http)
+        {
+            return null;
+        }
+
+        using var response = await http.GetAsync(actorIri.Value);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObject>(json);
     }
 
     private void SwitchTab(string tab)

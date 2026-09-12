@@ -44,10 +44,16 @@ if (advertiseBase is not null
     advertiseBase = serverBaseUri;
 }
 
-builder.Services.AddHttpClient("iris", client =>
-{
-    client.BaseAddress = serverBaseUri;
-});
+// The plain "iris" client dials same-origin, but absolute FQDN IRIs (the instance's canonical
+// advertised base, e.g. https://iris.luit.ink) would be cross-origin from the browser's dial host
+// (e.g. http://localhost:8088) and CORS-blocked. Anonymous (signed-out) public reads — the actor
+// document, the outbox/followers/following collections, the public feed — go through this client, so
+// wrap it in the same SameOriginApHandler rewrite the signed session uses (88.4). When no advertised
+// base is configured, the handler is a pass-through.
+builder.Services
+    .AddHttpClient("iris")
+    .ConfigurePrimaryHttpMessageHandler(() => new SameOriginApHandler(new HttpClientHandler(), canonicalAdvertiseBase, serverBaseUri))
+    .ConfigureHttpClient(client => client.BaseAddress = serverBaseUri);
 
 builder.Services.AddHttpClient("iris-notifications", client =>
 {
