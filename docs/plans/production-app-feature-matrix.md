@@ -72,10 +72,10 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Unified notification list (inbox projection) | ✅ | ✅ | ☐ | See [production-app-feature-set.md](production-app-feature-set.md) §2 |
-| Unread badge/count | ✅ | ✅ | ☐ | Derived client-side from `UserAccount.NotificationsReadAt` vs. each item's timestamp |
-| Mark as read | ✅ | ✅ | ☐ | MVP (Phase A) = bump `UserAccount.NotificationsReadAt` on view, **not** a per-item read store; see [production-app-feature-set.md](production-app-feature-set.md) §2 for why a dedicated `INotificationStore` is deferred to Phase 2 |
-| Filter by type (follows/likes/replies/mentions) | ✅ | ✅ | ☐ | All six filter tabs (All/Follows/Likes/Boosts/Replies/Mentions) + server `?type=` filter (Mentions = composite filter on Create activities with matching Mention tags, Phase 108). |
+| Unified notification list (inbox projection) | ✅ | ✅ | ✅ | `Notifications.razor` page renders the list (12 rows live-verified) with `NotificationRow` items (avatar, verb, relative time, target link). Live-verified signed in. |
+| Unread badge/count | ✅ | ✅ | ☐ | `NotificationBadge` polls `GetUnreadCountAsync` (endpoint verified: returns `unread:15`, drops to `0` after mark-all) and renders `.nav-badge` when >0. Live-render of the badge element itself is blocked in the headless WASM automation (the component's init lifecycle does not fire there); the data path is verified. |
+| Mark as read | ✅ | ✅ | ✅ | "Mark all as read" button → `NotificationService.MarkAllReadAsync` → `POST /local/v1/notifications/read`. Live-verified: unread 15 → 0. (Per-item read is intentionally deferred to Phase 2; MVP bumps `UserAccount.NotificationsReadAt`.) |
+| Filter by type (follows/likes/replies/mentions) | ✅ | ✅ | ✅ | Six filter tabs (All/Follows/Likes/Boosts/Replies/Mentions) → server `?type=` filter. Live-verified: "All" = 12 rows, "Likes" = 6 rows. |
 
 ## Communities
 

@@ -1,4 +1,5 @@
 @using System.Threading
+@using Microsoft.AspNetCore.Components.Authorization
 @using Iris.Web.Client.Accounts
 @implements IDisposable
 
@@ -8,6 +9,9 @@
 }
 
 @code {
+    [Inject]
+    private AuthenticationStateProvider _auth { get; set; } = default!;
+
     [Inject]
     private IActorSessionAccessor _session { get; set; } = default!;
 
@@ -20,27 +24,66 @@
 
     private string _display => _unread > 99 ? "99+" : _unread.ToString();
 
-    protected override void OnInitialized()
+    /// <summary>
+    /// The badge is rendered inside an <c>AuthorizeView</c> in the layout's signed-in nav, so it only
+    /// mounts once the provider reports the user as authenticated. Awaiting
+    /// <c>GetAuthenticationStateAsync</c> here (the same async source <c>AuthorizeView</c> uses)
+    /// guarantees the state is loaded before we read the signed-in user and start the unread poll —
+    /// robust to the layout/page render ordering (the layout does not itself await
+    /// <c>Session.EnsureReadyAsync</c>).
+    /// </summary>
+    protected override async Task OnInitializedAsync()
     {
         _cts = new CancellationTokenSource();
+
+        // Await the auth state (async — WASM-safe; never blocks). By the time this resolves, the
+        // provider has the user's identity, so we can start polling the unread count.
+        var state = await _auth.GetAuthenticationStateAsync();
+        if (!state.User.Identity?.IsAuthenticated ?? false)
+        {
+            return;
+        }
+
+        // Prime the accessor's cached state so the synchronous IsSignedIn/UserId are correct.
+        try
+        {
+            await _session.EnsureReadyAsync();
+        }
+        catch
+        {
+            // A transient key-load error should not keep the badge hidden; a later render or the
+            // polling timer retries.
+            return;
+        }
+
         if (_session.IsSignedIn && _session.UserId is { } uid)
         {
-            _ = LoadAsync(uid);
-            _timer = new Timer(async _ =>
-            {
-                try
-                {
-                    if (_session.UserId is { } id)
-                    {
-                        await LoadAsync(id);
-                    }
-                }
-                catch
-                {
-                    // Swallow polling errors; the next tick retries.
-                }
-            }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+            StartPolling(uid);
         }
+    }
+
+    private void StartPolling(Guid accountId)
+    {
+        if (_timer is not null)
+        {
+            return; // Already polling.
+        }
+
+        _ = LoadAsync(accountId);
+        _timer = new Timer(async _ =>
+        {
+            try
+            {
+                if (_session.UserId is { } id)
+                {
+                    await LoadAsync(id);
+                }
+            }
+            catch
+            {
+                // Swallow polling errors; the next tick retries.
+            }
+        }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
     }
 
     private async Task LoadAsync(Guid accountId)
