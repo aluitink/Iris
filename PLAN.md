@@ -80,7 +80,7 @@ Iris.slnx
 
 ## Active Slice
 
-_(none — 84.6 is complete; the next slice is selected from Up Next)_
+_(none — 86.1 is complete; the next slice is **86.2** from Up Next: live/fixture verification that a PieFed `Feed` community actor now resolves as a community)._
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -143,7 +143,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 ## Up Next
 
 - **86 — Community-type interop (Feed → Group mapping) (next phase).** The documented "candidate follow-up" from 81.2: PieFed's `Feed` community type is not mapped to `Group` in the deserializer/cast path, so PieFed/Pleroma-fork communities don't render as communities.
-  - **86.1** — Map the `Feed` type to `Group` (the `as Group` cast sites + a decision doc on how to detect `Feed` vs `Group` vs other fork-specific community terms).
+  - ~~**86.1** — Map the `Feed` type to `Group`~~ — **DONE** ([861](docs/changes/861-phase86-feed-to-group-community-mapping.md)).
   - **86.2** — Live/fixture verification: a PieFed `Feed` community actor now resolves as a community (community detail renders, follow/join work); re-run the 81.2 fixture through the new mapping.
 - ~~**80 — UI/UX polish + defect hunt**~~ — **COMPLETE** (5 findings P-001…P-005 all resolved). [800](docs/changes/800-phase80-bug-hunt-tracker.md) · [801](docs/changes/801-phase80-defect-hunt-fixes.md)
 - ~~**81 — Federation hardening & real-world interop**~~ — **COMPLETE** (81.1 Mastodon + 81.2 Misskey/Pleroma round-trips, no code changes; 81.3 pagination + `Delete`/`Tombstone` conformance, 2 fixes). [811](docs/changes/811-phase81-mastodon-interop-roundtrip.md) · [812](docs/changes/812-phase81-misskey-pleroma-interop-roundtrip.md) · [813](docs/changes/813-phase81-pagination-delete-tombstone-conformance.md)
@@ -169,11 +169,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **86.1 — Community-type interop: map the PieFed `Feed` wire type to `Group` — DONE** ([861](docs/changes/861-phase86-feed-to-group-community-mapping.md)): registered `"Feed" → typeof(Group)` in the shared `ObjectTypes.Types` registry (in `ActivityJson.CreateOptions()`, the single choke-point for all ActivityStreams (de)serialization) so a PieFed `Feed` community actor is recognized as a `Group` by every `as Group` / `is Group` cast site. The EF community store now treats a stored `Feed` row as a community (read filter + `GetAll`) and stores the document's actual wire type on write (a re-read re-emits a `Feed` as a `Feed` — the library preserves the original `Type` through a `Group` instance). **5 new integration tests** + the 81.2 round-trip test updated to assert the mapping (its type-preservation assertion still holds).
 - **85 — Notification "replied to you" verb fix — DONE** ([851](docs/changes/851-phase85-notification-reply-verb-fix.md)): the Notifications page was labeling every inbox `Create` as "replied to you", even for replies to another user's note (delivered via the follower fan-out). Now `NotificationRow.VerbFor` checks the note's `inReplyTo`: "replied to you" if it's the user's own note, "replied" if it's someone else's note, "posted" if it's a new note. **0 new coded tests** (WASM manual-test policy; verified via reasoning + partial Playwright).
 - **84.6 — Shared-state scale-out (converging multi-instance) — DONE** ([846](docs/changes/846-phase84-document-derived-shared-key-provider.md), [847](docs/changes/847-phase84-key-provider-refresh-hosted-service.md), [848](docs/changes/848-phase84-shared-delivery-queue.md), [849](docs/changes/849-phase84-cache-invalidation-channel.md), [850](docs/changes/850-phase84-lift-single-instance-guard.md)): the convergence half of 84.5 — three shared-state pieces (the document-derived key provider + the shared delivery queue + the cache-invalidation channel) + the 84.5 guard lift (fail-fast → warning when all three are configured). **20 new tests.** Multi-instance over one origin is now supported.
 - **84.5 — Multi-instance (scale-out) state readiness: single-instance-per-origin guard — DONE** ([845](docs/changes/845-phase84-single-instance-per-origin-guard.md)): the single-instance-per-origin constraint + a startup guard (`SingleInstanceLock` + `SingleInstanceGuardHostedService`, gated behind `Iris:InstanceLockPath` — unset = inert). **14 new tests.** The convergence half is seeded as **84.6**.
 - **84.4 — Key-rotation durability + per-actor rotation — DONE** ([844](docs/changes/844-phase84-key-rotation-durability-per-actor.md)): `KeyProviderRehydration` (re-derives each actor's key from its persisted `publicKey.id`, guarded by `IKeyStore.TryGetKey`) + `?actor=` on rotate. **9 new tests.**
-- **84.3 — Operator key-rotation endpoints — DONE** ([843](docs/changes/843-phase84-operator-key-rotation-endpoints.md)): admin-gated `POST /ap/v1/keys/rotate` + `/keys/retire`. **8 new integration tests.**
 ## Keeping the docs lean
 
 - This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.
