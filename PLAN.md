@@ -99,8 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **113 — (in progress)** — Phase D (polish/distribution). 113.1 (design-token system) done. Remaining: continue Phase D polish — migrate remaining raw rem/hex onto tokens, then pick the next matrix ☐ item (visual polish, motion, or a distribution feature).
-- **114 — (candidate)** — Next Phase D slice: either (a) finish the design-token migration (odd spacing values) + a visual-consistency pass, or (b) a concrete distribution/feature item from the matrix. Replenish before selecting.
+- **113 — (in progress)** — Phase D (polish). 113.1 (design-token system) + 113.2 (visual consistency + subtle motion) done. Remaining: continue Phase D — finish the design-token migration of odd spacing values, or a visual-consistency deep pass (card spacing, iconography), or a distribution feature item.
+- **114 — (candidate)** — Next Phase D slice: (a) odd-spacing-value token migration + spacing audit, (b) iconography/visual-consistency pass, or (c) a concrete matrix ☐ distribution feature. Replenish before selecting.
 
 ## Inbox
 
@@ -112,15 +112,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **113.1 — Design-Token System (DONE)** — Added semantic color tokens (danger/warning/success/btn-fg/surface-inset/border-strong), a 4px spacing scale (`--space-1…7`), and a type scale (`--font-size-xs…2xl`) to `app.css`; migrated the dominant raw hex + rem values (~430 lines) onto the tokens. Presentational no-op. Build clean, Web.Tests 95/95, live-verified tokens resolve. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
+- **113.2 — Visual Consistency + Subtle Motion (DONE)** — 0.15s hover transitions on buttons/links; secondary-button hover state; danger button text `#fff`→`--btn-fg` (WCAG AA); global `prefers-reduced-motion` guard (WCAG 2.3.3); `color-mix` success hover; cleaned stale `var()` fallbacks. Presentational no-op. Build clean, Web.Tests 95/95, live-verified. [changes/1132](docs/changes/1132-phase113-visual-consistency-motion.md)
 
-- **112 — Community Block + Matrix Reconciliation (DONE)** — Added `CommunityBlockHandler` + `POST /local/v1/c/{name}/blocks/{target}` (?unblock=true) + `BlockCommunityMemberAsync`/`UnblockCommunityMemberAsync` client methods + Block button in CommunityDetail Members tab. Reconciled 3 stale 🟡 matrix entries. Matrix now fully ✅. [changes/1121](docs/changes/1121-phase112-community-block.md)
+- **113.1 — Design-Token System (DONE)** — Semantic color tokens (danger/warning/success/btn-fg/surface-inset/border-strong), 4px spacing scale (`--space-1…7`), type scale (`--font-size-xs…2xl`); migrated ~430 lines of raw hex+rem onto tokens. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
 
-- **111 — Color Contrast Audit (DONE)** — WCAG AA audit of all text/bg pairs. Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` white-on-accent 2.8:1 → dark 5.97:1). [changes/1111](docs/changes/1111-phase111-color-contrast-audit.md)
+- **112 — Community Block + Matrix Reconciliation (DONE)** — `CommunityBlockHandler` + block endpoint + client methods + Block button. Reconciled 3 stale matrix entries. Matrix fully ✅. [changes/1121](docs/changes/1121-phase112-community-block.md)
 
-- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all `role="tablist"` tab bars. Pure JS in index.html. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
+- **111 — Color Contrast Audit (DONE)** — WCAG AA audit; fixed 2 white-on-accent failures. [changes/1111](docs/changes/1111-phase111-color-contrast-audit.md)
 
-- **109 — Community Mute UI (DONE)** — Mute button in CommunityDetail Members tab (creator-only) + client methods. [changes/1091](docs/changes/1091-phase109-community-mute.md)
+- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all tab bars. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
 
 
 
