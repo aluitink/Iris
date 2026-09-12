@@ -21,20 +21,30 @@
     --btn-fg: #0f1115;
 }
 
-/* Spacing scale (Phase D design tokens): a 4px-base ramp. Raw rem spacing values
-   throughout the stylesheet are migrated onto these tokens so a spacing change is a
-   single value swap. (--space-1..--space-7 plus a couple of named gaps.) */
+/* Spacing scale (Phase D design tokens): a 4px-base ramp (--space-1..7) plus the
+   off-ramp values actually in use (--space-25/35/45/55/60/65/90/125). All rem
+   spacing values in the stylesheet are migrated onto these tokens, so a spacing
+   change is a single value swap. */
 :root {
-    --space-1: 0.25rem;   /* 4px */
-    --space-2: 0.5rem;    /* 8px */
-    --space-3: 0.75rem;   /* 12px */
-    --space-4: 1rem;      /* 16px */
-    --space-5: 1.5rem;    /* 24px */
-    --space-6: 2rem;      /* 32px */
-    --space-7: 3rem;      /* 48px */
+    --space-1: 0.25rem;    /* 4px */
+    --space-2: 0.5rem;     /* 8px */
+    --space-3: 0.75rem;    /* 12px */
+    --space-4: 1rem;       /* 16px */
+    --space-5: 1.5rem;     /* 24px */
+    --space-6: 2rem;       /* 32px */
+    --space-7: 3rem;       /* 48px */
+    --space-25: 0.2rem;    /* 3.2px */
+    --space-35: 0.35rem;   /* 5.6px */
+    --space-45: 0.45rem;   /* 7.2px */
+    --space-55: 0.55rem;   /* 8.8px */
+    --space-60: 0.6rem;    /* 9.6px */
+    --space-65: 0.65rem;   /* 10.4px */
+    --space-90: 0.9rem;    /* 14.4px */
+    --space-125: 1.25rem;  /* 20px */
 }
 
-/* Type scale (Phase D design tokens): the font-size ramp actually in use. */
+/* Type scale (Phase D design tokens): the font-size ramp actually in use.
+   Headings use --font-size-3xl/4xl; body variants xs..base; lg for emphasis. */
 :root {
     --font-size-xs: 0.75rem;
     --font-size-sm: 0.85rem;
@@ -42,6 +52,8 @@
     --font-size-lg: 1.1rem;
     --font-size-xl: 1.35rem;
     --font-size-2xl: 1.6rem;
+    --font-size-3xl: 2rem;
+    --font-size-4xl: 2.5rem;
 }
 
 * {
@@ -70,12 +82,12 @@ h3 {
 }
 
 h1 {
-    font-size: 1.6rem;
+    font-size: var(--font-size-2xl);
     margin: 0 0 var(--space-4);
 }
 
 h2 {
-    font-size: 1.35rem;
+    font-size: var(--font-size-xl);
     margin: 0 0 var(--space-3);
     letter-spacing: -0.01em;
 }
@@ -109,7 +121,7 @@ select:focus-visible,
 
 .main-header {
     border-bottom: 1px solid var(--border);
-    padding: var(--space-3) 1.25rem;
+    padding: var(--space-3) var(--space-125);
     position: relative;
 }
 
@@ -121,7 +133,7 @@ select:focus-visible,
     letter-spacing: -0.02em;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-45);
 }
 
 .brand-icon {
@@ -139,14 +151,14 @@ select:focus-visible,
     width: 100%;
     max-width: 720px;
     margin: 0 auto;
-    padding: 1.5rem 1.25rem;
+    padding: var(--space-5) var(--space-125);
 }
 
 .main-footer {
     border-top: 1px solid var(--border);
-    padding: var(--space-3) 1.25rem;
+    padding: var(--space-3) var(--space-125);
     color: var(--muted);
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 .main-footer .content {
@@ -180,7 +192,7 @@ select:focus-visible,
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 1.25rem 1.5rem;
+    padding: var(--space-125) var(--space-5);
 }
 
 .card h1 {
@@ -188,7 +200,7 @@ select:focus-visible,
 }
 
 .settings-subsection {
-    margin-top: 1.25rem;
+    margin-top: var(--space-125);
     border-top: 1px solid var(--border);
     padding-top: var(--space-4);
 }
@@ -233,7 +245,7 @@ details[open] > .settings-subsection-summary::before {
 .settings-key-info > div {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-1);
 }
 
 .key-iri,
@@ -242,14 +254,14 @@ details[open] > .settings-subsection-summary::before {
     font-size: var(--font-size-sm);
     word-break: break-all;
     background: var(--bg-subtle, #f0f0f5);
-    padding: 0.35rem var(--space-2);
+    padding: var(--space-35) var(--space-2);
     border-radius: 4px;
     border: 1px solid var(--border);
 }
 
 .error-boundary-card {
     max-width: 30rem;
-    margin: 2rem auto;
+    margin: var(--space-6) auto;
     text-align: center;
 }
 
@@ -257,7 +269,7 @@ details[open] > .settings-subsection-summary::before {
     display: flex;
     gap: var(--space-3);
     justify-content: center;
-    margin-top: 1.25rem;
+    margin-top: var(--space-125);
 }
 
 .muted {
@@ -287,7 +299,7 @@ a:hover {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.9rem;
+    gap: var(--space-90);
 }
 
 .nav-toggle {
@@ -296,7 +308,7 @@ a:hover {
     border: none;
     color: var(--text);
     cursor: pointer;
-    padding: 0.3rem;
+    padding: var(--space-25);
     margin-left: auto;
 }
 
@@ -334,7 +346,7 @@ a:hover {
     }
 
     .main-nav.nav-open a {
-        padding: 0.6rem var(--space-1);
+        padding: var(--space-45) var(--space-1);
         border-bottom: 1px solid var(--border);
         white-space: nowrap;
         font-size: var(--font-size-base);
@@ -377,7 +389,7 @@ a:hover {
 
     .directory-item {
         flex-direction: column;
-        gap: 0.4rem;
+        gap: var(--space-45);
     }
 
     .directory-item .btn {
@@ -404,7 +416,7 @@ a:hover {
     /* The card-moderation group drops a touch of spacing on mobile (the header is tighter). */
     .card-moderate {
         gap: 0;
-        margin-left: 0.15rem;
+        margin-left: var(--space-1);
     }
 }
 
@@ -412,7 +424,7 @@ a:hover {
     color: var(--text);
     text-decoration: none;
     font-size: var(--font-size-base);
-    padding: 0.15rem 0;
+    padding: var(--space-1) 0;
     border-bottom: 2px solid transparent;
 }
 
@@ -433,7 +445,7 @@ button,
     color: var(--btn-fg);
     border: none;
     border-radius: 6px;
-    padding: 0.45rem var(--space-4);
+    padding: var(--space-45) var(--space-4);
     font-size: var(--font-size-base);
     font-weight: 600;
     cursor: pointer;
@@ -508,7 +520,7 @@ input[type="url"] {
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--text);
-    padding: 0.45rem 0.6rem;
+    padding: var(--space-45) var(--space-45);
     font-size: var(--font-size-base);
     width: 100%;
 }
@@ -527,7 +539,7 @@ input[type="url"] {
 
 .field label {
     display: block;
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-35);
     color: var(--muted);
     font-size: var(--font-size-sm);
     font-weight: 600;
@@ -540,7 +552,7 @@ input[type="url"] {
     color: var(--btn-fg);
     border: none;
     border-radius: 6px;
-    padding: 0.55rem 1.2rem;
+    padding: var(--space-55) var(--space-125);
     font-size: var(--font-size-base);
     font-weight: 600;
     cursor: pointer;
@@ -561,7 +573,7 @@ input[type="url"] {
     border: 1px solid var(--border);
     border-right: none;
     border-radius: 6px 0 0 6px;
-    padding: 0.45rem var(--space-2);
+    padding: var(--space-45) var(--space-2);
     color: var(--muted);
 }
 
@@ -574,7 +586,7 @@ input[type="url"] {
     background: var(--danger-bg);
     border: 1px solid var(--danger-border);
     border-radius: 6px;
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-45);
     margin-top: var(--space-3);
 }
 
@@ -633,7 +645,7 @@ ul.object-list li {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-35);
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
@@ -722,7 +734,7 @@ ul.object-list li {
 .actor-card-body {
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-1);
     min-width: 0;
 }
 
@@ -752,7 +764,7 @@ ul.object-list li {
 /* --- Actor list panel (hydrated followers/following) --- */
 
 .actor-list-panel {
-    padding: var(--space-4) 1.25rem;
+    padding: var(--space-4) var(--space-125);
 }
 
 .actor-list-grid {
@@ -825,7 +837,7 @@ ul.object-list li {
     color: var(--muted);
     font-size: var(--font-size-sm);
     display: block;
-    margin-top: 0.15rem;
+    margin-top: var(--space-1);
 }
 
 .object-iri {
@@ -893,13 +905,13 @@ ul.object-list li {
 .object-content h4,
 .object-content h5,
 .object-content h6 {
-    margin: 0.4rem 0 0.2rem;
+    margin: var(--space-45) 0 var(--space-25);
     font-size: var(--font-size-base);
     color: var(--text);
 }
 
 .object-content p {
-    margin: 0.2rem 0;
+    margin: var(--space-25) 0;
 }
 
 .object-content a {
@@ -1014,7 +1026,7 @@ ul.object-list li {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2.5rem;
+    font-size: var(--font-size-4xl);
 }
 
 .doc-gallery-label {
@@ -1022,11 +1034,11 @@ ul.object-list li {
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 0.4rem var(--space-2);
+    padding: var(--space-45) var(--space-2);
     background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--space-3);
 }
 
 .doc-gallery-link {
@@ -1056,7 +1068,7 @@ ul.object-list li {
     padding: var(--space-2);
     display: flex;
     flex-direction: column;
-    gap: 0.375rem;
+    gap: var(--space-35);
 }
 
 .object-poll-option {
@@ -1081,7 +1093,7 @@ ul.object-list li {
     align-items: center;
     padding: 0 var(--space-2);
     height: 100%;
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
 }
 
 .object-poll-option-title {
@@ -1144,7 +1156,7 @@ ul.object-list li {
 }
 
 .object-media {
-    margin-top: 0.4rem;
+    margin-top: var(--space-45);
 }
 
 .object-media img {
@@ -1156,21 +1168,21 @@ ul.object-list li {
 .engagement-bar {
     display: flex;
     gap: var(--space-3);
-    margin-top: 0.4rem;
-    padding-top: 0.3rem;
+    margin-top: var(--space-45);
+    padding-top: var(--space-25);
     border-top: 1px solid var(--border);
 }
 
 .engagement-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-25);
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
     font-size: var(--font-size-sm);
-    padding: 0.2rem 0.3rem;
+    padding: var(--space-25) var(--space-25);
     border-radius: 4px;
     text-decoration: none;
     transition: color 0.15s, background 0.15s;
@@ -1210,7 +1222,7 @@ ul.object-list li {
 .card-moderate {
     display: inline-flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-3);
     margin-left: var(--space-1);
     opacity: 0.55;
     transition: opacity 0.15s;
@@ -1256,7 +1268,7 @@ ul.object-list li {
 .object-sensitive {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-45);
 }
 
 .object-sensitive-notice {
@@ -1264,7 +1276,7 @@ ul.object-list li {
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-45) var(--space-45);
     border: 1px solid var(--border-strong);
     border-radius: 0.3rem;
     background: var(--surface-inset);
@@ -1281,7 +1293,7 @@ ul.object-list li {
 
 .object-sensitive-reveal {
     margin-left: auto;
-    padding: 0.15rem 0.6rem;
+    padding: var(--space-1) var(--space-45);
     border: 1px solid var(--border-strong);
     border-radius: 0.3rem;
     background: var(--surface);
@@ -1308,7 +1320,7 @@ ul.object-list li {
 .card-loading {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-45);
     margin-top: var(--space-3);
 }
 
@@ -1318,7 +1330,7 @@ ul.object-list li {
 }
 
 .card-loading-inline {
-    margin-top: 0.4rem;
+    margin-top: var(--space-45);
 }
 
 .loading-spinner {
@@ -1357,7 +1369,7 @@ ul.object-list li {
    reads as a note field, not a browser-default fixed box) and its action row. */
 .compose-card label {
     display: block;
-    margin-bottom: 0.3rem;
+    margin-bottom: var(--space-25);
     color: var(--muted);
     font-size: var(--font-size-sm);
 }
@@ -1367,7 +1379,7 @@ ul.object-list li {
     border: 1px solid var(--border);
     border-radius: 6px;
     color: var(--text);
-    padding: var(--space-2) 0.6rem;
+    padding: var(--space-2) var(--space-45);
     font-size: var(--font-size-base);
     font-family: inherit;
     line-height: 1.5;
@@ -1403,7 +1415,7 @@ ul.object-list li {
     align-items: center;
     gap: var(--space-2);
     width: 100%;
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-45) var(--space-45);
     background: none;
     border: none;
     border-bottom: 1px solid var(--border);
@@ -1442,7 +1454,7 @@ ul.object-list li {
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-3);
-    margin-top: 0.3rem;
+    margin-top: var(--space-25);
 }
 
 .compose-char-count {
@@ -1461,7 +1473,7 @@ ul.object-list li {
     border-radius: 4px;
     color: var(--text);
     font-size: var(--font-size-sm);
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-25) var(--space-45);
 }
 
 /* The compose audience/visibility selector (73.3): Public / Followers / Direct. Styled to match the
@@ -1473,13 +1485,13 @@ ul.object-list li {
     border-radius: 4px;
     color: var(--text);
     font-size: var(--font-size-sm);
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-25) var(--space-45);
 }
 
 /* The compose poll editor (73.1): the question input, the option rows (add/remove), and the
    duration/multiple meta. Shown only when the post type is Poll. */
 .compose-poll {
-    margin-top: 0.6rem;
+    margin-top: var(--space-45);
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
@@ -1493,13 +1505,13 @@ ul.object-list li {
     border-radius: 4px;
     color: var(--text);
     font-size: var(--font-size-base);
-    padding: 0.4rem var(--space-2);
+    padding: var(--space-45) var(--space-2);
 }
 
 .compose-poll-options {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-45);
 }
 
 .compose-poll-option-row {
@@ -1515,7 +1527,7 @@ ul.object-list li {
     border-radius: 4px;
     color: var(--text);
     font-size: var(--font-size-base);
-    padding: 0.4rem var(--space-2);
+    padding: var(--space-45) var(--space-2);
 }
 
 .compose-poll-option-remove {
@@ -1526,7 +1538,7 @@ ul.object-list li {
     cursor: pointer;
     font-size: var(--font-size-sm);
     line-height: 1;
-    padding: 0.35rem var(--space-2);
+    padding: var(--space-35) var(--space-2);
 }
 
 .compose-poll-option-remove:hover {
@@ -1537,13 +1549,13 @@ ul.object-list li {
 .compose-poll-add {
     align-self: flex-start;
     font-size: var(--font-size-sm);
-    padding: 0.3rem 0.6rem;
+    padding: var(--space-25) var(--space-45);
 }
 
 .compose-poll-meta {
     display: flex;
     align-items: center;
-    gap: 1.25rem;
+    gap: var(--space-125);
     flex-wrap: wrap;
 }
 
@@ -1551,7 +1563,7 @@ ul.object-list li {
 .compose-poll-multiple {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-45);
     font-size: var(--font-size-sm);
     color: var(--muted);
 }
@@ -1562,7 +1574,7 @@ ul.object-list li {
     border-radius: 4px;
     color: var(--text);
     font-size: var(--font-size-sm);
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-25) var(--space-45);
 }
 
 .compose-poll-error {
@@ -1574,8 +1586,8 @@ ul.object-list li {
    affordance. The upload happens at post time (a local, Basic-authenticated multipart POST). */
 .compose-attach-label {
     display: block;
-    margin-top: 0.6rem;
-    margin-bottom: 0.3rem;
+    margin-top: var(--space-45);
+    margin-bottom: var(--space-25);
     color: var(--muted);
     font-size: var(--font-size-sm);
 }
@@ -1608,7 +1620,7 @@ ul.object-list li {
     color: var(--muted);
     font-size: var(--font-size-xs);
     line-height: 1;
-    padding: 0.2rem 0.4rem;
+    padding: var(--space-25) var(--space-45);
     cursor: pointer;
 }
 
@@ -1618,7 +1630,7 @@ ul.object-list li {
 }
 
 .compose-hint {
-    margin-top: 0.4rem;
+    margin-top: var(--space-45);
     font-size: var(--font-size-sm);
 }
 
@@ -1626,7 +1638,7 @@ ul.object-list li {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    margin-top: 0.9rem;
+    margin-top: var(--space-90);
 }
 
 .compose-result {
@@ -1636,14 +1648,14 @@ ul.object-list li {
 
 .compose-result-iri {
     display: block;
-    margin-top: 0.2rem;
+    margin-top: var(--space-25);
     word-break: break-all;
     color: var(--muted);
 }
 
 .compose-tips {
     margin-top: var(--space-4);
-    padding: var(--space-4) 1.25rem;
+    padding: var(--space-4) var(--space-125);
 }
 
 .compose-tips h3 {
@@ -1654,7 +1666,7 @@ ul.object-list li {
 
 .compose-tips-list {
     margin: 0;
-    padding-left: 1.25rem;
+    padding-left: var(--space-125);
     font-size: var(--font-size-sm);
     color: var(--muted);
     line-height: 1.6;
@@ -1684,8 +1696,8 @@ ul.object-list li {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 1.25rem;
+    padding: var(--space-125) var(--space-5);
+    margin-bottom: var(--space-125);
     overflow: hidden;
 }
 
@@ -1716,13 +1728,13 @@ ul.object-list li {
     display: flex;
     align-items: flex-start;
     gap: var(--space-4);
-    padding: 0 1.5rem 1.25rem;
+    padding: 0 var(--space-5) var(--space-125);
     width: 100%;
 }
 
 /* With a banner, the avatar sits below the banner and overlaps its bottom edge. */
 .actor-profile--bannered .actor-profile-avatar {
-    margin-top: -3rem;
+    margin-top: -var(--space-7);
     position: relative;
     z-index: 1;
     width: 6rem;
@@ -1773,13 +1785,13 @@ ul.object-list li {
 
 /* A larger fallback glyph for the enlarged bannered avatar. */
 .actor-profile--bannered .actor-avatar-fallback {
-    font-size: 2.5rem;
+    font-size: var(--font-size-4xl);
 }
 
 .actor-profile-body {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: var(--space-25);
     min-width: 0;
 }
 
@@ -1843,7 +1855,7 @@ ul.object-list li {
 .search-actors-only {
     display: inline-flex;
     align-items: center;
-    gap: 0.3rem;
+    gap: var(--space-25);
     color: var(--muted);
     font-size: var(--font-size-base);
     white-space: nowrap;
@@ -1853,8 +1865,8 @@ ul.object-list li {
 
 .notification-row {
     display: grid;
-    gap: 0.15rem;
-    padding: 0.35rem 0;
+    gap: var(--space-1);
+    padding: var(--space-35) 0;
     border-bottom: 1px solid var(--border);
 }
 
@@ -1865,7 +1877,7 @@ ul.object-list li {
 .notification-head {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: var(--space-45);
     flex-wrap: wrap;
 }
 
@@ -1890,7 +1902,7 @@ ul.object-list li {
 .notification-target {
     color: var(--muted);
     font-size: var(--font-size-sm);
-    margin-top: 0.2rem;
+    margin-top: var(--space-25);
 }
 
 .notification-target-link {
@@ -1916,7 +1928,7 @@ ul.object-list li {
 .notification-note-card {
     background: var(--bg);
     border-radius: 6px;
-    padding: var(--space-2) 0.65rem;
+    padding: var(--space-2) var(--space-65);
     margin-top: var(--space-1);
     font-size: var(--font-size-sm);
     line-height: 1.4;
@@ -1927,7 +1939,7 @@ ul.object-list li {
     font-weight: 500;
     text-decoration: none;
     display: inline-block;
-    margin-bottom: 0.15rem;
+    margin-bottom: var(--space-1);
     font-size: var(--font-size-sm);
 }
 
@@ -1953,7 +1965,7 @@ ul.object-list li {
 .notification-body {
     display: flex;
     align-items: flex-start;
-    gap: 0.6rem;
+    gap: var(--space-45);
 }
 
 .notification-avatar {
@@ -2013,7 +2025,7 @@ ul.object-list li {
 .directory-external-input {
     flex: 1;
     max-width: 24rem;
-    padding: 0.4rem 0.6rem;
+    padding: var(--space-45) var(--space-45);
     border: 1px solid var(--border);
     border-radius: var(--radius, 6px);
     background: var(--surface);
@@ -2034,17 +2046,17 @@ ul.object-list li {
 .directory-external-error {
     color: var(--danger);
     font-size: var(--font-size-sm);
-    margin: 0.4rem 0 0;
+    margin: var(--space-45) 0 0;
 }
 
 .directory-external-result {
-    margin-top: 0.6rem;
+    margin-top: var(--space-45);
 }
 
 .directory-external-link {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-45);
     padding: var(--space-2) var(--space-3);
     border-radius: var(--radius, 6px);
     background: var(--surface);
@@ -2085,7 +2097,7 @@ ul.object-list li {
     display: flex;
     align-items: flex-start;
     gap: var(--space-3);
-    padding: 0.6rem var(--space-3);
+    padding: var(--space-45) var(--space-3);
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--surface-inset);
@@ -2096,7 +2108,7 @@ ul.object-list li {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 0.15rem;
+    gap: var(--space-1);
 }
 
 .directory-item-name {
@@ -2145,7 +2157,7 @@ ul.object-list li {
     color: var(--muted);
     font: inherit;
     font-size: var(--font-size-sm);
-    padding: 0.35rem 0.7rem;
+    padding: var(--space-35) var(--space-35);
     cursor: pointer;
     transition: color 0.12s ease, background 0.12s ease;
 }
@@ -2184,7 +2196,7 @@ ul.object-list li {
 .directory-card-row {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
+    gap: var(--space-45);
     padding: var(--space-3);
 }
 
@@ -2209,7 +2221,7 @@ ul.object-list li {
 /* The directory's follow button hugs the card edge (no extra min-width). */
 .directory-card .follow-button {
     min-width: 0;
-    padding: 0.35rem 0.7rem;
+    padding: var(--space-35) var(--space-35);
 }
 
 .directory-card-chevron {
@@ -2240,7 +2252,7 @@ ul.object-list li {
 .directory-card-post {
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: var(--space-2) 0.65rem;
+    padding: var(--space-2) var(--space-65);
     background: var(--bg);
 }
 
@@ -2268,7 +2280,7 @@ ul.object-list li {
 }
 
 .tab {
-    padding: 0.4rem 0.9rem;
+    padding: var(--space-45) var(--space-90);
     color: var(--muted);
     text-decoration: none;
     border-radius: 6px;
@@ -2312,7 +2324,7 @@ ul.object-list li {
 
 .actor-detail-actions .moderation-actions {
     display: flex;
-    gap: 0.4rem;
+    gap: var(--space-45);
     flex-wrap: wrap;
 }
 
@@ -2382,9 +2394,9 @@ ul.object-list li {
 .object-recipient {
     display: flex;
     align-items: baseline;
-    gap: 0.35rem;
+    gap: var(--space-35);
     flex-wrap: wrap;
-    margin-bottom: 0.4rem;
+    margin-bottom: var(--space-45);
     font-size: 0.82rem;
     color: var(--muted);
 }
@@ -2430,8 +2442,8 @@ ul.object-list li {
 .object-boost-by {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    margin-bottom: 0.4rem;
+    gap: var(--space-45);
+    margin-bottom: var(--space-45);
     font-size: var(--font-size-sm);
     color: var(--muted);
 }
@@ -2532,7 +2544,7 @@ ul.object-list li {
 
 .compose-thread-root {
     margin-top: var(--space-2);
-    padding: 0.4rem var(--space-3);
+    padding: var(--space-45) var(--space-3);
     background: var(--panel);
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
@@ -2565,18 +2577,18 @@ ul.object-list li {
 /* 34.23: signed-out landing hero — replaces the old h1 + card with a clean centered block. */
 .landing-hero {
     text-align: center;
-    padding: 3rem var(--space-4);
+    padding: var(--space-7) var(--space-4);
 }
 
 .landing-title {
     margin: 0 0 var(--space-2);
-    font-size: 2.5rem;
+    font-size: var(--font-size-4xl);
     font-weight: 700;
     color: var(--accent);
 }
 
 .landing-tagline {
-    margin: 0 0 1.5rem;
+    margin: 0 0 var(--space-5);
     color: var(--muted);
     font-size: var(--font-size-base);
     max-width: 480px;
@@ -2591,7 +2603,7 @@ ul.object-list li {
 /* 34.25: empty states — centered icon + message + optional action link. */
 .empty-state {
     text-align: center;
-    padding: 2rem var(--space-4);
+    padding: var(--space-6) var(--space-4);
     color: var(--muted);
 }
 
@@ -2657,7 +2669,7 @@ ul.object-list li {
 }
 
 .edit-profile-avatar-fallback {
-    font-size: 2rem;
+    font-size: var(--font-size-3xl);
     font-weight: 600;
     color: var(--accent);
 }
@@ -2690,7 +2702,7 @@ ul.object-list li {
     font-weight: 600;
     font-size: var(--font-size-sm);
     color: var(--muted);
-    margin-bottom: 0.35rem;
+    margin-bottom: var(--space-35);
     text-transform: uppercase;
     letter-spacing: 0.03em;
 }
@@ -2702,7 +2714,7 @@ ul.object-list li {
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 6px;
-    padding: 0.6rem 0.8rem;
+    padding: var(--space-45) var(--space-35);
     font-size: var(--font-size-base);
     color: var(--text);
     font-family: inherit;
@@ -2722,7 +2734,7 @@ ul.object-list li {
    with the checkbox on its own row (checkbox left, title + hint stacked to the right). */
 .edit-profile-privacy {
     margin: var(--space-4) 0 0;
-    padding: 0.9rem var(--space-4);
+    padding: var(--space-90) var(--space-4);
     border: 1px solid var(--border);
     border-radius: 8px;
     background: var(--bg);
@@ -2735,13 +2747,13 @@ ul.object-list li {
     color: var(--muted);
     text-transform: uppercase;
     letter-spacing: 0.03em;
-    padding: 0 0.35rem;
+    padding: 0 var(--space-35);
 }
 
 .edit-profile-privacy-row {
     display: flex;
     align-items: flex-start;
-    gap: 0.65rem;
+    gap: var(--space-65);
     cursor: pointer;
 }
 
@@ -2749,14 +2761,14 @@ ul.object-list li {
     flex: 0 0 auto;
     width: 1.15rem;
     height: 1.15rem;
-    margin-top: 0.75rem;
+    margin-top: var(--space-3);
     accent-color: var(--accent);
 }
 
 .edit-profile-privacy-label {
     display: flex;
     flex-direction: column;
-    gap: 0.2rem;
+    gap: var(--space-25);
     min-width: 0;
 }
 
@@ -2774,7 +2786,7 @@ ul.object-list li {
 .form-actions {
     display: flex;
     gap: var(--space-2);
-    margin-top: 1.25rem;
+    margin-top: var(--space-125);
 }
 
 .btn-primary {
@@ -2817,7 +2829,7 @@ ul.object-list li {
     display: flex;
     align-items: center;
     gap: var(--space-3);
-    padding: 2rem;
+    padding: var(--space-6);
 }
 
 .community-post-action {
@@ -2842,7 +2854,7 @@ ul.object-list li {
 }
 
 .community-feed-search-caption {
-    margin: 0.4rem 0 0;
+    margin: var(--space-45) 0 0;
 }
 
 .compose-community-context {
@@ -2869,8 +2881,8 @@ ul.object-list li {
 .nav-badge {
     display: inline-block;
     min-width: 1.35rem;
-    padding: 0 0.35rem;
-    margin-left: 0.3rem;
+    padding: 0 var(--space-35);
+    margin-left: var(--space-25);
     border-radius: 999px;
     background: var(--accent);
     color: var(--btn-fg);
@@ -2904,7 +2916,7 @@ ul.object-list li {
 
 .badge {
     display: inline-block;
-    padding: 0.15rem var(--space-2);
+    padding: var(--space-1) var(--space-2);
     border-radius: 999px;
     font-size: var(--font-size-xs);
     font-weight: 600;
@@ -2924,7 +2936,7 @@ ul.object-list li {
     position: relative;
     display: inline-flex;
     align-items: center;
-    padding: 0.35rem;
+    padding: var(--space-35);
     border-radius: 8px;
     cursor: pointer;
     color: var(--muted);
@@ -2989,19 +3001,19 @@ ul.object-list li {
 
 .follow-request-actions {
     display: flex;
-    gap: 0.4rem;
+    gap: var(--space-45);
 }
 
 .moderation-actions {
     display: inline-flex;
-    gap: 0.4rem;
+    gap: var(--space-45);
     margin-left: var(--space-2);
 }
 
 .compose-sensitive-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
+    gap: var(--space-35);
     font-size: var(--font-size-sm);
     color: var(--muted);
     cursor: pointer;
@@ -3014,8 +3026,8 @@ ul.object-list li {
 
 .compose-sensitive-summary {
     width: 100%;
-    margin-top: 0.4rem;
-    padding: 0.4rem 0.55rem;
+    margin-top: var(--space-45);
+    padding: var(--space-45) var(--space-55);
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-elevated, #1a1d24);
@@ -3024,14 +3036,14 @@ ul.object-list li {
 }
 
 .btn-sm {
-    padding: var(--space-1) 0.6rem;
+    padding: var(--space-1) var(--space-45);
     font-size: var(--font-size-sm);
 }
 
 .object-edit {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+    gap: var(--space-45);
 }
 
 .object-edit label {
@@ -3063,7 +3075,7 @@ ul.object-list li {
     right: 0;
     background: var(--danger-bg);
     border-top: 1px solid var(--danger-border);
-    padding: var(--space-3) 1.25rem;
+    padding: var(--space-3) var(--space-125);
     z-index: 200;
     font-size: var(--font-size-base);
     color: var(--danger-fg);
@@ -3097,18 +3109,18 @@ ul.object-list li {
 
 .stat-card {
     text-align: center;
-    padding: 1.5rem var(--space-4);
+    padding: var(--space-5) var(--space-4);
 }
 
 .stat-value {
-    font-size: 2.5rem;
+    font-size: var(--font-size-4xl);
     font-weight: 700;
     color: var(--accent);
     line-height: 1.1;
 }
 
 .stat-label {
-    font-size: 0.875rem;
+    font-size: var(--font-size-sm);
     color: var(--muted);
     margin-top: var(--space-1);
 }
@@ -3129,7 +3141,7 @@ body > #app {
     justify-content: center;
     gap: var(--space-3);
     text-align: center;
-    padding: 1.5rem;
+    padding: var(--space-5);
 }
 
 .splash-logo svg {
@@ -3200,7 +3212,7 @@ body > #app {
 }
 
 .filter-tab {
-    padding: 0.3rem var(--space-3);
+    padding: var(--space-25) var(--space-3);
     border: 1px solid var(--border);
     border-radius: var(--space-4);
     background: transparent;
@@ -3331,12 +3343,12 @@ body > #app {
 
 .lightbox-close {
     position: absolute;
-    top: -2rem;
-    right: -0.5rem;
+    top: -var(--space-6);
+    right: calc(-1 * var(--space-2));
     background: none;
     border: none;
     color: #fff;
-    font-size: 2rem;
+    font-size: var(--font-size-3xl);
     cursor: pointer;
     line-height: 1;
     padding: var(--space-1);
@@ -3349,7 +3361,7 @@ body > #app {
     background: rgba(255, 255, 255, 0.15);
     border: none;
     color: #fff;
-    font-size: 2.5rem;
+    font-size: var(--font-size-4xl);
     cursor: pointer;
     padding: var(--space-2) var(--space-3);
     border-radius: var(--space-2);
@@ -3361,16 +3373,16 @@ body > #app {
 }
 
 .lightbox-nav--prev {
-    left: -3rem;
+    left: -var(--space-7);
 }
 
 .lightbox-nav--next {
-    right: -3rem;
+    right: -var(--space-7);
 }
 
 .lightbox-counter {
     position: absolute;
-    bottom: -2rem;
+    bottom: -var(--space-6);
     left: 50%;
     transform: translateX(-50%);
     color: rgba(255, 255, 255, 0.7);
