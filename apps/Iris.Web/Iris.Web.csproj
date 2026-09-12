@@ -22,6 +22,10 @@
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Web.Tests" />
+  </ItemGroup>
+
   <!-- Build the WASM client, then copy its _framework output + source wwwroot files (index.html,
        css/, favicon.svg) into our wwwroot. This makes UseStaticFiles serve everything from a single
        location (the server's wwwroot, which is copied to bin by the SDK). -->

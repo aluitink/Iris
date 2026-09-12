@@ -105,7 +105,7 @@ else
 
         var page = await NotificationService.GetNotificationsAsync(
             _selectedFilter, limit: 20, offset: 0);
-        _items = page.Items.Select(e => e).ToList();
+        _items = page.Items.Where(KeepNotification).ToList();
         _offset = _items.Count;
         _nextPage = page.NextPage;
         _loading = false;
@@ -128,8 +128,9 @@ else
         {
             _items = [];
         }
-        _items.AddRange(page.Items);
-        _offset += page.Items.Count;
+        var more = page.Items.Where(KeepNotification).ToList();
+        _items.AddRange(more);
+        _offset += more.Count;
         _nextPage = page.NextPage;
         _loading = false;
         StateHasChanged();
@@ -155,6 +156,86 @@ else
     }
 
     private Iri? SelfIri => Session.ActorId;
+
+    /// <summary>
+    /// Belt-and-suspenders filter (Phase 91): the server already drops server-only noise (Update/
+    /// Undo/Flag/Block/Mute + remote post deletions) from the notification list, but the client
+    /// guards the <em>list</em> against a <c>Delete</c> that is not an account deletion — a remote
+    /// post deletion is a server-only message the user does not need to see. Account deletions
+    /// (<c>object == actor</c>) are kept so they can render "deleted their account". This makes the
+    /// exclusion independent of the server filter (a stale client build or a server that does not yet
+    /// filter still renders a clean list).
+    /// </summary>
+    private static bool KeepNotification(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        var type = element.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String
+            ? t.GetString()
+            : null;
+        if (type is not "Delete")
+        {
+            return true;
+        }
+
+        var objectText = element.TryGetProperty("object", out var o) ? o.GetRawText() : null;
+        var actorText = element.TryGetProperty("actor", out var a) ? a.GetRawText() : null;
+        if (string.IsNullOrEmpty(objectText) || string.IsNullOrEmpty(actorText))
+        {
+            // A Delete without a resolvable object is not a recognizable account deletion — drop it.
+            return false;
+        }
+
+        // Account deletion: the object is the actor's own IRI (the remote instance sends object ==
+        // actor). Normalize both to their absolute form and compare.
+        var objectIri = NormalizeIri(objectText);
+        var actorIri = NormalizeIri(actorText);
+        return objectIri is { } oi && actorIri is { } ai && oi == ai;
+    }
+
+    /// <summary>
+    /// Resolves a raw IRI fragment (a bare IRI string, an <c>{"id": "..."}</c> object, or an
+    /// <c>{"href": "..."}</c> link) to a normalized absolute string (trailing slash trimmed), or null
+    /// when it has no IRI. Mirrors <c>ResolveObjectIri</c> for the raw <see cref="JsonElement"/> form
+    /// the notification list carries before deserialization.
+    /// </summary>
+    private static string? NormalizeIri(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var text = raw.Trim();
+        string? candidate = null;
+        if (text.StartsWith('{'))
+        {
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                candidate = id.GetString();
+            }
+            else if (root.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String)
+            {
+                candidate = href.GetString();
+            }
+        }
+        else
+        {
+            candidate = text;
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate) || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri.TrimEnd('/');
+    }
 
     private static IObjectOrLink? DeserializeItem(JsonElement element)
     {

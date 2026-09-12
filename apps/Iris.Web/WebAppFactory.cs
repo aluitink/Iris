@@ -622,7 +622,7 @@ public static class WebAppFactory
             }
 
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
-            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs);
+            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs, account.ActorId);
             var unread = CountUnread(filtered, account.NotificationsReadAt);
             return Results.Json(new { unread });
         }).RequireAuthorization();
@@ -652,7 +652,7 @@ public static class WebAppFactory
             }
 
             var inbox = await persistence.Activities.GetInboxAsync(account.ActorId, ct);
-            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs);
+            var filtered = FilterInboxByPrefs(inbox, account.NotificationPrefs, account.ActorId);
 
             // Optional type filter (e.g. ?type=Like for likes only).
             if (!string.IsNullOrWhiteSpace(type))
@@ -1130,17 +1130,72 @@ public static class WebAppFactory
     /// Filters inbox items based on notification preferences (53.2). Removes items whose activity type
     /// is in the disabled set, or whose actor is in the muted-actors set.
     /// </summary>
+    /// <summary>
+    /// The activity types that are <em>server-only</em> — they arrive in a local actor's inbox from
+    /// the server's own moderation/cleanup machinery rather than from a person the user interacts
+    /// with, so the user has no need to see them as notifications (Phase 91). An inbox
+    /// <c>Delete</c> whose <c>object</c> is <em>not</em> the deleted actor's own IRI is also dropped
+    /// (a remote post deletion is noise; only an account deletion — <c>object == actor</c> — is shown,
+    /// rendered as "deleted their account").
+    /// </summary>
+    private static readonly HashSet<string> ServerOnlyNotificationTypes =
+    [
+        "Update", // the author edited their own note (a content revision, not a user-facing event)
+        "Undo",   // the actor withdrew their own like/boost/follow
+        "Flag",   // the actor reported the user's post
+        "Block",  // the actor blocked the user
+        "Mute",   // the actor muted the user
+    ];
+
+    /// <summary>
+    /// Whether the inbox item is a <em>server-only</em> notification the user should not see
+    /// (Phase 91): one of <see cref="ServerOnlyNotificationTypes"/>, or a <c>Delete</c> of a remote
+    /// post (a <c>Delete</c> whose <c>object</c> is not the deleted actor's own IRI — i.e. not an
+    /// account deletion). Account deletions are kept so they can render "deleted their account".
+    /// </summary>
+    private static bool IsServerOnlyNotification(IObjectOrLink item)
+    {
+        if (item is not Activity act)
+        {
+            return false;
+        }
+
+        var type = act.Type?.FirstOrDefault();
+        if (type is null)
+        {
+            return false;
+        }
+
+        if (type == "Delete")
+        {
+            // A Delete is user-facing only when it is an account deletion (the remote instance sends
+            // object == actor — the account itself is the deleted object). A Delete of some other
+            // object (a remote post) is server noise and is dropped.
+            var actorIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
+            var objectIri = act.Object?.FirstOrDefault()?.ResolveObjectIri();
+            return !(actorIri is { } ai && objectIri is { } o && o == ai);
+        }
+
+        return ServerOnlyNotificationTypes.Contains(type);
+    }
+
     internal static IReadOnlyList<IObjectOrLink> FilterInboxByPrefs(
         IReadOnlyList<IObjectOrLink> inbox,
-        NotificationPreferences? prefs)
+        NotificationPreferences? prefs,
+        Iris.Core.Identity.Iri? selfIri = null)
     {
-        if (prefs is null || inbox.Count == 0)
+        if (inbox.Count == 0)
         {
             return inbox;
         }
 
-        var hasFilters = prefs.DisabledTypes.Count > 0 || prefs.MutedActors.Count > 0;
-        if (!hasFilters)
+        var hasPrefsFilters = prefs is not null
+            && (prefs.DisabledTypes.Count > 0 || prefs.MutedActors.Count > 0);
+
+        // Fast path: no prefs filters and no self-IRI to evaluate the self-delete rule against — the
+        // inbox is already noise-free enough that we return it unchanged (preserving the prior
+        // behavior exactly for callers that do not pass a self IRI).
+        if (!hasPrefsFilters && selfIri is null)
         {
             return inbox;
         }
@@ -1154,20 +1209,54 @@ public static class WebAppFactory
                 continue;
             }
 
-            var type = act.Type?.FirstOrDefault();
-            if (type is not null && prefs.DisabledTypes.Contains(type))
+            // Always drop server-only noise (Update/Undo/Flag/Block/Mute + remote post deletions).
+            if (IsServerOnlyNotification(item))
             {
                 continue;
             }
 
-            var actorIri = (act.Actor as IEnumerable<IObjectOrLink>)?.FirstOrDefault()?.ResolveObjectIri();
-            if (actorIri is { } resolvedIri && prefs.MutedActors.Contains(resolvedIri.Value))
+            var type = act.Type?.FirstOrDefault();
+            if (prefs is not null && type is not null && prefs.DisabledTypes.Contains(type))
+            {
+                continue;
+            }
+
+            var actorIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
+            if (prefs is not null && actorIri is { } resolvedIri && prefs.MutedActors.Contains(resolvedIri.Value))
             {
                 continue;
             }
 
             result.Add(item);
         }
+
+        // Present newest first regardless of the inbox store's order (BoxItems are stored
+        // position-ordered, i.e. oldest first — the notification list must read newest-first, like
+        // every other feed on the instance). (Phase 91: "the lengths/order look random" — a stable
+        // newest-first ordering fixes the apparent randomness.)
+        result.Sort((a, b) =>
+        {
+            var ta = a as Activity;
+            var tb = b as Activity;
+            var pa = ta?.Published ?? ta?.Updated;
+            var pb = tb?.Published ?? tb?.Updated;
+            if (pa is { } ta2 && pb is { } tb2)
+            {
+                return pb.Value.CompareTo(pa.Value);
+            }
+
+            if (pa is { })
+            {
+                return -1;
+            }
+
+            if (pb is { })
+            {
+                return 1;
+            }
+
+            return 0;
+        });
 
         return result;
     }
