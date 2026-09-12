@@ -99,8 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **115.3 — (candidate)** — Continue D-column matrix reconciliation: pick the next cluster of implemented-but-unverified D items (e.g. Communities: join/leave / post-to-community / browse directory, or the remaining auth/directory items) — live-verify via Playwright + reconcile the matrix rows. Replenish from `docs/plans/production-app-feature-matrix.md` ☐ rows (~54 remain).
-- **115.4 — (candidate)** — If a D item turns out to be a *genuine* web gap (not just unreconciled), implement it as a vertical slice (impl + integration tests + live-verify). The "Unread badge" live-render is a known headless-WASM limitation, not a code gap.
+- **115.4 — (candidate)** — Continue D-column matrix reconciliation: pick the next cluster of implemented-but-unverified D items — **Moderation (per-user)**: Block / Mute / Flag-report / View own blocks-mutes-flags list, or the remaining **Search & directory** + auth items. Live-verify via Playwright + reconcile the matrix rows. Replenish from `docs/plans/production-app-feature-matrix.md` ☐ rows (~47 remain).
+- **115.5 — (candidate)** — If a D item turns out to be a *genuine* web gap (not just unreconciled), implement it as a vertical slice (impl + integration tests + live-verify). The "Unread badge" live-render is a known headless-WASM limitation, not a code gap.
 
 ## Inbox
 
@@ -112,15 +112,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **115.2 — Notifications: Live Verify + Matrix Reconciliation (DONE)** — Live-verified notifications web integration signed in: list (12 rows), filter (All=12→Likes=6), mark-all-read (unread 15→0), unread-count endpoint (15→0). Reconciled 3 D-column rows (list, mark-as-read, filter); left "unread badge" ☐ (data path verified, but the badge element's live-render is blocked in the headless WASM automation — a pre-existing environment limitation, not a code defect). No new functional code. Build clean, Web.Tests 95/95. [changes/1152](docs/changes/1152-phase115-notifications-live-verify.md)
+- **115.3 — Communities: Live Verify + Matrix Reconciliation (DONE)** — Live-verified communities web integration signed in: `/communities` lists 5 communities + create form; detail page shows all 5 creator tabs (Feed/Members/Owners/Peers/Requests) + Edit button for the creator, Feed + Join for non-creator; Join→Leave→Join toggle works; "Post to this community" link present; Members tab renders (empty state). Reconciled all 7 Communities D-column rows. No new code. Build clean, Server.Tests 1105/0, Web.Tests 95/95. [changes/1153](docs/changes/1153-phase115-communities-live-verify.md)
+
+- **115.2 — Notifications: Live Verify + Matrix Reconciliation (DONE)** — Live-verified notifications web integration signed in: list (12 rows), filter (All=12→Likes=6), mark-all-read (unread 15→0), unread-count endpoint (15→0). Reconciled 3 D-column rows (list, mark-as-read, filter); left "unread badge" ☐ (data path verified, badge live-render blocked in headless WASM — environment limitation, not a code defect). Also made `NotificationBadge` await the auth state before polling. Build clean, Web.Tests 95/95. [changes/1152](docs/changes/1152-phase115-notifications-live-verify.md)
 
 - **115.1 — Boost/Like Engagement: Live Verify + Matrix Reconciliation (DONE)** — Live-verified boost (Announce) + like end-to-end (client `AnnounceAsync`/`UnannounceAsync` + server `AnnounceActivityHandler` + `EngagementBar.ToggleBoostAsync`); 24/24 engagement bars render anonymous, server computes sharedCount=1 + minted announce IRI for a boosted note. Reconciled 4 D-column rows (like, boost, counts, optimistic UI). No new code. Build clean, Server.Tests 1105/0, Web.Tests 95/95. [changes/1151](docs/changes/1151-phase115-boost-engage-live-verify.md)
 
 - **114.3 — Card-List Spacing Rhythm (DONE)** — Unified the inter-item gap of the four primary bordered-card lists (posts / actors / community cards / communities) to `--space-3` (12px); two 8px outliers promoted. Nested content keeps the tighter `--space-2`. Clean two-tier rhythm. Presentational. Build clean, Web.Tests 95/95, live-verified. [changes/1143](docs/changes/1143-phase114-card-spacing-rhythm.md)
 
 - **114.2 — Border-Radius Token Scale (DONE)** — 4-token radius ramp (`--radius-sm 4px / md 8px / lg 10px / pill 999px`); migrated 41 raw radii scattered across 2/4/5/6/8/10px. Card families now share one rhythm (outer lg / list-item md / controls sm). Presentational. Build clean, Web.Tests 95/95, live-verified (41 token usages, .card→10px, .button→4px). [changes/1142](docs/changes/1142-phase114-radius-token-scale.md)
-
-- **114.1 — Empty-State Iconography + Inline-Style Consistency (DONE)** — Compact `.empty-state--compact` (32px icon) gives `PagedCollection`/`ActorListPanel` tab empty states the same centered-icon treatment as main pages; `.directory-card-empty` utility; `.text-sm`/`.text-xs` utilities replace 7 inline `font-size` styles (zero inline font-size left). Presentational. Build clean, Web.Tests 95/95, live-verified (served CSS + login intact). [changes/1141](docs/changes/1141-phase114-empty-state-iconography-consistency.md)
 
 
 

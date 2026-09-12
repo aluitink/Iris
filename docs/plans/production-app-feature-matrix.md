@@ -81,13 +81,13 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Browse/directory of communities | ✅ | ✅ | ☐ | |
-| View a community | ✅ | ✅ | ☐ | Port the sample's community tabs |
-| Create a community | ✅ | ✅ | ☐ | |
-| Join / leave | ✅ | ✅ | ☐ | |
-| Post to a community | ✅ | ✅ | ☐ | |
-| Member list | ✅ | ✅ | ☐ | |
-| Community moderation (block/mute within community) | ✅ | ✅ | ☐ | Full set: mute (Phase 109), block (Phase 112), remove-member, owner promote/demote, join-requests. Server handlers + client methods + CommunityDetail Members-tab buttons (creator-only). |
+| Browse/directory of communities | ✅ | ✅ | ✅ | `/communities` page lists local communities (5 live-verified) with a "Create community" form. Each row links to `/community?iri=…`. |
+| View a community | ✅ | ✅ | ✅ | `/community?iri=…` detail page: header card + member count, tabs (Feed/Members for all; +Owners/Peers/Requests for the creator), in-community search. Live-verified (Technology = non-creator view; owner-test-5428 = creator view with all 5 tabs + Edit button). |
+| Create a community | ✅ | ✅ | ✅ | "Create a community" form (name/handle/description) on `/communities` → `CreateCommunityAsync`. UI live-verified; server + client integration-tested (A/C). |
+| Join / leave | ✅ | ✅ | ✅ | `JoinButton` toggle on the community header → `RequestJoinAsync`/`RequestLeaveAsync`. Live-verified: button toggles Join → Leave → Join. |
+| Post to a community | ✅ | ✅ | ✅ | "＋ Post to this community" link → `/compose?community={iri}`; `Compose.razor` `PostToCommunityAsync` delivers a `Create(Note)` attributed to author + community. Link live-verified. |
+| Member list | ✅ | ✅ | ✅ | Members tab (`{community}/members` via `PagedCollection`, 5/page) with per-member moderation buttons for the creator. Live-verified (renders, empty state for 0 members). |
+| Community moderation (block/mute within community) | ✅ | ✅ | ✅ | Full set: mute (Phase 109), block (Phase 112), remove-member, owner promote/demote, join-requests. Server handlers + client methods + CommunityDetail Members/Owners/Requests-tab buttons (creator-only). Live-verified: the creator-only tabs (Owners/Peers/Requests) + Edit button render for the community creator; the moderation buttons are wired to `ILocalModerationClient` (A/C integration-tested). |
 | Community search | ✅ | ✅ | ✅ | Server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box (Phase 99) driving `PagedCollection` with a query-carrying IRI. The server's paged links now carry `?q=` (the `PageLink` fix) so the filter is preserved across infinite-scroll pages. |
 
 ## Moderation (per-user)
