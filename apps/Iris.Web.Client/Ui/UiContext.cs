@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Iris.Client;
 using Iris.Client.Collections;
+using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Web.Client.Accounts;
 using KristofferStrube.ActivityStreams;
@@ -60,10 +61,12 @@ public sealed class UiContext
 
     private readonly IActorSessionAccessor _session;
     private readonly SemaphoreSlim _followingGate = new(1, 1);
+    private readonly IHttpClientFactory _httpClientFactory;
 
-    public UiContext(IActorSessionAccessor session)
+    public UiContext(IActorSessionAccessor session, IHttpClientFactory httpClientFactory)
     {
         _session = session;
+        _httpClientFactory = httpClientFactory;
     }
 
     /// <summary>
@@ -196,11 +199,6 @@ public sealed class UiContext
     /// </summary>
     public async Task<IObject?> GetActorAsync(Iri actorIri)
     {
-        if (_session.Client is not { } client)
-        {
-            return null;
-        }
-
         if (_actors.TryGetValue(actorIri.Value, out var cached)
             && DateTime.UtcNow - cached.At < ActorTtl)
         {
@@ -209,7 +207,7 @@ public sealed class UiContext
 
         // Coalesce in-flight fetches for this IRI: the first caller starts the fetch and publishes
         // its Task; concurrent callers await the same Task instead of each hitting the network.
-        var fetchTask = _actorInFlight.GetOrAdd(actorIri.Value, _ => FetchActorAsync(client, actorIri));
+        var fetchTask = _actorInFlight.GetOrAdd(actorIri.Value, _ => FetchActorAsync(actorIri));
         try
         {
             return await fetchTask;
@@ -227,15 +225,27 @@ public sealed class UiContext
     /// <summary>
     /// Performs a single actor fetch for <paramref name="actorIri"/>: reads the document from the
     /// network and, on success, stores it in the per-circuit actor cache for the TTL window.
-    /// Returns null when the fetch fails or the actor is not found (nothing is cached on failure,
-    /// so a later call can retry).
+    /// When the session's signing client is available (signed in), the fetch is made through it
+    /// (signed requests). When the session's client is null (signed out), the fetch falls back to
+    /// a plain (unsigned) <c>HttpClient</c> — actor documents are public, so an anonymous read
+    /// succeeds. Returns null when the fetch fails or the actor is not found (nothing is cached
+    /// on failure, so a later call can retry).
     /// </summary>
-    private async Task<IObject?> FetchActorAsync(IActivityPubClient client, Iri actorIri)
+    private async Task<IObject?> FetchActorAsync(Iri actorIri)
     {
         IObject? doc;
         try
         {
-            doc = await client.GetObjectAsync(actorIri);
+            if (_session.Client is { } client)
+            {
+                // Signed-in: use the session's signing client (signed requests).
+                doc = await client.GetObjectAsync(actorIri);
+            }
+            else
+            {
+                // Signed-out: use a plain (unsigned) HttpClient (actor documents are public).
+                doc = await FetchActorDocumentAnonymousAsync(actorIri);
+            }
         }
         catch
         {
@@ -248,6 +258,24 @@ public sealed class UiContext
         }
 
         return doc;
+    }
+
+    /// <summary>
+    /// Fetches an actor document via plain HTTP (no ActivityPub signing). Used when signed out
+    /// (the session's signing client is null). The actor document is public, so an unsigned
+    /// <c>GET</c> succeeds. Returns null when the fetch fails or the actor is not found.
+    /// </summary>
+    private async Task<IObject?> FetchActorDocumentAnonymousAsync(Iri actorIri)
+    {
+        var http = _httpClientFactory.CreateClient("iris");
+        using var response = await http.GetAsync(actorIri.Value);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
     }
 
     /// <summary>

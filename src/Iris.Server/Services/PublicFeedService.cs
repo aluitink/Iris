@@ -10,10 +10,13 @@ namespace Iris.Server.Services;
 /// </summary>
 /// <remarks>
 /// For each local actor (from <see cref="IActorStore.ListActorsAsync"/>), reads the actor's outbox
-/// (from <see cref="IActivityStore.GetOutboxAsync"/>) and concatenates the items. The union is
-/// de-duplicated by item IRI (keep the first occurrence) and truncated to the requested maximum.
-/// Communities are excluded (their content is surfaced through the community feed, not the public
-/// feed — a community is not a "person" posting to the public timeline).
+/// (from <see cref="IActivityStore.GetOutboxAsync"/>) and concatenates the items. The union is then
+/// sorted newest-first by the activity's published date (the per-actor outboxes are each newest-first,
+/// but the merge concatenates them in actor-IRI order, which would group an actor's posts before
+/// another actor's — the sort restores the correct global feed order), de-duplicated by item IRI
+/// (keep the first occurrence), and truncated to the requested maximum. Communities are excluded (their
+/// content is surfaced through the community feed, not the public feed — a community is not a "person"
+/// posting to the public timeline).
 /// </remarks>
 public sealed class PublicFeedService : IPublicFeedService
 {
@@ -71,7 +74,52 @@ public sealed class PublicFeedService : IPublicFeedService
             feed = FilterByType(feed, activityType).ToList();
         }
 
+        // The public timeline is a global, date-ordered feed: it must be sorted newest-first across
+        // all actors (not grouped by actor). The per-actor outboxes are each newest-first, but the
+        // merge above concatenates them in actor-IRI order, which groups an actor's older posts before
+        // another actor's newer ones. Sorting the merged result by the activity's published date
+        // restores the correct global feed order. Items without a resolvable published date sort last
+        // (they cannot be placed relative to dated items, so they are kept but pushed to the end).
+        feed = SortByDateNewestFirst(feed).ToList();
+
         return TruncateDedup(feed, maxItems);
+    }
+
+    /// <summary>
+    /// Sorts the merged feed newest-first by the activity's published date. The per-actor outboxes are
+    /// each stored newest-first, but the merge concatenates them in actor-IRI order (grouping an
+    /// actor's posts before another actor's), so the merged result must be re-sorted by date to
+    /// produce a correct global feed. Items whose activity has no resolvable published date sort last
+    /// (they cannot be placed relative to dated items). LINQ's <c>OrderByDescending</c> is a stable
+    /// sort, so items with the same date keep their relative merge order.
+    /// </summary>
+    private static IReadOnlyList<IObjectOrLink> SortByDateNewestFirst(IReadOnlyList<IObjectOrLink> feed)
+    {
+        return feed
+            .OrderByDescending(item => ExtractPublishedDate(item))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Extracts the published date from a feed item for sorting. For an <c>Activity</c>, the date is
+    /// the activity's <c>published</c> property (set when the activity was created, or inherited by
+    /// the embedded object). For a plain <c>IObject</c> (a Note/Article not wrapped in an activity),
+    /// the date is the object's <c>published</c> property. Items without a resolvable date return
+    /// <see langword="null"/> and sort last.
+    /// </summary>
+    private static DateTime? ExtractPublishedDate(IObjectOrLink item)
+    {
+        if (item is Activity activity)
+        {
+            return activity.Published;
+        }
+
+        if (item is IObject { Published: { } published })
+        {
+            return published;
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<IObjectOrLink> FilterByQuery(IReadOnlyList<IObjectOrLink> feed, string query)
