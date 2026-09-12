@@ -197,7 +197,7 @@ select:focus-visible,
     cursor: pointer;
     font-weight: 600;
     font-size: var(--font-size-base);
-    color: var(--text, #1a1a2e);
+    color: var(--text);
     padding: var(--space-1) 0;
     user-select: none;
     list-style: none;
@@ -268,6 +268,7 @@ a {
     color: var(--accent-warm);
     text-decoration: underline;
     text-underline-offset: 2px;
+    transition: color 0.15s ease;
 }
 
 a:hover {
@@ -438,6 +439,7 @@ button,
     cursor: pointer;
     text-decoration: none;
     display: inline-block;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 button:hover,
@@ -457,6 +459,13 @@ button.secondary {
     border: 1px solid var(--border);
 }
 
+.button--secondary:hover,
+button.secondary:hover {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    filter: none;
+}
+
 .button--ghost,
 .btn.button--ghost {
     background: transparent;
@@ -472,7 +481,11 @@ button.secondary {
 
 .button--danger {
     background: var(--danger);
-    color: #fff;
+    color: var(--btn-fg);
+}
+
+.button--danger:hover {
+    filter: brightness(1.1);
 }
 
 .button--warning,
@@ -531,6 +544,7 @@ input[type="url"] {
     font-size: var(--font-size-base);
     font-weight: 600;
     cursor: pointer;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .btn:hover {
@@ -1164,7 +1178,7 @@ ul.object-list li {
 
 .engagement-btn:hover {
     color: var(--accent);
-    background: rgba(143, 211, 167, 0.1);
+    background: color-mix(in srgb, var(--success) 10%, transparent);
 }
 
 .engagement-btn svg {
@@ -1405,7 +1419,7 @@ ul.object-list li {
 
 .compose-autocomplete-item:hover,
 .compose-autocomplete-item:focus {
-    background: var(--hover, rgba(74, 144, 217, 0.12));
+    background: var(--hover);
     outline: none;
 }
 
@@ -1580,7 +1594,7 @@ ul.object-list li {
 
 .compose-attach-name {
     font-size: var(--font-size-sm);
-    color: var(--text-muted, #9aa4b2);
+    color: var(--muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1589,7 +1603,7 @@ ul.object-list li {
 
 .compose-attach-remove {
     background: transparent;
-    border: 1px solid var(--border, #2a2f3a);
+    border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--muted);
     font-size: var(--font-size-xs);
@@ -1599,8 +1613,8 @@ ul.object-list li {
 }
 
 .compose-attach-remove:hover:not(:disabled) {
-    color: var(--text, #e6e9ef);
-    border-color: var(--text-muted, #9aa4b2);
+    color: var(--text);
+    border-color: var(--muted);
 }
 
 .compose-hint {
@@ -1841,7 +1855,7 @@ ul.object-list li {
     display: grid;
     gap: 0.15rem;
     padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
+    border-bottom: 1px solid var(--border);
 }
 
 .notification-row:last-child {
@@ -1900,7 +1914,7 @@ ul.object-list li {
 }
 
 .notification-note-card {
-    background: var(--bg, #f5f5f5);
+    background: var(--bg);
     border-radius: 6px;
     padding: var(--space-2) 0.65rem;
     margin-top: var(--space-1);
@@ -1909,7 +1923,7 @@ ul.object-list li {
 }
 
 .notification-note-author {
-    color: var(--text-muted, #666);
+    color: var(--muted);
     font-weight: 500;
     text-decoration: none;
     display: inline-block;
@@ -2018,7 +2032,7 @@ ul.object-list li {
 }
 
 .directory-external-error {
-    color: var(--danger, #d9534f);
+    color: var(--danger);
     font-size: var(--font-size-sm);
     margin: 0.4rem 0 0;
 }
@@ -2390,7 +2404,7 @@ ul.object-list li {
 /* Phase 90 — inline "in reply to" context card (used by feed + detail cards). */
 .object-item .object-parent-context {
     padding: var(--space-2) var(--space-3);
-    background: var(--surface, rgba(255, 255, 255, 0.03));
+    background: var(--surface);
     border: 1px solid var(--border);
     border-left: 3px solid var(--accent);
     border-radius: 6px;
@@ -2989,23 +3003,23 @@ ul.object-list li {
     align-items: center;
     gap: 0.35rem;
     font-size: var(--font-size-sm);
-    color: var(--text-muted, #9aa4b2);
+    color: var(--muted);
     cursor: pointer;
     user-select: none;
 }
 
 .compose-sensitive-toggle input[type="checkbox"] {
-    accent-color: var(--accent, #7c6cf0);
+    accent-color: var(--accent);
 }
 
 .compose-sensitive-summary {
     width: 100%;
     margin-top: 0.4rem;
     padding: 0.4rem 0.55rem;
-    border: 1px solid var(--border, #2a2f3a);
+    border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--bg-elevated, #1a1d24);
-    color: var(--text, #e6e9ef);
+    color: var(--text);
     font-size: var(--font-size-sm);
 }
 
@@ -3022,7 +3036,7 @@ ul.object-list li {
 
 .object-edit label {
     font-size: var(--font-size-sm);
-    color: var(--text-muted, #9aa4b2);
+    color: var(--muted);
 }
 
 .object-edit .compose-content {
@@ -3089,13 +3103,13 @@ ul.object-list li {
 .stat-value {
     font-size: 2.5rem;
     font-weight: 700;
-    color: var(--accent, #5b8cff);
+    color: var(--accent);
     line-height: 1.1;
 }
 
 .stat-label {
     font-size: 0.875rem;
-    color: var(--muted, #8b93a1);
+    color: var(--muted);
     margin-top: var(--space-1);
 }
 
@@ -3165,6 +3179,14 @@ body > #app {
 @media (prefers-reduced-motion: reduce) {
     .splash-logo svg { animation: none; }
     .splash-spinner { animation-duration: 1.6s; }
+    /* Respect reduced-motion: drop all transitions (WCAG 2.3.3). */
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
 }
 
 
