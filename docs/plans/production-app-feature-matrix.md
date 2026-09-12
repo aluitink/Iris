@@ -49,7 +49,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | View an actor's outbox as a feed | ✅ | ✅ | ☐ | |
 | View a community's feed | ✅ | ✅ | ☐ | |
 | Infinite-scroll / pagination | ✅ | ✅ | ☐ | `PagedCollection` uses infinite scroll (scroll listener + sentinel, Phase 98) with a ghost "Load more" fallback button for accessibility/no-scroll. |
-| Optimistic UI on like/boost/reply | ✅ | ✅ | ☐ | Polish-pass item |
+| Optimistic UI on like/boost/reply | ✅ | ✅ | ✅ | `EngagementBar` applies the state + local count delta on success and rolls back on failure (catch reverts), invalidating the shared engagement cache so a re-render re-walks. Reply is a composer link (n/a for optimistic update). |
 
 ## Follow graph
 
@@ -64,9 +64,9 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Like (star) | ✅ | ✅ | ☐ | |
-| Boost (announce) | ✅ | ✅ | ☐ | |
-| Like/boost counts on a post | ✅ | ✅ | ☐ | Depends on remote-liker recording (PLAN.md 31.10) |
+| Like (star) | ✅ | ✅ | ✅ | `EngagementBar` like button — optimistic toggle, `iris:likedCount`/`iris:isLiked` seed, live-verified (24/24 bars render). |
+| Boost (announce) | ✅ | ✅ | ✅ | `EngagementBar` boost button — `AnnounceAsync`/`UnannounceAsync`, `iris:sharedCount`/`iris:isShared`/`iris:announceActivityIri` seed, live-verified (24/24 buttons render; server computes sharedCount=1 + minted announce IRI for a boosted note). |
+| Like/boost counts on a post | ✅ | ✅ | ✅ | Server renders `iris:likedCount`/`iris:sharedCount` + `iris:likeActivityIri`/`iris:announceActivityIri` extensions on the object doc; `EngagementBar` seeds counts + the signed-in user's engaged state from them (zero collection walks). Live-verified: a boosted note serves sharedCount=1, isShared=true. |
 
 ## Notifications
 
