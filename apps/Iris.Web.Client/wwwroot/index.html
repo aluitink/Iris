@@ -81,6 +81,59 @@
             setTimeout(maybeLoad, 500);
         });
     })();
+    // Roving tabindex + arrow-key navigation for ARIA tab bars (role="tablist"). The active
+    // tab gets tabindex="0" (the keyboard entry point); all others get tabindex="-1".
+    // Left/Right (and Up/Down) arrow keys move focus to the adjacent tab and activate it
+    // (automatic activation per the WAI-ARIA tabs pattern); Home/End jump to first/last.
+    // Tab lists render progressively as pages load, so a re-scan (until all are initialized)
+    // wires each one up; a MutationObserver re-syncs tabindex when the active tab changes.
+    (function () {
+        function syncTablist(tablist) {
+            var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+            if (tabs.length === 0) return;
+            var active = tabs.filter(function (t) {
+                return t.getAttribute('aria-selected') === 'true';
+            })[0] || tabs[0];
+            tabs.forEach(function (t) {
+                t.setAttribute('tabindex', t === active ? '0' : '-1');
+            });
+        }
+        function initTablist(tablist) {
+            if (tablist.getAttribute('data-iris-tab-init')) return;
+            tablist.setAttribute('data-iris-tab-init', 'true');
+            syncTablist(tablist);
+            tablist.addEventListener('keydown', function (e) {
+                var tabs = Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'));
+                if (tabs.length === 0) return;
+                var idx = tabs.indexOf(document.activeElement);
+                if (idx === -1) return;
+                var next = null;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    next = tabs[(idx + 1) % tabs.length];
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    next = tabs[(idx - 1 + tabs.length) % tabs.length];
+                } else if (e.key === 'Home') {
+                    next = tabs[0];
+                } else if (e.key === 'End') {
+                    next = tabs[tabs.length - 1];
+                }
+                if (next) {
+                    e.preventDefault();
+                    next.focus();
+                    next.click();
+                }
+            });
+            var mo = new MutationObserver(function () { syncTablist(tablist); });
+            mo.observe(tablist, { subtree: true, attributes: true, attributeFilter: ['aria-selected'] });
+        }
+        var scanTimer = setInterval(function () {
+            var pending = Array.prototype.slice.call(document.querySelectorAll('[role="tablist"]'))
+                .filter(function (t) { return !t.getAttribute('data-iris-tab-init'); });
+            if (pending.length === 0) { clearInterval(scanTimer); return; }
+            pending.forEach(initTablist);
+        }, 1000);
+        setTimeout(function () { clearInterval(scanTimer); }, 30000);
+    })();
     </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
