@@ -74,4 +74,11 @@ public interface IUserAccountStore
     /// (all types enabled, no muted actors).
     /// </summary>
     Task UpdateNotificationPrefsAsync(Guid id, NotificationPreferences? prefs, CancellationToken ct = default);
+
+    /// <summary>
+    /// Replaces an account's role (88.5 — admin promote/demote). Throws <see cref="InvalidOperationException"/>
+    /// when no account has the given id. The caller is responsible for any higher-level policy (e.g.
+    /// refusing to demote the last admin); this method only persists the new role.
+    /// </summary>
+    Task UpdateRoleAsync(Guid id, UserRole role, CancellationToken ct = default);
 }

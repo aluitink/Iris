@@ -137,6 +137,22 @@ public sealed class EfUserAccountStore : IUserAccountStore
     }
 
     /// <inheritdoc/>
+    public async Task UpdateRoleAsync(Guid id, UserRole role, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entity = await db.Set<UserAccountEntity>().FirstOrDefaultAsync(e => e.Id == id, ct)
+            .ConfigureAwait(false);
+        if (entity is null)
+        {
+            throw new InvalidOperationException($"No account with id {id}.");
+        }
+
+        entity.Role = role.ToString();
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

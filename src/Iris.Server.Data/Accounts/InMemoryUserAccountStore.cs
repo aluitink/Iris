@@ -134,6 +134,19 @@ public sealed class InMemoryUserAccountStore : IUserAccountStore
         return Task.CompletedTask;
     }
 
+    public Task UpdateRoleAsync(Guid id, UserRole role, CancellationToken ct = default)
+    {
+        lock (_gate)
+        {
+            if (!_accounts.TryGetValue(id, out var account))
+            {
+                return Task.FromException(new InvalidOperationException($"No account with id {id}."));
+            }
+            account.Role = role;
+        }
+        return Task.CompletedTask;
+    }
+
     // A defensive clone so callers cannot mutate the stored account by holding onto the returned reference.
     private static UserAccount clone(UserAccount account) => new()
     {

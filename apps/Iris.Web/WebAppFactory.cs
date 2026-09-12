@@ -885,6 +885,40 @@ public static class WebAppFactory
             return Results.Ok(new { success = true, username = account.Username });
         }).RequireAuthorization(p => p.RequireRole("Admin"));
 
+        // Admin role management (88.5): POST /local/v1/admin/users/{id}/role.
+        // Promote a user to admin, or demote an admin back to a plain user. Refuses to demote the
+        // last remaining admin so the instance can never be left with no admin.
+        endpoints.MapPost("/local/v1/admin/users/{id:guid}/role", async (
+            Guid id,
+            IUserAccountStore accounts,
+            UpdateRoleRequest body,
+            CancellationToken ct) =>
+        {
+            if (!Enum.TryParse<UserRole>(body.Role, ignoreCase: true, out var role))
+            {
+                return Results.BadRequest(new { error = "Role must be 'User' or 'Admin'." });
+            }
+
+            var account = await accounts.FindByIdAsync(id, ct);
+            if (account is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (account.Role == UserRole.Admin && role == UserRole.User)
+            {
+                var all = await accounts.GetAllAsync(ct);
+                var adminCount = all.Count(u => u.Role == UserRole.Admin);
+                if (adminCount <= 1)
+                {
+                    return Results.BadRequest(new { error = "Cannot demote the last admin." });
+                }
+            }
+
+            await accounts.UpdateRoleAsync(id, role, ct);
+            return Results.Ok(new { success = true, username = account.Username, role = role.ToString() });
+        }).RequireAuthorization(p => p.RequireRole("Admin"));
+
         // Admin account deletion (53.1): DELETE /local/v1/admin/users/{id}.
         endpoints.MapDelete("/local/v1/admin/users/{id:guid}", async (
             Guid id,
@@ -1297,3 +1331,7 @@ public sealed record AdminPasswordResetRequest(string? Password);
 /// <param name="DisabledTypes">Activity types the user has opted out of.</param>
 /// <param name="MutedActors">Actor IRIs whose notifications are muted.</param>
 public sealed record NotificationPrefsRequest(IReadOnlyList<string>? DisabledTypes, IReadOnlyList<string>? MutedActors);
+
+/// <summary>Request body for <c>POST /local/v1/admin/users/{id}/role</c> (88.5).</summary>
+/// <param name="Role">The role to set: <c>"User"</c> or <c>"Admin"</c> (case-insensitive).</param>
+public sealed record UpdateRoleRequest(string? Role);

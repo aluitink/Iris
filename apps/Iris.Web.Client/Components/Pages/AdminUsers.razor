@@ -40,6 +40,14 @@ else
         {
             <div class="success" role="status">@DeleteSuccess</div>
         }
+        @if (RoleError is not null)
+        {
+            <div class="error" role="alert">@RoleError</div>
+        }
+        @if (RoleSuccess is not null)
+        {
+            <div class="success" role="status">@RoleSuccess</div>
+        }
         <table class="admin-table">
             <thead>
                 <tr>
@@ -57,7 +65,19 @@ else
                         <td><span class="badge @RoleBadgeClass(user.RoleLabel)">@user.RoleLabel</span></td>
                         <td>@user.CreatedAt.ToString("yyyy-MM-dd")</td>
                         <td>
-                            <button class="btn btn--small" @onclick="() => ResetPasswordPrompt(user)" disabled="@ResetBusy">
+                            @if (user.RoleLabel == "Admin")
+                            {
+                                <button class="btn btn--small" @onclick="() => ToggleRoleAsync(user, false)" disabled="@RoleBusy">
+                                    Demote to user
+                                </button>
+                            }
+                            else
+                            {
+                                <button class="btn btn--small" @onclick="() => ToggleRoleAsync(user, true)" disabled="@RoleBusy">
+                                    Make admin
+                                </button>
+                            }
+                            <button class="btn btn--small" @onclick="() => ResetPasswordPrompt(user)" disabled="@ResetBusy" style="margin-left: 0.25rem;">
                                 Reset password
                             </button>
                             <button class="btn btn--small btn--danger" @onclick="() => DeleteUserPrompt(user)" disabled="@DeleteBusy" style="margin-left: 0.25rem;">
@@ -106,6 +126,9 @@ else
     private bool DeleteBusy { get; set; }
     private string? DeleteError { get; set; }
     private string? DeleteSuccess { get; set; }
+    private bool RoleBusy { get; set; }
+    private string? RoleError { get; set; }
+    private string? RoleSuccess { get; set; }
 
     public AdminUsers(IHttpClientFactory factory, IActorSessionAccessor session)
     {
@@ -256,6 +279,43 @@ else
         finally
         {
             DeleteBusy = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task ToggleRoleAsync(AdminUserDto user, bool makeAdmin)
+    {
+        RoleBusy = true;
+        RoleError = null;
+        RoleSuccess = null;
+
+        try
+        {
+            var role = makeAdmin ? "Admin" : "User";
+            var payload = System.Text.Json.JsonSerializer.Serialize(new { Role = role });
+            var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var response = await _http!.PostAsync($"/local/v1/admin/users/{user.Id}/role", content);
+            if (response.IsSuccessStatusCode)
+            {
+                RoleSuccess = $"@{user.Username} is now {(makeAdmin ? "an admin" : "a user")}.";
+                var list = await LoadUsersAsync();
+                Users = list;
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                RoleError = doc.RootElement.TryGetProperty("error", out var err) ? err.GetString() : "Role change failed.";
+            }
+        }
+        catch
+        {
+            RoleError = "Role change failed. Please try again.";
+        }
+        finally
+        {
+            RoleBusy = false;
         }
 
         StateHasChanged();
