@@ -1055,6 +1055,15 @@ ul.object-list li {
     min-width: 0.5rem;
 }
 
+.engagement-count-link {
+    text-decoration: none;
+}
+
+.engagement-count-link:hover .engagement-count {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
 .object-sensitive {
     display: flex;
     flex-direction: column;
