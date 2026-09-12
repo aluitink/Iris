@@ -145,6 +145,18 @@ public static class ActorIdentityHelper
     public static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";
 
     /// <summary>
+    /// Whether the actor document is a <c>Group</c> (a community / public group actor).
+    /// </summary>
+    public static bool IsCommunity(IObject? actor) => actor is Group;
+
+    /// <summary>
+    /// The appropriate detail page URL for an actor: <c>/community?iri=…</c> for <c>Group</c> actors,
+    /// <c>/actor?iri=…</c> for everything else.
+    /// </summary>
+    public static string ActorHref(Iri iri, IObject? actor)
+        => IsCommunity(actor) ? $"/community?iri={Uri.EscapeDataString(iri.Value)}" : ActorHref(iri);
+
+    /// <summary>
     /// Whether an actor's <c>name</c> is redundant with its <c>preferredUsername</c> (case-insensitive
     /// equal) — when redundant the name is omitted to avoid duplication.
     /// </summary>

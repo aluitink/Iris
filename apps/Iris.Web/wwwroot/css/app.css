@@ -810,6 +810,12 @@ ul.object-list li {
     color: var(--accent);
 }
 
+.object-actor--community .object-actor-handle::before {
+    content: "c/";
+    color: var(--muted);
+    font-weight: 400;
+}
+
 .object-post-link {
     color: inherit;
     text-decoration: none;

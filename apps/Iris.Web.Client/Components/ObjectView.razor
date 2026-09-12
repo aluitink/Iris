@@ -308,10 +308,10 @@
     }
     else if (Item is Actor actor)
     {
-        <div class="object-item object-actor">
+        <div class="object-item object-actor @(actor is Group ? "object-actor--community" : string.Empty)">
             @if (actor.Id is { Length: > 0 } actorId)
             {
-                <a href="@ActorHref(new Iri(actorId))" title="@actorId" class="object-actor-handle">@actor.PreferredUsername</a>
+                <a href="@ActorHref(new Iri(actorId), actor)" title="@actorId" class="object-actor-handle">@actor.PreferredUsername</a>
             }
             @if (actor.Name?.FirstOrDefault() is { Length: > 0 } name && !NameIsRedundant)
             {

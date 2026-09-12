@@ -513,7 +513,9 @@ public partial class ObjectView
 
     private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
 
-    private static string ActorHref(Iri iri) => $"/actor?iri={Uri.EscapeDataString(iri.Value)}";
+    private static string ActorHref(Iri iri) => ActorIdentityHelper.ActorHref(iri);
+
+    private static string ActorHref(Iri iri, IObject? actor) => ActorIdentityHelper.ActorHref(iri, actor);
 
     /// <summary>
     /// The href for a rendered hashtag: this instance's own hashtag search
