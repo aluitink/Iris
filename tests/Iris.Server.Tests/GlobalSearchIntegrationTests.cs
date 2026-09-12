@@ -68,7 +68,10 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal($"{_base}/ap/v1/search", doc.RootElement.GetProperty("id").GetString());
+        // Phase 99: with a query present, the collection base (the page-1 `id` and `first`) carries
+        // the escaped query so a client walking `next` keeps the filter.
+        Assert.Equal($"{_base}/ap/v1/search?q=ALIC", doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal($"{_base}/ap/v1/search?q=ALIC", doc.RootElement.GetProperty("first").GetString());
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         // Actors first (IRI-sorted), then content objects (IRI-sorted): alice (actor), then the note.

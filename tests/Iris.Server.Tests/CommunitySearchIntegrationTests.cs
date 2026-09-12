@@ -75,7 +75,10 @@ public sealed class CommunitySearchIntegrationTests : IAsyncLifetime
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal($"{_base}/ap/v1/c/{Community}/search", doc.RootElement.GetProperty("id").GetString());
+        // Phase 99: with a query present, the collection base (the page-1 `id` and `first`) carries
+        // the escaped query so a client walking `next` keeps the filter.
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=fED", doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=fED", doc.RootElement.GetProperty("first").GetString());
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
         Assert.Equal(2, items.Length);
@@ -167,6 +170,100 @@ public sealed class CommunitySearchIntegrationTests : IAsyncLifetime
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}/activities/create-2", items[0]);
         Assert.Equal($"https://{AHost}/ap/v1/u/{Bob}/activities/create-2", items[1]);
         Assert.Equal($"{_base}/ap/v1/c/{Community}/search/?offset=2&limit=2", doc.RootElement.GetProperty("next").GetString());
+    }
+
+    // --- Page links preserve the query (Phase 99: client next-walking keeps the filter) ---
+
+    [Fact]
+    public async Task Search_Page1_WithQuery_NextAndFirstCarryTheQuery()
+    {
+        // "a" matches every item's content (alice "a GARDEN post", alice "a FEDERAL post",
+        // bob "about federation", bob "the weather today" — each contains the substring "a"),
+        // so all 4 items match. limit=2 → page 1 of 2. The `first` self-link and the `next`
+        // link must both carry ?q=a so a client that walks `next` (the ActivityPub client's
+        // GetCollectionAsync, driven by the PagedCollection component) keeps the filter on
+        // page 2 instead of dropping it and returning unfiltered results.
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?q=a&limit=2&offset=0");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        // The collection base (the `first` target and the page-1 `id`) carries the query.
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a", doc.RootElement.GetProperty("first").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a", doc.RootElement.GetProperty("id").GetString());
+        // The `next` link carries the query + the offset/limit, so following it keeps the filter.
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a&offset=2&limit=2", doc.RootElement.GetProperty("next").GetString());
+    }
+
+    [Fact]
+    public async Task Search_Page2_WithQuery_PrevAndIdCarryTheQuery()
+    {
+        // "a" matches all 4 items; limit=2, offset=2 → page 2 of 2 (the last page). The `id`,
+        // `partOf`, and `prev` links must all carry ?q=a (the last page has no `next`).
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?q=a&limit=2&offset=2");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal("OrderedCollectionPage", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a&offset=2&limit=2", doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a", doc.RootElement.GetProperty("partOf").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q=a&offset=0&limit=2", doc.RootElement.GetProperty("prev").GetString());
+        Assert.False(doc.RootElement.TryGetProperty("next", out _)); // last page
+    }
+
+    [Fact]
+    public async Task Search_WithQuery_PagedNextWalkStillFilters()
+    {
+        // End-to-end paging walk: fetch page 1 (?q=a&limit=2), then follow its `next` link
+        // verbatim. The page-2 response must be filtered by the same query (the `next` link
+        // carried ?q=a), not reset to the unfiltered feed. This is the exact sequence the
+        // ActivityPub client's GetCollectionAsync performs when a PagedCollection is pointed
+        // at {community}/search?q=a.
+        var page1 = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?q=a&limit=2&offset=0");
+        page1.EnsureSuccessStatusCode();
+        using (var doc1 = JsonDocument.Parse(await page1.Content.ReadAsStringAsync()))
+        {
+            var nextIri = doc1.RootElement.GetProperty("next").GetString();
+            Assert.NotNull(nextIri);
+
+            // Follow the emitted `next` link verbatim.
+            var page2 = await _http.GetAsync(nextIri!);
+            page2.EnsureSuccessStatusCode();
+            using var doc2 = JsonDocument.Parse(await page2.Content.ReadAsStringAsync());
+
+            // Page 2 is the second page of the SAME filtered result set (2 of the 4 "a" matches),
+            // not the unfiltered feed. totalItems still reflects the full match count.
+            Assert.Equal("OrderedCollectionPage", doc2.RootElement.GetProperty("type").GetString());
+            Assert.Equal(2, JsonDoc.GetItems(doc2.RootElement).Count());
+            Assert.Equal(4, doc2.RootElement.GetProperty("totalItems").GetInt32());
+        }
+    }
+
+    [Fact]
+    public async Task Search_WithSpacesInQuery_QueryIsPercentEscapedInLinks_AndUnescapedInExtension()
+    {
+        // A query containing a space ("garden post") must be percent-escaped in the emitted page
+        // links so they are valid IRIs, while the iris:searchQuery extension records the original
+        // un-escaped query (the server un-escapes ?q when it arrives). "garden post" matches only
+        // alice's "a GARDEN post" (1 item), so limit=10 is a single page (no `next`).
+        var escaped = Uri.EscapeDataString("garden post"); // "garden%20post"
+        var response = await _http.GetAsync($"{_base}/ap/v1/c/{Community}/search?q={escaped}&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // The collection base (the `first` target and the page-1 `id`) carries the ESCAPED query,
+        // so the emitted IRI is well-formed (a literal space would make it invalid).
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q={escaped}", doc.RootElement.GetProperty("first").GetString());
+        Assert.Equal($"{_base}/ap/v1/c/{Community}/search?q={escaped}", doc.RootElement.GetProperty("id").GetString());
+
+        // The page is filtered to the single match.
+        Assert.Single(JsonDoc.GetItems(doc.RootElement));
+        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
+
+        // The iris:searchQuery extension records the UN-ESCAPED original query (the server
+        // percent-un-escaped ?q before storing/matching).
+        var queryValue = doc.RootElement.GetProperty($"{DefaultNamespace}searchQuery").GetString();
+        Assert.Equal("garden post", queryValue);
     }
 
     // --- Edge cases -----------------------------------------------------------------

@@ -139,14 +139,33 @@ else
     @if (ActiveTab == "feed")
     {
         <div role="tabpanel" id="panel-feed" aria-labelledby="tab-feed">
-        <PagedCollection
-            Client="Client"
-            CollectionIri="FeedIri"
-            Title="Community Feed"
-            Description="Posts from this community's members."
-            PageSize="5"
-            ShowRefreshButton="true"
-            EmptyMessage="No posts in this community yet." />
+            <div class="community-feed-search">
+                <form class="community-feed-search-form" @onsubmit="SubmitFeedSearch" role="search" aria-label="Search this community">
+                    <input id="community-feed-search" type="text" @bind="FeedQueryInput" @bind:event="oninput"
+                            placeholder="Search posts in this community…"
+                            aria-label="Search posts in this community"
+                            autocomplete="off" />
+                    <button type="submit" class="button" disabled="@string.IsNullOrWhiteSpace(FeedQueryInput)">Search</button>
+                    @if (HasActiveFeedSearch)
+                    {
+                        <button type="button" class="button button--ghost" @onclick="ClearFeedSearch">Clear</button>
+                    }
+                </form>
+                @if (HasActiveFeedSearch)
+                {
+                    <p class="muted community-feed-search-caption">
+                        Showing posts matching “@ActiveFeedQuery”.
+                    </p>
+                }
+            </div>
+            <PagedCollection
+                Client="Client"
+                CollectionIri="FeedCollectionIri"
+                Title="@FeedCollectionTitle"
+                Description="@FeedCollectionDescription"
+                PageSize="5"
+                ShowRefreshButton="true"
+                EmptyMessage="@FeedCollectionEmptyMessage" />
         </div>
     }
     else if (ActiveTab == "members")
@@ -368,6 +387,74 @@ else
     private Iri? FeedIri => CommunityIri?.FeedOf();
     private Iri? MembersIri => CommunityIri is { } iri ? AppendSegment(iri, "members") : null;
 
+    // Community feed search (Phase 99): a query box above the feed that, when active, points the
+    // feed's PagedCollection at the community's /search specialized collection (?q=…) instead of the
+    // raw feed. The server embeds ?q= in every page link (first/prev/next/id) so the PagedCollection's
+    // next-walking keeps the filter on page 2+ (the ActivityPub client preserves the query string on
+    // the IRI it follows). Clearing the query restores the normal feed.
+    private string FeedQueryInput { get; set; } = string.Empty;
+    private string? ActiveFeedQuery { get; set; }
+
+    private bool HasActiveFeedSearch => !string.IsNullOrWhiteSpace(ActiveFeedQuery);
+
+    // The IRI the feed's PagedCollection enumerates: the raw feed when no search is active, or the
+    // community /search collection (?q=<query>) when a search is active.
+    private Iri? FeedCollectionIri
+    {
+        get
+        {
+            if (CommunityIri is not { } communityIri)
+            {
+                return null;
+            }
+
+            if (!HasActiveFeedSearch)
+            {
+                return communityIri.FeedOf();
+            }
+
+            var searchBase = AppendSegment(communityIri, "search");
+            return new Iri($"{searchBase.Value}?q={Uri.EscapeDataString(ActiveFeedQuery!)}");
+        }
+    }
+
+    private string FeedCollectionTitle
+        => HasActiveFeedSearch ? $"Posts matching “{ActiveFeedQuery}”" : "Community Feed";
+
+    private string FeedCollectionDescription
+        => HasActiveFeedSearch
+            ? "Posts in this community matching your search."
+            : "Posts from this community's members.";
+
+    private string FeedCollectionEmptyMessage
+        => HasActiveFeedSearch
+            ? "No posts in this community match your search."
+            : "No posts in this community yet.";
+
+    /// <summary>
+    /// Submits the feed search (from the form or Enter): sets the active query, which repoints the
+    /// feed's PagedCollection at the /search collection (a fresh load fires on the IRI change).
+    /// </summary>
+    private void SubmitFeedSearch()
+    {
+        var query = FeedQueryInput.Trim();
+        if (query.Length == 0)
+        {
+            return;
+        }
+
+        ActiveFeedQuery = query;
+    }
+
+    /// <summary>
+    /// Clears the active feed search, restoring the normal community feed.
+    /// </summary>
+    private void ClearFeedSearch()
+    {
+        ActiveFeedQuery = null;
+        FeedQueryInput = string.Empty;
+    }
+
     protected override async Task OnParametersSetAsync()
     {
         await Session.EnsureReadyAsync();
@@ -380,6 +467,11 @@ else
         {
             return;
         }
+
+        // A different community is being shown: drop any in-progress feed search so a stale query
+        // from a previous community doesn't carry over (the /search IRI is community-scoped).
+        ActiveFeedQuery = null;
+        FeedQueryInput = string.Empty;
 
         try
         {

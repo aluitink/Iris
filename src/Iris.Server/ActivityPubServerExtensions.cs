@@ -8646,7 +8646,21 @@ public static class ActivityPubServerExtensions
         var searchQueryTerm = $"{namespaceBase}{IrisExtensionTerms.SearchQuery}";
         var nextOffset = start + limit;
         var prevOffset = Math.Max(0, start - limit);
-        var nextIri = nextOffset < total ? $"{collectionIri.Value}/?offset={nextOffset}&limit={limit}" : null;
+
+        // When a query is present, the collection's page links (`first`/`partOf`/`id`/`prev`/`next`)
+        // must carry the query string so a client that walks `next` (the ActivityPub client's
+        // GetCollectionAsync, as driven by the PagedCollection component) keeps the filter on
+        // every page — otherwise page 2+ would follow a `next` IRI that has lost `?q=` and return
+        // unfiltered results. The query is percent-escaped so the links are valid IRIs; the server
+        // un-escapes it again when a page-2+ request arrives.
+        var trimmedQuery = hasQuery ? query!.Trim() : string.Empty;
+        var queryPart = hasQuery ? $"?q={Uri.EscapeDataString(trimmedQuery)}" : string.Empty;
+        // A page link at a given offset: the collection base + the query part + the offset/limit.
+        static string PageLink(string baseIri, string queryPart, int offset, int limit)
+            => string.IsNullOrEmpty(queryPart)
+                ? $"{baseIri}/?offset={offset}&limit={limit}"
+                : $"{baseIri}{queryPart}&offset={offset}&limit={limit}";
+        var nextIri = nextOffset < total ? PageLink(collectionIri.Value, queryPart, nextOffset, limit) : null;
 
         // Hand-write the page document (instead of letting the library's OrderedCollection/
         // OrderedCollectionPage + ActivityJson.Serialize render it) so `items` is ALWAYS a JSON array —
@@ -8677,20 +8691,24 @@ public static class ActivityPubServerExtensions
             writer.WritePropertyName("totalItems");
             writer.WriteNumberValue(total);
 
+            // The collection base IRI as a page link (the `first`/`partOf` target and the page-1 `id`):
+            // the bare collection IRI, or the collection IRI + query part when a query filters the page.
+            var collectionLink = collectionIri.Value + queryPart;
+
             if (start == 0)
             {
                 // The first page (offset 0) is the collection document itself: it carries its own items
                 // and a self-referencing `first` link. An `OrderedCollection` has no `next` property, so
                 // a next-page link is recorded as the standard AS `next` (matching the page-2+ `next` so
                 // a reader can walk from page 1 onward).
-                writer.WriteString("first", collectionIri.Value);
+                writer.WriteString("first", collectionLink);
             }
             else
             {
-                writer.WriteString("partOf", collectionIri.Value);
+                writer.WriteString("partOf", collectionLink);
                 writer.WritePropertyName("startIndex");
                 writer.WriteNumberValue(start);
-                writer.WriteString("prev", $"{collectionIri.Value}/?offset={prevOffset}&limit={limit}");
+                writer.WriteString("prev", PageLink(collectionIri.Value, queryPart, prevOffset, limit));
             }
 
             if (nextIri is not null)
@@ -8700,11 +8718,11 @@ public static class ActivityPubServerExtensions
 
             if (hasQuery)
             {
-                writer.WriteString(searchQueryTerm, query!.Trim());
+                writer.WriteString(searchQueryTerm, trimmedQuery);
             }
 
             writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
-            writer.WriteString("id", start == 0 ? collectionIri.Value : $"{collectionIri.Value}/?offset={offset}&limit={limit}");
+            writer.WriteString("id", start == 0 ? collectionLink : PageLink(collectionIri.Value, queryPart, offset, limit));
             writer.WriteString("type", start == 0 ? "OrderedCollection" : "OrderedCollectionPage");
 
             writer.WriteEndObject();

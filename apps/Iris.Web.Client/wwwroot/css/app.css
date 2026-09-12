@@ -2587,6 +2587,27 @@ ul.object-list li {
     margin-bottom: 1rem;
 }
 
+/* --- Community feed search (Phase 99) --- */
+
+.community-feed-search {
+    margin-bottom: 0.75rem;
+}
+
+.community-feed-search-form {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.community-feed-search-form input[type="text"] {
+    flex: 1 1 16rem;
+}
+
+.community-feed-search-caption {
+    margin: 0.4rem 0 0;
+}
+
 .compose-community-context {
     margin-bottom: 0.75rem;
 }
