@@ -13,10 +13,12 @@
         }
 
         <div class="actor-profile-main">
-            <ActorAvatar ActorIri="@(ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null)"
-                         DisplayName="@Name"
-                         IconIriOverride="@IconIri"
-                         CssClass="actor-profile-avatar" />
+            <a href="@ActorHref" class="actor-profile-avatar-link" title="View profile">
+                <ActorAvatar ActorIri="@(ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null)"
+                             DisplayName="@Name"
+                             IconIriOverride="@IconIri"
+                             CssClass="actor-profile-avatar" />
+            </a>
 
             <div class="actor-profile-body">
                 @if (PreferredUsername is { Length: > 0 } username)

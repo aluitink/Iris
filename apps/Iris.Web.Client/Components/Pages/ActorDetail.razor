@@ -31,18 +31,16 @@ else
 {
     <div class="actor-detail-header">
         <ActorProfile Actor="ActorDoc" ActorId="@(ActorDoc.Id)" />
-        @if (IsSelf)
+        @if (!IsSelf && Session.IsSignedIn)
         {
-            <p class="muted">This is you.</p>
+            <div class="actor-detail-actions">
+                <FollowButton TargetActor="ActorDoc" />
+                <ModerationActions TargetActor="ActorDoc" />
+            </div>
         }
-        else if (Session.IsSignedIn)
+        else if (!IsSelf && !Session.IsSignedIn)
         {
-            <FollowButton TargetActor="ActorDoc" />
-            <ModerationActions TargetActor="ActorDoc" />
-        }
-        else
-        {
-            <p class="muted"><a href="/login">Sign in</a> to follow or moderate.</p>
+            <p class="muted actor-detail-signin"><a href="/login">Sign in</a> to follow or moderate.</p>
         }
     </div>
 
@@ -74,28 +72,22 @@ else
     else if (ActiveTab == "followers")
     {
         <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
-        <PagedCollection
+        <ActorListPanel
             Client="Client"
             AnonymousHttpClient="Http"
             CollectionIri="FollowersIri"
             Title="Followers"
-            Description="Actors following this person."
-            PageSize="5"
-            ShowRefreshButton="@(Client is not null)"
             EmptyMessage="No followers yet." />
         </div>
     }
     else if (ActiveTab == "following")
     {
         <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
-        <PagedCollection
+        <ActorListPanel
             Client="Client"
             AnonymousHttpClient="Http"
             CollectionIri="FollowingIri"
             Title="Following"
-            Description="Actors this person follows."
-            PageSize="5"
-            ShowRefreshButton="@(Client is not null)"
             EmptyMessage="Not following anyone yet." />
         </div>
     }

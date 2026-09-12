@@ -703,6 +703,52 @@ ul.object-list li {
     margin-top: 0.25rem;
 }
 
+/* --- Actor list panel (hydrated followers/following) --- */
+
+.actor-list-panel {
+    padding: 1rem 1.25rem;
+}
+
+.actor-list-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.actor-list-grid .actor-card {
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: border-color 0.15s;
+}
+
+.actor-list-grid .actor-card:hover {
+    border-color: var(--accent);
+}
+
+.actor-list-grid .actor-card-avatar {
+    width: 3rem;
+    height: 3rem;
+}
+
+.actor-list-grid .actor-card-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+/* --- Clickable profile avatar link --- */
+
+.actor-profile-avatar-link {
+    display: inline-flex;
+    border-radius: 50%;
+    text-decoration: none;
+}
+
+.actor-profile-avatar-link:hover .actor-profile-avatar {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
 .object-type {
     font-size: 0.7rem;
     text-transform: uppercase;
@@ -2157,6 +2203,7 @@ ul.object-list li {
 .actor-detail-header {
     display: flex;
     align-items: flex-start;
+    justify-content: space-between;
     gap: 1rem;
     flex-wrap: wrap;
 }
@@ -2164,6 +2211,25 @@ ul.object-list li {
 .actor-detail-header .actor-profile {
     flex: 1;
     min-width: 200px;
+}
+
+.actor-detail-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: stretch;
+    flex-shrink: 0;
+}
+
+.actor-detail-actions .moderation-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.actor-detail-signin {
+    flex-shrink: 0;
+    margin: 0.25rem 0 0;
 }
 
 .object-detail .object-content {
