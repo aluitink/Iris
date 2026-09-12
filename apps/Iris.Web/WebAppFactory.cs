@@ -728,8 +728,9 @@ public static class WebAppFactory
 
     /// <summary>
     /// Maps the account self-service endpoints: <c>POST /local/v1/account/password</c> (changes the
-    /// signed-in user's password). <c>[Authorize]</c>-gated (cookie auth); resolves the account via
-    /// the <c>sub</c> claim.
+    /// signed-in user's password), <c>GET /local/v1/account/key-info</c> (read-only key/algorithm
+    /// info for the signed-in user's actor). <c>[Authorize]</c>-gated (cookie auth); resolves the
+    /// account via the <c>sub</c> claim.
     /// </summary>
     /// <param name="endpoints">The endpoint route builder.</param>
     public static void MapAccountEndpoints(IEndpointRouteBuilder endpoints)
@@ -768,6 +769,34 @@ public static class WebAppFactory
             return result.Succeeded
                 ? Results.Ok(new { success = true })
                 : Results.BadRequest(new { error = result.Error });
+        }).RequireAuthorization();
+
+        // Read-only key/algorithm info (88.3): GET /local/v1/account/key-info.
+        // Resolves the signed-in user's actor key from the IKeyStore by the well-known
+        // {actorIri}#key-1 convention and returns the algorithm, key IRI, and JWK thumbprint.
+        endpoints.MapGet("/local/v1/account/key-info", async (
+            HttpContext ctx,
+            IKeyStore keys,
+            CancellationToken ct) =>
+        {
+            var actorIri = ctx.User.FindFirstValue(ActorClaims.ActorIri);
+            if (string.IsNullOrEmpty(actorIri))
+            {
+                return Results.Unauthorized();
+            }
+
+            var keyIri = new Iri($"{actorIri}#key-1");
+            if (!keys.TryGetKey(keyIri, out var key) || key is null)
+            {
+                return Results.NotFound(new { error = "No signing key found for this actor." });
+            }
+
+            return Results.Ok(new
+            {
+                Algorithm = key.Algorithm.ToString(),
+                KeyIri = key.KeyId.ToString(),
+                Thumbprint = key.GetThumbprint(),
+            });
         }).RequireAuthorization();
     }
 
