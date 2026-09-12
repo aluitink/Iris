@@ -12,13 +12,6 @@ namespace Iris.Server.Data.Stores;
 /// </summary>
 public sealed class EfActorStore : IActorStore
 {
-    /// <summary>
-    /// The constant SQL fragment that restricts a search to this instance's own actors (a non-null
-    /// <c>Handle</c>). Inlined verbatim into the raw SQL (EF1002) — it carries no user input, so it is
-    /// safe to interpolate.
-    /// </summary>
-    private const string LocalOnlySearchClause = "AND \"Handle\" IS NOT NULL ";
-
     private readonly IDbContextFactory<IrisDbContext> _factory;
 
     /// <summary>
@@ -153,24 +146,32 @@ public sealed class EfActorStore : IActorStore
             // Fallback: for rows where SearchVector is NULL (pre-migration rows not yet backfilled),
             // also match via ILIKE on the Document column. When localOnly is set, the search is
             // restricted to rows with a non-null Handle (this instance's own actors — the directory);
-            // a remote actor cached here carries no Handle. The clause is a constant (no user input)
-            // so it is inlined verbatim (EF1002 — a non-constant string would not be verifiable).
-            var localClause = localOnly
-                ? LocalOnlySearchClause
-                : string.Empty;
-            entities = await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
-                $$"""
-                SELECT * FROM "Actors" WHERE (
-                    "SearchVector" @@ plainto_tsquery('simple', {0})
-                    OR ("SearchVector" IS NULL AND "Document"::text ILIKE {1} ESCAPE '\')
-                ) {localClause}ORDER BY
-                    ts_rank("SearchVector", plainto_tsquery('simple', {0})) DESC NULLS LAST,
-                    "Id"
-                LIMIT {2} OFFSET {3}
-                """,
-                normalized!, $"%{EscapeLike(normalized!)}%", limit, offset).AsNoTracking()
-                .ToListAsync(ct)
-                .ConfigureAwait(false);
+            // a remote actor cached here carries no Handle. Each branch is a constant literal so the
+            // FromSqlRaw EF1003 verifiability holds, and the {0}..{3} reach FromSqlRaw as parameter
+            // placeholders (a $$ raw-interpolated string would let C# consume them).
+            entities = localOnly
+                ? await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                    @"SELECT * FROM ""Actors"" WHERE (
+                        ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                        OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                    ) AND ""Handle"" IS NOT NULL ORDER BY
+                        ts_rank(""SearchVector"", plainto_tsquery('simple', {0})) DESC NULLS LAST,
+                        ""Id""
+                    LIMIT {2} OFFSET {3}",
+                    normalized!, $"%{EscapeLike(normalized!)}%", limit, offset).AsNoTracking()
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false)
+                : await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                    @"SELECT * FROM ""Actors"" WHERE (
+                        ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                        OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                    ) ORDER BY
+                        ts_rank(""SearchVector"", plainto_tsquery('simple', {0})) DESC NULLS LAST,
+                        ""Id""
+                    LIMIT {2} OFFSET {3}",
+                    normalized!, $"%{EscapeLike(normalized!)}%", limit, offset).AsNoTracking()
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
         }
         else
         {
@@ -211,19 +212,26 @@ public sealed class EfActorStore : IActorStore
         if (hasQuery)
         {
             // Count matching rows: tsvector match OR (NULL vector AND ILIKE fallback). When localOnly is
-            // set, restrict to this instance's own actors (a non-null Handle). The clause is a constant
-            // (no user input) so it is inlined verbatim (EF1002).
-            var localClause = localOnly ? LocalOnlySearchClause : string.Empty;
-            return await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
-                $$"""
-                SELECT * FROM "Actors" WHERE (
-                    "SearchVector" @@ plainto_tsquery('simple', {0})
-                    OR ("SearchVector" IS NULL AND "Document"::text ILIKE {1} ESCAPE '\')
-                ) {localClause}
-                """,
-                normalized!, $"%{EscapeLike(normalized!)}%")
-                .CountAsync(ct)
-                .ConfigureAwait(false);
+            // set, restrict to this instance's own actors (a non-null Handle). Each branch is a constant
+            // literal (FromSqlRaw EF1003 verifiability) and its {0}/{1} reach FromSqlRaw as parameter
+            // placeholders.
+            return localOnly
+                ? await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                    @"SELECT * FROM ""Actors"" WHERE (
+                        ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                        OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                    ) AND ""Handle"" IS NOT NULL",
+                    normalized!, $"%{EscapeLike(normalized!)}%")
+                    .CountAsync(ct)
+                    .ConfigureAwait(false)
+                : await db.Set<ActorEntity>().FromSqlRaw<ActorEntity>(
+                    @"SELECT * FROM ""Actors"" WHERE (
+                        ""SearchVector"" @@ plainto_tsquery('simple', {0})
+                        OR (""SearchVector"" IS NULL AND ""Document""::text ILIKE {1} ESCAPE '\')
+                    )",
+                    normalized!, $"%{EscapeLike(normalized!)}%")
+                    .CountAsync(ct)
+                    .ConfigureAwait(false);
         }
 
         if (localOnly)

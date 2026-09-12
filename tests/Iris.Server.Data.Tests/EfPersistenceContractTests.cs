@@ -170,4 +170,47 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
         Assert.Equal("text/plain", contentType);
         Assert.Equal("file.txt", fileName);
     }
+
+    /// <summary>
+    /// Regression: the EF actor full-text search (<see cref="IActorStore.SearchActorsAsync"/> /
+    /// <see cref="IActorStore.CountSearchMatchesAsync"/>) built its raw SQL with a <c>$$"""</c>
+    /// raw-interpolated string, so the <c>{0}</c>..<c>{3}</c> tokens were consumed by C# string
+    /// interpolation instead of reaching <c>FromSqlRaw</c> as parameter placeholders — every query with a
+    /// non-empty search term threw <c>FormatException</c> (the <c>GET /ap/v1/search</c> endpoint 500'd on
+    /// the EF/Postgres host). This drives the EF store against a real Postgres with a match and a
+    /// no-match query, in both <c>localOnly</c> directions, and asserts the results (not just that no
+    /// exception is thrown).
+    /// </summary>
+    [Fact]
+    public async Task ActorStore_Search_MatchesAndCounts_DoesNotThrow()
+    {
+        var p = NewProvider();
+        var ns = "search" + Guid.NewGuid().ToString("N")[..8];
+
+        // A local actor (carries a Handle) whose name matches the query.
+        var localActorIri = new Iri($"https://test.local/ap/v1/u/{ns}-local");
+        await p.Actors.PutActorAsync(new Person
+        {
+            Id = localActorIri.Value,
+            PreferredUsername = $"{ns}-local",
+            Name = [$"needle-{ns}"],
+        });
+
+        var query = $"needle-{ns}";
+
+        // Both localOnly directions must run without throwing and return the matching actor.
+        foreach (var localOnly in new[] { false, true })
+        {
+            var found = await p.Actors.SearchActorsAsync(query, 100, 0, localOnly: localOnly);
+            Assert.Contains(found, a => a.Id == localActorIri.Value);
+
+            var count = await p.Actors.CountSearchMatchesAsync(query, localOnly: localOnly);
+            Assert.True(count >= 1, $"expected >= 1 match for localOnly={localOnly}, got {count}");
+        }
+
+        // A no-match query returns zero rows (and does not throw).
+        var empty = await p.Actors.SearchActorsAsync("zzz-no-such-needle-" + Guid.NewGuid().ToString("N")[..8], 100, 0, localOnly: false);
+        Assert.Empty(empty);
+        Assert.Equal(0, await p.Actors.CountSearchMatchesAsync("zzz-no-such-needle-" + Guid.NewGuid().ToString("N")[..8], localOnly: false));
+    }
 }
