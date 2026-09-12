@@ -80,7 +80,7 @@ Iris.slnx
 
 ## Active Slice
 
-_(none — 86.1 is complete; the next slice is **86.2** from Up Next: live/fixture verification that a PieFed `Feed` community actor now resolves as a community)._
+_(none — **Phase 86 is complete** (86.1 mapping + 86.2 server verification). No further Phase 86 slices remain. The next phase to scope is open — see Up Next._)
 
 **Note for the loop (stale-WASM, re-confirmed this turn):** the server
 `Iris.Web.csproj` `BuildAndCopyClient` target only republishes the client when
@@ -142,9 +142,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **86 — Community-type interop (Feed → Group mapping) (next phase).** The documented "candidate follow-up" from 81.2: PieFed's `Feed` community type is not mapped to `Group` in the deserializer/cast path, so PieFed/Pleroma-fork communities don't render as communities.
+- ~~**86 — Community-type interop (Feed → Group mapping)**~~ — **COMPLETE** (86.1 mapping + 86.2 server verification). The "candidate follow-up" from 81.2: PieFed's `Feed` community type is now mapped to `Group` and verified through the server's community pipeline. [861](docs/changes/861-phase86-feed-to-group-community-mapping.md) · [862](docs/changes/862-phase86-feed-community-server-verification.md)
   - ~~**86.1** — Map the `Feed` type to `Group`~~ — **DONE** ([861](docs/changes/861-phase86-feed-to-group-community-mapping.md)).
-  - **86.2** — Live/fixture verification: a PieFed `Feed` community actor now resolves as a community (community detail renders, follow/join work); re-run the 81.2 fixture through the new mapping.
+  - ~~**86.2** — Server-level verification (stores + inbox handlers) that a `Feed` community flows correctly~~ — **DONE** ([862](docs/changes/862-phase86-feed-community-server-verification.md)). 6 new integration tests (all load-bearing: fail without the mapping).
 - ~~**80 — UI/UX polish + defect hunt**~~ — **COMPLETE** (5 findings P-001…P-005 all resolved). [800](docs/changes/800-phase80-bug-hunt-tracker.md) · [801](docs/changes/801-phase80-defect-hunt-fixes.md)
 - ~~**81 — Federation hardening & real-world interop**~~ — **COMPLETE** (81.1 Mastodon + 81.2 Misskey/Pleroma round-trips, no code changes; 81.3 pagination + `Delete`/`Tombstone` conformance, 2 fixes). [811](docs/changes/811-phase81-mastodon-interop-roundtrip.md) · [812](docs/changes/812-phase81-misskey-pleroma-interop-roundtrip.md) · [813](docs/changes/813-phase81-pagination-delete-tombstone-conformance.md)
 - ~~**83 — Iri identity correctness + production readiness**~~ — **COMPLETE** (83.1 Iri fragment-awareness, 83.2 config validation + observability, 83.3 dead-letter retry + observability, 83.4 graceful degradation). [831](docs/changes/831-phase83-iri-fragment-awareness.md) · [832](docs/changes/832-phase83-deployment-hardening-config-validation.md) · [833](docs/changes/833-phase83-outbound-delivery-dead-letter-observability.md) · [834](docs/changes/834-phase83-graceful-degradation-readonly-mode.md)
@@ -169,6 +169,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **86.2 — Community-type interop: server-level verification of the `Feed` → `Group` mapping — DONE** ([862](docs/changes/862-phase86-feed-community-server-verification.md)): **6 new integration tests** (`FeedCommunityServerIntegrationTests`) drive a real PieFed `Feed` document through the server's community stores + `FollowActivityHandler` (edges, outbox, scheduled `Accept`) + the wire-level `as Group` / `is Group` cast sites. All load-bearing (fail without the 86.1 registration). No production code changed. **Phase 86 now complete.**
 - **86.1 — Community-type interop: map the PieFed `Feed` wire type to `Group` — DONE** ([861](docs/changes/861-phase86-feed-to-group-community-mapping.md)): registered `"Feed" → typeof(Group)` in the shared `ObjectTypes.Types` registry (in `ActivityJson.CreateOptions()`, the single choke-point for all ActivityStreams (de)serialization) so a PieFed `Feed` community actor is recognized as a `Group` by every `as Group` / `is Group` cast site. The EF community store now treats a stored `Feed` row as a community (read filter + `GetAll`) and stores the document's actual wire type on write (a re-read re-emits a `Feed` as a `Feed` — the library preserves the original `Type` through a `Group` instance). **5 new integration tests** + the 81.2 round-trip test updated to assert the mapping (its type-preservation assertion still holds).
 - **85 — Notification "replied to you" verb fix — DONE** ([851](docs/changes/851-phase85-notification-reply-verb-fix.md)): the Notifications page was labeling every inbox `Create` as "replied to you", even for replies to another user's note (delivered via the follower fan-out). Now `NotificationRow.VerbFor` checks the note's `inReplyTo`: "replied to you" if it's the user's own note, "replied" if it's someone else's note, "posted" if it's a new note. **0 new coded tests** (WASM manual-test policy; verified via reasoning + partial Playwright).
 - **84.6 — Shared-state scale-out (converging multi-instance) — DONE** ([846](docs/changes/846-phase84-document-derived-shared-key-provider.md), [847](docs/changes/847-phase84-key-provider-refresh-hosted-service.md), [848](docs/changes/848-phase84-shared-delivery-queue.md), [849](docs/changes/849-phase84-cache-invalidation-channel.md), [850](docs/changes/850-phase84-lift-single-instance-guard.md)): the convergence half of 84.5 — three shared-state pieces (the document-derived key provider + the shared delivery queue + the cache-invalidation channel) + the 84.5 guard lift (fail-fast → warning when all three are configured). **20 new tests.** Multi-instance over one origin is now supported.
