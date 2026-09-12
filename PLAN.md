@@ -99,7 +99,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **114.2 — (candidate)** — Next Phase D slice, pick one: (a) card spacing-rhythm audit (consistent `--space-*` gaps/padding across card families: actor-card, object-list item, community-card, directory-card), (b) a concrete matrix ☐ distribution feature (e.g. post boosts, or community join flow), or (c) remaining one-off display font-sizes → tokens if a repeatable ramp emerges. Replenish before selecting.
+- **114.3 — (candidate)** — Next Phase D slice, pick one: (a) remaining one-off display font-sizes (0.65–1.8rem, ~15) → a display ramp if a repeatable pattern emerges, (b) card spacing-rhythm deep pass (the inner padding/gap of card families is tokenized; audit for a consistent `--space-*` rhythm across actor-card / object-list / directory-card / community-card), or (c) a concrete matrix ☐ distribution feature. Replenish before selecting.
 - **115 — (candidate)** — Phase D distribution feature item. Pick the highest-value ☐ from `docs/plans/production-app-feature-matrix.md` (distribution section) and expand into a vertical slice (impl + integration tests + live-verify).
 
 ## Inbox
@@ -112,6 +112,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **114.2 — Border-Radius Token Scale (DONE)** — 4-token radius ramp (`--radius-sm 4px / md 8px / lg 10px / pill 999px`); migrated 41 raw radii scattered across 2/4/5/6/8/10px. Card families now share one rhythm (outer lg / list-item md / controls sm). Presentational. Build clean, Web.Tests 95/95, live-verified (41 token usages, .card→10px, .button→4px). [changes/1142](docs/changes/1142-phase114-radius-token-scale.md)
+
 - **114.1 — Empty-State Iconography + Inline-Style Consistency (DONE)** — Compact `.empty-state--compact` (32px icon) gives `PagedCollection`/`ActorListPanel` tab empty states the same centered-icon treatment as main pages; `.directory-card-empty` utility; `.text-sm`/`.text-xs` utilities replace 7 inline `font-size` styles (zero inline font-size left). Presentational. Build clean, Web.Tests 95/95, live-verified (served CSS + login intact). [changes/1141](docs/changes/1141-phase114-empty-state-iconography-consistency.md)
 
 - **113.3 — Complete Token Migration (DONE)** — Extended spacing scale (off-ramp `--space-25/35/45/55/60/65/90/125`) + type scale (`--font-size-3xl/4xl`); migrated the remaining raw rem spacing values (~150) + heading font-sizes. `app.css` now has zero raw rem spacing values. Presentational no-op. Build clean, Web.Tests 95/95, live-verified. [changes/1133](docs/changes/1133-phase113-complete-token-migration.md)
@@ -119,8 +121,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **113.2 — Visual Consistency + Subtle Motion (DONE)** — 0.15s hover transitions on buttons/links; secondary-button hover; danger text `#fff`→`--btn-fg` (AA); global `prefers-reduced-motion` guard; `color-mix` success hover; cleaned stale `var()` fallbacks. [changes/1132](docs/changes/1132-phase113-visual-consistency-motion.md)
 
 - **113.1 — Design-Token System (DONE)** — Semantic color tokens, 4px spacing scale, type scale; migrated ~430 lines of raw hex+rem. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
-
-- **112 — Community Block + Matrix Reconciliation (DONE)** — `CommunityBlockHandler` + block endpoint + client methods + Block button. Reconciled 3 stale matrix entries. [changes/1121](docs/changes/1121-phase112-community-block.md)
 
 
 
