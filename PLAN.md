@@ -100,7 +100,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- *(empty — all known phases complete; see ROADMAP.md for the ledger)*
+- **109 — (next)** — to be defined from remaining production-app feature matrix gaps (community-scoped block/mute UI, user-list role promote/demote, keyboard roving-tabindex for tab bars).
 ## Inbox
 
 - *(empty)*
