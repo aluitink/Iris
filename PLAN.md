@@ -120,6 +120,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **88.5 — Admin user role management (promote/demote)** — `IUserAccountStore.UpdateRoleAsync` + InMemory/EF impls; `POST /local/v1/admin/users/{id}/role` (Admin-gated, last-admin guard); per-row "Make admin"/"Demote to user" in `AdminUsers.razor`. Live-verified (promote/demote/guard, fresh Playwright browser after an MCP restart to dodge the disk-cache WASM), 0 new coded web tests. [changes/885](docs/changes/885-phase88-user-role-management.md)
+
 ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**
