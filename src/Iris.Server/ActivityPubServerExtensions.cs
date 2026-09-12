@@ -8247,6 +8247,10 @@ public static class ActivityPubServerExtensions
         var options = optionsAccessor.Value;
         var query = context.Request.Query["q"].ToString();
         var type = context.Request.Query["type"].ToString();
+        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
+        // remote actor is excluded. The directory page's "local only" / "all known actors" toggle sets it.
+        var localOnly = context.Request.Query["local"].ToString()
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
@@ -8256,7 +8260,7 @@ public static class ActivityPubServerExtensions
         // document builder derives totalItems from the full match count, so the handler fetches the full
         // list and slices here. For the local surface (a single instance's directory + content) the full
         // list is small and the slice is O(page size).
-        var items = await searchService.SearchAsync(query, ct, type).ConfigureAwait(false);
+        var items = await searchService.SearchAsync(query, ct, type, localOnly).ConfigureAwait(false);
 
         // The collection IRI is the endpoint IRI (the /ap/v1 prefix is the route prefix), so the page
         // links (?offset/?limit) are relative to it and resolve back to this route. Trim any trailing

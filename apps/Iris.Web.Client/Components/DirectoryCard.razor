@@ -4,14 +4,15 @@
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <div class="directory-card">
-    <button type="button" class="directory-card-header" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") posts by @DisplayName" @onclick="ToggleAsync">
-        <ActorCard Actor="Actor" ActorId="@Actor.Id">
-            <span class="directory-card-expand" aria-hidden="true">
-                @(IsExpanded ? "−" : "+")
-            </span>
-            <FollowButton TargetActor="Actor" />
-        </ActorCard>
-    </button>
+    <div class="directory-card-row">
+        <button type="button" class="directory-card-expand-btn" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") recent posts by @DisplayName" @onclick="ToggleAsync">
+            <ActorCard Actor="Actor" ActorId="@Actor.Id" />
+        </button>
+        <FollowButton TargetActor="Actor" />
+        <span class="directory-card-chevron" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="14" height="14" class="directory-card-chevron-svg @(IsExpanded ? "is-expanded" : "")"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
+        </span>
+    </div>
     @if (IsExpanded && Posts is not null)
     {
         <div class="directory-card-posts">

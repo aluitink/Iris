@@ -395,10 +395,10 @@ public sealed class HealthCheckUnitTests
         public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<Actor>>([]);
 
-        public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+        public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false)
             => Task.FromResult<IReadOnlyList<Actor>>([]);
 
-        public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+        public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false)
             => Task.FromResult(0);
     }
 

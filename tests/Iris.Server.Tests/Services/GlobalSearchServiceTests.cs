@@ -147,6 +147,73 @@ public sealed class GlobalSearchServiceTests
         Assert.Equal($"https://{AHost}/ap/v1/u/alice/notes/n1", Assert.Single(byNote));
     }
 
+    // --- localOnly restricts the actor pass to this instance's own actors (92.1 directory) ---
+
+    [Fact]
+    public async Task Search_LocalOnly_ExcludesCachedRemoteActors()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // A local actor (carries a handle) and a cached remote actor (no preferredUsername).
+        await PutActorAsync(persistence, "alice");
+        await PutRemoteActorAsync(persistence, "remote", "mastodon.social");
+
+        var service = new GlobalSearchService(persistence);
+
+        // "All known actors" (default) returns both the local actor and the cached remote actor.
+        var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, all.Length);
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice", all);
+        Assert.Contains($"https://mastodon.social/users/remote", all);
+
+        // "This instance" (localOnly) drops the cached remote actor but keeps the local one.
+        var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_LocalOnly_AppliesToQueryMatches()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // Both a local and a remote actor whose name contains "gardener".
+        var localIri = new Iri($"https://{AHost}/ap/v1/u/gardener");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = localIri.Value,
+            PreferredUsername = "gardener",
+            Name = ["Gardener"],
+        });
+        var remoteIri = new Iri($"https://remote.example/users/gardener");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = remoteIri.Value,
+            Name = ["Gardener"],
+        });
+
+        var service = new GlobalSearchService(persistence);
+
+        // A query match without localOnly finds both; with localOnly it finds only the local one.
+        var all = (await service.SearchAsync("gardener", type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, all.Length);
+
+        var local = (await service.SearchAsync("gardener", type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal(localIri.Value, Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_LocalOnly_DoesNotAffectContent()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutNoteAsync(persistence, "n1", "hello world");
+
+        var service = new GlobalSearchService(persistence);
+
+        // Content is the instance's stored content regardless of localOnly — a localOnly search with a
+        // no-type filter still returns the note (content is never "remote" in this model).
+        var withLocal = (await service.SearchAsync("hello", localOnly: true)).Select(ToId).ToArray();
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice/notes/n1", withLocal);
+    }
+
     // --- A no-match query returns nothing -------------------------------------------------
 
     [Fact]
@@ -194,6 +261,21 @@ public sealed class GlobalSearchServiceTests
             Id = iri.Value,
             PreferredUsername = handle,
             Name = [handle],
+        });
+    }
+
+    /// <summary>
+    /// Stores a cached remote actor (an actor from another server that this instance cached) — it
+    /// carries a remote IRI and <em>no</em> <c>preferredUsername</c> (a remote stand-in has no local
+    /// handle), which is exactly what the <c>localOnly</c> filter excludes.
+    /// </summary>
+    private static Task PutRemoteActorAsync(InMemoryPersistenceProvider persistence, string name, string host)
+    {
+        var iri = new Iri($"https://{host}/users/{name}");
+        return persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = iri.Value,
+            Name = [name],
         });
     }
 

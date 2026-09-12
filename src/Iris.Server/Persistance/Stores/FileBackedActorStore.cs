@@ -98,7 +98,7 @@ public sealed class FileBackedActorStore : IActorStore, IDisposable
         }, ct);
 
     /// <inheritdoc/>
-    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false)
         => _file.SnapshotAsync<IReadOnlyList<Actor>>(s =>
         {
             var normalized = query?.Trim();
@@ -108,6 +108,7 @@ public sealed class FileBackedActorStore : IActorStore, IDisposable
                 .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as Actor)
                 .Where(a => a is not null)
                 .Select(a => a!)
+                .Where(a => IsLocal(a, localOnly))
                 .Where(a => !hasQuery || MatchesActor(a, normalized!))
                 .OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal)
                 .Skip(offset)
@@ -118,7 +119,7 @@ public sealed class FileBackedActorStore : IActorStore, IDisposable
         }, ct);
 
     /// <inheritdoc/>
-    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false)
         => _file.SnapshotAsync<int>(s =>
         {
             var normalized = query?.Trim();
@@ -126,8 +127,15 @@ public sealed class FileBackedActorStore : IActorStore, IDisposable
 
             return DocumentMap(s).Values
                 .Select(e => ActivityJson.Deserialize<IObjectOrLink>(e.Json) as Actor)
-                .Count(a => a is not null && (!hasQuery || MatchesActor(a, normalized!)));
+                .Count(a => a is not null && IsLocal(a, localOnly) && (!hasQuery || MatchesActor(a, normalized!)));
         }, ct);
+
+    /// <summary>
+    /// True when the actor passes the <paramref name="localOnly"/> filter: a local actor carries a
+    /// <c>preferredUsername</c> (its handle); a cached remote actor does not.
+    /// </summary>
+    private static bool IsLocal(Actor actor, bool localOnly)
+        => !localOnly || actor.PreferredUsername is { Length: > 0 };
 
     /// <summary>
     /// Returns true when the actor's <c>name</c>, <c>preferredUsername</c>, or IRI contains

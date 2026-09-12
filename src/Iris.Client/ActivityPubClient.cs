@@ -1414,7 +1414,10 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // directory page searches actors only (no content).
         var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
         var typeSegment = string.IsNullOrWhiteSpace(options?.Type) ? string.Empty : $"&type={Uri.EscapeDataString(options!.Type!)}";
-        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}");
+        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
+        // remote actor is excluded. Only appended when set so a default search is unchanged.
+        var localSegment = options?.LocalOnly == true ? "&local=true" : string.Empty;
+        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}{localSegment}");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
         var page = await GetObjectAsync(request, ct).ConfigureAwait(false);

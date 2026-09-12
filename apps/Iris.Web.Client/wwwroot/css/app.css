@@ -1823,6 +1823,52 @@ ul.object-list li {
     margin: 0;
 }
 
+/* Directory scope toggle (This instance / All known actors). */
+.directory-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.directory-scope {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.directory-scope-btn {
+    appearance: none;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.7rem;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.directory-scope-btn + .directory-scope-btn {
+    border-left: 1px solid var(--border);
+}
+
+.directory-scope-btn:hover {
+    color: var(--text);
+}
+
+.directory-scope-btn--active {
+    background: var(--accent);
+    color: #fff;
+}
+
+.directory-scope-btn--active:hover {
+    color: #fff;
+}
+
 .directory-cards {
     display: flex;
     flex-direction: column;
@@ -1837,89 +1883,52 @@ ul.object-list li {
     overflow: hidden;
 }
 
-.directory-card-header {
+.directory-card-row {
     display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
+    align-items: center;
+    gap: 0.6rem;
     padding: 0.75rem;
-    cursor: pointer;
+}
+
+.directory-card-expand-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
     width: 100%;
     background: none;
     border: none;
     color: inherit;
     font: inherit;
     text-align: left;
+    cursor: pointer;
+    padding: 0;
 }
 
-.directory-card-avatar {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface);
-}
-
-.directory-card-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.directory-card-avatar-fallback {
-    font-weight: 600;
-    font-size: 1rem;
-    color: var(--muted);
-}
-
-.directory-card-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-}
-
-.directory-card-name {
-    font-weight: 600;
-    font-size: 0.95rem;
-    color: var(--text);
-    text-decoration: none;
-    display: inline-block;
-}
-
-.directory-card-name:hover {
+.directory-card-expand-btn:hover .actor-card-handle {
     color: var(--accent);
-    text-decoration: underline;
 }
 
-.directory-card-handle {
-    font-size: 0.8rem;
-    color: var(--muted);
+/* The directory's follow button hugs the card edge (no extra min-width). */
+.directory-card .follow-button {
+    min-width: 0;
+    padding: 0.35rem 0.7rem;
 }
 
-.directory-card-summary {
-    font-size: 0.85rem;
-    color: var(--muted);
-    margin: 0.2rem 0 0;
-}
-
-.directory-card-expand {
+.directory-card-chevron {
     flex-shrink: 0;
-    width: 1.75rem;
-    height: 1.75rem;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: var(--surface);
     color: var(--muted);
-    font-size: 1rem;
-    font-weight: 600;
-    margin-top: 0.2rem;
+    padding: 0.25rem;
+}
+
+.directory-card-chevron-svg {
+    transition: transform 0.15s ease;
+}
+
+.directory-card-chevron-svg.is-expanded {
+    transform: rotate(180deg);
 }
 
 .directory-card-posts {

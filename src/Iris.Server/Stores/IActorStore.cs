@@ -57,8 +57,11 @@ public interface IActorStore
     /// <param name="limit">The maximum number of items to return (the page size).</param>
     /// <param name="offset">The number of matching items to skip before the page starts.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="localOnly">When true, restricts the result to this instance's own actors (the
+    /// directory) — a remote actor cached here (e.g. via a federated <c>Update</c>) is excluded. When
+    /// false (the default), the whole stored surface (local + cached remote) is searched.</param>
     /// <returns>A task that completes with the page of matching actors, ordered by IRI (ordinal).</returns>
-    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default);
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false);
 
     /// <summary>
     /// Counts the actors that would match <see cref="SearchActorsAsync"/>'s <paramref name="query"/> —
@@ -66,6 +69,8 @@ public interface IActorStore
     /// </summary>
     /// <param name="query">The substring to search for (case-insensitive). Empty/whitespace matches all.</param>
     /// <param name="ct">Cancellation token.</param>
+    /// <param name="localOnly">When true, counts only this instance's own actors (the directory); see
+    /// <see cref="SearchActorsAsync"/>.</param>
     /// <returns>A task that completes with the number of matching actors.</returns>
-    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default);
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false);
 }

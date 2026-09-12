@@ -57,9 +57,15 @@ else
         }
     </div>
 
-    <div class="tab-bar" role="tablist" aria-label="Directory sections">
-        <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
-        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+    <div class="directory-toolbar">
+        <div class="tab-bar" role="tablist" aria-label="Directory sections">
+            <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
+            <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        </div>
+        <div class="directory-scope" role="group" aria-label="Directory scope">
+            <button type="button" class="directory-scope-btn @(_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOnly" aria-pressed="@_localOnly">This instance</button>
+            <button type="button" class="directory-scope-btn @(!_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOff" aria-pressed="@(!_localOnly)">All known</button>
+        </div>
     </div>
 
     @if (Busy)
@@ -132,6 +138,12 @@ else
     private bool Busy { get; set; }
     private IReadOnlyList<Actor>? Actors { get; set; }
     private string? Error { get; set; }
+
+    /// <summary>
+    /// The directory scope: when true the list shows only this instance's own actors (the directory);
+    /// when false it shows every actor the instance stores (local + cached remote — "all known actors").
+    /// </summary>
+    private bool _localOnly = true;
 
     private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
     private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
@@ -345,6 +357,28 @@ else
         ActiveTab = tab;
     }
 
+    private async Task ToggleLocalOnly()
+    {
+        if (_localOnly)
+        {
+            return;
+        }
+
+        _localOnly = true;
+        await LoadActorsAsync();
+    }
+
+    private async Task ToggleLocalOff()
+    {
+        if (!_localOnly)
+        {
+            return;
+        }
+
+        _localOnly = false;
+        await LoadActorsAsync();
+    }
+
     private async Task LoadActorsAsync()
     {
         if (Client is not { } client || Session.ActorId is not { } actor)
@@ -370,9 +404,9 @@ else
 
             var results = new List<IObjectOrLink>();
             await foreach (var item in client.SearchAsync(
-                               baseIri.Value,
-                               string.Empty,
-                               new SearchOptions { Type = "Actor" }))
+                                baseIri.Value,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor", LocalOnly = _localOnly }))
             {
                 results.Add(item);
             }

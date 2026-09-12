@@ -30,11 +30,11 @@ public sealed class GlobalSearchService : IGlobalSearchService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null)
+    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null, bool localOnly = false)
     {
         // The un-paged surface is the full result set (offset 0, no limit) — the same matching, ordering,
         // and type-filter rules as the paged search.
-        var (items, _) = await SearchPagedAsync(query, ct, type, int.MaxValue, 0).ConfigureAwait(false);
+        var (items, _) = await SearchPagedAsync(query, ct, type, int.MaxValue, 0, localOnly).ConfigureAwait(false);
         return items;
     }
 
@@ -44,7 +44,8 @@ public sealed class GlobalSearchService : IGlobalSearchService
         CancellationToken ct,
         string? type,
         int limit,
-        int offset)
+        int offset,
+        bool localOnly = false)
     {
         var normalized = query?.Trim();
 
@@ -71,7 +72,7 @@ public sealed class GlobalSearchService : IGlobalSearchService
 
         if (actorPass)
         {
-            var actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
+            var actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct, localOnly).ConfigureAwait(false);
 
             if (contentPass && !hasType)
             {
@@ -84,7 +85,7 @@ public sealed class GlobalSearchService : IGlobalSearchService
                 {
                     var actorLimit = Math.Min(limit, actorTotal - offset);
                     actorTaken = actorLimit;
-                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
+                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct, localOnly).ConfigureAwait(false));
                 }
 
                 var contentOffset = Math.Max(0, offset - actorTotal);
@@ -113,7 +114,7 @@ public sealed class GlobalSearchService : IGlobalSearchService
                 {
                     var actorLimit = Math.Min(limit, actorTotal - offset);
                     actorTaken = actorLimit;
-                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct).ConfigureAwait(false));
+                    results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct, localOnly).ConfigureAwait(false));
                 }
 
                 var contentOffset = Math.Max(0, offset - actorTotal);

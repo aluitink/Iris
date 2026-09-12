@@ -240,10 +240,10 @@ public sealed class DegradedModeTests : IDisposable
         public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default)
             => throw new NotSupportedException();
 
-        public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+        public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false)
             => throw new NotSupportedException();
 
-        public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+        public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false)
             => throw new NotSupportedException();
     }
 }

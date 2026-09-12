@@ -13,9 +13,12 @@ namespace Iris.Client;
 /// <c>"Actor"</c>), the server restricts the result to items of that ActivityStreams type — so the
 /// directory page searches actors only (no content). When null, no filter is applied (the full
 /// actor + content search).</param>
+/// <param name="LocalOnly">When true, sends <c>?local=true</c> so the server restricts the actor pass
+/// to this instance's own actors (the directory); a cached remote actor is excluded. When false
+/// (the default), the whole stored actor surface is searched ("all known actors").</param>
 /// <remarks>
 /// Global search uses the <c>limit</c>/<c>offset</c> pagination shape (Resolved Decision #6) rather than
 /// the forward-follow <c>first</c>/<c>next</c> shape of a stable collection, so a search request fetches a
 /// single page of up to <see cref="Limit"/> items at <see cref="Offset"/>.
 /// </remarks>
-public sealed record SearchOptions(int? Limit = null, bool BypassCache = false, int Offset = 0, string? Type = null);
+public sealed record SearchOptions(int? Limit = null, bool BypassCache = false, int Offset = 0, string? Type = null, bool LocalOnly = false);
