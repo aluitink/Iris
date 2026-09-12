@@ -111,6 +111,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **108 — Mentions Filter + Matrix Fix (DONE)** — Added "Mentions" filter tab to Notifications (server-side `type=Mention` composite filter matching Create activities with Mention tags). Fixed stale matrix entry (Key/algorithm info already exists). Full suite **1419 passed / 0 failed**. [changes/1081](docs/changes/1081-phase108-mentions-filter.md)
+
 - **107 — Search Improvements (DONE)** — Group actors in search results now link to `/community?iri=…` (instead of `/actor?iri=…`) and display a `c/` prefix (Lemmy-style). `ActorIdentityHelper` gained `IsCommunity()` + `ActorHref(Iri, IObject?)` overload; `ActorProfile`, `ObjectView`, `NotificationRow` all use the Group-aware href. CSS `::before` renders the muted `c/` prefix. 0 new coded web tests (policy). Live Playwright-verified: `!technology@lemmy.world` → `c/technology` links to `/community?iri=…`, renders full community page (header, tabs, feed). 0 unexpected console errors. [changes/1071](docs/changes/1071-phase107-search-improvements.md)
 
 - **106 — Profile Improvements (DONE)** — profile page now has Followers and Following tabs (hydrated `ActorCard` via `ActorListPanel`) and the Likes tab shows the liked target as a clickable link to the object view. 0 new coded web tests (policy). Full suite **1419 passed / 0 failed**. [changes/1061](docs/changes/1061-phase106-profile-improvements.md)
@@ -118,8 +120,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **105 — Directory Improvements (DONE)** — `GlobalSearchService` now uses IRI-prefix matching to distinguish local from cached remote actors. 4 new unit tests. Full suite **1419 passed / 0 failed**. [changes/1051](docs/changes/1051-phase105-directory-improvements.md)
 
 - **104 — Notification Improvements (DONE)** — accurate verbs for likes/boosts, reply notifications show author, card-style target rendering. 0 new coded web tests (policy). [changes/1041](docs/changes/1041-phase104-notification-improvements.md)
-
-- **103 — Actor Detail Improvements (DONE)** — Followers/Following tabs render hydrated `ActorCard` via `ActorListPanel`; avatar is clickable; removed "This is you."; fixed header layout. 0 new coded web tests (policy). [changes/1031](docs/changes/1031-phase103-actor-detail-improvements.md)
 
 
 
