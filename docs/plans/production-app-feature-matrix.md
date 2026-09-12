@@ -103,8 +103,8 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Global search (actors + content) | ✅ | ✅ | ☐ | F-13 |
-| Actor-only directory filter | ✅ | ✅ | ☐ | |
+| Global search (actors + content) | ✅ | ✅ | ✅ | `GET /ap/v1/search` (q/limit/offset, type filter). **Phase 115.5 fixed a live 500:** the EF/Postgres `EfActorStore` search built its raw SQL with a `$$"""` raw-interpolated string, so `{0}`–`{3}` were consumed by C# interpolation instead of reaching `FromSqlRaw` as parameter placeholders → every non-empty query threw `FormatException`. Switched to verbatim string literals (branched on `localOnly`). Live-verified: q=alice → 9 results (actors + notes). |
+| Actor-only directory filter | ✅ | ✅ | ✅ | The "Actors only" checkbox → `type=Actor` (local-only directory). Live-verified: q=alice + actors-only → 3 actor results, 0 notes. Regression-covered by `EfPersistenceContractTests.ActorStore_Search_MatchesAndCounts_DoesNotThrow` (real Postgres, both `localOnly` directions). |
 
 ## Settings
 
