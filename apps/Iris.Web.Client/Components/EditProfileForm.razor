@@ -56,13 +56,16 @@
                       placeholder="Tell the world about yourself…"></textarea>
         </div>
 
-        <div class="form-group form-group--checkbox">
-            <label for="edit-approve-followers">
+        <fieldset class="edit-profile-privacy">
+            <legend class="edit-profile-privacy-legend">Follow requests</legend>
+            <label class="edit-profile-privacy-row" for="edit-approve-followers">
                 <input id="edit-approve-followers" type="checkbox" @bind="_approveFollowers" />
-                Require approval for follow requests
+                <span class="edit-profile-privacy-label">
+                    <span class="edit-profile-privacy-title">Require approval for follow requests</span>
+                    <span class="muted edit-profile-privacy-hint">When enabled, new followers must be explicitly approved.</span>
+                </span>
             </label>
-            <p class="muted">When enabled, new followers must be explicitly approved.</p>
-        </div>
+        </fieldset>
 
         <div class="form-actions">
             <button type="submit" class="btn btn-primary" disabled="@Saving">

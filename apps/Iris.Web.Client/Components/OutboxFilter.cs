@@ -67,8 +67,40 @@ internal static class OutboxFilter
             return false;
         }
 
-        var actorId = activity.Actor?.FirstOrDefault()?.Id;
+        var actorId = ResolveActorIri(activity.Actor);
         var expected = authorIri.ToLibraryId();
         return string.Equals(actorId, expected, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Resolves the IRI of the first resolvable actor reference in an ActivityStreams actor
+    /// collection. An <c>actor</c> on a wire activity is a bare IRI string (a <see cref="ILink"/>)
+    /// in the common case — e.g. Iris's own server emits <c>"actor": "https://…/u/andrew"</c> — but
+    /// may also be an embedded object (a <see cref="IObject"/> carrying an <c>id</c>). Both shapes are
+    /// accepted so the comparison is correct regardless of how the server serialized the actor
+    /// (B-005 / 93.2: reading only <c>.Id</c> silently returned null for the bare-IRI shape and
+    /// filtered out every own post).
+    /// </summary>
+    private static string? ResolveActorIri(IEnumerable<IObjectOrLink>? refs)
+    {
+        if (refs is null)
+        {
+            return null;
+        }
+
+        foreach (var reference in refs)
+        {
+            if (reference is ILink { Href: { } href })
+            {
+                return href.ToString();
+            }
+
+            if (reference is IObject { Id: { Length: > 0 } id })
+            {
+                return id;
+            }
+        }
+
+        return null;
     }
 }

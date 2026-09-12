@@ -99,7 +99,7 @@ else
             ShowRefreshButton="true"
             ItemFilter="IsLike"
             ItemTemplate="@PostTemplate"
-            EmptyMessage="No likes on your posts yet." />
+            EmptyMessage="You haven't liked any posts yet." />
         </div>
     }
     else if (ActiveTab == "requests")
@@ -187,7 +187,14 @@ else
     private Iri? InboxIri
         => Session.ActorId is { } actor ? actor.InboxOf() : null;
 
-    private static bool IsReply(IObjectOrLink item)
+    /// <summary>
+    /// Whether an outbox item is one of the signed-in user's **own** replies: a <c>Create</c> whose
+    /// actor is the user and whose embedded object has an <c>inReplyTo</c>. The outbox is a mixed
+    /// collection (the user's own activities interleaved with mirrored remote content), so scoping to
+    /// the user's own author — not just "is a reply" — is what keeps other people's replies out of the
+    /// Replies tab (93.3).
+    /// </summary>
+    private bool IsReply(IObjectOrLink item)
     {
         if (item is not Activity activity)
         {
@@ -201,7 +208,12 @@ else
         }
 
         var embedded = activity.Object?.FirstOrDefault() as IObject;
-        return embedded?.InReplyTo?.Any() == true;
+        if (embedded?.InReplyTo?.Any() != true)
+        {
+            return false;
+        }
+
+        return OutboxFilter.IsOwnContentItem(item, Session.ActorId);
     }
 
     private static bool IsLike(IObjectOrLink item)

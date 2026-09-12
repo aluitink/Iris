@@ -18,25 +18,46 @@ public static class ActorIdentityHelper
     /// <see cref="IEnumerable{T}"/>{<see cref="ILink"/>}), then an <see cref="ILink"/> icon's
     /// <c>href</c>. Returns null when the actor has no icon or no resolvable IRI.
     /// </summary>
-    public static string? IconIri(IObject? actorDoc)
+    public static string? IconIri(IObject? actorDoc) => ResolveImageOrLinkIri(actorDoc?.Icon);
+
+    /// <summary>
+    /// Resolves the actor's first <c>image</c> (the profile banner / header background) IRI, using the
+    /// same resolution order as <see cref="IconIri"/>: an <see cref="IObject"/> image's <c>id</c>
+    /// (Iris-local), then its <c>url</c> (remote), then a bare <see cref="ILink"/> image's <c>href</c>.
+    /// Returns null when the actor has no image or no resolvable IRI. (The ActivityStreams <c>image</c>
+    /// property — Mastodon's banner — is distinct from <c>icon</c>, the avatar.)
+    /// </summary>
+    public static string? BannerIri(IObject? actorDoc) => ResolveImageOrLinkIri(actorDoc?.Image);
+
+    /// <summary>
+    /// Shared resolution for an actor's <c>icon</c>/<c>image</c> (an
+    /// <see cref="IImageOrLink"/> collection): the first entry's IRI, trying in order an
+    /// <see cref="IObject"/> <c>id</c> (Iris-local media), an <see cref="IObject"/> <c>url</c>
+    /// (remote — the AS vocabulary's <c>url</c> property, mapped to the library's <c>Url</c> as
+    /// <see cref="IEnumerable{T}"/>{<see cref="ILink"/>}), a <see cref="Link"/> <c>id</c> (a server
+    /// that emits the icon/image as a typed <c>Link</c> object carrying an <c>id</c> — the shape
+    /// Iris's own server produces), and finally a bare <see cref="ILink"/> <c>href</c>. Returns null
+    /// when the collection is empty or no entry yields a resolvable IRI.
+    /// </summary>
+    private static string? ResolveImageOrLinkIri(IEnumerable<IImageOrLink>? images)
     {
-        if (actorDoc?.Icon is not { } icons)
+        if (images is not { })
         {
             return null;
         }
 
-        foreach (var icon in icons)
+        foreach (var image in images)
         {
-            // Iris-local icons carry an `id` (the /ap/v1/media/{id} IRI).
-            if (icon is IObject { Id: { Length: > 0 } id })
+            // An embedded object icon (Iris-local media carries an `id`; a remote object may not).
+            if (image is IObject { Id: { Length: > 0 } id })
             {
                 return id;
             }
 
-            // Remote icons (Mastodon, etc.) carry a `url` instead of an `id`. The library maps the
-            // AS vocabulary's `url` property to the `Url` property (IEnumerable<ILink>?), so read
-            // the first link's href.
-            if (icon is IObject { Url: { } urls } && urls.FirstOrDefault() is ILink { Href: { } urlHref })
+            // A remote object icon carries a `url` instead of an `id`. The library maps the AS
+            // vocabulary's `url` property to the `Url` property (IEnumerable<ILink>?), so read the
+            // first link's href.
+            if (image is IObject { Url: { } urls } && urls.FirstOrDefault() is ILink { Href: { } urlHref })
             {
                 if (urlHref.ToString() is { Length: > 0 } urlIri)
                 {
@@ -44,8 +65,16 @@ public static class ActorIdentityHelper
                 }
             }
 
+            // A typed Link object carrying an `id` (the wire shape Iris's own server emits:
+            // {"id": "…", "type": "Link"}). A Link is not an IObject, so the checks above miss it —
+            // read its `id` directly.
+            if (image is Link { Id: { Length: > 0 } linkId })
+            {
+                return linkId;
+            }
+
             // A bare link icon (a server that emits the icon as a plain IRI string).
-            if (icon is ILink { Href: { } href })
+            if (image is ILink { Href: { } href })
             {
                 return href.ToString();
             }

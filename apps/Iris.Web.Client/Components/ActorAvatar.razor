@@ -7,13 +7,13 @@
 @if (ActorIri is { } iri)
 {
     <span class="actor-avatar @CssClass">
-        @if (_iconIri is { } icon)
+        @if (EffectiveIconIri is { } icon)
         {
             <img src="@ActorIdentityHelper.RewriteMediaToSameOrigin(icon)" alt="" loading="lazy" />
         }
         else
         {
-            <span class="actor-avatar-fallback">@ActorIdentityHelper.AvatarInitial(DisplayName, Handle)</span>
+            <span class="actor-avatar-fallback">@ActorIdentityHelper.AvatarInitial(EffectiveDisplayName, Handle)</span>
         }
     </span>
 }

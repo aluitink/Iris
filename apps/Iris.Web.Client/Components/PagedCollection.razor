@@ -250,6 +250,16 @@
         try
         {
             await EnumerateOnePageAsync();
+            // A filtered view (an ItemFilter is set) may see a first page that is entirely
+            // non-matching — e.g. an actor's outbox is a mixed collection (the user's own posts
+            // interleaved with mirrored remote content), newest-first, so page 1 can hold only
+            // foreign items and the user's own content sits many pages deep. Without this, the
+            // filtered tab renders its "no items" state even though matching items exist further
+            // back, and the user must click "Load more" repeatedly to reach them (93.2/93.3). When
+            // a filter is active and the rendered count is below the page size, keep pulling pages
+            // (capped) until enough matching items have been collected or the collection is
+            // exhausted, so the first screenful is actually relevant.
+            await TopUpFilteredPagesAsync();
         }
         catch (Exception)
         {
@@ -279,6 +289,38 @@
         }
     }
 
+    /// <summary>
+    /// The cap on how many *extra* pages <see cref="TopUpFilteredPagesAsync"/> will pull beyond the
+    /// first page during the initial load. Bounds the worst-case round-trips when a filter matches
+    /// few items (a very active user's outbox can be deep) while still reaching the user's own
+    /// content in the common case.
+    /// </summary>
+    private const int FilteredTopUpMaxPages = 12;
+
+    /// <summary>
+    /// For a filtered view, keeps pulling additional pages (up to <see cref="FilteredTopUpMaxPages"/>)
+    /// after the initial first page until the rendered (post-filter) count reaches the page size or the
+    /// collection is exhausted. No-op when no <see cref="ItemFilter"/> is set (an unfiltered view is
+    /// already "relevant" on page 1) or when the rendered count already fills the page size.
+    /// </summary>
+    private async Task TopUpFilteredPagesAsync()
+    {
+        if (ItemFilter is null)
+        {
+            return;
+        }
+
+        var target = PageSize ?? 10;
+        var pulled = 0;
+        while (RenderedItems.Count < target
+            && HasMore
+            && pulled < FilteredTopUpMaxPages)
+        {
+            await EnumerateOnePageAsync();
+            pulled++;
+        }
+    }
+
     private async Task LoadMoreAsync()
     {
         if (LoadingMore || !HasMore)
@@ -291,6 +333,9 @@
         try
         {
             await EnumerateOnePageAsync();
+            // A filtered view: keep pulling (capped) so the "Load more" click surfaces a full
+            // screenful of matching items rather than a single (possibly all-foreign) page.
+            await TopUpFilteredPagesAsync();
         }
         catch (Exception)
         {

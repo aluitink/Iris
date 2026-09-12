@@ -4,29 +4,38 @@
 
 @if (ActorObj is { } actor)
 {
-    <div class="actor-profile">
-        <ActorAvatar ActorIri="@(ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null)"
-                     DisplayName="@Name"
-                     IconIriOverride="@IconIri"
-                     CssClass="actor-profile-avatar" />
+    <div class="actor-profile @(HasBanner ? "actor-profile--bannered" : string.Empty)">
+        @if (HasBanner)
+        {
+            <div class="actor-profile-banner" role="img" aria-label="Profile banner">
+                <img src="@ActorIdentityHelper.RewriteMediaToSameOrigin(BannerIri!)" alt="" loading="lazy" />
+            </div>
+        }
 
-        <div class="actor-profile-body">
-            @if (PreferredUsername is { Length: > 0 } username)
-            {
-                <a href="@ActorHref" title="@ActorIdValue" class="actor-profile-handle-link">@username</a>
-            }
-            else
-            {
-                <span class="actor-profile-handle">@actor.Id</span>
-            }
-            @if (Name is { Length: > 0 } name && !Redundant)
-            {
-                <span class="actor-profile-name">@name</span>
-            }
-            @if (Summary is { Length: > 0 } summary)
-            {
-                <div class="actor-profile-summary">@summary</div>
-            }
+        <div class="actor-profile-main">
+            <ActorAvatar ActorIri="@(ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null)"
+                         DisplayName="@Name"
+                         IconIriOverride="@IconIri"
+                         CssClass="actor-profile-avatar" />
+
+            <div class="actor-profile-body">
+                @if (PreferredUsername is { Length: > 0 } username)
+                {
+                    <a href="@ActorHref" title="@ActorIdValue" class="actor-profile-handle-link">@username</a>
+                }
+                else
+                {
+                    <span class="actor-profile-handle">@actor.Id</span>
+                }
+                @if (Name is { Length: > 0 } name && !Redundant)
+                {
+                    <span class="actor-profile-name">@name</span>
+                }
+                @if (Summary is { Length: > 0 } summary)
+                {
+                    <div class="actor-profile-summary">@summary</div>
+                }
+            </div>
         </div>
     </div>
 }
@@ -67,4 +76,13 @@ else
     private bool Redundant => ActorIdentityHelper.NameIsRedundant(Name, PreferredUsername);
 
     private string? IconIri => ActorIdentityHelper.IconIri(Actor);
+
+    /// <summary>
+    /// The actor's banner IRI (the first <c>image</c>'s resolved IRI), or null when the actor has no
+    /// banner. The banner renders as the header background with the avatar laid over it (Mastodon-style).
+    /// </summary>
+    private string? BannerIri => ActorIdentityHelper.BannerIri(Actor);
+
+    /// <summary>Whether the actor has a resolvable banner image.</summary>
+    private bool HasBanner => BannerIri is { Length: > 0 };
 }
