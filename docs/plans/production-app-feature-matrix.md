@@ -133,7 +133,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Mobile-responsive layout | — | ✅ | ☐ | |
 | Keyboard navigation | — | ✅ | ☐ | Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle + roving-tabindex + arrow-key nav for all `role="tablist"` tab bars (Phase 110). |
 | Screen-reader labels / ARIA | — | ✅ | ☐ | |
-| Color contrast / accessibility audit | — | 🟡 | ☐ | **PARTIAL:** High-contrast dark palette + reinforced focus ring + `prefers-reduced-motion` respected. No documented contrast **audit** was found. |
+| Color contrast / accessibility audit | — | ✅ | ☐ | **DONE (Phase 111):** All text/background pairs verified against WCAG AA (4.5:1). Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` were 2.8:1 → now 5.97:1). All other pairs: 5.0–15.2:1. |
 | Visual design system (spacing, type, icons) | — | — | ✅ | Polish pass |
 | Dark mode | — | — | ✅ | Dark-only (hard-coded `--bg:#111318`); no light-mode toggle / `prefers-color-scheme` support. |
 | Subtle motion/transitions | — | — | ✅ | `transition` on filter tabs + splash keyframes + `prefers-reduced-motion` guard. |
