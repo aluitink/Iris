@@ -53,10 +53,24 @@
                 <div class="notification-target">
                     @if (isSelfDelete && actorIri is { } deleted)
                     {
-                        // The account itself is the deleted object: show a "deleted their account"
-                        // caption (with the actor link already in the head) rather than a bogus
-                        // /object?iri=<actor> link that 410s. (B-010)
                         <span class="notification-self-delete" title="@deleted">deleted their account</span>
+                    }
+                    else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity))
+                    {
+                        <div class="notification-note-card">
+                            @if (noteObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
+                            {
+                                <a href="@ActorHref(noteAuthor)" title="@noteAuthor" class="notification-note-author">@HandleOf(noteAuthor)</a>
+                            }
+                            @if (targetPreview is { } preview)
+                            {
+                                <a href="@(objectIri is { } ti ? ObjectHref(ti) : null)" class="notification-note-content">@preview</a>
+                            }
+                            else if (objectIri is { } ti)
+                            {
+                                <a href="@ObjectHref(ti)" class="notification-target-link">@ShortLabel(ti)</a>
+                            }
+                        </div>
                     }
                     else if (objectIri is { } target)
                     {
@@ -239,34 +253,56 @@
                 // An Accept whose object is a Follow is the confirmation of a follow request.
                 return IsFollowConfirmation(activity) ? "accepted your follow request" : "accepted";
             case "Like":
-                // A Like in the inbox is on one of the user's own posts (the like is delivered to the
-                // post's author) — "liked your post" is accurate.
-                return "liked your post";
-            case "Announce":
-                // An Announce is a boost. It is a mention of the user only if the user is tagged in the
-                // boosted note; otherwise it is a boost of the user's post (the boost is delivered to
-                // the post's author). (Phase 91: "was I @mentioned" — a boost is a mention when the
-                // user is tagged in the boosted content.)
-                if (activity.Object?.FirstOrDefault() is IObject boostedNote
-                    && NoteMentionsSelf(boostedNote))
+                // A Like in the inbox is on a note. If the note is the user's own post (by IRI prefix
+                // or attributedTo), "liked your post" is accurate. Otherwise it's a like on a note
+                // the user was CC'd on (follower fan-out) — "liked a post" is safer.
+                if (activity.Object?.FirstOrDefault() is IObject likedNote
+                    && IsSelfNoteObject(likedNote))
                 {
-                    return "boosted a post mentioning you";
+                    return "liked your post";
                 }
 
-                return "boosted your post";
+                return "liked a post";
+            case "Announce":
+                // An Announce is a boost. It is a mention of the user only if the user is tagged in the
+                // boosted note; if the boosted note is the user's own post, "boosted your post";
+                // otherwise "boosted a post" (the boost was delivered via CC/fan-out).
+                if (activity.Object?.FirstOrDefault() is IObject boostedNote)
+                {
+                    if (NoteMentionsSelf(boostedNote))
+                    {
+                        return "boosted a post mentioning you";
+                    }
+
+                    if (IsSelfNoteObject(boostedNote))
+                    {
+                        return "boosted your post";
+                    }
+
+                    return "boosted a post";
+                }
+
+                return "boosted a post";
             case "Mention":
                 return "mentioned you";
             case "Create":
                 // A Create in the inbox is either a reply (the note has an inReplyTo) or a new note.
-                // User-centric phrasing (Phase 91): a reply is "replied to your post" only when it
-                // answers one of the user's own notes (a path under the user's actor IRI); a reply to
-                // someone else's note (delivered via the follower fan-out) is "replied". A non-reply
-                // note that tags the user is a mention; any other new note (from a followed actor) is
-                // just a post. (85 established the self-note rule; 91 sharpens the copy.)
+                // User-centric phrasing (Phase 104): a reply is "replied to your post" when it answers
+                // one of the user's own notes (by IRI prefix or attributedTo); a reply to someone
+                // else's note is "replied to {author}'s post" when the parent's author is known, or
+                // "replied" otherwise. A non-reply note that tags the user is a mention; any other new
+                // note (from a followed actor) is just a post.
                 if (activity.Object?.FirstOrDefault() is IObject replyNote
                     && replyNote.InReplyTo?.FirstOrDefault()?.ResolveObjectIri() is { } inReplyTo)
                 {
-                    return IsSelfNote(inReplyTo) ? "replied to your post" : "replied";
+                    if (IsSelfNote(inReplyTo) || IsSelfNoteFromInReplyTo(replyNote))
+                    {
+                        return "replied to your post";
+                    }
+
+                    return ParentNoteAuthorLabel(replyNote) is { } parentAuthor
+                        ? $"replied to {parentAuthor}'s post"
+                        : "replied";
                 }
 
                 if (activity.Object?.FirstOrDefault() is IObject newNote
@@ -334,6 +370,83 @@
     private bool IsSelfNote(Iri noteIri)
     {
         return SelfId is { } self && noteIri.Value.StartsWith(self.Value, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether a note object is one of the signed-in user's own posts, checked by both IRI prefix
+    /// (local notes) and <c>attributedTo</c> (remote notes where the author IRI is embedded).
+    /// (Phase 104: fixes the "liked/boosted your post" verb for remote notes.)
+    /// </summary>
+    private bool IsSelfNoteObject(IObject note)
+    {
+        if (SelfId is not { } self)
+        {
+            return false;
+        }
+
+        if (note.Id is { Length: > 0 } id && id.StartsWith(self.Value, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var attributed in note.AttributedTo ?? [])
+        {
+            if (attributed.ResolveObjectIri() is { } attrIri &&
+                string.Equals(attrIri.Value.TrimEnd('/'), self.Value.TrimEnd('/'), StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the reply note's <c>inReplyTo</c> target is one of the signed-in user's own posts,
+    /// checked via the parent note's <c>attributedTo</c> when the parent is an embedded object
+    /// (Phase 104: the inbox sometimes embeds the full parent note, not just its IRI).
+    /// </summary>
+    private bool IsSelfNoteFromInReplyTo(IObject replyNote)
+    {
+        if (SelfId is not { } self)
+        {
+            return false;
+        }
+
+        if (replyNote.InReplyTo?.FirstOrDefault() is IObject parentNote)
+        {
+            foreach (var attributed in parentNote.AttributedTo ?? [])
+            {
+                if (attributed.ResolveObjectIri() is { } attrIri &&
+                    string.Equals(attrIri.Value.TrimEnd('/'), self.Value.TrimEnd('/'), StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            if (parentNote.Id is { Length: > 0 } id && id.StartsWith(self.Value, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A short display label for the parent note's author (the note the reply is answering), resolved
+    /// from the <c>inReplyTo</c>'s <c>attributedTo</c> when the parent is an embedded object.
+    /// Returns null when the author cannot be determined. (Phase 104: "replied to {author}'s post".)
+    /// </summary>
+    private string? ParentNoteAuthorLabel(IObject replyNote)
+    {
+        if (replyNote.InReplyTo?.FirstOrDefault() is not IObject parentNote)
+        {
+            return null;
+        }
+
+        var authorIri = parentNote.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        return authorIri is { } a ? HandleOf(a) : null;
     }
 
     /// <summary>

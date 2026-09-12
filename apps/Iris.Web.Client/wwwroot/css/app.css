@@ -1861,6 +1861,43 @@ ul.object-list li {
     display: block;
 }
 
+.notification-note-card {
+    background: var(--bg, #f5f5f5);
+    border-radius: 6px;
+    padding: 0.5rem 0.65rem;
+    margin-top: 0.25rem;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.notification-note-author {
+    color: var(--text-muted, #666);
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: 0.15rem;
+    font-size: 0.8rem;
+}
+
+.notification-note-author:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-note-content {
+    color: var(--muted);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-note-content:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
 .notification-body {
     display: flex;
     align-items: flex-start;
