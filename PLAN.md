@@ -100,7 +100,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-**89 - Investigate Community Peering** - Communities can be followed by users, what is the proper way for a community to follow a community as to build a replica? Is this a standard practice in AP/Lemmyverse. Determine the best way to accomplish this, investigate and implement controls for Lemmy style commnunity posts with Like/Dislike.
 **90 - Improve the Feed** - Messages that are in reply to - should render the in reply to message as part of the message for better context. We should improve the cards to look a bit more like an email with recipient at the top of the note. Boosts should just show the boosted post - not the boost itself.
 **91 - Improve notifications** - Notifications seem to preset everything as "replied to you" but infact they are replies to other content. Notifications should be user centric; Did someone the user followed make a post, was I @mentioned, did someone reply to one of my posts? Fix the size and formatting as well - the lengths look random. We can exclude Deleted because those are server only messages that the user doesn't need to see.
 **92 - Improve Directory** - The directory page looks a bit weird, do we cache/track a record for every actor we see? Do we have a heap of locally cached content, maybe we can query an object cache for known actors? The Directory could have a toggle for local actors only or all known actors; Same with communities. The communities tab and follow buttons look odd - its long for communities with longer descriptions. The + for recent items looks odd, we should brainstorm better visual for this.
@@ -119,6 +118,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **89 — Community Peering (a community follows actors) (DONE)** — a community (Group actor) can follow another community/person and the followed actors' content surfaces in the community feed (Lemmy-style replica). `CommunityFeedService` merges the follows set (peers `requireCommunityTagged:false`, deduped by activity IRI; 0-member early-return removed; community outbox routed before the person-only resolver); `POST /local/v1/c/{name}/follow/{targetIri}` owner-gated server-side authoring of the community's signed `Follow`/`Undo` (a Group holds no client key); client `FollowAsCommunityAsync`/`UnfollowAsCommunityAsync`; creator-only **Peers** tab in `CommunityDetail.razor`. 13 new coded tests (6 feed / 7 endpoint / 4 client); 1842 passed / 0 failed. Live-verified end-to-end (follow → feed surfaces peered content → unfollow drops it), 0 peering console errors. [changes/891](docs/changes/891-phase89-community-peering.md)
 
 - **88.5 — Admin user role management (promote/demote)** — `IUserAccountStore.UpdateRoleAsync` + InMemory/EF impls; `POST /local/v1/admin/users/{id}/role` (Admin-gated, last-admin guard); per-row "Make admin"/"Demote to user" in `AdminUsers.razor`. Live-verified (promote/demote/guard, fresh Playwright browser after an MCP restart to dodge the disk-cache WASM), 0 new coded web tests. [changes/885](docs/changes/885-phase88-user-role-management.md)
 
