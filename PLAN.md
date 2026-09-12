@@ -100,8 +100,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-**97 - Perform a new user walk** - Run thought a typical onboarding scenaio, find some users to follow - like some posts, makes some posts, post content, bost and reply.
 **98 - Improve collection scrolling** - An infity scroll style feed would be ideal, where a couple pages load and as we start to reach the bottom more items load.
+**99 - (placeholder)** - TBD
 ## Inbox
 
 - *(empty)*
@@ -111,6 +111,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **97 — Perform a new user walk (DONE)** — Playwright-driven onboarding walkthrough: login, follow `bob` from directory, like a post (pressed, count 0→1), boost a post (pressed, count 0→1), compose a new post (HTTP 202), reply to a post (HTTP 202, visible in thread). Object detail shows parent + replies with correct engagement counts. **No defects found.** All console errors were expected federation behavior (CORS on remote actor profiles, 403 from one proxy target). [changes/971](docs/changes/971-phase97-new-user-walk.md)
 
 - **96 — Utilize compatibility enhancements (reply count → thread) (DONE)** — the EngagementBar's reply count is now a clickable link to the ObjectDetail page (which shows the full thread: parent context + replies), utilizing Phase 74's `replies` field. The reply icon still links to `/compose?replyTo=...` (to write a reply); the count links to `/object?iri=...` (to view the thread). UI-only (WASM), 0 new coded web tests per WASM policy. Live-verified via Playwright (posted a note + reply, confirmed the count shows as "1" and navigates to the thread view). [changes/961](docs/changes/961-phase96-reply-count-thread-link.md)
 
