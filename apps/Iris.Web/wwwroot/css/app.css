@@ -350,6 +350,29 @@ a:hover {
     .directory-item .btn {
         align-self: flex-end;
     }
+
+    /* Phase 102 — the card header avatar steps back down to 2rem on small screens so the handle +
+       time keep room on the header line. The .object-item prefix raises specificity above the
+       (later-declared) base .object-header .actor-avatar 2.5rem rule so the mobile size wins. */
+    .object-item .object-header .actor-avatar {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .object-item .object-header .actor-avatar img {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .object-item .object-header .actor-avatar-fallback {
+        font-size: 0.9rem;
+    }
+
+    /* The card-moderation group drops a touch of spacing on mobile (the header is tighter). */
+    .card-moderate {
+        gap: 0;
+        margin-left: 0.15rem;
+    }
 }
 
 .main-nav a {
@@ -567,30 +590,23 @@ ul.object-list li {
     margin-bottom: 0.35rem;
 }
 
-.object-avatar {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg);
-    border: 1px solid var(--border);
+/* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
+   post card's identity reads more strongly; on small screens it steps back down (see the mobile
+   media query) so the handle + time keep room on one line. The card header's ActorBar/ActorAvatar is
+   scoped under .object-header so this only enlarges the feed-card avatar, not avatars in the actor
+   detail header, profile, directory, or notification rows. */
+.object-header .actor-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
 }
 
-.object-avatar img {
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    object-fit: cover;
+.object-header .actor-avatar img {
+    width: 2.5rem;
+    height: 2.5rem;
 }
 
-.object-avatar-fallback {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--accent);
+.object-header .actor-avatar-fallback {
+    font-size: 1rem;
 }
 
 .actor-avatar {
@@ -1088,6 +1104,55 @@ ul.object-list li {
 .engagement-count-link:hover .engagement-count {
     color: var(--accent);
     text-decoration: underline;
+}
+
+/* Phase 102 — minimalistic moderation (block / mute / report) on the RIGHT of the card header.
+   A compact, low-key icon group that sits before the timestamp and only becomes prominent on hover,
+   so the card header stays clean but the actions are reachable without opening a menu. */
+.card-moderate {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.1rem;
+    margin-left: 0.25rem;
+    opacity: 0.55;
+    transition: opacity 0.15s;
+}
+
+/* The whole header (or the group itself) hovered reveals the actions fully. */
+.object-header:hover .card-moderate,
+.card-moderate:hover,
+.card-moderate:focus-within {
+    opacity: 1;
+}
+
+.card-moderate-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: none;
+    border-radius: 5px;
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+
+.card-moderate-btn:hover:not(:disabled) {
+    color: var(--accent);
+    background: var(--hover);
+}
+
+.card-moderate-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.card-moderate-btn svg {
+    width: 0.9rem;
+    height: 0.9rem;
 }
 
 .object-sensitive {

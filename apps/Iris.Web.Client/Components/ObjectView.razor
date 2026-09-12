@@ -7,6 +7,13 @@
                 {
                     <ActorBar ActorIri="actor" />
                 }
+                @if (CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
+                {
+                    <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                        OnBlock="() => CardBlockAsync(modAuthor)"
+                        OnMute="() => CardMuteAsync(modAuthor)"
+                        OnReport="() => CardReportAsync(modAuthor)" />
+                }
                 @if (ActivityPublished is { } pub)
                 {
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
@@ -308,6 +315,13 @@
                 @if (AuthorIri is { } author)
                 {
                     <ActorBar ActorIri="author" />
+                }
+                @if (CanModerateAuthor(AuthorIri) && AuthorIri is { } modAuthor)
+                {
+                    <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                        OnBlock="() => CardBlockAsync(modAuthor)"
+                        OnMute="() => CardMuteAsync(modAuthor)"
+                        OnReport="() => CardReportAsync(modAuthor)" />
                 }
                 @if (Published is { } published)
                 {

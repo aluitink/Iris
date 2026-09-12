@@ -166,6 +166,11 @@ public partial class ObjectView
     private bool Revealed;
     private bool ActivityRevealed;
 
+    // Phase 102 — a single shared busy flag for the card-header moderation buttons (block / mute /
+    // report). One action at a time is enough for these fire-and-forget header controls; the flag
+    // keeps a double-click from firing two deliveries.
+    private bool _cardModBusy;
+
     /// <summary>
     /// The author of the fetched parent ("in reply to") object, for the context card's "In reply to
     /// @author" label. Null until the parent is fetched or when the parent has no author.
@@ -532,6 +537,102 @@ public partial class ObjectView
         finally
         {
             _pollBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Whether the signed-in viewer may moderate the given author: the viewer is signed in, the author
+    /// is known, and the author is a distinct actor (you cannot moderate yourself from a card header).
+    /// Shared by the <c>Create</c> and direct-object card headers for the Phase 102 right-side
+    /// moderation buttons.
+    /// </summary>
+    private bool CanModerateAuthor(Iri? author)
+        => author is { } a && Session.ActorId is { } me && a != me;
+
+    /// <summary>
+    /// Blocks the author from the card header (Phase 102). A fire-and-forget moderation action: it
+    /// posts a <c>Block</c> via the signed client and re-renders on completion. Non-fatal on failure
+    /// (the button simply stays enabled for a retry).
+    /// </summary>
+    /// <param name="author">The author actor's IRI (the moderation target).</param>
+    private async Task CardBlockAsync(Iri author)
+    {
+        if (_cardModBusy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _cardModBusy = true;
+        try
+        {
+            await client.BlockAsync(me, author, CancellationToken.None);
+        }
+        catch
+        {
+            // Non-fatal: the moderation delivery failed; the button remains for a retry.
+        }
+        finally
+        {
+            _cardModBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Mutes the author from the card header (Phase 102). A local moderation action (a <c>Mute</c>
+    /// against this instance's moderation endpoint), not a federated delivery. Fire-and-forget with the
+    /// same non-fatal-on-failure contract as <see cref="CardBlockAsync(Iri)"/>.
+    /// </summary>
+    /// <param name="author">The author actor's IRI (the moderation target).</param>
+    private async Task CardMuteAsync(Iri author)
+    {
+        if (_cardModBusy || Session.ActorId is not { } me || Session.LocalModeration is not { } mod)
+        {
+            return;
+        }
+
+        _cardModBusy = true;
+        try
+        {
+            await mod.MuteAsync(me, author, CancellationToken.None);
+        }
+        catch
+        {
+            // Non-fatal.
+        }
+        finally
+        {
+            _cardModBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Reports (flags) the author from the card header (Phase 102). A federated moderation report
+    /// (a <c>Flag</c>) via the signed client. Fire-and-forget with the same non-fatal-on-failure
+    /// contract as <see cref="CardBlockAsync(Iri)"/>.
+    /// </summary>
+    /// <param name="author">The author actor's IRI (the moderation target).</param>
+    private async Task CardReportAsync(Iri author)
+    {
+        if (_cardModBusy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        _cardModBusy = true;
+        try
+        {
+            await client.FlagAsync(me, author, CancellationToken.None);
+        }
+        catch
+        {
+            // Non-fatal.
+        }
+        finally
+        {
+            _cardModBusy = false;
             StateHasChanged();
         }
     }
