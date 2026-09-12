@@ -38,6 +38,50 @@
          import the session's signing key. Must load before the WASM client's first signing call. -->
     <script src="js/WebCrypto.js"></script>
     <script src="js/error-ui.js"></script>
+    <script>
+    // Infinite scroll: a single passive scroll listener checks whether any
+    // .paged-collection-sentinel is within 200px of the viewport bottom. When it is
+    // (and no load is in flight for that sentinel), click it to trigger the Blazor
+    // @onclick handler (LoadMoreAsync). A data attribute marks a sentinel "busy" while
+    // its load is in flight; it is cleared on the next scroll once new content has pushed
+    // the sentinel back below the trigger line (re-arming it for the next scroll).
+    (function () {
+        var TRIGGER_PX = 200;
+        var checking = false;
+        function maybeLoad() {
+            if (checking) return;
+            checking = true;
+            try {
+                var sentinels = document.querySelectorAll('.paged-collection-sentinel');
+                var vh = window.innerHeight;
+                for (var i = 0; i < sentinels.length; i++) {
+                    var el = sentinels[i];
+                    var rect = el.getBoundingClientRect();
+                    var nearBottom = rect.top < vh + TRIGGER_PX && rect.bottom > 0;
+                    var busy = el.getAttribute('data-busy') === 'true';
+                    if (nearBottom && !busy) {
+                        el.setAttribute('data-busy', 'true');
+                        el.click();
+                    } else if (!nearBottom && busy) {
+                        // New content pushed the sentinel below the trigger line — re-arm.
+                        el.removeAttribute('data-busy');
+                    }
+                }
+            } finally {
+                // Defer the re-entrancy guard reset to the next microtask so a rapid burst
+                // of scroll events within one frame is coalesced into a single check.
+                Promise.resolve().then(function () { checking = false; });
+            }
+        }
+        window.addEventListener('scroll', maybeLoad, { passive: true });
+        window.addEventListener('resize', maybeLoad, { passive: true });
+        // Initial check once the app has rendered (covers the signed-out public feed case
+        // where the first page already reaches the trigger line on load).
+        window.addEventListener('load', function () {
+            setTimeout(maybeLoad, 500);
+        });
+    })();
+    </script>
     <script src="_framework/blazor.webassembly.js"></script>
 </body>
 

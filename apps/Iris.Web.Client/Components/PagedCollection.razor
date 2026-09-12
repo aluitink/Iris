@@ -74,7 +74,11 @@
             }
             @if (HasMore)
             {
-                <button class="button button--secondary" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                <div class="paged-collection-sentinel paged-collection-sentinel--clickable" @onclick="LoadMoreAsync" role="button" aria-label="Load more items" tabindex="0"></div>
+                @if (!InfiniteScroll)
+                {
+                    <button class="button button--secondary" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                }
                 @if (LoadingMore)
                 {
                     <div class="card-loading card-loading-inline">
@@ -83,6 +87,10 @@
                         </svg>
                         <span class="muted">Loading…</span>
                     </div>
+                }
+                @if (InfiniteScroll)
+                {
+                    <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
                 }
             }
         }
@@ -173,7 +181,16 @@
     /// even within the cache TTL.
     /// </summary>
     [Parameter]
-    public bool ShowRefreshButton { get; set; }
+    public bool ShowRefreshButton { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c>, a page-level scroll listener automatically loads the next page when the
+    /// user scrolls within 200px of the bottom of the list (infinite scroll). A ghost "Load more"
+    /// fallback button is still rendered below the sentinel for accessibility and for environments
+    /// where the scroll listener is unavailable. Default is <c>true</c>.
+    /// </summary>
+    [Parameter]
+    public bool InfiniteScroll { get; set; } = true;
 
     /// <summary>
     /// Optional filter applied to fetched items before rendering. Items that do not pass the predicate
