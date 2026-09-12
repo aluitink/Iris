@@ -29,33 +29,6 @@
                         }
                     </div>
                 }
-                @if (ActivityParentIri is { } parent)
-                {
-                    @if (HasParentContext)
-                    {
-                        <div class="object-parent-context">
-                            <div class="object-parent-label">
-                                In reply to
-                                @if (ParentAuthorIri is { } pauthor)
-                                {
-                                    <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
-                                }
-                                else
-                                {
-                                    <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
-                                }
-                            </div>
-                            <div class="object-parent-content">@ParentContent</div>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="object-parent">
-                            in reply to
-                            <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
-                        </div>
-                    }
-                }
                 @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor))
                 {
                     <div class="object-title">@title</div>
@@ -93,6 +66,33 @@
                 {
                     <a href="@ObjectHref(linkIri)" title="@linkIri" class="object-iri">@linkIri</a>
                 }
+                @if (ActivityParentIri is { } parent)
+                {
+                    @if (HasParentContext)
+                    {
+                        <div class="object-parent-context object-parent-context--below">
+                            <div class="object-parent-label">
+                                In reply to
+                                @if (ParentAuthorIri is { } pauthor)
+                                {
+                                    <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                                }
+                                else
+                                {
+                                    <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                                }
+                            </div>
+                            <div class="object-parent-content">@ParentContent</div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="object-parent object-parent--below">
+                            in reply to
+                            <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                        </div>
+                    }
+                }
                 @if (ActivityUpdated is { } updated)
                 {
                     <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
@@ -107,19 +107,6 @@
                 {
                     <div class="object-article-meta">
                         <span class="object-article-language">@lang</span>
-                    </div>
-                }
-                @foreach (var mention in ActivityMentionIris)
-                {
-                    <div class="object-mention">
-                        mentions
-                        <a href="@ActorHref(mention)" title="@mention" class="object-actor">@HandleOf(mention)</a>
-                    </div>
-                }
-                @foreach (var (hashtagName, hashtagHref) in ActivityHashtagTags)
-                {
-                    <div class="object-hashtag">
-                        <a href="@HashtagHref(hashtagName, hashtagHref)" title="@hashtagName" class="object-hashtag-link">@hashtagName</a>
                     </div>
                 }
                 @if (EmojiTags.Count > 0)
@@ -201,6 +188,10 @@
                 <div class="object-boost-by">
                     <span class="object-action">Boosted by</span>
                     <ActorBar ActorIri="booster" />
+                    @if (ActivityPublished is { } boostTime)
+                    {
+                        <time class="object-time object-boost-time" title="@boostTime.ToString("o")">@RelativeTime(boostTime)</time>
+                    }
                 </div>
             }
             @if (AnnounceTargetIri is { } targetIri)
@@ -338,33 +329,6 @@
                     }
                 </div>
             }
-            @if (ParentIri is { } parent)
-            {
-                @if (HasParentContext)
-                {
-                    <div class="object-parent-context">
-                        <div class="object-parent-label">
-                            In reply to
-                            @if (ParentAuthorIri is { } pauthor)
-                            {
-                                <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
-                            }
-                            else
-                            {
-                                <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
-                            }
-                        </div>
-                        <div class="object-parent-content">@ParentContent</div>
-                    </div>
-                }
-                else
-                {
-                    <div class="object-parent">
-                        in reply to
-                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
-                    </div>
-                }
-            }
             @if (Name is { Length: > 0 } title && !(obj is Actor))
             {
                 <div class="object-title">@title</div>
@@ -394,6 +358,33 @@
                     </a>
                 }
             }
+            @if (ParentIri is { } parent)
+            {
+                @if (HasParentContext)
+                {
+                    <div class="object-parent-context object-parent-context--below">
+                        <div class="object-parent-label">
+                            In reply to
+                            @if (ParentAuthorIri is { } pauthor)
+                            {
+                                <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                            }
+                            else
+                            {
+                                <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                            }
+                        </div>
+                        <div class="object-parent-content">@ParentContent</div>
+                    </div>
+                }
+                else
+                {
+                    <div class="object-parent object-parent--below">
+                        in reply to
+                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                    </div>
+                }
+            }
             @if (Updated is { } updated)
             {
                 <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
@@ -414,19 +405,6 @@
             {
                 <div class="object-article-meta">
                     <span class="object-article-language">@lang</span>
-                </div>
-            }
-            @foreach (var mention in MentionIris)
-            {
-                <div class="object-mention">
-                    mentions
-                    <a href="@ActorHref(mention)" title="@mention" class="object-actor">@HandleOf(mention)</a>
-                </div>
-            }
-            @foreach (var (hashtagName, hashtagHref) in HashtagTags)
-            {
-                <div class="object-hashtag">
-                    <a href="@HashtagHref(hashtagName, hashtagHref)" title="@hashtagName" class="object-hashtag-link">@hashtagName</a>
                 </div>
             }
             @if (EmojiTags.Count > 0)

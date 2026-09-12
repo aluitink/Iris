@@ -755,7 +755,7 @@ ul.object-list li {
 }
 
 .object-post-link:hover .object-content {
-    color: var(--accent);
+    color: inherit;
 }
 
 .object-title {
@@ -2191,6 +2191,17 @@ ul.object-list li {
     margin-bottom: 0.5rem;
 }
 
+/* Phase 101 — "in reply to" context below the post body. */
+.object-parent-context--below {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+}
+
+.object-parent--below {
+    margin-top: 0.5rem;
+    margin-bottom: 0;
+}
+
 /* Phase 90 — boosts render the boosted post inline; the "Boosted by" line is a small muted tag. */
 .object-item--boost {
     position: relative;
@@ -2203,6 +2214,12 @@ ul.object-list li {
     margin-bottom: 0.4rem;
     font-size: 0.8rem;
     color: var(--muted);
+}
+
+.object-boost-time {
+    font-size: 0.75rem;
+    color: var(--muted);
+    margin-left: auto;
 }
 
 .object-item--boosted {

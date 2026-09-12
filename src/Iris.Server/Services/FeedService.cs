@@ -134,7 +134,8 @@ public sealed class FeedService : IFollowFeedService
         var feed = new List<IObjectOrLink>();
 
         // The actor's own posts (54.17): always included, regardless of follows. The actor is local (the
-        // feed endpoint only resolves local actors), so read their outbox from the local store.
+        // feed endpoint only resolves local actors), so read their outbox from the local store. Own
+        // replies are kept — the home timeline shows the signed-in actor's own content in full.
         foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
         {
             feed.Add(item);
@@ -155,11 +156,44 @@ public sealed class FeedService : IFollowFeedService
 
             foreach (var item in items)
             {
+                // Phase 101: filter out replies from followed actors. A reply is a Create activity
+                // whose content object has a non-public audience (the person being replied to).
+                // Top-level posts (public-only audience) are kept. Boosts (Announce) are always kept.
+                if (IsFollowReply(item, followIri))
+                {
+                    continue;
+                }
+
                 feed.Add(item);
             }
         }
 
         return TruncateDedup(feed);
+    }
+
+    /// <summary>
+    /// Reports whether a feed item is a reply made by a followed actor (not a top-level post).
+    /// A reply is a <c>Create</c> activity whose content object has a non-public audience
+    /// (the <c>to</c>/<c>cc</c> field contains a specific actor IRI, not just the public sentinel).
+    /// Top-level posts (public-only audience) and non-<c>Create</c> activities (Announce, Like, etc.)
+    /// return <see langword="false"/>.
+    /// </summary>
+    private static bool IsFollowReply(IObjectOrLink item, Iri followerIri)
+    {
+        if (item is not Create create)
+        {
+            return false;
+        }
+
+        var contentObj = create.Object?.FirstOrDefault() as IObject;
+        if (contentObj is null)
+        {
+            return false;
+        }
+
+        // A reply has a non-public audience (the person being replied to).
+        // A top-level post has only the public sentinel in its audience.
+        return contentObj.GetAudienceIris().Count > 0;
     }
 
     /// <summary>

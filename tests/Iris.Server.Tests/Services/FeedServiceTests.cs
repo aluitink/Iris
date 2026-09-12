@@ -727,6 +727,77 @@ public sealed class FeedServiceTests
         Assert.Equal($"https://{LocalHost}/notes/b-2", IdOf(feed[1]));
     }
 
+    [Fact]
+    public async Task Feed_FollowReply_IsFilteredOut()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // bob posts a top-level post (public only).
+            AddPost(persistence, bob, "b-1", "bob top-level post");
+            // bob replies to carol (has a non-public audience).
+            AddReply(persistence, bob, "b-2", "bob reply to carol", carol);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Only bob's top-level post should appear; the reply is filtered out.
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_OwnReply_IsKept()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // alice posts a top-level post.
+            AddPost(persistence, alice, "a-1", "alice top-level");
+            // alice replies to bob (has a non-public audience).
+            AddReply(persistence, alice, "a-2", "alice reply to bob", bob);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // Both alice's posts should appear (own replies are kept).
+        Assert.Equal(2, feed.Count);
+        Assert.Equal($"https://{LocalHost}/notes/a-2", IdOf(feed[0]));
+        Assert.Equal($"https://{LocalHost}/notes/a-1", IdOf(feed[1]));
+    }
+
+    [Fact]
+    public async Task Feed_FollowAnnounce_IsKept()
+    {
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            // carol posts a top-level post.
+            AddPost(persistence, carol, "c-1", "carol post");
+            // bob boosts carol's post (Announce).
+            AddAnnounce(persistence, bob, "https://a.test/announce/b-1", "https://a.test/notes/c-1", embedded: true);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The boost should appear (Announce is not filtered).
+        Assert.Single(feed);
+        Assert.Equal("https://a.test/announce/b-1", IdOf(feed[0]));
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(
@@ -768,6 +839,27 @@ public sealed class FeedServiceTests
             Actor = [new Link { Href = new Uri(actorIri.Value) }],
             Object = [new Note { Id = activityIri, Content = [content] }],
         }).GetAwaiter().GetResult();
+
+    /// <summary>
+    /// Seeds a <c>Create</c> of a note that is a reply to <paramref name="repliedToIri"/> (the note's
+    /// <c>to</c> field contains the replied-to actor, making it a non-public audience).
+    /// </summary>
+    private static void AddReply(
+        InMemoryPersistenceProvider persistence, Iri actorIri, string suffix, string content, Iri repliedToIri)
+    {
+        var noteIri = $"https://{LocalHost}/notes/{suffix}";
+        persistence.Activities.AddToOutboxAsync(actorIri, new Create
+        {
+            Id = noteIri,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri,
+                Content = [content],
+                To = [new Link { Href = new Uri(repliedToIri.Value) }, new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
+            }],
+        }).GetAwaiter().GetResult();
+    }
 
     /// <summary>
     /// Seeds an <c>Announce</c> (boost) of <paramref name="objectIri"/> into the actor's outbox. When
