@@ -267,6 +267,21 @@
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
             </div>
+            @if (LikeTargetIri is { } likeTarget)
+            {
+                <div class="object-like-target">
+                    <a href="@ObjectHref(likeTarget)" title="@likeTarget" class="object-post-link">
+                        @if (LikedContent is { } lc && !string.IsNullOrEmpty(lc.Value))
+                        {
+                            <div class="object-content">@lc</div>
+                        }
+                        else
+                        {
+                            <span class="object-iri">@likeTarget.Value</span>
+                        }
+                    </a>
+                </div>
+            }
         </div>
     }
     else if (Item is Follow)

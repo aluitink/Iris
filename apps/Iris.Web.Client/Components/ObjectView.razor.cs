@@ -226,6 +226,33 @@ public partial class ObjectView
     private Iri? ActivityActorIri
         => (Item as Activity)?.Actor?.FirstOrDefault()?.ResolveObjectIri();
 
+    /// <summary>
+    /// The IRI of the target of a <c>Like</c> activity (the liked object).
+    /// </summary>
+    private Iri? LikeTargetIri
+    {
+        get
+        {
+            if (Item is not Like like)
+            {
+                return null;
+            }
+
+            var target = like.Object?.FirstOrDefault();
+            if (target is IObject { Id: { Length: > 0 } targetId })
+            {
+                return new Iri(targetId);
+            }
+
+            if (target is ILink { Href: { } linkUri })
+            {
+                return new Iri(linkUri.OriginalString);
+            }
+
+            return null;
+        }
+    }
+
     private Iri? FollowTargetIri
     {
         get
@@ -251,6 +278,29 @@ public partial class ObjectView
     }
 
     private string? CreateIri => (Item as Create)?.Id;
+
+    /// <summary>
+    /// The rendered content of the liked object (a <c>Like</c>'s target), when present.
+    /// </summary>
+    private MarkupString LikedContent
+    {
+        get
+        {
+            if (ActivityEmbeddedObject is not { } embedded)
+            {
+                return new MarkupString(string.Empty);
+            }
+
+            var content = embedded is ActivityObject ao ? JoinStrings(ao.Content) : null;
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return new MarkupString(string.Empty);
+            }
+
+            return new MarkupString(
+                embedded.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
+        }
+    }
 
     private MarkupString ActivityContent
     {

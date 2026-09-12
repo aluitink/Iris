@@ -54,6 +54,8 @@ else
         <a href="#posts" id="tab-posts" role="tab" aria-selected="@(ActiveTab == "posts")" aria-controls="panel-posts" class="tab @(ActiveTab == "posts" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("posts")'>Your posts</a>
         <a href="#replies" id="tab-replies" role="tab" aria-selected="@(ActiveTab == "replies")" aria-controls="panel-replies" class="tab @(ActiveTab == "replies" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("replies")'>Replies</a>
         <a href="#likes" id="tab-likes" role="tab" aria-selected="@(ActiveTab == "likes")" aria-controls="panel-likes" class="tab @(ActiveTab == "likes" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("likes")'>Likes</a>
+        <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers</a>
+        <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
         @if (ApprovesFollowers)
         {
             <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests@(FollowRequestCount is { } frc && frc > 0 ? $" ({frc})" : string.Empty)</a>
@@ -100,6 +102,26 @@ else
             ItemFilter="IsLike"
             ItemTemplate="@PostTemplate"
             EmptyMessage="You haven't liked any posts yet." />
+        </div>
+    }
+    else if (ActiveTab == "followers")
+    {
+        <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
+        <ActorListPanel
+            Client="@OutboxClient"
+            CollectionIri="@FollowersIri"
+            Title="Followers"
+            EmptyMessage="No followers yet." />
+        </div>
+    }
+    else if (ActiveTab == "following")
+    {
+        <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
+        <ActorListPanel
+            Client="@OutboxClient"
+            CollectionIri="@FollowingIri"
+            Title="Following"
+            EmptyMessage="Not following anyone yet." />
         </div>
     }
     else if (ActiveTab == "requests")
@@ -211,6 +233,12 @@ else
 
     private Iri? InboxIri
         => Session.ActorId is { } actor ? actor.InboxOf() : null;
+
+    private Iri? FollowersIri
+        => Session.ActorId is { } actor ? actor.FollowersOf() : null;
+
+    private Iri? FollowingIri
+        => Session.ActorId is { } actor ? actor.FollowingOf() : null;
 
     /// <summary>
     /// Whether an outbox item is one of the signed-in user's **own** replies: a <c>Create</c> whose
