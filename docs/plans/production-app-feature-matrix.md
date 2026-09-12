@@ -131,7 +131,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Empty states everywhere | — | ✅ | ☐ | |
 | Error states everywhere (network failure, validation) | — | ✅ | ☐ | |
 | Mobile-responsive layout | — | ✅ | ☐ | |
-| Keyboard navigation | — | 🟡 | ☐ | **PARTIAL:** Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle. **No** roving-tabindex/tab-arrow-key handling for `role="tablist"` tab bars. |
+| Keyboard navigation | — | ✅ | ☐ | Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle + roving-tabindex + arrow-key nav for all `role="tablist"` tab bars (Phase 110). |
 | Screen-reader labels / ARIA | — | ✅ | ☐ | |
 | Color contrast / accessibility audit | — | 🟡 | ☐ | **PARTIAL:** High-contrast dark palette + reinforced focus ring + `prefers-reduced-motion` respected. No documented contrast **audit** was found. |
 | Visual design system (spacing, type, icons) | — | — | ✅ | Polish pass |

@@ -99,7 +99,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **110 — (next)** — keyboard roving-tabindex for tab bars, or color contrast audit (remaining matrix 🟡 items).
+- **111 — (next)** — color contrast / accessibility audit (last remaining 🟡 matrix item), or user-list role promote/demote UI.
 
 ## Inbox
 
@@ -111,6 +111,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all `role="tablist"` tab bars: roving tabindex + ArrowRight/Left/Up/Down + Home/End. Pure JS in index.html. Live Playwright-verified. Matrix 🟡 → ✅. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
+
 - **109 — Community Mute UI (DONE)** — Added `MuteCommunityMemberAsync`/`UnmuteCommunityMemberAsync` to `ILocalModerationClient` + Mute button in CommunityDetail Members tab (creator-only). Fixed 2 more stale matrix entries. Full fast suite 0 failures. [changes/1091](docs/changes/1091-phase109-community-mute.md)
 
 - **108 — Mentions Filter + Matrix Fix (DONE)** — Added "Mentions" filter tab to Notifications (server-side `type=Mention` composite filter matching Create activities with Mention tags). Fixed stale matrix entry (Key/algorithm info already exists). Full suite **1419 passed / 0 failed**. [changes/1081](docs/changes/1081-phase108-mentions-filter.md)
@@ -118,8 +120,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **107 — Search Improvements (DONE)** — Group actors in search results now link to `/community?iri=…` (instead of `/actor?iri=…`) and display a `c/` prefix (Lemmy-style). `ActorIdentityHelper` gained `IsCommunity()` + `ActorHref(Iri, IObject?)` overload; `ActorProfile`, `ObjectView`, `NotificationRow` all use the Group-aware href. CSS `::before` renders the muted `c/` prefix. 0 new coded web tests (policy). Live Playwright-verified: `!technology@lemmy.world` → `c/technology` links to `/community?iri=…`, renders full community page (header, tabs, feed). 0 unexpected console errors. [changes/1071](docs/changes/1071-phase107-search-improvements.md)
 
 - **106 — Profile Improvements (DONE)** — profile page now has Followers and Following tabs (hydrated `ActorCard` via `ActorListPanel`) and the Likes tab shows the liked target as a clickable link to the object view. 0 new coded web tests (policy). Full suite **1419 passed / 0 failed**. [changes/1061](docs/changes/1061-phase106-profile-improvements.md)
-
-- **105 — Directory Improvements (DONE)** — `GlobalSearchService` now uses IRI-prefix matching to distinguish local from cached remote actors. 4 new unit tests. Full suite **1419 passed / 0 failed**. [changes/1051](docs/changes/1051-phase105-directory-improvements.md)
 
 
 
