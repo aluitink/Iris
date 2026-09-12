@@ -51,7 +51,12 @@
                 }
                 else
                 {
-                    <p class="muted">@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+                    <div class="empty-state empty-state--compact">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        <p>@(string.IsNullOrEmpty(EmptyMessage) ? "No items." : EmptyMessage)</p>
+                    </div>
                 }
             }
             @if (RenderedItems.Count > 0)

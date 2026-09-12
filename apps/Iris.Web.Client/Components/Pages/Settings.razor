@@ -162,7 +162,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@($"/actor?iri={Uri.EscapeDataString(iri)}")" class="object-actor-handle">@HandleFromIri(new Iri(iri))</a>
-                                    <span class="muted" style="font-size: 0.85rem;">Muted</span>
+                                    <span class="muted text-sm">Muted</span>
                                 </div>
                                 <button class="button button--ghost" @onclick="() => RemoveMutedActor(iri)">Unmute</button>
                             </div>
@@ -217,7 +217,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@($"/community?iri={Uri.EscapeDataString(iri ?? string.Empty)}")" class="object-actor-handle">@name</a>
-                                    <span class="muted" style="font-size: 0.85rem;">Member</span>
+                                    <span class="muted text-sm">Member</span>
                                 </div>
                             </div>
                         }
@@ -262,7 +262,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@relayIri.Value" target="_blank" rel="noopener noreferrer" class="object-actor-handle">@RelayHost(relayIri)</a>
-                                    <span class="muted" style="font-size: 0.85rem;">@relayIri.Value</span>
+                                    <span class="muted text-sm">@relayIri.Value</span>
                                 </div>
                                 <button class="button button--ghost" disabled="@RelaysBusy" @onclick="() => UnsubscribeRelayAsync(relayIri)">Remove</button>
                             </div>
@@ -310,7 +310,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted" style="font-size: 0.85rem;">Blocked</span>
+                                    <span class="muted text-sm">Blocked</span>
                                 </div>
                                 <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnblockAsync(actorIri)">Unblock</button>
                             </div>
@@ -331,7 +331,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted" style="font-size: 0.85rem;">Muted</span>
+                                    <span class="muted text-sm">Muted</span>
                                 </div>
                                 <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnmuteAsync(actorIri)">Unmute</button>
                             </div>
@@ -352,7 +352,7 @@ else
                             <div class="directory-item">
                                 <div class="directory-item-body">
                                     <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted" style="font-size: 0.85rem;">Reported</span>
+                                    <span class="muted text-sm">Reported</span>
                                 </div>
                                 <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnflagAsync(actorIri)">Remove</button>
                             </div>

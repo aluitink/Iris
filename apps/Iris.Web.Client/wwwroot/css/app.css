@@ -276,6 +276,16 @@ details[open] > .settings-subsection-summary::before {
     color: var(--muted);
 }
 
+/* 114: small-text utility — replaces repeated inline style="font-size: …" so
+   secondary/caption text is sized from the type scale. */
+.text-sm {
+    font-size: var(--font-size-sm);
+}
+
+.text-xs {
+    font-size: var(--font-size-xs);
+}
+
 a {
     color: var(--accent-warm);
     text-decoration: underline;
@@ -2249,6 +2259,13 @@ ul.object-list li {
     gap: var(--space-2);
 }
 
+/* 114: empty message inside an expanded directory-card row — lighter, smaller
+   than the page-level empty state since it sits within an already-nested card. */
+.directory-card-empty {
+    margin: var(--space-1) 0;
+    font-size: var(--font-size-sm);
+}
+
 .directory-card-post {
     border: 1px solid var(--border);
     border-radius: 6px;
@@ -2626,6 +2643,24 @@ ul.object-list li {
 
 .empty-state a:hover {
     text-decoration: underline;
+}
+
+/* 114: compact variant for in-card / tab-panel empty states — smaller icon +
+   tighter vertical padding so it sits well inside a card rather than dominating
+   a full page. Same centered icon + message treatment as the full-size state. */
+.empty-state--compact {
+    padding: var(--space-4) var(--space-3);
+}
+
+.empty-state--compact svg {
+    width: 32px;
+    height: 32px;
+    margin-bottom: var(--space-2);
+}
+
+.empty-state--compact p {
+    margin-bottom: 0;
+    font-size: var(--font-size-sm);
 }
 
 .profile-actions {
