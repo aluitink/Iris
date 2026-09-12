@@ -94,10 +94,10 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Block | ✅ | ✅ | ☐ | F-07 |
-| Mute | ✅ | ✅ | ☐ | |
-| Flag/report | ✅ | ✅ | ☐ | |
-| View own blocks/mutes/flags list | ✅ | ✅ | ☐ | |
+| Block | ✅ | ✅ | ✅ | `ModerationActions` Block button → `IActivityPubClient.BlockAsync`. Live-verified: button toggles Block → Unblock; DB edge recorded (Kind=5). |
+| Mute | ✅ | ✅ | ✅ | `ModerationActions` Mute button → `ILocalModerationClient.MuteAsync`. Live-verified: button toggles Mute → Unmute; DB edge recorded (Kind=7). |
+| Flag/report | ✅ | ✅ | ✅ | `ModerationActions` Report button → `IActivityPubClient.FlagAsync`. Live-verified: flag delivered; DB edge recorded (Kind=6). |
+| View own blocks/mutes/flags list | ✅ | ✅ | ✅ | Settings → Moderation tab: three sections (Blocked / Muted / Reported) with per-item action buttons. Live-verified: all three lists render the correct actors. |
 
 ## Search & directory
 
