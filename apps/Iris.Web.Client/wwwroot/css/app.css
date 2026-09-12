@@ -2114,11 +2114,11 @@ ul.object-list li {
 
 .directory-scope-btn--active {
     background: var(--accent);
-    color: #fff;
+    color: #0f1115;
 }
 
 .directory-scope-btn--active:hover {
-    color: #fff;
+    color: #0f1115;
 }
 
 .directory-cards {
@@ -3163,7 +3163,7 @@ body > #app {
 .filter-tab[aria-pressed="true"],
 .filter-tab[aria-pressed=""] {
     background: var(--accent, #4a90d9);
-    color: #fff;
+    color: #0f1115;
     border-color: var(--accent, #4a90d9);
 }
 
