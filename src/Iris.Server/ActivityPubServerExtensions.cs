@@ -417,8 +417,15 @@ public static class ActivityPubServerExtensions
 
         // Global search (F-13): searches the instance's local actors (the directory) and stored content
         // objects for the /ap/v1/search endpoint and the client's SearchAsync. A host may replace this to
-        // add ranking, full-text indexing, or cross-instance (relay/WebFinger) search.
-        services.TryAddSingleton<IGlobalSearchService, GlobalSearchService>();
+        // add ranking, full-text indexing, or cross-instance (relay/WebFinger) search. The instance base
+        // IRI enables IRI-prefix-based local/remote discrimination (more reliable than the store's
+        // preferredUsername heuristic for remote actors from other platforms).
+        services.TryAddSingleton<IGlobalSearchService>(sp =>
+        {
+            var persistence = sp.GetRequiredService<IPersistenceProvider>();
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+            return new GlobalSearchService(persistence, options.BaseUri);
+        });
 
         // Followed feed (F-14): computes an actor's home timeline (the union of the actor's local and
         // remote follows' outbox items, newest first) for the /u/{handle}/feed endpoint and the client's

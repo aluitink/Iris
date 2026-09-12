@@ -214,6 +214,100 @@ public sealed class GlobalSearchServiceTests
         Assert.Contains($"https://{AHost}/ap/v1/u/alice/notes/n1", withLocal);
     }
 
+    // --- IRI-prefix-based local/remote discrimination (Phase 105 directory) -----------------
+
+    [Fact]
+    public async Task Search_LocalOnly_WithInstanceBase_ExcludesRemoteActorsWithPreferredUsername()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // A local actor and a remote actor that DOES carry a preferredUsername (like a Mastodon user).
+        // The old preferredUsername heuristic would include the remote actor in "This instance"; the
+        // IRI-prefix check correctly excludes it.
+        await PutActorAsync(persistence, "alice");
+        var remoteIri = new Iri($"https://mastodon.social/users/remote_user");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = remoteIri.Value,
+            PreferredUsername = "remote_user",
+            Name = ["Remote User"],
+        });
+
+        var instanceBase = new Iri($"https://{AHost}");
+        var service = new GlobalSearchService(persistence, instanceBase);
+
+        // "All known actors" returns both.
+        var all = (await service.SearchAsync(null, type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, all.Length);
+        Assert.Contains($"https://{AHost}/ap/v1/u/alice", all);
+        Assert.Contains(remoteIri.Value, all);
+
+        // "This instance" (localOnly + instance base) excludes the remote actor even though it has a
+        // preferredUsername — the IRI doesn't start with the instance base.
+        var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_LocalOnly_WithInstanceBase_IncludesLocalActors()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutActorAsync(persistence, "bob");
+        await PutRemoteActorAsync(persistence, "ext", "other.example");
+
+        var instanceBase = new Iri($"https://{AHost}");
+        var service = new GlobalSearchService(persistence, instanceBase);
+
+        var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal(
+            [
+                $"https://{AHost}/ap/v1/u/alice",
+                $"https://{AHost}/ap/v1/u/bob",
+            ],
+            local);
+    }
+
+    [Fact]
+    public async Task Search_LocalOnly_WithInstanceBase_FallsBackToStoreHeuristic_WhenBaseIsNull()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await PutActorAsync(persistence, "alice");
+        await PutRemoteActorAsync(persistence, "remote", "mastodon.social");
+
+        // No instance base: falls back to the store's preferredUsername heuristic.
+        var service = new GlobalSearchService(persistence);
+
+        var local = (await service.SearchAsync(null, type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/alice", Assert.Single(local));
+    }
+
+    [Fact]
+    public async Task Search_LocalOnly_WithInstanceBase_QueryFilter()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        // A local actor matching the query, and a remote actor with the same name + a
+        // preferredUsername (which the old heuristic would include).
+        await PutActorAsync(persistence, "gardener");
+        var remoteIri = new Iri("https://remote.example/users/gardener");
+        await persistence.ActorStore.PutActorAsync(new Person
+        {
+            Id = remoteIri.Value,
+            PreferredUsername = "gardener",
+            Name = ["Gardener"],
+        });
+
+        var instanceBase = new Iri($"https://{AHost}");
+        var service = new GlobalSearchService(persistence, instanceBase);
+
+        // Without localOnly: both match "gardener".
+        var all = (await service.SearchAsync("gardener", type: "Actor")).Select(ToId).ToArray();
+        Assert.Equal(2, all.Length);
+
+        // With localOnly + instance base: only the local actor.
+        var local = (await service.SearchAsync("gardener", type: "Actor", localOnly: true)).Select(ToId).ToArray();
+        Assert.Equal($"https://{AHost}/ap/v1/u/gardener", Assert.Single(local));
+    }
+
     // --- A no-match query returns nothing -------------------------------------------------
 
     [Fact]
