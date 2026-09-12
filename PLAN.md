@@ -99,7 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **113 — (next)** — production-readiness pass: feature matrix is now fully ✅ (Phase C complete). Next: pick a Phase D (distribution) item from the matrix (all currently ☐) or a hardening/observability slice (structured logging, health checks, rate-limit tuning).
+- **113 — (in progress)** — Phase D (polish/distribution). 113.1 (design-token system) done. Remaining: continue Phase D polish — migrate remaining raw rem/hex onto tokens, then pick the next matrix ☐ item (visual polish, motion, or a distribution feature).
+- **114 — (candidate)** — Next Phase D slice: either (a) finish the design-token migration (odd spacing values) + a visual-consistency pass, or (b) a concrete distribution/feature item from the matrix. Replenish before selecting.
 
 ## Inbox
 
@@ -111,15 +112,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **112 — Community Block + Matrix Reconciliation (DONE)** — Added `CommunityBlockHandler` + `POST /local/v1/c/{name}/blocks/{target}` (?unblock=true) + `BlockCommunityMemberAsync`/`UnblockCommunityMemberAsync` client methods + Block button in CommunityDetail Members tab. Reconciled 3 stale 🟡 matrix entries (view others' profile, follow-request queue, user role mgmt — all already implemented). Matrix now fully ✅. [changes/1121](docs/changes/1121-phase112-community-block.md)
+- **113.1 — Design-Token System (DONE)** — Added semantic color tokens (danger/warning/success/btn-fg/surface-inset/border-strong), a 4px spacing scale (`--space-1…7`), and a type scale (`--font-size-xs…2xl`) to `app.css`; migrated the dominant raw hex + rem values (~430 lines) onto the tokens. Presentational no-op. Build clean, Web.Tests 95/95, live-verified tokens resolve. [changes/1131](docs/changes/1131-phase113-design-token-system.md)
 
-- **111 — Color Contrast Audit (DONE)** — WCAG AA audit of all text/bg pairs. Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` white-on-accent 2.8:1 → dark 5.97:1). All other pairs 5.0–15.2:1. Matrix 🟡 → ✅. [changes/1111](docs/changes/1111-phase111-color-contrast-audit.md)
+- **112 — Community Block + Matrix Reconciliation (DONE)** — Added `CommunityBlockHandler` + `POST /local/v1/c/{name}/blocks/{target}` (?unblock=true) + `BlockCommunityMemberAsync`/`UnblockCommunityMemberAsync` client methods + Block button in CommunityDetail Members tab. Reconciled 3 stale 🟡 matrix entries. Matrix now fully ✅. [changes/1121](docs/changes/1121-phase112-community-block.md)
 
-- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all `role="tablist"` tab bars: roving tabindex + ArrowRight/Left/Up/Down + Home/End. Pure JS in index.html. Live Playwright-verified. Matrix 🟡 → ✅. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
+- **111 — Color Contrast Audit (DONE)** — WCAG AA audit of all text/bg pairs. Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` white-on-accent 2.8:1 → dark 5.97:1). [changes/1111](docs/changes/1111-phase111-color-contrast-audit.md)
 
-- **109 — Community Mute UI (DONE)** — Added `MuteCommunityMemberAsync`/`UnmuteCommunityMemberAsync` to `ILocalModerationClient` + Mute button in CommunityDetail Members tab (creator-only). Fixed 2 more stale matrix entries. Full fast suite 0 failures. [changes/1091](docs/changes/1091-phase109-community-mute.md)
+- **110 — Roving Tabindex + Arrow-Key Nav (DONE)** — WAI-ARIA keyboard nav for all `role="tablist"` tab bars. Pure JS in index.html. [changes/1101](docs/changes/1101-phase110-roving-tabindex.md)
 
-- **108 — Mentions Filter + Matrix Fix (DONE)** — Added "Mentions" filter tab to Notifications (server-side `type=Mention` composite filter matching Create activities with Mention tags). Fixed stale matrix entry (Key/algorithm info already exists). Full suite **1419 passed / 0 failed**. [changes/1081](docs/changes/1081-phase108-mentions-filter.md)
+- **109 — Community Mute UI (DONE)** — Mute button in CommunityDetail Members tab (creator-only) + client methods. [changes/1091](docs/changes/1091-phase109-community-mute.md)
 
 
 

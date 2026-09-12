@@ -134,6 +134,6 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Keyboard navigation | — | ✅ | ☐ | Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle + roving-tabindex + arrow-key nav for all `role="tablist"` tab bars (Phase 110). |
 | Screen-reader labels / ARIA | — | ✅ | ☐ | |
 | Color contrast / accessibility audit | — | ✅ | ☐ | **DONE (Phase 111):** All text/background pairs verified against WCAG AA (4.5:1). Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` were 2.8:1 → now 5.97:1). All other pairs: 5.0–15.2:1. |
-| Visual design system (spacing, type, icons) | — | — | ✅ | Polish pass |
+ | Visual design system (spacing, type, icons) | — | — | ✅ | **DONE (Phase 113):** design-token system in `app.css` — semantic color tokens (`--danger`/`--danger-fg`/`--danger-bg`/`--danger-border`, `--warning`, `--success`, `--btn-fg`, `--surface-inset`, `--border-strong`), a 4px spacing scale (`--space-1…7`), and a type scale (`--font-size-xs…2xl`). Migrated the dominant raw hex + rem values (~430 lines) onto the tokens so a theme/spacing change is a single value swap. |
 | Dark mode | — | — | ✅ | Dark-only (hard-coded `--bg:#111318`); no light-mode toggle / `prefers-color-scheme` support. |
 | Subtle motion/transitions | — | — | ✅ | `transition` on filter tabs + splash keyframes + `prefers-reduced-motion` guard. |
