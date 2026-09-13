@@ -264,3 +264,5 @@
  - **Phase 123.2 — Actor detail: enrich the profile header (COMPLETE):** stats row (posts, followers, following) below ActorProfile card. PostCount from outbox totalItems. HasStats computed property. CSS in both files. Live-verified: Bob "13 posts, 2 followers, 1 following"; Alice own profile no follow button. 0 console errors. [changes/12302](changes/12302-phase123-actor-detail-stats.md).
 
  - **Phase 123.3 — Community detail: mobile layout for ownership banner (COMPLETE):** mobile media query stacks .community-detail-actions vertically (flex-direction: column, align-items: flex-start, width: 100%). Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12303](changes/12303-phase123-community-mobile-banner.md).
+
+ - **Phase 124.1 — General UI/UX review (third pass) (COMPLETE, review-only):** visual inspection of all pages (desktop + mobile) via Playwright. No new issues found; 123.* fixes verified working (notification dedup, actor detail stats, community mobile banner). 0 console errors on every page. [changes/12401](changes/12401-phase124-ui-ux-review.md).
