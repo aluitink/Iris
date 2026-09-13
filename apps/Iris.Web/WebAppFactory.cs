@@ -463,6 +463,20 @@ public static class WebAppFactory
             await next();
         });
         app.UseRouting();
+        // Security headers: applied to every response (HTML, WASM, API, static files). Uses a lightweight
+        // inline middleware (no extra NuGet package — the ASP.NET Core shared framework is sufficient).
+        // The CSP allows 'unsafe-inline' for Blazor WASM bootstrap (required by the framework's inline
+        // script) and 'wasm-unsafe-eval' for the Mono runtime's WebAssembly.instantiate (a known Blazor
+        // WASM limitation — the runtime cannot compile WASM modules without this directive).
+        app.Use(async (ctx, next) =>
+        {
+            ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' https:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'";
+            ctx.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            ctx.Response.Headers["X-Frame-Options"] = "DENY";
+            ctx.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+            ctx.Response.Headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
+            await next();
+        });
         // CORS (slice 33.5): applied only when an operator opted in via Iris:Cors:Origins (the
         // CorsPolicyName policy is registered in ConfigureServices only in that case). When no origins are
         // configured there is no policy, so this is skipped and the app stays same-origin-only by
