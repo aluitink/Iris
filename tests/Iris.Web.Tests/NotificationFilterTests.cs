@@ -163,15 +163,70 @@ public sealed class NotificationFilterTests
     }
 
     [Fact]
-    public void FilterInboxByPrefs_NoSelfIri_NoPrefs_ReturnsUnchanged()
+    public void FilterInboxByPrefs_DuplicateFollows_CollapsesToMostRecent()
     {
-        // The fast path: with no prefs and no self IRI, the inbox is returned as-is (the prior
-        // behavior) — including any noise the caller is responsible for handling.
-        var inbox = new List<IObjectOrLink> { CreateActivity(Note), UpdateActivity(Note) };
+        // 123.1: repeated Follows from the same actor to the same target are collapsed to one
+        // (the most recent). Each Follow has a distinct server-minted IRI, so the IRI-based inbox
+        // dedup cannot collapse them — the read-time filter must.
+        var target = "https://self.test.local/ap/v1/u/alice";
+        var follow1 = FollowActivity(target, "2026-01-01T00:00:00Z");
+        var follow2 = FollowActivity(target, "2026-06-01T00:00:00Z");
+        var follow3 = FollowActivity(target, "2026-09-01T00:00:00Z");
+
+        var inbox = new List<IObjectOrLink> { follow1, follow2, follow3 };
+
+        var result = WebAppFactory.FilterInboxByPrefs(inbox, null, SelfIri);
+
+        Assert.Single(result);
+        Assert.Equal("Follow", TypeOf(result[0]));
+        // The most recent follow (Sep 1) is the one kept.
+        Assert.Equal(follow3, result[0]);
+    }
+
+    [Fact]
+    public void FilterInboxByPrefs_FollowsFromDifferentActors_NotCollapsed()
+    {
+        // Follows from different actors to the same target are distinct notifications — all kept.
+        var target = "https://self.test.local/ap/v1/u/alice";
+        var followBob = FollowActivityFrom("https://other.test.local/users/bob", target, "2026-01-01T00:00:00Z");
+        var followCara = FollowActivityFrom("https://third.test.local/users/cara", target, "2026-02-01T00:00:00Z");
+
+        var inbox = new List<IObjectOrLink> { followBob, followCara };
+
+        var result = WebAppFactory.FilterInboxByPrefs(inbox, null, SelfIri);
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void FilterInboxByPrefs_FollowsToDifferentTargets_NotCollapsed()
+    {
+        // Follows from the same actor to different targets are distinct notifications — all kept.
+        var followAlice = FollowActivity("https://self.test.local/ap/v1/u/alice", "2026-01-01T00:00:00Z");
+        var followBob = FollowActivity("https://other.test.local/users/bob", "2026-02-01T00:00:00Z");
+
+        var inbox = new List<IObjectOrLink> { followAlice, followBob };
+
+        var result = WebAppFactory.FilterInboxByPrefs(inbox, null, SelfIri);
+
+        Assert.Equal(2, result.Count);
+    }
+
+    [Fact]
+    public void FilterInboxByPrefs_DuplicateFollows_FastPath_NoSelfIri_NoPrefs()
+    {
+        // 123.1: the dedup must run even on the fast path (no prefs, no self-IRI) so pre-existing
+        // duplicate follows are collapsed for all callers.
+        var target = "https://self.test.local/ap/v1/u/alice";
+        var follow1 = FollowActivity(target, "2026-01-01T00:00:00Z");
+        var follow2 = FollowActivity(target, "2026-09-01T00:00:00Z");
+
+        var inbox = new List<IObjectOrLink> { follow1, follow2 };
 
         var result = WebAppFactory.FilterInboxByPrefs(inbox, null);
 
-        Assert.Equal(2, result.Count);
+        Assert.Single(result);
+        Assert.Equal("Follow", TypeOf(result[0]));
     }
 
     /// <summary>
@@ -256,6 +311,22 @@ public sealed class NotificationFilterTests
         Actor = [new Person { Id = Other }],
         Object = [new Link { Href = new Uri(Self) }],
         Published = DateTime.UtcNow,
+    };
+
+    private static Follow FollowActivity(string targetIri, string published) => new()
+    {
+        Id = $"https://self.test.local/ap/v1/u/alice/follow/{Guid.NewGuid():N}",
+        Actor = [new Person { Id = Other }],
+        Object = [new Link { Href = new Uri(targetIri) }],
+        Published = DateTime.Parse(published),
+    };
+
+    private static Follow FollowActivityFrom(string actorIri, string targetIri, string published) => new()
+    {
+        Id = $"https://self.test.local/ap/v1/u/alice/follow/{Guid.NewGuid():N}",
+        Actor = [new Person { Id = actorIri }],
+        Object = [new Link { Href = new Uri(targetIri) }],
+        Published = DateTime.Parse(published),
     };
 
     private static Accept AcceptActivity() => new()

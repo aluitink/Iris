@@ -2975,18 +2975,28 @@ public static class ActivityPubServerExtensions
                     return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
                 }
 
-                Iri? recipientIri = activity switch
+                bool isNewFollow = true;
+                Iri? recipientIri;
+                if (activity is Follow follow)
                 {
-                    Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
-                    Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
-                    Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
-                    MuteActivity mute => await RecordMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
-                    Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
-                    Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
-                    Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
-                    Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
-                    _ => null,
-                };
+                    (Iri? Target, bool IsNewFollow)? followResult = await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false);
+                    recipientIri = followResult?.Target;
+                    isNewFollow = followResult?.IsNewFollow ?? true;
+                }
+                else
+                {
+                    recipientIri = activity switch
+                    {
+                        Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
+                        Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
+                        MuteActivity mute => await RecordMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
+                        Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
+                        Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
+                        Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
+                        Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
+                        _ => null,
+                    };
+                }
 
                 // 19.6.2 moderation-collection enumeration correctness: the actor's moderation
                 // collections (blocks / flags / mutes) are served through the same local collection-page
@@ -3052,15 +3062,24 @@ public static class ActivityPubServerExtensions
                 //    activity is added directly to the recipient's inbox so it appears in their
                 //    notifications. A remote recipient is delivered to over the wire, signed as the
                 //    acting local actor.
+                //
+                // 123.1: For a Follow that is a re-follow (the edge already existed), skip the local
+                //    inbox write — the recipient already has a notification for the original follow.
+                //    Without this gate, every repeated follow click mints a new ULID IRI and lands a
+                //    duplicate row in the recipient's inbox (the IRI-based dedup in AddToInboxAsync
+                //    cannot collapse them because each Follow has a distinct server-minted id).
                 if (recipientIri is { } recipient)
                 {
                     var isLocal = await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false)
                         || await persistence.Communities.TryGetCommunityAsync(recipient, out _, ct).ConfigureAwait(false);
                     if (isLocal)
                     {
-                        await persistence.Activities
-                            .AddToInboxAsync(recipient, activity, ct)
-                            .ConfigureAwait(false);
+                        if (!(activity is Follow) || isNewFollow)
+                        {
+                            await persistence.Activities
+                                .AddToInboxAsync(recipient, activity, ct)
+                                .ConfigureAwait(false);
+                        }
                     }
                     else
                     {
@@ -3631,7 +3650,7 @@ public static class ActivityPubServerExtensions
     /// sets (the inverse of <see cref="FollowActivityHandler"/>'s community branch, F-24). Returns
     /// <see langword="null"/> when the target is not resolvable.
     /// </summary>
-    private static async Task<Iri?> RecordFollowLocalAsync(
+    private static async Task<(Iri? Target, bool IsNewFollow)?> RecordFollowLocalAsync(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         Iri followerIri,
@@ -3643,6 +3662,13 @@ public static class ActivityPubServerExtensions
         {
             return null;
         }
+
+        // Detect whether the follow edge already exists BEFORE recording it, so the caller can
+        // suppress a duplicate inbox write (123.1: repeated follows from the same actor to the same
+        // target should produce only one notification, not one per repeated click).
+        var alreadyFollowing = await persistence.Follows
+            .IsFollowingAsync(followerIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
 
         // The actor's home instance records the follow edge in its own follow store regardless of
         // whether the target is local — the actor's `following` collection lists even a remote target.
@@ -3659,19 +3685,20 @@ public static class ActivityPubServerExtensions
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
             await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
         }
-        else if (await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
+        else if (!alreadyFollowing && await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
         {
             // A local follow of a person who manually approves followers is held for approval (Phase 100):
-            // record a pending follow-request edge so the target’s follow-approval queue
+            // record a pending follow-request edge so the target's follow-approval queue
             // (GET /local/v1/u/{handle}/requests) lists it. The provisional Follow edge (recorded above)
             // is independent and is drained/confirmed when the target Accepts or Rejects (the follow-
             // decision path). Mirrors the inbox-side FollowActivityHandler gate (the remote-follow path).
+            // Gated on !alreadyFollowing so a re-follow does not re-create a stale request edge.
             await persistence.Follows
                 .RecordFollowRequestAsync(followerIri, targetIri.Value, ct)
                 .ConfigureAwait(false);
         }
 
-        return targetIri.Value;
+        return (targetIri.Value, !alreadyFollowing);
     }
 
     /// <summary>

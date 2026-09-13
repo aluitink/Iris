@@ -1268,43 +1268,64 @@ public static class WebAppFactory
         var hasPrefsFilters = prefs is not null
             && (prefs.DisabledTypes.Count > 0 || prefs.MutedActors.Count > 0);
 
-        // Fast path: no prefs filters and no self-IRI to evaluate the self-delete rule against — the
-        // inbox is already noise-free enough that we return it unchanged (preserving the prior
-        // behavior exactly for callers that do not pass a self IRI).
+        List<IObjectOrLink> result;
+
+        // Fast path: no prefs filters and no self-IRI to evaluate the self-delete rule against.
+        // We still run the noise filter + dedup (the noise filter has always run; the dedup is
+        // 123.1 and must run even on the fast path to collapse pre-existing duplicate follows).
         if (!hasPrefsFilters && selfIri is null)
         {
-            return inbox;
-        }
-
-        var result = new List<IObjectOrLink>(inbox.Count);
-        foreach (var item in inbox)
-        {
-            if (item is not Activity act)
+            result = new List<IObjectOrLink>(inbox.Count);
+            foreach (var item in inbox)
             {
+                if (item is Activity act && IsServerOnlyNotification(item))
+                {
+                    continue;
+                }
+
                 result.Add(item);
-                continue;
             }
-
-            // Always drop server-only noise (Update/Undo/Flag/Block/Mute + remote post deletions).
-            if (IsServerOnlyNotification(item))
-            {
-                continue;
-            }
-
-            var type = act.Type?.FirstOrDefault();
-            if (prefs is not null && type is not null && prefs.DisabledTypes.Contains(type))
-            {
-                continue;
-            }
-
-            var actorIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
-            if (prefs is not null && actorIri is { } resolvedIri && prefs.MutedActors.Contains(resolvedIri.Value))
-            {
-                continue;
-            }
-
-            result.Add(item);
         }
+        else
+        {
+            result = new List<IObjectOrLink>(inbox.Count);
+            foreach (var item in inbox)
+            {
+                if (item is not Activity act)
+                {
+                    result.Add(item);
+                    continue;
+                }
+
+                // Always drop server-only noise (Update/Undo/Flag/Block/Mute + remote post deletions).
+                if (IsServerOnlyNotification(item))
+                {
+                    continue;
+                }
+
+                var type = act.Type?.FirstOrDefault();
+                if (prefs is not null && type is not null && prefs.DisabledTypes.Contains(type))
+                {
+                    continue;
+                }
+
+                var actorIri = act.Actor?.FirstOrDefault()?.ResolveObjectIri();
+                if (prefs is not null && actorIri is { } resolvedIri && prefs.MutedActors.Contains(resolvedIri.Value))
+                {
+                    continue;
+                }
+
+                result.Add(item);
+            }
+        }
+
+        // 123.1: Collapse duplicate Follow notifications. When an actor sends multiple Follows to the
+        // same target (e.g. repeated clicks), the server mints a new ULID IRI for each, so the IRI-based
+        // dedup in the inbox store cannot collapse them. The write-time gate (RecordFollowLocalAsync)
+        // prevents new duplicates going forward, but pre-existing rows (from before the fix, or from
+        // the inbound federation path which has no write-time gate) still need a read-time collapse.
+        // For Follow activities, keep only the most recent per (actor IRI, target IRI) pair.
+        result = DeduplicateFollows(result);
 
         // Present newest first regardless of the inbox store's order (BoxItems are stored
         // position-ordered, i.e. oldest first — the notification list must read newest-first, like
@@ -1334,6 +1355,52 @@ public static class WebAppFactory
             return 0;
         });
 
+        return result;
+    }
+
+    /// <summary>
+    /// Collapses duplicate <see cref="Follow"/> notifications: for each unique (actor IRI, target IRI)
+    /// pair, only the most recent Follow is kept. Other activity types pass through unchanged.
+    /// </summary>
+    /// <remarks>
+    /// This is a read-time safety net (123.1). The write-time gate in <c>RecordFollowLocalAsync</c>
+    /// prevents new duplicates from being created in the local outbox-publish path, but pre-existing
+    /// rows (from before the fix) and the inbound federation path (which has no write-time gate)
+    /// still produce duplicates in the raw inbox. This function collapses them on read.
+    /// </remarks>
+    private static List<IObjectOrLink> DeduplicateFollows(IReadOnlyList<IObjectOrLink> items)
+    {
+        // Track the best (most recent) Follow per (actor IRI, target IRI) key.
+        var bestFollowByKey = new Dictionary<string, (IObjectOrLink Item, DateTime? Time)>();
+        var nonFollows = new List<IObjectOrLink>();
+
+        foreach (var item in items)
+        {
+            if (item is not Follow follow)
+            {
+                nonFollows.Add(item);
+                continue;
+            }
+
+            var actorIri = follow.Actor?.FirstOrDefault()?.ResolveObjectIri()?.Value ?? string.Empty;
+            var targetIri = follow.Object?.FirstOrDefault()?.ResolveObjectIri()?.Value ?? string.Empty;
+            var key = actorIri + "\u0000" + targetIri;
+            var time = follow.Published ?? follow.Updated;
+
+            if (!bestFollowByKey.TryGetValue(key, out var existing) || (time > existing.Time))
+            {
+                bestFollowByKey[key] = (item, time);
+            }
+        }
+
+        if (bestFollowByKey.Count == 0)
+        {
+            return new List<IObjectOrLink>(items);
+        }
+
+        var result = new List<IObjectOrLink>(items.Count);
+        result.AddRange(bestFollowByKey.Values.Select(kv => kv.Item));
+        result.AddRange(nonFollows);
         return result;
     }
 
