@@ -233,6 +233,78 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         Assert.Equal("<p>proxied note for 75.3</p>", stored!.Content?.First());
     }
 
+    // --- 132.1: a proxied GET of a remote Note syncs its interaction edges into the local stores --
+    //
+    // Since 132.1, when the proxy stores a remote (non-locally-authored) object it also walks the
+    // object's /likes, /shares, and /replies collections on the remote and records the discovered
+    // likers / announcers / replies as edges in the local like / announce / reply reverse indexes. The
+    // object-document endpoint then derives the object's iris:likedCount / iris:sharedCount /
+    // iris:repliedCount from those indexes, so a proxied remote object shows its real interaction
+    // counts (a proxied read previously stored the object but never its interactions, so the
+    // object-detail page showed "0 likes · 0 boosts · 0 replies"). This test seeds a Note in B's store
+    // WITH recorded like / announce / reply edges (so B serves the /likes, /shares, /replies
+    // collections), proxy-GETs the Note from A, and asserts A's local reverse indexes now hold the
+    // same edges (a subsequent local read of the object on A would render 2/1/2).
+
+    [Fact]
+    public async Task Proxy_GetOfRemoteNote_SyncsInteractionEdgesIntoLocalStores()
+    {
+        // A second local actor on B (carol) to be a second liker, so the /likes collection is non-trivial.
+        var carolSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, "carol");
+
+        // Seed a Note in B's store so B serves it at its IRI.
+        var noteIri = new Iri($"https://{BHost}/ap/v1/u/bob/notes/1321");
+        var note = new Note
+        {
+            Id = noteIri.Value,
+            Content = new[] { "<p>proxied note for 132.1</p>" },
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+        await _bPersistence.Objects.PutObjectAsync(note);
+
+        // Record the interaction edges in B's reverse indexes (as B's own Like / Announce / Create
+        // handlers would): bob + carol like the note, bob boosts it, and a remote reply (r1) replies to
+        // it. B serves these as the /likes, /shares, and /replies collections the proxy walk reads.
+        var carolIri = carolSeeded.ActorIri;
+        var replyIri = new Iri($"https://{BHost}/ap/v1/u/carol/notes/r1");
+        await _bPersistence.Likes.RecordLikeAsync(carolIri, noteIri);
+        await _bPersistence.Likes.RecordLikeAsync(BobActorIri, noteIri);
+        await _bPersistence.Announces.RecordAnnounceAsync(BobActorIri, noteIri);
+        await _bPersistence.Replies.RecordReplyAsync(noteIri, replyIri);
+
+        // Sanity: B's own object-document endpoint renders the counts (the source of truth the proxy
+        // walk will discover).
+        var bHttp = _b.CreateClient();
+        var bNotePath = new Uri(noteIri.Value).AbsolutePath;
+        var bDoc = await bHttp.GetStringAsync(bNotePath);
+        using (var bJson = JsonDocument.Parse(bDoc))
+        {
+            Assert.Equal(2, bJson.RootElement.GetProperty("https://iris.example/ns#likedCount").GetInt32());
+            Assert.Equal(1, bJson.RootElement.GetProperty("https://iris.example/ns#sharedCount").GetInt32());
+            Assert.Equal(1, bJson.RootElement.GetProperty("https://iris.example/ns#repliedCount").GetInt32());
+        }
+
+        // A proxies a GET to the Note's IRI. The relayed response is the Note (200, AP JSON); the
+        // proxy stores it in A's local object store AND syncs its interaction edges into A's stores.
+        var response = await ProxyGetAsync(noteIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The proxied Note is stored in A's local object store (75.3).
+        Assert.True(await _aPersistence.Objects.TryGetObjectAsync(noteIri, out _));
+
+        // 132.1: A's local reverse indexes now hold the same edges B served (the proxy walk recorded
+        // them), so a local read of the object on A renders the real counts (2 likes, 1 boost, 1 reply).
+        var likers = await _aPersistence.Likes.GetLikersAsync(noteIri);
+        Assert.Contains(carolIri, likers);
+        Assert.Contains(BobActorIri, likers);
+
+        var announcers = await _aPersistence.Announces.GetAnnouncersAsync(noteIri);
+        Assert.Contains(BobActorIri, announcers);
+
+        var replies = await _aPersistence.Replies.GetRepliesAsync(noteIri);
+        Assert.Contains(replyIri, replies);
+    }
+
     // --- The proxy relays a write (POST + body) as a POST to the target -------------------------
     //
     // The proxy transport is always a POST to /ap/v1/proxy/{target}; the client signals the REAL
