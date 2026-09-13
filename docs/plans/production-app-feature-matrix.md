@@ -110,10 +110,10 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Account (change password) | ✅ | ✅ | ☐ | |
-| Profile edit | ✅ | ✅ | ☐ | duplicate entry point with Profile section — same feature |
-| Relay subscriptions | ✅ | ✅ | ☐ | F-06 |
-| Key/algorithm info (read-only) | ✅ | ✅ | ☐ | Settings > Account > Security section (fetches `GET /local/v1/account/key-info`: algorithm, key IRI, JWK thumbprint). Verified live 2026-09-12. |
+| Account (change password) | ✅ | ✅ | ✅ | Settings > Account > "Change password" `<details>`: 3 inputs (current/new/confirm) + button. Client-side validation fires ("Current and new passwords are required"). Endpoint `POST /local/v1/account/password` (cookie auth). Live-verified 2026-09-13. |
+| Profile edit | ✅ | ✅ | ✅ | Settings > Account > "Edit your profile" link → `/profile?edit=true` opens edit form pre-populated: display name, bio, avatar picker, follow-approval checkbox, Save/Cancel. Save posts signed AP `Update` to outbox + `POST /local/v1/u/{handle}/media` for avatar. Live-verified 2026-09-13. |
+| Relay subscriptions | ✅ | ✅ | ✅ | Settings > Relays tab: empty state ("not subscribed to any relays"), URL input + Subscribe button, per-relay Remove. Client-side URL validation. `GET /ap/v1/u/{handle}/relays` (list), `POST /local/v1/u/{handle}/relays/{iri}[?unsubscribe=true]` (add/remove). Live-verified 2026-09-13. |
+| Key/algorithm info (read-only) | ✅ | ✅ | ✅ | Settings > Account > "Security" `<details>`: fetches `GET /local/v1/account/key-info`, renders algorithm (Rsa), key IRI (`…/u/alice#key-1`), JWK thumbprint (43-char RFC 7638). Read-only. Live-verified 2026-09-13. |
 
 ## Instance admin (Admin role)
 
