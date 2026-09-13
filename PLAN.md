@@ -94,8 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
     ## Up Next
  
-- **121.1 - Notifications: replace raw IRI links with friendly labels** — Notification links show raw IRI fragments (e.g. "u alice", "notes 06G84EE..."). Replace with human-readable labels: "View alice's profile" for follows, content preview for likes/boosts.
-
 - **121.2 - Compose mobile: fix character counter and content-warning label wrapping** — On 375px the "0/500" counter and "Content warning" checkbox wrap awkwardly. Stack the counter below the textarea and give the checkbox its own row.
 
 - **121.3 - Notifications: fix "Mark all as read" button placement on mobile** — On mobile the button is centered between title and filter pills, creating an awkward gap. Right-align it in the title row or move below filters.
@@ -119,7 +117,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
- 
+  
+- **121.1 — Notifications: replace raw IRI links with friendly labels (DONE)** — `NotificationRow` now uses `FriendlyLabel()` instead of `ShortLabel()` for the notification target link when no content preview exists. Actor IRIs → "View {handle}'s profile", note IRIs → "View note", community IRIs → "View {name}". Live-verified: follow requests + likes show friendly labels. 88/88 web tests pass. [changes/12101](docs/changes/12101-phase121-notification-friendly-labels.md)
+
 - **120.1 — General UI/UX review (first pass) (DONE)** — Visual inspection of all pages (desktop + mobile). Found 7 improvement areas → created 121.1–121.7 items. No bugs, all cosmetic/usability. [changes/12001](docs/changes/12001-phase120-ui-ux-review.md)
   
 - **119.2 — Settings improvements: 3 tabs with expandable subsections (DONE)** — Split the 6-tab settings page into 3 primary tabs (Account, Content, Danger) with expandable `<details>` subsections. Moderation moved into Account. Lazy-loading for Moderation/Communities/Relays via `@ontoggle`. Mobile: tab bar wraps, tighter subsection spacing. Live-verified: desktop + mobile (375px), all tabs/subsections, 0 console errors. [changes/11902](docs/changes/11902-phase119-settings-improvements.md)
@@ -127,8 +127,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **119.1 — Profile improvements: render the liked object in the Likes tab (DONE)** — The profile Likes tab showed each Like as a bare IRI link because the outbox `Like` carries its target as a bare link (no embedded object). `ObjectView` now resolves the target: for a `Like` with a link-only target it primes the scoped session (`EnsureReadyAsync` — the accessor is scoped, so `Client` is null until the key loads) and fetches the liked object, then renders it as a full nested `ObjectView` (author/content/media/counts) under the "Liked" header, with a left-accent `.object-like-resolved` style. Falls back to the bare link if the fetch fails. Live-verified (fresh cache): 10/10 liked objects resolve (local + remote), 0 bare links. [changes/11901](docs/changes/11901-phase119-profile-likes-tab.md)
   
 - **118.3 — Compose improvements: fix @/# autocomplete trigger + surface known hashtags (DONE)** — The compose `@mention`/`#hashtag` auto-complete control existed (54.14/71.5) but its popover never opened (`@onkeyup` unreliable + `@bind`'s generated input handler suppressed the explicit trigger). Switched the content textarea to an explicit `@oninput` handler that reads `Content` and runs token detection — both `@` and `#` dropdowns now open as the user types. Also gave the `#` autocomplete a real source: the actor's previously-used hashtags (bounded read of their recent outbox), filtered by the typed token, with the typed `#tag` always confirmable. Live-verified (fresh cache): `#` lists own hashtags, `#1183` filters, `@al` lists mentions. [changes/11803](docs/changes/11803-phase118-compose-improvements.md)
- 
-- **118.2 — Communities: Post to a Remote (Lemmy) Community as a Lemmy-compatible Page (DONE)** — Compose detects a remote (different-host) community and posts a `Page` (`attributedTo`=[author,community], `to`=[community,as#Public], `cc`=[followers], `content`=HTML, `source`=markdown) via a signed `Create` to the community's inbox; local communities still post a `Note`. Dockerfile now ships `libgssapi-krb5-2` (outbound HTTPS federation). Wire format confirmed Lemmy-compatible; local post live-verified (HTTP 202, Note). Live Lemmy delivery blocked by a sandbox TLS quirk (lemmy.ml rejects .NET's handshake; host curl succeeds). [changes/11802](docs/changes/11802-phase118-communities-lemmy-page-post.md)
  
 ## Keeping the docs lean
 
