@@ -763,11 +763,31 @@ ul.object-list li {
     gap: var(--space-1);
 }
 
+/* Phase 133.1 — the card header is a two-row column: row 1 is the post date (a single top line,
+   left-justified); row 2 is the actor handle + moderation bar (moderation left-justified, directly
+   after the handle). Splitting the date off its own line stops long usernames from crowding the
+   timestamp and keeps the header calm on mobile. */
 .object-header {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-15);
+    margin-bottom: var(--space-35);
+}
+
+/* Row 1: the post date, a single left-justified line. */
+.object-header-time {
+    width: 100%;
+}
+
+/* Row 2: the actor handle + moderation bar, left-justified (the moderation group sits right after
+   the handle rather than being pushed to the far right). */
+.object-header-actor {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    margin-bottom: var(--space-35);
+    width: 100%;
+    min-width: 0;
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
@@ -1042,8 +1062,9 @@ ul.object-list li {
     font-style: italic;
 }
 
+/* Phase 133.1 — the date is a standalone top line (left-justified), so it no longer needs
+   margin-left: auto (that pushed it to the far right of the old single-row header). */
 .object-time {
-    margin-left: auto;
     color: var(--muted);
     font-size: var(--font-size-xs);
     white-space: nowrap;

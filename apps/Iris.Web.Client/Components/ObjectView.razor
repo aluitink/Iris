@@ -3,21 +3,28 @@
     {
         <div class="object-item">
             <div class="object-header">
-                @if (ActivityActorIri is { } actor)
-                {
-                    <ActorBar ActorIri="actor" />
-                }
-                @if (CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
-                {
-                    <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
-                        OnBlock="() => CardBlockAsync(modAuthor)"
-                        OnMute="() => CardMuteAsync(modAuthor)"
-                        OnReport="() => CardReportAsync(modAuthor)" />
-                }
+                @* Phase 133.1 — two-row header: the post date is a single top line (left-justified);
+                   the actor handle + moderation bar sit on the next line (moderation left-justified,
+                   directly after the handle) so long usernames don't crowd the timestamp. *@
                 @if (ActivityPublished is { } pub)
                 {
-                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                    <div class="object-header-time">
+                        <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                    </div>
                 }
+                <div class="object-header-actor">
+                    @if (ActivityActorIri is { } actor)
+                    {
+                        <ActorBar ActorIri="actor" />
+                    }
+                    @if (CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
+                    {
+                        <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                            OnBlock="() => CardBlockAsync(modAuthor)"
+                            OnMute="() => CardMuteAsync(modAuthor)"
+                            OnReport="() => CardReportAsync(modAuthor)" />
+                    }
+                </div>
             </div>
             @if (ActivityContentObject is { } contentObj)
             {
@@ -365,21 +372,28 @@
     {
         <div class="object-item">
             <div class="object-header">
-                @if (AuthorIri is { } author)
-                {
-                    <ActorBar ActorIri="author" />
-                }
-                @if (CanModerateAuthor(AuthorIri) && AuthorIri is { } modAuthor)
-                {
-                    <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
-                        OnBlock="() => CardBlockAsync(modAuthor)"
-                        OnMute="() => CardMuteAsync(modAuthor)"
-                        OnReport="() => CardReportAsync(modAuthor)" />
-                }
+                @* Phase 133.1 — two-row header: the post date is a single top line (left-justified);
+                   the actor handle + moderation bar sit on the next line (moderation left-justified,
+                   directly after the handle) so long usernames don't crowd the timestamp. *@
                 @if (Published is { } published)
                 {
-                    <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
+                    <div class="object-header-time">
+                        <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
+                    </div>
                 }
+                <div class="object-header-actor">
+                    @if (AuthorIri is { } author)
+                    {
+                        <ActorBar ActorIri="author" />
+                    }
+                    @if (CanModerateAuthor(AuthorIri) && AuthorIri is { } modAuthor)
+                    {
+                        <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                            OnBlock="() => CardBlockAsync(modAuthor)"
+                            OnMute="() => CardMuteAsync(modAuthor)"
+                            OnReport="() => CardReportAsync(modAuthor)" />
+                    }
+                </div>
             </div>
             @if (AudienceIris.Count > 0)
             {
