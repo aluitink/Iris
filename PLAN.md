@@ -126,13 +126,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **Flaky federation tests (UNBLOCKED)** — `FollowEdgeConvergenceIntegrationTests` (15s→45s) and `DuplicateInboundDeliveryIdempotencyIntegrationTests` (4s→15s) intermittently failed only under full-suite CPU contention: their wait helpers return silently on timeout, so a slow (but correct) cross-instance delivery made the following `Assert` fail. Test-timing flake, not a product bug. Lengthened the wait budgets (fast-or-equal on a healthy machine). Full suite now green under concurrent execution. [changes/13106](docs/changes/13106-phase131-flaky-federation-tests.md)
+
 - **131.5b — Disable anti-forgery tokens (dev) (DONE)** — The dev compose stack now defaults `Iris:Security:EnableAntiforgery=false` (env `IRIS_SECURITY_ENABLEANTIFORGERY`, override back with `=true`). Stale AF tokens (re-signed Data Protection key ring after a container rebuild) were 400-ing the login/register forms on every redeploy. The C# production default in `WebAppFactory` stays ON; only the dev stack is overridden, so no C# behavior or web-test changes. [changes/13105b](docs/changes/13105b-phase131-disable-antiforgery-dev.md)
 
 - **131.5 — HSTS + cookie hardening (DONE)** — Added `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (HTTPS-only, placed after `UseForwardedHeaders` so the proxy's scheme is seen). Cookie already hardened (HttpOnly, SameSite=Lax, Secure=SameAsRequest) — verified. 0 console errors. [changes/13105](docs/changes/13105-phase131-hsts-cookie-hardening.md)
 
 - **131.2 — Security: dependency audit + CSP review (DONE)** — Added 5 security headers (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy). CSP uses `'wasm-unsafe-eval'` (Blazor WASM requirement). Dependency audit: no known CVEs. 0 console errors. [changes/13102](docs/changes/13102-phase131-security-headers.md)
-
-- **130.3 — General UI/UX review (fifth pass) (DONE)** — Visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias). 0 console errors. Review cycle converged (5 passes). [changes/13003](docs/changes/13003-phase130-ui-ux-review-pass5.md)
 
 ## Keeping the docs lean
 
