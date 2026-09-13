@@ -94,8 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
    ## Up Next
 
-- **118.2 - Community feed** - A community provides a different type of information, I'm not enirely sure how we get at it yet (if we can browse it or need to subscribe and wait for it). We should experiement with some real world communities. We may need to do some indepth research (dispatch a sub agent) to determine what to expect from a Lemmy community, I think it may be a Document or a Page object that has a link or attachment - it's different than the mastodon note. I think there are also Likes and Dislikes - but unusre how to enumerate them. We need controls that support posting to a community in the proper form as to allow us to post to a Lemmy community - we should be Lemmy compatible and can investigate other platform compatabilities later.
-
 - **118.3 - Compose improvements** - We will need to be able to compose to communities as well, they may have a different type of object to send. We should look into improving the UX of the compose (New Post) page. We should create a control to support @mention and #hashtag; something that shows an auto-complete dropdown and selection of known actors. When a Create is generated and sent to the outbox, the outbox should be parsing these mentions and hashtags, we should be formatting them similar to mastodon and filling in fields that help the recipient system handle this (populate tags and mentions).
 
 - **119.1 - Profile improvements** - The profiles Likes tab should render the liked object with some kind of indication that it was Liked - not just a link to the like.
@@ -116,6 +114,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **118.2 — Communities: Post to a Remote (Lemmy) Community as a Lemmy-compatible Page (DONE)** — Compose detects a remote (different-host) community and posts a `Page` (`attributedTo`=[author,community], `to`=[community,as#Public], `cc`=[followers], `content`=HTML, `source`=markdown) via a signed `Create` to the community's inbox; local communities still post a `Note`. Dockerfile now ships `libgssapi-krb5-2` (outbound HTTPS federation). Wire format confirmed Lemmy-compatible; local post live-verified (HTTP 202, Note). Live Lemmy delivery blocked by a sandbox TLS quirk (lemmy.ml rejects .NET's handshake; host curl succeeds). [changes/11802](docs/changes/11802-phase118-communities-lemmy-page-post.md)
+
 - **118.1 — Communities: WebFinger-then-Follow (DONE)** — Peers tab "Follow as this community" now accepts a remote handle (`!community@host` / `@user@host`); new "Look up" button resolves it via WebFinger (home proxy) with a "Will follow" preview; `!` prefers a Lemmy Group. Full IRIs accepted directly. Live-verified: `@alice@iris.luit.ink` → "Will follow: alice (…/ap/v1/u/alice)"; `!rust@lemmy.ml` → graceful "Could not reach". [changes/11801](docs/changes/11801-phase118-communities-webfinger-follow.md)
 
 - **117.6 — Feed Items with Replies: Parent Media (DONE)** — "In reply to" context card now shows the parent's media attachments via `MediaGallery`. Live-verified: reply to a post with image shows the image in the context card. [changes/11706](docs/changes/11706-phase117-feed-items-with-replies.md)
@@ -123,8 +123,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **117.5 — Feed Content: Filter Own Replies (DONE)** — Extended 117.1's reply filter to the actor's own outbox: home feed now shows only top-level content by default; `?depth` opts in to replies (own + followed). 4 updated/new tests. 1,143 total pass. [changes/11705](docs/changes/11705-phase117-feed-content-filtering.md)
 
 - **117.4 — Common Actor Card (DONE)** — Upgraded `ActorCard` with banner support (avatar overlap), type badges (Community/Bot), 2-line summary clamp, and inline moderation (Block/Mute/Report) via `ShowModeration` param. Correct href for Group actors. Live-verified: directory, followers/following, search. [changes/11704](docs/changes/11704-phase117-actor-card.md)
-
-- **117.3 — Directory: Persist Remote Actors for "All Known" (DONE)** — `RemoteActorPersister` persists remote actors to durable store on first fetch via `IActorDocumentFetcher`. "All known" now shows remote actors. 11 new tests. 1,125 total pass. [changes/11703](docs/changes/11703-phase117-directory-remote-actors.md)
 
 
 ## Keeping the docs lean
