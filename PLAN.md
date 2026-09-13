@@ -132,8 +132,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 - **131.5 — HSTS + cookie hardening (DONE)** — Added `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (HTTPS-only, placed after `UseForwardedHeaders` so the proxy's scheme is seen). Cookie already hardened (HttpOnly, SameSite=Lax, Secure=SameAsRequest) — verified. 0 console errors. [changes/13105](docs/changes/13105-phase131-hsts-cookie-hardening.md)
 
-- **131.2 — Security: dependency audit + CSP review (DONE)** — Added 5 security headers (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy). CSP uses `'wasm-unsafe-eval'` (Blazor WASM requirement). Dependency audit: no known CVEs. 0 console errors. [changes/13102](docs/changes/13102-phase131-security-headers.md)
-
 ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**
