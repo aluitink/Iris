@@ -2951,6 +2951,18 @@ ul.object-list li {
     margin-top: var(--space-125);
 }
 
+.peers-add-hint {
+    margin-top: var(--space-1);
+    font-size: 0.875em;
+}
+
+.peers-add-resolved {
+    margin-top: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-inset);
+    border-radius: var(--radius-sm);
+}
+
 .btn-primary {
     background: var(--accent);
     color: var(--btn-fg);

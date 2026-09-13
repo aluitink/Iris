@@ -230,10 +230,26 @@ else
                 <div class="form-group">
                     <label for="peer-iri">Follow a community or actor</label>
                     <input id="peer-iri" type="text" @bind="PeerIriInput"
-                           placeholder="https://host/ap/v1/c/name  or  https://host/ap/v1/u/handle"
+                            placeholder="!community@host or user@host, or a full IRI (https://…)"
                            autocomplete="off" />
+                    <p class="muted peers-add-hint">
+                        Use a Lemmy community handle with a <code>!</code> prefix (e.g.
+                        <code>!rust@lemmy.ml</code>) to look it up by WebFinger, or paste a full
+                        actor/community IRI directly.
+                    </p>
                 </div>
+                @if (PeerResolvedName is not null)
+                {
+                    <div class="peers-add-resolved" role="status">
+                        Will follow: <strong>@PeerResolvedName</strong>
+                        <span class="muted">(@PeerResolvedIri)</span>
+                    </div>
+                }
                 <div class="form-actions">
+                    <button type="button" class="btn" @onclick="ResolvePeerInputAsync"
+                            disabled="@(IsResolvingPeer || string.IsNullOrWhiteSpace(PeerIriInput))">
+                        @if (IsResolvingPeer) { <span>Looking up…</span> } else { <span>Look up</span> }
+                    </button>
                     <button type="submit" class="btn btn-primary" disabled="@(IsAddingPeer || string.IsNullOrWhiteSpace(PeerIriInput))">
                         @if (IsAddingPeer) { <span>Following…</span> } else { <span>Follow as this community</span> }
                     </button>
@@ -1071,6 +1087,14 @@ else
     private bool IsUnfollowingPeer { get; set; }
     private string? UnfollowingPeerIri { get; set; }
 
+    // Phase 118.1 — WebFinger lookup for the "follow as this community" flow. The operator may
+    // type a handle (!community@host or @user@host) instead of a full IRI; "Look up" resolves it
+    // via WebFinger (through the home proxy) and caches the result so "Follow" uses the resolved
+    // IRI. PeerResolvedIri is null until a successful lookup or when the input is a plain IRI.
+    private bool IsResolvingPeer { get; set; }
+    private Iri? PeerResolvedIri { get; set; }
+    private string? PeerResolvedName { get; set; }
+
     private async Task LoadOwnersAsync()
     {
         var localModeration = Session.LocalModeration;
@@ -1234,9 +1258,26 @@ else
         }
 
         var raw = PeerIriInput.Trim();
-        if (string.IsNullOrWhiteSpace(raw) || !Uri.TryCreate(raw, UriKind.Absolute, out _))
+        if (string.IsNullOrWhiteSpace(raw))
         {
-            PeerError = "Enter a valid actor or community IRI (a full https:// URL).";
+            PeerError = "Enter a handle (!community@host / @user@host) or a full IRI.";
+            return;
+        }
+
+        // Resolve the target IRI: use the cached WebFinger result when present, otherwise treat the
+        // input as a literal IRI (a full https:// URL). A handle without a prior lookup is rejected.
+        Iri targetIri;
+        if (PeerResolvedIri is { } resolved)
+        {
+            targetIri = resolved;
+        }
+        else if (Uri.TryCreate(raw, UriKind.Absolute, out _))
+        {
+            targetIri = new Iri(raw);
+        }
+        else
+        {
+            PeerError = "Use 'Look up' to resolve a handle first, or paste a full IRI (https://…).";
             return;
         }
 
@@ -1246,10 +1287,12 @@ else
 
         try
         {
-            var result = await localModeration.FollowAsCommunityAsync(communityIri, new Iri(raw));
+            var result = await localModeration.FollowAsCommunityAsync(communityIri, targetIri);
             if (result.IsSuccess)
             {
                 PeerIriInput = string.Empty;
+                PeerResolvedIri = null;
+                PeerResolvedName = null;
                 Ui.InvalidateActor(communityIri);
                 await LoadPeersAsync();
             }
@@ -1266,6 +1309,180 @@ else
         {
             IsAddingPeer = false;
             StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Resolves the peer input via WebFinger (through the home proxy) when it is a handle
+    /// (!community@host or @user@host), or accepts it as a literal IRI. Caches the resolved IRI and
+    /// a display name for the "Will follow" preview. A <c>!</c> prefix prefers a Lemmy <c>Group</c>
+    /// over a <c>Person</c> when the WebFinger response contains both.
+    /// </summary>
+    private async Task ResolvePeerInputAsync()
+    {
+        var raw = PeerIriInput.Trim();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return;
+        }
+
+        // A full IRI needs no lookup — accept it directly.
+        if (Uri.TryCreate(raw, UriKind.Absolute, out _))
+        {
+            PeerResolvedIri = new Iri(raw);
+            PeerResolvedName = DisplayHandle(raw);
+            PeerError = null;
+            StateHasChanged();
+            return;
+        }
+
+        var handle = ParseRemoteHandle(raw);
+        if (handle is null)
+        {
+            PeerError = "Enter a handle like <code>!community@host</code> or <code>@user@host</code>, or a full IRI.";
+            PeerResolvedIri = null;
+            PeerResolvedName = null;
+            StateHasChanged();
+            return;
+        }
+
+        IsResolvingPeer = true;
+        PeerError = null;
+        PeerResolvedIri = null;
+        PeerResolvedName = null;
+        StateHasChanged();
+
+        try
+        {
+            var user = handle.Value.user;
+            var host = handle.Value.host;
+            var preferGroup = handle.Value.preferGroup;
+
+            var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
+            var webfingerBody = await Session.ProxyGetAsync(
+                webfingerUrl,
+                "application/jrd+json, application/json; q=0.9",
+                CancellationToken.None);
+
+            if (webfingerBody is null)
+            {
+                PeerError = $"Could not reach {host}. Check the domain and try again.";
+                return;
+            }
+
+            var actorIri = ParseWebFingerActorIri(webfingerBody, preferGroup);
+            if (actorIri is null)
+            {
+                PeerError = $"No account found for {(preferGroup ? "!" : "@")}{user}@{host}.";
+                return;
+            }
+
+            PeerResolvedIri = actorIri;
+            PeerResolvedName = DisplayHandle(actorIri.ToString()!);
+        }
+        catch (Exception)
+        {
+            PeerError = "The WebFinger lookup failed. Please try again.";
+        }
+        finally
+        {
+            IsResolvingPeer = false;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Parses a remote handle (<c>user@domain</c>) into its user, host, and preferGroup parts. A
+    /// leading <c>!</c> marks a Lemmy community handle (prefer a Group). Returns null when the input
+    /// is not a recognizable remote handle.
+    /// </summary>
+    private static (string user, string host, bool preferGroup)? ParseRemoteHandle(string query)
+    {
+        var q = query.Trim();
+        var preferGroup = false;
+        if (q.StartsWith('!'))
+        {
+            preferGroup = true;
+            q = q[1..];
+        }
+        q = q.TrimStart('@');
+        var atIndex = q.LastIndexOf('@');
+        if (atIndex <= 0 || atIndex >= q.Length - 1)
+        {
+            return null;
+        }
+
+        var user = q[..atIndex];
+        var host = q[(atIndex + 1)..];
+
+        if (host.Length == 0 || (!host.Contains('.') && host != "localhost"))
+        {
+            return null;
+        }
+
+        if (user.Length == 0 || user.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return (user, host, preferGroup);
+    }
+
+    /// <summary>
+    /// Parses a WebFinger response and extracts the actor IRI from the <c>self</c> link. When
+    /// <paramref name="preferGroup"/> is true (Lemmy community handles), prefers a <c>Group</c> type
+    /// over a <c>Person</c> type when both are present.
+    /// </summary>
+    private static Iri? ParseWebFingerActorIri(string json, bool preferGroup = false)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            Iri? fallback = null;
+            foreach (var link in links.EnumerateArray())
+            {
+                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
+                var type = link.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (rel is not "self")
+                {
+                    continue;
+                }
+
+                if (type is null || type.Contains("activity", StringComparison.OrdinalIgnoreCase) || type.Contains("ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
+                    if (href is not null && Iri.TryParse(href, out var iri))
+                    {
+                        var properties = link.TryGetProperty("properties", out var p) ? p : default;
+                        var apType = properties.ValueKind == System.Text.Json.JsonValueKind.Object
+                            && properties.TryGetProperty("https://www.w3.org/ns/activitystreams#type", out var at)
+                            ? at.GetString()
+                            : null;
+
+                        if (preferGroup && apType is not null)
+                        {
+                            if (apType.Equals("Group", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return iri;
+                            }
+                        }
+
+                        fallback ??= iri;
+                    }
+                }
+            }
+
+            return fallback;
+        }
+        catch
+        {
+            return null;
         }
     }
 
