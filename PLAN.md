@@ -94,8 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
     ## Up Next
  
-- **121.6 - Actor profile: remove redundant "Posts" section header and description** — Below the "Posts" tab there's a second "Posts" header + implementation-detail description. Remove both.
-
 - **121.7 - Boosted posts: show inline content preview** — Boosted posts only show "View boosted post →" with no content preview. Show truncated content inline like Mastodon.
 
 - **122.1 - General UI/UX review** - perform a visual inspection of all aspects of the project so far. Create new 123.* items for anything we find that could be improved. This review will cover changes made in 121.* - continue and repeate to tweak and enhance.
@@ -110,6 +108,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
   
+- **121.6 — Actor profile: remove redundant "Posts" header (DONE)** — Removed `Title="Posts"` and `Description="..."` from the `PagedCollection` in the actor profile's Posts tab. The tab label already identifies the section. Live-verified, 0 console errors. [changes/12106](docs/changes/12106-phase121-actor-profile-redundant-posts.md)
+
 - **121.5 — Public timeline: hide "To followers" audience line (DONE)** — `FilterDisplayAudience()` in `ObjectView` strips follower/following collection IRIs from the rendered "To" line. Followers-only posts show no "To" line; posts with both a followers cc and a concrete mention show only the mention. Live-verified 3 post types, 0 console errors. [changes/12105](docs/changes/12105-phase121-hide-follower-audience.md)
 
 - **121.4 — Home timeline empty state (DONE, no code change)** — Already implemented in Phase 34.25: `HomeTimeline.razor` renders an icon + "Your timeline is empty." + "Follow people to see their posts here." + "Browse the directory →" link. 120.1's finding was based on a stale observation. [changes/12104](docs/changes/12104-phase121-home-empty-state.md)
@@ -118,7 +118,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 - **121.2 — Compose mobile: stack char counter + CW toggle on mobile (DONE)** — Added mobile media query (≤768px): `.compose-meta` wraps, char counter gets its own row (`order: -1` + `flex-basis: 100%`), CW toggle gets its own row. Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12102](docs/changes/12102-phase121-compose-mobile-meta-stacking.md)
 
-- **121.1 — Notifications: replace raw IRI links with friendly labels (DONE)** — `NotificationRow` now uses `FriendlyLabel()` instead of `ShortLabel()` for the notification target link when no content preview exists. Actor IRIs → "View {handle}'s profile", note IRIs → "View note", community IRIs → "View {name}". Live-verified: follow requests + likes show friendly labels. 88/88 web tests pass. [changes/12101](docs/changes/12101-phase121-notification-friendly-labels.md)
 ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**
