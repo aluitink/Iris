@@ -752,8 +752,9 @@ public sealed class FeedServiceTests
     }
 
     [Fact]
-    public async Task Feed_OwnReply_IsKept()
+    public async Task Feed_OwnReply_FilteredByDefault()
     {
+        // 117.5: the actor's own replies to other actors are filtered from the home feed by default.
         var (service, _) = Build(persistence: SeedLocal(persistence =>
         {
             var alice = Actor(LocalHost, "alice");
@@ -768,10 +769,29 @@ public sealed class FeedServiceTests
 
         var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
 
-        // Both alice's posts should appear (own replies are kept).
+        // Only the top-level post appears; the reply is filtered out.
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/a-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_OwnReply_IncludedWithThreadDepth()
+    {
+        // 117.5: with threadDepth > 0, the actor's own replies are included.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, alice, "a-1", "alice top-level");
+            AddReply(persistence, alice, "a-2", "alice reply to bob", bob);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1);
+
+        // Both the post and the reply appear when depth is requested.
         Assert.Equal(2, feed.Count);
-        Assert.Equal($"https://{LocalHost}/notes/a-2", IdOf(feed[0]));
-        Assert.Equal($"https://{LocalHost}/notes/a-1", IdOf(feed[1]));
     }
 
     [Fact]
@@ -879,9 +899,9 @@ public sealed class FeedServiceTests
     }
 
     [Fact]
-    public async Task Feed_OwnReply_AlwaysKept_RegardlessOfDepth()
+    public async Task Feed_OwnAndFollowReplies_FilteredByDefault()
     {
-        // 117.1: the actor's own replies are always kept, even without threadDepth.
+        // 117.5: both the actor's own replies and followed actors' replies are filtered by default.
         var (service, _) = Build(persistence: SeedLocal(persistence =>
         {
             var alice = Actor(LocalHost, "alice");
@@ -896,11 +916,38 @@ public sealed class FeedServiceTests
 
         var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
 
-        // alice's own reply (a-2) is kept; bob's reply (b-2) is filtered.
-        Assert.Equal(3, feed.Count);
+        // Only top-level posts remain: alice's a-1 and bob's b-1. Both replies are filtered.
+        Assert.Equal(2, feed.Count);
+        var ids = feed.Select(IdOf).ToHashSet();
+        Assert.Contains($"https://{LocalHost}/notes/a-1", ids);
+        Assert.Contains($"https://{LocalHost}/notes/b-1", ids);
+        Assert.DoesNotContain($"https://{LocalHost}/notes/a-2", ids);
+        Assert.DoesNotContain($"https://{LocalHost}/notes/b-2", ids);
+    }
+
+    [Fact]
+    public async Task Feed_OwnAndFollowReplies_IncludedWithThreadDepth()
+    {
+        // 117.5: with threadDepth > 0, both own and follow replies are included.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, alice, "a-1", "alice top-level");
+            AddReply(persistence, alice, "a-2", "alice reply to bob", Actor(LocalHost, "bob"));
+            AddPost(persistence, bob, "b-1", "bob post");
+            AddReply(persistence, bob, "b-2", "bob reply to alice", Actor(LocalHost, "alice"));
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1);
+
+        // All four items appear when depth is requested.
+        Assert.Equal(4, feed.Count);
         var ids = feed.Select(IdOf).ToHashSet();
         Assert.Contains($"https://{LocalHost}/notes/a-2", ids);
-        Assert.DoesNotContain($"https://{LocalHost}/notes/b-2", ids);
+        Assert.Contains($"https://{LocalHost}/notes/b-2", ids);
     }
 
     [Fact]

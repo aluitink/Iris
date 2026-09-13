@@ -123,8 +123,9 @@ public sealed class FeedService : IFollowFeedService
     /// safeguard) and caps the result to <see cref="FeedOptions.MaxItems"/>.
     /// </remarks>
     /// <param name="actorIri">The local actor whose feed is being built.</param>
-    /// <param name="threadDepth">When non-null and > 0, replies up to this depth from followed actors are
-    /// included (117.1). When null or 0, all replies from followed actors are filtered out.</param>
+    /// <param name="threadDepth">When non-null and > 0, replies (from both the actor's own outbox and
+    /// followed actors' outboxes) are included in the feed (117.1, 117.5). When null or 0, all replies
+    /// are filtered out — the home timeline shows only top-level content.</param>
     /// <param name="ct">Cancellation token.</param>
     private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, int? threadDepth, CancellationToken ct)
     {
@@ -148,11 +149,18 @@ public sealed class FeedService : IFollowFeedService
 
         var feed = new List<IObjectOrLink>();
 
-        // The actor's own posts (54.17): always included, regardless of follows. The actor is local (the
-        // feed endpoint only resolves local actors), so read their outbox from the local store. Own
-        // replies are kept — the home timeline shows the signed-in actor's own content in full.
+        // The actor's own posts (54.17): included regardless of follows. The actor is local (the feed
+        // endpoint only resolves local actors), so read their outbox from the local store. Own replies
+        // to other actors' content are filtered out by default (117.5) — the home timeline shows
+        // top-level content; replies are visible on the parent post's page. The threadDepth parameter
+        // allows opting in to include own replies (consistent with the followed-actor reply filter).
         foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
         {
+            if (threadDepth is not (> 0) && IsFollowReply(item))
+            {
+                continue;
+            }
+
             feed.Add(item);
         }
 
@@ -171,10 +179,9 @@ public sealed class FeedService : IFollowFeedService
 
             foreach (var item in items)
             {
-                // 117.1: thread-aware reply filtering. Replies from followed actors are excluded from the
-                // home feed by default (they appear under the parent post's replies section). The
-                // threadDepth parameter allows including replies up to a given depth. The actor's own
-                // replies are always kept (they are merged from the actor's own outbox, not here).
+                // 117.1/117.5: thread-aware reply filtering. Replies from followed actors are excluded
+                // from the home feed by default (they appear under the parent post's replies section).
+                // The threadDepth parameter allows opting in to include replies.
                 if (threadDepth is not (> 0) && IsFollowReply(item))
                 {
                     continue;
