@@ -270,3 +270,5 @@
  - **Phase 125.1 — Hardening: error & empty state audit (IN PROGRESS):** Playwright-driven audit of error/empty/edge states across all pages. Findings become 126.* fix items.
 
  - **Phase 125.1 — Hardening: error & empty state audit (COMPLETE, review-only):** Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1 (stats row counts non-post activities) + 126.2 (notification empty name/verb). [changes/12501](changes/12501-phase125-error-empty-state-audit.md).
+
+ - **Phase 126.1 — Actor detail stats row: count only Note/Article posts (COMPLETE):** Replaced outbox totalItems with first-page Note/Article count. verifier87 "2"→"0", bob "13"→"4". 0 console errors. [changes/12601](changes/12601-phase126-actor-stats-post-count.md).
