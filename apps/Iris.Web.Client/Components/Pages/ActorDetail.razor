@@ -30,7 +30,26 @@ else if (ActorDoc is null)
 else
 {
     <div class="actor-detail-header">
-        <ActorProfile Actor="ActorDoc" ActorId="@(ActorDoc.Id)" />
+        <div class="actor-detail-header-main">
+            <ActorProfile Actor="ActorDoc" ActorId="@(ActorDoc.Id)" />
+            @if (HasStats)
+            {
+                <div class="actor-detail-stats">
+                    @if (PostCount is { } postCt)
+                    {
+                        <span class="actor-detail-stat"><strong>@postCt</strong> post@(postCt == 1 ? string.Empty : "s")</span>
+                    }
+                    @if (FollowerCount is { } followerCt)
+                    {
+                        <span class="actor-detail-stat"><strong>@followerCt</strong> follower@(followerCt == 1 ? string.Empty : "s")</span>
+                    }
+                    @if (FollowingCount is { } followingCt)
+                    {
+                        <span class="actor-detail-stat"><strong>@followingCt</strong> following</span>
+                    }
+                </div>
+            }
+        </div>
         @if (!IsSelf && Session.IsSignedIn)
         {
             <div class="actor-detail-actions">
@@ -260,6 +279,9 @@ else
 
     private int? FollowerCount { get; set; }
     private int? FollowingCount { get; set; }
+    private int? PostCount { get; set; }
+
+    private bool HasStats => FollowerCount is not null || FollowingCount is not null || PostCount is not null;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -309,12 +331,14 @@ else
             {
                 FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
                 FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
+                PostCount = await GetFirstPageTotalAsync(client, actorIri.OutboxOf());
             }
             else
             {
                 // Signed-out: read the public collection pages over plain HTTP (88.4).
                 FollowerCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowersOf());
                 FollowingCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowingOf());
+                PostCount = await GetFirstPageTotalAnonymousAsync(actorIri.OutboxOf());
             }
 
             StateHasChanged();

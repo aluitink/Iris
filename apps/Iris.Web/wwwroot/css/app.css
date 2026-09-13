@@ -2496,9 +2496,30 @@ ul.object-list li {
     flex-wrap: wrap;
 }
 
-.actor-detail-header .actor-profile {
+.actor-detail-header-main {
     flex: 1;
     min-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.actor-detail-header-main .actor-profile {
+    flex: 1;
+    min-width: 200px;
+}
+
+.actor-detail-stats {
+    display: flex;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.actor-detail-stat strong {
+    color: var(--text-primary);
+    font-weight: 600;
 }
 
 .actor-detail-actions {
