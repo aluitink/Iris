@@ -115,8 +115,22 @@
         }
     }
 
+    protected override void OnInitialized()
+    {
+        _notifications.UnreadCountChanged += OnUnreadCountChanged;
+    }
+
+    private void OnUnreadCountChanged()
+    {
+        if (_session.UserId is { } id)
+        {
+            _ = LoadAsync(id);
+        }
+    }
+
     public void Dispose()
     {
+        _notifications.UnreadCountChanged -= OnUnreadCountChanged;
         _cts?.Cancel();
         _timer?.Dispose();
         _cts?.Dispose();

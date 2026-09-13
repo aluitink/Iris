@@ -10,6 +10,14 @@ namespace Iris.Web.Client.Accounts;
 /// </summary>
 public sealed class NotificationService
 {
+    /// <summary>
+    /// Raised on the UI thread whenever the unread count changes (after a poll, a mark-all, or a
+    /// manual refresh). Subscribers (the <c>NotificationBadge</c> component, the <c>Notifications</c>
+    /// page) re-render from this signal so the badge clears in real-time rather than waiting for
+    /// the next 60-second poll.
+    /// </summary>
+    public event Action? UnreadCountChanged;
+
     private readonly HttpClient _http;
 
     /// <summary>
@@ -75,6 +83,12 @@ public sealed class NotificationService
             new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         return page ?? new NotificationPage([], 0, null);
     }
+
+    /// <summary>
+    /// Notifies subscribers that the unread count has changed. Called by the <c>Notifications</c>
+    /// page after a mark-all so the badge clears in real-time.
+    /// </summary>
+    public void RaiseUnreadCountChanged() => UnreadCountChanged?.Invoke();
 
     private sealed record UnreadCountDto(int Unread);
 }

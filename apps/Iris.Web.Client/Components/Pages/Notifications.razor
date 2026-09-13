@@ -152,6 +152,7 @@ else
 
         _markingRead = true;
         await NotificationService.MarkAllReadAsync(uid);
+        NotificationService.RaiseUnreadCountChanged();
         _markingRead = false;
         StateHasChanged();
     }
