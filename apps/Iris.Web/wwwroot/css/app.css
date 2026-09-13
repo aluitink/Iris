@@ -703,6 +703,60 @@ ul.object-list li {
     background: var(--surface-inset);
 }
 
+/* Reply thread (Phase 132.3): the object-detail Replies tab renders replies as a nested thread.
+   Each .reply-node is one reply (its ObjectView card) + an optional "N replies" toggle + its nested
+   children (indented). Children are collapsed by default (the --expanded class reveals them). */
+.reply-thread {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.reply-node {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.reply-node-card {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-inset);
+}
+
+.reply-node-toggle-row {
+    padding-left: var(--space-4);
+}
+
+.reply-node-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.reply-node-toggle:hover {
+    text-decoration: underline;
+}
+
+/* Nested children: indented + a left rule to show the thread lineage. */
+.reply-node-children {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding-left: var(--space-4);
+    border-left: 2px solid var(--border);
+}
+
 .object-item {
     display: flex;
     flex-direction: column;

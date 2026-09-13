@@ -166,14 +166,14 @@ else if (ObjectDoc is null)
                             <span class="muted">Loading replies…</span>
                         </div>
                     }
-                    else if (Replies is { Count: > 0 })
+                    else if (ReplyTree is { Count: > 0 })
                     {
-                        <ul class="object-list">
-                            @foreach (var reply in Replies)
+                        <div class="reply-thread">
+                            @foreach (var root in ReplyTree)
                             {
-                                <li><ObjectView Item="reply" /></li>
+                                <ReplyNode Node="root" />
                             }
-                        </ul>
+                        </div>
                         @if (HasMoreReplies)
                         {
                             <div class="replies-more">
@@ -235,6 +235,15 @@ else if (ObjectDoc is null)
     private bool HasMoreReplies { get; set; }
     private bool LoadingMoreReplies { get; set; }
     private Iri? RepliesObjectIri { get; set; }
+    private List<ReplyThreadNode> ReplyTree { get; set; } = [];
+
+    /// <summary>
+    /// The maximum depth of the reply-thread walk (Phase 132.3). The root's direct replies are depth 1;
+    /// their replies are depth 2; and so on. Bounding the depth keeps the (bounded) number of collection
+    /// walks from exploding on long, deep threads — a reply at the depth limit renders with its own
+    /// replies un-walked (it shows no "N replies" affordance for replies this instance never fetched).
+    /// </summary>
+    private const int MaxReplyDepth = 3;
     private int LikeCount { get; set; }
     private int BoostCount { get; set; }
     private int? ReplyCount { get; set; }
@@ -506,6 +515,7 @@ else if (ObjectDoc is null)
             RepliesLoading = false;
         }
 
+        await BuildReplyTreeAsync();
         StateHasChanged();
     }
 
@@ -558,7 +568,146 @@ else if (ObjectDoc is null)
             LoadingMoreReplies = false;
         }
 
+        await BuildReplyTreeAsync();
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// Builds the reply thread tree (Phase 132.3) from the loaded flat <see cref="Replies"/> (the
+    /// object's direct replies). For each direct reply, walks that reply's own <c>/replies</c>
+    /// collection (its direct replies-to-replies), and recurses to <see cref="MaxReplyDepth"/> so the
+    /// thread renders nested (a reply's replies beneath it, collapsed by default in
+    /// <see cref="ReplyNode"/>). Each node's document is resolved via <c>GetObjectAsync</c>;
+    /// unresolvable nodes are dropped. The walk is bounded in both depth (<see cref="MaxReplyDepth"/>)
+    /// and per-node breadth (20 items) so a long thread does not explode into an unbounded number of
+    /// collection fetches.
+    /// </summary>
+    private async Task BuildReplyTreeAsync()
+    {
+        if (Replies.Count == 0)
+        {
+            ReplyTree = [];
+            return;
+        }
+
+        ReplyTree = await BuildSubtreeAsync(Replies, depth: 1);
+    }
+
+    /// <summary>
+    /// Recursively builds the thread nodes for a set of a parent's direct replies
+    /// (<paramref name="replies"/>), walking each reply's own <c>/replies</c> one level down and
+    /// recursing until <see cref="MaxReplyDepth"/> (a reply at the depth limit renders with no children —
+    /// its replies were not walked). <paramref name="depth"/> is the depth of <paramref name="replies"/>
+    /// (the root's direct replies are depth 1).
+    /// </summary>
+    private async Task<List<ReplyThreadNode>> BuildSubtreeAsync(List<IObject?> replies, int depth)
+    {
+        var nodes = new List<ReplyThreadNode>(replies.Count);
+
+        foreach (var reply in replies)
+        {
+            var iri = reply.ResolveObjectIri();
+            if (iri is not { } ri)
+            {
+                continue;
+            }
+
+            // This reply's direct replies (one level down), walked only while we have depth to spare.
+            var children = depth < MaxReplyDepth ? await BuildSubtreeAsync(await LoadResolvedRepliesAsync(ri), depth + 1) : [];
+
+            nodes.Add(new ReplyThreadNode(ri, reply, children));
+        }
+
+        return nodes;
+    }
+
+    /// <summary>
+    /// Loads and resolves one object's direct replies (its <c>/replies</c> collection, bounded to 20
+    /// items) as a flat list of documents — the input to <see cref="BuildSubtreeAsync"/>'s next level.
+    /// Unresolvable replies are skipped.
+    /// </summary>
+    private async Task<List<IObject?>> LoadResolvedRepliesAsync(Iri objectIri)
+    {
+        var resolved = new List<IObject?>();
+        if (Client is not { } client)
+        {
+            return resolved;
+        }
+
+        try
+        {
+            await foreach (var item in client.GetRepliesAsync(objectIri, new CollectionQuery { Limit = 20 }, CancellationToken.None))
+            {
+                var replyIri = item.ResolveObjectIri();
+                if (replyIri is not { } ri)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var obj = await client.GetObjectAsync(ri, CancellationToken.None);
+                    if (obj is not null)
+                    {
+                        resolved.Add(obj);
+                    }
+                }
+                catch
+                {
+                    // Skip unresolvable replies (404, network error, etc.).
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: the node renders with the replies we could fetch (possibly none).
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
+    /// Loads one object's direct replies (its <c>/replies</c> collection, bounded to 20 items), resolves
+    /// each to its document, and returns them as <see cref="ReplyThreadNode"/> leaves (their own children
+    /// are walked one level deeper by the caller's recursion). Unresolvable replies are skipped.
+    /// </summary>
+    private async Task<List<ReplyThreadNode>> LoadDirectRepliesAsync(Iri objectIri)
+    {
+        var leaves = new List<ReplyThreadNode>();
+        if (Client is not { } client)
+        {
+            return leaves;
+        }
+
+        try
+        {
+            await foreach (var item in client.GetRepliesAsync(objectIri, new CollectionQuery { Limit = 20 }, CancellationToken.None))
+            {
+                var replyIri = item.ResolveObjectIri();
+                if (replyIri is not { } ri)
+                {
+                    continue;
+                }
+
+                IObject? obj = null;
+                try
+                {
+                    obj = await client.GetObjectAsync(ri, CancellationToken.None);
+                }
+                catch
+                {
+                    // Skip unresolvable replies (404, network error, etc.).
+                }
+
+                leaves.Add(new ReplyThreadNode(ri, obj, []));
+            }
+        }
+        catch
+        {
+            // Non-fatal: the node renders with the replies we could fetch (possibly none).
+        }
+
+        return leaves;
     }
 
     private async Task LoadParentAsync(IActivityPubClient client)
