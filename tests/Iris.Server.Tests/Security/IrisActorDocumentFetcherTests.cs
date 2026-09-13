@@ -1,5 +1,7 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Server.InMemory;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using ClientCollectionPage = Iris.Core.Collections.CollectionPage;
 
@@ -29,7 +31,7 @@ public class IrisActorDocumentFetcherTests
 
         Assert.NotNull(actor);
         Assert.Equal("alice", actor!.PreferredUsername);
-        Assert.Equal(1, client.GetActorCalls);
+        Assert.Equal(1, client.GetObjectCalls);
         Assert.Equal(1, cache.Count);
     }
 
@@ -47,7 +49,7 @@ public class IrisActorDocumentFetcherTests
         // Same document served from the cache on the second call; the client is not hit again.
         Assert.NotNull(first);
         Assert.Same(first, second);
-        Assert.Equal(1, client.GetActorCalls);
+        Assert.Equal(1, client.GetObjectCalls);
         Assert.Equal(1, cache.Count);
     }
 
@@ -65,7 +67,7 @@ public class IrisActorDocumentFetcherTests
         // Absent results are never cached, so the second call retries the fetch.
         Assert.Null(first);
         Assert.Null(second);
-        Assert.Equal(2, client.GetActorCalls);
+        Assert.Equal(2, client.GetObjectCalls);
         Assert.Equal(0, cache.Count);
     }
 
@@ -89,8 +91,40 @@ public class IrisActorDocumentFetcherTests
 
         Assert.Equal("carol", carol!.PreferredUsername);
         Assert.Equal("dave", dave!.PreferredUsername);
-        Assert.Equal(2, client.GetActorCalls);
+        Assert.Equal(2, client.GetObjectCalls);
         Assert.Equal(2, cache.Count);
+    }
+
+    [Fact]
+    public async Task GetActor_RemoteCommunity_PersistsItAndReturnsItForKeyResolution()
+    {
+        // 135.1: when the fetched document is a community Group, the fetcher persists it to the durable
+        // community store (via the RemoteCommunityPersister) so the community is served as known content,
+        // AND returns the Group (a Group IS an Actor) so the inbound key resolver can read its publicKey
+        // and validate the community's signatures.
+        var persistence = new InMemoryPersistenceProvider();
+        var communityPersister = new RemoteCommunityPersister(
+            persistence.Communities,
+            instanceBase: new Iri($"https://{AHost}/ap/v1"));
+
+        var remoteCommunity = new Group
+        {
+            Id = "https://lemmy.example/c/lemmyverse",
+            PreferredUsername = "lemmyverse",
+            Name = ["Lemmyverse"],
+        };
+        var client = new StubActivityPubClient(actor: null) { GroupDocument = remoteCommunity };
+        var cache = new RemoteActorCache();
+        var sut = new IrisActorDocumentFetcher(client, cache, null, communityPersister);
+
+        var actor = await sut.GetActorAsync(new Iri(remoteCommunity.Id));
+
+        // The community is returned (as an Actor) for key resolution …
+        Assert.NotNull(actor);
+        Assert.Same(remoteCommunity, actor);
+        // … and persisted to the durable community store.
+        Assert.True(await persistence.Communities.TryGetCommunityAsync(new Iri(remoteCommunity.Id), out var stored));
+        Assert.Equal(remoteCommunity.Id, stored!.Id);
     }
 
     // --- Helpers -----------------------------------------------------------------
@@ -112,25 +146,37 @@ public class IrisActorDocumentFetcherTests
         public Dictionary<Iri, Actor>? Documents { get; set; }
 
         /// <summary>
-        /// The number of times <see cref="IActivityPubClient.GetActorAsync"/> has been invoked.
+        /// An optional community (Group) document to return from <see cref="GetObjectAsync"/> (135.1 —
+        /// a fetched remote community is a Group, not an Actor). When set, it is returned for any IRI.
         /// </summary>
-        public int GetActorCalls { get; private set; }
+        public Group? GroupDocument { get; set; }
+
+        /// <summary>
+        /// The number of times <see cref="IActivityPubClient.GetObjectAsync"/> has been invoked (the
+        /// fetcher fetches the full object so a community Group is not dropped, 135.1).
+        /// </summary>
+        public int GetObjectCalls { get; private set; }
 
         /// <inheritdoc/>
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
-            => Task.FromResult<IObject?>(null);
+        {
+            GetObjectCalls++;
+            if (GroupDocument is { } group)
+            {
+                return Task.FromResult<IObject?>(group);
+            }
+
+            if (Documents is { } docs && docs.TryGetValue(objectId, out var doc))
+            {
+                return Task.FromResult<IObject?>(doc);
+            }
+
+            return Task.FromResult<IObject?>(_actor);
+        }
 
         /// <inheritdoc/>
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
-        {
-            GetActorCalls++;
-            if (Documents is { } docs && docs.TryGetValue(actorId, out var doc))
-            {
-                return Task.FromResult<Actor?>(doc);
-            }
-
-            return Task.FromResult(_actor);
-        }
+            => Task.FromResult<Actor?>(_actor);
 
         /// <inheritdoc/>
         public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default)

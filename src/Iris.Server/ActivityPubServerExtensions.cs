@@ -233,6 +233,10 @@ public static class ActivityPubServerExtensions
             // 117.3: persist newly fetched remote actors to the durable store so the directory's
             // "All known" scope can list actors the instance has encountered during federation.
             RemoteActorPersister? persister = null;
+            // 135.1: persist newly fetched remote communities (Group) to the durable community store
+            // so the communities the instance has interacted with (e.g. a Lemmy community it follows)
+            // are served as known content.
+            RemoteCommunityPersister? communityPersister = null;
             var persistence = sp.GetService<IPersistenceProvider>();
             if (persistence is not null)
             {
@@ -240,9 +244,17 @@ public static class ActivityPubServerExtensions
                     persistence.Actors,
                     instanceBase: options.BaseUri,
                     logger: sp.GetService<ILogger<RemoteActorPersister>>());
+                communityPersister = new RemoteCommunityPersister(
+                    persistence.Communities,
+                    instanceBase: options.BaseUri,
+                    logger: sp.GetService<ILogger<RemoteCommunityPersister>>());
             }
 
-            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache, persister);
+            return new IrisActorDocumentFetcher(
+                factory.Create(clientOptions, new HttpClientHandler()),
+                actorCache,
+                persister,
+                communityPersister);
         });
 
         // Outbound object fetch (24.1): the server→server delivery target for a Like / Announce (and an
@@ -1407,10 +1419,11 @@ public static class ActivityPubServerExtensions
     /// </para>
     /// </summary>
     /// <param name="context">The HTTP context (reads the <c>?iri</c> query value; negotiates the content type).</param>
-    /// <param name="persistence">The persistence provider (the actor store to look the cached document up in).</param>
+    /// <param name="persistence">The persistence provider (the actor store and community store to look the
+    /// cached document up in).</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <returns>The cached actor document (the stored document, serialized) when the instance has it;
-    /// <see cref="Results.NotFound"/> when the actor is unknown to the instance or <c>?iri</c> is
+    /// <returns>The cached actor or community document (the stored document, serialized) when the instance
+    /// has it; <see cref="Results.NotFound"/> when the actor is unknown to the instance or <c>?iri</c> is
     /// missing/malformed.</returns>
     private static async Task<IResult> ActorByIriHandler(
         HttpContext context,
@@ -1424,19 +1437,40 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
-        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
-            || actor is null)
+        // Look the cached document up in the actor store first (a local or remote person / organization
+        // actor), then the community store (a local or remote community Group, 135.1 — a remote Lemmy
+        // community the instance followed is persisted there by the RemoteCommunityPersister). The first
+        // hit wins; a community IRI is only ever in the community store, an actor IRI only in the actor
+        // store, so the order is a safety net rather than a discriminator.
+        IObject? doc = null;
+        if (await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            && actor is not null)
+        {
+            doc = actor;
+        }
+        else if (await persistence.Communities.TryGetCommunityAsync(actorIri, out var community, ct).ConfigureAwait(false)
+            && community is not null)
+        {
+            doc = community;
+        }
+
+        if (doc is null)
         {
             return Results.NotFound();
         }
 
-        // Serve the stored document as-is (a remote actor's document already carries its own
-        // inbox/outbox/followers/following IRIs on the remote instance; a local actor's document is
-        // the same one the /u/{handle} endpoint would build minus the Iris-local extensions, which a
-        // client fetching a *known* actor by IRI does not need — it reads the collections by their
-        // advertised IRIs). Deep-copy so we never mutate the stored actor.
-        var doc = ActivityJson.Deserialize<Actor>(ActivityJson.Serialize(actor))!;
-        var json = ActivityJson.Serialize(doc);
+        // Serve the stored document as-is (a remote actor's / community's document already carries its
+        // own inbox/outbox/followers/following IRIs on the remote instance; a local actor's / community's
+        // document is the same one the /u/{handle} or /c/{name} endpoint would build minus the Iris-local
+        // extensions, which a client fetching a *known* actor by IRI does not need — it reads the
+        // collections by their advertised IRIs). Deep-copy so we never mutate the stored document.
+        var copy = ActivityJson.Deserialize<IObjectOrLink>(ActivityJson.Serialize(doc)) as IObject;
+        if (copy is null)
+        {
+            return Results.NotFound();
+        }
+
+        var json = ActivityJson.Serialize(copy);
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
