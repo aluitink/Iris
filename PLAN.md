@@ -94,7 +94,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **126.2 — Notification rows: empty name and verb (LOW)** — Some notification cards render avatar but empty name link and empty verb. Ensure `DisplayNameFallback` always returns non-empty; add fallback verb for unknown types. [changes/12501](docs/changes/12501-phase125-error-empty-state-audit.md)
+- **127.1 — General UI/UX review (fourth pass) (MEDIUM)** — Visual sweep of all pages (desktop + mobile) via Playwright after the 126.* fixes. Find remaining rough edges, inconsistencies, or bugs. Review-only; findings become 128.* items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
 
 ## Inbox
 
@@ -106,6 +106,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **126.2 — Notification row: null-safe icon/verb rendering (DONE)** — Wrapped icon + verb in `@if (Activity is { })` guard. Prevents NRE on non-Activity inbox items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
+
 - **126.1 — Actor detail stats row: count only Note/Article posts (DONE)** — Replaced outbox `totalItems` with first-page Note/Article count. verifier87: "2"→"0"; bob: "13"→"4". [changes/12601](docs/changes/12601-phase126-actor-stats-post-count.md)
 
 - **125.1 — Hardening: error & empty state audit (DONE, review-only)** — Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1–126.2. [changes/12501](docs/changes/12501-phase125-error-empty-state-audit.md)
@@ -113,8 +115,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **124.1 — General UI/UX review (third pass) (DONE, review-only)** — Visual sweep of all pages (desktop + mobile). No new issues found. [changes/12401](docs/changes/12401-phase124-ui-ux-review.md)
 
 - **123.3 — Community detail: mobile layout for ownership banner (DONE)** — Mobile media query stacks `.community-detail-actions` vertically. [changes/12303](docs/changes/12303-phase123-community-mobile-banner.md)
-
-- **123.2 — Actor detail: enrich the profile header (DONE)** — Stats row (posts, followers, following) below ActorProfile card. [changes/12302](docs/changes/12302-phase123-actor-detail-stats.md)
 
 ## Keeping the docs lean
 

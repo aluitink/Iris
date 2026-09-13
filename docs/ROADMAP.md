@@ -272,3 +272,5 @@
  - **Phase 125.1 — Hardening: error & empty state audit (COMPLETE, review-only):** Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1 (stats row counts non-post activities) + 126.2 (notification empty name/verb). [changes/12501](changes/12501-phase125-error-empty-state-audit.md).
 
  - **Phase 126.1 — Actor detail stats row: count only Note/Article posts (COMPLETE):** Replaced outbox totalItems with first-page Note/Article count. verifier87 "2"→"0", bob "13"→"4". 0 console errors. [changes/12601](changes/12601-phase126-actor-stats-post-count.md).
+
+ - **Phase 126.2 — Notification row: null-safe icon/verb rendering (COMPLETE):** wrapped icon + verb in @if (Activity is { }) guard to prevent NRE on non-Activity inbox items. 0 console errors. [changes/12602](changes/12602-phase126-notification-null-safe-render.md).
