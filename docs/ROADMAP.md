@@ -266,3 +266,7 @@
  - **Phase 123.3 — Community detail: mobile layout for ownership banner (COMPLETE):** mobile media query stacks .community-detail-actions vertically (flex-direction: column, align-items: flex-start, width: 100%). Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12303](changes/12303-phase123-community-mobile-banner.md).
 
  - **Phase 124.1 — General UI/UX review (third pass) (COMPLETE, review-only):** visual inspection of all pages (desktop + mobile) via Playwright. No new issues found; 123.* fixes verified working (notification dedup, actor detail stats, community mobile banner). 0 console errors on every page. [changes/12401](changes/12401-phase124-ui-ux-review.md).
+
+ - **Phase 125.1 — Hardening: error & empty state audit (IN PROGRESS):** Playwright-driven audit of error/empty/edge states across all pages. Findings become 126.* fix items.
+
+ - **Phase 125.1 — Hardening: error & empty state audit (COMPLETE, review-only):** Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1 (stats row counts non-post activities) + 126.2 (notification empty name/verb). [changes/12501](changes/12501-phase125-error-empty-state-audit.md).
