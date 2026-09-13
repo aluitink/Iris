@@ -96,8 +96,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 - **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files; raw 11.4 MB, **gzipped 5.83 MB** (the "12.8 MB" figure was raw + JS). Target: < 5 MB gzipped. **Investigated + tabled (2026-09-13):** the dominant cost is BouncyCastle.Cryptography.wasm (5.1 MB raw / 2.56 MB gz, 44% of the payload), pulled in because Iris.Core's `Ed25519Key` references it. The WASM client never actually signs with Ed25519 at runtime (it always uses `WebCryptoSigningKeyFactory` → browser WebCrypto RSA), so BouncyCastle is dead weight in the payload — but the trimmer can't prove `Ed25519Key` is unreferenced (Iris.Core is a shared, non-trimmable project). The fix is to remove BouncyCastle from Iris.Core by implementing Ed25519 in pure .NET. **Attempted a pure-.NET `NativeEd25519` (RFC 8032, BigInteger-based extended coordinates) — base point + curve constant verified correct, but the scalar-mult/compress path produced wrong points for large scalars; bug not isolated before time-boxing. Reverted.** Backup of the partial implementation: `.tmp-ed25519-backup.cs`. Next attempt should debug `ScalarMult`/`Double`/`Add` against the RFC 8032 test vectors (a Python reference confirms the expected outputs). Alternative lower-risk path: multi-target Iris.Core (`net10.0` server with BouncyCastle + a WASM-friendly path) or accept the 5.83 MB gzipped payload as "good enough."
 
-- **131.5 - Disable anti-fogery tokens** - These AF tokens are causing login issues, they may work find in production but cause a lot of greif as we change the implementation and redeploy, we should disable for now.
-
 - **131.6 - Content caching policies** - During active development it seems our browser gets stuck with a cached versions of the website often. Investigate a method to create a shorter cache lifetime and or make it configurable so while we develope we can disable browser content caching to ensure a refresh actually fetches the new content.
 
 - **132.1 - Interaction tracking** - Objects have Likes, Shares, and Replies; We need to be able to track the counts of these for local and remote objects. We should be able to display the number of Likes/Shares/Replies on any object we can see. Ideally when we fetch an object via proxy or upon seeing an announce or reply, we attempt to sync up the like/share/reply counts by walking the object collections if available, if the collections cannot be walked or return nothing, we would serve the counts of any known Likes/Shares/Replies.
@@ -128,11 +126,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **131.5b — Disable anti-forgery tokens (dev) (DONE)** — The dev compose stack now defaults `Iris:Security:EnableAntiforgery=false` (env `IRIS_SECURITY_ENABLEANTIFORGERY`, override back with `=true`). Stale AF tokens (re-signed Data Protection key ring after a container rebuild) were 400-ing the login/register forms on every redeploy. The C# production default in `WebAppFactory` stays ON; only the dev stack is overridden, so no C# behavior or web-test changes. [changes/13105b](docs/changes/13105b-phase131-disable-antiforgery-dev.md)
+
 - **131.5 — HSTS + cookie hardening (DONE)** — Added `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (HTTPS-only, placed after `UseForwardedHeaders` so the proxy's scheme is seen). Cookie already hardened (HttpOnly, SameSite=Lax, Secure=SameAsRequest) — verified. 0 console errors. [changes/13105](docs/changes/13105-phase131-hsts-cookie-hardening.md)
 
 - **131.2 — Security: dependency audit + CSP review (DONE)** — Added 5 security headers (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy). CSP uses `'wasm-unsafe-eval'` (Blazor WASM requirement). Dependency audit: no known CVEs. 0 console errors. [changes/13102](docs/changes/13102-phase131-security-headers.md)
-
-- **131.1 — Performance: home feed load time (DONE, measurement-only)** — Cold load: ~1s to first post (target <3s met). WASM bootstrap (12.8 MB / 66 files) is the dominant cost. No optimization needed at this scale. [changes/13101](docs/changes/13101-phase131-home-feed-performance.md)
 
 - **130.3 — General UI/UX review (fifth pass) (DONE)** — Visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias). 0 console errors. Review cycle converged (5 passes). [changes/13003](docs/changes/13003-phase130-ui-ux-review-pass5.md)
 
