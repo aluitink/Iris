@@ -1,5 +1,6 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server.Security;
 
@@ -28,10 +29,11 @@ public class RemoteKeyCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.Key"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public RemoteKeyCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public RemoteKeyCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.Key;
-        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
+        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity), metrics);
     }
 
     /// <summary>
@@ -43,6 +45,11 @@ public class RemoteKeyCache
     /// The number of entries currently held (for observability/testing).
     /// </summary>
     public int Count => _cache.Count;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Removes the entry for <paramref name="key"/> (e.g. after key rotation).

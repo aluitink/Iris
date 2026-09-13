@@ -126,13 +126,15 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<RemoteActorCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new RemoteActorCache(policies?.RemoteActor);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new RemoteActorCache(policies?.RemoteActor, metrics: metrics);
         });
 
         services.TryAddSingleton<RemoteKeyCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new RemoteKeyCache(policies?.RemoteKey);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new RemoteKeyCache(policies?.RemoteKey, metrics: metrics);
         });
 
         // The WebFinger cache is also registered standalone so the outbound account-resolution path
@@ -141,7 +143,8 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<WebFingerCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new WebFingerCache(policies?.WebFinger);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new WebFingerCache(policies?.WebFinger, metrics: metrics);
         });
 
         // The collection-page cache is also registered standalone so the outbound remote-collection
@@ -150,7 +153,8 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<CollectionPageCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new CollectionPageCache(policies?.CollectionPage);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new CollectionPageCache(policies?.CollectionPage, metrics: metrics);
         });
 
         services.TryAddSingleton<ServerCaches>(sp =>
@@ -167,11 +171,19 @@ public static class ActivityPubServerExtensions
         // The server → client response cache: rendered local actor documents, backing the actor
         // document endpoint's Cache-Control headers and ?refresh=true bypass (public docs only; the
         // authenticated owner-only document is never cached).
-        services.TryAddSingleton<LocalActorDocumentCache>(_ => new LocalActorDocumentCache());
+        services.TryAddSingleton<LocalActorDocumentCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new LocalActorDocumentCache(metrics: metrics);
+        });
 
         // The server → client response cache for paged local collections (outbox/followers/following),
         // backing those endpoints' Cache-Control headers and ?refresh=true bypass.
-        services.TryAddSingleton<LocalCollectionPageCache>(_ => new LocalCollectionPageCache());
+        services.TryAddSingleton<LocalCollectionPageCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new LocalCollectionPageCache(metrics: metrics);
+        });
 
         // Inbound signature validation (Phase 4). The server verifies the HTTP signature on inbound
         // requests by resolving the remote signing key (fetched from the remote actor's document) and
@@ -856,6 +868,13 @@ public static class ActivityPubServerExtensions
         // monitoring scrape reaches it without a signature), like the health endpoint.
         group.MapGet($"/{ActivityPubServerConstants.DeadLetterRouteSegment}", DeadLetterHandler)
             .WithName("dead-letters-endpoint");
+
+        // Cache metrics: GET /ap/v1/diagnostics/caches — per-cache hit/miss/stale counters and entry
+        // counts (Phase 116.6). Exposes the ICacheMetrics from each registered server cache so an
+        // operator can verify caching is effective. No authentication: an operator's monitoring scrape
+        // reaches it without a signature, like the health endpoint.
+        group.MapGet($"/{ActivityPubServerConstants.DiagnosticsRouteSegment}/caches", CacheDiagnosticsHandler)
+            .WithName("cache-diagnostics-endpoint");
 
         // Key rotation (Phase 84.3): POST /ap/v1/keys/rotate — rotates the instance actor's signing key
         // (KeyRotationService.RotateAsync): mints a new key at the next free fragment, re-binds the
@@ -6483,6 +6502,64 @@ public static class ActivityPubServerExtensions
             "application/json",
             System.Text.Encoding.UTF8,
             status);
+    }
+
+    /// <summary>
+    /// The <c>GET /ap/v1/diagnostics/caches</c> handler (Phase 116.6). Reports per-cache hit/miss/stale
+    /// counters and entry counts for all registered server caches. No authentication (an operator's
+    /// monitoring scrape reaches it without a signature), like the health endpoint.
+    /// </summary>
+    /// <param name="serverCaches">The registered server caches.</param>
+    /// <param name="localActorDocs">The local actor document cache.</param>
+    /// <param name="localCollectionPages">The local collection page cache.</param>
+    private static Task<IResult> CacheDiagnosticsHandler(
+        ServerCaches serverCaches,
+        LocalActorDocumentCache localActorDocs,
+        LocalCollectionPageCache localCollectionPages)
+    {
+        var caches = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal);
+
+        void AddCache(string name, ICacheMetrics metrics, int count)
+        {
+            caches[name] = new(StringComparer.Ordinal)
+            {
+                ["hits"] = metrics.Hits,
+                ["misses"] = metrics.Misses,
+                ["staleHits"] = metrics.StaleHits,
+                ["hitRate"] = Math.Round(metrics.HitRate, 4),
+                ["entries"] = count,
+            };
+        }
+
+        if (serverCaches.RemoteActors is { } remoteActors)
+        {
+            AddCache("remoteActors", remoteActors.Metrics, remoteActors.Count);
+        }
+
+        if (serverCaches.RemoteKeys is { } remoteKeys)
+        {
+            AddCache("remoteKeys", remoteKeys.Metrics, remoteKeys.Count);
+        }
+
+        if (serverCaches.CollectionPages is { } collectionPages)
+        {
+            AddCache("remoteCollectionPages", collectionPages.Metrics, collectionPages.Count);
+        }
+
+        if (serverCaches.WebFinger is { } webFinger)
+        {
+            AddCache("webFinger", webFinger.Metrics, webFinger.Count);
+        }
+
+        AddCache("localActorDocuments", localActorDocs.Metrics, localActorDocs.Count);
+        AddCache("localCollectionPages", localCollectionPages.Metrics, localCollectionPages.Count);
+
+        var payload = new { caches };
+        return Task.FromResult<IResult>(Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            StatusCodes.Status200OK));
     }
 
     /// <summary>

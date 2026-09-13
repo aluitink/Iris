@@ -19,15 +19,23 @@ public sealed class CachingReadThrough<TValue>
     where TValue : class
 {
     private readonly ICache<TValue> _cache;
+    private readonly ICacheMetrics _metrics;
 
     /// <summary>
     /// Initializes a new <see cref="CachingReadThrough{TValue}"/>.
     /// </summary>
     /// <param name="cache">The underlying store (its <see cref="ICache{TValue}.Policy"/> governs TTL / staleness).</param>
-    public CachingReadThrough(ICache<TValue> cache)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to <see cref="NullCacheMetrics"/> (no-op).</param>
+    public CachingReadThrough(ICache<TValue> cache, ICacheMetrics? metrics = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
+        _metrics = metrics ?? NullCacheMetrics.Instance;
     }
+
+    /// <summary>
+    /// The hit/miss counters for this cache (for observability).
+    /// </summary>
+    public ICacheMetrics Metrics => _metrics;
 
     /// <summary>
     /// The policy (TTL / stale window) in effect for this cache.
@@ -86,10 +94,12 @@ public sealed class CachingReadThrough<TValue>
                 var value = existing.Entry.Value;
                 if (existing.State == CacheState.Fresh)
                 {
+                    _metrics.RecordHit();
                     return (value, false, true);
                 }
 
                 // Stale: serve immediately, then refresh (stale-while-revalidate).
+                _metrics.RecordStaleHit();
                 var refreshed = await factory(key).ConfigureAwait(false);
                 if (refreshed is not null)
                 {
@@ -100,6 +110,7 @@ public sealed class CachingReadThrough<TValue>
             }
         }
 
+        _metrics.RecordMiss();
         var fetched = await factory(key).ConfigureAwait(false);
         if (fetched is not null)
         {

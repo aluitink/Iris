@@ -274,6 +274,15 @@ public static class ActivityPubServerConstants
     public const string DeadLetterRouteSegment = "dead-letters";
 
     /// <summary>
+    /// The route segment for the cache-metrics diagnostics endpoint (the <c>GET
+    /// /ap/v1/diagnostics/caches</c> endpoint, Phase 116.6). Mapped as <c>{RoutePrefix}/diagnostics/caches</c>
+    /// — under the versioned prefix, like the health endpoint. It reports per-cache hit/miss/stale
+    /// counters and entry counts so an operator can verify caching is effective. No authentication: an
+    /// operator's monitoring scrape reaches it without a signature, like the health endpoint.
+    /// </summary>
+    public const string DiagnosticsRouteSegment = "diagnostics";
+
+    /// <summary>
     /// The route segment for the operator key-rotation endpoints (Phase 84.3): <c>POST
     /// {RoutePrefix}/keys/rotate</c> (rotate the instance actor's signing key via the
     /// <see cref="Identity.KeyRotationService"/>) and <c>POST {RoutePrefix}/keys/retire</c> (retire a

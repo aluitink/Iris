@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server;
 
@@ -103,6 +104,13 @@ public sealed class ActivityPubServerOptions
     /// single-process deployment.
     /// </summary>
     public TimeSpan CacheInvalidationPollInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// The shared hit/miss counter for all server-side caches. When null (the default), each cache
+    /// uses a no-op <see cref="NullCacheMetrics"/>. Set a <see cref="CacheMetrics"/> instance to
+    /// collect per-cache counters, exposed via <c>GET /ap/v1/diagnostics/caches</c>.
+    /// </summary>
+    public ICacheMetrics? CacheMetrics { get; set; }
 }
 
 /// <summary>

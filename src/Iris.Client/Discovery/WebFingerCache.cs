@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Client.Discovery;
 
@@ -20,16 +21,22 @@ public sealed class WebFingerCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.WebFinger"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public WebFingerCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public WebFingerCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.WebFinger;
-        _cache = new CachingReadThrough<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity));
+        _cache = new CachingReadThrough<WebFingerHit>(new MemoryCache<WebFingerHit>(resolved, capacity), metrics);
     }
 
     /// <summary>
     /// The policy (TTL / stale window) in effect for this cache.
     /// </summary>
     public CachePolicy Policy => _cache.Policy;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Gets the cached resolved actor IRI for <paramref name="key"/>, resolving with

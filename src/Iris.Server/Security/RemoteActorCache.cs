@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Server.Security;
@@ -22,10 +23,11 @@ public sealed class RemoteActorCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.Actor"/> (server-side 1h).</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public RemoteActorCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public RemoteActorCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.Create(TimeSpan.FromHours(1), TimeSpan.FromHours(1));
-        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity));
+        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity), metrics);
     }
 
     /// <summary>
@@ -37,6 +39,11 @@ public sealed class RemoteActorCache
     /// The number of entries currently held (for observability/testing).
     /// </summary>
     public int Count => _cache.Count;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Removes the entry for <paramref name="key"/> (e.g. after receiving an <c>Update</c>).

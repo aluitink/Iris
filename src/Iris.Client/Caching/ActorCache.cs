@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Client.Caching;
@@ -21,16 +22,22 @@ public sealed class ActorCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.Actor"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public ActorCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public ActorCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.Actor;
-        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity));
+        _cache = new CachingReadThrough<IObject>(new MemoryCache<IObject>(resolved, capacity), metrics);
     }
 
     /// <summary>
     /// The policy (TTL / stale window) in effect for this cache.
     /// </summary>
     public CachePolicy Policy => _cache.Policy;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Gets the cached object for <paramref name="key"/>, fetching with <paramref name="factory"/> on a
