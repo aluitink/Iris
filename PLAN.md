@@ -94,7 +94,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **123.3 — Community detail: mobile layout for ownership banner (LOW)** — On 375px, "This is your community." + "Edit community" button + "0 members" wrap awkwardly in one row. Stack on mobile (text line, button below). [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
+- **124.1 — General UI/UX review (third pass)** — Visual sweep of all pages (desktop + mobile) via Playwright after the 123.* fixes. Find remaining rough edges, inconsistencies, or bugs. Review-only; findings become 125.* items. [changes/12303](docs/changes/12303-phase123-community-mobile-banner.md)
 
 ## Inbox
 
@@ -106,15 +106,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **123.2 — Actor detail: enrich the profile header (DONE)** — Added stats row (posts, followers, following) below the ActorProfile card. `PostCount` loaded from outbox `totalItems`. `HasStats` computed property. CSS in both files. Live-verified: Bob "13 posts, 2 followers, 1 following"; Alice own profile no follow button. 0 console errors. [changes/12302](docs/changes/12302-phase123-actor-detail-stats.md)
+- **123.3 — Community detail: mobile layout for ownership banner (DONE)** — Mobile media query stacks `.community-detail-actions` vertically (flex-direction: column). Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12303](docs/changes/12303-phase123-community-mobile-banner.md)
+
+- **123.2 — Actor detail: enrich the profile header (DONE)** — Added stats row (posts, followers, following) below the ActorProfile card. Live-verified: Bob "13 posts, 2 followers, 1 following"; Alice own profile no follow button. [changes/12302](docs/changes/12302-phase123-actor-detail-stats.md)
 
 - **123.1 — Notifications: deduplicate repeated follow requests (DONE)** — Write-time gate in `RecordFollowLocalAsync` + read-time collapse in `FilterInboxByPrefs`/`DeduplicateFollows`. 4 new tests, 1 deleted. Live-verified: 4 duplicates → 1 card. [changes/12301](docs/changes/12301-phase123-notification-follow-dedup.md)
 
 - **122.1 — General UI/UX review (second pass) (DONE, review-only)** — Visual sweep of all 13 pages (desktop + mobile). Found 3 improvement areas → 123.1–123.3. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 
 - **121.7 — Boosted posts: inline content preview (DONE)** — Announce lazy-fetch in `ObjectView`. Boost card shows author, timestamp, content, media. [changes/12107](docs/changes/12107-phase121-boosted-post-preview.md)
-
-- **121.6 — Actor profile: remove redundant "Posts" header (DONE)** — Removed `Title`/`Description` from Posts-tab `PagedCollection`. [changes/12106](docs/changes/12106-phase121-actor-profile-redundant-posts.md)
 
 ## Keeping the docs lean
 
