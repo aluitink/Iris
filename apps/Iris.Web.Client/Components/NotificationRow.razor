@@ -257,7 +257,7 @@
                 builder.AddAttribute(3, "href", ObjectHref(target));
                 builder.AddAttribute(4, "title", target.ToString());
                 var preview = TargetPreview(objectFirst);
-                builder.AddContent(5, preview ?? ShortLabel(target));
+                builder.AddContent(5, preview ?? FriendlyLabel(activity, target));
                 builder.CloseElement();
                 builder.CloseElement();
             }
@@ -585,6 +585,39 @@
         var segments = path.Split('/');
         var label = segments.Length >= 2 ? string.Join(" ", segments[^2..]) : iri.Value;
         return label.Length > 40 ? label[..37] + "…" : label;
+    }
+
+    /// <summary>
+    /// A human-readable label for a notification target when no content preview is available.
+    /// For actor IRIs (e.g. follow requests where the object is the actor's own IRI) shows
+    /// "View {handle}'s profile"; for note IRIs shows "View note"; otherwise falls back to
+    /// <see cref="ShortLabel"/>.
+    /// </summary>
+    private static string FriendlyLabel(Activity activity, Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var segments = path.Split('/');
+        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
+
+        // Actor IRI: /ap/v1/u/{user} — show "View {user}'s profile"
+        if (segments.Length >= 2 && segments[^2] == "u" && segments[^1].Length > 0)
+        {
+            return $"View {segments[^1]}'s profile";
+        }
+
+        // Note IRI: /ap/v1/u/{user}/notes/{id} — show "View note"
+        if (segments.Contains("notes") && segments[^1].Length > 0)
+        {
+            return "View note";
+        }
+
+        // Community IRI: /ap/v1/c/{name} — show "View community"
+        if (segments.Length >= 2 && segments[^2] == "c" && segments[^1].Length > 0)
+        {
+            return $"View {segments[^1]}";
+        }
+
+        return ShortLabel(iri);
     }
 
     private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
