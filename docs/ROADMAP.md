@@ -288,3 +288,5 @@
   - **Phase 130.3 — General UI/UX review (fifth pass) (COMPLETE):** visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias on `AdminDashboard.razor`). 0 console errors. Review cycle converged (5 passes). [changes/13003](changes/13003-phase130-ui-ux-review-pass5.md).
 
   - **Phase 131.1 — Performance: home feed load time (COMPLETE, measurement-only):** cold load ~1s to first post (target <3s met). WASM bootstrap (12.8 MB / 66 files) is the dominant cost; API fetches ~2s total (75 fetches, P95 50 ms each). No optimization needed at this scale. [changes/13101](changes/13101-phase131-home-feed-performance.md).
+
+  - **Phase 131.2 — Security: dependency audit + CSP review (COMPLETE):** added 5 security headers (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy). CSP uses `'unsafe-inline'` + `'wasm-unsafe-eval'` (Blazor WASM requirements). Dependency audit: no known CVEs in any package. 0 console errors. [changes/13102](changes/13102-phase131-security-headers.md).
