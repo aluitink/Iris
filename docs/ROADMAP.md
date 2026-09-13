@@ -280,3 +280,9 @@
   - **Phase 128.1 — Unread notification badge: live-render verification (COMPLETE, review-only):** confirmed badge renders "1" when unread > 0 and disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found minor gap: badge stale on notifications page for up to 60s after mark-all → 129.1. Feature matrix D-column closed. [changes/12801](changes/12801-phase128-notification-badge-verification.md).
 
   - **Phase 129.1 — Notification badge: real-time clear on mark-all (COMPLETE):** added `UnreadCountChanged` event to `NotificationService`; badge subscribes in `OnInitialized`, notifications page raises after mark-all. Live-verified: badge "13" → gone immediately on notifications page. 0 console errors. [changes/12901](changes/12901-phase129-badge-realtime-clear.md).
+
+  - **Phase 130.1 — Login rate limiting: live UI verification (COMPLETE, review-only):** 5 failed logins → 6th rejected with "Too many failed attempts... Try again in about 15 minutes." Feature matrix D-column "Login rate limiting" closed (☐ → ✅). [changes/13001](changes/13001-phase130-login-rate-limit-verify.md).
+
+  - **Phase 130.2 — Admin bootstrap from `.env`: verification path documented (COMPLETE, docs-only):** `AdminBootstrapper` idempotent (alice bootstrapped 2026-09-08, no second admin on restarts). Verification path documented in change doc. Feature matrix D-column "Admin bootstrap" closed (☐ → ✅). All D-column boxes now ✅. [changes/13002](changes/13002-phase130-admin-bootstrap-docs.md).
+
+  - **Phase 130.3 — General UI/UX review (fifth pass) (COMPLETE):** visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias on `AdminDashboard.razor`). 0 console errors. Review cycle converged (5 passes). [changes/13003](changes/13003-phase130-ui-ux-review-pass5.md).
