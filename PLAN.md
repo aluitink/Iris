@@ -92,10 +92,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 6. **Fix in scope**: implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
-   ## Up Next
-
-- **118.3 - Compose improvements** - We will need to be able to compose to communities as well, they may have a different type of object to send. We should look into improving the UX of the compose (New Post) page. We should create a control to support @mention and #hashtag; something that shows an auto-complete dropdown and selection of known actors. When a Create is generated and sent to the outbox, the outbox should be parsing these mentions and hashtags, we should be formatting them similar to mastodon and filling in fields that help the recipient system handle this (populate tags and mentions).
-
+    ## Up Next
+ 
 - **119.1 - Profile improvements** - The profiles Likes tab should render the liked object with some kind of indication that it was Liked - not just a link to the like.
 
 - **119.2 - Settings improvements** - On mobile page, we can only display a certain number of tabs becuse our width is minimal. We may need to split these up in various sections that can be expanded like change password and security. See what we can improve here. Maybe moderation can go under Profile?
@@ -113,16 +111,16 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
-
+ 
+- **118.3 — Compose improvements: fix @/# autocomplete trigger + surface known hashtags (DONE)** — The compose `@mention`/`#hashtag` auto-complete control existed (54.14/71.5) but its popover never opened (`@onkeyup` unreliable + `@bind`'s generated input handler suppressed the explicit trigger). Switched the content textarea to an explicit `@oninput` handler that reads `Content` and runs token detection — both `@` and `#` dropdowns now open as the user types. Also gave the `#` autocomplete a real source: the actor's previously-used hashtags (bounded read of their recent outbox), filtered by the typed token, with the typed `#tag` always confirmable. Live-verified (fresh cache): `#` lists own hashtags, `#1183` filters, `@al` lists mentions. [changes/11803](docs/changes/11803-phase118-compose-improvements.md)
+ 
 - **118.2 — Communities: Post to a Remote (Lemmy) Community as a Lemmy-compatible Page (DONE)** — Compose detects a remote (different-host) community and posts a `Page` (`attributedTo`=[author,community], `to`=[community,as#Public], `cc`=[followers], `content`=HTML, `source`=markdown) via a signed `Create` to the community's inbox; local communities still post a `Note`. Dockerfile now ships `libgssapi-krb5-2` (outbound HTTPS federation). Wire format confirmed Lemmy-compatible; local post live-verified (HTTP 202, Note). Live Lemmy delivery blocked by a sandbox TLS quirk (lemmy.ml rejects .NET's handshake; host curl succeeds). [changes/11802](docs/changes/11802-phase118-communities-lemmy-page-post.md)
-
+ 
 - **118.1 — Communities: WebFinger-then-Follow (DONE)** — Peers tab "Follow as this community" now accepts a remote handle (`!community@host` / `@user@host`); new "Look up" button resolves it via WebFinger (home proxy) with a "Will follow" preview; `!` prefers a Lemmy Group. Full IRIs accepted directly. Live-verified: `@alice@iris.luit.ink` → "Will follow: alice (…/ap/v1/u/alice)"; `!rust@lemmy.ml` → graceful "Could not reach". [changes/11801](docs/changes/11801-phase118-communities-webfinger-follow.md)
-
+ 
 - **117.6 — Feed Items with Replies: Parent Media (DONE)** — "In reply to" context card now shows the parent's media attachments via `MediaGallery`. Live-verified: reply to a post with image shows the image in the context card. [changes/11706](docs/changes/11706-phase117-feed-items-with-replies.md)
-
+ 
 - **117.5 — Feed Content: Filter Own Replies (DONE)** — Extended 117.1's reply filter to the actor's own outbox: home feed now shows only top-level content by default; `?depth` opts in to replies (own + followed). 4 updated/new tests. 1,143 total pass. [changes/11705](docs/changes/11705-phase117-feed-content-filtering.md)
-
-- **117.4 — Common Actor Card (DONE)** — Upgraded `ActorCard` with banner support (avatar overlap), type badges (Community/Bot), 2-line summary clamp, and inline moderation (Block/Mute/Report) via `ShowModeration` param. Correct href for Group actors. Live-verified: directory, followers/following, search. [changes/11704](docs/changes/11704-phase117-actor-card.md)
 
 
 ## Keeping the docs lean
