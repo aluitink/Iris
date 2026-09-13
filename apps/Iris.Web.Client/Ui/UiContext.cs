@@ -223,33 +223,65 @@ public sealed class UiContext
     }
 
     /// <summary>
-    /// Performs a single actor fetch for <paramref name="actorIri"/>: reads the document from the
-    /// network and, on success, stores it in the per-circuit actor cache for the TTL window.
-    /// When the session's signing client is available (signed in), the fetch is made through it
-    /// (signed requests). When the session's client is null (signed out), the fetch falls back to
-    /// a plain (unsigned) <c>HttpClient</c> — actor documents are public, so an anonymous read
-    /// succeeds. Returns null when the fetch fails or the actor is not found (nothing is cached
-    /// on failure, so a later call can retry).
+    /// Performs a single actor fetch for <paramref name="actorIri"/>: reads the document and, on
+    /// success, stores it in the per-circuit actor cache for the TTL window.
+    /// <para>
+    /// For a <em>remote</em> (cross-origin) actor, the home instance's cached-actor endpoint
+    /// (<c>GET /ap/v1/actor?iri=…</c>, 134.1) is consulted first: it serves the actor document the
+    /// instance stored in its database during federation, so a known actor's profile renders even
+    /// when its home instance is unreachable or the account has been deactivated (a live fetch would
+    /// 410). When the instance has no cached copy (404), the fetch falls through to the live path.
+    /// </para>
+    /// <para>
+    /// The live path: when the session's signing client is available (signed in) the fetch is made
+    /// through it (signed requests, routed through the home proxy for a remote IRI); when the
+    /// session's client is null (signed out) it falls back to a plain (unsigned) <c>HttpClient</c> —
+    /// actor documents are public, so an anonymous read succeeds. Returns null when the fetch fails
+    /// or the actor is not found (nothing is cached on failure, so a later call can retry).
+    /// </para>
     /// </summary>
     private async Task<IObject?> FetchActorAsync(Iri actorIri)
     {
-        IObject? doc;
-        try
+        IObject? doc = null;
+
+        // 134.1: a remote (cross-origin) actor is first served from the home instance's cached
+        // actor record (the document it stored in the database during federation). This makes a
+        // known actor's profile resilient — it renders even when the actor's home instance is
+        // unreachable or the account has been deactivated (a live fetch would 410). A local actor
+        // is NOT routed here: its canonical document (via /u/{handle}) carries the Iris-local
+        // extensions (capabilities, feed, …) the cached copy does not.
+        if (IsRemoteActorIri(actorIri))
         {
-            if (_session.Client is { } client)
+            try
             {
-                // Signed-in: use the session's signing client (signed requests).
-                doc = await client.GetObjectAsync(actorIri);
+                doc = await FetchCachedActorAsync(actorIri);
             }
-            else
+            catch
             {
-                // Signed-out: use a plain (unsigned) HttpClient (actor documents are public).
-                doc = await FetchActorDocumentAnonymousAsync(actorIri);
+                // The cached lookup failed (network / parse). Fall through to the live fetch.
+                doc = null;
             }
         }
-        catch
+
+        if (doc is null)
         {
-            return null;
+            try
+            {
+                if (_session.Client is { } client)
+                {
+                    // Signed-in: use the session's signing client (signed requests).
+                    doc = await client.GetObjectAsync(actorIri);
+                }
+                else
+                {
+                    // Signed-out: use a plain (unsigned) HttpClient (actor documents are public).
+                    doc = await FetchActorDocumentAnonymousAsync(actorIri);
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         if (doc is not null)
@@ -258,6 +290,54 @@ public sealed class UiContext
         }
 
         return doc;
+    }
+
+    /// <summary>
+    /// True when <paramref name="actorIri"/> is a remote (cross-origin) actor — its host differs from
+    /// the home instance's origin (the "iris" <c>HttpClient</c>'s <c>BaseAddress</c>). A local actor
+    /// (same origin, e.g. <c>https://iris.luit.ink/ap/v1/u/alice</c>) is not remote. When the home
+    /// origin cannot be determined, the IRI is treated as remote (the cached lookup is a safe no-op
+    /// that 404s and falls through to the live fetch).
+    /// </summary>
+    private bool IsRemoteActorIri(Iri actorIri)
+    {
+        if (!Uri.TryCreate(actorIri.Value, UriKind.Absolute, out var actorUri)
+            || actorUri.Scheme != Uri.UriSchemeHttp && actorUri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        var homeBase = _httpClientFactory.CreateClient("iris").BaseAddress;
+        if (homeBase is null)
+        {
+            return true;
+        }
+
+        return !string.Equals(actorUri.Host, homeBase.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Fetches a remote actor's document from the home instance's cached-actor endpoint
+    /// (<c>GET /ap/v1/actor?iri={absolute-actor-iri}</c>, 134.1). The endpoint serves the actor
+    /// document the instance stored in its database during federation, so a known actor renders even
+    /// when its home instance is unreachable or the account has been deactivated. Returns null when
+    /// the instance has no cached copy (404), the request fails, or the body is not an actor document
+    /// (the caller then falls through to a live fetch).
+    /// </summary>
+    private async Task<IObject?> FetchCachedActorAsync(Iri actorIri)
+    {
+        var http = _httpClientFactory.CreateClient("iris");
+        var path = $"/ap/v1/actor?iri={Uri.EscapeDataString(actorIri.Value)}";
+        using var response = await http.GetAsync(path);
+        if (!response.IsSuccessStatusCode)
+        {
+            // 404 (the instance has no cached copy) or any other failure: the caller falls through
+            // to a live fetch.
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObjectOrLink>(json) as IObject;
     }
 
     /// <summary>

@@ -1116,6 +1116,17 @@ public static class ActivityPubServerExtensions
         // served through the local collection-page cache).
         group.MapGet("/search", GlobalSearchHandler);
 
+        // Cached actor document by IRI: GET /ap/v1/actor?iri={absolute-actor-iri} — serves the actor
+        // document the instance has cached in its database (134.1 — directory "All known" / known
+        // actors). The ?iri value is the actor's absolute IRI (local or remote). When the instance has
+        // encountered the actor during federation (a remote actor's document was fetched and persisted
+        // by the RemoteActorPersister, or it is a local actor), the stored document is served as-is —
+        // no live cross-instance fetch. This lets the client render a known actor's profile even when
+        // the actor's home instance is unreachable or the account has been deactivated (a live fetch
+        // would 410). An actor the instance has never cached 404s (the client then falls back to a live
+        // fetch). The route is registered BEFORE the /{**path} object catch-all so it wins by specificity.
+        group.MapGet("/actor", ActorByIriHandler);
+
         // Object document: GET /ap/v1/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
         // {**path} is the object IRI's path relative to the route prefix (e.g. the Note at
         // https://a.test/ap/v1/u/alice/notes/1 is GET /ap/v1/u/alice/notes/1). The absolute IRI is
@@ -1371,6 +1382,65 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(rendered, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// The cached-actor-by-IRI endpoint (<c>GET /ap/v1/actor?iri={absolute-actor-iri}</c>, 134.1).
+    /// Serves the actor document the instance has stored in its database — a local actor or a remote
+    /// actor the instance cached during federation (the <c>RemoteActorPersister</c> persists a remote
+    /// actor's document on first encounter). The document is served <em>as-is</em> (the stored
+    /// document, with its original IRI, name, summary, icon, image, and publicKey) — no live
+    /// cross-instance fetch, and no Iris-local collection extensions are added (those are only valid
+    /// for local actors, whose documents are built by <see cref="BuildActorDocument"/>).
+    /// <para>
+    /// This is the "serve known content" half of the directory's "All known" scope: the client
+    /// consults it first for a known actor's profile, so a cached actor renders even when its home
+    /// instance is unreachable or the account has been deactivated (a live fetch would 410). When the
+    /// instance has never cached the actor (an unknown IRI), the endpoint 404s and the client falls
+    /// back to a live fetch (the proxy).
+    /// </para>
+    /// <para>
+    /// The response is cacheable for a short window (<see cref="ActivityPubServerConstants.ActorCacheControl"/>):
+    /// the cached document is only refreshed when the instance re-fetches the actor (key resolution /
+    /// a federated Update), so a modest <c>max-age</c> avoids hammering the store while staying fresh
+    /// enough for a profile read.
+    /// </para>
+    /// </summary>
+    /// <param name="context">The HTTP context (reads the <c>?iri</c> query value; negotiates the content type).</param>
+    /// <param name="persistence">The persistence provider (the actor store to look the cached document up in).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The cached actor document (the stored document, serialized) when the instance has it;
+    /// <see cref="Results.NotFound"/> when the actor is unknown to the instance or <c>?iri</c> is
+    /// missing/malformed.</returns>
+    private static async Task<IResult> ActorByIriHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        CancellationToken ct)
+    {
+        var iriValue = context.Request.Query["iri"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(iriValue)
+            || !Iri.TryParse(iriValue, out var actorIri))
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            || actor is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Serve the stored document as-is (a remote actor's document already carries its own
+        // inbox/outbox/followers/following IRIs on the remote instance; a local actor's document is
+        // the same one the /u/{handle} endpoint would build minus the Iris-local extensions, which a
+        // client fetching a *known* actor by IRI does not need — it reads the collections by their
+        // advertised IRIs). Deep-copy so we never mutate the stored actor.
+        var doc = ActivityJson.Deserialize<Actor>(ActivityJson.Serialize(actor))!;
+        var json = ActivityJson.Serialize(doc);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(json, NegotiateContentType(context));
     }
 
     /// <summary>
