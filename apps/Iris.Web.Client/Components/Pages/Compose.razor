@@ -52,8 +52,8 @@
     }
     <label for="compose-content">Content</label>
     <div class="compose-autocomplete-wrap">
-        <textarea id="compose-content" class="compose-content" rows="4" @bind="Content"
-                  @onkeyup="OnContentInput"
+        <textarea id="compose-content" class="compose-content" rows="4"
+                  @oninput="OnContentInputEvent"
                   placeholder="What's on your mind?"></textarea>
         @if (Autocomplete is { Visible: true } ac)
         {
@@ -667,6 +667,23 @@
     private Timer? _autocompleteDebounce;
     private List<AutocompleteCandidate>? _knownActors;
 
+    // The signed-in actor's previously-used hashtags (118.3), surfaced as the compose `#`
+    // autocomplete's default list — the topics the user already tags, loaded lazily and cached for the
+    // page's lifetime (a compose session), mirroring `_knownActors`.
+    private HashSet<string>? _knownHashtags;
+
+    /// <summary>
+    /// The textarea's input event handler (118.3): reads the freshly-typed value into <see
+    /// cref="Content"/> (replacing the former two-way <c>@bind</c>, whose generated input handler
+    /// suppressed the explicit autocomplete trigger — the popover never opened) and then runs the
+    /// mention/hashtag token detection.
+    /// </summary>
+    private void OnContentInputEvent(ChangeEventArgs e)
+    {
+        Content = e.Value?.ToString() ?? string.Empty;
+        OnContentInput();
+    }
+
     /// <summary>
     /// The textarea's input handler: detects an in-progress <c>@handle</c> or <c>#hashtag</c> token at
     /// the end of the text and (debounced) populates the popover with candidates. Hides the popover when
@@ -746,10 +763,7 @@
             }
             else
             {
-                // No hashtag directory — offer the typed hashtag as-is (the user confirms to insert a
-                // canonical #tag token). A trailing partial token is offered as its own candidate.
-                var hashtag = "#" + tokenText;
-                candidates = [new AutocompleteCandidate(hashtag, null, null)];
+                candidates = await GetHashtagCandidatesAsync(tokenText, cts.Token);
             }
 
             if (cts.IsCancellationRequested)
@@ -899,6 +913,101 @@
     }
 
     /// <summary>
+    /// Resolves hashtag candidates for the compose <c>#hashtag</c> autocomplete (118.3): the signed-in
+    /// actor's previously-used hashtags as the default list, filtered by the typed token. An empty token
+    /// (the user just typed <c>#</c>) returns the known hashtags; a non-empty token filters them. When
+    /// the typed token matches no known hashtag, the typed <c>#tag</c> itself is offered as the sole
+    /// candidate (so a brand-new tag can still be confirmed and inserted as a canonical token).
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> GetHashtagCandidatesAsync(string query, CancellationToken ct)
+    {
+        if (_knownHashtags is null)
+        {
+            _knownHashtags = await LoadKnownHashtagsAsync(ct);
+        }
+
+        var list = new List<AutocompleteCandidate>();
+        var lowerQuery = query.TrimStart('#').ToLowerInvariant();
+
+        foreach (var tag in _knownHashtags)
+        {
+            if (lowerQuery.Length is 0 || tag.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(new AutocompleteCandidate("#" + tag, null, null));
+            }
+        }
+
+        // The typed token (canonical #tag) is always confirmable — even when it matches no known hashtag.
+        if (lowerQuery.Length > 0)
+        {
+            var typed = "#" + lowerQuery;
+            if (!list.Any(c => c.InsertText.Equals(typed, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Add(new AutocompleteCandidate(typed, null, null));
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Loads the signed-in actor's previously-used hashtags (118.3): the <c>tag</c> array of the most
+    /// recent of the actor's own outbox objects (a bounded read — the first outbox page, up to
+    /// <see cref="HashtagSourceLimit"/> items), de-duplicated by tag name. Non-fatal on failure — an
+    /// empty set simply means the <c>#</c> autocomplete falls back to offering the typed token only.
+    /// </summary>
+    private async Task<HashSet<string>> LoadKnownHashtagsAsync(CancellationToken ct)
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Session.ActorId is not { } actorId || Session.Client is not { } client)
+        {
+            return tags;
+        }
+
+        try
+        {
+            await foreach (var item in client.GetCollectionItemsAsync(
+                                   actorId.OutboxOf(),
+                                   new CollectionQuery(Limit: HashtagSourceLimit),
+                                   ct))
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // An outbox item is a Create/Update activity wrapping the authored object (or, less
+                // commonly, the object itself). Read hashtags from whichever is the authored object.
+                var authored = item is Activity { Object: { } objs }
+                    ? objs.FirstOrDefault()
+                    : item;
+                if (authored is IObject obj)
+                {
+                    foreach (var (name, _) in obj.GetHashtagTags())
+                    {
+                        // Normalize: strip any leading '#', drop whitespace, keep it non-empty.
+                        var clean = name.TrimStart('#').Trim();
+                        if (clean.Length > 0)
+                        {
+                            tags.Add(clean);
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke — ignore.
+        }
+        catch
+        {
+            // Non-fatal: no known hashtags simply means the typed token is the only candidate.
+        }
+
+        return tags;
+    }
+
+    /// <summary>
     /// Accepts a popover candidate: splices the confirmed choice into the compose text in place of the
     /// active token (the <c>@</c>/<c>#</c> + the characters typed), appending a trailing space for
     /// mentions (so the next word is separate) and closing the popover.
@@ -990,6 +1099,13 @@
     private string Visibility { get; set; } = "public";
 
     private const int MaxChars = 500;
+
+    /// <summary>
+    /// The cap on the number of the actor's recent outbox objects scanned to build the <c>#</c>
+    /// autocomplete's known-hashtag list (118.3). A bounded read — the most recent posts carry the
+    /// hashtags a user is likely to re-use, and it keeps the first outbox-page fetch small.
+    /// </summary>
+    private const int HashtagSourceLimit = 40;
 
     // --- Poll authoring (73.1) ---
 
