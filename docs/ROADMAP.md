@@ -273,4 +273,6 @@
 
  - **Phase 126.1 — Actor detail stats row: count only Note/Article posts (COMPLETE):** Replaced outbox totalItems with first-page Note/Article count. verifier87 "2"→"0", bob "13"→"4". 0 console errors. [changes/12601](changes/12601-phase126-actor-stats-post-count.md).
 
- - **Phase 126.2 — Notification row: null-safe icon/verb rendering (COMPLETE):** wrapped icon + verb in @if (Activity is { }) guard to prevent NRE on non-Activity inbox items. 0 console errors. [changes/12602](changes/12602-phase126-notification-null-safe-render.md).
+  - **Phase 126.2 — Notification row: null-safe icon/verb rendering (COMPLETE):** wrapped icon + verb in @if (Activity is { }) guard to prevent NRE on non-Activity inbox items. 0 console errors. [changes/12602](changes/12602-phase126-notification-null-safe-render.md).
+
+  - **Phase 127.1 — General UI/UX review (fourth pass) (COMPLETE, review-only):** visual sweep of all pages (desktop 1400px + mobile 375px) via Playwright. No new issues found. 126.* fixes verified (stats row post count, notification null-safe rendering). Review cycle converged: 4 passes, 0 issues in last 2. [changes/12701](changes/12701-phase127-ui-ux-review.md).

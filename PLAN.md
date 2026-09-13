@@ -94,17 +94,20 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **127.1 — General UI/UX review (fourth pass) (MEDIUM)** — Visual sweep of all pages (desktop + mobile) via Playwright after the 126.* fixes. Find remaining rough edges, inconsistencies, or bugs. Review-only; findings become 128.* items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
+- **128.1 — Unread notification badge: live-render verification (LOW)** — The badge data path is verified (endpoint returns `unread:15` → `0` after mark-all), but the actual badge element live-render was never confirmed in Playwright due to a WASM init lifecycle issue. Attempt a fresh Playwright session to verify the badge appears/disappears correctly. [changes/12701](docs/changes/12701-phase127-ui-ux-review.md)
 
 ## Inbox
 
-- *(empty)*
+- **Login rate limiting: polish pass (LOW)** — Feature matrix ☐ on D. Server-side rate limiting exists; needs a live UI verification (trigger many failed logins, confirm lockout message).
+- **Admin bootstrap from `.env`: polish pass (LOW)** — Feature matrix ☐ on D. Not a web UI feature; document the verification path.
 
 ## Paused Questions
 
 - *(empty)*
 
 ## Recently Completed
+
+- **127.1 — General UI/UX review (fourth pass) (DONE, review-only)** — Visual sweep of all pages (desktop 1400px + mobile 375px). No new issues found. 126.* fixes verified. Review cycle converged (4 passes, 0 issues in last 2). [changes/12701](docs/changes/12701-phase127-ui-ux-review.md)
 
 - **126.2 — Notification row: null-safe icon/verb rendering (DONE)** — Wrapped icon + verb in `@if (Activity is { })` guard. Prevents NRE on non-Activity inbox items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
 
@@ -113,8 +116,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **125.1 — Hardening: error & empty state audit (DONE, review-only)** — Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1–126.2. [changes/12501](docs/changes/12501-phase125-error-empty-state-audit.md)
 
 - **124.1 — General UI/UX review (third pass) (DONE, review-only)** — Visual sweep of all pages (desktop + mobile). No new issues found. [changes/12401](docs/changes/12401-phase124-ui-ux-review.md)
-
-- **123.3 — Community detail: mobile layout for ownership banner (DONE)** — Mobile media query stacks `.community-detail-actions` vertically. [changes/12303](docs/changes/12303-phase123-community-mobile-banner.md)
 
 ## Keeping the docs lean
 
