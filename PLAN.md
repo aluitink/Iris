@@ -94,7 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **123.1 — Notifications: deduplicate repeated follow requests (HIGH)** — 4 identical "Bob sent you a follow request" cards appear when Bob follows Alice 4 times. Root cause: server mints a new ULID per Follow so IRI-based dedup can't collapse; inbox write is unconditional (doesn't check if follow edge is new). Fix: gate `AddToInboxAsync` on follow-edge novelty (write-time, `ActivityPubServerExtensions.cs:3055-3064`) + read-time collapse in `FilterInboxByPrefs` (`WebAppFactory.cs:1258-1338`). [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 - **123.2 — Actor detail: enrich the profile header (MEDIUM)** — `/actor?iri=...` shows only handle + avatar + name. No bio, follower/following counts, or follow/unfollow button. Community detail is richer (name, handle, description, action buttons). Add `summary`, counts, and follow button to the actor header card. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 - **123.3 — Community detail: mobile layout for ownership banner (LOW)** — On 375px, "This is your community." + "Edit community" button + "0 members" wrap awkwardly in one row. Stack on mobile (text line, button below). [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 
@@ -108,15 +107,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **122.1 — General UI/UX review (second pass) (DONE, review-only)** — Visual sweep of all 13 pages (desktop + mobile). Found 3 improvement areas: (1) duplicate follow-request notifications (HIGH — server mints new ULID per Follow, inbox write unconditional), (2) sparse actor detail header (no bio/counts/follow button), (3) cramped community ownership banner on mobile. No bugs beyond the dedup issue. 0 console errors. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
+- **123.1 — Notifications: deduplicate repeated follow requests (DONE)** — Write-time gate in `RecordFollowLocalAsync` (check `IsFollowingAsync` before `RecordFollowAsync`, skip `AddToInboxAsync` on re-follow) + read-time collapse in `FilterInboxByPrefs`/`DeduplicateFollows` (collapse Follows sharing actor+target IRI to most recent). 4 new tests, 1 deleted. Live-verified: 4 pre-existing duplicates → 1 card. [changes/12301](docs/changes/12301-phase123-notification-follow-dedup.md)
 
-- **121.7 — Boosted posts: inline content preview (DONE)** — Announce lazy-fetch in `ObjectView.OnInitializedAsync`. `BoostedObject`/`BoostedAuthorIri`/`BoostedPublished` computed properties. Boost card shows author, timestamp, content, media. [changes/12107](docs/changes/12107-phase121-boosted-post-preview.md)
+- **122.1 — General UI/UX review (second pass) (DONE, review-only)** — Visual sweep of all 13 pages (desktop + mobile). Found 3 improvement areas → 123.1–123.3. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
+
+- **121.7 — Boosted posts: inline content preview (DONE)** — Announce lazy-fetch in `ObjectView`. Boost card shows author, timestamp, content, media. [changes/12107](docs/changes/12107-phase121-boosted-post-preview.md)
 
 - **121.6 — Actor profile: remove redundant "Posts" header (DONE)** — Removed `Title`/`Description` from Posts-tab `PagedCollection`. [changes/12106](docs/changes/12106-phase121-actor-profile-redundant-posts.md)
 
 - **121.5 — Hide "To followers" audience line (DONE)** — `FilterDisplayAudience()` strips follower/following collection IRIs. [changes/12105](docs/changes/12105-phase121-hide-follower-audience.md)
-
-- **121.4 — Home timeline empty state (DONE, no code change)** — Already implemented in Phase 34.25. [changes/12104](docs/changes/12104-phase121-home-empty-state.md)
 
 ## Keeping the docs lean
 
