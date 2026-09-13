@@ -207,43 +207,41 @@
             }
             @if (AnnounceTargetIri is { } targetIri)
             {
-                @if (ActivityEmbeddedObject is { } boosted)
+                @if (BoostedObject is { } boosted)
                 {
                     <div class="object-item object-item--boosted">
                         <div class="object-header">
-                            @if (AnnounceAuthorIri is { } author)
+                            @if (BoostedAuthorIri is { } ba)
                             {
-                                <ActorBar ActorIri="author" />
+                                <ActorBar ActorIri="ba" />
                             }
-                            @if (ActivityPublished is { } pub)
+                            @if (BoostedPublished is { } bt)
                             {
-                                <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                                <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
                             }
                         </div>
-                        @if (ActivityName is { Length: > 0 } title && !(boosted is Actor))
-                        {
-                            <div class="object-title">@title</div>
-                        }
-                        @if (boosted is KristofferStrube.ActivityStreams.Object bao && JoinStrings(bao.Content) is { Length: > 0 } content)
-                        {
-                            @if (CreatedObjectIri is { } objIri)
-                            {
-                                <a href="@ObjectHref(objIri)" class="object-post-link">
-                                    <div class="object-content">@ActivityContent</div>
-                                </a>
-                            }
-                            else
-                            {
-                                <div class="object-content">@ActivityContent</div>
-                            }
-                        }
-                        else
+                        @if (boosted is Actor)
                         {
                             <div class="object-content">
                                 <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
                             </div>
                         }
-                        <MediaGallery Attachments="ActivityRichAttachments" Blurred="false" />
+                        else
+                        {
+                            @if (boosted is KristofferStrube.ActivityStreams.Object bao2 && JoinStrings(bao2.Content) is { Length: > 0 } content2)
+                            {
+                                <a href="@ObjectHref(targetIri)" class="object-post-link">
+                                    <div class="object-content">@RenderBoostedContent(boosted)</div>
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="object-content">
+                                    <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                                </div>
+                            }
+                        }
+                        <MediaGallery Attachments="ResolveBoostedAttachments(boosted)" Blurred="false" />
                         <EngagementBar ObjectIri="@targetIri" Object="boosted" />
                     </div>
                 }

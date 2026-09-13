@@ -44,6 +44,12 @@ public partial class ObjectView
     // shows the actual liked content, not just a link.
     private IObject? _likedObject;
 
+    // 121.7 — the fetched target of an Announce (the boosted object). An Announce activity carries its
+    // target as a bare link (no embedded content), so the boost card would otherwise render only
+    // "View boosted post →". When the target is link-only this is resolved so the card shows a
+    // content preview (author, text, media) like Mastodon.
+    private IObject? _announcedObject;
+
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
@@ -502,6 +508,60 @@ public partial class ObjectView
             || path.EndsWith("/following", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// 121.7 — The boosted object for an <c>Announce</c>: the embedded object (when the feed item
+    /// carries the full object) or the fetched object (when the target is a bare link and has been
+    /// resolved in <see cref="OnInitializedAsync"/>). Null when neither is available.
+    /// </summary>
+    private IObject? BoostedObject => ActivityEmbeddedObject ?? _announcedObject;
+
+    /// <summary>
+    /// 121.7 — The author IRI of the boosted object, preferring the activity-level author and
+    /// falling back to the boosted object's own <c>attributedTo</c>.
+    /// </summary>
+    private Iri? BoostedAuthorIri
+        => AnnounceAuthorIri
+           ?? (BoostedObject as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+
+    /// <summary>
+    /// 121.7 — The published time of the boosted object, preferring the activity-level published
+    /// and falling back to the boosted object's own <c>published</c>.
+    /// </summary>
+    private DateTime? BoostedPublished
+        => ActivityPublished
+           ?? (BoostedObject as ActivityObject)?.Published;
+
+    /// <summary>
+    /// 121.7 — Renders the content of a boosted object (from either the embedded or the fetched
+    /// object) as a safe HTML markup string, converting markdown to HTML when needed.
+    /// </summary>
+    private MarkupString RenderBoostedContent(IObject boosted)
+    {
+        var content = boosted is ActivityObject ao ? JoinStrings(ao.Content) : null;
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return new MarkupString(string.Empty);
+        }
+
+        return new MarkupString(
+            boosted.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
+    }
+
+    /// <summary>
+    /// 121.7 — Resolves rich attachments for a boosted object, preferring the embedded object's
+    /// attachments (which may include server-rendered same-origin media) and falling back to the
+    /// fetched object's attachments.
+    /// </summary>
+    private IReadOnlyList<RichAttachment> ResolveBoostedAttachments(IObject boosted)
+    {
+        if (ActivityEmbeddedObject is { } embedded)
+        {
+            return embedded.GetRichAttachments();
+        }
+
+        return boosted.GetRichAttachments();
+    }
+
     private PollData? ResolvePoll()
         => (ActivityEmbeddedObject ?? Obj)?.GetPollData();
 
@@ -790,6 +850,44 @@ public partial class ObjectView
                     if (liked is { } likedObj)
                     {
                         _likedObject = likedObj;
+                    }
+                }
+                catch
+                {
+                    // Non-fatal: the card falls back to the bare-link rendering.
+                }
+                finally
+                {
+                    StateHasChanged();
+                }
+            }
+        }
+
+        // 121.7 — an Announce whose target is a bare link (the common case: the feed Announce carries
+        // only an IRI, no embedded object) is resolved so the boost card renders a content preview
+        // (author, text, media) instead of just "View boosted post →". Skipped when the Announce
+        // already carries an embedded target (nothing to fetch) or when no target IRI is present.
+        if (Item is Announce
+            && ActivityEmbeddedObject is null
+            && AnnounceTargetIri is { } announceIri)
+        {
+            try
+            {
+                await Session.EnsureReadyAsync();
+            }
+            catch
+            {
+                // Non-fatal: the card falls back to the bare-link rendering.
+            }
+
+            if (Session.Client is { } announceClient)
+            {
+                try
+                {
+                    var announced = await announceClient.GetObjectAsync(announceIri, CancellationToken.None);
+                    if (announced is { } announcedObj)
+                    {
+                        _announcedObject = announcedObj;
                     }
                 }
                 catch
