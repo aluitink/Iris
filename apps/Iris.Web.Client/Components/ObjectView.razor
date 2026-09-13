@@ -271,7 +271,16 @@
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
             </div>
-            @if (LikeTargetIri is { } likeTarget)
+            @if (_likedObject is { } liked)
+            {
+                // 119.1 — the liked object was resolved: render it as a full, nested object card
+                // (author, content, media, engagement) under the "Liked" header, so the Likes tab
+                // shows the actual liked post rather than a bare link.
+                <div class="object-like-resolved">
+                    <ObjectView Item="liked" />
+                </div>
+            }
+            else if (LikeTargetIri is { } likeTarget)
             {
                 <div class="object-like-target">
                     <a href="@ObjectHref(likeTarget)" title="@likeTarget" class="object-post-link">

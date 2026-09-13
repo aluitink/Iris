@@ -966,6 +966,12 @@ ul.object-list li {
     text-decoration: none;
 }
 
+.object-like-resolved {
+    margin-top: var(--space-2);
+    padding-left: var(--space-3);
+    border-left: 2px solid var(--accent-warm);
+}
+
 .object-actor-handle {
     color: var(--text);
     font-weight: 700;

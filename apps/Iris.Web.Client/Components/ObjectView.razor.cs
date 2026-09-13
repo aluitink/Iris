@@ -38,6 +38,12 @@ public partial class ObjectView
     private IObject? _parentObject;
     private Iri? _parentAuthorIri;
 
+    // 119.1 — the fetched target of a Like (the liked object). A Like activity carries its target as a
+    // bare link (no embedded content), so the profile Likes tab would otherwise render only an IRI.
+    // When the target is a link-only reference this is resolved (the liked Note/Article) so the card
+    // shows the actual liked content, not just a link.
+    private IObject? _likedObject;
+
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
@@ -733,6 +739,48 @@ public partial class ObjectView
             finally
             {
                 StateHasChanged();
+            }
+        }
+
+        // 119.1 — a Like whose target is a bare link (the common case: the outbox Like carries only an
+        // IRI, no embedded object) is resolved so the profile Likes tab renders the actual liked
+        // content (author, text, media) instead of a bare IRI. Skipped when the Like already carries an
+        // embedded target (nothing to fetch) or when no target IRI is present.
+        //
+        // The session accessor is scoped, so this component's instance may not have its signing key
+        // loaded yet even though the parent page has (the client returns null until
+        // EnsureReadyAsync completes). Prime it here before reading Session.Client.
+        if (Item is Like
+            && ActivityEmbeddedObject is null
+            && LikeTargetIri is { } likedIri)
+        {
+            try
+            {
+                await Session.EnsureReadyAsync();
+            }
+            catch
+            {
+                // Non-fatal: the card falls back to the bare-link rendering.
+            }
+
+            if (Session.Client is { } likeClient)
+            {
+                try
+                {
+                    var liked = await likeClient.GetObjectAsync(likedIri, CancellationToken.None);
+                    if (liked is { } likedObj)
+                    {
+                        _likedObject = likedObj;
+                    }
+                }
+                catch
+                {
+                    // Non-fatal: the card falls back to the bare-link rendering.
+                }
+                finally
+                {
+                    StateHasChanged();
+                }
             }
         }
     }
