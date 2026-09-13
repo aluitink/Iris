@@ -17,12 +17,18 @@ namespace Iris.Server.Security;
 /// document is fetched once and reused across key resolutions and deliveries within the cache's TTL.
 /// An absent result (the client returned null) is not cached, so a later lookup retries.
 /// </para>
+/// <para>
+/// When a <see cref="RemoteActorPersister"/> is provided, newly fetched remote actors are also
+/// persisted to the durable actor store (117.3 — directory "All known" scope), so the directory
+/// can list actors the instance has encountered during federation.
+/// </para>
 /// </remarks>
-public sealed class IrisActorDocumentFetcher(IActivityPubClient client, RemoteActorCache remoteActors)
+public sealed class IrisActorDocumentFetcher(IActivityPubClient client, RemoteActorCache remoteActors, RemoteActorPersister? persister = null)
     : IActorDocumentFetcher
 {
     private readonly IActivityPubClient _client = client!;
     private readonly RemoteActorCache _remoteActors = remoteActors!;
+    private readonly RemoteActorPersister? _persister = persister;
 
     /// <inheritdoc/>
     public async Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
@@ -35,7 +41,14 @@ public sealed class IrisActorDocumentFetcher(IActivityPubClient client, RemoteAc
                 ct)
             .ConfigureAwait(false);
 
-        return value as Actor;
+        var actor = value as Actor;
+
+        if (actor is not null && _persister is not null)
+        {
+            await _persister.PersistIfNewAsync(actor, ct).ConfigureAwait(false);
+        }
+
+        return actor;
     }
 
     private async Task<IObject?> FetchDocumentAsync(Iri iri, CancellationToken ct)

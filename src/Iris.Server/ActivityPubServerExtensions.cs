@@ -229,7 +229,20 @@ public static class ActivityPubServerExtensions
             // The fetch reads through the remote-actor cache (Phase 3), so a remote actor's document
             // is fetched once and reused across key resolutions and deliveries.
             var actorCache = sp.GetRequiredService<RemoteActorCache>();
-            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache);
+
+            // 117.3: persist newly fetched remote actors to the durable store so the directory's
+            // "All known" scope can list actors the instance has encountered during federation.
+            RemoteActorPersister? persister = null;
+            var persistence = sp.GetService<IPersistenceProvider>();
+            if (persistence is not null)
+            {
+                persister = new RemoteActorPersister(
+                    persistence.Actors,
+                    instanceBase: options.BaseUri,
+                    logger: sp.GetService<ILogger<RemoteActorPersister>>());
+            }
+
+            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache, persister);
         });
 
         // Outbound object fetch (24.1): the server→server delivery target for a Like / Announce (and an
