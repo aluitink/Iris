@@ -7305,10 +7305,16 @@ public static class ActivityPubServerExtensions
         // only posts, excluding Flag/Block/Like/Announce activities).
         var activityType = context.Request.Query["type"].ToString();
 
+        // A ?depth query (117.1) includes replies up to the given depth from followed actors.
+        // e.g. ?depth=1 includes first-level replies (the thread's top replies appear in the feed).
+        // When absent, all replies from followed actors are filtered out (default behavior).
+        int? threadDepth = int.TryParse(context.Request.Query["depth"].ToString(), out var d) && d > 0 ? (int?)d : null;
+
         var items = await feedService.GetFeedAsync(
             actorIri,
             query.Length > 0 ? query : null,
             activityType.Length > 0 ? activityType : null,
+            threadDepth,
             ct).ConfigureAwait(false);
 
         // Enrich nested objects with likedCount/sharedCount (+ isLiked/isShared for authenticated
@@ -7324,7 +7330,7 @@ public static class ActivityPubServerExtensions
 
         var collectionIri = new Iri($"{actorIri.Value}/feed");
         var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
-            supportsRefresh: true, supportsQuery: true, supportsType: true,
+            supportsRefresh: true, supportsQuery: true, supportsType: true, supportsDepth: true,
             namespaceIri: ns);
 
         // The feed is not served through the local collection-page response cache (it merges remote
@@ -8763,6 +8769,7 @@ public static class ActivityPubServerExtensions
     /// <param name="supportsRefresh">When true, advertises the <c>iris:refresh</c> capability on page 1.</param>
     /// <param name="supportsQuery">When true, advertises the <c>iris:query</c> capability on page 1.</param>
     /// <param name="supportsType">When true, advertises the <c>iris:type</c> capability on page 1.</param>
+    /// <param name="supportsDepth">When true, advertises the <c>iris:depth</c> capability on page 1.</param>
     /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (null omits all capabilities).</param>
     /// <returns>The serialized JSON-LD document for the requested page.</returns>
     private static string BuildCollectionPageDocument(
@@ -8773,6 +8780,7 @@ public static class ActivityPubServerExtensions
         bool supportsRefresh = false,
         bool supportsQuery = false,
         bool supportsType = false,
+        bool supportsDepth = false,
         string? namespaceIri = null)
     {
         var total = items.Count;
@@ -8818,6 +8826,7 @@ public static class ActivityPubServerExtensions
                 supportsRefresh: supportsRefresh,
                 supportsQuery: supportsQuery,
                 supportsType: supportsType,
+                supportsDepth: supportsDepth,
                 namespaceIri: namespaceIri);
         }
 
@@ -8835,6 +8844,7 @@ public static class ActivityPubServerExtensions
             supportsRefresh: false,
             supportsQuery: false,
             supportsType: false,
+            supportsDepth: false,
             namespaceIri: null);
     }
 
@@ -8867,6 +8877,8 @@ public static class ActivityPubServerExtensions
     /// supports <c>?q=...</c> content filtering).</param>
     /// <param name="supportsType">When true, advertises <c>iris:type: true</c> (the collection
     /// supports <c>?type=...</c> activity-type filtering).</param>
+    /// <param name="supportsDepth">When true, advertises <c>iris:depth: true</c> (the collection
+    /// supports <c>?depth=...</c> reply-depth filtering, 117.1).</param>
     /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (used to prefix the
     /// capability extension keys). Null or empty omits all capability extensions.</param>
     /// <returns>The serialized JSON-LD document for the page.</returns>
@@ -8884,6 +8896,7 @@ public static class ActivityPubServerExtensions
         bool supportsRefresh = false,
         bool supportsQuery = false,
         bool supportsType = false,
+        bool supportsDepth = false,
         string? namespaceIri = null)
     {
         using var stream = new MemoryStream();
@@ -8960,6 +8973,12 @@ public static class ActivityPubServerExtensions
                 if (supportsType)
                 {
                     writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Type);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsDepth)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Depth);
                     writer.WriteBooleanValue(true);
                 }
             }

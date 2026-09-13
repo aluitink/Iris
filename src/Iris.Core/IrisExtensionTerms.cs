@@ -93,6 +93,15 @@ public static class IrisExtensionTerms
     public const string Type = "type";
 
     /// <summary>
+    /// The <c>depth</c> collection capability extension (117.1): a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?depth=...</c> reply-depth query parameter. When present, clients can issue
+    /// <c>?depth=1</c> to include first-level replies from followed actors in the feed (the thread's
+    /// top replies appear inline). The full wire key is <c>{NamespaceIri}depth</c>.
+    /// </summary>
+    public const string Depth = "depth";
+
+    /// <summary>
     /// The <c>likedCount</c> extension: an <c>int</c> rendered on a content object's document (including
     /// nested objects in collection items) indicating the number of distinct actors that have liked the
     /// object (the like reverse-index count). This is a cacheable, per-object interaction counter: it is

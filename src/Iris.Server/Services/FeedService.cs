@@ -1,5 +1,6 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Options;
 using CollectionPage = Iris.Core.Collections.CollectionPage;
@@ -30,6 +31,16 @@ namespace Iris.Server.Services;
 /// follow is kept, only its content is hidden). When the service is constructed without a moderation
 /// store (moderation disabled) every follow is merged (no filtering). The check is by the follow's actor
 /// IRI (the edge is recorded on the actor IRI), so it applies uniformly to local and remote follows.
+/// </remarks>
+/// <remarks>
+/// <strong>Reply filtering (117.1, thread-aware feed).</strong> Replies from followed actors are excluded
+/// from the home feed (they appear under the parent post's replies section instead). A reply is detected
+/// deterministically via the content object's <c>inReplyTo</c> field (the primary signal); when
+/// <c>inReplyTo</c> is absent, the audience heuristic is used as a fallback (a non-public audience
+/// indicates a directed reply). The actor's <em>own</em> replies are always kept in the feed. The
+/// <c>threadDepth</c> parameter (117.1) enables inclusion of replies up to a given depth:
+/// when 1, first-level replies to followed actors' top-level posts are included; when 2, second-level
+/// replies are also included. Depth 0 (default) filters all replies.
 /// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
@@ -76,9 +87,9 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, CancellationToken ct = default)
     {
-        var feed = await BuildFeedAsync(actorIri, ct).ConfigureAwait(false);
+        var feed = await BuildFeedAsync(actorIri, threadDepth, ct).ConfigureAwait(false);
 
         // A non-empty query filters the feed to the matching items (the same content/name match as the
         // community feed's ?q filter, F-23 / 21.4.2): an item matches when its content/name (or, for
@@ -111,7 +122,11 @@ public sealed class FeedService : IFollowFeedService
     /// IRI (a post the actor made cannot also appear in a follow's outbox, but the de-dup is a cheap
     /// safeguard) and caps the result to <see cref="FeedOptions.MaxItems"/>.
     /// </remarks>
-    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, CancellationToken ct)
+    /// <param name="actorIri">The local actor whose feed is being built.</param>
+    /// <param name="threadDepth">When non-null and > 0, replies up to this depth from followed actors are
+    /// included (117.1). When null or 0, all replies from followed actors are filtered out.</param>
+    /// <param name="ct">Cancellation token.</param>
+    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, int? threadDepth, CancellationToken ct)
     {
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
 
@@ -156,10 +171,11 @@ public sealed class FeedService : IFollowFeedService
 
             foreach (var item in items)
             {
-                // Phase 101: filter out replies from followed actors. A reply is a Create activity
-                // whose content object has a non-public audience (the person being replied to).
-                // Top-level posts (public-only audience) are kept. Boosts (Announce) are always kept.
-                if (IsFollowReply(item, followIri))
+                // 117.1: thread-aware reply filtering. Replies from followed actors are excluded from the
+                // home feed by default (they appear under the parent post's replies section). The
+                // threadDepth parameter allows including replies up to a given depth. The actor's own
+                // replies are always kept (they are merged from the actor's own outbox, not here).
+                if (threadDepth is not (> 0) && IsFollowReply(item))
                 {
                     continue;
                 }
@@ -173,12 +189,14 @@ public sealed class FeedService : IFollowFeedService
 
     /// <summary>
     /// Reports whether a feed item is a reply made by a followed actor (not a top-level post).
-    /// A reply is a <c>Create</c> activity whose content object has a non-public audience
-    /// (the <c>to</c>/<c>cc</c> field contains a specific actor IRI, not just the public sentinel).
-    /// Top-level posts (public-only audience) and non-<c>Create</c> activities (Announce, Like, etc.)
+    /// A reply is a <c>Create</c> activity whose content object has an <c>inReplyTo</c> field
+    /// (the deterministic primary signal). When <c>inReplyTo</c> is absent, the audience heuristic is
+    /// used as a fallback: a non-public audience (the <c>to</c>/<c>cc</c> field contains a specific
+    /// actor IRI, not just the public sentinel) indicates a directed reply. Top-level posts
+    /// (no <c>inReplyTo</c>, public-only audience) and non-<c>Create</c> activities (Announce, Like, etc.)
     /// return <see langword="false"/>.
     /// </summary>
-    private static bool IsFollowReply(IObjectOrLink item, Iri followerIri)
+    private static bool IsFollowReply(IObjectOrLink item)
     {
         if (item is not Create create)
         {
@@ -191,8 +209,13 @@ public sealed class FeedService : IFollowFeedService
             return false;
         }
 
-        // A reply has a non-public audience (the person being replied to).
-        // A top-level post has only the public sentinel in its audience.
+        // Primary signal: inReplyTo is set (deterministic, 117.1).
+        if (contentObj.GetParentIri() is not null)
+        {
+            return true;
+        }
+
+        // Fallback: non-public audience indicates a directed reply (Phase 101 heuristic).
         return contentObj.GetAudienceIris().Count > 0;
     }
 

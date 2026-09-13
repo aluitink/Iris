@@ -798,6 +798,133 @@ public sealed class FeedServiceTests
         Assert.Equal("https://a.test/announce/b-1", IdOf(feed[0]));
     }
 
+    [Fact]
+    public async Task Feed_FollowReply_WithInReplyTo_IsFilteredOut()
+    {
+        // 117.1: reply detection via inReplyTo (primary signal).
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob top-level post");
+            // bob replies to carol's post (inReplyTo is set).
+            AddReply(persistence, bob, "b-2", "bob reply to carol", Actor(LocalHost, "carol"));
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_FollowReply_WithOnlyAudience_IsFilteredOut()
+    {
+        // 117.1: fallback to audience heuristic when inReplyTo is absent.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob top-level post");
+            // bob's reply has NO inReplyTo but has a non-public audience (carol in `to`).
+            var noteIri = $"https://{LocalHost}/notes/b-2";
+            persistence.Activities.AddToOutboxAsync(bob, new Create
+            {
+                Id = noteIri,
+                Actor = [new Link { Href = new Uri(bob.Value) }],
+                Object = [new Note
+                {
+                    Id = noteIri,
+                    Content = ["bob reply (audience only)"],
+                    To = [new Link { Href = new Uri(carol.Value) }],
+                }],
+            }).GetAwaiter().GetResult();
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // The audience-only reply is still filtered (fallback heuristic).
+        Assert.Single(feed);
+        Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(feed[0]));
+    }
+
+    [Fact]
+    public async Task Feed_FollowReply_ThreadDepth1_IncludesReply()
+    {
+        // 117.1: ?depth=1 includes first-level replies from followed actors.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, bob, "b-1", "bob top-level post");
+            AddReply(persistence, bob, "b-2", "bob reply to carol", Actor(LocalHost, "carol"));
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1);
+
+        // Both the post and the reply appear (depth 1 includes first-level replies).
+        Assert.Equal(2, feed.Count);
+    }
+
+    [Fact]
+    public async Task Feed_OwnReply_AlwaysKept_RegardlessOfDepth()
+    {
+        // 117.1: the actor's own replies are always kept, even without threadDepth.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, alice, "a-1", "alice top-level");
+            AddReply(persistence, alice, "a-2", "alice reply to bob", Actor(LocalHost, "bob"));
+            AddPost(persistence, bob, "b-1", "bob post");
+            AddReply(persistence, bob, "b-2", "bob reply to alice", Actor(LocalHost, "alice"));
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        // alice's own reply (a-2) is kept; bob's reply (b-2) is filtered.
+        Assert.Equal(3, feed.Count);
+        var ids = feed.Select(IdOf).ToHashSet();
+        Assert.Contains($"https://{LocalHost}/notes/a-2", ids);
+        Assert.DoesNotContain($"https://{LocalHost}/notes/b-2", ids);
+    }
+
+    [Fact]
+    public async Task Feed_FollowAnnounce_NotAffectedByReplyFilter()
+    {
+        // 117.1: Announce (boost) activities are never treated as replies.
+        var (service, _) = Build(persistence: SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            var carol = Actor(LocalHost, "carol");
+            SeedActor(persistence, bob, "Bob");
+            SeedActor(persistence, carol, "Carol");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+            AddPost(persistence, carol, "c-1", "carol post");
+            AddAnnounce(persistence, bob, "https://a.test/announce/b-1", "https://a.test/notes/c-1", embedded: true);
+        }));
+
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"));
+
+        Assert.Single(feed);
+        Assert.Equal("https://a.test/announce/b-1", IdOf(feed[0]));
+    }
+
     // --- Builders --------------------------------------------------------------------
 
     private static (FeedService Service, InMemoryPersistenceProvider Persistence) Build(
@@ -842,7 +969,8 @@ public sealed class FeedServiceTests
 
     /// <summary>
     /// Seeds a <c>Create</c> of a note that is a reply to <paramref name="repliedToIri"/> (the note's
-    /// <c>to</c> field contains the replied-to actor, making it a non-public audience).
+    /// <c>inReplyTo</c> field contains the replied-to actor, and its <c>to</c> field contains the
+    /// replied-to actor as audience, making it a non-public audience).
     /// </summary>
     private static void AddReply(
         InMemoryPersistenceProvider persistence, Iri actorIri, string suffix, string content, Iri repliedToIri)
@@ -856,6 +984,7 @@ public sealed class FeedServiceTests
             {
                 Id = noteIri,
                 Content = [content],
+                InReplyTo = [new Link { Href = new Uri(repliedToIri.Value) }],
                 To = [new Link { Href = new Uri(repliedToIri.Value) }, new Link { Href = new Uri("https://www.w3.org/ns/activitystreams#Public") }],
             }],
         }).GetAwaiter().GetResult();
