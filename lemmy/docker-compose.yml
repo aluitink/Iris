@@ -1,0 +1,71 @@
+# Lemmy server for the Iris <-> Lemmy interop instance (Phase 135.1).
+#
+# Deployed in its OWN folder (lemmy/), separate from the Iris app, per the Phase 135.1 requirement.
+# Advertised under the public FQDN https://iris-dev2.luit.ink — the external reverse proxy forwards
+# iris-dev2.luit.ink:443 -> host:8082 -> this container's 8536 (Lemmy 0.19's backend port).
+#
+# Runs on the shared `irisweb_iris-web-net` Docker network so Lemmy can reach the Iris instances
+# (iris.luit.ink on 8088, and — while iris2 is down — the network is still shared) directly for
+# federation, and Iris can reach Lemmy.
+#
+# NOTE: this REPLACES the iris2 (iris-dev2.luit.ink) Iris test instance at the same FQDN/port. The
+# iris2 Postgres volume (irisweb_iris2-db-data) is owned by the iris2 compose project, NOT this one,
+# so `docker compose -f lemmy/docker-compose.yml down -v` does NOT destroy it.
+#
+# Bring up:   docker compose -f lemmy/docker-compose.yml up -d
+# Tear down:  docker compose -f lemmy/docker-compose.yml down -v
+# Logs:       docker compose -f lemmy/docker-compose.yml logs -f lemmy
+#
+# First run: the `setup` block in config/config.hjson creates the admin user (lemmyadmin) and the
+# site ("Iris Lemmy Interop"). After the DB is initialized, the site's registration_mode and
+# federation settings are set via the Lemmy REST API (see the 135.1b change doc).
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: lemmy
+      POSTGRES_USER: lemmy
+      POSTGRES_PASSWORD: lemmy-test-pw
+    volumes:
+      - lemmy-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lemmy -d lemmy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+
+  lemmy:
+    # Built from ./Dockerfile, which bakes config/config.hjson into the image at
+    # /config/config.hjson (Lemmy 0.19's default config location). We build (rather than pull +
+    # bind-mount) because this host's Docker runtime bind mounts are broken — see Dockerfile.
+    build:
+      context: .
+      dockerfile: Dockerfile
+    platform: linux/x86_64
+    environment:
+      # Verbose enough to debug federation without drowning in noise.
+      RUST_LOG: "warn,lemmy_server=info,lemmy_apub=debug"
+      RUST_BACKTRACE: "1"
+    ports:
+      # 8082 matches the reverse-proxy target for iris-dev2.luit.ink (443 -> host:8082).
+      # Lemmy 0.19's backend listens on 8536.
+      - "8082:8536"
+    # NOTE: no healthcheck. The official `dessalines/lemmy` image is minimal (no wget/curl/busybox,
+    # and its shell is dash, which lacks bash's /dev/tcp), so there is no in-container tool to probe
+    # the HTTP endpoint. The service is confirmed healthy externally (it serves /api/v3/site,
+    # /.well-known/nodeinfo, and the community Group documents). `depends_on: db: service_healthy`
+    # below still gates Lemmy start on Postgres being ready.
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+networks:
+  iris-web-net:
+    external: true
+    name: irisweb_iris-web-net
+
+volumes:
+  lemmy-db-data:
