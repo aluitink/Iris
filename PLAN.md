@@ -92,9 +92,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 6. **Fix in scope**: implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
- ## Up Next
-
-- **118.1 - Communities polish** - Our goal is to cooperate in the Lemmyverse eco system. We need to do a deeper investigation on how this is done lemmy instance to lemmy instance. I imagine the owner of the community would follow a peer community as the owned community, the peer community would then send it's content to the owned communities inbox. If this is the proper method for peering, we should improve the flow by allowing the user to webfinger for a peer community and then follow it - we can call it relay on our side, but it should post a follow request as the owned community to the peer community.
+   ## Up Next
 
 - **118.2 - Community feed** - A community provides a different type of information, I'm not enirely sure how we get at it yet (if we can browse it or need to subscribe and wait for it). We should experiement with some real world communities. We may need to do some indepth research (dispatch a sub agent) to determine what to expect from a Lemmy community, I think it may be a Document or a Page object that has a link or attachment - it's different than the mastodon note. I think there are also Likes and Dislikes - but unusre how to enumerate them. We need controls that support posting to a community in the proper form as to allow us to post to a Lemmy community - we should be Lemmy compatible and can investigate other platform compatabilities later.
 
@@ -118,6 +116,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **118.1 — Communities: WebFinger-then-Follow (DONE)** — Peers tab "Follow as this community" now accepts a remote handle (`!community@host` / `@user@host`); new "Look up" button resolves it via WebFinger (home proxy) with a "Will follow" preview; `!` prefers a Lemmy Group. Full IRIs accepted directly. Live-verified: `@alice@iris.luit.ink` → "Will follow: alice (…/ap/v1/u/alice)"; `!rust@lemmy.ml` → graceful "Could not reach". [changes/11801](docs/changes/11801-phase118-communities-webfinger-follow.md)
+
 - **117.6 — Feed Items with Replies: Parent Media (DONE)** — "In reply to" context card now shows the parent's media attachments via `MediaGallery`. Live-verified: reply to a post with image shows the image in the context card. [changes/11706](docs/changes/11706-phase117-feed-items-with-replies.md)
 
 - **117.5 — Feed Content: Filter Own Replies (DONE)** — Extended 117.1's reply filter to the actor's own outbox: home feed now shows only top-level content by default; `?depth` opts in to replies (own + followed). 4 updated/new tests. 1,143 total pass. [changes/11705](docs/changes/11705-phase117-feed-content-filtering.md)
@@ -125,8 +125,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **117.4 — Common Actor Card (DONE)** — Upgraded `ActorCard` with banner support (avatar overlap), type badges (Community/Bot), 2-line summary clamp, and inline moderation (Block/Mute/Report) via `ShowModeration` param. Correct href for Group actors. Live-verified: directory, followers/following, search. [changes/11704](docs/changes/11704-phase117-actor-card.md)
 
 - **117.3 — Directory: Persist Remote Actors for "All Known" (DONE)** — `RemoteActorPersister` persists remote actors to durable store on first fetch via `IActorDocumentFetcher`. "All known" now shows remote actors. 11 new tests. 1,125 total pass. [changes/11703](docs/changes/11703-phase117-directory-remote-actors.md)
-
-- **117.2 — Notifications Card Layout (DONE)** — Rewritten NotificationRow from flat list to card layout (header: avatar+name+verb+time, body: note preview + View link). Fixed render tree crash. Live-verified: cards, filters, pagination. [changes/11702](docs/changes/11702-phase117-notifications-cards.md)
 
 
 ## Keeping the docs lean
