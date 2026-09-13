@@ -8,6 +8,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 >
 > **Updated (Phase 99):** **Community search** promoted 🟡 → ✅ (server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box, with the server's paged links now carrying `?q=` so the filter survives infinite-scroll). Tally now **34 fully implemented, 5 partial, 0 missing**.
 > **Updated (Phase 128.1):** **Unread badge** promoted ☐ → ✅ on D (polish). Tally now **35 fully implemented, 4 partial, 0 missing**.
+> **Updated (Phase 130.1–130.2):** **Login rate limiting** + **Admin bootstrap** promoted ☐ → ✅ on D (polish). Tally now **37 fully implemented, 2 partial, 0 missing**. All D-column boxes closed.
 
 ## Onboarding & account
 
@@ -15,8 +16,8 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 |---|---|---|---|---|
 | Register (username/password) | ✅ | ✅ | ✅ | `/register`: handle + display + password inputs + "Create account" button. Provisions actor + keys. Live-verified 2026-09-13 (form structure; DOM-injected values don't bind in headless WASM — known limitation). |
 | Login / logout | ✅ | ✅ | ✅ | `/login`: handle + password + "Sign in" button; error handling ("Invalid username or password."); `/logout` → `/login`. Cookie auth. Rate limiting server-side. Live-verified 2026-09-13 (logout→login round-trip). |
-| Login rate limiting | ✅ | ✅ | ☐ | Server-side rate limiting; not easily triggerable via UI without many failed attempts. Structure verified, not exercised. |
-| Admin bootstrap from `.env` | ✅ | ✅ | ☐ | Server-side bootstrap from environment variables; not a web UI feature. Structure verified, not exercised via Playwright. |
+| Login rate limiting | ✅ | ✅ | ✅ | `SlidingWindowLoginRateLimiter` (5 attempts / 15 min, keyed by `username+IP`). **Phase 130.1 live-verified:** 5 failed logins → 6th rejected with "Too many failed attempts. Please try again later. Try again in about 15 minutes." |
+| Admin bootstrap from `.env` | ✅ | ✅ | ✅ | `AdminBootstrapper` provisions first admin from `IRIS_ADMIN_USERNAME`/`IRIS_ADMIN_PASSWORD` at boot. **Phase 130.2 verified:** idempotent (alice bootstrapped 2026-09-08, no second admin on subsequent restarts). Verification path documented. |
 | Change password | ✅ | ✅ | ✅ | Settings > Account > "Change password" `<details>`: 3 inputs + button + client-side validation. `POST /local/v1/account/password`. Live-verified 2026-09-13 (Phase 115.6). |
 | Admin-assisted password reset | ✅ | ✅ | ✅ | `/admin/users`: per-row "Reset password" button → inline confirm (password input + Set/Cancel). `POST /local/v1/admin/users/{id}/password-reset`. Live-verified 2026-09-13 (button present; not exercised to avoid changing a real user's password). |
 

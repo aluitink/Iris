@@ -94,9 +94,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **130.1 — Login rate limiting: polish pass (LOW)** — Feature matrix ☐ on D. Server-side rate limiting exists; needs a live UI verification (trigger many failed logins, confirm lockout message). Note: rate limiter may need a reset between test runs.
-- **130.2 — Admin bootstrap from `.env`: polish pass (LOW)** — Feature matrix ☐ on D. Not a web UI feature; document the verification path in the deployment docs.
-- **130.3 — General UI/UX review (fifth pass) (MEDIUM)** — Scheduled periodic review. If no issues found, the app is in a stable production state and the loop can shift to hardening/ops tasks.
+- **130.3 — General UI/UX review (fifth pass) (MEDIUM)** — Scheduled periodic review. Feature matrix D-column now 100% closed (37/37 rows fully implemented). If no issues found, the app is in a stable production state and the loop can shift to hardening/ops tasks (performance, federation edge cases, security audit).
+- **131.1 — Performance: home feed load time (MEDIUM)** — Measure and optimize the home feed initial load (WASM bootstrap + first paged collection fetch). Target: < 3s to first post visible on a cold load. Baseline measurement via Playwright.
+- **131.2 — Security: dependency audit + CSP review (MEDIUM)** — Review NuGet dependencies for known vulnerabilities; verify CSP headers are correct (no `unsafe-eval`, minimal `unsafe-inline`); check for missing security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy).
 
 ## Inbox
 
@@ -108,15 +108,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **130.1 — Login rate limiting: live UI verification (DONE)** — 5 failed logins → 6th rejected with "Too many failed attempts... Try again in about 15 minutes." Feature matrix D-column closed. [changes/13001](docs/changes/13001-phase130-login-rate-limit-verify.md)
+
+- **130.2 — Admin bootstrap from `.env`: verification path documented (DONE)** — `AdminBootstrapper` idempotent (alice bootstrapped 2026-09-08, no second admin on restarts). Verification path documented. Feature matrix D-column closed. [changes/13002](docs/changes/13002-phase130-admin-bootstrap-docs.md)
+
 - **129.1 — Notification badge: real-time clear on mark-all (DONE)** — Added `UnreadCountChanged` event to `NotificationService`; badge subscribes, notifications page raises after mark-all. Live-verified: badge "13" → gone immediately. 0 console errors. [changes/12901](docs/changes/12901-phase129-badge-realtime-clear.md)
 
 - **128.1 — Unread notification badge: live-render verification (DONE)** — Badge renders "1" when unread > 0, disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found: badge stale on notifications page for up to 60s after mark-all → 129.1. [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
 
 - **127.1 — General UI/UX review (fourth pass) (DONE, review-only)** — Visual sweep of all pages (desktop 1400px + mobile 375px). No new issues found. 126.* fixes verified. Review cycle converged (4 passes, 0 issues in last 2). [changes/12701](docs/changes/12701-phase127-ui-ux-review.md)
-
-- **126.2 — Notification row: null-safe icon/verb rendering (DONE)** — Wrapped icon + verb in `@if (Activity is { })` guard. Prevents NRE on non-Activity inbox items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
-
-- **126.1 — Actor detail stats row: count only Note/Article posts (DONE)** — Replaced outbox `totalItems` with first-page Note/Article count. verifier87: "2"→"0"; bob: "13"→"4". [changes/12601](docs/changes/12601-phase126-actor-stats-post-count.md)
 
 ## Keeping the docs lean
 
