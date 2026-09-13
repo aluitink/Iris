@@ -27,8 +27,11 @@
                         </a>
                     }
                 }
-                @NotificationIcon(Activity!)
-                <span class="notification-card__verb">@VerbFor(Activity!)</span>
+                @if (Activity is { } notfAct)
+                {
+                    @NotificationIcon(notfAct)
+                    <span class="notification-card__verb">@VerbFor(notfAct)</span>
+                }
             </div>
             @if (Published is { } published)
             {
