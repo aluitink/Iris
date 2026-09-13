@@ -26,7 +26,7 @@ public partial class ObjectView
     private IReadOnlyList<(string Name, Iri? Href)> HashtagTags => Obj?.GetHashtagTags() ?? [];
     private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> EmojiTags => ResolveEmojiTags();
     private PollData? Poll => _pollOverride ?? ResolvePoll();
-    private IReadOnlyList<Iri> AudienceIris => Obj?.GetAudienceIris() ?? [];
+    private IReadOnlyList<Iri> AudienceIris => FilterDisplayAudience(Obj?.GetAudienceIris());
     private PollData? _pollOverride;
     private bool _pollVoted;
     private int _pollVotedOption = -1;
@@ -459,7 +459,7 @@ public partial class ObjectView
     /// </summary>
     private Iri? EffectiveParentIri => ActivityParentIri ?? ParentIri;
 
-    private IReadOnlyList<Iri> ActivityAudienceIris => ActivityEmbeddedObject?.GetAudienceIris() ?? [];
+    private IReadOnlyList<Iri> ActivityAudienceIris => FilterDisplayAudience(ActivityEmbeddedObject?.GetAudienceIris());
 
     private IReadOnlyList<Iri> ActivityMentionIris => ActivityEmbeddedObject?.GetMentionIris() ?? [];
 
@@ -482,6 +482,25 @@ public partial class ObjectView
     /// </summary>
     private IReadOnlyList<(string Name, string ShortCode, Iri? Url)> ResolveEmojiTags()
         => (ActivityEmbeddedObject ?? Obj)?.GetCustomEmojis() ?? [];
+
+    /// <summary>
+    /// Filters follower-collection IRIs (e.g. <c>…/followers</c>) out of the audience list so the
+    /// "To" line only shows concrete recipients. A follower-collection IRI is noise for anonymous
+    /// visitors on the public timeline (121.5).
+    /// </summary>
+    private static IReadOnlyList<Iri> FilterDisplayAudience(IReadOnlyList<Iri>? audiences)
+    {
+        if (audiences is null || audiences.Count == 0) return [];
+        var filtered = audiences.Where(a => !IsFollowerCollection(a)).ToList();
+        return filtered.Count == audiences.Count ? audiences : filtered;
+    }
+
+    private static bool IsFollowerCollection(Iri iri)
+    {
+        var path = new Uri(iri.Value).AbsolutePath.TrimEnd('/');
+        return path.EndsWith("/followers", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/following", StringComparison.OrdinalIgnoreCase);
+    }
 
     private PollData? ResolvePoll()
         => (ActivityEmbeddedObject ?? Obj)?.GetPollData();
