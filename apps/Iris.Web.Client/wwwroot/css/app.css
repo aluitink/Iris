@@ -459,6 +459,22 @@ a:hover {
     .settings-subsection-summary {
         font-size: var(--font-size-base);
     }
+
+    /* 121.2 — Compose meta: stack the char counter and CW toggle on mobile so they don't
+       wrap awkwardly alongside the type/visibility selects. */
+    .compose-meta {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    .compose-char-count {
+        order: -1;
+        flex-basis: 100%;
+    }
+
+    .compose-sensitive-toggle {
+        flex-basis: 100%;
+    }
 }
 
 .main-nav a {
