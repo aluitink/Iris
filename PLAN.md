@@ -94,7 +94,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **128.1 — Unread notification badge: live-render verification (LOW)** — The badge data path is verified (endpoint returns `unread:15` → `0` after mark-all), but the actual badge element live-render was never confirmed in Playwright due to a WASM init lifecycle issue. Attempt a fresh Playwright session to verify the badge appears/disappears correctly. [changes/12701](docs/changes/12701-phase127-ui-ux-review.md)
+- **129.1 — Notification badge: real-time clear on mark-all (LOW)** — After "Mark all as read" on `/notifications`, the badge stays stale until the 60s poll or a page navigation. Wire the notifications page to signal the badge to reload (CascadingValue, event, or shared service). [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
 
 ## Inbox
 
@@ -107,6 +107,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **128.1 — Unread notification badge: live-render verification (DONE)** — Badge renders "1" when unread > 0, disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found: badge stale on notifications page for up to 60s after mark-all → 129.1. [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
+
 - **127.1 — General UI/UX review (fourth pass) (DONE, review-only)** — Visual sweep of all pages (desktop 1400px + mobile 375px). No new issues found. 126.* fixes verified. Review cycle converged (4 passes, 0 issues in last 2). [changes/12701](docs/changes/12701-phase127-ui-ux-review.md)
 
 - **126.2 — Notification row: null-safe icon/verb rendering (DONE)** — Wrapped icon + verb in `@if (Activity is { })` guard. Prevents NRE on non-Activity inbox items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
@@ -114,8 +116,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **126.1 — Actor detail stats row: count only Note/Article posts (DONE)** — Replaced outbox `totalItems` with first-page Note/Article count. verifier87: "2"→"0"; bob: "13"→"4". [changes/12601](docs/changes/12601-phase126-actor-stats-post-count.md)
 
 - **125.1 — Hardening: error & empty state audit (DONE, review-only)** — Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1–126.2. [changes/12501](docs/changes/12501-phase125-error-empty-state-audit.md)
-
-- **124.1 — General UI/UX review (third pass) (DONE, review-only)** — Visual sweep of all pages (desktop + mobile). No new issues found. [changes/12401](docs/changes/12401-phase124-ui-ux-review.md)
 
 ## Keeping the docs lean
 

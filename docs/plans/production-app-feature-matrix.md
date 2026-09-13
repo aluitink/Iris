@@ -7,6 +7,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 > **Reconciled 2026-09-12 (Phase 88.1):** All boxes below reflect a code-inspection + live-app verification pass against Phases 32–87. 33 rows fully implemented, 6 partial (scope/exposure gaps, not missing functionality), 1 missing (key/algorithm info). The two most notable gaps: (1) no read-only key/algorithm info surface, (2) "View others' profile" is `@attribute [Authorize]`-gated (the matrix originally said "Public, no auth required").
 >
 > **Updated (Phase 99):** **Community search** promoted 🟡 → ✅ (server `GET /c/{name}/search` + a CommunityDetail Feed-tab search box, with the server's paged links now carrying `?q=` so the filter survives infinite-scroll). Tally now **34 fully implemented, 5 partial, 0 missing**.
+> **Updated (Phase 128.1):** **Unread badge** promoted ☐ → ✅ on D (polish). Tally now **35 fully implemented, 4 partial, 0 missing**.
 
 ## Onboarding & account
 
@@ -73,7 +74,7 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
 | Unified notification list (inbox projection) | ✅ | ✅ | ✅ | `Notifications.razor` page renders the list (12 rows live-verified) with `NotificationRow` items (avatar, verb, relative time, target link). Live-verified signed in. |
-| Unread badge/count | ✅ | ✅ | ☐ | `NotificationBadge` polls `GetUnreadCountAsync` (endpoint verified: returns `unread:15`, drops to `0` after mark-all) and renders `.nav-badge` when >0. Live-render of the badge element itself is blocked in the headless WASM automation (the component's init lifecycle does not fire there); the data path is verified. |
+| Unread badge/count | ✅ | ✅ | ✅ | `NotificationBadge` polls `GetUnreadCountAsync` and renders `.nav-badge` when >0. **Phase 128.1 live-verified:** badge shows "1" when alice has 1 unread; disappears after mark-all + navigation. Minor: badge is stale on the notifications page for up to 60s after mark-all (clears on next poll or navigation). |
 | Mark as read | ✅ | ✅ | ✅ | "Mark all as read" button → `NotificationService.MarkAllReadAsync` → `POST /local/v1/notifications/read`. Live-verified: unread 15 → 0. (Per-item read is intentionally deferred to Phase 2; MVP bumps `UserAccount.NotificationsReadAt`.) |
 | Filter by type (follows/likes/replies/mentions) | ✅ | ✅ | ✅ | Six filter tabs (All/Follows/Likes/Boosts/Replies/Mentions) → server `?type=` filter. Live-verified: "All" = 12 rows, "Likes" = 6 rows. |
 

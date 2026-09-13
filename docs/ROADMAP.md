@@ -276,3 +276,5 @@
   - **Phase 126.2 — Notification row: null-safe icon/verb rendering (COMPLETE):** wrapped icon + verb in @if (Activity is { }) guard to prevent NRE on non-Activity inbox items. 0 console errors. [changes/12602](changes/12602-phase126-notification-null-safe-render.md).
 
   - **Phase 127.1 — General UI/UX review (fourth pass) (COMPLETE, review-only):** visual sweep of all pages (desktop 1400px + mobile 375px) via Playwright. No new issues found. 126.* fixes verified (stats row post count, notification null-safe rendering). Review cycle converged: 4 passes, 0 issues in last 2. [changes/12701](changes/12701-phase127-ui-ux-review.md).
+
+  - **Phase 128.1 — Unread notification badge: live-render verification (COMPLETE, review-only):** confirmed badge renders "1" when unread > 0 and disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found minor gap: badge stale on notifications page for up to 60s after mark-all → 129.1. Feature matrix D-column closed. [changes/12801](changes/12801-phase128-notification-badge-verification.md).
