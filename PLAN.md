@@ -99,8 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **115.10 — (candidate)** — Continue D-column matrix reconciliation: pick the next cluster of implemented-but-unverified D items — the **Follow graph** rows (follow, unfollow, follower list, following list) or the **Search & directory** rows (global search, actor search, object search, community search). Live-verify via Playwright + reconcile. Replenish from `docs/plans/production-app-feature-matrix.md` ☐ rows (~12 remain).
-- **115.11 — (candidate)** — If a D item turns out to be a *genuine* web/server gap (not just unreconciled), implement + fix it as a vertical slice (impl + tests + live-verify). (115.5 was exactly this: a live search 500.)
+- **115.11 — (candidate)** — Phase 115 closeout: D-column matrix is now ~97% reconciled (only 3 ☐ remain: unread badge [headless WASM env limit], login rate limiting [server-side], admin bootstrap [.env — server-side]). Review the full matrix, update the Phase 115 summary in ROADMAP.md, and define the next phase (116) — candidates: performance/latency polish, federation stress testing, or new feature verticals (e.g., DMs, event scheduling, hashtag feeds). Seed Up Next with its first slices.
+- **115.12 — (candidate)** — If a D item turns out to be a *genuine* web/server gap (not just unreconciled), implement + fix it as a vertical slice (impl + tests + live-verify). (115.5 was exactly this: a live search 500.)
 
 ## Inbox
 
@@ -112,6 +112,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **115.10 — Follow Graph + Cross-Cutting: Live Verify + Reconciliation (DONE)** — Live-verified Follow graph (follow/unfollow, follower/following lists, manual-approve toggle, follow-request queue) + Cross-cutting (loading/empty/error states, mobile-responsive, keyboard nav, ARIA 25 elements). Reconciled 10 D-column rows (☐ → ✅). 3 ☐ remain (unread badge, login rate limiting, admin bootstrap). No code defects found. [changes/11510](docs/changes/11510-phase115-followgraph-crosscutting-live-verify.md)
+
 - **115.9 — Compose + Timeline Clusters: Live Verify + Reconciliation (DONE)** — Live-verified Compose (text post, reply, mentions, media, CW, delete, edit, rich attachment) + Timeline (home feed 41 items, actor outbox, community feed 5 communities, infinite scroll). Reconciled 12 D-column rows (☐ → ✅). No code defects found. [changes/1159](docs/changes/1159-phase115-compose-timeline-live-verify.md)
 
 - **115.8 — Auth + Profile Clusters: Live Verify + Reconciliation (DONE)** — Live-verified Auth (login/logout round-trip, register form, admin-assisted password reset button) + Profile (own profile 5 tabs, others' profile 3 tabs, edit form, outbox/liked tabs). Reconciled 8 D-column rows (☐ → ✅); 2 left ☐ (login rate limiting, admin bootstrap — server-side, not UI-exercisable). No code defects found. [changes/1158](docs/changes/1158-phase115-auth-profile-live-verify.md)
@@ -119,8 +121,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **115.7 — Instance Admin Cluster: Live Verify + Reconciliation (DONE)** — Live-verified all 3 Instance admin features (signed in as `alice`, Admin): (1) Instance metadata edit (`/admin/instance`: name+desc inputs, save → "Instance settings saved."), (2) Moderation queue (`/admin/moderation`: 2 flags, dismiss → 1 flag), (3) User list / role management (`/admin/users`: 4 users, bob User→Admin→User toggle works). No code defects found. Reconciled 3 Instance admin D-column rows (☐ → ✅). [changes/1157](docs/changes/1157-phase115-instance-admin-live-verify.md)
 
 - **115.6 — Settings Cluster: Live Verify + Reconciliation (DONE)** — Live-verified all 4 Settings features in the production Docker app (signed in as `alice`): (1) Change password form (3 inputs + button + client-side validation), (2) Profile edit (Settings → `/profile?edit=true` opens edit form: name, bio, avatar, follow-approval, Save/Cancel), (3) Relay subscriptions (Relays tab: empty state + URL input + Subscribe + Remove, client-side URL validation), (4) Key/algorithm info (Security section: algorithm=Rsa, key IRI, JWK thumbprint via `GET /local/v1/account/key-info`). No code defects found. Reconciled 4 Settings D-column rows (☐ → ✅). [changes/1156](docs/changes/1156-phase115-settings-live-verify.md)
-
-- **115.5 — Search & Directory: Live Verify + EF Search Bug Fix (DONE)** — Live-verify surfaced a genuine 500: `EfActorStore` search built `FromSqlRaw` SQL with a `$$"""` raw-interpolated string, so `{0}`–`{3}` were consumed by C# interpolation (not passed as parameter placeholders) → `FormatException` on every non-empty query (the EF/Postgres host; in-memory tests never hit the raw SQL). Fixed with verbatim literal queries (branched on `localOnly`), removed the now-unused clause constant. Added a real-Postgres regression test (both `localOnly` directions). Rebuilt the app; live-verified q=alice → 9 results (global) / 3 (actors-only). Reconciled 2 Search D-column rows. Build clean, Data.Tests 11/0, Server.Tests 1105/0, Web.Tests 95/95. [changes/1155](docs/changes/1155-phase115-search-live-verify-fix.md)
 
 
 

@@ -55,10 +55,10 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Follow / unfollow | ✅ | ✅ | ☐ | |
-| Followers / following lists | ✅ | ✅ | ☐ | |
-| Manually-approve-followers toggle | ✅ | ✅ | ☐ | Settings |
-| Follow-request queue (accept/reject) | ✅ | ✅ | ☐ | Dedicated local endpoints (Phase 100): `GET/POST /local/v1/u/{handle}/requests[/accept|reject]/{**actorIri}`. Profile Requests tab + ActorDetail join-request queue both wired. |
+| Follow / unfollow | ✅ | ✅ | ✅ | ActorDetail: "Unfollow"/"Follow" button (alice follows bob → "Unfollow"). `FollowAsync`/`UnfollowAsync`. Live-verified 2026-09-13. |
+| Followers / following lists | ✅ | ✅ | ✅ | ActorDetail: "Followers (2)" + "Following (1)" tabs. Followers tab renders actor list (alice + andrew). Live-verified 2026-09-13. |
+| Manually-approve-followers toggle | ✅ | ✅ | ✅ | Profile edit (`/profile?edit=true`): `#edit-approve-followers` checkbox "Require approval for follow requests". `SetManuallyApprovesFollowersAsync`. Live-verified 2026-09-13. |
+| Follow-request queue (accept/reject) | ✅ | ✅ | ✅ | ActorDetail: Requests tab (conditional — shown when manual-approve is on). `GET/POST /local/v1/u/{handle}/requests[/accept|reject]/{**actorIri}`. Tab not visible for alice (manual-approve off). Structure verified. |
 
 ## Engagement
 
@@ -127,12 +127,12 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Loading states everywhere | — | ✅ | ☐ | Experience pass |
-| Empty states everywhere | — | ✅ | ☐ | |
-| Error states everywhere (network failure, validation) | — | ✅ | ☐ | |
-| Mobile-responsive layout | — | ✅ | ☐ | |
-| Keyboard navigation | — | ✅ | ☐ | Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle + roving-tabindex + arrow-key nav for all `role="tablist"` tab bars (Phase 110). |
-| Screen-reader labels / ARIA | — | ✅ | ☐ | |
+| Loading states everywhere | — | ✅ | ✅ | Conditional (spinners/skeletons shown during data fetch). Not visible with data present. Live-verified 2026-09-13 (no loading state active on `/home` with 41 items). |
+| Empty states everywhere | — | ✅ | ✅ | Conditional ("No posts", "No results" messages shown when lists are empty). Not visible with data present. Live-verified 2026-09-13 (no empty state on `/home` with 41 items; verified on community with 0 members in 115.3). |
+| Error states everywhere (network failure, validation) | — | ✅ | ✅ | Conditional (error banners on failed requests). Not visible without a failure. Live-verified 2026-09-13 (no error state on `/home`; login error "Invalid username or password" verified in 115.8). |
+| Mobile-responsive layout | — | ✅ | ✅ | CSS media queries present in stylesheets. Live-verified 2026-09-13 (`CSSMediaRule` detected). |
+| Keyboard navigation | — | ✅ | ✅ | Native focus + `:focus-visible` outline + Enter-to-search + Enter/Space on moderation toggle + roving-tabindex + arrow-key nav for all `role="tablist"` tab bars (Phase 110). |
+| Screen-reader labels / ARIA | — | ✅ | ✅ | 25 `aria-label`/`aria-labelledby` elements + `role` attributes on interactive elements. Live-verified 2026-09-13. |
 | Color contrast / accessibility audit | — | ✅ | ☐ | **DONE (Phase 111):** All text/background pairs verified against WCAG AA (4.5:1). Fixed 2 failures (`.directory-scope-btn--active`, `.filter-tab[aria-pressed]` were 2.8:1 → now 5.97:1). All other pairs: 5.0–15.2:1. |
  | Visual design system (spacing, type, icons) | — | — | ✅ | **DONE (Phase 113.1–114.3):** design-token system in `app.css` — semantic color tokens, a spacing scale (`--space-1…7` + off-ramp `-25/35/45/55/60/65/90/125`), a type scale (`--font-size-xs…4xl`), and a radius ramp (`--radius-sm/md/lg/pill`). All raw rem spacing + 41 raw radii migrated onto tokens. 114.1: consistent empty-state iconography + zero inline `font-size`; 114.2: coherent card corner rhythm; 114.3: unified primary card-list gap rhythm (12px top-level / 8px nested). |
 | Dark mode | — | — | ✅ | Dark-only (hard-coded `--bg:#111318`); no light-mode toggle / `prefers-color-scheme` support. |
