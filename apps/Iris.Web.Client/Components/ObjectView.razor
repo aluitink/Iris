@@ -90,6 +90,10 @@
                                 }
                             </div>
                             <div class="object-parent-content">@ParentContent</div>
+                            @if (ParentRichAttachments.Count > 0)
+                            {
+                                <MediaGallery Attachments="ParentRichAttachments" Blurred="false" />
+                            }
                         </div>
                     }
                     else
@@ -404,6 +408,10 @@
                             }
                         </div>
                         <div class="object-parent-content">@ParentContent</div>
+                        @if (ParentRichAttachments.Count > 0)
+                        {
+                            <MediaGallery Attachments="ParentRichAttachments" Blurred="false" />
+                        }
                     </div>
                 }
                 else

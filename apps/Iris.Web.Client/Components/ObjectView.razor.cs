@@ -202,6 +202,13 @@ public partial class ObjectView
 
     private bool HasParentContext => _parentObject is not null;
 
+    /// <summary>
+    /// The rich media attachments of the fetched parent ("in reply to") object, for rendering in the
+    /// context card so the reader sees what media the reply is answering. Empty when the parent has
+    /// no attachments or has not yet been fetched.
+    /// </summary>
+    private IReadOnlyList<RichAttachment> ParentRichAttachments => _parentObject?.GetRichAttachments() ?? [];
+
     private string? ActivityVerb => Item switch
     {
         Announce => "boosted",

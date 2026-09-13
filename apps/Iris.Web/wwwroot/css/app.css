@@ -2573,6 +2573,11 @@ ul.object-list li {
     margin-bottom: 0;
 }
 
+/* Phase 117.6 — media gallery inside the parent context card. */
+.object-parent-context .media-gallery {
+    margin-top: var(--space-2);
+}
+
 /* Phase 90 — boosts render the boosted post inline; the "Boosted by" line is a small muted tag. */
 .object-item--boost {
     position: relative;
