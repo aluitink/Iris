@@ -2552,21 +2552,50 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Extracts the <c>actor</c> IRI from an activity for logging purposes.
+    /// Extracts the <c>actor</c> IRI(s) from an activity for logging purposes.
+    /// <c>Activity.Actor</c> is <c>IEnumerable&lt;IObjectOrLink&gt;</c>; this returns the first
+    /// resolvable IRI (an <c>IObject</c> with an <c>Id</c>, or an <c>ILink</c>).
     /// </summary>
     private static string? ExtractActorIriFromActivity(Activity activity)
     {
-        var actor = activity.Actor;
-        return actor is IObject { Id: { } id } ? id : actor?.ToString();
+        return FirstIriFromCollection(activity.Actor);
     }
 
     /// <summary>
-    /// Extracts the <c>object</c> (target) IRI from an activity for logging purposes.
+    /// Extracts the <c>object</c> (target) IRI(s) from an activity for logging purposes.
+    /// <c>Activity.Object</c> is <c>IEnumerable&lt;IObjectOrLink&gt;</c>; this returns the first
+    /// resolvable IRI (an <c>IObject</c> with an <c>Id</c>, or an <c>ILink</c>).
     /// </summary>
     private static string? ExtractTargetIriFromActivity(Activity activity)
     {
-        var obj = activity.Object;
-        return obj is IObject { Id: { } id } ? id : obj?.ToString();
+        return FirstIriFromCollection(activity.Object);
+    }
+
+    /// <summary>
+    /// Returns the IRI of the first resolvable entry in a collection of
+    /// <c>IObjectOrLink</c> values, or <c>null</c> if none is resolvable.
+    /// </summary>
+    private static string? FirstIriFromCollection(IEnumerable<IObjectOrLink>? collection)
+    {
+        if (collection is null)
+        {
+            return null;
+        }
+
+        foreach (var item in collection)
+        {
+            if (item is IObject { Id: { } id })
+            {
+                return id;
+            }
+
+            if (item is ILink link)
+            {
+                return link.ToString();
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
