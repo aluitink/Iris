@@ -92,13 +92,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 6. **Fix in scope**: implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
-## Up Next
+ ## Up Next
 
-- **117.2 - Notifications improvements** - Show cards similar to the feed for notification items, the idea is to make it easy to navigate from notifications to the particular item, but notification should also look like collection view.
-
-- **117.3 - Directory Listings** - Directory should show external users as well, any actor we have come across should be cached and shown in the directory, separated by This instance vs. all known. 
+- **117.3 - Directory Listings** - Directory should show external users as well, any actor we have come across should be cached and shown in the directory, separated by This instance vs. all known.
 
 - **117.4 - Common Actor card** - We show actors in search results, follow/following collections, and the directory, we should create a common actor card and polish it, make it look more presentable, verify and inspect visually to ensure it's looks good and is functional. We should include moderation for actors like we do on notes actors post in the feed.
+
+- **117.5 - Feed Content** - A users feed should contain content from people the user follows and the user. Do not show replies to other actors content in the feed, require the user to view a followed actors object to see replies.
+
+- **117.6 - Feed Items with replies** - Show media of the replied item in the reply to post.
 
 - **118.1 - Communities polish** - Our goal is to cooperate in the Lemmyverse eco system. We need to do a deeper investigation on how this is done lemmy instance to lemmy instance. I imagine the owner of the community would follow a peer community as the owned community, the peer community would then send it's content to the owned communities inbox. If this is the proper method for peering, we should improve the flow by allowing the user to webfinger for a peer community and then follow it - we can call it relay on our side, but it should post a follow request as the owned community to the peer community.
 
@@ -124,6 +126,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **117.2 — Notifications Card Layout (DONE)** — Rewritten NotificationRow from flat list to card layout (header: avatar+name+verb+time, body: note preview + View link). Fixed render tree crash. Live-verified: cards, filters, pagination. [changes/11702](docs/changes/11702-phase117-notifications-cards.md)
+
 - **117.1 — Thread-Aware Feed: inReplyTo + `?depth` (DONE)** — Reply detection now uses `inReplyTo` (deterministic) with audience heuristic fallback. Added `?depth` query param to feed endpoint (`iris:depth` capability). 5 new tests. 1,833 total pass. [changes/11701](docs/changes/11701-phase117-thread-aware-feed.md)
 
 - **116.6 — ICacheMetrics (DONE)** — `ICacheMetrics`/`CacheMetrics`/`NullCacheMetrics` wired into all 11 cache façades. `GET /ap/v1/diagnostics/caches` endpoint. 15 new tests. [changes/11606](docs/changes/11606-phase116-icachemetrics.md)
@@ -131,8 +135,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **116.3 — Inbox Log IRI Extraction Fix (DONE)** — Fixed `ExtractActorIriFromActivity`/`ExtractTargetIriFromActivity`. [changes/11603](docs/changes/11603-phase116-inbox-log-iri-fix.md)
 
 - **116.2 — Cache Hit-Rate Audit (DONE)** — Hit rates 95-99%. Gap: no metrics (fixed in 116.6). [plans/cache-audit](docs/plans/cache-audit.md)
-
-- **116.1 — Performance Baseline (DONE)** — All endpoints < 200 ms P95. [plans/performance-baseline](docs/plans/performance-baseline.md)
 
 
 ## Keeping the docs lean
