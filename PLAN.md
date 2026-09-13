@@ -99,9 +99,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **116.2 — (candidate)** — Cache hit-rate audit: measure Redis/in-memory cache hit rates for actor docs, collections, search. Identify misses. Document in `docs/plans/cache-audit.md`.
 - **116.3 — (candidate)** — Federation stress test: 10-instance multi-node test with 1k follow edges + 10k objects. Verify delivery queue, cache, GC.
 - **116.4 — (candidate)** — WASM startup time profile: measure client-side WASM load (blazor.webassembly.js 60 KB + .wasm runtime). Identify slow startup contributors.
+- **116.5 — (candidate)** — Add ICacheMetrics: implement `ICacheMetrics` interface (HitCount/MissCount/HitRate) wired into `CachingReadThrough<TValue>.GetAsync`. Expose via `/ap/v1/diagnostics/caches` endpoint. (From 116.2 cache audit recommendation.)
 
 ## Inbox
 
@@ -113,6 +113,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **116.2 — Cache Hit-Rate Audit (DONE)** — Audited full caching infra (ICache/MemoryCache/CachingReadThrough + 7 server + 4 client façades). Empirical hit rates: actor 95-99% (4.8× faster), feed 95-99% (marginal), outbox 95-99% (2.7×). Search NOT cached (by design). **Critical gap: no hit/miss metrics.** Recommended ICacheMetrics. [plans/cache-audit](docs/plans/cache-audit.md)
+
 - **116.1 — Performance Baseline (DONE)** — Measured TTFB/throughput/concurrency for all key API endpoints. All well under 200 ms P95 target (feed P95=9.3 ms, search P95=3.8 ms, actor P95=0.9 ms). 1,219 req/s concurrent on feed. No perf optimization needed at this scale. [plans/performance-baseline](docs/plans/performance-baseline.md)
 
 - **115.11 — Phase 115 Closeout (DONE)** — D-column matrix 66 ✅ / 3 ☐ = 95.6%. 1 bug found + fixed (115.5 EF search). 1,816 tests, 0 failures. Phase 116 defined (performance, federation stress, new feature verticals). [changes/11511](docs/changes/11511-phase115-closeout.md)
@@ -120,8 +122,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **115.10 — Follow Graph + Cross-Cutting: Live Verify + Reconciliation (DONE)** — Live-verified Follow graph (follow/unfollow, follower/following lists, manual-approve toggle, follow-request queue) + Cross-cutting (loading/empty/error states, mobile-responsive, keyboard nav, ARIA 25 elements). Reconciled 10 D-column rows (☐ → ✅). 3 ☐ remain (unread badge, login rate limiting, admin bootstrap). No code defects found. [changes/11510](docs/changes/11510-phase115-followgraph-crosscutting-live-verify.md)
 
 - **115.9 — Compose + Timeline Clusters: Live Verify + Reconciliation (DONE)** — Live-verified Compose (text post, reply, mentions, media, CW, delete, edit, rich attachment) + Timeline (home feed 41 items, actor outbox, community feed 5 communities, infinite scroll). Reconciled 12 D-column rows (☐ → ✅). No code defects found. [changes/1159](docs/changes/1159-phase115-compose-timeline-live-verify.md)
-
-- **115.8 — Auth + Profile Clusters: Live Verify + Reconciliation (DONE)** — Live-verified Auth (login/logout round-trip, register form, admin-assisted password reset button) + Profile (own profile 5 tabs, others' profile 3 tabs, edit form, outbox/liked tabs). Reconciled 8 D-column rows (☐ → ✅); 2 left ☐ (login rate limiting, admin bootstrap — server-side, not UI-exercisable). No code defects found. [changes/1158](docs/changes/1158-phase115-auth-profile-live-verify.md)
 
 
 
