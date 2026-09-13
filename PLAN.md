@@ -94,7 +94,29 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files totaling 12.8 MB on cold load. Investigate AOT compilation, trimming, or single-file bundling to reduce the payload. Target: < 5 MB.
+- **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files; raw 11.4 MB, **gzipped 5.83 MB** (the "12.8 MB" figure was raw + JS). Target: < 5 MB gzipped. **Investigated + tabled (2026-09-13):** the dominant cost is BouncyCastle.Cryptography.wasm (5.1 MB raw / 2.56 MB gz, 44% of the payload), pulled in because Iris.Core's `Ed25519Key` references it. The WASM client never actually signs with Ed25519 at runtime (it always uses `WebCryptoSigningKeyFactory` → browser WebCrypto RSA), so BouncyCastle is dead weight in the payload — but the trimmer can't prove `Ed25519Key` is unreferenced (Iris.Core is a shared, non-trimmable project). The fix is to remove BouncyCastle from Iris.Core by implementing Ed25519 in pure .NET. **Attempted a pure-.NET `NativeEd25519` (RFC 8032, BigInteger-based extended coordinates) — base point + curve constant verified correct, but the scalar-mult/compress path produced wrong points for large scalars; bug not isolated before time-boxing. Reverted.** Backup of the partial implementation: `.tmp-ed25519-backup.cs`. Next attempt should debug `ScalarMult`/`Double`/`Add` against the RFC 8032 test vectors (a Python reference confirms the expected outputs). Alternative lower-risk path: multi-target Iris.Core (`net10.0` server with BouncyCastle + a WASM-friendly path) or accept the 5.83 MB gzipped payload as "good enough."
+
+- **131.5 - Disable anti-fogery tokens** - These AF tokens are causing login issues, they may work find in production but cause a lot of greif as we change the implementation and redeploy, we should disable for now.
+
+- **131.6 - Content caching policies** - During active development it seems our browser gets stuck with a cached versions of the website often. Investigate a method to create a shorter cache lifetime and or make it configurable so while we develope we can disable browser content caching to ensure a refresh actually fetches the new content.
+
+- **132.1 - Interaction tracking** - Objects have Likes, Shares, and Replies; We need to be able to track the counts of these for local and remote objects. We should be able to display the number of Likes/Shares/Replies on any object we can see. Ideally when we fetch an object via proxy or upon seeing an announce or reply, we attempt to sync up the like/share/reply counts by walking the object collections if available, if the collections cannot be walked or return nothing, we would serve the counts of any known Likes/Shares/Replies.
+
+- **132.2 - Object details view** - When an object is selected in the feed, we navigate to an object centric view, this view should be able to render several kinds of objects in a meaningful format. This view could have tabs like an actor view to display the Likes/Shraes (Actor cards for the actors that have Liked or Shared). The Replies should show as a thread stream under the object's main body. The thread stream should allow users to expand each reply to see the replies to that message.
+
+- **133.1 - Object Card styling** - Object cards have a user header moderation bar and a post date - this has become too busy for a mobile screen and causes overflow for long usernames. The date (relative time) should be a single top line left justified, the actor handle and moderation bar should be the next (moderation bar left justified).
+
+- **133.2 - Actor page/card styling** - There is a description under an actors name that can contain html tags, we should render this markup correctly.
+
+- **134.1 - Directory listings** - The directory is only showing local actors, we need to be able to see all actors we interact with. The backend should be caching copies of the actor records in order to serve them as known content. These records should live in the databse so we can display them in the directory of known actors.
+
+- **135.1 - Communities and the Lemmyverse** - We need to be able to interact with Lemmy communities. We need to better understand how the Lemmy servers expect us to interact. We should deploy a local lemmy server container and interact with it, we likely need to use public fqdns so let's utilize the iris-dev2.luit.ink fqdn for this. The lemmy container definitons/compose should live in it's own folder separate from our app with it's.
+
+- **135.2 - Lemmy Test Planning** - Investigate how to configure and manage the Lemmy server instance, build a test plan and populate it as item 136; The goal will be to post content to Lemmy
+ and see it replicated to Iris and vice versa. This is a big one and we will need to iterate on it spending a lot of time to carefully
+.
+**137 - Run the Lemmy intergration test plan** - Focus on driving the lemmy server and confirming interactions with Iris.
+
 
 ## Inbox
 
