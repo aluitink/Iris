@@ -334,6 +334,33 @@
             }
         </div>
     }
+    else if (Item is Tombstone tombstone)
+    {
+        <div class="object-item object-tombstone">
+            <div class="object-tombstone-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                </svg>
+            </div>
+            <div class="object-tombstone-body">
+                <div class="object-tombstone-label">
+                    @if (TombstoneFormerType(tombstone) is { Length: > 0 } former)
+                    {
+                        <span>@former post</span>
+                    }
+                    else
+                    {
+                        <span>Post</span>
+                    }
+                    <span class="object-tombstone-state">deleted</span>
+                </div>
+                @if (tombstone.Deleted is { } deleted)
+                {
+                    <div class="object-tombstone-time" title="@deleted.ToString("o")">deleted @deleted.ToLocalTime().ToString("g")</div>
+                }
+            </div>
+        </div>
+    }
     else if (Item is IObject { Id: { Length: > 0 } id } obj)
     {
         <div class="object-item">

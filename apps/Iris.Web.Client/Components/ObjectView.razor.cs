@@ -901,4 +901,14 @@ public partial class ObjectView
             }
         }
     }
+
+    /// <summary>
+    /// The first <c>formerType</c> value on a <see cref="Tombstone"/> (the AS2.0 type of the deleted
+    /// object, e.g. "Note" / "Article"), or <c>null</c> when the tombstone carries none. Used by the
+    /// tombstone card to label the placeholder ("Note post deleted" vs the generic "Post deleted").
+    /// </summary>
+    /// <param name="tombstone">The tombstone to read the former type from.</param>
+    /// <returns>The first former-type string, or <c>null</c>.</returns>
+    internal static string? TombstoneFormerType(Tombstone tombstone)
+        => tombstone.FormerType?.FirstOrDefault();
 }

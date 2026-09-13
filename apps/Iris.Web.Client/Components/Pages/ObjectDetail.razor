@@ -35,6 +35,38 @@ else if (ObjectDoc is null)
 }
     else
 {
+    @if (IsTombstone && ObjectDoc is KristofferStrube.ActivityStreams.Tombstone objTombstone)
+    {
+        <div class="card object-detail">
+            <div class="object-tombstone object-tombstone--detail">
+                <div class="object-tombstone-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    </svg>
+                </div>
+                <div class="object-tombstone-body">
+                    <div class="object-tombstone-label">
+                        @if (ObjectView.TombstoneFormerType(objTombstone) is { Length: > 0 } formerType)
+                        {
+                            <span>@formerType post</span>
+                        }
+                        else
+                        {
+                            <span>Post</span>
+                        }
+                        <span class="object-tombstone-state">deleted</span>
+                    </div>
+                    @if (objTombstone.Deleted is { } deletedAt)
+                    {
+                        <div class="object-tombstone-time" title="@deletedAt.ToString("o")">deleted @deletedAt.ToLocalTime().ToString("g")</div>
+                    }
+                    <p class="muted object-tombstone-hint">This object was removed. Its content, replies, and interactions are no longer available.</p>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
     @if (ThreadContext is { Count: > 0 })
     {
         <div class="card object-parent-context">
@@ -149,6 +181,7 @@ else if (ObjectDoc is null)
             }
         </div>
     }
+    }
 }
 
 @code {
@@ -207,10 +240,22 @@ else if (ObjectDoc is null)
         }
     }
 
+    /// <summary>
+    /// Whether the resolved document is an AS2.0 <see cref="Tombstone"/> (a deleted object). The detail
+    /// page renders a "deleted" placeholder for these and skips the reply / engagement / edit surface
+    /// (a deleted object has no content, replies, or interactions to show).
+    /// </summary>
+    private bool IsTombstone => ObjectDoc is KristofferStrube.ActivityStreams.Tombstone;
+
     private string PageHeading
     {
         get
         {
+            if (IsTombstone)
+            {
+                return "Deleted post";
+            }
+
             if (ObjectDoc is Actor { PreferredUsername: { Length: > 0 } px })
             {
                 return px;
@@ -278,9 +323,10 @@ else if (ObjectDoc is null)
     }
 
     /// <summary>
-    /// Whether the replies section should be rendered (the object is a content object, not an actor).
+    /// Whether the replies section should be rendered (the object is a content object, not an actor or
+    /// a tombstone — a deleted object has no replies to show).
     /// </summary>
-    private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor;
+    private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor && !IsTombstone;
 
     private string AncestorAuthor(IObject ancestor)
     {
@@ -350,7 +396,7 @@ else if (ObjectDoc is null)
             LoadError = "Failed to load object. It may not exist or the server is unreachable.";
         }
 
-        if (ObjectDoc is not null && ObjectDoc is not Actor)
+        if (ObjectDoc is not null && ObjectDoc is not Actor && !IsTombstone)
         {
             await LoadParentAsync(client);
             await LoadRepliesAsync(client, iri);
