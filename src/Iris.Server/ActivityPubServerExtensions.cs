@@ -1593,17 +1593,189 @@ public static class ActivityPubServerExtensions
                     {
                         await mediaWarmer.WarmAsync(obj, instanceBase, ct).ConfigureAwait(false);
                     }
+
+                    // 132.1 — interaction count sync for a proxied (remote) object: after storing the
+                    // object, walk the remote object's /likes, /shares, and /replies collections and
+                    // record the discovered likers / announcers / replies as edges in the local stores,
+                    // so a subsequent local read of the object (the object-document endpoint's
+                    // iris:likedCount / iris:sharedCount / iris:repliedCount) reflects the object's real
+                    // interaction counts instead of 0 (a proxied read previously stored the object but
+                    // never its interactions, so the object-detail page showed "0 likes · 0 boosts").
+                    // Best-effort and bounded (a limited, capped walk): a remote that does not serve the
+                    // collections (or is slow / unreachable) simply yields nothing, and the object is
+                    // then served with the counts of the interactions this instance has already recorded
+                    // (the "known edges" fallback — there is nothing more to do). Never breaks the relay.
+                    if (!IsLocallyAuthoredObject(obj, options.BaseUri))
+                    {
+                        await SyncProxiedObjectInteractionsAsync(client, persistence, new Iri(obj.Id), ct)
+                            .ConfigureAwait(false);
+                    }
                 }
             }
             catch
             {
-                // Best-effort: a parse or store failure does not break the relay.
+                // Best-effort: a parse, store, or interaction-sync failure does not break the relay.
             }
         }
 
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = mediaType;
         return Results.Content(body, mediaType);
+    }
+
+    /// <summary>
+    /// 132.1 — whether a proxied (fetched) object is locally authored (its <c>attributedTo</c> is a local
+    /// actor on this instance). A locally-authored object's interactions are already recorded by this
+    /// instance's own handlers (the <see cref="Iris.Server.Inbox.LikeActivityHandler"/> /
+    /// <see cref="Iris.Server.Inbox.AnnounceActivityHandler"/> /
+    /// <see cref="Iris.Server.Inbox.CreateActivityHandler"/>), so the proxy does not re-walk its remote
+    /// collections (the object is not really remote — it is a local object being read back through the
+    /// proxy, e.g. the client's outbox fallback). Returns <see langword="false"/> when the object has no
+    /// <c>attributedTo</c> or its author is not a local actor (a genuinely remote object, which is the
+    /// case the interaction sync targets).
+    /// </summary>
+    /// <param name="obj">The fetched object.</param>
+    /// <param name="instanceBase">The instance's base IRI (e.g. <c>https://a.domain.local</c>); when null
+    /// the object is treated as remote (the sync runs).</param>
+    private static bool IsLocallyAuthoredObject(IObject obj, Iri? instanceBase)
+    {
+        if (instanceBase is not { } baseIri)
+        {
+            return false;
+        }
+
+        // Rule 3: read the multi-valued attributedTo as IEnumerable, null-safe.
+        var author = obj is KristofferStrube.ActivityStreams.Object o ? o.AttributedTo : null;
+        var first = author?.FirstOrDefault();
+        var authorIri = first?.ResolveObjectIri();
+        if (authorIri is not { } aIri)
+        {
+            return false;
+        }
+
+        // A local actor's IRI is {instanceBase}/ap/v1/u/{handle} (or /c/{handle} for a community).
+        var localPrefix = baseIri.Value.TrimEnd('/') + ActivityPubServerConstants.RoutePrefix;
+        return aIri.Value.StartsWith(localPrefix + "/u/", StringComparison.Ordinal)
+            || aIri.Value.StartsWith(localPrefix + "/c/", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 132.1 — syncs the interaction counts of a proxied (remote) object into the local stores. After the
+    /// proxy stores a remote object (75.3), this walks the remote object's <c>/likes</c>, <c>/shares</c>,
+    /// and <c>/replies</c> collections (via the proxy's signed <see cref="IActivityPubClient"/>, the same
+    /// transport the proxy used to fetch the object) and records each discovered liker / announcer /
+    /// reply as an edge in the local <see cref="ILikeStore"/> / <see cref="IAnnounceStore"/> /
+    /// <see cref="IReplyStore"/>. The object-document endpoint then derives the object's
+    /// <c>iris:likedCount</c> / <c>iris:sharedCount</c> / <c>iris:repliedCount</c> from those reverse
+    /// indexes, so a subsequent local read of the object shows the object's real interaction counts
+    /// instead of 0.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Known-edges fallback.</strong> When a collection cannot be walked (the remote does not serve
+    /// it — a non-Iris / strict ActivityStreams instance that does not expose the bare <c>likes</c> /
+    /// <c>shares</c> extension collections — or is slow / unreachable), the walk yields nothing and the
+    /// object is simply served with the counts of the interactions this instance has <em>already</em>
+    /// recorded (from inbound Like / Announce / Reply activities, which the handlers record for stored
+    /// objects). There is no additional signal to mine; the fallback is "serve what we know."
+    /// <para>
+    /// <strong>Bounded and best-effort.</strong> Each collection walk is capped (the client's
+    /// <c>GetLikesAsync</c> / <c>GetSharesAsync</c> / <c>GetRepliesAsync</c> with a 100-item limit — a
+    /// like/boost/reply set is small and bounded), and any failure (a network error, a 404, a timeout) is
+    /// swallowed: the proxy relay and the object store are never broken by a failed interaction sync. The
+    /// walk is best-effort enrichment, not a correctness dependency.
+    /// </para>
+    /// </remarks>
+    /// <param name="client">The proxy's signed <see cref="IActivityPubClient"/> (the outbound federation
+    /// transport; the same client the proxy used to fetch the object).</param>
+    /// <param name="persistence">The local persistence provider (provides the like / announce / reply
+    /// stores the discovered edges are recorded in).</param>
+    /// <param name="objectIri">The IRI of the proxied object whose interactions are being synced.</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task SyncProxiedObjectInteractionsAsync(
+        IActivityPubClient client,
+        IPersistenceProvider persistence,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        const int limit = 100;
+
+        // /likes: each item is a liker's IRI (a Link, or a Like activity whose actor is the liker). Record
+        // each as a like edge (liker → object) in the local like store. The store is idempotent
+        // (add-if-absent), so a re-proxy of the same object is a no-op for already-known likers.
+        await ForEachCollectionItemAsync(
+            client, objectIri.LikesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Likes.RecordLikeAsync(itemIri, objectIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+
+        // /shares: each item is an announcer's (booster's) IRI. Record each as an announce edge
+        // (announcer → object) in the local announce store (idempotent, as above).
+        await ForEachCollectionItemAsync(
+            client, objectIri.SharesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Announces.RecordAnnounceAsync(itemIri, objectIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+
+        // /replies: each item is a reply object's IRI. Record each as a reply edge (parent=object,
+        // child=reply) in the local reply store (idempotent, as above). The reply object itself is not
+        // stored here (only its edge) — the object-document endpoint counts the reply edges, and the
+        // reply's full object is fetched on demand by the client's thread reader.
+        await ForEachCollectionItemAsync(
+            client, objectIri.RepliesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Replies.RecordReplyAsync(objectIri, itemIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 132.1 — walks a remote collection (via the proxy's signed <see cref="IActivityPubClient"/>) up to a
+    /// bounded number of items, resolving each item's IRI and invoking <paramref name="onItem"/> with it.
+    /// Best-effort: any failure (a non-success status, a missing collection, a timeout, a non-IRI item) is
+    /// swallowed, and the walk simply yields nothing for that collection — the caller's known-edges
+    /// fallback (serve the counts of already-recorded interactions) then applies. A successful walk of an
+    /// empty collection yields nothing too (an object with no likes/boosts/replies has empty collections).
+    /// </summary>
+    /// <param name="client">The signed client that walks the collection.</param>
+    /// <param name="collectionIri">The collection IRI to walk (e.g. <c>{object}/likes</c>).</param>
+    /// <param name="limit">The maximum number of items to walk (bounds the remote load).</param>
+    /// <param name="onItem">The callback invoked with each item's resolved IRI (null items are skipped).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task ForEachCollectionItemAsync(
+        IActivityPubClient client,
+        Iri collectionIri,
+        int limit,
+        Func<Iri, CancellationToken, Task> onItem,
+        CancellationToken ct)
+    {
+        try
+        {
+            // GetCollectionItemsAsync respects the query's Limit (it walks pages until the limit is
+            // reached, reading through the CollectionPageCache) and yields each item as an
+            // IObjectOrLink, so the bounded walk is built in — no separate page-following here.
+            await foreach (var item in client.GetCollectionItemsAsync(collectionIri, new CollectionQuery { Limit = limit }, ct))
+            {
+                var itemIri = item.ResolveObjectIri();
+                if (itemIri is null)
+                {
+                    continue;
+                }
+
+                await onItem(itemIri.Value, ct).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Best-effort: a failed / missing collection is a no-op (the known-edges fallback applies).
+        }
     }
 
     /// <summary>
@@ -5480,6 +5652,7 @@ public static class ActivityPubServerExtensions
         bool? isSharedValue = null;
         int? likedCountValue = null;
         int? sharedCountValue = null;
+        int? repliedCountValue = null;
         Iri? likeActivityIriValue = null;
         Iri? announceActivityIriValue = null;
         if (obj is not KristofferStrube.ActivityStreams.Tombstone)
@@ -5491,13 +5664,18 @@ public static class ActivityPubServerExtensions
                 ? await persistence.Announces.HasAnnouncedAsync(s, objectIri, ct).ConfigureAwait(false)
                 : null;
 
-            // The per-object interaction counters (iris:likedCount / iris:sharedCount): cacheable,
-            // not per-requester (the same value for every requester), so they are computed on every read
-            // and rendered onto the object document. A client (e.g. the object-detail page) reads them
-            // off the document it already fetched instead of re-walking the /likes and /shares
-            // collections (54.8).
+            // The per-object interaction counters (iris:likedCount / iris:sharedCount / iris:repliedCount):
+            // cacheable, not per-requester (the same value for every requester), so they are computed on
+            // every read and rendered onto the object document. A client (e.g. the object-detail page and
+            // the EngagementBar) reads them off the document it already fetched instead of re-walking the
+            // /likes, /shares, and /replies collections (54.8). The reply count is derived from the
+            // IReplyStore reverse index (the parent → [child] reply edges recorded by the
+            // CreateActivityHandler when an inbound reply is stored), so it reflects the replies this
+            // instance knows about for the object — local or remote (a proxied remote object's replies
+            // are synced into the local reply store, 132.1).
             likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
             sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            repliedCountValue = (await persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
 
             // The requester's minted Like / Announce activity IRIs (72.2, per-requester read-time state,
             // like isLiked / isShared): when the requester has (net) liked / boosted this object, resolve
@@ -5527,7 +5705,7 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             ServeObjectDocument(
                 obj, objectIri, isLikedValue, isSharedValue, likedCountValue, sharedCountValue,
-                likeActivityIriValue, announceActivityIriValue, IrisExtensionNamespace(options)),
+                repliedCountValue, likeActivityIriValue, announceActivityIriValue, IrisExtensionNamespace(options)),
             NegotiateContentType(context));
     }
 
@@ -5593,14 +5771,16 @@ public static class ActivityPubServerExtensions
     /// object (the <c>iris:announceActivityIri</c> extension; per-requester, read-time state); when
     /// non-null (and the requester has boosted the object) it is rendered, when null the extension is
     /// omitted.</param>
+    /// <param name="repliedCount">The number of replies (the <c>iris:repliedCount</c> extension;
+    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
     /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (the <c>@vocab</c> the
     /// document declares); the <c>isLiked</c> / <c>isShared</c> / <c>likedCount</c> / <c>sharedCount</c> /
-    /// <c>likeActivityIri</c> / <c>announceActivityIri</c> terms are written as
+    /// <c>repliedCount</c> / <c>likeActivityIri</c> / <c>announceActivityIri</c> terms are written as
     /// <c>{irisNamespace}&lt;term&gt;</c>.</param>
     /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
     private static string ServeObjectDocument(
         IObject obj, Iri objectIri, bool? isLiked, bool? isShared, int? likedCount, int? sharedCount,
-        Iri? likeActivityIri, Iri? announceActivityIri, string? irisNamespace)
+        int? repliedCount, Iri? likeActivityIri, Iri? announceActivityIri, string? irisNamespace)
     {
         if (obj is KristofferStrube.ActivityStreams.Tombstone)
         {
@@ -5663,6 +5843,13 @@ public static class ActivityPubServerExtensions
                 document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                 document.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
                     System.Text.Json.JsonSerializer.SerializeToElement(shares);
+            }
+
+            if (repliedCount is { } replies)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(replies);
             }
         }
 
