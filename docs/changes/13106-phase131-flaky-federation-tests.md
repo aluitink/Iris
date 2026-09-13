@@ -57,11 +57,31 @@ redelivery idempotency). Deleting or skipping them would throw away real coverag
 timeout is the minimal, correct fix: it preserves the assertions and the coverage, and only buys
 headroom under contention.
 
+## Follow-up — the idempotency test's second flake mode (same turn)
+
+Lengthening the *settle* timeout (4 s → 15 s → 30 s) was **not** the root cause for
+`DuplicateInboundDeliveryIdempotencyIntegrationTests`. Capturing the actual failure under load showed
+it failed at a *different* assertion — `the first Follow delivery should have been accepted (202)`
+(line 181), in ~1 s — not the idempotency "exactly one Accept" assertion. The real cause:
+`DeliverDirectly` awaits `service.DeliverAsync` (which only **enqueues** the delivery) and then waited
+a **fixed 500 ms** for the async `DeliveryWorker` to perform the HTTP request. Under full-suite CPU
+contention 500 ms was too short, so the capturing handler had not yet recorded `LastStatus` and the
+202-acceptance assertion failed — even though the delivery would have completed moments later (the
+idempotency logic is correct; the delivery just hadn't run yet).
+
+**Fix (commit `9aceabb`):** replace the fixed 500 ms delay in `DeliverDirectly` with a poll (25 ms
+cadence, 30 s budget) for `LastStatus` to be set. On an idle machine the first poll iteration succeeds
+(~25 ms), so it is faster-or-equal; under load it gives the worker the headroom it needs.
+
+**Verification:** 7 consecutive `dotnet test Iris.slnx` runs green under full-suite concurrency
+(previously the idempotency test failed ~2/3 of the time).
+
 ## Verification
 
 - `dotnet build` — clean.
 - `dotnet test Iris.slnx --no-build` (full solution, all suites concurrent) — **all 1960 tests pass,
-  0 failures** (previously the two federation tests intermittently failed under this exact run).
+  0 failures** across 7 consecutive runs (previously the two federation tests intermittently failed
+  under this exact run).
 
 ## Out of scope
 
