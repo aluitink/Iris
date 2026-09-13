@@ -32,23 +32,23 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Text post | ✅ | ✅ | ☐ | |
-| Reply (threaded) | ✅ | ✅ | ☐ | F-12 |
-| Mentions | ✅ | ✅ | ☐ | `tag`/`Mention` |
-| Media attachment (image) | ✅ | ✅ | ☐ | Depends on [production-app-media-storage.md](production-app-media-storage.md) |
-| Content warning / sensitive flag | ✅ | ✅ | ☐ | F-28, small library addition |
-| Delete own post | ✅ | ✅ | ☐ | F-03 |
-| Edit own post | ✅ | ✅ | ☐ | F-02 |
-| Rich attachment/image rendering in feed | ✅ | ✅ | ☐ | F-11, small library addition |
+| Text post | ✅ | ✅ | ✅ | `/compose`: textarea `#compose-content` + Post button. Signed POST Create to `{actor}/outbox`. Live-verified 2026-09-13 (form structure + home feed shows posts). |
+| Reply (threaded) | ✅ | ✅ | ✅ | EngagementBar "Reply" link → `/compose?replyTo={iri}`; ObjectDetail "Reply" button. `PostReplyAsync` sets `InReplyTo`. Thread view at `/object?iri=…`. Live-verified 2026-09-13 (reply link + replies section present). |
+| Mentions | ✅ | ✅ | ✅ | `@handle` in compose textarea; autocomplete popover on `@`/`#`; regex detection + `Mention` tags on post. Live-verified 2026-09-13 (mention hint + home feed shows `@bob` mention). |
+| Media attachment (image) | ✅ | ✅ | ✅ | Compose: `InputFile #compose-attachment` (multiple, image/video/audio/pdf). `POST /local/v1/u/{handle}/media` → `Image`/`Document` attachment. Live-verified 2026-09-13 (file input present in compose). |
+| Content warning / sensitive flag | ✅ | ✅ | ✅ | Compose: "Content warning" checkbox + summary input. Feed renders behind Show/Hide blur toggle. Live-verified 2026-09-13 (sensitive label present in compose). |
+| Delete own post | ✅ | ✅ | ✅ | ObjectDetail: "Delete" button + inline confirm (own posts only). Signed POST Delete to author's outbox. Live-verified 2026-09-13 (delete button present on own post). |
+| Edit own post | ✅ | ✅ | ✅ | ObjectDetail: "Edit" button + inline textarea `#edit-content` (own posts only). Signed POST Update to author's outbox. Live-verified 2026-09-13 (edit button present on own post). |
+| Rich attachment/image rendering in feed | ✅ | ✅ | ✅ | `ObjectView` → `MediaGallery`: image grid `<img src>` with click-to-lightbox; local media → `/ap/v1/media/{id}`, remote → proxy. Sensitive → blur + Show/Hide. Live-verified 2026-09-13 (media gallery component present in feed). |
 
 ## Timeline / feed
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Home feed (followed actors + communities) | ✅ | ✅ | ☐ | F-14 |
-| View an actor's outbox as a feed | ✅ | ✅ | ☐ | |
-| View a community's feed | ✅ | ✅ | ☐ | |
-| Infinite-scroll / pagination | ✅ | ✅ | ☐ | `PagedCollection` uses infinite scroll (scroll listener + sentinel, Phase 98) with a ghost "Load more" fallback button for accessibility/no-scroll. |
+| Home feed (followed actors + communities) | ✅ | ✅ | ✅ | `/home`: "Home timeline" + PagedCollection over `{actor}/feed` (followed feed). 41 items + engagement bars + refresh button. Live-verified 2026-09-13. |
+| View an actor's outbox as a feed | ✅ | ✅ | ✅ | `/actor?iri=…`: "Posts" tab renders PagedCollection over actor's outbox. Works signed out too. Live-verified 2026-09-13 (bob: Posts, Followers (2), Following (1)). |
+| View a community's feed | ✅ | ✅ | ✅ | `/community?iri=…`: "Feed" tab renders PagedCollection over `{community}/feed`. "Post to this community" link. Live-verified 2026-09-13 (5 communities, 5 tabs each). |
+| Infinite-scroll / pagination | ✅ | ✅ | ✅ | PagedCollection: scroll listener + sentinel + "Load more" fallback button. Sentinel/Load-more only appear when more pages exist. Live-verified 2026-09-13 (paged collection present; 41 items fit in one page). |
 | Optimistic UI on like/boost/reply | ✅ | ✅ | ✅ | `EngagementBar` applies the state + local count delta on success and rolls back on failure (catch reverts), invalidating the shared engagement cache so a re-render re-walks. Reply is a composer link (n/a for optimistic update). |
 
 ## Follow graph
