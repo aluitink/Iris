@@ -3,6 +3,7 @@
 @using Iris.Client
 @using Iris.Core.Compose
 @using Iris.Core.Identity
+@using Iris.Core.Rendering
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
 @using Microsoft.AspNetCore.Components.Web
@@ -262,6 +263,35 @@
     /// posting to a community.
     /// </summary>
     private string? CommunityName { get; set; }
+
+    /// <summary>
+    /// Whether the targeted community lives on a different host than the signed-in actor (i.e. a
+    /// remote community such as a Lemmy one). When true, <see cref="PostToCommunityAsync"/> posts a
+    /// Lemmy-compatible <c>Page</c> (rather than a <c>Note</c>) and delivers it directly to the
+    /// community's inbox, because a remote server only sees content it is addressed to — it will never
+    /// see an activity delivered to the author's own outbox.
+    /// </summary>
+    private bool IsRemoteCommunity
+    {
+        get
+        {
+            if (CommunityIri is not { } community || Session.ActorId is not { } actor)
+            {
+                return false;
+            }
+
+            try
+            {
+                var communityHost = new Uri(community.Value).Host;
+                var actorHost = new Uri(actor.Value).Host;
+                return !string.Equals(communityHost, actorHost, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
 
     private Iri? ReplyToIri
     {
@@ -1322,13 +1352,97 @@
     }
 
     /// <summary>
-    /// Posts a note to a community: the note's <c>attributedTo</c> carries both the author and the
-    /// community, and its <c>to</c> is the community's followers collection + the public. The
-    /// receiving server's <c>Create</c> handler records the post in the community's members' outboxes
-    /// (the "followed content" half of the community feed). When <paramref name="mentions"/> is
-    /// non-empty, each mentioned actor becomes a <c>Mention</c> <c>tag</c> entry.
+    /// Posts content to a community. For a <em>local</em> community (same host as the actor) the post is
+    /// a <c>Note</c> published to the author's own outbox (the standard path); the receiving server's
+    /// <c>Create</c> handler records it in the community's members' outboxes. For a <em>remote</em>
+    /// community (a different host — e.g. a Lemmy community) the post is a Lemmy-compatible
+    /// <c>Page</c> delivered directly to the community's inbox: a remote server only sees content it is
+    /// addressed to, so it would never observe an activity delivered to the author's own outbox. The
+    /// post's <c>attributedTo</c> carries both the author and the community in either case.
     /// </summary>
     private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, bool sensitive = false, string? summary = null)
+    {
+        return IsRemoteCommunity
+            ? await PostToRemoteCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary)
+            : await PostToLocalCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary);
+    }
+
+    /// <summary>
+    /// Posts to a <em>remote</em> (different-host) community as a Lemmy-compatible <c>Page</c>, delivered
+    /// to the community's inbox. The object is addressed <c>to</c> the community + the public and
+    /// <c>cc</c>'d to the community's followers collection (the Lemmy cross-check order), carries
+    /// <c>content</c> as Markdown-rendered HTML plus a <c>source</c> of the original Markdown, and is
+    /// <c>attributedTo</c> both the author and the community. The <c>Create</c> carries a minted id
+    /// (inbox-received activities are not id-minted server-side).
+    /// </summary>
+    private async Task<DeliveryResult> PostToRemoteCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
+    {
+        var content = Content.Trim();
+        var html = Markdown.ToHtml(content);
+        var followersIri = communityIri.FollowersOf();
+
+        var page = new KristofferStrube.ActivityStreams.Page
+        {
+            AttributedTo =
+            [
+                new Link { Href = new Uri(actorId.Value) },
+                new Link { Href = new Uri(communityIri.Value) }
+            ],
+            To =
+            [
+                new Link { Href = new Uri(communityIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ],
+            Content = [string.IsNullOrEmpty(html) ? content : html],
+            Published = DateTime.UtcNow
+        };
+
+        // Lemmy reads the Markdown source from the object's `source` field (the library does not model
+        // it, so it is written into ExtensionData — Rule 6) so a remote client can re-render it.
+        page.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        page.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(new List<string> { followersIri.Value });
+        page.ExtensionData["source"] = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            content,
+            mediaType = "text/markdown"
+        });
+
+        if (sensitive)
+        {
+            page.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+            if (summary is { Length: > 0 } s)
+            {
+                page.Summary = [s];
+            }
+        }
+
+        if (media.Count > 0)
+        {
+            page.Attachment = BuildCommunityAttachments(media);
+        }
+
+        var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
+        if (tags is { Count: > 0 })
+        {
+            page.Tag = tags;
+        }
+
+        var create = new Create
+        {
+            Id = $"{actorId.Value.TrimEnd('/')}/creates/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(actorId.Value) }],
+            Object = [page]
+        };
+
+        return await client.DeliverAsync(communityIri.InboxOf(), create);
+    }
+
+    /// <summary>
+    /// Posts to a <em>local</em> (same-host) community as a <c>Note</c> published to the author's own
+    /// outbox (the standard community-post path; the server's <c>Create</c> handler routes it into the
+    /// community's members' outboxes).
+    /// </summary>
+    private async Task<DeliveryResult> PostToLocalCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
     {
         var followersIri = communityIri.FollowersOf();
         var note = new KristofferStrube.ActivityStreams.Note
@@ -1359,43 +1473,10 @@
 
         if (media.Count > 0)
         {
-            var attachments = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
-            foreach (var m in media)
-            {
-                var isImage = string.Equals(m.ContentType, "image", StringComparison.Ordinal)
-                    || m.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
-                if (isImage)
-                {
-                    var image = new Image
-                    {
-                        Url = [new Link { Href = m.MediaIri.Uri }],
-                        Id = m.MediaIri.Value,
-                        MediaType = m.ContentType,
-                    };
-                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
-                    {
-                        image.Name = [m.FileName];
-                    }
-                    attachments.Add(image);
-                }
-                else
-                {
-                    var document = new Document
-                    {
-                        Url = [new Link { Href = m.MediaIri.Uri }],
-                        MediaType = m.ContentType,
-                    };
-                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
-                    {
-                        document.Name = [m.FileName];
-                    }
-                    attachments.Add(document);
-                }
-            }
-            note.Attachment = attachments;
+            note.Attachment = BuildCommunityAttachments(media);
         }
 
-        var tags = BuildTagList(mentions, hashtags ?? [], actorId);
+        var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
         if (tags is { Count: > 0 })
         {
             note.Tag = tags;
@@ -1403,6 +1484,56 @@
 
         return await client.PostNoteAsync(actorId, note);
     }
+
+    /// <summary>
+    /// Builds the attachment list (Image for <c>image/*</c>, Document otherwise) shared by the local
+    /// (<c>Note</c>) and remote (<c>Page</c>) community-post paths.
+    /// </summary>
+    private static List<KristofferStrube.ActivityStreams.IObjectOrLink> BuildCommunityAttachments(List<MediaAttachment> media)
+    {
+        var attachments = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
+        foreach (var m in media)
+        {
+            var isImage = string.Equals(m.ContentType, "image", StringComparison.Ordinal)
+                || m.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+            if (isImage)
+            {
+                var image = new Image
+                {
+                    Url = [new Link { Href = m.MediaIri.Uri }],
+                    Id = m.MediaIri.Value,
+                    MediaType = m.ContentType,
+                };
+                if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                {
+                    image.Name = [m.FileName];
+                }
+                attachments.Add(image);
+            }
+            else
+            {
+                var document = new Document
+                {
+                    Url = [new Link { Href = m.MediaIri.Uri }],
+                    MediaType = m.ContentType,
+                };
+                if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                {
+                    document.Name = [m.FileName];
+                }
+                attachments.Add(document);
+            }
+        }
+
+        return attachments;
+    }
+
+    /// <summary>
+    /// Builds the mention/hashtag <c>tag</c> list shared by the local (<c>Note</c>) and remote
+    /// (<c>Page</c>) community-post paths (mirrors <see cref="BuildTagList"/>).
+    /// </summary>
+    private List<KristofferStrube.ActivityStreams.IObjectOrLink>? BuildCommunityTags(List<Iri>? mentions, List<string> hashtags, Iri actorId)
+        => BuildTagList(mentions, hashtags, actorId);
 
     private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, PostAudience? audience = null)
     {

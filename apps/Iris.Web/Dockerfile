@@ -37,6 +37,14 @@ COPY . .
 RUN find src apps -type d \( -name bin -o -name obj \) -prune -exec rm -rf {} + && rm -rf apps/Iris.Web.Client/publish && dotnet build apps/Iris.Web.Client/Iris.Web.Client.csproj -c Release && dotnet publish apps/Iris.Web/Iris.Web.csproj -c Release -o /app/publish /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
+# .NET's SslStream negotiates Kerberos (GSSAPI) by default on outbound HTTPS, which loads
+# libgssapi_krb5. When that lib is absent (the aspnet base image does not ship it) a request whose
+# TLS negotiation trips the GSSAPI path aborts with "The response ended prematurely" (ResponseEnded)
+# — observed on the server's outbound federation delivery (e.g. a Create POST relayed to a remote
+# Lemmy community's inbox). Installing libgssapi-krb5-2 makes that negotiation succeed.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 # Create a non-root user to run the app (50.1 security hardening). The Data Protection keys
 # volume is mounted at /home/iris/.aspnet/DataProtection-Keys (see docker-compose.yml).
 RUN groupadd --gid 1001 iris && useradd --uid 1001 --gid iris --home-dir /home/iris --shell /usr/sbin/nologin iris
