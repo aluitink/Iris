@@ -99,8 +99,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **115.7 — (candidate)** — Continue D-column matrix reconciliation: pick the next cluster of implemented-but-unverified D items — the **Instance admin** rows (metadata edit, moderation queue, user list / role management) or the **Auth** rows (login, register, logout, session). Live-verify via Playwright + reconcile. Replenish from `docs/plans/production-app-feature-matrix.md` ☐ rows (~37 remain).
-- **115.8 — (candidate)** — If a D item turns out to be a *genuine* web/server gap (not just unreconciled), implement + fix it as a vertical slice (impl + tests + live-verify). (115.5 was exactly this: a live search 500.)
+- **115.8 — (candidate)** — Continue D-column matrix reconciliation: pick the next cluster of implemented-but-unverified D items — the **Auth** rows (login, register, logout, session) or the **Cross-cutting** rows. Live-verify via Playwright + reconcile. Replenish from `docs/plans/production-app-feature-matrix.md` ☐ rows (~34 remain).
+- **115.9 — (candidate)** — If a D item turns out to be a *genuine* web/server gap (not just unreconciled), implement + fix it as a vertical slice (impl + tests + live-verify). (115.5 was exactly this: a live search 500.)
 
 ## Inbox
 
@@ -112,6 +112,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **115.7 — Instance Admin Cluster: Live Verify + Reconciliation (DONE)** — Live-verified all 3 Instance admin features (signed in as `alice`, Admin): (1) Instance metadata edit (`/admin/instance`: name+desc inputs, save → "Instance settings saved."), (2) Moderation queue (`/admin/moderation`: 2 flags, dismiss → 1 flag), (3) User list / role management (`/admin/users`: 4 users, bob User→Admin→User toggle works). No code defects found. Reconciled 3 Instance admin D-column rows (☐ → ✅). [changes/1157](docs/changes/1157-phase115-instance-admin-live-verify.md)
+
 - **115.6 — Settings Cluster: Live Verify + Reconciliation (DONE)** — Live-verified all 4 Settings features in the production Docker app (signed in as `alice`): (1) Change password form (3 inputs + button + client-side validation), (2) Profile edit (Settings → `/profile?edit=true` opens edit form: name, bio, avatar, follow-approval, Save/Cancel), (3) Relay subscriptions (Relays tab: empty state + URL input + Subscribe + Remove, client-side URL validation), (4) Key/algorithm info (Security section: algorithm=Rsa, key IRI, JWK thumbprint via `GET /local/v1/account/key-info`). No code defects found. Reconciled 4 Settings D-column rows (☐ → ✅). [changes/1156](docs/changes/1156-phase115-settings-live-verify.md)
 
 - **115.5 — Search & Directory: Live Verify + EF Search Bug Fix (DONE)** — Live-verify surfaced a genuine 500: `EfActorStore` search built `FromSqlRaw` SQL with a `$$"""` raw-interpolated string, so `{0}`–`{3}` were consumed by C# interpolation (not passed as parameter placeholders) → `FormatException` on every non-empty query (the EF/Postgres host; in-memory tests never hit the raw SQL). Fixed with verbatim literal queries (branched on `localOnly`), removed the now-unused clause constant. Added a real-Postgres regression test (both `localOnly` directions). Rebuilt the app; live-verified q=alice → 9 results (global) / 3 (actors-only). Reconciled 2 Search D-column rows. Build clean, Data.Tests 11/0, Server.Tests 1105/0, Web.Tests 95/95. [changes/1155](docs/changes/1155-phase115-search-live-verify-fix.md)
@@ -119,8 +121,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **115.4 — Moderation (per-user): Live Verify + Matrix Reconciliation (DONE)** — Live-verified per-user moderation web integration signed in: Block (toggles Block→Unblock, DB Kind=5), Mute (toggles Mute→Unmute, DB Kind=7), Flag/Report (delivered, DB Kind=6), Settings→Moderation tab renders Blocked/Muted/Reported lists with per-item actions. Reconciled 4 D-column rows. No new code. Build clean, Server.Tests 1105/0, Web.Tests 95/95. [changes/1154](docs/changes/1154-phase115-moderation-live-verify.md)
 
 - **115.3 — Communities: Live Verify + Matrix Reconciliation (DONE)** — Live-verified communities web integration signed in: `/communities` lists 5 communities + create form; detail page shows all 5 creator tabs (Feed/Members/Owners/Peers/Requests) + Edit button for the creator, Feed + Join for non-creator; Join→Leave→Join toggle works; "Post to this community" link present; Members tab renders (empty state). Reconciled all 7 Communities D-column rows. No new code. Build clean, Server.Tests 1105/0, Web.Tests 95/95. [changes/1153](docs/changes/1153-phase115-communities-live-verify.md)
-
-- **115.2 — Notifications: Live Verify + Matrix Reconciliation (DONE)** — Live-verified notifications web integration signed in: list (12 rows), filter (All=12→Likes=6), mark-all-read (unread 15→0), unread-count endpoint (15→0). Reconciled 3 D-column rows (list, mark-as-read, filter); left "unread badge" ☐ (data path verified, badge live-render blocked in headless WASM — environment limitation, not a code defect). Build clean, Web.Tests 95/95. [changes/1152](docs/changes/1152-phase115-notifications-live-verify.md)
 
 
 

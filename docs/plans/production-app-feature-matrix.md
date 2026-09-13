@@ -119,9 +119,9 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Instance metadata edit (name, description) | ✅ | ✅ | ☐ | |
-| Moderation queue (all flags, action buttons) | ✅ | ✅ | ☐ | |
-| User list / role management | ✅ | ✅ | ☐ | `AdminUsers.razor` user table + reset-password + delete + role promote/demote (`POST /local/v1/admin/users/{id}/role`, Phase 88.5; refuses to demote the last admin). |
+| Instance metadata edit (name, description) | ✅ | ✅ | ✅ | `/admin/instance`: name input (maxlength 255) + description textarea (rows 3, maxlength 1024) + Save. `GET /local/v1/admin/instance` (load), `PUT /local/v1/admin/instance` (save). Live-verified 2026-09-13 (save → "Instance settings saved."). |
+| Moderation queue (all flags, action buttons) | ✅ | ✅ | ✅ | `/admin/moderation`: table (Flagged by / Actor / Date / Action) with per-row Dismiss. `GET /local/v1/admin/flags` (list), `POST /local/v1/admin/flags/dismiss` (dismiss). Live-verified 2026-09-13 (2 flags → dismiss → 1 flag). |
+| User list / role management | ✅ | ✅ | ✅ | `/admin/users`: table (Handle / Role / Created / Action) with per-row Make admin/Demote + Reset password + Delete. `GET /local/v1/admin/users` (list), `POST /local/v1/admin/users/{id}/role` (toggle), `POST /local/v1/admin/users/{id}/password-reset`, `DELETE /local/v1/admin/users/{id}`. Live-verified 2026-09-13 (4 users, bob User→Admin→User toggle works). |
 
 ## Cross-cutting (apply once broadly, not per-feature)
 
