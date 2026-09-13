@@ -94,18 +94,21 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **129.1 — Notification badge: real-time clear on mark-all (LOW)** — After "Mark all as read" on `/notifications`, the badge stays stale until the 60s poll or a page navigation. Wire the notifications page to signal the badge to reload (CascadingValue, event, or shared service). [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
+- **130.1 — Login rate limiting: polish pass (LOW)** — Feature matrix ☐ on D. Server-side rate limiting exists; needs a live UI verification (trigger many failed logins, confirm lockout message). Note: rate limiter may need a reset between test runs.
+- **130.2 — Admin bootstrap from `.env`: polish pass (LOW)** — Feature matrix ☐ on D. Not a web UI feature; document the verification path in the deployment docs.
+- **130.3 — General UI/UX review (fifth pass) (MEDIUM)** — Scheduled periodic review. If no issues found, the app is in a stable production state and the loop can shift to hardening/ops tasks.
 
 ## Inbox
 
-- **Login rate limiting: polish pass (LOW)** — Feature matrix ☐ on D. Server-side rate limiting exists; needs a live UI verification (trigger many failed logins, confirm lockout message).
-- **Admin bootstrap from `.env`: polish pass (LOW)** — Feature matrix ☐ on D. Not a web UI feature; document the verification path.
+- *(empty)*
 
 ## Paused Questions
 
 - *(empty)*
 
 ## Recently Completed
+
+- **129.1 — Notification badge: real-time clear on mark-all (DONE)** — Added `UnreadCountChanged` event to `NotificationService`; badge subscribes, notifications page raises after mark-all. Live-verified: badge "13" → gone immediately. 0 console errors. [changes/12901](docs/changes/12901-phase129-badge-realtime-clear.md)
 
 - **128.1 — Unread notification badge: live-render verification (DONE)** — Badge renders "1" when unread > 0, disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found: badge stale on notifications page for up to 60s after mark-all → 129.1. [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
 
@@ -114,8 +117,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **126.2 — Notification row: null-safe icon/verb rendering (DONE)** — Wrapped icon + verb in `@if (Activity is { })` guard. Prevents NRE on non-Activity inbox items. [changes/12602](docs/changes/12602-phase126-notification-null-safe-render.md)
 
 - **126.1 — Actor detail stats row: count only Note/Article posts (DONE)** — Replaced outbox `totalItems` with first-page Note/Article count. verifier87: "2"→"0"; bob: "13"→"4". [changes/12601](docs/changes/12601-phase126-actor-stats-post-count.md)
-
-- **125.1 — Hardening: error & empty state audit (DONE, review-only)** — Playwright audit of 404s, empty states, anonymous access. 2 findings → 126.1–126.2. [changes/12501](docs/changes/12501-phase125-error-empty-state-audit.md)
 
 ## Keeping the docs lean
 
