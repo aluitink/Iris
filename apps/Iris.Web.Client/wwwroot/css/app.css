@@ -480,6 +480,12 @@ a:hover {
     .compose-sensitive-toggle {
         flex-basis: 100%;
     }
+
+    .community-detail-actions {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
 }
 
 .main-nav a {
