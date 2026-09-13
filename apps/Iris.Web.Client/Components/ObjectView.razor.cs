@@ -610,6 +610,14 @@ public partial class ObjectView
     private static string ActorHref(Iri iri, IObject? actor) => ActorIdentityHelper.ActorHref(iri, actor);
 
     /// <summary>
+    /// The rendered (sanitized) summary for the <c>Actor</c> branch of the object view. An actor's
+    /// <c>summary</c> is untrusted HTML from a remote instance, so it is sanitized (see
+    /// <c>HtmlSanitizer</c>) before being emitted as a <see cref="MarkupString"/>.
+    /// </summary>
+    private MarkupString RenderedActorSummary
+        => ActorIdentityHelper.RenderedSummary((Item as Actor)?.Summary?.FirstOrDefault());
+
+    /// <summary>
     /// The href for a rendered hashtag: this instance's own hashtag search
     /// (<c>/search?q={#tag}</c>). A hashtag's authoring-server href (when one was supplied in the
     /// inbound <c>tag</c>) is a *foreign* URL (e.g. another instance's hashtag page) and is not useful

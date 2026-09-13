@@ -335,9 +335,9 @@
             {
                 <span class="object-name">@name</span>
             }
-            @if (actor.Summary?.FirstOrDefault() is { Length: > 0 } summary)
+            @if (actor.Summary?.FirstOrDefault() is { Length: > 0 })
             {
-                <span class="object-summary">@summary</span>
+                <span class="object-summary">@RenderedActorSummary</span>
             }
         </div>
     }

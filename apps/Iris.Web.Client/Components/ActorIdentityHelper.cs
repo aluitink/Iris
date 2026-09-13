@@ -1,5 +1,7 @@
 using Iris.Core.Identity;
+using Iris.Core.Rendering;
 using KristofferStrube.ActivityStreams;
+using Microsoft.AspNetCore.Components;
 
 namespace Iris.Web.Client.Components;
 
@@ -164,4 +166,14 @@ public static class ActorIdentityHelper
         => !string.IsNullOrWhiteSpace(name)
             && !string.IsNullOrWhiteSpace(preferredUsername)
             && name!.Equals(preferredUsername, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Renders an actor's <c>summary</c> (bio / description) as a safe
+    /// <see cref="MarkupString"/>. The summary arrives as untrusted HTML from other ActivityPub
+    /// instances, so it is run through <see cref="HtmlSanitizer.Sanitize"/> first (allow-listing a safe
+    /// subset of tags/attributes, stripping scripts, event handlers, and dangerous link targets) and only
+    /// then emitted as markup. A null or blank summary renders as an empty string.
+    /// </summary>
+    public static MarkupString RenderedSummary(string? summary)
+        => new(HtmlSanitizer.Sanitize(summary));
 }

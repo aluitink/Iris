@@ -33,9 +33,9 @@
                 {
                     <span class="actor-profile-name">@name</span>
                 }
-                @if (Summary is { Length: > 0 } summary)
+                @if (Summary is { Length: > 0 })
                 {
-                    <div class="actor-profile-summary">@summary</div>
+                    <div class="actor-profile-summary">@RenderedSummary</div>
                 }
             </div>
         </div>
@@ -74,6 +74,9 @@ else
     private string? Name => ActorObj?.Name?.FirstOrDefault();
 
     private string? Summary => ActorObj?.Summary?.FirstOrDefault();
+
+    // The summary is untrusted HTML from a remote instance — sanitize it before emitting as markup.
+    private MarkupString RenderedSummary => ActorIdentityHelper.RenderedSummary(Summary);
 
     private bool Redundant => ActorIdentityHelper.NameIsRedundant(Name, PreferredUsername);
 

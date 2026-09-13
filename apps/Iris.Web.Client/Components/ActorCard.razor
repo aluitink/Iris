@@ -38,9 +38,9 @@
                         <span class="actor-card-badge actor-card-badge--app">Bot</span>
                     }
                 </div>
-                @if (Summary is { Length: > 0 } summary)
+                @if (Summary is { Length: > 0 })
                 {
-                    <div class="actor-card-summary">@summary</div>
+                    <div class="actor-card-summary">@RenderedSummary</div>
                 }
             </div>
         </div>
@@ -98,6 +98,11 @@ else
     private string? Name => (Actor as Actor)?.Name?.FirstOrDefault();
 
     private string? Summary => (Actor as Actor)?.Summary?.FirstOrDefault();
+
+    // The summary is untrusted HTML from a remote instance — sanitize it before emitting as markup
+    // (see HtmlSanitizer). Rendered via @RenderedSummary in the template.
+    private MarkupString RenderedSummary
+        => ActorIdentityHelper.RenderedSummary(Summary);
 
     private bool Redundant => ActorIdentityHelper.NameIsRedundant(Name, PreferredUsername);
 
