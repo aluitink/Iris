@@ -147,39 +147,69 @@ else if (ObjectDoc is null)
 
     @if (ShowRepliesSection)
     {
-        <div class="card replies-section">
-            <h2>Replies</h2>
-            @if (RepliesLoading)
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading replies…</span>
-                </div>
-            }
-            else if (Replies is { Count: > 0 })
-            {
-                <ul class="object-list">
-                    @foreach (var reply in Replies)
-                    {
-                        <li><ObjectView Item="reply" /></li>
-                    }
-                </ul>
-                @if (HasMoreReplies)
-                {
-                    <div class="replies-more">
-                        <button type="button" class="button button--secondary" disabled="@LoadingMoreReplies" @onclick="LoadMoreRepliesAsync">
-                            @(LoadingMoreReplies ? "Loading…" : "Show more replies")
-                        </button>
-                    </div>
-                }
-            }
-            else
-            {
-                <p class="muted">No replies yet.</p>
-            }
+        <div class="tab-bar" role="tablist" aria-label="Object sections">
+            <a href="#replies" id="tab-replies" role="tab" aria-selected="@(ActiveTab == "replies")" aria-controls="panel-replies" class="tab @(ActiveTab == "replies" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("replies")'>Replies@(ReplyCount is { } rc && rc > 0 ? $" ({rc})" : string.Empty)</a>
+            <a href="#likes" id="tab-likes" role="tab" aria-selected="@(ActiveTab == "likes")" aria-controls="panel-likes" class="tab @(ActiveTab == "likes" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("likes")'>Likes@(LikeCount > 0 ? $" ({LikeCount})" : string.Empty)</a>
+            <a href="#shares" id="tab-shares" role="tab" aria-selected="@(ActiveTab == "shares")" aria-controls="panel-shares" class="tab @(ActiveTab == "shares" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("shares")'>Shares@(BoostCount > 0 ? $" ({BoostCount})" : string.Empty)</a>
         </div>
+
+        @if (ActiveTab == "replies")
+        {
+            <div role="tabpanel" id="panel-replies" aria-labelledby="tab-replies">
+                <div class="card replies-section">
+                    @if (RepliesLoading)
+                    {
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading replies…</span>
+                        </div>
+                    }
+                    else if (Replies is { Count: > 0 })
+                    {
+                        <ul class="object-list">
+                            @foreach (var reply in Replies)
+                            {
+                                <li><ObjectView Item="reply" /></li>
+                            }
+                        </ul>
+                        @if (HasMoreReplies)
+                        {
+                            <div class="replies-more">
+                                <button type="button" class="button button--secondary" disabled="@LoadingMoreReplies" @onclick="LoadMoreRepliesAsync">
+                                    @(LoadingMoreReplies ? "Loading…" : "Show more replies")
+                                </button>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p class="muted">No replies yet.</p>
+                    }
+                </div>
+            </div>
+        }
+        else if (ActiveTab == "likes")
+        {
+            <div role="tabpanel" id="panel-likes" aria-labelledby="tab-likes">
+                <InteractionActorsPanel
+                    Client="Client"
+                    CollectionIri="LikesCollectionIri"
+                    Title="Likes"
+                    EmptyMessage="No likes yet." />
+            </div>
+        }
+        else if (ActiveTab == "shares")
+        {
+            <div role="tabpanel" id="panel-shares" aria-labelledby="tab-shares">
+                <InteractionActorsPanel
+                    Client="Client"
+                    CollectionIri="SharesCollectionIri"
+                    Title="Shares"
+                    EmptyMessage="No boosts yet." />
+            </div>
+        }
     }
     }
 }
@@ -207,6 +237,8 @@ else if (ObjectDoc is null)
     private Iri? RepliesObjectIri { get; set; }
     private int LikeCount { get; set; }
     private int BoostCount { get; set; }
+    private int? ReplyCount { get; set; }
+    private string ActiveTab { get; set; } = "replies";
     private bool ConfirmingDelete { get; set; }
     private bool Deleting { get; set; }
     private string? DeleteError { get; set; }
@@ -327,6 +359,32 @@ else if (ObjectDoc is null)
     /// a tombstone — a deleted object has no replies to show).
     /// </summary>
     private bool ShowRepliesSection => ObjectDoc is not null && ObjectDoc is not Actor && !IsTombstone;
+
+    /// <summary>
+    /// The object's <c>/likes</c> collection IRI (the per-object likers surface the Likes tab walks).
+    /// Derived from the object's IRI; null when the object is not yet resolved.
+    /// </summary>
+    private Iri? LikesCollectionIri => ObjectIri is { } iri ? iri.LikesOf() : null;
+
+    /// <summary>
+    /// The object's <c>/shares</c> collection IRI (the per-object boosters surface the Shares tab walks).
+    /// Derived from the object's IRI; null when the object is not yet resolved.
+    /// </summary>
+    private Iri? SharesCollectionIri => ObjectIri is { } iri ? iri.SharesOf() : null;
+
+    /// <summary>
+    /// Switches the active tab (Replies / Likes / Shares). The Likes / Shares panels lazy-load their
+    /// collections on first activation (the <see cref="InteractionActorsPanel"/> loads in
+    /// <c>OnParametersSet</c>, which runs when the panel is first rendered into the tab panel).
+    /// </summary>
+    private void SwitchTab(string tab)
+    {
+        if (ActiveTab != tab)
+        {
+            ActiveTab = tab;
+            StateHasChanged();
+        }
+    }
 
     private string AncestorAuthor(IObject ancestor)
     {
@@ -550,6 +608,9 @@ else if (ObjectDoc is null)
         {
             LikeCount = liked;
             BoostCount = shared;
+            // 132.1: the object document also carries iris:repliedCount (rendered by the
+            // object-document endpoint), so read the reply count off it too (the Replies tab's count).
+            ReplyCount = doc.GetRepliedCount(ns);
             return;
         }
 
