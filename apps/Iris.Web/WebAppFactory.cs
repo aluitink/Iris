@@ -495,6 +495,21 @@ public static class WebAppFactory
         // — no extra package. It must run before UseAuthentication so the cookie + redirects see the real
         // scheme. When not behind a proxy the headers are absent and this is a no-op.
         app.UseForwardedHeaders();
+        // HSTS (131.5): instruct the browser to use HTTPS for this host for 1 year, including
+        // subdomains, and to preconnect. Per RFC 6797 the header MUST NOT be sent over plain HTTP, so
+        // it is emitted only when the request is HTTPS. Placed AFTER UseForwardedHeaders so that, behind
+        // the TLS-terminating reverse proxy, the app sees https (the forwarded-headers middleware has
+        // already updated Request.IsHttps from X-Forwarded-Proto) and the header is emitted; over local
+        // plain-HTTP dev the request is http and the header is skipped, so the browser is never told to
+        // force-HTTPS a host that only serves HTTP.
+        app.Use(async (ctx, next) =>
+        {
+            if (ctx.Request.IsHttps)
+            {
+                ctx.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload";
+            }
+            await next();
+        });
         // Antiforgery (Phase 94): the ASP.NET Core antiforgery middleware gates every non-GET request
         // (notably the login/register form POSTs) on a per-session token. It is enabled by default
         // (production). The middleware is ALWAYS applied (the endpoints carry antiforgery metadata, so
