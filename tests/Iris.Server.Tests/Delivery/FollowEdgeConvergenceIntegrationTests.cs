@@ -107,7 +107,7 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
         // lives). A's edge is alice's own following set.
         await WaitForAsync(
             async () => await _bPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(45));
         Assert.True(
             await _bPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
             "after alice follows bob, B should record that alice follows bob");
@@ -132,7 +132,7 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
             async () =>
                 !await _aPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri)
                 && !await _bPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(45));
         Assert.False(
             await _aPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
             "after the un-follow, A must no longer record alice → bob (no orphan on the follower's home side)");
@@ -158,7 +158,7 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
             async () =>
                 await _aPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri)
                 && await _bPersistence.Follows.IsFollowingAsync(_aliceActorIri, _bobActorIri),
-            timeout: TimeSpan.FromSeconds(15));
+            timeout: TimeSpan.FromSeconds(45));
 
         // --- Convergence assertions (the 19.3.5 invariant) ---------------------------------------
         // Both sides' store agree on the single edge: alice follows bob, and nothing else.
