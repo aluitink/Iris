@@ -94,13 +94,25 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **117.1 - Feed Optimizations** - Feeds should be build from the user's posts + user's followings posts. Example, userA follows userB, userB posts, it should show in userA's feed. If userC replies to userB's post, the reply should not show in userA's feed unless they follow userC - the post should show under userB's post's replies section.
-
 - **117.2 - Notifications improvements** - Show cards similar to the feed for notification items, the idea is to make it easy to navigate from notifications to the particular item, but notification should also look like collection view.
 
 - **117.3 - Directory Listings** - Directory should show external users as well, any actor we have come across should be cached and shown in the directory, separated by This instance vs. all known. 
 
 - **117.4 - Common Actor card** - We show actors in search results, follow/following collections, and the directory, we should create a common actor card and polish it, make it look more presentable, verify and inspect visually to ensure it's looks good and is functional. We should include moderation for actors like we do on notes actors post in the feed.
+
+- **118.1 - Communities polish** - Our goal is to cooperate in the Lemmyverse eco system. We need to do a deeper investigation on how this is done lemmy instance to lemmy instance. I imagine the owner of the community would follow a peer community as the owned community, the peer community would then send it's content to the owned communities inbox. If this is the proper method for peering, we should improve the flow by allowing the user to webfinger for a peer community and then follow it - we can call it relay on our side, but it should post a follow request as the owned community to the peer community.
+
+- **118.2 - Community feed** - A community provides a different type of information, I'm not enirely sure how we get at it yet (if we can browse it or need to subscribe and wait for it). We should experiement with some real world communities. We may need to do some indepth research (dispatch a sub agent) to determine what to expect from a Lemmy community, I think it may be a Document or a Page object that has a link or attachment - it's different than the mastodon note. I think there are also Likes and Dislikes - but unusre how to enumerate them. We need controls that support posting to a community in the proper form as to allow us to post to a Lemmy community - we should be Lemmy compatible and can investigate other platform compatabilities later.
+
+- **118.3 - Compose improvements** - We will need to be able to compose to communities as well, they may have a different type of object to send. We should look into improving the UX of the compose (New Post) page. We should create a control to support @mention and #hashtag; something that shows an auto-complete dropdown and selection of known actors. When a Create is generated and sent to the outbox, the outbox should be parsing these mentions and hashtags, we should be formatting them similar to mastodon and filling in fields that help the recipient system handle this (populate tags and mentions).
+
+- **119.1 - Profile improvements** - The profiles Likes tab should render the liked object with some kind of indication that it was Liked - not just a link to the like.
+
+- **119.2 - Settings improvements** - On mobile page, we can only display a certain number of tabs becuse our width is minimal. We may need to split these up in various sections that can be expanded like change password and security. See what we can improve here. Maybe moderation can go under Profile?
+
+- **120.1 - General UI/UX review** - perform a visual inspection of all aspects of the project so far. Create new 121.* items for anything we find that could be improved. After we make these changes we will perform another review.
+
+- **122.1 - General UI/UX review** - perform a visual inspection of all aspects of the project so far. Create new 123.* items for anything we find that could be improved. This review will cover changes made in 121.* - continue and repeate to tweak and enhance.
 
 ## Inbox
 
@@ -112,17 +124,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **116.6 — ICacheMetrics: Per-Cache Hit/Miss/Stale Counters (DONE)** — Added `ICacheMetrics`/`CacheMetrics`/`NullCacheMetrics` in Iris.Core. Wired into `CachingReadThrough<TValue>` + all 7 server + 4 client cache façades. New `GET /ap/v1/diagnostics/caches` endpoint (no auth). 15 new tests. 1,819 total pass. [changes/11606](docs/changes/11606-phase116-icachemetrics.md)
+- **117.1 — Thread-Aware Feed: inReplyTo + `?depth` (DONE)** — Reply detection now uses `inReplyTo` (deterministic) with audience heuristic fallback. Added `?depth` query param to feed endpoint (`iris:depth` capability). 5 new tests. 1,833 total pass. [changes/11701](docs/changes/11701-phase117-thread-aware-feed.md)
 
-- **116.3 — Inbox Log IRI Extraction Fix (DONE)** — Fixed `ExtractActorIriFromActivity`/`ExtractTargetIriFromActivity`: `Activity.Actor`/`.Object` are `IEnumerable<IObjectOrLink>`, not single objects; old code printed `RangeSelectIterator` type name. Added `FirstIriFromCollection` helper. Also investigated "invalid key errors": 3 categories (remote key resolution failures, unauthenticated probes, dead-follower DNS) — all expected, no code bugs. 1,816 tests pass. [changes/11603](docs/changes/11603-phase116-inbox-log-iri-fix.md)
+- **116.6 — ICacheMetrics (DONE)** — `ICacheMetrics`/`CacheMetrics`/`NullCacheMetrics` wired into all 11 cache façades. `GET /ap/v1/diagnostics/caches` endpoint. 15 new tests. [changes/11606](docs/changes/11606-phase116-icachemetrics.md)
 
-- **116.2 — Cache Hit-Rate Audit (DONE)** — Audited full caching infra (ICache/MemoryCache/CachingReadThrough + 7 server + 4 client façades). Empirical hit rates: actor 95-99% (4.8× faster), feed 95-99% (marginal), outbox 95-99% (2.7×). Search NOT cached (by design). **Critical gap: no hit/miss metrics.** Recommended ICacheMetrics. [plans/cache-audit](docs/plans/cache-audit.md)
+- **116.3 — Inbox Log IRI Extraction Fix (DONE)** — Fixed `ExtractActorIriFromActivity`/`ExtractTargetIriFromActivity`. [changes/11603](docs/changes/11603-phase116-inbox-log-iri-fix.md)
 
-- **116.1 — Performance Baseline (DONE)** — Measured TTFB/throughput/concurrency for all key API endpoints. All well under 200 ms P95 target (feed P95=9.3 ms, search P95=3.8 ms, actor P95=0.9 ms). 1,219 req/s concurrent on feed. No perf optimization needed at this scale. [plans/performance-baseline](docs/plans/performance-baseline.md)
+- **116.2 — Cache Hit-Rate Audit (DONE)** — Hit rates 95-99%. Gap: no metrics (fixed in 116.6). [plans/cache-audit](docs/plans/cache-audit.md)
 
-- **115.11 — Phase 115 Closeout (DONE)** — D-column matrix 66 ✅ / 3 ☐ = 95.6%. 1 bug found + fixed (115.5 EF search). 1,816 tests, 0 failures. Phase 116 defined (performance, federation stress, new feature verticals). [changes/11511](docs/changes/11511-phase115-closeout.md)
-
-- **115.10 — Follow Graph + Cross-Cutting: Live Verify + Reconciliation (DONE)** — Live-verified Follow graph (follow/unfollow, follower/following lists, manual-approve toggle, follow-request queue) + Cross-cutting (loading/empty/error states, mobile-responsive, keyboard nav, ARIA 25 elements). Reconciled 10 D-column rows (☐ → ✅). 3 ☐ remain (unread badge, login rate limiting, admin bootstrap). No code defects found. [changes/11510](docs/changes/11510-phase115-followgraph-crosscutting-live-verify.md)
+- **116.1 — Performance Baseline (DONE)** — All endpoints < 200 ms P95. [plans/performance-baseline](docs/plans/performance-baseline.md)
 
 
 ## Keeping the docs lean
