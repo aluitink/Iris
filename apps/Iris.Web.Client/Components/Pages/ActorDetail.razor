@@ -331,14 +331,14 @@ else
             {
                 FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
                 FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
-                PostCount = await GetFirstPageTotalAsync(client, actorIri.OutboxOf());
+                PostCount = await GetPostCountAsync(client, actorIri.OutboxOf());
             }
             else
             {
                 // Signed-out: read the public collection pages over plain HTTP (88.4).
                 FollowerCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowersOf());
                 FollowingCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowingOf());
-                PostCount = await GetFirstPageTotalAnonymousAsync(actorIri.OutboxOf());
+                PostCount = await GetPostCountAnonymousAsync(actorIri.OutboxOf());
             }
 
             StateHasChanged();
@@ -347,6 +347,91 @@ else
         {
             // Counts are best-effort; a failure to fetch them should not break the page.
         }
+    }
+
+    /// <summary>
+    /// Counts only Note/Article objects in the actor's outbox (126.1). The outbox contains all
+    /// activities (Create, Follow, Like, Announce, etc.); <c>totalItems</c> counts all of them,
+    /// which overstates the post count for actors with few posts but many non-post activities.
+    /// Fetches the first page (limit 30) and counts items whose <c>object</c> is a Note or Article.
+    /// </summary>
+    private static async Task<int?> GetPostCountAsync(IActivityPubClient client, Iri? outboxIri, CancellationToken ct = default)
+    {
+        if (outboxIri is not { } iri)
+        {
+            return null;
+        }
+
+        await foreach (var page in client.GetCollectionAsync(iri, ct: ct))
+        {
+            var count = 0;
+            foreach (var item in page.Items)
+            {
+                if (item is Activity activity &&
+                    activity.Object?.FirstOrDefault() is IObject noteObj &&
+                    noteObj.Type is { } types)
+                {
+                    foreach (var t in types)
+                    {
+                        if (t is "Note" or "Article")
+                        {
+                            count++;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Signed-out variant of <see cref="GetPostCountAsync"/>: fetches the first page of the outbox
+    /// over plain HTTP and counts Note/Article objects (126.1).
+    /// </summary>
+    private async Task<int?> GetPostCountAnonymousAsync(Iri? outboxIri)
+    {
+        if (outboxIri is not { } iri || Http is not { } http)
+        {
+            return null;
+        }
+
+        var url = iri.Value + (iri.Value.Contains('?') ? '&' : '?') + "limit=30";
+        using var response = await http.GetAsync(url);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        var doc = System.Text.Json.JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("orderedItems", out var items) &&
+            !doc.RootElement.TryGetProperty("items", out items))
+        {
+            return 0;
+        }
+
+        var count = 0;
+        foreach (var item in items.EnumerateArray())
+        {
+            if (item.TryGetProperty("type", out var typeProp) &&
+                item.TryGetProperty("object", out var objProp) &&
+                objProp.ValueKind == System.Text.Json.JsonValueKind.Object &&
+                objProp.TryGetProperty("type", out var objTypeProp))
+            {
+                var typeStr = typeProp.GetString() ?? string.Empty;
+                var objTypeStr = objTypeProp.GetString() ?? string.Empty;
+                if (typeStr == "Create" && (objTypeStr is "Note" or "Article"))
+                {
+                    count++;
+                }
+            }
+        }
+
+        return count;
     }
 
     /// <summary>
