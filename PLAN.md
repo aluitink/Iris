@@ -94,9 +94,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 ## Up Next
 
-- **131.1 — Performance: home feed load time (MEDIUM)** — Measure and optimize the home feed initial load (WASM bootstrap + first paged collection fetch). Target: < 3s to first post visible on a cold load. Baseline measurement via Playwright.
 - **131.2 — Security: dependency audit + CSP review (MEDIUM)** — Review NuGet dependencies for known vulnerabilities; verify CSP headers are correct (no `unsafe-eval`, minimal `unsafe-inline`); check for missing security headers (X-Content-Type-Options, X-Frame-Options, Referrer-Policy).
 - **131.3 — Federation edge cases: remote actor deletion + tombstone rendering (LOW)** — Verify that deleted remote actors/posts render gracefully (tombstone or "deleted" placeholder) rather than breaking the timeline. Test with a remote instance if possible.
+- **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files totaling 12.8 MB on cold load. Investigate AOT compilation, trimming, or single-file bundling to reduce the payload. Target: < 5 MB.
 
 ## Inbox
 
@@ -108,6 +108,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **131.1 — Performance: home feed load time (DONE, measurement-only)** — Cold load: ~1s to first post (target <3s met). WASM bootstrap (12.8 MB / 66 files) is the dominant cost. No optimization needed at this scale. [changes/13101](docs/changes/13101-phase131-home-feed-performance.md)
+
 - **130.3 — General UI/UX review (fifth pass) (DONE)** — Visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias). 0 console errors. Review cycle converged (5 passes). [changes/13003](docs/changes/13003-phase130-ui-ux-review-pass5.md)
 
 - **130.1 — Login rate limiting: live UI verification (DONE)** — 5 failed logins → 6th rejected with "Too many failed attempts... Try again in about 15 minutes." Feature matrix D-column closed. [changes/13001](docs/changes/13001-phase130-login-rate-limit-verify.md)
@@ -115,8 +117,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **130.2 — Admin bootstrap from `.env`: verification path documented (DONE)** — `AdminBootstrapper` idempotent (alice bootstrapped 2026-09-08, no second admin on restarts). Verification path documented. Feature matrix D-column closed. [changes/13002](docs/changes/13002-phase130-admin-bootstrap-docs.md)
 
 - **129.1 — Notification badge: real-time clear on mark-all (DONE)** — Added `UnreadCountChanged` event to `NotificationService`; badge subscribes, notifications page raises after mark-all. Live-verified: badge "13" → gone immediately. 0 console errors. [changes/12901](docs/changes/12901-phase129-badge-realtime-clear.md)
-
-- **128.1 — Unread notification badge: live-render verification (DONE)** — Badge renders "1" when unread > 0, disappears when 0. Previous "WASM init lifecycle issue" was a false negative. Found: badge stale on notifications page for up to 60s after mark-all → 129.1. [changes/12801](docs/changes/12801-phase128-notification-badge-verification.md)
 
 ## Keeping the docs lean
 
