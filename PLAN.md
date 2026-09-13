@@ -92,9 +92,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 6. **Fix in scope**: implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
-    ## Up Next
- 
-- **122.1 - General UI/UX review** - perform a visual inspection of all aspects of the project so far. Create new 123.* items for anything we find that could be improved. This review will cover changes made in 121.* - continue and repeate to tweak and enhance.
+## Up Next
+
+- **123.1 — Notifications: deduplicate repeated follow requests (HIGH)** — 4 identical "Bob sent you a follow request" cards appear when Bob follows Alice 4 times. Root cause: server mints a new ULID per Follow so IRI-based dedup can't collapse; inbox write is unconditional (doesn't check if follow edge is new). Fix: gate `AddToInboxAsync` on follow-edge novelty (write-time, `ActivityPubServerExtensions.cs:3055-3064`) + read-time collapse in `FilterInboxByPrefs` (`WebAppFactory.cs:1258-1338`). [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
+- **123.2 — Actor detail: enrich the profile header (MEDIUM)** — `/actor?iri=...` shows only handle + avatar + name. No bio, follower/following counts, or follow/unfollow button. Community detail is richer (name, handle, description, action buttons). Add `summary`, counts, and follow button to the actor header card. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
+- **123.3 — Community detail: mobile layout for ownership banner (LOW)** — On 375px, "This is your community." + "Edit community" button + "0 members" wrap awkwardly in one row. Stack on mobile (text line, button below). [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 
 ## Inbox
 
@@ -105,16 +107,16 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
-  
-- **121.7 — Boosted posts: inline content preview (DONE)** — Announce lazy-fetch in `ObjectView.OnInitializedAsync` (same pattern as 119.1 Like fetch). `BoostedObject`/`BoostedAuthorIri`/`BoostedPublished` computed properties resolve embedded or fetched object. Boost card now shows author, timestamp, content preview, media. Live-verified remote boost, 0 console errors. [changes/12107](docs/changes/12107-phase121-boosted-post-preview.md)
 
-- **121.6 — Actor profile: remove redundant "Posts" header (DONE)** — Removed `Title="Posts"` and `Description="..."` from the `PagedCollection` in the actor profile's Posts tab. The tab label already identifies the section. Live-verified, 0 console errors. [changes/12106](docs/changes/12106-phase121-actor-profile-redundant-posts.md)
+- **122.1 — General UI/UX review (second pass) (DONE, review-only)** — Visual sweep of all 13 pages (desktop + mobile). Found 3 improvement areas: (1) duplicate follow-request notifications (HIGH — server mints new ULID per Follow, inbox write unconditional), (2) sparse actor detail header (no bio/counts/follow button), (3) cramped community ownership banner on mobile. No bugs beyond the dedup issue. 0 console errors. [changes/12201](docs/changes/12201-phase122-ui-ux-review.md)
 
-- **121.5 — Public timeline: hide "To followers" audience line (DONE)** — `FilterDisplayAudience()` in `ObjectView` strips follower/following collection IRIs from the rendered "To" line. Followers-only posts show no "To" line; posts with both a followers cc and a concrete mention show only the mention. Live-verified 3 post types, 0 console errors. [changes/12105](docs/changes/12105-phase121-hide-follower-audience.md)
+- **121.7 — Boosted posts: inline content preview (DONE)** — Announce lazy-fetch in `ObjectView.OnInitializedAsync`. `BoostedObject`/`BoostedAuthorIri`/`BoostedPublished` computed properties. Boost card shows author, timestamp, content, media. [changes/12107](docs/changes/12107-phase121-boosted-post-preview.md)
 
-- **121.4 — Home timeline empty state (DONE, no code change)** — Already implemented in Phase 34.25: `HomeTimeline.razor` renders an icon + "Your timeline is empty." + "Follow people to see their posts here." + "Browse the directory →" link. 120.1's finding was based on a stale observation. [changes/12104](docs/changes/12104-phase121-home-empty-state.md)
+- **121.6 — Actor profile: remove redundant "Posts" header (DONE)** — Removed `Title`/`Description` from Posts-tab `PagedCollection`. [changes/12106](docs/changes/12106-phase121-actor-profile-redundant-posts.md)
 
-- **121.2 — Compose mobile: stack char counter + CW toggle on mobile (DONE)** — Added mobile media query (≤768px): `.compose-meta` wraps, char counter gets its own row (`order: -1` + `flex-basis: 100%`), CW toggle gets its own row. Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12102](docs/changes/12102-phase121-compose-mobile-meta-stacking.md)
+- **121.5 — Hide "To followers" audience line (DONE)** — `FilterDisplayAudience()` strips follower/following collection IRIs. [changes/12105](docs/changes/12105-phase121-hide-follower-audience.md)
+
+- **121.4 — Home timeline empty state (DONE, no code change)** — Already implemented in Phase 34.25. [changes/12104](docs/changes/12104-phase121-home-empty-state.md)
 
 ## Keeping the docs lean
 
