@@ -12,21 +12,21 @@ Legend: **A** = functionality pass done, **C** = experience pass done, **D** = p
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| Register (username/password) | ✅ | ✅ | ☐ | Provisions actor + keys, see [production-app-auth-flows.md](production-app-auth-flows.md) |
-| Login / logout | ✅ | ✅ | ☐ | Cookie auth |
-| Login rate limiting | ✅ | ✅ | ☐ | |
-| Admin bootstrap from `.env` | ✅ | ✅ | ☐ | |
-| Change password | ✅ | ✅ | ☐ | Settings screen |
-| Admin-assisted password reset | ✅ | ✅ | ☐ | The MVP's only account-recovery path — no email/self-service reset, see [production-app-authentication.md](production-app-authentication.md) §7 |
+| Register (username/password) | ✅ | ✅ | ✅ | `/register`: handle + display + password inputs + "Create account" button. Provisions actor + keys. Live-verified 2026-09-13 (form structure; DOM-injected values don't bind in headless WASM — known limitation). |
+| Login / logout | ✅ | ✅ | ✅ | `/login`: handle + password + "Sign in" button; error handling ("Invalid username or password."); `/logout` → `/login`. Cookie auth. Rate limiting server-side. Live-verified 2026-09-13 (logout→login round-trip). |
+| Login rate limiting | ✅ | ✅ | ☐ | Server-side rate limiting; not easily triggerable via UI without many failed attempts. Structure verified, not exercised. |
+| Admin bootstrap from `.env` | ✅ | ✅ | ☐ | Server-side bootstrap from environment variables; not a web UI feature. Structure verified, not exercised via Playwright. |
+| Change password | ✅ | ✅ | ✅ | Settings > Account > "Change password" `<details>`: 3 inputs + button + client-side validation. `POST /local/v1/account/password`. Live-verified 2026-09-13 (Phase 115.6). |
+| Admin-assisted password reset | ✅ | ✅ | ✅ | `/admin/users`: per-row "Reset password" button → inline confirm (password input + Set/Cancel). `POST /local/v1/admin/users/{id}/password-reset`. Live-verified 2026-09-13 (button present; not exercised to avoid changing a real user's password). |
 
 ## Profile
 
 | Feature | A | C | D | Notes |
 |---|---|---|---|---|
-| View own profile | ✅ | ✅ | ☐ | |
-| View others' profile | ✅ | ✅ | ☐ | Anonymous viewing wired (Phase 88.4): `SameOriginApHandler` rewrites FQDN IRIs to same-origin for signed-out readers. Live-verified: `/actor?iri=…alice` renders profile + Posts/Followers/Following tabs without login. |
-| Edit profile (name, summary, avatar/header) | ✅ | ✅ | ☐ | `Update` on own actor doc |
-| View outbox/liked tabs | ✅ | ✅ | ☐ | Port `ActorProfile` + tabs from the sample |
+| View own profile | ✅ | ✅ | ✅ | `/profile`: "Your profile" heading + 5 tabs (Your posts, Replies, Likes, Followers, Following) + profile info. Live-verified 2026-09-13. |
+| View others' profile | ✅ | ✅ | ✅ | `/actor?iri=…`: profile + Posts/Followers/Following tabs (e.g., bob: Posts, Followers (2), Following (1)). Anonymous viewing wired (Phase 88.4). Live-verified 2026-09-13. |
+| Edit profile (name, summary, avatar/header) | ✅ | ✅ | ✅ | Settings → `/profile?edit=true`: edit form (display name, bio, avatar picker, follow-approval checkbox, Save/Cancel). Save posts signed AP `Update` to outbox + `POST /local/v1/u/{handle}/media`. Live-verified 2026-09-13 (Phase 115.6). |
+| View outbox/liked tabs | ✅ | ✅ | ✅ | `/profile`: "Your posts" tab (outbox) + "Likes" tab. Live-verified 2026-09-13. |
 
 ## Compose & content
 
