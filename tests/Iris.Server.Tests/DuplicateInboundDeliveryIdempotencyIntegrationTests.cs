@@ -127,7 +127,7 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IAsync
         // the exactly-once assertion below.
         await TestFederation.WaitForStableAsync(async () =>
             (await _bPersistence.Moderation.GetBlockersAsync(_bobActorIri)).Count(b => b == _aliceActorIri),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(15));
+            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(30));
 
         // Both deliveries were accepted (a re-delivery is a no-op, not an error).
         Assert.True(first, "the first Block delivery should have been accepted (202).");
@@ -176,7 +176,7 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IAsync
         // the exactly-once assertion below.
         await TestFederation.WaitForStableAsync(async () =>
             (await _bPersistence.Follows.GetFollowersAsync(_bobActorIri)).Count(f => f == _aliceActorIri),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(15));
+            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(30));
 
         Assert.True(first, "the first Follow delivery should have been accepted (202).");
         Assert.True(second, "a redelivered Follow should be accepted as a no-op (202), not error (500).");

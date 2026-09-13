@@ -67,6 +67,13 @@ services:
       # it (the C# production default in WebAppFactory remains ON; this only overrides the dev stack).
       # NEVER run a public production instance with antiforgery off. Maps to Iris:Security:EnableAntiforgery.
       Iris__Security__EnableAntiforgery: ${IRIS_SECURITY_ENABLEANTIFORGERY:-false}
+      # Development cache-bypass (Phase 131.6): ON by default in the dev stack so the browser never
+      # serves a stale build after a container redeploy — the SPA shell (index.html) is served
+      # no-store and CSS/JS are revalidated (no-cache), while the fingerprinted _framework/ WASM assets
+      # stay long-term immutable (safe: content-hashed URLs change per build). Set
+      # IRIS_DEV_CACHEBYPASS=false to restore normal caching (24h CSS/JS). The C# production default in
+      # WebAppFactory remains OFF; this only overrides the dev stack. Maps to Iris:Dev:CacheBypass.
+      Iris__Dev__CacheBypass: ${IRIS_DEV_CACHEBYPASS:-true}
       # Graceful-shutdown drain timeout (slice 33.6): bounds the time the DeliveryWorker waits for
       # in-flight outbound deliveries to settle on a SIGTERM. A delivery that does not finish in time
       # is dropped (journaled / dead-lettered per the F-22 at-least-once policy). Accepts a TimeSpan

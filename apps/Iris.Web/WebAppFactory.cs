@@ -144,6 +144,45 @@ public static class WebAppFactory
     public const string EnableAntiforgeryConfigKey = "Iris:Security:EnableAntiforgery";
 
     /// <summary>
+    /// The configuration key that toggles <em>development cache bypass</em> (Phase 131.6). Bound from
+    /// <c>Iris:Dev:CacheBypass</c> (env <c>IRIS_DEV_CACHEBYPASS</c>). When <c>true</c> (case-insensitive),
+    /// the SPA shell (<c>index.html</c>) is served with <c>Cache-Control: no-store</c> and CSS/JS static
+    /// assets with <c>Cache-Control: no-cache</c> (revalidated on every request), so a browser never
+    /// serves a stale build after a container redeploy — the recurring "the site is stuck on an old
+    /// version" pain during active development. The fingerprinted <c>/_framework/</c> WASM assets are
+    /// cached long-term (<c>max-age=31536000, immutable</c>) in BOTH modes: they are content-hashed per
+    /// build, so a redeploy changes their URLs and they are safe to cache aggressively regardless.
+    /// </summary>
+    /// <remarks>
+    /// The C# production default is <c>false</c> (cache normally — correct for a public instance). The
+    /// development compose stack defaults it to <c>true</c> (env <c>IRIS_DEV_CACHEBYPASS</c>, override
+    /// back to <c>false</c> to restore normal caching), mirroring the antiforgery dev-default pattern.
+    /// Unset/blank or any non-<c>true</c> value → cache normally (fail closed to production behavior, so
+    /// a misconfiguration can never accidentally serve an uncached, slower site to public users).
+    /// </remarks>
+    public const string DevCacheBypassConfigKey = "Iris:Dev:CacheBypass";
+
+    /// <summary>
+    /// Reads the development cache-bypass toggle from <paramref name="configuration"/> (Phase 131.6).
+    /// Cache bypass is enabled only when the value bound to <see cref="DevCacheBypassConfigKey"/> parses
+    /// to <c>true</c> (case-insensitive). Unset/blank or any non-<c>true</c> value → cache normally (the
+    /// production default), so a misconfiguration can never silently turn off caching for a public
+    /// instance.
+    /// </summary>
+    /// <param name="configuration">The application configuration.</param>
+    /// <returns><c>true</c> when the dev cache-bypass headers should be emitted.</returns>
+    internal static bool IsDevCacheBypassEnabled(IConfiguration configuration)
+    {
+        var raw = configuration[DevCacheBypassConfigKey];
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        return bool.TryParse(raw, out var enabled) && enabled;
+    }
+
+    /// <summary>
     /// Reads the antiforgery toggle from <paramref name="configuration"/> (Phase 94). Antiforgery is
     /// enabled unless the value bound to <see cref="EnableAntiforgeryConfigKey"/> parses to <c>false</c>
     /// (case-insensitive). Unset/blank or any non-<c>false</c> value → enabled (the production default),
@@ -531,7 +570,13 @@ public static class WebAppFactory
         app.UseAuthorization();
         // Static files: serves the WASM client's _framework/ + wwwroot/ (copied into this host's
         // wwwroot at build time by the BuildAndCopyClient target). _framework/ assets are
-        // fingerprinted per build, so they get long-term immutable caching; CSS/JS get 24h.
+        // fingerprinted per build (content-hashed URLs), so they get long-term immutable caching in
+        // BOTH modes — a redeploy changes their URLs, so aggressive caching is safe regardless.
+        // CSS/JS live at FIXED (non-fingerprinted) paths, so they are the assets that go stale after a
+        // redeploy: in the development cache-bypass mode (Phase 131.6, Iris:Dev:CacheBypass=true) they
+        // get no-cache (revalidate every request) so a fresh build is picked up immediately; otherwise
+        // they get a 24h heuristic cache (the production default).
+        var devCacheBypass = IsDevCacheBypassEnabled(app.Configuration);
         app.UseStaticFiles(new StaticFileOptions
         {
             OnPrepareResponse = ctx =>
@@ -543,7 +588,9 @@ public static class WebAppFactory
                 }
                 else if (path.EndsWith(".css") || path.EndsWith(".js"))
                 {
-                    ctx.Context.Response.Headers.CacheControl = "public, max-age=86400";
+                    ctx.Context.Response.Headers.CacheControl = devCacheBypass
+                        ? "no-cache"
+                        : "public, max-age=86400";
                 }
             },
         });
@@ -574,9 +621,30 @@ public static class WebAppFactory
         app.MapActivityPubEndpoints();
 
         // SPA fallback: any non-API, non-static path serves the WASM client's index.html so the
-        // client-side router can handle it (e.g. /home, /compose, /profile). Must be mapped LAST
-        // so it doesn't shadow the API endpoints above.
-        app.MapFallbackToFile("index.html");
+        // client-side router can handle it (e.g. /home, /compose, /profile). Must be mapped LAST so
+        // it doesn't shadow the API endpoints above. The shell is a fixed URL: if the browser cached
+        // the old shell, it keeps loading the old _framework/ build after a redeploy. In the
+        // development cache-bypass mode (Phase 131.6) we therefore mark it no-store so the next
+        // navigation fetches the fresh shell (which references the new content-hashed _framework/
+        // assets); in production mode it is served with no Cache-Control (the pre-131.6 behavior).
+        // Served as an explicit endpoint (not MapFallbackToFile) so the Cache-Control header can be
+        // set unambiguously alongside the body.
+        app.MapFallback(async (HttpContext ctx, IWebHostEnvironment env) =>
+        {
+            var path = Path.Combine(env.WebRootPath, "index.html");
+            if (!File.Exists(path))
+            {
+                return Results.NotFound();
+            }
+
+            var content = await File.ReadAllTextAsync(path, System.Text.Encoding.UTF8);
+            if (devCacheBypass)
+            {
+                ctx.Response.Headers.CacheControl = "no-store";
+            }
+
+            return Results.Content(content, "text/html");
+        });
     }
 
     /// <summary>
