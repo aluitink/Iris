@@ -42,14 +42,14 @@ else if (_items is null || _items.Count == 0)
 }
 else
 {
-    <ul class="notif-list">
+    <div class="notif-cards">
         @foreach (var item in _items)
         {
-            <li class="notif-item">
+            <div class="notif-card-wrapper">
                 <NotificationRow Item="@DeserializeItem(item)" SelfId="@SelfIri" />
-            </li>
+            </div>
         }
-    </ul>
+    </div>
 
     @if (_nextPage is not null)
     {

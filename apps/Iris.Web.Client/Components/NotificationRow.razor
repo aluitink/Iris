@@ -6,90 +6,40 @@
 
 @inject UiContext Ui
 
-<div class="notification-row">
-    @if (Item is Activity activity)
-    {
-        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
-        var objectFirst = activity.Object?.FirstOrDefault();
-        var objectIri = objectFirst?.ResolveObjectIri();
-        var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
-        // A <c>Delete</c> activity references the actor's <em>own</em> IRI as its <c>object</c> (the
-        // remote instance sends <c>object == actor</c>, not a separate deleted-object IRI — the object
-        // being deleted is the account itself). For those, the row's target link would point at the
-        // actor's IRI via /object (which 410s), and the name would fall back to the raw IRI last
-        // segment (a numeric remote ID) — B-010/B-011. Such rows render a "deleted their account"
-        // caption (linking the actor) instead of a bogus object link.
-        var isSelfDelete = IsSelfDelete(activity);
-        var targetPreview = isSelfDelete ? null : TargetPreview(objectFirst);
-        var actorDoc = actorIri is { } a ? _actorDocs.TryGetValue(a.Value, out var d) ? d : null : null;
-        var displayName = actorDoc is { } ad && ad is Actor actorObj && actorObj.Name is { } names
-            ? names.FirstOrDefault()
-            : null;
-        var iconIri = ActorIconIri(actorDoc);
-
-        <div class="notification-body">
-            <div class="notification-avatar">
-                <ActorAvatar
-                    ActorIri="actorIri"
-                    DisplayName="@(isSelfDelete && actorIri is { } del ? DisplayNameFallback(del) : displayName)"
-                    IconIriOverride="@iconIri"
-                    SkipFetch="@isSelfDelete" />
-            </div>
-            <div class="notification-content">
-                <div class="notification-head">
+<div class="notification-card" data-type="@(Activity?.Type?.FirstOrDefault())">
+    <div class="notification-card__header">
+        <div class="notification-card__avatar">
+            <ActorAvatar
+                ActorIri="@(Item is Activity a && a.Actor is { } act ? act.FirstOrDefault()?.ResolveObjectIri() : null)"
+                DisplayName="@(Item is Activity a2 ? GetDisplayName(a2) : null)"
+                IconIriOverride="@(Item is Activity a3 ? GetIconIri(a3) : null)"
+                SkipFetch="@IsSelfDeleteActivity" />
+        </div>
+        <div class="notification-card__meta">
+            <div class="notification-card__actor-row">
+                @if (Item is Activity a4 && a4.Actor is { } a4actors)
+                {
+                    var actorIri = a4actors.FirstOrDefault()?.ResolveObjectIri();
                     @if (actorIri is { } performer)
                     {
-                        <a href="@ActorHref(performer)" title="@performer" class="notification-name">
-                            @(displayName ?? DisplayNameFallback(performer))
+                        <a href="@ActorHref(performer)" title="@performer" class="notification-card__name">
+                            @(GetDisplayName(a4) ?? DisplayNameFallback(performer))
                         </a>
                     }
-                    @NotificationIcon(activity)
-                    <span class="notification-verb">@VerbFor(activity)</span>
-                    @if (Published is { } published)
-                    {
-                        <span class="notification-time" title="@published.ToString("o")">@RelativeTime(published)</span>
-                    }
-                </div>
-                <div class="notification-target">
-                    @if (isSelfDelete && actorIri is { } deleted)
-                    {
-                        <span class="notification-self-delete" title="@deleted">deleted their account</span>
-                    }
-                    else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity))
-                    {
-                        <div class="notification-note-card">
-                            @if (noteObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
-                            {
-                                <a href="@ActorHref(noteAuthor)" title="@noteAuthor" class="notification-note-author">@HandleOf(noteAuthor)</a>
-                            }
-                            @if (targetPreview is { } preview)
-                            {
-                                <a href="@(objectIri is { } ti ? ObjectHref(ti) : null)" class="notification-note-content">@preview</a>
-                            }
-                            else if (objectIri is { } ti)
-                            {
-                                <a href="@ObjectHref(ti)" class="notification-target-link">@ShortLabel(ti)</a>
-                            }
-                        </div>
-                    }
-                    else if (objectIri is { } target)
-                    {
-                        <a href="@ObjectHref(target)" title="@target" class="notification-target-link">
-                            @(targetPreview ?? ShortLabel(target))
-                        </a>
-                    }
-                    else if (targetIri is { } t)
-                    {
-                        <a href="@ActorHref(t)" title="@t" class="object-actor">@HandleOf(t)</a>
-                    }
-                </div>
+                }
+                @NotificationIcon(Activity!)
+                <span class="notification-card__verb">@VerbFor(Activity!)</span>
             </div>
+            @if (Published is { } published)
+            {
+                <span class="notification-card__time" title="@published.ToString("o")">@RelativeTime(published)</span>
+            }
         </div>
-    }
-    else
-    {
-        <div class="notification-row unknown"><span class="object-type">Unknown</span></div>
-    }
+    </div>
+
+    <div class="notification-card__body">
+        @RenderCardBody()
+    </div>
 </div>
 
 @code {
@@ -171,6 +121,158 @@
         var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
         var objectIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
         return actorIri is { } ai && objectIri is { } o && o == ai;
+    }
+
+    private bool IsSelfDeleteActivity => Item is Activity a && IsSelfDelete(a);
+
+    private string? GetDisplayName(Activity activity)
+    {
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            return null;
+        }
+
+        if (IsSelfDelete(activity))
+        {
+            return DisplayNameFallback(iri);
+        }
+
+        if (_actorDocs.TryGetValue(iri.Value, out var doc) && doc is { } d)
+        {
+            if (d is Actor actorObj && actorObj.Name is { } names)
+            {
+                return names.FirstOrDefault();
+            }
+        }
+
+        return null;
+    }
+
+    private string? GetIconIri(Activity activity)
+    {
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            return null;
+        }
+
+        if (_actorDocs.TryGetValue(iri.Value, out var doc) && doc is { } d)
+        {
+            return ActorIconIri(d);
+        }
+
+        return null;
+    }
+
+    private RenderFragment RenderCardBody()
+    {
+        if (Item is not Activity activity)
+        {
+            return builder => { };
+        }
+
+        var isSelfDelete = IsSelfDelete(activity);
+        var objectFirst = activity.Object?.FirstOrDefault();
+        var objectIri = objectFirst?.ResolveObjectIri();
+        var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
+
+        return builder =>
+        {
+            if (isSelfDelete && activity.Actor?.FirstOrDefault()?.ResolveObjectIri() is { } deleted)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__self-delete");
+                builder.AddContent(2, "deleted their account");
+                builder.CloseElement();
+            }
+            else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity))
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__note");
+
+                // Note author
+                if (noteObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
+                {
+                    builder.OpenElement(2, "div");
+                    builder.AddAttribute(3, "class", "notification-card__note-author");
+                    builder.OpenElement(4, "a");
+                    builder.AddAttribute(5, "href", ActorHref(noteAuthor));
+                    builder.AddAttribute(6, "title", noteAuthor.ToString());
+                    builder.AddContent(7, HandleOf(noteAuthor));
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                // Note content preview
+                var preview = TargetPreview(objectFirst);
+                if (preview is { })
+                {
+                    builder.OpenElement(8, "div");
+                    builder.AddAttribute(9, "class", "notification-card__note-content");
+                    if (objectIri is { } ti)
+                    {
+                        builder.OpenElement(10, "a");
+                        builder.AddAttribute(11, "href", ObjectHref(ti));
+                        builder.AddContent(12, preview);
+                        builder.CloseElement();
+                    }
+                    else
+                    {
+                        builder.AddContent(10, preview);
+                    }
+                    builder.CloseElement();
+                }
+                else if (objectIri is { } ti)
+                {
+                    builder.OpenElement(8, "div");
+                    builder.AddAttribute(9, "class", "notification-card__note-content");
+                    builder.OpenElement(10, "a");
+                    builder.AddAttribute(11, "href", ObjectHref(ti));
+                    builder.AddContent(12, ShortLabel(ti));
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                // "View" link
+                if (objectIri is { } vi)
+                {
+                    builder.OpenElement(13, "div");
+                    builder.AddAttribute(14, "class", "notification-card__actions");
+                    builder.OpenElement(15, "a");
+                    builder.AddAttribute(16, "href", ObjectHref(vi));
+                    builder.AddAttribute(17, "class", "notification-card__view-link");
+                    builder.AddContent(18, "View →");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                builder.CloseElement();
+            }
+            else if (objectIri is { } target)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__target");
+                builder.OpenElement(2, "a");
+                builder.AddAttribute(3, "href", ObjectHref(target));
+                builder.AddAttribute(4, "title", target.ToString());
+                var preview = TargetPreview(objectFirst);
+                builder.AddContent(5, preview ?? ShortLabel(target));
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            else if (targetIri is { } t)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__target");
+                builder.OpenElement(2, "a");
+                builder.AddAttribute(3, "href", ActorHref(t));
+                builder.AddAttribute(4, "title", t.ToString());
+                builder.AddContent(5, HandleOf(t));
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        };
     }
 
     /// <summary>

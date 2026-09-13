@@ -3298,6 +3298,173 @@ body > #app {
     text-align: center;
 }
 
+/* ── 117.2: Notification cards (feed-style layout) ── */
+.notif-cards {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.notif-card-wrapper {
+    /* Each notification is a card, matching the feed's ObjectView card style */
+}
+
+.notification-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-35);
+    transition: border-color 0.15s;
+}
+
+.notification-card:hover {
+    border-color: var(--border-hover, var(--border));
+}
+
+.notification-card__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-25);
+    margin-bottom: var(--space-2);
+}
+
+.notification-card__avatar {
+    flex-shrink: 0;
+}
+
+.notification-card__meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-card__actor-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+}
+
+.notification-card__name {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.notification-card__name:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__verb {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.notification-card__time {
+    display: block;
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    margin-top: var(--space-1);
+}
+
+.notification-card__body {
+    min-height: 0;
+}
+
+.notification-card__note {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-25) var(--space-3);
+}
+
+.notification-card__note-author {
+    margin-bottom: var(--space-1);
+}
+
+.notification-card__note-author a {
+    color: var(--muted);
+    font-weight: 500;
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+}
+
+.notification-card__note-author a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__note-content {
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    color: var(--text);
+    word-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.notification-card__note-content a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.notification-card__note-content a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__target {
+    font-size: var(--font-size-sm);
+    color: var(--text);
+}
+
+.notification-card__target a {
+    color: var(--accent);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-card__target a:hover {
+    text-decoration: underline;
+}
+
+.notification-card__actions {
+    margin-top: var(--space-2);
+    padding-top: var(--space-15);
+    border-top: 1px solid var(--border);
+}
+
+.notification-card__view-link {
+    font-size: var(--font-size-sm);
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.notification-card__view-link:hover {
+    text-decoration: underline;
+}
+
+.notification-card__self-delete {
+    color: var(--muted);
+    font-style: italic;
+    font-size: var(--font-size-sm);
+    padding: var(--space-1) 0;
+}
+
+.notification-icon {
+    width: var(--space-4);
+    height: var(--space-4);
+    flex-shrink: 0;
+}
+
 /* ── 61.4: Media gallery + lightbox + media players ── */
 .media-gallery {
     display: grid;
