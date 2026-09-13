@@ -296,8 +296,17 @@ public sealed class DuplicateInboundDeliveryIdempotencyIntegrationTests : IAsync
         try
         {
             await service.DeliverAsync(inbox, activity);
-            // Let the (single) delivery settle before returning.
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
+            // The delivery is ASYNC (DeliverAsync only enqueues; the DeliveryWorker performs the HTTP
+            // request on its own loop). Poll until the worker has completed the delivery (the capturing
+            // handler records LastStatus when SendAsync runs) rather than relying on a fixed delay — a
+            // fixed 500 ms was enough on an idle machine but raced under full-suite CPU contention,
+            // leaving LastStatus unset and failing the "accepted (202)" assertion even though the
+            // delivery would have completed moments later (a test-timing flake, not a product bug).
+            var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+            while (capture.LastStatus is null && DateTime.UtcNow < deadline)
+            {
+                await Task.Delay(25);
+            }
         }
         finally
         {
