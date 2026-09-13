@@ -94,8 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
     ## Up Next
  
-- **121.3 - Notifications: fix "Mark all as read" button placement on mobile** — On mobile the button is centered between title and filter pills, creating an awkward gap. Right-align it in the title row or move below filters.
-
 - **121.4 - Home timeline: add empty state when user has no follows** — Blank page with just "Home timeline". Add: "You haven't followed anyone yet. Find people in the Directory." with link.
 
 - **121.5 - Public timeline: hide or improve "To followers" audience line for anonymous visitors** — "TO followers" is meaningless to anonymous users. Hide it or replace with "visible to alice's followers".
@@ -116,6 +114,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
   
+- **121.3 — Notifications: right-align "Mark all as read" on mobile (DONE)** — Added `.page-header-row .btn { align-self: flex-end }` in the ≤768px media query. Button now right-aligned in the stacked mobile header. Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12103](docs/changes/12103-phase121-notifications-mark-read-mobile.md)
+
 - **121.2 — Compose mobile: stack char counter + CW toggle on mobile (DONE)** — Added mobile media query (≤768px): `.compose-meta` wraps, char counter gets its own row (`order: -1` + `flex-basis: 100%`), CW toggle gets its own row. Desktop unchanged. Live-verified 375px + 1400px, 0 console errors. [changes/12102](docs/changes/12102-phase121-compose-mobile-meta-stacking.md)
 
 - **121.1 — Notifications: replace raw IRI links with friendly labels (DONE)** — `NotificationRow` now uses `FriendlyLabel()` instead of `ShortLabel()` for the notification target link when no content preview exists. Actor IRIs → "View {handle}'s profile", note IRIs → "View note", community IRIs → "View {name}". Live-verified: follow requests + likes show friendly labels. 88/88 web tests pass. [changes/12101](docs/changes/12101-phase121-notification-friendly-labels.md)
@@ -123,8 +123,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **120.1 — General UI/UX review (first pass) (DONE)** — Visual inspection of all pages (desktop + mobile). Found 7 improvement areas → created 121.1–121.7 items. No bugs, all cosmetic/usability. [changes/12001](docs/changes/12001-phase120-ui-ux-review.md)
   
 - **119.2 — Settings improvements: 3 tabs with expandable subsections (DONE)** — Split the 6-tab settings page into 3 primary tabs (Account, Content, Danger) with expandable `<details>` subsections. Moderation moved into Account. Lazy-loading for Moderation/Communities/Relays via `@ontoggle`. Mobile: tab bar wraps, tighter subsection spacing. Live-verified: desktop + mobile (375px), all tabs/subsections, 0 console errors. [changes/11902](docs/changes/11902-phase119-settings-improvements.md)
-  
-- **119.1 — Profile improvements: render the liked object in the Likes tab (DONE)** — The profile Likes tab showed each Like as a bare IRI link because the outbox `Like` carries its target as a bare link (no embedded object). `ObjectView` now resolves the target: for a `Like` with a link-only target it primes the scoped session (`EnsureReadyAsync` — the accessor is scoped, so `Client` is null until the key loads) and fetches the liked object, then renders it as a full nested `ObjectView` (author/content/media/counts) under the "Liked" header, with a left-accent `.object-like-resolved` style. Falls back to the bare link if the fetch fails. Live-verified (fresh cache): 10/10 liked objects resolve (local + remote), 0 bare links. [changes/11901](docs/changes/11901-phase119-profile-likes-tab.md)
   
 ## Keeping the docs lean
 
