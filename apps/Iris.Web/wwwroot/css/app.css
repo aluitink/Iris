@@ -438,6 +438,27 @@ a:hover {
         gap: 0;
         margin-left: var(--space-1);
     }
+
+    /* 119.2 — Settings tab bar: allow wrapping on narrow viewports so all 3 tabs
+       remain reachable without horizontal scroll. */
+    .tab-bar {
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    /* Settings subsections: tighter spacing on mobile. */
+    .settings-subsection {
+        margin-top: var(--space-85);
+        padding-top: var(--space-3);
+    }
+
+    .settings-subsection-summary {
+        font-size: var(--font-size-base);
+    }
 }
 
 .main-nav a {

@@ -19,10 +19,7 @@ else
 {
     <div class="tab-bar" role="tablist" aria-label="Settings sections">
         <a href="#account" id="tab-account" role="tab" aria-selected="@(ActiveTab == "account")" aria-controls="panel-account" class="tab @(ActiveTab == "account" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("account")'>Account</a>
-        <a href="#notifications" id="tab-notifications" role="tab" aria-selected="@(ActiveTab == "notifications")" aria-controls="panel-notifications" class="tab @(ActiveTab == "notifications" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("notifications")'>Notifications</a>
-        <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
-        <a href="#relays" id="tab-relays" role="tab" aria-selected="@(ActiveTab == "relays")" aria-controls="panel-relays" class="tab @(ActiveTab == "relays" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("relays")'>Relays</a>
-        <a href="#moderation" id="tab-moderation" role="tab" aria-selected="@(ActiveTab == "moderation")" aria-controls="panel-moderation" class="tab @(ActiveTab == "moderation" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("moderation")'>Moderation</a>
+        <a href="#content" id="tab-content" role="tab" aria-selected="@(ActiveTab == "content")" aria-controls="panel-content" class="tab @(ActiveTab == "content" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("content")'>Content</a>
         <a href="#danger" id="tab-danger" role="tab" aria-selected="@(ActiveTab == "danger")" aria-controls="panel-danger" class="tab tab--danger @(ActiveTab == "danger" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("danger")'>Danger</a>
     </div>
 
@@ -30,56 +27,28 @@ else
     {
         <div class="card" id="panel-account" role="tabpanel" aria-labelledby="tab-account">
             <h2>Account</h2>
-            @if (ActorDoc is not null)
-            {
-                <div class="settings-account-info">
-                    <ActorProfile Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" />
-                    <p class="muted" style="margin-top: 0.75rem;">
-                        <a href="/profile?edit=true">Edit your profile</a> to update your display name and description.
-                    </p>
-                </div>
-            }
-            else
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading…</span>
-                </div>
-            }
 
-            <details class="settings-subsection">
-                <summary class="settings-subsection-summary">Change password</summary>
+            <details class="settings-subsection" open>
+                <summary class="settings-subsection-summary">Profile</summary>
                 <div class="settings-subsection-body">
-                    @if (PasswordError is not null)
+                    @if (ActorDoc is not null)
                     {
-                        <div class="error" role="alert">@PasswordError</div>
+                        <div class="settings-account-info">
+                            <ActorProfile Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" />
+                            <p class="muted" style="margin-top: 0.75rem;">
+                                <a href="/profile?edit=true">Edit your profile</a> to update your display name and description.
+                            </p>
+                        </div>
                     }
-                    @if (PasswordSuccess)
+                    else
                     {
-                        <div class="success" role="status">Password changed successfully.</div>
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading…</span>
+                        </div>
                     }
-                    <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
-                        <div>
-                            <label class="label" for="current-password">Current password</label>
-                            <input id="current-password" type="password" class="input" value="@CurrentPassword"
-                                   @onchange="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
-                        </div>
-                        <div>
-                            <label class="label" for="new-password">New password</label>
-                            <input id="new-password" type="password" class="input" value="@NewPassword"
-                                   @onchange="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
-                        </div>
-                        <div>
-                            <label class="label" for="confirm-password">Confirm new password</label>
-                            <input id="confirm-password" type="password" class="input" value="@ConfirmPassword"
-                                   @onchange="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
-                        </div>
-                        <button class="button" disabled="@PasswordBusy" @onclick="ChangePasswordAsync">
-                            @(PasswordBusy ? "Changing…" : "Change password")
-                        </button>
-                    </div>
                 </div>
             </details>
 
@@ -115,251 +84,291 @@ else
                     }
                 </div>
             </details>
+
+            <details class="settings-subsection">
+                <summary class="settings-subsection-summary">Change password</summary>
+                <div class="settings-subsection-body">
+                    @if (PasswordError is not null)
+                    {
+                        <div class="error" role="alert">@PasswordError</div>
+                    }
+                    @if (PasswordSuccess)
+                    {
+                        <div class="success" role="status">Password changed successfully.</div>
+                    }
+                    <div style="display: flex; flex-direction: column; gap: 0.75rem; max-width: 28rem;">
+                        <div>
+                            <label class="label" for="current-password">Current password</label>
+                            <input id="current-password" type="password" class="input" value="@CurrentPassword"
+                                   @onchange="e => CurrentPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <div>
+                            <label class="label" for="new-password">New password</label>
+                            <input id="new-password" type="password" class="input" value="@NewPassword"
+                                   @onchange="e => NewPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <div>
+                            <label class="label" for="confirm-password">Confirm new password</label>
+                            <input id="confirm-password" type="password" class="input" value="@ConfirmPassword"
+                                   @onchange="e => ConfirmPassword = e.Value?.ToString() ?? string.Empty" />
+                        </div>
+                        <button class="button" disabled="@PasswordBusy" @onclick="ChangePasswordAsync">
+                            @(PasswordBusy ? "Changing…" : "Change password")
+                        </button>
+                    </div>
+                </div>
+            </details>
+
+            <details class="settings-subsection" @ontoggle='() => LoadLazily("moderation")'>
+                <summary class="settings-subsection-summary">Moderation</summary>
+                <div class="settings-subsection-body">
+                    @if (ModerationBusy)
+                    {
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading moderation lists…</span>
+                        </div>
+                    }
+                    else if (ModerationError is not null)
+                    {
+                        <div class="error" role="alert">@ModerationError</div>
+                    }
+                    else if (BlockedActors is not null || MutedActors is not null || FlaggedActors is not null)
+                    {
+                        <h3>Blocked</h3>
+                        @if (BlockedActors!.Count == 0)
+                        {
+                            <p class="muted">You have not blocked anyone.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var actorIri in BlockedActors)
+                                {
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                            <span class="muted text-sm">Blocked</span>
+                                        </div>
+                                        <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnblockAsync(actorIri)">Unblock</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <h3 style="margin-top: 1.5rem;">Muted</h3>
+                        @if (MutedActors!.Count == 0)
+                        {
+                            <p class="muted">You have not muted anyone.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var actorIri in MutedActors)
+                                {
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                            <span class="muted text-sm">Muted</span>
+                                        </div>
+                                        <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnmuteAsync(actorIri)">Unmute</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <h3 style="margin-top: 1.5rem;">Reported</h3>
+                        @if (FlaggedActors!.Count == 0)
+                        {
+                            <p class="muted">You have not reported anyone.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var actorIri in FlaggedActors)
+                                {
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
+                                            <span class="muted text-sm">Reported</span>
+                                        </div>
+                                        <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnflagAsync(actorIri)">Remove</button>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+            </details>
         </div>
     }
-    else if (ActiveTab == "notifications")
+    else if (ActiveTab == "content")
     {
-        <div class="card" id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications">
-            <h2>Notifications</h2>
-            @if (NotifBusy)
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading…</span>
-                </div>
-            }
-            else if (NotifError is not null)
-            {
-                <div class="error" role="alert">@NotifError</div>
-            }
-            else if (NotifPrefs is not null)
-            {
-                <h3>Notification types</h3>
-                <p class="muted">Choose which types of activities you want to receive as notifications.</p>
-                @foreach (var (type, label) in NotifTypeOptions)
-                {
-                    var isEnabled = !NotifPrefs.DisabledTypes.Contains(type);
-                    <label class="notif-pref-row">
-                        <input type="checkbox" checked="@isEnabled"
-                               @onchange="e => ToggleNotifType(type, e.Value is bool b && b)" />
-                        <span>@label</span>
-                    </label>
-                }
+        <div class="card" id="panel-content" role="tabpanel" aria-labelledby="tab-content">
+            <h2>Content</h2>
 
-                <h3 style="margin-top: 1.5rem;">Muted actors</h3>
-                <p class="muted">Notifications from these actors will be hidden.</p>
-                @if (NotifPrefs.MutedActors.Count == 0)
-                {
-                    <p class="muted">No muted actors.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var iri in NotifPrefs.MutedActors)
+            <details class="settings-subsection" open>
+                <summary class="settings-subsection-summary">Notifications</summary>
+                <div class="settings-subsection-body">
+                    @if (NotifBusy)
+                    {
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading…</span>
+                        </div>
+                    }
+                    else if (NotifError is not null)
+                    {
+                        <div class="error" role="alert">@NotifError</div>
+                    }
+                    else if (NotifPrefs is not null)
+                    {
+                        <h3>Notification types</h3>
+                        <p class="muted">Choose which types of activities you want to receive as notifications.</p>
+                        @foreach (var (type, label) in NotifTypeOptions)
                         {
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@($"/actor?iri={Uri.EscapeDataString(iri)}")" class="object-actor-handle">@HandleFromIri(new Iri(iri))</a>
-                                    <span class="muted text-sm">Muted</span>
-                                </div>
-                                <button class="button button--ghost" @onclick="() => RemoveMutedActor(iri)">Unmute</button>
+                            var isEnabled = !NotifPrefs.DisabledTypes.Contains(type);
+                            <label class="notif-pref-row">
+                                <input type="checkbox" checked="@isEnabled"
+                                       @onchange="e => ToggleNotifType(type, e.Value is bool b && b)" />
+                                <span>@label</span>
+                            </label>
+                        }
+
+                        <h3 style="margin-top: 1.5rem;">Muted actors</h3>
+                        <p class="muted">Notifications from these actors will be hidden.</p>
+                        @if (NotifPrefs.MutedActors.Count == 0)
+                        {
+                            <p class="muted">No muted actors.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var iri in NotifPrefs.MutedActors)
+                                {
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@($"/actor?iri={Uri.EscapeDataString(iri)}")" class="object-actor-handle">@HandleFromIri(new Iri(iri))</a>
+                                            <span class="muted text-sm">Muted</span>
+                                        </div>
+                                        <button class="button button--ghost" @onclick="() => RemoveMutedActor(iri)">Unmute</button>
+                                    </div>
+                                }
                             </div>
                         }
-                    </div>
-                }
-                <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
-                    <input type="text" class="input" style="max-width: 20rem;" placeholder="Actor IRI (e.g. https://iris.luit.ink/ap/v1/u/bob)"
-                           value="@MutedActorInput"
-                           @onchange="e => MutedActorInput = e.Value?.ToString() ?? string.Empty" />
-                    <button class="button" @onclick="AddMutedActor">Mute</button>
-                </div>
+                        <div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+                            <input type="text" class="input" style="max-width: 20rem;" placeholder="Actor IRI (e.g. https://iris.luit.ink/ap/v1/u/bob)"
+                                   value="@MutedActorInput"
+                                   @onchange="e => MutedActorInput = e.Value?.ToString() ?? string.Empty" />
+                            <button class="button" @onclick="AddMutedActor">Mute</button>
+                        </div>
 
-                @if (NotifSaved)
-                {
-                    <div class="success" style="margin-top: 0.75rem;" role="status">Preferences saved.</div>
-                }
-            }
-        </div>
-    }
-    else if (ActiveTab == "communities")
-    {
-        <div class="card" id="panel-communities" role="tabpanel" aria-labelledby="tab-communities">
-            <h2>Your communities</h2>
-            @if (CommunitiesBusy)
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading communities…</span>
-                </div>
-            }
-            else if (CommunitiesError is not null)
-            {
-                <div class="error" role="alert">@CommunitiesError</div>
-            }
-            else if (MemberCommunities is not null)
-            {
-                @if (MemberCommunities.Count == 0)
-                {
-                    <p class="muted">You are not a member of any communities yet. <a href="/communities">Browse communities</a> to find one.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var community in MemberCommunities)
+                        @if (NotifSaved)
                         {
-                            var name = community.Name?.FirstOrDefault() ?? "Unnamed";
-                            var iri = community.Id;
+                            <div class="success" style="margin-top: 0.75rem;" role="status">Preferences saved.</div>
+                        }
+                    }
+                </div>
+            </details>
 
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@($"/community?iri={Uri.EscapeDataString(iri ?? string.Empty)}")" class="object-actor-handle">@name</a>
-                                    <span class="muted text-sm">Member</span>
-                                </div>
+            <details class="settings-subsection" @ontoggle='() => LoadLazily("communities")'>
+                <summary class="settings-subsection-summary">Communities</summary>
+                <div class="settings-subsection-body">
+                    @if (CommunitiesBusy)
+                    {
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading communities…</span>
+                        </div>
+                    }
+                    else if (CommunitiesError is not null)
+                    {
+                        <div class="error" role="alert">@CommunitiesError</div>
+                    }
+                    else if (MemberCommunities is not null)
+                    {
+                        @if (MemberCommunities.Count == 0)
+                        {
+                            <p class="muted">You are not a member of any communities yet. <a href="/communities">Browse communities</a> to find one.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var community in MemberCommunities)
+                                {
+                                    var name = community.Name?.FirstOrDefault() ?? "Unnamed";
+                                    var iri = community.Id;
+
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@($"/community?iri={Uri.EscapeDataString(iri ?? string.Empty)}")" class="object-actor-handle">@name</a>
+                                            <span class="muted text-sm">Member</span>
+                                        </div>
+                                    </div>
+                                }
                             </div>
                         }
-                    </div>
-                }
-            }
-        </div>
-    }
-    else if (ActiveTab == "relays")
-    {
-        <div class="card" id="panel-relays" role="tabpanel" aria-labelledby="tab-relays">
-            <h2>Relay subscriptions</h2>
-            <p class="muted" style="margin-bottom: 1rem;">
-                Relays are fan-out servers that receive a copy of your public posts.
-                Subscribing to a relay makes your content available to other ActivityPub
-                instances that follow that relay.
-            </p>
-            @if (RelaysBusy)
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading relays…</span>
+                    }
                 </div>
-            }
-            else if (RelaysError is not null)
-            {
-                <div class="error" role="alert">@RelaysError</div>
-            }
-            else if (Relays is not null)
-            {
-                @if (Relays.Count == 0)
-                {
-                    <p class="muted">You are not subscribed to any relays.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var relayIri in Relays)
+            </details>
+
+            <details class="settings-subsection" @ontoggle='() => LoadLazily("relays")'>
+                <summary class="settings-subsection-summary">Relays</summary>
+                <div class="settings-subsection-body">
+                    <p class="muted" style="margin-bottom: 1rem;">
+                        Relays are fan-out servers that receive a copy of your public posts.
+                        Subscribing to a relay makes your content available to other ActivityPub
+                        instances that follow that relay.
+                    </p>
+                    @if (RelaysBusy)
+                    {
+                        <div class="card-loading">
+                            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                            </svg>
+                            <span class="muted">Loading relays…</span>
+                        </div>
+                    }
+                    else if (RelaysError is not null)
+                    {
+                        <div class="error" role="alert">@RelaysError</div>
+                    }
+                    else if (Relays is not null)
+                    {
+                        @if (Relays.Count == 0)
                         {
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@relayIri.Value" target="_blank" rel="noopener noreferrer" class="object-actor-handle">@RelayHost(relayIri)</a>
-                                    <span class="muted text-sm">@relayIri.Value</span>
-                                </div>
-                                <button class="button button--ghost" disabled="@RelaysBusy" @onclick="() => UnsubscribeRelayAsync(relayIri)">Remove</button>
+                            <p class="muted">You are not subscribed to any relays.</p>
+                        }
+                        else
+                        {
+                            <div class="directory-list">
+                                @foreach (var relayIri in Relays)
+                                {
+                                    <div class="directory-item">
+                                        <div class="directory-item-body">
+                                            <a href="@relayIri.Value" target="_blank" rel="noopener noreferrer" class="object-actor-handle">@RelayHost(relayIri)</a>
+                                            <span class="muted text-sm">@relayIri.Value</span>
+                                        </div>
+                                        <button class="button button--ghost" disabled="@RelaysBusy" @onclick="() => UnsubscribeRelayAsync(relayIri)">Remove</button>
+                                    </div>
+                                }
                             </div>
                         }
-                    </div>
-                }
 
-                <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem;">
-                    <input type="url" class="input" placeholder="https://relay.example.com" value="@RelayIriInput"
-                           @onchange="e => RelayIriInput = e.Value?.ToString() ?? string.Empty" style="flex: 1;" />
-                    <button class="button" disabled="@RelaysBusy" @onclick="SubscribeRelayAsync">Subscribe</button>
+                        <div style="margin-top: 1.25rem; display: flex; gap: 0.5rem;">
+                            <input type="url" class="input" placeholder="https://relay.example.com" value="@RelayIriInput"
+                                   @onchange="e => RelayIriInput = e.Value?.ToString() ?? string.Empty" style="flex: 1;" />
+                            <button class="button" disabled="@RelaysBusy" @onclick="SubscribeRelayAsync">Subscribe</button>
+                        </div>
+                    }
                 </div>
-            }
-        </div>
-    }
-    else if (ActiveTab == "moderation")
-    {
-        <div class="card" id="panel-moderation" role="tabpanel" aria-labelledby="tab-moderation">
-            <h2>Moderation</h2>
-            @if (ModerationBusy)
-            {
-                <div class="card-loading">
-                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
-                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
-                    </svg>
-                    <span class="muted">Loading moderation lists…</span>
-                </div>
-            }
-            else if (ModerationError is not null)
-            {
-                <div class="error" role="alert">@ModerationError</div>
-            }
-            else if (BlockedActors is not null || MutedActors is not null || FlaggedActors is not null)
-            {
-                <h3>Blocked</h3>
-                @if (BlockedActors!.Count == 0)
-                {
-                    <p class="muted">You have not blocked anyone.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var actorIri in BlockedActors)
-                        {
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted text-sm">Blocked</span>
-                                </div>
-                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnblockAsync(actorIri)">Unblock</button>
-                            </div>
-                        }
-                    </div>
-                }
-
-                <h3 style="margin-top: 1.5rem;">Muted</h3>
-                @if (MutedActors!.Count == 0)
-                {
-                    <p class="muted">You have not muted anyone.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var actorIri in MutedActors)
-                        {
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted text-sm">Muted</span>
-                                </div>
-                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnmuteAsync(actorIri)">Unmute</button>
-                            </div>
-                        }
-                    </div>
-                }
-
-                <h3 style="margin-top: 1.5rem;">Reported</h3>
-                @if (FlaggedActors!.Count == 0)
-                {
-                    <p class="muted">You have not reported anyone.</p>
-                }
-                else
-                {
-                    <div class="directory-list">
-                        @foreach (var actorIri in FlaggedActors)
-                        {
-                            <div class="directory-item">
-                                <div class="directory-item-body">
-                                    <a href="@($"/actor?iri={Uri.EscapeDataString(actorIri.Value)}")" class="object-actor-handle">@HandleFromIri(actorIri)</a>
-                                    <span class="muted text-sm">Reported</span>
-                                </div>
-                                <button class="button button--ghost" disabled="@ModerationBusy" @onclick="() => UnflagAsync(actorIri)">Remove</button>
-                            </div>
-                        }
-                    </div>
-                }
-            }
+            </details>
         </div>
     }
     else if (ActiveTab == "danger")
@@ -538,21 +547,28 @@ else
     private void SwitchTab(string tab)
     {
         ActiveTab = tab;
-        if (tab == "communities" && MemberCommunities is null && CommunitiesError is null)
-        {
-            _ = LoadMemberCommunitiesAsync();
-        }
-        if (tab == "relays" && Relays is null && RelaysError is null)
-        {
-            _ = LoadRelaysAsync();
-        }
-        if (tab == "moderation" && (BlockedActors is null || MutedActors is null || FlaggedActors is null) && ModerationError is null)
-        {
-            _ = LoadModerationAsync();
-        }
-        if (tab == "notifications" && NotifPrefs is null && NotifError is null)
+        if (tab == "content" && NotifPrefs is null && NotifError is null)
         {
             _ = LoadNotifPrefsAsync();
+        }
+    }
+
+    private void LoadLazily(string section)
+    {
+        switch (section)
+        {
+            case "moderation" when (BlockedActors is null || MutedActors is null || FlaggedActors is null) && ModerationError is null:
+                _ = LoadModerationAsync();
+                break;
+            case "communities" when MemberCommunities is null && CommunitiesError is null:
+                _ = LoadMemberCommunitiesAsync();
+                break;
+            case "relays" when Relays is null && RelaysError is null:
+                _ = LoadRelaysAsync();
+                break;
+            case "notifications" when NotifPrefs is null && NotifError is null:
+                _ = LoadNotifPrefsAsync();
+                break;
         }
     }
 
