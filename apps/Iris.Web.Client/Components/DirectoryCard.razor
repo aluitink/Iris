@@ -6,7 +6,7 @@
 <div class="directory-card">
     <div class="directory-card-row">
         <button type="button" class="directory-card-expand-btn" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") recent posts by @DisplayName" @onclick="ToggleAsync">
-            <ActorCard Actor="Actor" ActorId="@Actor.Id" />
+            <ActorCard Actor="Actor" ActorId="@Actor.Id" ShowModeration="false" />
         </button>
         <FollowButton TargetActor="Actor" />
         <span class="directory-card-chevron" aria-hidden="true">
