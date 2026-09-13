@@ -95,7 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 ## Up Next
 
 - **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files totaling 12.8 MB on cold load. Investigate AOT compilation, trimming, or single-file bundling to reduce the payload. Target: < 5 MB.
-- **131.5 — HSTS + cookie hardening (LOW)** — Add `Strict-Transport-Security` header (behind the reverse proxy); verify auth cookie has `Secure` + `HttpOnly` + `SameSite=Lax` flags.
 
 ## Inbox
 
@@ -107,15 +106,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **131.3 — Federation edge cases: tombstone rendering (DONE)** — Blazor WASM client renders AS2.0 Tombstone objects as a graceful "deleted" placeholder (icon + formerType label + deleted time + hint) instead of an empty/broken card. ObjectDetail skips replies/engagement/parent for tombstones. Live-verified: create→delete→view tombstone, 0 console errors. [changes/13103](docs/changes/13103-phase131-federation-tombstone.md)
+- **131.5 — HSTS + cookie hardening (DONE)** — Added `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` (HTTPS-only, placed after `UseForwardedHeaders` so the proxy's scheme is seen). Cookie already hardened (HttpOnly, SameSite=Lax, Secure=SameAsRequest) — verified. 0 console errors. [changes/13105](docs/changes/13105-phase131-hsts-cookie-hardening.md)
 
 - **131.2 — Security: dependency audit + CSP review (DONE)** — Added 5 security headers (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy). CSP uses `'wasm-unsafe-eval'` (Blazor WASM requirement). Dependency audit: no known CVEs. 0 console errors. [changes/13102](docs/changes/13102-phase131-security-headers.md)
 
 - **131.1 — Performance: home feed load time (DONE, measurement-only)** — Cold load: ~1s to first post (target <3s met). WASM bootstrap (12.8 MB / 66 files) is the dominant cost. No optimization needed at this scale. [changes/13101](docs/changes/13101-phase131-home-feed-performance.md)
 
 - **130.3 — General UI/UX review (fifth pass) (DONE)** — Visual sweep of all 11 pages (desktop 1400px + mobile 375px). 1 issue found: `/admin` 404 → fixed (route alias). 0 console errors. Review cycle converged (5 passes). [changes/13003](docs/changes/13003-phase130-ui-ux-review-pass5.md)
-
-- **130.2 — Admin bootstrap from `.env`: verification path documented (DONE)** — `AdminBootstrapper` idempotent (alice bootstrapped 2026-09-08, no second admin on restarts). Verification path documented. Feature matrix D-column closed. [changes/13002](docs/changes/13002-phase130-admin-bootstrap-docs.md)
 
 ## Keeping the docs lean
 
