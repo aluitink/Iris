@@ -94,8 +94,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
  ## Up Next
 
-- **117.4 - Common Actor card** - We show actors in search results, follow/following collections, and the directory, we should create a common actor card and polish it, make it look more presentable, verify and inspect visually to ensure it's looks good and is functional. We should include moderation for actors like we do on notes actors post in the feed.
-
 - **117.5 - Feed Content** - A users feed should contain content from people the user follows and the user. Do not show replies to other actors content in the feed, require the user to view a followed actors object to see replies.
 
 - **117.6 - Feed Items with replies** - Show media of the replied item in the reply to post.
@@ -124,6 +122,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **117.4 — Common Actor Card (DONE)** — Upgraded `ActorCard` with banner support (avatar overlap), type badges (Community/Bot), 2-line summary clamp, and inline moderation (Block/Mute/Report) via `ShowModeration` param. Correct href for Group actors. Live-verified: directory, followers/following, search. [changes/11704](docs/changes/11704-phase117-actor-card.md)
+
 - **117.3 — Directory: Persist Remote Actors for "All Known" (DONE)** — `RemoteActorPersister` persists remote actors to durable store on first fetch via `IActorDocumentFetcher`. "All known" now shows remote actors. 11 new tests. 1,125 total pass. [changes/11703](docs/changes/11703-phase117-directory-remote-actors.md)
 
 - **117.2 — Notifications Card Layout (DONE)** — Rewritten NotificationRow from flat list to card layout (header: avatar+name+verb+time, body: note preview + View link). Fixed render tree crash. Live-verified: cards, filters, pagination. [changes/11702](docs/changes/11702-phase117-notifications-cards.md)
@@ -131,8 +131,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **117.1 — Thread-Aware Feed: inReplyTo + `?depth` (DONE)** — Reply detection now uses `inReplyTo` (deterministic) with audience heuristic fallback. Added `?depth` query param to feed endpoint (`iris:depth` capability). 5 new tests. 1,833 total pass. [changes/11701](docs/changes/11701-phase117-thread-aware-feed.md)
 
 - **116.6 — ICacheMetrics (DONE)** — `ICacheMetrics`/`CacheMetrics`/`NullCacheMetrics` wired into all 11 cache façades. `GET /ap/v1/diagnostics/caches` endpoint. 15 new tests. [changes/11606](docs/changes/11606-phase116-icachemetrics.md)
-
-- **116.3 — Inbox Log IRI Extraction Fix (DONE)** — Fixed `ExtractActorIriFromActivity`/`ExtractTargetIriFromActivity`. [changes/11603](docs/changes/11603-phase116-inbox-log-iri-fix.md)
 
 
 ## Keeping the docs lean
