@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.1 Lemmy interop foundation (env + observability)**
-    - Confirm both hosts are reachable and stable: `https://iris.luit.ink` and `https://lemmy.luit.ink`.
-    - Record instance metadata snapshots (`/api/v3/site`, nodeinfo, software version) for reproducible runs.
-    - Enable request/response capture for ActivityPub endpoints (method, URL, status, actor, activity type, count).
-    - Exit when a baseline run can produce a single shared trace artifact per scenario.
-
 - **136.2 Federation discovery + identity resolution (wire-level)**
     - Validate WebFinger discovery from each side for users and communities.
     - Validate actor and object dereferencing (`application/activity+json`) including content negotiation behavior.
@@ -225,6 +219,12 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **136.1 Lemmy interop foundation (env + observability)** — federation trace collector: a
+  process-local, bounded, time-ordered trace of every inbound + outbound federation request
+  (`InMemoryFederationTraceCollector`), wired into `DeliveryWorker` (outbound) and the inbox handler
+  (inbound, every return point), exposed at `GET /local/v1/federation-trace`. Verified live against
+  `iris.luit.ink` (an unsigned inbox POST captured as Inbound/401). The diagnostic tool for the
+  135.1b(4) signature blocker. → [docs/changes/13601-phase136-federation-trace-collector.md](docs/changes/13601-phase136-federation-trace-collector.md)
 
 ## Keeping the docs lean
 
