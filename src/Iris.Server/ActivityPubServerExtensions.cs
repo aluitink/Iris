@@ -3232,7 +3232,7 @@ public static class ActivityPubServerExtensions
                 // resolvable remote parent is delivered. Best-effort: an unresolvable parent (a fetch
                 // failure) simply skips the extra delivery — the follower fan-out still ran.
                 if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await ResolveReplyParentAuthorAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor
                     && !await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
                 {
                     await delivery.DeliverToActorAsync(parentAuthor, activity, actorIri, ct).ConfigureAwait(false);
@@ -3255,14 +3255,37 @@ public static class ActivityPubServerExtensions
                 // inbound-federation path records the same edge in AnnounceActivityHandler; the local
                 // outbox-write path (this branch) records it here so a local boost is counted exactly
                 // like a local like is (RecordLikeLocalAsync). Reversible via Undo(Announce)
-                // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync).
-                await RecordAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct).ConfigureAwait(false);
+                // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync). RecordAnnounceLocalAsync also
+                // resolves the announced object's owner (24.1, ResolveObjectOwnerForDeliveryAsync) so the
+                // boost can be routed to the object's home (Phase 136.8, below).
+                var announcedOwner = await RecordAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct)
+                    .ConfigureAwait(false);
+                var announcedObjectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
 
                 var recipients = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, actorIri, ct)
                     .ConfigureAwait(false);
                 foreach (var recipient in recipients)
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+
+                // Phase 136.8 (cross-instance boost integrity): when the Announce targets a REMOTE object
+                // (an Iris user boosting a Lemmy post — the object is on another instance, not stored
+                // locally), the boost must ALSO reach the object's home — the object's author is not (in
+                // general) a follower of the announcer, so the follower fan-out above does not carry the
+                // boost to the author's home (the Lemmy author of a post an Iris user boosted would
+                // otherwise never see the boost). RecordAnnounceLocalAsync resolved the owner (24.1, a
+                // remote fetch when the object is not stored locally); deliver the Announce to it when it
+                // is a resolvable REMOTE (non-local) author. A local owner is a no-op (the boost is already
+                // on the same instance); the object-IRI fallback (owner unresolvable — a fetch failure)
+                // is skipped (an object IRI is not an actor and has no inbox). Mirrors the 136.7
+                // reply-parent-author delivery. Best-effort: a delivery failure does not fail the publish.
+                if (announcedOwner is { } owner
+                    && announcedObjectIri is { } objIri
+                    && owner.Value != objIri.Value
+                    && !await localActors.IsLocalActorAsync(owner, ct).ConfigureAwait(false))
+                {
+                    await delivery.DeliverToActorAsync(owner, activity, actorIri, ct).ConfigureAwait(false);
                 }
 
                 // F-06 relay fan-out: deliver the Announce to each of the actor's subscribed relays.
@@ -4415,22 +4438,29 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
-    /// Resolves the <c>attributedTo</c> owner (author) of the object at <paramref name="objectIri"/> for a
-    /// reply: a local object's owner is read from the object store; a remote object's owner is resolved by
-    /// fetching the object's document over the wire (Phase 136.7 — a cross-instance reply must name its
-    /// parent's author so the reply both carries the parent author in its <c>to</c> audience and is
-    /// delivered to the parent's home instance). Best-effort: a local miss with no remote fetcher, or a
-    /// remote fetch that yields no owner, returns <see langword="null"/> (the reply then degrades to the
-    /// prior behavior — the parent author is simply not added to the audience / not an explicit delivery
-    /// recipient). The fetch is best-effort and must never fail the publish.
+    /// Resolves the <c>attributedTo</c> owner (author) of the object at <paramref name="objectIri"/> for
+    /// cross-instance delivery: a local object's owner is read from the object store; a remote object's
+    /// owner is resolved by fetching the object's document over the wire. Used by two outbound paths:
+    /// <list type="bullet">
+    /// <item>Phase 136.7 (cross-instance reply integrity): a reply must name its parent's author so the
+    /// reply both carries the parent author in its <c>to</c> audience and is delivered to the parent's home
+    /// instance.</item>
+    /// <item>Phase 136.8 (cross-instance boost integrity): a boost (Announce) of a remote object must be
+    /// delivered to the object's author (the object's home) so the boost is counted on the object's home,
+    /// and the object's author is named in the boost's <c>to</c> audience.</item>
+    /// </list>
+    /// Best-effort: a local miss with no remote fetcher, or a remote fetch that yields no owner, returns
+    /// <see langword="null"/> (the caller then degrades to the prior behavior — the object's author is
+    /// simply not added to the audience / not an explicit delivery recipient). The fetch is best-effort and
+    /// must never fail the publish.
     /// </summary>
     /// <param name="persistence">The persistence provider (for the local object-store lookup).</param>
     /// <param name="objectFetch">The outbound object fetcher used to resolve a remote object's owner
-    /// (Phase 136.7); <see langword="null"/> disables remote-parent author resolution (local parents only).</param>
-    /// <param name="objectIri">The IRI of the reply's parent object.</param>
+    /// (Phase 136.7 / 136.8); <see langword="null"/> disables remote-owner resolution (local objects only).</param>
+    /// <param name="objectIri">The IRI of the object (a reply's parent, or an Announce's announced object).</param>
     /// <param name="ct">A cancellation token.</param>
-    /// <returns>The parent object's owner IRI, or <see langword="null"/> when not resolvable.</returns>
-    private static async Task<Iri?> ResolveReplyParentAuthorAsync(
+    /// <returns>The object's owner (author) IRI, or <see langword="null"/> when not resolvable.</returns>
+    private static async Task<Iri?> ResolveObjectAuthorForDeliveryAsync(
         IPersistenceProvider persistence,
         IActivityPubClient? objectFetch,
         Iri objectIri,
@@ -5019,6 +5049,18 @@ public static class ActivityPubServerExtensions
                 // for the whole follower set (the local outbox path delivers one object to all).
                 announce.Cc = [new Link { Href = new Uri(authorIri.Value) }];
                 announce.To = MergeAudience(announce.To, followers);
+
+                // Phase 136.8 (cross-instance boost integrity): the announced object's author is a direct
+                // recipient of the boost — the object's author must be told their object was boosted. The
+                // announced object may be LOCAL (in the object store) or REMOTE (on another instance, not
+                // stored locally); ResolveObjectAuthorForDeliveryAsync resolves the author in either case (a
+                // remote object's author is fetched over the wire), so a cross-instance boost names the
+                // object's author in the `to` audience — mirroring the 136.7 reply's parent-author audience.
+                if (announce.Object?.FirstOrDefault().ResolveObjectIri() is { } announcedIri
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, announcedIri, ct).ConfigureAwait(false) is { } announcedAuthor)
+                {
+                    announce.To = MergeAudience(announce.To, [announcedAuthor]);
+                }
                 break;
 
             case Create create:
@@ -5028,11 +5070,11 @@ public static class ActivityPubServerExtensions
 
                 // Phase 136.7 (cross-instance reply integrity): the reply target — the parent note's
                 // author — is a direct recipient of the reply. The parent may be LOCAL (in the object
-                // store) or REMOTE (on another instance, not stored locally); ResolveReplyParentAuthorAsync
+                // store) or REMOTE (on another instance, not stored locally); ResolveObjectAuthorForDeliveryAsync
                 // resolves the author in either case (a remote parent's author is fetched over the wire),
                 // so a cross-instance reply names its parent's author in the `to` audience.
                 if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await ResolveReplyParentAuthorAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
                 {
                     create.To = MergeAudience(create.To, [parentAuthor]);
                 }
