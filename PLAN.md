@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.11 Delivery reliability, retries, and dead-letter handling**
-    - Induce transient failures (timeouts/5xx) and verify retry budgets, backoff, and eventual success/failure behavior.
-    - Confirm idempotency across retries (no duplicated posts/comments/reactions).
-    - Capture and classify permanent failures (4xx) with operator-facing diagnostics.
-    - Exit when delivery behavior matches policy and is observable end-to-end.
-
 - **136.12 Performance and request-spam audit**
     - For each critical scenario, count federated requests by method+path+trigger to detect duplicate fan-out.
     - Identify N+1 or redundant fetch patterns in community timeline and thread hydration.
@@ -164,6 +158,25 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.11 Delivery reliability, retries, and dead-letter handling** — verified the core retry/dead-letter
+  logic in `DeliveryWorker` is **already correct** (exponential backoff, 4xx=permanent/5xx+429=transient,
+  Retry-After delay-seconds, dead-letter store, circuit breaker) — no change needed there. Pinned three
+  genuine gaps with new integration tests: (1) **idempotency across retries in a real topology** — a
+  re-POSTed delivery (simulating at-least-once retry) is stored exactly once (C-07:
+  `TryAddActivityAsync` dedupes by IRI; `AddToInboxAsync` is idempotent); (2) **end-to-end dead-lettering
+  in a real topology** — a real two-instance topology where A's delivery to B's inbox always fails (500);
+  the worker retries (5 attempts, default backoff 1s+2s+4s+8s ≈ 15s) and dead-letters the job with the
+  correct inbox, actor, kind, detail, and attempt count; also unskipped the pre-existing
+  `DeliveryDeadLetterIntegrationTests` test (root cause: initialization-order bug — A was created before B,
+  so the `LazyHandler` did not have its inner handler ready); (3) **Retry-After HTTP-date form** — a 429
+  response with a `Retry-After` HTTP-date header (3s in the future) is honored (the worker waits until the
+  specified date before retrying; the gap is ≥ 2000ms, well above the zero-base-delay backoff).
+  `DeliveryReliabilityIntegrationTests` (two-instance, A: alice, B: bob; `RoutingFetcher` for key
+  resolution; `FailingInboxHandler` for the dead-letter test; `RetryAfterHttpDateHandler` for the
+  HTTP-date test). 3 new tests + 1 unskipped; Iris.Server.Tests 1174 passed (+4), 17 skipped, 0 failed.
+  136.12 is now the top of Up Next. →
+  [docs/changes/13611-phase136-delivery-reliability.md](docs/changes/13611-phase136-delivery-reliability.md)
 
 - **136.10 Moderation and trust-boundary behavior (cross-instance block/report/flag, blocked-content-not-reintroduced)** —
   verified cross-instance block/report/flag behavior in **both directions** (forward: local actor blocks remote;
