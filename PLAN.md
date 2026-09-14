@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.10 Moderation and trust-boundary behavior**
-    - Test remote actor/community block behavior in both directions (instance-level and actor-level where supported).
-    - Validate report/flag activities and how moderation signals are represented cross-instance.
-    - Ensure blocked content is not reintroduced via backfill or retries.
-    - Exit when moderation actions enforce expected visibility and delivery boundaries.
-
 - **136.11 Delivery reliability, retries, and dead-letter handling**
     - Induce transient failures (timeouts/5xx) and verify retry budgets, backoff, and eventual success/failure behavior.
     - Confirm idempotency across retries (no duplicated posts/comments/reactions).
@@ -170,6 +164,22 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.10 Moderation and trust-boundary behavior (cross-instance block/report/flag, blocked-content-not-reintroduced)** —
+  verified cross-instance block/report/flag behavior in **both directions** (forward: local actor blocks remote;
+  reverse: remote actor blocks local — the `BlockActivityHandler` records the edge when either party is local;
+  Undo removes the edge on the remote instance) — no change needed there. Pinned two genuine gaps with new
+  cross-instance integration tests: (1) **reverse-direction block** — a remote actor (bob on B) blocks a local
+  actor (alice on A); the Block federates B→A; A records the `bob→alice` edge + inverse index
+  (`GetBlockersAsync(alice)` includes bob); (2) **blocked content not reintroduced via new delivery** (the
+  trust-boundary guarantee) — when alice (A) blocks bob (B), bob's new content (published after the block)
+  federates B→A and is **stored** on A (fetchable by direct IRI) but is **excluded from alice's feed** (the
+  `FeedService` applies the block edge on the reader's side — the authoritative guarantee). The delivery
+  suppression on the deliverer's side is a local optimization that does not apply cross-instance (the
+  deliverer B does not have alice's block edge — it is on A). `CrossInstanceBlockedContentIntegrationTests`
+  (two-instance, A: alice, B: bob; signed outbox publish; `RoutingFetcher`). 2 new tests; Iris.Server.Tests
+  1171 passed (+2), 0 failed; Iris.Core.Tests 445 passed. 136.11 is now the top of Up Next. →
+  [docs/changes/13610-phase136-moderation-trust-boundary.md](docs/changes/13610-phase136-moderation-trust-boundary.md)
 
 - **136.9 Update/Delete/Undo propagation (edit, delete/tombstone, undo flows)** — verified the lifecycle
   propagation is **already correct in both directions** (Update federates to remote followers + relays and
@@ -254,19 +264,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   fails when the source change is reverted). The live Iris→Lemmy leg stays blocked by the Lemmy-side
   signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests; Iris.Server.Tests 1164 passed,
   0 failed; Iris.Core.Tests 445 passed. 136.7 is now the top of Up Next. → [docs/changes/13606-phase136-outbound-federation-from-communities.md](docs/changes/13606-phase136-outbound-federation-from-communities.md)
-
-- **136.5 Inbound federation to Iris communities (Lemmy -> Iris)** — the inbound-Create-to-community
-  pipeline (handler → community content recorder → member outboxes → feed projection) and the C-07
-  idempotency guard were already built and happy-path tested; this turn pinned the two remaining gaps.
-  `CommunityInboundContentIntegrationTests` (two-instance, A: `alice`; B: `bob` + community `iris`):
-  (1) a Create whose activity **and** embedded Note carry a fixed `published` value reaches the member's
-  outbox and the community feed with the **originator's timestamp preserved** (not delivery time);
-  (2) the same Create (identical activity IRI) delivered **twice** is stored once and reaches the member's
-  outbox and the community feed **exactly once** (the C-07 guard in `InboxProcessor`, shared pre-dispatch,
-  now locked for the community-inbound-Create path). **No production source change** — the pipeline and
-  guard already worked; this pins the timestamp + idempotency attributes. The live Lemmy→Iris leg stays
-  blocked by the Lemmy-side signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests;
-    Iris.Server.Tests 1162 passed, 0 failed. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
 
 ## Keeping the docs lean
 
