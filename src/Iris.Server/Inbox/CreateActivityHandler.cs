@@ -1,5 +1,6 @@
 using Iris.Core;
 using Iris.Server.Media;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -71,6 +72,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly ILocalActorResolver _localActors;
     private readonly IMediaWarmer _mediaWarmer;
     private readonly IOptions<ActivityPubServerOptions> _options;
+    private readonly IActorDocumentFetcher? _actorDocuments;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -85,6 +87,10 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// attachments, Phase 20.4 (d); a no-op when eager-warm is disabled).</param>
     /// <param name="options">The server options (the instance base IRI, used to classify an attachment
     /// as same-origin when warming).</param>
+    /// <param name="actorDocuments">The actor document fetcher (fetches + persists the embedded object's
+    /// <c>attributedTo</c> actor — the posting community, for a community-attributed post — so the remote
+    /// instance can resolve its name/icon for display, Phase 136.6). May be <see langword="null"/> (no
+    /// community-identity warming).</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
@@ -93,6 +99,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         ILocalActorResolver localActors,
         IMediaWarmer mediaWarmer,
         IOptions<ActivityPubServerOptions> options,
+        IActorDocumentFetcher? actorDocuments = null,
         ILogger<CreateActivityHandler>? logger = null)
         : base(logger)
     {
@@ -106,6 +113,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         _localActors = localActors;
         _mediaWarmer = mediaWarmer;
         _options = options;
+        _actorDocuments = actorDocuments;
     }
 
     /// <inheritdoc/>
@@ -259,7 +267,52 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                     .RecordReplyAsync(parent, child, ct)
                     .ConfigureAwait(false);
             }
+
+            // Phase 136.6 (community provenance): when the stored object is attributed to a REMOTE
+            // actor — the posting community, for a community-attributed post (a member posting with the
+            // community in the Note's <c>attributedTo</c>) — fetch + persist that actor's document so the
+            // instance can resolve the community's name/icon for display. The signing member is already
+            // persisted by the signature-verification path; the attributedTo community is not (the
+            // persister only ever saw the signer), so without this the community is known only as an
+            // opaque IRI on the object. A LOCAL attributedTo (a local person or community) is skipped —
+            // its document is already local. Best-effort: a fetch failure (an unreachable peer) leaves
+            // the object stored and does not fail the post.
+            if (_actorDocuments is not null)
+            {
+                await PersistAttributedToActorAsync(embedded, ct).ConfigureAwait(false);
+            }
         }
+    }
+
+    /// <summary>
+    /// Fetches + persists the stored object's <c>attributedTo</c> actor document when it is a remote
+    /// actor (the posting community for a community-attributed post, Phase 136.6). The fetch goes through
+    /// <see cref="IActorDocumentFetcher.GetActorAsync(Iri, CancellationToken)"/> (cached in the
+    /// <c>RemoteActorCache</c>, and persisted to the durable community/actor store for a Group/actor), so a
+    /// re-fetch within the cache TTL is cheap and the durable write is idempotent. A local attributedTo
+    /// (a local person or community) and a missing attributedTo are no-ops.
+    /// </summary>
+    /// <param name="embedded">The stored embedded object (a <see cref="IObject"/> — typically a
+    /// <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task PersistAttributedToActorAsync(IObject embedded, CancellationToken ct)
+    {
+        var attributedTo = embedded.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        if (attributedTo is not { } iri)
+        {
+            return;
+        }
+
+        // A local attributedTo (a local person or community) is already known locally — skip the fetch.
+        if (await _localActors.IsLocalActorAsync(iri, ct).ConfigureAwait(false)
+            || await _persistence.Communities.TryGetCommunityAsync(iri, out _, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Best-effort: a fetch failure (an unreachable remote peer) is logged by the fetcher and does not
+        // fail the post — the object is already stored and servable.
+        await _actorDocuments!.GetActorAsync(iri, ct).ConfigureAwait(false);
     }
 
     /// <summary>
