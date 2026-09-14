@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.12 Performance and request-spam audit**
-    - For each critical scenario, count federated requests by method+path+trigger to detect duplicate fan-out.
-    - Identify N+1 or redundant fetch patterns in community timeline and thread hydration.
-    - Define acceptable request-count budgets for baseline scenarios.
-    - Exit when high-noise patterns are triaged into blocker/bug/perf classes.
-
 - **136.13 Regression harness + closeout checklist**
     - Convert verified interop scenarios into a repeatable manual checklist for each release slice.
     - Record known incompatibilities and Lemmy-specific behavior notes with severity and workaround.
@@ -158,6 +152,22 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.12 Performance and request-spam audit** — audited federation delivery/fetch patterns
+  across outbox publish, follow-feed hydration, community-feed hydration, public-feed hydration,
+  thread/replies hydration, remote-object fetch caching, and activity-store sweeps. Fixed the
+  highest-impact finding (F-136.12.8): the `/likes` and `/shares` endpoints previously called
+  `GetAllActivitiesAsync` once per liker/announcer (O(k × total_activities)); now a single sweep
+  (O(total_activities)) + in-memory `Dictionary<Iri, IObjectOrLink>` lookup. Triaged remaining
+  findings: F-136.12.7 (outbound client without `Caches` — perf follow-up), F-136.12.1 (duplicate
+  remote object fetch per publish — perf follow-up), F-136.12.3/5 (O(follows × pages) uncached
+  outbox page GETs — perf follow-up), F-136.12.2 (O(followers+relays) serialized delivery jobs —
+  perf/design), F-136.12.6 (client-side per-reply object GET — inherent to AP model), F-136.12.10
+  (no read-side request metrics — observability follow-up). 2 new integration tests pin the
+  full-activity-document resolution for `/likes` and `/shares` with multiple likers/announcers.
+  Iris.Server.Tests 1177 passed (+2), 16 skipped, 0 failed.
+  136.13 is now the top of Up Next. →
+  [docs/changes/13612-phase136-performance-request-spam-audit.md](docs/changes/13612-phase136-performance-request-spam-audit.md)
 
 - **136.11 Delivery reliability, retries, and dead-letter handling** — verified the core retry/dead-letter
   logic in `DeliveryWorker` is **already correct** (exponential backoff, 4xx=permanent/5xx+429=transient,
