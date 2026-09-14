@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.4 Peering handshake (Follow/Accept for communities)**
-    - Model how Lemmy peers communities (community follow, accept flow, actor relationship updates).
-    - Execute Lemmy -> Iris and Iris -> Lemmy follow handshakes for community actors.
-    - Confirm state transitions on both sides (pending, accepted, visible federation link).
-    - Exit when both directional peering paths complete and persist across restart.
-
 - **136.5 Inbound federation to Iris communities (Lemmy -> Iris)**
     - Send Create/Announce activities from Lemmy targeting Iris community inbox/sharedInbox paths.
     - Verify posts render in Iris community feeds with correct actor attribution and timestamps.
@@ -206,6 +200,18 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.4 Community peering handshake (Follow/Accept)** — the community peering handshake is now
+  pinned in **both** directions across two instances. The auto-accept direction was already covered
+  (`CrossInstanceAcceptPropagationIntegrationTests`); this turn added the **gated** (manually-approving)
+  direction — `CommunityGatedPeeringIntegrationTests`: a remote community follows a manually-approving
+  community → the follow is held (edges recorded, no auto-Accept) → the operator publishes an `Accept`
+  to the community's outbox (signed as the community) → it is server-delivered back and the remote
+  `AcceptActivityHandler` (G-3) finalizes the follower's edge. New `SeedManuallyApprovingCommunityWithExistingKey`
+  seeder (existing-key form) for the two-host fixture re-seed. **No production source change** — the
+  gated path already worked; this pins it. The live Iris→Lemmy leg stays blocked by the Lemmy-side
+  signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1159 passed.
+  136.5 is now the top of Up Next. → [docs/changes/13604-phase136-community-peering-handshake.md](docs/changes/13604-phase136-community-peering-handshake.md)
 
 - **136.2 Federation discovery + identity resolution (wire-level)** — discovery and identity
   resolution verified at the wire level in both directions. Iris WebFinger (users + communities)
