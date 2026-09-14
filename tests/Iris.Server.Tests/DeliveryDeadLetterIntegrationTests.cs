@@ -98,7 +98,7 @@ public sealed class DeliveryDeadLetterIntegrationTests : IDisposable
         _b.Dispose();
     }
 
-    [Fact(Skip = "hangs >30s")]
+    [Fact]
     [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task FailedCrossInstanceDelivery_IsDeadLettered_InRealTopology()
     {
