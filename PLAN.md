@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.8 Reactions and engagement interoperability**
-    - Validate Like/UndoLike semantics where supported; document any Lemmy vote model mismatches.
-    - Verify counters and user-visible state converge eventually across both instances.
-    - Confirm unsupported interaction types degrade gracefully (no crashes, clear logs).
-    - Exit when supported reactions interop correctly and unsupported ones are safely ignored.
-
 - **136.9 Update/Delete/Undo propagation**
     - Verify edit/update propagation from each source instance to the remote copy.
     - Verify delete/tombstone behavior for posts and comments including remote visibility changes.
@@ -183,6 +177,32 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **136.8 Reactions and engagement interoperability (reactions, boosts, counters, graceful degradation)** —
+  a local boost (Announce) of a **remote** object now **federates to the object's home instance**, so the
+  object's author's per-object boost counter (the `/shares` collection, decision 056 (d)) sees the Iris boost
+  — even when the object's author is not a follower of the announcer. The core gap (the 136.7
+  reply-parent-author gap, now for the Announce path): the `OutboxPublishHandler`'s Announce branch fanned
+  out the Announce **only to the announcer's followers + relays** and **discarded** the owner
+  `RecordAnnounceLocalAsync` had resolved (a remote object's author, via a 24.1 remote fetch), so a boost of a
+  Lemmy post never reached the post's home when the author was not a follower (the post's `/shares` counter
+  never saw it). The **Like** path was already correct (it went through the generic delivery block +
+  `RecordLikeLocalAsync` owner resolution) — no change. Fix: the Announce branch now captures the owner and,
+  after the follower/relay fan-out, **delivers the Announce to it** when it is a resolvable remote
+  (non-local) author (local owner = no-op; the object-IRI fallback is skipped); the Announce's `to` audience
+  now names the object's author (mirrors the 136.7 reply's parent-author audience);
+  `ResolveReplyParentAuthorAsync` is renamed `ResolveObjectAuthorForDeliveryAsync` to reflect its now-general
+  use (both the reply-parent and announce-owner paths). `CrossInstanceAnnounceIntegrationTests` (two-instance,
+  A: `bob` the object's home; B: `alice` the announcer): alice boosts bob's remote note m1 via a signed outbox
+  POST; the boost federates to A, is recorded in A's announcers reverse index, and is surfaced on
+  `GET {m1}/shares` (asserted on A: edge recorded, reverse index lists alice, `/shares` lists the boost with
+  `actor`=alice, `object`=m1). Verified non-vacuous (the test times out when the delivery is disabled — the
+  boost never reaches A). Like/Undo(Like)/Undo(Announce) cross-instance semantics were already correct
+  (covered by `LikeAnnounceUndoPropagationIntegrationTests`, no regression); graceful degradation of
+  unsupported interaction types is covered by `InboxProcessorTests` (an unhandled activity is stored, not
+  dropped, and nothing is dispatched). The live Iris↔Lemmy leg stays blocked by the Lemmy-side
+  signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1166 passed,
+  0 failed; Iris.Core.Tests 445 passed. 136.9 is now the top of Up Next. → [docs/changes/13608-phase136-reactions-engagement-interop.md](docs/changes/13608-phase136-reactions-engagement-interop.md)
+
 - **136.7 Cross-instance reply integrity (replies, threading, and context integrity)** — a reply whose
   parent lives on a remote instance (an Iris user replying to a Lemmy post) now **federates to the
   parent's home instance and is threaded there**, with the reply's `inReplyTo` and `conversationId`
@@ -247,16 +267,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   gated path already worked; this pins it. The live Iris→Lemmy leg stays blocked by the Lemmy-side
    signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1159 passed.
    → [docs/changes/13604-phase136-community-peering-handshake.md](docs/changes/13604-phase136-community-peering-handshake.md)
-
-- **136.2 Federation discovery + identity resolution (wire-level)** — discovery and identity
-  resolution verified at the wire level in both directions. Iris WebFinger (users + communities)
-  serves `application/jrd+json` and resolves to the actor/Group document, which carries its
-  `publicKey`; actor-doc content negotiation (ld+json / activity+json / `*/*`) is correct. Lemmy's
-  `interop` community resolves via WebFinger to a `Group` whose PKIX RSA key (under `#main-key`) is
-  accepted by Iris's inbound key resolver. 9 new tests close the gaps (content-type, community
-  discovery, ld+json negotiation, Lemmy-shape key). Finding: Lemmy→Iris WebFinger fails live (an
-  ops/egress issue — `504` on the `iris-dev2.luit.ink` proxy — not an Iris code gap); does not block
-  136.3. → [docs/changes/13602-phase136-federation-discovery-identity-resolution.md](docs/changes/13602-phase136-federation-discovery-identity-resolution.md)
 
 ## Keeping the docs lean
 
