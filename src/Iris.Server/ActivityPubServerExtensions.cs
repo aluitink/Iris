@@ -6547,29 +6547,11 @@ public static class ActivityPubServerExtensions
         // via PutActivityAsync, the same record the Undo path looks up). A liker whose Like was never
         // durably stored degrades to a Link to the liker (the count stays exact; the item simply lacks the
         // minted id / object reference).
-        var items = new List<IObjectOrLink>(likers.Count);
-        foreach (var liker in likers)
-        {
-            items.Add(await ResolveLikeActivityAsync(persistence, liker, parentIri, ct).ConfigureAwait(false));
-        }
-
-        return BuildInteractionCollection(context, parentIri.LikesOf(), items);
-    }
-
-    /// <summary>
-    /// Resolves the full <see cref="KristofferStrube.ActivityStreams.Like"/> activity a <paramref name="liker"/>
-    /// issued against <paramref name="likedObjectIri"/> (for serving in the object's <c>likes</c>
-    /// collection): a <c>Like</c> stored in the activity store with this liker as its <c>actor</c> and this
-    /// object as its <c>object</c>. Returns a <see cref="Link"/> to the liker when no such stored
-    /// <c>Like</c> exists (a like recorded only as an edge), so the collection never drops a current liker.
-    /// </summary>
-    private static async Task<IObjectOrLink> ResolveLikeActivityAsync(
-        IPersistenceProvider persistence,
-        Iri liker,
-        Iri likedObjectIri,
-        CancellationToken ct)
-    {
+        //
+        // 136.12: a single GetAllActivitiesAsync sweep (O(total_activities)) instead of one per liker
+        // (O(k × total_activities)): the sweep is done once, then the likers are matched in memory.
         var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        var likerToActivity = new Dictionary<Iri, IObjectOrLink>(likers.Count, AudienceIriComparer.Instance);
         foreach (var activity in all)
         {
             if (activity is not KristofferStrube.ActivityStreams.Like like
@@ -6579,14 +6561,21 @@ public static class ActivityPubServerExtensions
                 continue;
             }
 
-            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri && actorIri == liker
-                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri && objectIri == likedObjectIri)
+            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri
+                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri
+                && objectIri == parentIri)
             {
-                return like;
+                likerToActivity[actorIri] = like;
             }
         }
 
-        return new Link { Href = liker.Uri };
+        var items = new List<IObjectOrLink>(likers.Count);
+        foreach (var liker in likers)
+        {
+            items.Add(likerToActivity.TryGetValue(liker, out var activity) ? activity : new Link { Href = liker.Uri });
+        }
+
+        return BuildInteractionCollection(context, parentIri.LikesOf(), items);
     }
 
     /// <summary>
@@ -6632,30 +6621,11 @@ public static class ActivityPubServerExtensions
         // Announce via PutActivityAsync, the same record the Undo path looks up). An announcer whose
         // Announce was never durably stored degrades to a Link to the announcer (the count stays exact; the
         // item simply lacks the minted id / object reference).
-        var items = new List<IObjectOrLink>(announcers.Count);
-        foreach (var announcer in announcers)
-        {
-            items.Add(await ResolveAnnounceActivityAsync(persistence, announcer, parentIri, ct).ConfigureAwait(false));
-        }
-
-        return BuildInteractionCollection(context, parentIri.SharesOf(), items);
-    }
-
-    /// <summary>
-    /// Resolves the full <see cref="KristofferStrube.ActivityStreams.Announce"/> activity a
-    /// <paramref name="announcer"/> issued against <paramref name="announcedObjectIri"/> (for serving in
-    /// the object's <c>shares</c> collection): an <c>Announce</c> stored in the activity store with this
-    /// announcer as its <c>actor</c> and this object as its <c>object</c>. Returns a <see cref="Link"/> to
-    /// the announcer when no such stored <c>Announce</c> exists (a boost recorded only as an edge), so the
-    /// collection never drops a current announcer.
-    /// </summary>
-    private static async Task<IObjectOrLink> ResolveAnnounceActivityAsync(
-        IPersistenceProvider persistence,
-        Iri announcer,
-        Iri announcedObjectIri,
-        CancellationToken ct)
-    {
+        //
+        // 136.12: a single GetAllActivitiesAsync sweep (O(total_activities)) instead of one per announcer
+        // (O(k × total_activities)): the sweep is done once, then the announcers are matched in memory.
         var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        var announcerToActivity = new Dictionary<Iri, IObjectOrLink>(announcers.Count, AudienceIriComparer.Instance);
         foreach (var activity in all)
         {
             if (activity is not KristofferStrube.ActivityStreams.Announce announce
@@ -6665,14 +6635,21 @@ public static class ActivityPubServerExtensions
                 continue;
             }
 
-            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri && actorIri == announcer
-                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri && objectIri == announcedObjectIri)
+            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri
+                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri
+                && objectIri == parentIri)
             {
-                return announce;
+                announcerToActivity[actorIri] = announce;
             }
         }
 
-        return new Link { Href = announcer.Uri };
+        var items = new List<IObjectOrLink>(announcers.Count);
+        foreach (var announcer in announcers)
+        {
+            items.Add(announcerToActivity.TryGetValue(announcer, out var activity) ? activity : new Link { Href = announcer.Uri });
+        }
+
+        return BuildInteractionCollection(context, parentIri.SharesOf(), items);
     }
 
     /// <summary>

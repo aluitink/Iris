@@ -144,6 +144,123 @@ public sealed class InteractionCollectionIntegrationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    // --- 136.12: full activity resolution with multiple likers/announcers --------------------
+
+    [Fact]
+    public async Task LikesEndpoint_MultipleLikers_WithStoredActivities_ReturnsFullLikeDocuments()
+    {
+        // Seed two Like activities in the activity store (as the outbox-publish write path would via
+        // PutActivityAsync). The /likes endpoint should resolve the full Like documents (id + actor +
+        // object) for both likers via a single GetAllActivitiesAsync sweep (136.12: not one sweep per
+        // liker).
+        var bobLike = new KristofferStrube.ActivityStreams.Like
+        {
+            Id = $"{BobIri.Value}/likes/bob-like-1",
+            Actor = [new Link { Href = new Uri(BobIri.Value) }],
+            Object = [new Link { Href = new Uri(Note1.Value) }],
+        };
+        var carolLike = new KristofferStrube.ActivityStreams.Like
+        {
+            Id = $"{CarolIri.Value}/likes/carol-like-1",
+            Actor = [new Link { Href = new Uri(CarolIri.Value) }],
+            Object = [new Link { Href = new Uri(Note1.Value) }],
+        };
+        await _persistence.Activities.PutActivityAsync(bobLike);
+        await _persistence.Activities.PutActivityAsync(carolLike);
+
+        var response = await _http.GetAsync(LikesPath(Note1));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // The items should be full Like documents (with the minted id), not bare actor links.
+        var itemIds = JsonDoc.GetItems(doc.RootElement)
+            .Select(item => item.ValueKind == JsonValueKind.Object
+                ? item.GetProperty("id").GetString()
+                : null)
+            .Where(id => id is not null)
+            .ToList();
+        Assert.Equal(2, itemIds.Count);
+        Assert.Contains($"{BobIri.Value}/likes/bob-like-1", itemIds);
+        Assert.Contains($"{CarolIri.Value}/likes/carol-like-1", itemIds);
+
+        // Each item should have an "actor" field pointing to the liker.
+        var itemActors = JsonDoc.GetItems(doc.RootElement)
+            .Where(item => item.ValueKind == JsonValueKind.Object && item.TryGetProperty("actor", out var actor))
+            .Select(item =>
+            {
+                var a = item.GetProperty("actor");
+                return a.ValueKind == JsonValueKind.Array
+                    ? a.EnumerateArray().First().ValueKind == JsonValueKind.Object
+                        ? a.EnumerateArray().First().GetProperty("href").GetString()
+                        : a.EnumerateArray().First().GetString()
+                    : a.ValueKind == JsonValueKind.Object
+                        ? a.GetProperty("href").GetString()
+                        : a.GetString();
+            })
+            .Where(a => a is not null)
+            .ToList();
+        Assert.Contains(BobIri.Value, itemActors);
+        Assert.Contains(CarolIri.Value, itemActors);
+    }
+
+    [Fact]
+    public async Task SharesEndpoint_MultipleAnnouncers_WithStoredActivities_ReturnsFullAnnounceDocuments()
+    {
+        // Seed two Announce activities in the activity store. The /shares endpoint should resolve the
+        // full Announce documents via a single GetAllActivitiesAsync sweep (136.12).
+        var bobAnnounce = new KristofferStrube.ActivityStreams.Announce
+        {
+            Id = $"{BobIri.Value}/announces/bob-announce-1",
+            Actor = [new Link { Href = new Uri(BobIri.Value) }],
+            Object = [new Link { Href = new Uri(Note1.Value) }],
+        };
+        var carolAnnounce = new KristofferStrube.ActivityStreams.Announce
+        {
+            Id = $"{CarolIri.Value}/announces/carol-announce-1",
+            Actor = [new Link { Href = new Uri(CarolIri.Value) }],
+            Object = [new Link { Href = new Uri(Note1.Value) }],
+        };
+        await _persistence.Activities.PutActivityAsync(bobAnnounce);
+        await _persistence.Activities.PutActivityAsync(carolAnnounce);
+
+        // Record carol's announce edge (bob's was already recorded by the seed).
+        await _persistence.Announces.RecordAnnounceAsync(CarolIri, Note1);
+
+        var response = await _http.GetAsync(SharesPath(Note1));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // The items should be full Announce documents (with the minted id), not bare actor links.
+        var itemIds = JsonDoc.GetItems(doc.RootElement)
+            .Select(item => item.ValueKind == JsonValueKind.Object
+                ? item.GetProperty("id").GetString()
+                : null)
+            .Where(id => id is not null)
+            .ToList();
+        Assert.Equal(2, itemIds.Count);
+        Assert.Contains($"{BobIri.Value}/announces/bob-announce-1", itemIds);
+        Assert.Contains($"{CarolIri.Value}/announces/carol-announce-1", itemIds);
+
+        // Each item should have an "actor" field pointing to the announcer.
+        var itemActors = JsonDoc.GetItems(doc.RootElement)
+            .Where(item => item.ValueKind == JsonValueKind.Object && item.TryGetProperty("actor", out var actor))
+            .Select(item =>
+            {
+                var a = item.GetProperty("actor");
+                return a.ValueKind == JsonValueKind.Array
+                    ? a.EnumerateArray().First().ValueKind == JsonValueKind.Object
+                        ? a.EnumerateArray().First().GetProperty("href").GetString()
+                        : a.EnumerateArray().First().GetString()
+                    : a.ValueKind == JsonValueKind.Object
+                        ? a.GetProperty("href").GetString()
+                        : a.GetString();
+            })
+            .Where(a => a is not null)
+            .ToList();
+        Assert.Contains(BobIri.Value, itemActors);
+        Assert.Contains(CarolIri.Value, itemActors);
+    }
+
     // --- Client round-trip (counts read uniformly via the bare extension terms) -------------
 
     [Fact]
