@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.13 Regression harness + closeout checklist**
-    - Convert verified interop scenarios into a repeatable manual checklist for each release slice.
-    - Record known incompatibilities and Lemmy-specific behavior notes with severity and workaround.
-    - Produce a final pass/fail matrix: discovery, auth, peering, delivery, threading, lifecycle, moderation, reliability.
-    - Exit when the checklist can be executed by another operator with consistent results.
-
 - **136.14 Media and attachment interoperability**
     - Validate image, link, and rich-text/markdown payloads from Iris -> Lemmy and Lemmy -> Iris.
     - Verify media fetch/render behavior for remote assets (authless/public paths, broken-link handling, MIME mismatches).
@@ -152,6 +146,19 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.13 Regression harness + closeout checklist** — produced the standing Lemmy interop regression
+  checklist (`docs/reference/LEMMY_INTEROP_REGRESSION_CHECKLIST.md`): 68 checkable items across 8
+  categories (discovery, auth/signatures, peering, delivery, threading, lifecycle, moderation,
+  observability), each mapped to its authoritative in-process two-instance integration test. Includes
+  a pass/fail matrix (release gate rule: GO when every FAIL is empty or has a documented exception),
+  10 known incompatibilities/Lemmy-specific notes (K1–K10) with severity + workaround (Lemmy
+  signature-parse gap, WebFinger egress gap, Lemmy group semantics, vote-score limitation, nginx 400,
+  EdDSA gap, etc.), and the automated regression gate (test-class-to-category mapping + `dotnet test`
+  as the primary gate). The checklist is executable by another operator: run `dotnet test` for the
+  automated gate, execute LIVE items against a running topology for the secondary gate, record
+  outcomes in the pass/fail matrix. 136.14 is now the top of Up Next. →
+  [docs/reference/LEMMY_INTEROP_REGRESSION_CHECKLIST.md](docs/reference/LEMMY_INTEROP_REGRESSION_CHECKLIST.md)
 
 - **136.12 Performance and request-spam audit** — audited federation delivery/fetch patterns
   across outbox publish, follow-feed hydration, community-feed hydration, public-feed hydration,
