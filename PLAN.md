@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.17 Duplicate/replay defense validation**
-    - Re-send identical activities (same ID/signature window) and confirm strict idempotent handling.
-    - Replay near-expiry and expired signed requests to verify acceptance/rejection boundaries are enforced.
-    - Re-order benign headers in equivalent signed requests to confirm canonical validation is robust, not brittle.
-    - Exit when replay attempts do not create state duplication and all decisions are observable in logs.
-
 - **136.18 Privacy and visibility policy alignment**
     - Validate visibility mapping (public/unlisted/restricted where supported) from source intent to remote presentation.
     - Verify non-public or scope-limited content is not leaked through timeline APIs, deep links, or backfill.
@@ -128,6 +122,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.17 Duplicate/replay defense validation** — three cross-instance integration tests
+  (`CrossInstanceReplayDefenseIntegrationTests`, two-instance `TestServer` fixture) verify that
+  duplicate Create delivery is idempotent (stored once, handler runs once, both 202), that a
+  replayed signed request (same date/signature) is accepted (pinning the current no-expiry
+  behavior — a known gap), and that wire-header reordering does not break canonical signature
+  validation. Key finding: no signature expiry/freshness check exists in the validation path
+  (documented as a future-slice candidate). 136.18 is now the top of Up Next. →
+  [docs/changes/13617-phase136-duplicate-replay-defense.md](docs/changes/13617-phase136-duplicate-replay-defense.md)
 
 - **136.16 Search and discoverability checks** — six cross-instance integration tests
   (`CrossInstanceSearchDiscoverabilityIntegrationTests`, two-instance `TestServer` fixture: A
