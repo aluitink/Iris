@@ -3187,7 +3187,7 @@ public static class ActivityPubServerExtensions
         // to enumerate the actual distribution list (the remote, non-blocked follower set — and, for a
         // reply, the reply target). This runs BEFORE the outbox/activity-store record so the stored form and
         // the federated (on-the-wire) form are the same canonical activity; no-op for other activity types.
-        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, ct).ConfigureAwait(false);
+        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, objectFetch, ct).ConfigureAwait(false);
 
         try
         {
@@ -3218,6 +3218,24 @@ public static class ActivityPubServerExtensions
                 foreach (var recipient in recipients)
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+
+                // Phase 136.7 (cross-instance reply integrity): when the Create is a reply (its embedded
+                // object's inReplyTo is set), the reply must ALSO reach the PARENT's home instance — the
+                // parent's author is not (in general) a follower of the replier, so the follower fan-out
+                // above does not carry the reply to the parent's home (the Lemmy author of a post that an
+                // Iris user replied to would otherwise never see the reply — the thread is broken on the
+                // parent's home). Resolve the parent's author (local lookup, or a remote fetch when the
+                // parent is on another instance) and deliver the reply to it, so the parent's home stores
+                // the reply and serves it under the parent's /replies collection. A local parent (the
+                // author is a local actor) is a no-op (the reply is already on the same instance); a
+                // resolvable remote parent is delivered. Best-effort: an unresolvable parent (a fetch
+                // failure) simply skips the extra delivery — the follower fan-out still ran.
+                if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
+                    && await ResolveReplyParentAuthorAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor
+                    && !await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
+                {
+                    await delivery.DeliverToActorAsync(parentAuthor, activity, actorIri, ct).ConfigureAwait(false);
                 }
 
                 // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
@@ -4397,6 +4415,64 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Resolves the <c>attributedTo</c> owner (author) of the object at <paramref name="objectIri"/> for a
+    /// reply: a local object's owner is read from the object store; a remote object's owner is resolved by
+    /// fetching the object's document over the wire (Phase 136.7 — a cross-instance reply must name its
+    /// parent's author so the reply both carries the parent author in its <c>to</c> audience and is
+    /// delivered to the parent's home instance). Best-effort: a local miss with no remote fetcher, or a
+    /// remote fetch that yields no owner, returns <see langword="null"/> (the reply then degrades to the
+    /// prior behavior — the parent author is simply not added to the audience / not an explicit delivery
+    /// recipient). The fetch is best-effort and must never fail the publish.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (for the local object-store lookup).</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a remote object's owner
+    /// (Phase 136.7); <see langword="null"/> disables remote-parent author resolution (local parents only).</param>
+    /// <param name="objectIri">The IRI of the reply's parent object.</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The parent object's owner IRI, or <see langword="null"/> when not resolvable.</returns>
+    private static async Task<Iri?> ResolveReplyParentAuthorAsync(
+        IPersistenceProvider persistence,
+        IActivityPubClient? objectFetch,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        // A local object is in the object store: read its attributedTo directly (no wire hop).
+        if (await persistence.Objects.TryGetObjectAsync(objectIri, out var storedObject, ct).ConfigureAwait(false)
+            && storedObject is { }
+            && storedObject.AttributedTo is { } localAttributed
+            && localAttributed.FirstOrDefault().ResolveObjectIri() is { } localOwner)
+        {
+            return localOwner;
+        }
+
+        // A remote object (the reply's parent is on another instance, not stored locally): fetch its
+        // document over the wire and read its attributedTo, so the reply's audience names the parent's
+        // author and the delivery reaches the parent's home. A fetch failure (network, not-found, or a
+        // document with no attributedTo) degrades to null — the remote fetch is best-effort: it must
+        // never fail the local publish.
+        if (objectFetch is { } fetch)
+        {
+            try
+            {
+                var remoteObject = await fetch.GetObjectAsync(objectIri, ct).ConfigureAwait(false);
+                if (remoteObject is { }
+                    && remoteObject.AttributedTo is { } remoteAttributed
+                    && remoteAttributed.FirstOrDefault().ResolveObjectIri() is { } remoteOwner)
+                {
+                    return remoteOwner;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                // A remote fetch failure is an expected condition (the parent may be on an unreachable
+                // instance); degrade to null (the parent author is simply not resolved).
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Records the local announce edge (announcer → announced-object, both directions) for an
     /// <see cref="Announce"/> published to the actor's own outbox, and returns the announced object's
     /// owner (the recipient of the server→server delivery). Mirrors <see cref="RecordLikeLocalAsync"/>
@@ -4920,12 +4996,16 @@ public static class ActivityPubServerExtensions
     /// <param name="persistence">The persistence provider (provides the followers, moderation, and object
     /// stores used to compute the audience and resolve a reply's parent author).</param>
     /// <param name="localActors">Resolves whether a candidate follower is a local actor.</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a reply's REMOTE parent author
+    /// (Phase 136.7 — a cross-instance reply's parent is not stored locally, so its author is fetched over
+    /// the wire); <see langword="null"/> restricts parent-author resolution to local parents.</param>
     /// <param name="ct">A cancellation token.</param>
     private static async Task RewriteOutboundAudienceAsync(
         Activity activity,
         Iri authorIri,
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var followers = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct)
@@ -4946,12 +5026,14 @@ public static class ActivityPubServerExtensions
                 // recipients (as:Public for a public post) and, for a reply, gains the reply target.
                 create.Cc = MergeAudience(create.Cc, followers);
 
+                // Phase 136.7 (cross-instance reply integrity): the reply target — the parent note's
+                // author — is a direct recipient of the reply. The parent may be LOCAL (in the object
+                // store) or REMOTE (on another instance, not stored locally); ResolveReplyParentAuthorAsync
+                // resolves the author in either case (a remote parent's author is fetched over the wire),
+                // so a cross-instance reply names its parent's author in the `to` audience.
                 if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await persistence.Objects.TryGetObjectAsync(parentIri, out var parent, ct).ConfigureAwait(false)
-                    && parent is { }
-                    && parent.AttributedTo?.FirstOrDefault().ResolveObjectIri() is { } parentAuthor)
+                    && await ResolveReplyParentAuthorAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
                 {
-                    // The reply target (the parent note's author) is a direct recipient of the reply.
                     create.To = MergeAudience(create.To, [parentAuthor]);
                 }
                 break;
@@ -6331,14 +6413,22 @@ public static class ActivityPubServerExtensions
         var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
 
         // An object this instance does not store has no replies to serve (404, mirroring the object
-        // document). The replies of a stored object are listed even when there are none (empty
-        // collection).
-        if (!await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false))
+        // document) — UNLESS the instance knows reply edges for it. Phase 136.7 (cross-instance thread
+        // integrity): a reply to a REMOTE parent (an Iris reply to a Lemmy post) is recorded in the reply
+        // store (the parent → child edge from the inbound Create) even though the parent object itself
+        // was never stored locally (it was only ever seen by IRI in the reply's inReplyTo). Such a parent
+        // still has a meaningful replies collection (the instance knows which replies point at it), so it
+        // is served ("serve what we know", the proxy's 132.1 fallback philosophy) rather than 404'd — the
+        // thread stays coherent on the Iris side. A genuinely unknown parent (no stored object AND no
+        // reply edges) still 404s, and a stored object always serves (empty collection when it has no
+        // replies).
+        var hasStoredObject = await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false);
+
+        var replyIris = await persistence.Replies.GetRepliesAsync(parentIri, ct).ConfigureAwait(false);
+        if (!hasStoredObject && replyIris.Count == 0)
         {
             return Results.NotFound();
         }
-
-        var replyIris = await persistence.Replies.GetRepliesAsync(parentIri, ct).ConfigureAwait(false);
         var items = ActorIrisToLinks(replyIris);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());

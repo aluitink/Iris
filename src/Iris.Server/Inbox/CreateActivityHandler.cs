@@ -325,8 +325,10 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// <remarks>
     /// 57.3: Pleroma and Misskey set a stable thread-root IRI on every note in a conversation. This
     /// method runs on the server (the object-id authority) so it has access to the stored parent's
-    /// <c>conversationId</c>. Best-effort: a failure to resolve the parent (e.g. the parent is on a remote
-    /// instance not yet fetched) leaves the conversation ID unset rather than failing the post.
+    /// <c>conversationId</c>. Best-effort: a failure to fetch the parent (a network error) leaves the
+    /// conversation ID unset rather than failing the post. When the parent is on a remote instance this
+    /// instance has not stored (an Iris reply to a Lemmy post — Phase 136.7), the parent's IRI is used as
+    /// the thread root, so the reply still anchors to its conversation.
     /// </remarks>
     /// <param name="embedded">The embedded object (a <see cref="IObject"/> — typically a <see cref="Note"/>).</param>
     /// <param name="ct">A cancellation token.</param>
@@ -362,6 +364,16 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 {
                     embedded.SetConversationId(parent);
                 }
+            }
+            else
+            {
+                // Phase 136.7 (cross-instance thread integrity): the reply's parent lives on a remote
+                // instance this instance has not stored (an Iris reply to a Lemmy post — the parent was
+                // only ever seen by IRI in the reply's inReplyTo). The parent's own conversationId is
+                // unknown, but the parent's IRI is the stable thread root: anchor the reply to it so
+                // parent-child reconstruction (and a client's thread walk) survives the cross-origin hop.
+                // This mirrors the local-parent / no-conversationId branch above (the parent IRI as root).
+                embedded.SetConversationId(parent);
             }
         }
     }
