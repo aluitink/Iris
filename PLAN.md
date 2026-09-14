@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.5 Inbound federation to Iris communities (Lemmy -> Iris)**
-    - Send Create/Announce activities from Lemmy targeting Iris community inbox/sharedInbox paths.
-    - Verify posts render in Iris community feeds with correct actor attribution and timestamps.
-    - Verify duplicate delivery handling (same activity ID sent multiple times) is idempotent.
-    - Exit when inbound posts are accepted once, persisted once, and displayed once.
-
 - **136.6 Outbound federation from Iris communities (Iris -> Lemmy)**
     - Publish Iris community content intended for federated recipients on Lemmy.
     - Verify Lemmy receives, stores, and displays remote community posts correctly.
@@ -201,6 +195,19 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **136.5 Inbound federation to Iris communities (Lemmy -> Iris)** — the inbound-Create-to-community
+  pipeline (handler → community content recorder → member outboxes → feed projection) and the C-07
+  idempotency guard were already built and happy-path tested; this turn pinned the two remaining gaps.
+  `CommunityInboundContentIntegrationTests` (two-instance, A: `alice`; B: `bob` + community `iris`):
+  (1) a Create whose activity **and** embedded Note carry a fixed `published` value reaches the member's
+  outbox and the community feed with the **originator's timestamp preserved** (not delivery time);
+  (2) the same Create (identical activity IRI) delivered **twice** is stored once and reaches the member's
+  outbox and the community feed **exactly once** (the C-07 guard in `InboxProcessor`, shared pre-dispatch,
+  now locked for the community-inbound-Create path). **No production source change** — the pipeline and
+  guard already worked; this pins the timestamp + idempotency attributes. The live Lemmy→Iris leg stays
+  blocked by the Lemmy-side signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests;
+  Iris.Server.Tests 1162 passed, 0 failed. 136.6 is now the top of Up Next. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
+
 - **136.4 Community peering handshake (Follow/Accept)** — the community peering handshake is now
   pinned in **both** directions across two instances. The auto-accept direction was already covered
   (`CrossInstanceAcceptPropagationIntegrationTests`); this turn added the **gated** (manually-approving)
@@ -210,8 +217,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   `AcceptActivityHandler` (G-3) finalizes the follower's edge. New `SeedManuallyApprovingCommunityWithExistingKey`
   seeder (existing-key form) for the two-host fixture re-seed. **No production source change** — the
   gated path already worked; this pins it. The live Iris→Lemmy leg stays blocked by the Lemmy-side
-  signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1159 passed.
-  136.5 is now the top of Up Next. → [docs/changes/13604-phase136-community-peering-handshake.md](docs/changes/13604-phase136-community-peering-handshake.md)
+   signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1159 passed.
+   → [docs/changes/13604-phase136-community-peering-handshake.md](docs/changes/13604-phase136-community-peering-handshake.md)
 
 - **136.2 Federation discovery + identity resolution (wire-level)** — discovery and identity
   resolution verified at the wire level in both directions. Iris WebFinger (users + communities)
