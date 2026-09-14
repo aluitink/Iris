@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.7 Replies, threading, and context integrity**
-    - Validate cross-instance reply chains (Lemmy reply to Iris post, Iris reply to Lemmy post).
-    - Verify `inReplyTo` and parent-child reconstruction remain stable after reload and backfill.
-    - Validate deep thread pagination/loading behavior does not break cross-origin ancestors.
-    - Exit when threaded conversations remain coherent on both sides.
-
 - **136.8 Reactions and engagement interoperability**
     - Validate Like/UndoLike semantics where supported; document any Lemmy vote model mismatches.
     - Verify counters and user-visible state converge eventually across both instances.
@@ -189,6 +183,29 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **136.7 Cross-instance reply integrity (replies, threading, and context integrity)** — a reply whose
+  parent lives on a remote instance (an Iris user replying to a Lemmy post) now **federates to the
+  parent's home instance and is threaded there**, with the reply's `inReplyTo` and `conversationId`
+  surviving the cross-origin hop. The core gap: a reply to a remote parent was never delivered to the
+  parent's home — `RewriteOutboundAudienceAsync` resolved the parent author from the **local** object
+  store only (a remote parent has no local author, so the parent author was never added to the reply's
+  `to` audience), and the Create fan-out delivered **only to followers** (the parent author is not a
+  follower). Fix: new `ResolveReplyParentAuthorAsync` (local parent from the object store; remote parent
+  by fetching its object document over the wire, best-effort) feeds both the audience rewrite (parent
+  author added to `to`) and a new parent-author delivery in `OutboxPublishHandler` (delivers the reply to
+  the parent author when that author is a remote, non-local actor). Secondary fixes:
+  `EnsureConversationIdAsync` anchors the reply's `conversationId` to the parent IRI (thread root) when
+  the parent is remote/un-stored (was left unset); `ObjectRepliesAsync` serves a parent's `/replies` when
+  the instance knows reply edges for it even though the parent object was never stored locally (404 only
+  when there is neither a stored object nor reply edges). `CrossInstanceReplyThreadIntegrationTests`
+  (two-instance, A: `bob` the parent's home; B: `alice` the replier): alice replies to bob's remote note
+  m1 via a signed outbox POST; the reply federates to A, is threaded under m1 on A, and its `inReplyTo`
+  + `conversationId` survive the hop (asserted on A: reply stored, parent→child reply edge recorded,
+  `GET {m1}/replies` lists the reply). Verified non-vacuous (the test fails when the audience/delivery
+  changes are reverted). The live Iris↔Lemmy leg stays blocked by the Lemmy-side signature/egress gap
+  (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1165 passed, 0 failed;
+  Iris.Core.Tests 445 passed. 136.8 is now the top of Up Next. → [docs/changes/13607-phase136-cross-instance-reply-integrity.md](docs/changes/13607-phase136-cross-instance-reply-integrity.md)
+
 - **136.6 Outbound federation from Iris communities (Iris -> Lemmy)** — a community-attributed post
   (a member posting a Note whose `attributedTo` is the community IRI) now federates to the member's
   remote followers with the posting community's identity intact, and the receiving instance fetches +
@@ -240,17 +257,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   discovery, ld+json negotiation, Lemmy-shape key). Finding: Lemmy→Iris WebFinger fails live (an
   ops/egress issue — `504` on the `iris-dev2.luit.ink` proxy — not an Iris code gap); does not block
   136.3. → [docs/changes/13602-phase136-federation-discovery-identity-resolution.md](docs/changes/13602-phase136-federation-discovery-identity-resolution.md)
-
-- **136.3 HTTP signatures + canonical verification matrix** — the wire-level accept/reject contract
-  for `HttpSignatureVerifier` is now pinned by a 15-test canonical matrix (`CanonicalSignatureMatrixTests`):
-  accepts well-formed RSA/EC × both profiles, a Lemmy-style `#main-key` keyId, an optional `created`
-  parameter, and a peer's reordered component list; deterministically rejects malformed headers, a
-  missing parameter, a wrong-key signature, an unparseable keyId, an empty component list, and a
-  non-base64 value. **No source change** — Iris's outbound header is well-formed draft-cavage-03
-  (captured + verified this turn); the 135.1b(4) Lemmy rejection is a Lemmy-side parser strictness +
-  egress gap, not an Iris format defect. Secondary (still open, queued as next candidate): Iris's
-  site root `/` serves the HTML SPA, not a JSON-LD `DiasporaFederated` doc (blocks instance-level
-   federation). 136.4 is now the top of Up Next. → [docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md](docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md)
 
 ## Keeping the docs lean
 
