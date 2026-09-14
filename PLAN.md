@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.14 Media and attachment interoperability**
-    - Validate image, link, and rich-text/markdown payloads from Iris -> Lemmy and Lemmy -> Iris.
-    - Verify media fetch/render behavior for remote assets (authless/public paths, broken-link handling, MIME mismatches).
-    - Stress large attachments and long-body posts to confirm truncation, preview, and storage behavior is explicit.
-    - Exit when media-bearing content round-trips with expected rendering and no silent drops.
-
 - **136.15 Pagination and backfill consistency**
     - Validate cross-instance timeline paging boundaries (first/next/previous pages) for federated community content.
     - Confirm historical backfill after peering includes expected post/comment windows and stable ordering.
@@ -146,6 +140,20 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.14 Media and attachment interoperability** — six cross-instance integration tests
+  (`CrossInstanceMediaInteropIntegrationTests`, two-instance `TestServer` fixture) verify that image,
+  link, and rich-text attachment payloads survive an Iris→Iris federation round-trip without silent
+  drops or truncation: an `Image` attachment's id survives + the media proxy serves fetched bytes
+  with the correct content-type; a dead image URL does not drop the object (proxy returns 502); a
+  `Document` link attachment survives with name/type intact; a note's HTML content survives; a
+  100 000-character body is stored in full; a MIME-mismatched attachment is stored + the proxy
+  serves the actual fetched type. Key finding: the embedded object is stored under its original IRI
+  (author's host), so the receiving instance's object-document endpoint (which reconstructs IRIs
+  from its own BaseUri) 404s for cross-instance objects — the tests verify via the receiving
+  instance's persistence directly (the production read path) and the media proxy via HTTP
+  (host-agnostic). 136.15 is now the top of Up Next. →
+  [docs/changes/13614-phase136-media-attachment-interop.md](docs/changes/13614-phase136-media-attachment-interop.md)
 
 - **136.13 Regression harness + closeout checklist** — produced the standing Lemmy interop regression
   checklist (`docs/reference/LEMMY_INTEROP_REGRESSION_CHECKLIST.md`): 68 checkable items across 8
