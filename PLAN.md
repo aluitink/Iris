@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.15 Pagination and backfill consistency**
-    - Validate cross-instance timeline paging boundaries (first/next/previous pages) for federated community content.
-    - Confirm historical backfill after peering includes expected post/comment windows and stable ordering.
-    - Verify cache bypass/reload does not lose older remote objects or create duplicate entries.
-    - Exit when paged and backfilled views are consistent across refreshes and both instances.
-
 - **136.16 Search and discoverability checks**
     - Confirm federated communities and posts become discoverable in both UIs after handshake + first delivery.
     - Validate direct URL deep links resolve for remote posts/comments without requiring prior local cache.
@@ -140,6 +134,29 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.15 Pagination and backfill consistency** — three cross-instance integration tests
+  (`CrossInstancePaginationIntegrationTests`, two-instance `TestServer` fixture: A
+  `page-a.domain.local` alice with a 50-post outbox, B `page-b.domain.local` lumen community
+  with `FeedOptions.PagesPerActor=3, MaxItems=60`) verify that federated community content
+  pages correctly across instance boundaries and that the historical backfill window includes
+  the expected post count with stable ordering: A's outbox paginates correctly (page 1
+  `OrderedCollection` with `first`/`next`, page 2 `OrderedCollectionPage` with
+  `startIndex=21`/`prev`/`next`/`partOf`, 20 items per page newest-first); B's community feed
+  includes all 50 posts from alice's outbox (3 pages × 20 capacity); the feed returns the same
+  items in the same order across repeated reads (with and without `?refresh=true`). Key design
+  decision: the `ICommunityFeedService` is registered by `AddActivityPubServer` with a factory
+  that creates its own `IActivityPubClient` via `IActivityPubClientFactory.Create()` with a real
+  `HttpClientHandler` (not the DI-registered client), so overriding `IActivityPubClient` in DI
+  has no effect — the fix is to override `IActivityPubClientFactory` in a new `PreServices`
+  property (runs before `AddActivityPubServer`) with a `RoutingClientFactory` that creates
+  clients routed to A's `TestServer` with `Caches = null`. Cache-bypass testing (new remote post
+  appears after `?refresh=true`) is deferred: the feed endpoint is not served through the
+  `LocalCollectionPageCache` (it re-walks remote outboxes on every request), so `?refresh=true`
+  is a no-op; the `IActivityPubClient`'s `CollectionPageCache` is the relevant cache and
+  clearing it on `?refresh=true` is a production change for a separate slice. 136.16 is now the
+  top of Up Next. →
+  [docs/changes/13615-phase136-pagination-backfill-consistency.md](docs/changes/13615-phase136-pagination-backfill-consistency.md)
 
 - **136.14 Media and attachment interoperability** — six cross-instance integration tests
   (`CrossInstanceMediaInteropIntegrationTests`, two-instance `TestServer` fixture) verify that image,
