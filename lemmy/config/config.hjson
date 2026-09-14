@@ -4,20 +4,19 @@
 # /config/config.hjson by docker-compose.yml.
 #
 # This instance is deployed in its OWN folder (lemmy/), separate from the Iris app, and is
-# advertised under the public FQDN https://iris-dev2.luit.ink (the external reverse proxy
-# forwards iris-dev2.luit.ink:443 -> host:8082 -> this container's 8536). It runs on the shared
+# advertised under the public FQDN https://lemmy.luit.ink (the external reverse proxy
+# forwards lemmy.luit.ink:443 -> host:8091 -> this container's 8536). It runs on the shared
 # `irisweb_iris-web-net` Docker network so it can reach the Iris instances directly for federation.
 #
-# NOTE: this intentionally REPLACES the iris2 (iris-dev2.luit.ink) Iris test instance. The iris2
-# Postgres data volume (irisweb_iris2-db-data) is NOT destroyed by this project's down (it belongs
-# to the iris2 compose project), so it can be re-provisioned if Iris-to-Iris live interop is needed.
+# NOTE: lemmy.luit.ink is a dedicated FQDN for this interop instance.
 
 {
   # The public hostname Lemmy advertises — the base of every Lemmy actor/object IRI
-  # (https://iris-dev2.luit.ink/c/<community>, https://iris-dev2.luit.ink/u/<user>).
-  hostname: "iris-dev2.luit.ink"
+  # (https://lemmy.luit.ink/c/<community>, https://lemmy.luit.ink/u/<user>).
+  hostname: "lemmy.luit.ink"
 
-  # Listen on 0.0.0.0:8536 (the container's port, mapped to host 8082 by the reverse proxy).
+  # Listen on 0.0.0.0:8536 (the container's port; only reachable on the shared Docker network —
+  # the nginx `proxy` service fronts it and maps host 8091 -> the proxy).
   bind: "0.0.0.0"
   port: 8536
 

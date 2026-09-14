@@ -1,20 +1,27 @@
 # Lemmy server for the Iris <-> Lemmy interop instance (Phase 135.1).
 #
 # Deployed in its OWN folder (lemmy/), separate from the Iris app, per the Phase 135.1 requirement.
-# Advertised under the public FQDN https://iris-dev2.luit.ink — the external reverse proxy forwards
-# iris-dev2.luit.ink:443 -> host:8082 -> this container's 8536 (Lemmy 0.19's backend port).
+# Advertised under the public FQDN https://lemmy.luit.ink — the external nginx reverse proxy
+# forwards lemmy.luit.ink:443 -> host:8091 -> the `proxy` service (single port).
+#
+# SINGLE-PORT ARCHITECTURE: the host publishes exactly ONE port (8091), owned by the `proxy`
+# service (an nginx front). It splits traffic:
+#   /api/* + /.well-known/*  -> lemmy backend (REST + ActivityPub discovery)
+#   /static/*                -> lemmy-ui (hashed asset bundles)
+#   everything else          -> lemmy-ui (SSR pages)
+# This matches the external proxy's "one FQDN -> one port" model. The UI and backend are NOT
+# published to the host directly anymore; they are reachable only on the shared Docker network
+# (by container name) for the proxy and for cross-instance federation.
 #
 # Runs on the shared `irisweb_iris-web-net` Docker network so Lemmy can reach the Iris instances
-# (iris.luit.ink on 8088, and — while iris2 is down — the network is still shared) directly for
-# federation, and Iris can reach Lemmy.
+# (iris.luit.ink on 8088) directly for federation, and Iris can reach Lemmy (via the FQDN).
 #
-# NOTE: this REPLACES the iris2 (iris-dev2.luit.ink) Iris test instance at the same FQDN/port. The
-# iris2 Postgres volume (irisweb_iris2-db-data) is owned by the iris2 compose project, NOT this one,
-# so `docker compose -f lemmy/docker-compose.yml down -v` does NOT destroy it.
+# NOTE: lemmy.luit.ink is a DEDICATED FQDN for this instance (no longer shared with an Iris test
+# instance), so there is no existing instance being replaced here.
 #
 # Bring up:   docker compose -f lemmy/docker-compose.yml up -d
 # Tear down:  docker compose -f lemmy/docker-compose.yml down -v
-# Logs:       docker compose -f lemmy/docker-compose.yml logs -f lemmy
+# Logs:       docker compose -f lemmy/docker-compose.yml logs -f
 #
 # First run: the `setup` block in config/config.hjson creates the admin user (lemmyadmin) and the
 # site ("Iris Lemmy Interop"). After the DB is initialized, the site's registration_mode and
@@ -43,58 +50,66 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: lemmy-1
     platform: linux/x86_64
     environment:
       # Verbose enough to debug federation without drowning in noise.
       RUST_LOG: "warn,lemmy_server=info,lemmy_apub=debug"
       RUST_BACKTRACE: "1"
-    ports:
-      # 8082 matches the reverse-proxy target for iris-dev2.luit.ink (443 -> host:8082).
-      # Lemmy 0.19's backend listens on 8536.
-      - "8082:8536"
-    # NOTE: no healthcheck. The official `dessalines/lemmy` image is minimal (no wget/curl/busybox,
-    # and its shell is dash, which lacks bash's /dev/tcp), so there is no in-container tool to probe
-    # the HTTP endpoint. The service is confirmed healthy externally (it serves /api/v3/site,
-    # /.well-known/nodeinfo, and the community Group documents). `depends_on: db: service_healthy`
-    # below still gates Lemmy start on Postgres being ready.
+    # NOT published to the host — only the `proxy` service owns the host port. Reachable on the
+    # shared network as lemmy-1:8536 (by the UI SSR and the proxy).
     depends_on:
       db:
         condition: service_healthy
     networks: [iris-web-net]
 
-  # The Lemmy web UI (SvelteKit frontend). The `dessalines/lemmy` backend image is backend-only
-  # (API + ActivityPub, no HTML), so the UI is a separate container: `dessalines/lemmy-ui` serves
-  # the frontend and proxies /api/* (and the ActivityPub paths) to the backend. This lets us log in
-  # and drive the Iris <-> Lemmy interop visually.
-  #
-  # LEMMY_UI_LEMMY_INTERNAL_HOST is the backend URL the UI proxies to (the backend container on the
-  # shared Docker network, by container name). LEMMY_UI_LEMMY_EXTERNAL_HOST is the public origin the
-  # UI advertises (the iris-dev2.luit.ink FQDN). The UI listens on 1234; we expose it on host 8083
-  # (next to the backend's 8082) so it can be reached directly, and it is also reachable on the
-  # shared network for the reverse proxy.
-  #
-  # STATUS (135.1b(5)): the service deploys and the container CAN reach the backend (verified with
-  # node fetch to both the internal and external hosts), but the SvelteKit SSR currently returns
-  # 500 on every page (`site_res: undefined`) regardless of the internal/external-host or https
-  # settings — a `dessalines/lemmy-ui:0.19.20` SSR issue not yet root-caused. The Lemmy API
-  # (backend on 8082 / iris-dev2.luit.ink) is fully usable for login + posting in the meantime
-  # (see the 135.1b(5) change doc for the working curl commands).
-  lemmy-ui:
-    image: dessalines/lemmy-ui:0.19.20
+  # The Lemmy web UI (SSR). Custom image (./ui-proxy/Dockerfile) that patches the 0.19.20 SSR
+  # backend-URL bug: stock lemmy-ui unconditionally prefixes LEMMY_UI_LEMMY_INTERNAL_HOST with
+  # "http[s]://", so a scheme-bearing value (needed to keep the internal call plain HTTP while
+  # the browser-facing IRI is https) produced https://http://... and 500'd every page. The patch
+  # makes a scheme-bearing env var be used verbatim. See ./ui-proxy/Dockerfile + patch-server.js.
+  ui:
+    build:
+      context: ./ui-proxy
+      target: ui
+    container_name: ui-1
     platform: linux/x86_64
     environment:
-      # When LEMMY_UI_HTTPS is false the UI proxies /api/* to LEMMY_UI_LEMMY_INTERNAL_HOST (the
-      # backend on the shared network, by container name). With https=true the UI instead proxies to
-      # the EXTERNAL host, which is reachable but made the SvelteKit SSR 500 in testing — false + the
-      # internal host is the path that works.
-      LEMMY_UI_LEMMY_INTERNAL_HOST: "http://lemmy-lemmy-1:8536"
-      LEMMY_UI_LEMMY_EXTERNAL_HOST: "https://iris-dev2.luit.ink"
-      LEMMY_UI_HTTPS: "false"
+      # The patched X() uses this VERBATIM (it starts with http). Plain HTTP on the shared
+      # Docker network, by container name.
+      LEMMY_UI_LEMMY_INTERNAL_HOST: "http://lemmy-1:8536"
+      # The public origin the SSR bakes into the HTML (window.isoData.lemmy_external_host) and
+      # uses for browser-facing IRIs. Must be the external FQDN.
+      LEMMY_UI_LEMMY_EXTERNAL_HOST: "https://lemmy.luit.ink"
+      # true -> SSR builds https:// URLs (the me() helper appends "s"). Required because the
+      # external proxy terminates TLS; the browser must see https IRIs for federation to work.
+      LEMMY_UI_HTTPS: "true"
+      # Debug: no CSP, no immutable cache headers, eruda console injected — easier to iterate.
       LEMMY_UI_DEBUG: "true"
-    ports:
-      - "8083:1234"
+    # NOT published to the host — only the `proxy` service owns the host port. Reachable on the
+    # shared network as ui-1:1234 (by the proxy).
     depends_on:
       - lemmy
+    networks: [iris-web-net]
+
+  # nginx front: the ONLY service published to the host (8091). Splits /api + /.well-known to the
+  # backend and everything else (pages, /static/* assets) to the UI. TLS is terminated by the
+  # external nginx; we forward X-Forwarded-Proto: https so IRIs come out https.
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: lemmy-proxy-1
+    platform: linux/x86_64
+    # Baked config (this host's Docker runtime bind mounts are broken — see ../Dockerfile).
+    build:
+      context: ./ui-proxy
+      target: proxy
+    ports:
+      # Host 8091 = the reverse-proxy target for lemmy.luit.ink (443 -> host:8091). The nginx
+      # container listens on 8082 internally (see ui-proxy/nginx.conf).
+      - "8091:8082"
+    depends_on:
+      - lemmy
+      - ui
     networks: [iris-web-net]
 
 networks:

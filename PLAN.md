@@ -92,15 +92,128 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 6. **Fix in scope**: implement fixes for this slice's assigned defects; **re-verify each fix from a clean entry** (step 3) and record the evidence (`console-clean + <control/state> works`, optionally + the auto-saved screenshot path) before flipping Status to `fixed`. No evidence, no `fixed`.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
+
 ## Up Next
 
-- **131.4 — Performance: WASM payload reduction (LOW)** — 66 .wasm files; raw 11.4 MB, **gzipped 5.83 MB** (the "12.8 MB" figure was raw + JS). Target: < 5 MB gzipped. **Investigated + tabled (2026-09-13):** the dominant cost is BouncyCastle.Cryptography.wasm (5.1 MB raw / 2.56 MB gz, 44% of the payload), pulled in because Iris.Core's `Ed25519Key` references it. The WASM client never actually signs with Ed25519 at runtime (it always uses `WebCryptoSigningKeyFactory` → browser WebCrypto RSA), so BouncyCastle is dead weight in the payload — but the trimmer can't prove `Ed25519Key` is unreferenced (Iris.Core is a shared, non-trimmable project). The fix is to remove BouncyCastle from Iris.Core by implementing Ed25519 in pure .NET. **Attempted a pure-.NET `NativeEd25519` (RFC 8032, BigInteger-based extended coordinates) — base point + curve constant verified correct, but the scalar-mult/compress path produced wrong points for large scalars; bug not isolated before time-boxing. Reverted.** Backup of the partial implementation: `.tmp-ed25519-backup.cs`. Next attempt should debug `ScalarMult`/`Double`/`Add` against the RFC 8032 test vectors (a Python reference confirms the expected outputs). Alternative lower-risk path: multi-target Iris.Core (`net10.0` server with BouncyCastle + a WASM-friendly path) or accept the 5.83 MB gzipped payload as "good enough."
+- **136.1 Lemmy interop foundation (env + observability)**
+    - Confirm both hosts are reachable and stable: `https://iris.luit.ink` and `https://lemmy.luit.ink`.
+    - Record instance metadata snapshots (`/api/v3/site`, nodeinfo, software version) for reproducible runs.
+    - Enable request/response capture for ActivityPub endpoints (method, URL, status, actor, activity type, count).
+    - Exit when a baseline run can produce a single shared trace artifact per scenario.
 
-- **135.1 - Communities and the Lemmyverse** - We need to be able to interact with Lemmy communities. We need to better understanding how the Lemmy servers expect us to interact. We should deploy a local lemmy server container and interact with it, we likely need to use public fqdns so let's utilize the iris-dev2.luit.ink fqdn for this. The lemmy container definitons/compose should live in it's own folder separate from our app. **135.1a DONE:** `RemoteCommunityPersister` persists remote community `Group` documents to the durable `ICommunityStore`; the `/ap/v1/actor?iri=...` endpoint now also serves a cached remote community (proven by tests). **135.1b DONE:** real Lemmy 0.19.20 deployed in its own `lemmy/` folder (own compose + Dockerfile + hjson config), advertising `https://iris-dev2.luit.ink`, on the shared Docker network; it serves a real community `test` (a proper ActivityStreams `Group` at `https://iris-dev2.luit.ink/c/test` with publicKey/inbox/followers/outbox) in exactly the shape the persister expects. **BLOCKED on the full live follow-interop** by external infra: the host's nginx reverse proxy 400s the required POST federation paths (`/local/v1/c/*/follow/*`, `/ap/v1/proxy/*`, Lemmy `/api/v3/follow`), and the running Iris container's actor Basic-auth creds don't match the PLAN notes (401/403 on direct container access). Unblocked when the operator whitelists those nginx POST paths + confirms/re-seeds live Iris actor creds. **135.1b(2) DONE (test):** `IrisActorDocumentFetcherTests.GetActor_RealLemmyCommunity_PersistsAndServesIt` feeds the verbatim real Lemmy `Group` document (full Lemmy shape) through deserialize → fetcher → persist → cached-actor-endpoint, asserting the Lemmy fields round-trip. **135.1b(3) DONE (LIVE, the core interop goal):** the full live follow-interop WORKS end to end — `POST /local/v1/c/owner-test-5428/follow/https://iris-dev2.luit.ink/c/test` (Basic auth `alice:alice`, direct container `172.19.0.3:8080` bypassing the nginx 400) → 204; the real Lemmy `Group` is fetched + persisted (Actors row `test`/`Group`) + served via `/ap/v1/actor?iri=…` (200) + listed in `/ap/v1/search` + follow edge recorded. The earlier "blockers" are resolved: nginx 400 is bypassed by direct container access, and the working Basic auth is `alice:alice` (handle/handle `SeedHandle` validator, `WebAppFactory.cs:300`/`:61`), not `alice:alice-password` (that's the cookie-login password); the follow must be on an `alice`-owned community (`owner-test-5428`). **135.1b(4) INVESTIGATION (content federation BLOCKED):** tested the inbound content path — posted a Note on the Lemmy side (`POST /api/v3/post` to community `test`, `ap_id=https://iris-dev2.luit.ink/post/1`, HTTP 200) but it did **not** arrive in Iris (search 0, no `Objects` row). Root cause (Lemmy logs): when Iris's community followed the Lemmy community, Iris sent a signed `Follow` to Lemmy's `/inbox` and Lemmy rejected it — **`Error when parsing signature from Http Signature`** (HTTP 400) — so the follow was never registered on Lemmy's side and the Note had no follower to federate to. The failure is at **signature parse** (before key resolution). Secondary: Lemmy also `Failed to dereference site for https://iris.luit.ink/` (got the HTML SPA, not a JSON-LD site doc). **Next (135.2/137):** root-cause + fix the signature interop (capture the exact `Signature` header Iris sends via `SigningHandler`/`SignatureHeader` — suspect format/`headers` list/quoting), also serve a JSON-LD site doc at `/`, then re-drive the follow + post to confirm content flows both ways. [changes/13501b](docs/changes/13501b-phase135-lemmy-deployment.md) [changes/13501b2](docs/changes/13501b2-phase135-real-lemmy-group-roundtrip-test.md) [changes/13501b3](docs/changes/13501b3-phase135-live-lemmy-follow-interop.md) [changes/13501b4](docs/changes/13501b4-phase135-content-federation-signature-blocker.md)
+- **136.2 Federation discovery + identity resolution (wire-level)**
+    - Validate WebFinger discovery from each side for users and communities.
+    - Validate actor and object dereferencing (`application/activity+json`) including content negotiation behavior.
+    - Confirm key discovery paths (actor `publicKey`, key rotation tolerance if present).
+    - Exit when Iris can resolve Lemmy actors/communities and Lemmy can resolve Iris actors/communities without manual patching.
 
-- **135.2 - Lemmy integration test plan (CONCRETE, next)** - Build the test plan as the actionable path to content federation both ways. (Also: the Lemmy UI `dessalines/lemmy-ui:0.19.20` is deployed in `lemmy/` on host 8083 but its SvelteKit SSR 500s on every page — `site_res: undefined` — regardless of host/https/TLS config, though the container reaches the backend fine; root-cause + fix the SSR so we can log in visually. The Lemmy API works in the meantime — see 135.1b(5) for the curl commands.) **Blocker first (135.1b(4)):** root-cause + fix the signature interop so Lemmy accepts Iris's signed `Follow` (it currently rejects with `Error when parsing signature from Http Signature`, 400). Steps: (1) capture the exact `Signature` header Iris sends for a `Follow` POST (via `Iris.Client.Pipeline.SigningHandler` → `Iris.Core.Signing.SignatureHeader`, draft-cavage-03) against a capture endpoint, compare to what Lemmy expects (parse-level failure → suspect header format / `headers` component list / quoting / `algorithm`); (2) also serve a JSON-LD site document at `/` (Lemmy `Failed to dereference site`); (3) re-drive the follow (confirm Lemmy logs it registered, no 400); (4) post a Note on Lemmy → confirm it lands in Iris (`/ap/v1/search` + `Objects` store); (5) post a Note from an Iris community → confirm it lands in Lemmy; (6) add an integration test (a signed-`Follow` accepted by a Lemmy-compatible signature verifier) so this doesn't regress. This is the "big one" — expect iteration.
-**137 - Run the Lemmy integration test plan** - Drive the Lemmy server end to end and confirm content replicates Iris↔Lemmy (the live verification half of 135.2; the test plan + signature fix land first).
+- **136.3 HTTP signatures + canonical verification matrix**
+    - Capture signed `POST` requests from both systems and verify signature headers are accepted.
+    - Test canonicalization edge cases (header ordering/date skew/replay window) within safe bounds.
+    - Validate rejection paths are explicit (4xx with actionable logs) for intentionally bad signatures.
+    - Exit when valid signatures pass consistently and invalid signatures fail deterministically.
 
+- **136.4 Peering handshake (Follow/Accept for communities)**
+    - Model how Lemmy peers communities (community follow, accept flow, actor relationship updates).
+    - Execute Lemmy -> Iris and Iris -> Lemmy follow handshakes for community actors.
+    - Confirm state transitions on both sides (pending, accepted, visible federation link).
+    - Exit when both directional peering paths complete and persist across restart.
+
+- **136.5 Inbound federation to Iris communities (Lemmy -> Iris)**
+    - Send Create/Announce activities from Lemmy targeting Iris community inbox/sharedInbox paths.
+    - Verify posts render in Iris community feeds with correct actor attribution and timestamps.
+    - Verify duplicate delivery handling (same activity ID sent multiple times) is idempotent.
+    - Exit when inbound posts are accepted once, persisted once, and displayed once.
+
+- **136.6 Outbound federation from Iris communities (Iris -> Lemmy)**
+    - Publish Iris community content intended for federated recipients on Lemmy.
+    - Verify Lemmy receives, stores, and displays remote community posts correctly.
+    - Confirm audience/targeting semantics (community followers, addressing, visibility mapping).
+    - Exit when Iris-originated community content is visible in Lemmy with correct provenance.
+
+- **136.7 Replies, threading, and context integrity**
+    - Validate cross-instance reply chains (Lemmy reply to Iris post, Iris reply to Lemmy post).
+    - Verify `inReplyTo` and parent-child reconstruction remain stable after reload and backfill.
+    - Validate deep thread pagination/loading behavior does not break cross-origin ancestors.
+    - Exit when threaded conversations remain coherent on both sides.
+
+- **136.8 Reactions and engagement interoperability**
+    - Validate Like/UndoLike semantics where supported; document any Lemmy vote model mismatches.
+    - Verify counters and user-visible state converge eventually across both instances.
+    - Confirm unsupported interaction types degrade gracefully (no crashes, clear logs).
+    - Exit when supported reactions interop correctly and unsupported ones are safely ignored.
+
+- **136.9 Update/Delete/Undo propagation**
+    - Verify edit/update propagation from each source instance to the remote copy.
+    - Verify delete/tombstone behavior for posts and comments including remote visibility changes.
+    - Verify undo flows (unfollow/unlike) remove or adjust remote state as expected.
+    - Exit when lifecycle changes converge and stale artifacts are bounded and documented.
+
+- **136.10 Moderation and trust-boundary behavior**
+    - Test remote actor/community block behavior in both directions (instance-level and actor-level where supported).
+    - Validate report/flag activities and how moderation signals are represented cross-instance.
+    - Ensure blocked content is not reintroduced via backfill or retries.
+    - Exit when moderation actions enforce expected visibility and delivery boundaries.
+
+- **136.11 Delivery reliability, retries, and dead-letter handling**
+    - Induce transient failures (timeouts/5xx) and verify retry budgets, backoff, and eventual success/failure behavior.
+    - Confirm idempotency across retries (no duplicated posts/comments/reactions).
+    - Capture and classify permanent failures (4xx) with operator-facing diagnostics.
+    - Exit when delivery behavior matches policy and is observable end-to-end.
+
+- **136.12 Performance and request-spam audit**
+    - For each critical scenario, count federated requests by method+path+trigger to detect duplicate fan-out.
+    - Identify N+1 or redundant fetch patterns in community timeline and thread hydration.
+    - Define acceptable request-count budgets for baseline scenarios.
+    - Exit when high-noise patterns are triaged into blocker/bug/perf classes.
+
+- **136.13 Regression harness + closeout checklist**
+    - Convert verified interop scenarios into a repeatable manual checklist for each release slice.
+    - Record known incompatibilities and Lemmy-specific behavior notes with severity and workaround.
+    - Produce a final pass/fail matrix: discovery, auth, peering, delivery, threading, lifecycle, moderation, reliability.
+    - Exit when the checklist can be executed by another operator with consistent results.
+
+- **136.14 Media and attachment interoperability**
+    - Validate image, link, and rich-text/markdown payloads from Iris -> Lemmy and Lemmy -> Iris.
+    - Verify media fetch/render behavior for remote assets (authless/public paths, broken-link handling, MIME mismatches).
+    - Stress large attachments and long-body posts to confirm truncation, preview, and storage behavior is explicit.
+    - Exit when media-bearing content round-trips with expected rendering and no silent drops.
+
+- **136.15 Pagination and backfill consistency**
+    - Validate cross-instance timeline paging boundaries (first/next/previous pages) for federated community content.
+    - Confirm historical backfill after peering includes expected post/comment windows and stable ordering.
+    - Verify cache bypass/reload does not lose older remote objects or create duplicate entries.
+    - Exit when paged and backfilled views are consistent across refreshes and both instances.
+
+- **136.16 Search and discoverability checks**
+    - Confirm federated communities and posts become discoverable in both UIs after handshake + first delivery.
+    - Validate direct URL deep links resolve for remote posts/comments without requiring prior local cache.
+    - Measure discovery lag (publish to searchable/visible) and record expected eventual-consistency window.
+    - Exit when operators can reliably find remote communities/content by name or URL on both sides.
+
+- **136.17 Duplicate/replay defense validation**
+    - Re-send identical activities (same ID/signature window) and confirm strict idempotent handling.
+    - Replay near-expiry and expired signed requests to verify acceptance/rejection boundaries are enforced.
+    - Re-order benign headers in equivalent signed requests to confirm canonical validation is robust, not brittle.
+    - Exit when replay attempts do not create state duplication and all decisions are observable in logs.
+
+- **136.18 Privacy and visibility policy alignment**
+    - Validate visibility mapping (public/unlisted/restricted where supported) from source intent to remote presentation.
+    - Verify non-public or scope-limited content is not leaked through timeline APIs, deep links, or backfill.
+    - Confirm mismatched visibility capabilities degrade safely with explicit operator notes.
+    - Exit when visibility semantics are documented and enforced without over-sharing.
+
+- **136.19 Data lifecycle and tombstone retention**
+    - Define retention/expiry expectations for tombstones and deleted remote references in Iris.
+    - Validate behavior when old remote links are revisited after delete propagation (UI, API, cache, and logs).
+    - Confirm retention policy does not reanimate deleted content during re-sync/backfill.
+    - Exit when delete lifecycle outcomes are deterministic and operator-documented.
+
+- **136.20 Final release federation gate**
+    - Create a concise go/no-go checklist referencing mandatory green scenarios across all prior phases.
+    - Mark known interop gaps as explicit release exceptions with severity, impact, and workaround.
+    - Require sign-off evidence artifacts (trace IDs, screenshots, console-clean confirmations) per critical flow.
+    - Exit when a release can be approved or blocked using this gate without ad hoc interpretation.
 
 ## Inbox
 
@@ -112,15 +225,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **135.1b(5) — Deploy the Lemmy UI (frontend) for visual interop (DONE — deployed; SSR 500 blocker documented)** — The `dessalines/lemmy` image is backend-only (no HTML), so a `lemmy-ui` service (`dessalines/lemmy-ui:0.19.20`, the only UI image available — `ghcr.io` is blocked, no full UI-bundled `lemmy` image) was added to `lemmy/docker-compose.yml` on host 8083→1234, joining the shared network and proxying `/api/*` to the backend. It deploys and starts, and the container **can** reach the backend (node fetch to both internal + external hosts works), but the SvelteKit SSR returns **500** on every page (`site_res: undefined`) regardless of `LEMMY_UI_HTTPS` / internal-vs-external host / `NODE_TLS_REJECT_UNAUTHORIZED=0`; no stack trace even with `LEMMY_UI_DEBUG=true`; it's pure-SSR (no static `index.html`) so it can't be served statically. Not yet root-caused. The Lemmy **API** is fully usable in the meantime (login → `jwt`, community list, post) — curl commands in the change doc. [changes/13501b5](docs/changes/13501b5-phase135-lemmy-ui-deployment.md)
-
-- **135.1b(4) — Content federation (Lemmy→Iris) investigation: signature interop blocker (DONE, investigation)** — Tested the inbound content path: posted a Note on the Lemmy side (`POST /api/v3/post` → community `test`, `ap_id=https://iris-dev2.luit.ink/post/1`, HTTP 200) but it did **not** arrive in Iris (search 0, no `Objects` row). Root cause (Lemmy logs): Iris's signed `Follow` (sent when the Iris community followed the Lemmy community) was rejected by Lemmy — **`Error when parsing signature from Http Signature`** (HTTP 400) — so the follow was never registered on Lemmy's side and the Note had no follower to federate to. The failure is at **signature parse** (before key resolution); `keyId` (`…/c/owner-test-5428#key-1`, RSA) is resolvable. Secondary: Lemmy `Failed to dereference site for https://iris.luit.ink/` (got the HTML SPA, not a JSON-LD site doc). Next (135.2/137): capture the exact `Signature` header Iris sends (`SigningHandler`/`SignatureHeader`), fix the parse-level rejection, serve a JSON-LD site doc at `/`, then verify content flows both ways. [changes/13501b4](docs/changes/13501b4-phase135-content-federation-signature-blocker.md)
-
-- **135.1b(3) — Live Iris ↔ Lemmy community follow interop verified end to end (DONE, live-state)** — The full live follow-interop WORKS: `POST /local/v1/c/owner-test-5428/follow/https://iris-dev2.luit.ink/c/test` (Basic auth `alice:alice`, direct container `http://172.19.0.3:8080` bypassing the nginx 400) → **204**. The real Lemmy `Group` was fetched + persisted to the durable store (`Actors` row `test`/`Group`) + served via `GET /ap/v1/actor?iri=…` (**200**, stored `Group` with `publicKey`/`source` intact) + listed in `GET /ap/v1/search?q=lemmy` + follow edge recorded (`Edges` Kind=10). The earlier "blockers" are resolved — no infra change needed: the nginx 400 is bypassed by direct container access, and the working Basic auth is **`alice:alice`** (handle/handle `SeedHandle` validator, `WebAppFactory.cs:300`/`:61`) — *not* `alice:alice-password` (that's the cookie-login password); the follow must be on an `alice`-owned community (`owner-test-5428`) because `VerifyCommunityCreatorAsync` builds the person IRI from the owner's handle, which must equal `SeedHandle`. Remaining 135.1: reverse direction (Lemmy→Iris follow; no clean Lemmy REST endpoint for community-follows-remote) + content posting both directions (signed outbox publishes). [changes/13501b3](docs/changes/13501b3-phase135-live-lemmy-follow-interop.md)
-
-- **135.1b — Deploy a local Lemmy instance for real Iris ↔ Lemmy interop (DONE — deployment; live follow-interop blocked on external nginx + creds)** — Stood up a real, separate Lemmy 0.19.20 in its **own folder** (`lemmy/`) per the Phase 135.1 requirement, advertised under `https://iris-dev2.luit.ink` (replaces the iris2 test instance at that FQDN; the iris2 Postgres volume is preserved). `lemmy/docker-compose.yml` (postgres:16 + lemmy on the shared `irisweb_iris-web-net` network, host 8082→container 8536), `lemmy/Dockerfile` (`FROM dessalines/lemmy:0.19.20` + bakes the hjson config into the image — this host's Docker **file bind mounts are broken**, so config is baked not mounted), `lemmy/config/config.hjson` (hostname, `tls_enabled: true`, DB, pictrs `None`, first-run `setup` → `lemmyadmin` + "Iris Lemmy Interop" site). **Verified live:** Lemmy healthy (nodeinfo, node doc, `/api/v3/site` federation-enabled); a real community `test` created via the REST API serving a proper ActivityStreams `Group` at `https://iris-dev2.luit.ink/c/test` (publicKey/inbox/followers/outbox) — the exact document shape 135.1a's `RemoteCommunityPersister` persists; network path confirmed (shared Docker network). **Blocked on the full live follow-interop** by two external-infra issues: (1) the host nginx reverse proxy returns 400 on the required POST federation paths (Iris `/local/v1/c/*/follow/*`, `/ap/v1/proxy/*`, Lemmy `/api/v3/follow`) before they reach the app (direct container access bypasses the 400 and reaches the handler); (2) the running Iris container's actor Basic-auth creds don't match the PLAN notes (401/403 on direct access), so a community owner can't be authenticated to drive the follow. The core persistence logic remains proven by the passing 135.1a unit/integration tests. **Next:** once the operator whitelists the nginx POST paths + confirms/re-seeds live Iris actor creds, drive `POST /local/v1/c/technology/follow/https://iris-dev2.luit.ink/c/test` as the community owner, verify the `Group` lands in `ICommunityStore` + serves via `/ap/v1/actor?iri=…`, then post content in both directions. [changes/13501b](docs/changes/13501b-phase135-lemmy-deployment.md)
-
-- **135.1a — Persist remote community (Group) documents for Lemmy interop (DONE, first slice)** — Iris cached remote **actor** docs (117.3) but had no equivalent for communities: a remote `Group` (a Lemmy community) was invisible after interaction. New `RemoteCommunityPersister` (Iris.Server.Security, mirrors `RemoteActorPersister`) persists a remote `Group` to the durable `ICommunityStore` (skips local IRIs, idempotent, best-effort). `IrisActorDocumentFetcher` now fetches the full object (`GetObjectAsync`) so a `Group` document is not dropped; a `Group` is persisted to the community store **and returned** (a Group IS an Actor) so inbound key resolution still validates community signatures (returning null broke 31 community federation tests → fixed by returning the Group). `/ap/v1/actor?iri=...` now also serves a cached remote community (200, stored Group as-is; 404 unknown). `RemoteCommunityPersisterTests` (6) + fetcher community test. Build clean; suite green (1141 Server tests, stable). [changes/13501](docs/changes/13501-phase135-remote-community-persister.md)
 
 ## Keeping the docs lean
 
