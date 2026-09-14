@@ -136,6 +136,26 @@ public class ServerEndpointIntegrationTests : IDisposable
             JsonDocument.Parse("true").RootElement.Clone();
         persistence.ActorStore.PutActorAsync(carol).GetAwaiter().GetResult();
 
+        // A community (Group) with a publicKey extension — the discovery path for communities (19.5.1 /
+        // Phase 136.2): a WebFinger query for a community handle resolves to the /ap/v1/c/{name} Group,
+        // which is dereferenced (its document carries the Group's publicKey for signature verification).
+        var communityIri = $"https://{Host}/ap/v1/c/devs";
+        var communityKey = KeyPairGenerator.GenerateRsa(new Iri($"{communityIri}#key-1"));
+        var devs = new Group
+        {
+            Id = communityIri,
+            PreferredUsername = "devs",
+            Name = ["Devs"],
+        };
+        devs.ExtensionData ??= new Dictionary<string, JsonElement>();
+        devs.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id = $"{communityIri}#key-1",
+            owner = communityIri,
+            publicKeyPem = communityKey.ExportPublicKeyPem(),
+        });
+        persistence.Communities.PutCommunityAsync(devs).GetAwaiter().GetResult();
+
         return keyPair;
     }
 
@@ -350,6 +370,119 @@ public class ServerEndpointIntegrationTests : IDisposable
         var response = await _client.GetAsync(
             $"/.well-known/webfinger?resource=acct:nobody@{Host}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WebFinger_Response_IsServedAsJrdJson()
+    {
+        // RFC 8410 §4: a WebFinger response is a JRD document served as application/jrd+json (NOT the
+        // generic application/json). A spec-conformant remote client (and Lemmy) may check the media
+        // type, so it must be exact. Phase 136.2: the discovery content-type contract.
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:{Handle}@{Host}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/jrd+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task WebFinger_SelfLink_DeclaresActivityJsonType()
+    {
+        // The self link's `type` must advertise the actor document's media type (application/activity+json)
+        // so a remote client knows what to Accept when it dereferences the href.
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:{Handle}@{Host}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var link = doc.RootElement.GetProperty("links")[0];
+        Assert.Equal("application/activity+json", link.GetProperty("type").GetString());
+    }
+
+    [Fact]
+    public async Task WebFinger_ResolvesCommunityHandleToGroupIri()
+    {
+        // Phase 136.2: discovery for communities. A WebFinger query for a community handle (a Group, not
+        // a Person) resolves to the /ap/v1/c/{name} Group IRI — the same single-endpoint discovery a
+        // remote instance uses to find a community before following it.
+        var response = await _client.GetAsync(
+            $"/.well-known/webfinger?resource=acct:devs@{Host}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        Assert.Equal($"acct:devs@{Host}", doc.RootElement.GetProperty("subject").GetString());
+        Assert.Equal($"https://{Host}/ap/v1/c/devs", doc.RootElement.GetProperty("links")[0].GetProperty("href").GetString());
+    }
+
+    [Fact]
+    public async Task CommunityDocument_ServesGroupWithPublicKey()
+    {
+        // Phase 136.2: dereferencing a community. The WebFinger self href points at the Group document;
+        // that document must carry the Group's publicKey (id + publicKeyPem) so a remote instance can
+        // verify signatures from the community. Content type is activity+json (the default negotiation).
+        var response = await _client.GetAsync($"/ap/v1/c/devs");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
+
+        var json = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        Assert.Equal("Group", root.GetProperty("type").GetString());
+        Assert.Equal($"https://{Host}/ap/v1/c/devs", root.GetProperty("id").GetString());
+        Assert.True(root.TryGetProperty("publicKey", out var publicKey),
+            "the community document must carry a publicKey for signature verification");
+        Assert.Equal($"https://{Host}/ap/v1/c/devs#key-1", publicKey.GetProperty("id").GetString());
+        Assert.StartsWith("-----BEGIN PUBLIC KEY-----", publicKey.GetProperty("publicKeyPem").GetString());
+    }
+
+    // --- Content negotiation (F-31 / Phase 136.2) -------------------------------
+
+    [Fact]
+    public async Task ActorDoc_AcceptLdJson_ServesLdJson()
+    {
+        // F-31: when the client Accepts application/ld+json, the actor document is served as
+        // application/ld+json (some federation clients — e.g. certain Mastodon/PeerTube builds —
+        // negotiate for ld+json specifically).
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ld+json"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ActorDoc_AcceptActivityJson_ServesActivityJson()
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/activity+json"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ActorDoc_AcceptWildcard_ServesActivityJson()
+    {
+        // */* (and no Accept header) fall back to the spec-default application/activity+json.
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
+    }
+
+    [Fact]
+    public async Task ActorDoc_MixedAccept_ServesLdJsonWhenOffered()
+    {
+        // A multi-type Accept that includes ld+json (e.g. the common "application/activity+json,
+        // application/ld+json") is answered with ld+json — the server prefers ld+json when it is among
+        // the accepted types.
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
+        request.Headers.Accept.ParseAdd("application/activity+json, application/ld+json");
+        var response = await _client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     // --- NodeInfo --------------------------------------------------------------

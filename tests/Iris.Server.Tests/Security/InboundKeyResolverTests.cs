@@ -220,6 +220,39 @@ public class InboundKeyResolverTests
         Assert.Equal(1, cache.Count);
     }
 
+    [Fact]
+    public async Task Resolve_LemmyGroupPkixPemPublicKey_ReturnsVerifyingKey()
+    {
+        // Phase 136.2 (real-wire shape): a Lemmy community (Group) document carries its public key as a
+        // PKIX PEM under the keyId fragment "#main-key" (e.g. https://lemmy.luit.ink/c/interop#main-key),
+        // not the "#key-1" Iris convention. This proves the inbound key resolver — the seam that
+        // validates an inbound Lemmy signature — resolves a genuine Lemmy-shaped community key
+        // (PKIX "-----BEGIN PUBLIC KEY-----", RSA), and that the resolved key verifies a signature made
+        // with the matching private key.
+        const string keyId = "https://lemmy.luit.ink/c/interop#main-key";
+        var lemmyKey = KeyPairGenerator.GenerateRsa(new Iri(keyId));
+        var fetcher = new StubActorDocumentFetcher(GroupWithPublicKeyPem(
+            id: keyId,
+            owner: "https://lemmy.luit.ink/c/interop",
+            pem: lemmyKey.ExportPublicKeyPem()));
+
+        var resolver = new RemoteInboundKeyResolver(fetcher, new RemoteKeyCache());
+        var resolved = await resolver.ResolveAsync(new Iri(keyId));
+
+        Assert.NotNull(resolved);
+        var disposable = resolved as IDisposable;
+        try
+        {
+            byte[] payload = [0xA, 0xB, 0xC, 0xD];
+            var signature = lemmyKey.Sign(payload);
+            Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
+        }
+    }
+
     // --- Helpers -----------------------------------------------------------------
 
     private static Person ActorWithPublicKey(string id, string owner, string jwk)
@@ -253,6 +286,24 @@ public class InboundKeyResolverTests
             publicKeyPem = pem,
         });
         return actor;
+    }
+
+    /// <summary>
+    /// Builds a Group (community) actor carrying a <c>publicKey</c> PEM extension — the Lemmy community
+    /// document shape (a Group, not a Person). The resolver keys off the <c>publicKey</c> extension, not
+    /// the actor type, so a Group is exercised identically to a Person.
+    /// </summary>
+    private static Group GroupWithPublicKeyPem(string id, string owner, string pem)
+    {
+        var group = new Group { Id = owner, PreferredUsername = owner.Split('/').Last() };
+        group.ExtensionData ??= new Dictionary<string, JsonElement>();
+        group.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id,
+            owner,
+            publicKeyPem = pem,
+        });
+        return group;
     }
 
     /// <summary>
