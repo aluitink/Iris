@@ -522,6 +522,13 @@ public static class ActivityPubServerExtensions
         // points they log. No OpenTelemetry dependency — a host that wants to export the metrics adds
         // the OTel SDK and AddMeter(IrisDeliveryMetrics.MeterName) (plus an exporter).
         services.TryAddSingleton<Iris.Server.Observability.IrisDeliveryMetrics>();
+        // Phase 136.1: federation trace capture. A single shared IFederationTraceCollector (the bounded
+        // in-memory default) is handed to the DeliveryWorker (outbound deliveries) and the inbox handler
+        // (inbound inbox POSTs), which record a FederationTraceEntry at the same points they log. The
+        // collector's Snapshot() is the single shared trace artifact per scenario (the Phase 136.1 exit
+        // criterion). A host that wants durable capture (file/log-backed) rebinds IFederationTraceCollector.
+        services.TryAddSingleton<Iris.Server.Observability.IFederationTraceCollector,
+            Iris.Server.Observability.InMemoryFederationTraceCollector>();
         services.TryAddSingleton<IDeliveryService>(sp =>
             new DeliveryService(
                 sp.GetRequiredService<IDeliveryQueue>(),
@@ -589,7 +596,8 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
             CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value),
             sp.GetRequiredService<IConfiguration>(),
-            CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value)));
+            CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value),
+            sp.GetRequiredService<Iris.Server.Observability.IFederationTraceCollector>()));
 
         // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered
         // IHealthCheck (IEnumerable<IHealthCheck>) and reports the aggregate status, so a host that wants
@@ -2710,6 +2718,7 @@ public static class ActivityPubServerExtensions
     {
         var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
             .CreateLogger("Iris.Server.Inbox");
+        var trace = context.RequestServices.GetService<Observability.IFederationTraceCollector>();
 
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
@@ -2734,6 +2743,7 @@ public static class ActivityPubServerExtensions
                 logger.LogInformation(
                     "Inbox rejected: invalid signature. Recipient: {Recipient}, KeyId: {KeyId}",
                     recipientIri, keyIdStr);
+                RecordInboundTrace(trace, context, recipientIri, 401, null, null);
                 return Results.Unauthorized();
             }
         }
@@ -2743,6 +2753,7 @@ public static class ActivityPubServerExtensions
             logger.LogInformation(
                 "Inbox rejected: unknown recipient {Recipient}",
                 recipientIri);
+            RecordInboundTrace(trace, context, recipientIri, 404, null, null);
             return Results.NotFound();
         }
 
@@ -2772,6 +2783,7 @@ public static class ActivityPubServerExtensions
             logger.LogWarning(
                 "Inbox rate-limited: peer {Peer} exceeded budget. Recipient: {Recipient}",
                 senderHost, recipientIri);
+            RecordInboundTrace(trace, context, recipientIri, 429, outcome.ActorIri?.Value, null);
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
@@ -2786,6 +2798,7 @@ public static class ActivityPubServerExtensions
             logger.LogWarning(
                 "Inbox rejected: empty body. Recipient: {Recipient}, Peer: {Peer}",
                 recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 400, outcome.ActorIri?.Value, null);
             return Results.BadRequest();
         }
 
@@ -2807,6 +2820,7 @@ public static class ActivityPubServerExtensions
             logger.LogInformation(
                 "Inbox accepted: Tombstone. Recipient: {Recipient}, Object: {ObjectIri}, Peer: {Peer}",
                 recipientIri, inboundTombstone.Id, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 202, outcome.ActorIri?.Value, "Tombstone");
             return Results.Accepted();
         }
 
@@ -2825,6 +2839,7 @@ public static class ActivityPubServerExtensions
             logger.LogWarning(
                 "Inbox rejected: unrecognizable payload. Recipient: {Recipient}, Peer: {Peer}",
                 recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 400, outcome.ActorIri?.Value, null);
             return Results.BadRequest();
         }
 
@@ -2849,14 +2864,48 @@ public static class ActivityPubServerExtensions
             logger.LogError(
                 "Inbox processing failed: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
                 activityType, actorIri, targetIri, recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 500, outcome.ActorIri?.Value, activityType);
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
 
         logger.LogInformation(
             "Inbox accepted: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
             activityType, actorIri, targetIri, recipientIri, senderHost);
+        RecordInboundTrace(trace, context, recipientIri, 202, outcome.ActorIri?.Value, activityType);
 
         return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Records an inbound inbox POST in the <see cref="Observability.IFederationTraceCollector"/>
+    /// (Phase 136.1) so the scenario's trace captures the local recipient, the verified remote actor,
+    /// the activity type, and the outcome status. A no-op when no collector is registered (e.g. in hosts
+    /// that do not opt into trace capture). The actor IRI is the verified signer's identity
+    /// (<c>SignatureValidationResult.ActorIri</c>), which is null for unsigned/rejected requests —
+    /// the trace then records the request without an attributed actor.
+    /// </summary>
+    private static void RecordInboundTrace(
+        Observability.IFederationTraceCollector? trace,
+        HttpContext context,
+        Iri recipientIri,
+        int status,
+        string? actorIri,
+        string? activityType)
+    {
+        if (trace is null)
+        {
+            return;
+        }
+
+        trace.Record(new Observability.FederationTraceEntry(
+            DateTimeOffset.UtcNow,
+            Observability.FederationDirection.Inbound,
+            context.Request.Method,
+            context.Request.Path,
+            status,
+            recipientIri.Value,
+            actorIri,
+            activityType));
     }
 
     /// <summary>

@@ -84,6 +84,7 @@ public sealed class DeliveryWorker : BackgroundService
     private readonly Iris.Server.Observability.IrisDeliveryMetrics? _metrics;
     private readonly IDeliveryCircuitBreaker? _circuitBreaker;
     private readonly int _shutdownDrainTimeoutMs;
+    private readonly Iris.Server.Observability.IFederationTraceCollector? _trace;
 
     // 30.2: set (atomically, once) when ExecuteAsync begins its pump loop, so the readiness probe can
     // confirm the delivery worker is actually running — not merely registered. Read by the
@@ -138,6 +139,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// (<c>Iris:Delivery:ShutdownDrainTimeout</c>). Null uses the default budget.</param>
     /// <param name="circuitBreaker">The per-peer outbound-delivery circuit breaker (Phase 17.3). Null
     /// disables circuit breaking.</param>
+    /// <param name="trace">The federation trace collector (Phase 136.1). Null disables trace capture
+    /// (the worker delivers exactly as before).</param>
     public DeliveryWorker(
         IDeliveryQueue queue,
         IActivityPubClientFactory clientFactory,
@@ -149,10 +152,11 @@ public sealed class DeliveryWorker : BackgroundService
         int maxConcurrentDeliveries,
         IDeliveryRateLimiter? rateLimiter,
         IConfiguration? configuration,
-        IDeliveryCircuitBreaker? circuitBreaker)
+        IDeliveryCircuitBreaker? circuitBreaker,
+        Iris.Server.Observability.IFederationTraceCollector? trace)
         : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter,
             maxConcurrentDeliveries, rateLimiter, null, circuitBreaker,
-            ResolveShutdownDrainTimeoutMs(configuration))
+            ResolveShutdownDrainTimeoutMs(configuration), trace)
     {
     }
 
@@ -209,6 +213,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// worker gets to drain in-flight deliveries once the host's stopping token is cancelled). Null uses
     /// <see cref="DefaultShutdownDrainTimeoutMs"/>; a value below 0 is clamped to 0 (stop without
     /// waiting — in-flight deliveries are dropped immediately).</param>
+    /// <param name="trace">The federation trace collector (Phase 136.1). Null disables trace capture
+    /// (the worker delivers exactly as before).</param>
     /// <exception cref="ArgumentNullException">When any required dependency is null.</exception>
     public DeliveryWorker(
         IDeliveryQueue queue,
@@ -222,7 +228,8 @@ public sealed class DeliveryWorker : BackgroundService
         IDeliveryRateLimiter? rateLimiter,
         Iris.Server.Observability.IrisDeliveryMetrics? metrics = null,
         IDeliveryCircuitBreaker? circuitBreaker = null,
-        int? shutdownDrainTimeoutMs = null)
+        int? shutdownDrainTimeoutMs = null,
+        Iris.Server.Observability.IFederationTraceCollector? trace = null)
     {
         ArgumentNullException.ThrowIfNull(queue);
         ArgumentNullException.ThrowIfNull(clientFactory);
@@ -242,6 +249,7 @@ public sealed class DeliveryWorker : BackgroundService
         _metrics = metrics;
         _circuitBreaker = circuitBreaker;
         _shutdownDrainTimeoutMs = Math.Max(0, shutdownDrainTimeoutMs ?? 0);
+        _trace = trace;
     }
 
     /// <summary>
@@ -541,6 +549,7 @@ public sealed class DeliveryWorker : BackgroundService
             try
             {
                 var (statusCode, retryAfter) = await DeliverAsAsync(client, job, ct).ConfigureAwait(false);
+                RecordOutboundTrace(job, statusCode, activityType);
                 if (statusCode is >= 200 and < 300)
                 {
                     _metrics?.RecordDelivered(activityType);
@@ -613,6 +622,7 @@ public sealed class DeliveryWorker : BackgroundService
                 {
                     await breakerTransport.RecordFailureAsync(job.InboxIri, ct).ConfigureAwait(false);
                 }
+                RecordOutboundTrace(job, 0, activityType, ex.Message);
                 // Log, don't throw: a transport failure is retryable. Never crash the worker over one bad delivery.
                 _logger.LogWarning(
                     ex,
@@ -702,6 +712,39 @@ public sealed class DeliveryWorker : BackgroundService
             attempts,
             kind,
             detail);
+    }
+
+    /// <summary>
+    /// Records an outbound delivery in the <see cref="Iris.Server.Observability.IFederationTraceCollector"/>
+    /// (Phase 136.1) so the scenario's trace captures the recipient inbox, the acting actor, the activity
+    /// type, and the outcome. A no-op when no collector is configured. The trace is recorded once per
+    /// attempt (including the final failed one), so a retried delivery yields one entry per attempt —
+    /// the per-attempt granularity an operator needs to see the retry sequence.
+    /// </summary>
+    private void RecordOutboundTrace(DeliveryJob job, int statusCode, string? activityType, string? detail = null)
+    {
+        if (_trace is not { } trace)
+        {
+            return;
+        }
+
+        // The acting actor is the job's actor when present, else the instance actor (the worker's signing
+        // identity). Both are the actor the delivery was signed as, which is the provenance the trace needs.
+        var actorIri = job.ActorIri?.Value ?? _instanceActorIri?.Value;
+        var entry = new Iris.Server.Observability.FederationTraceEntry(
+            DateTimeOffset.UtcNow,
+            Iris.Server.Observability.FederationDirection.Outbound,
+            "POST",
+            job.InboxIri.Value,
+            statusCode,
+            job.InboxIri.Value,
+            actorIri,
+            activityType);
+        if (!string.IsNullOrEmpty(detail))
+        {
+            _logger.LogDebug("Trace detail for {Inbox}: {Detail}", job.InboxIri, detail);
+        }
+        trace.Record(entry);
     }
 
     /// <summary>
