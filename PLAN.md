@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.9 Update/Delete/Undo propagation**
-    - Verify edit/update propagation from each source instance to the remote copy.
-    - Verify delete/tombstone behavior for posts and comments including remote visibility changes.
-    - Verify undo flows (unfollow/unlike) remove or adjust remote state as expected.
-    - Exit when lifecycle changes converge and stale artifacts are bounded and documented.
-
 - **136.10 Moderation and trust-boundary behavior**
     - Test remote actor/community block behavior in both directions (instance-level and actor-level where supported).
     - Validate report/flag activities and how moderation signals are represented cross-instance.
@@ -176,6 +170,24 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.9 Update/Delete/Undo propagation (edit, delete/tombstone, undo flows)** — verified the lifecycle
+  propagation is **already correct in both directions** (Update federates to remote followers + relays and
+  refreshes the remote copy; Delete federates + tombstones the remote copy (AS2.0 `Tombstone`, F-10); Undo
+  removes the follow/like/announce edge on the remote instance) — no change needed there. The one genuine
+  gap (the delete/tombstone "remote visibility" half): deleting a **parent** post left its **replies
+  orphaned but still listed and served** under the now-tombstoned parent, on both the home and every remote
+  instance holding a copy. Fix: `DeleteActivityHandler` now **collapses the thread under a deleted parent**
+  (removes each child's `parent → child` reply edge via `IReplyStore.GetRepliesAsync`/`RemoveReplyAsync`), so
+  the tombstoned parent's `/replies` collection is empty (the child objects remain stored — fetchable by
+  direct IRI; only the thread listing is collapsed). The federated half is the existing Delete propagation
+  (the `Delete` reaches every copy-holder, which applies the same cleanup via the same handler). Bounded
+  stale artifacts documented (children's content not removed; like/announce edges on a tombstoned object not
+  swept; ghost-parent reply edges). `CrossInstanceDeleteThreadCollapseIntegrationTests` (two-instance,
+  A: `bob` the parent's home; B: `alice` bob's follower) + 2 unit tests in `DeleteActivityHandlerTests`.
+  Verified non-vacuous (the test fails when the parent-collapse fix is disabled — B's reply edge is not
+  collapsed). Iris.Server.Tests 1169 passed (+3), 0 failed; Iris.Core.Tests 445 passed. 136.10 is now the top
+  of Up Next. → [docs/changes/13609-phase136-update-delete-undo-propagation.md](docs/changes/13609-phase136-update-delete-undo-propagation.md)
 
 - **136.8 Reactions and engagement interoperability (reactions, boosts, counters, graceful degradation)** —
   a local boost (Announce) of a **remote** object now **federates to the object's home instance**, so the
@@ -254,19 +266,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   now locked for the community-inbound-Create path). **No production source change** — the pipeline and
   guard already worked; this pins the timestamp + idempotency attributes. The live Lemmy→Iris leg stays
   blocked by the Lemmy-side signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests;
-   Iris.Server.Tests 1162 passed, 0 failed. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
-
-- **136.4 Community peering handshake (Follow/Accept)** — the community peering handshake is now
-  pinned in **both** directions across two instances. The auto-accept direction was already covered
-  (`CrossInstanceAcceptPropagationIntegrationTests`); this turn added the **gated** (manually-approving)
-  direction — `CommunityGatedPeeringIntegrationTests`: a remote community follows a manually-approving
-  community → the follow is held (edges recorded, no auto-Accept) → the operator publishes an `Accept`
-  to the community's outbox (signed as the community) → it is server-delivered back and the remote
-  `AcceptActivityHandler` (G-3) finalizes the follower's edge. New `SeedManuallyApprovingCommunityWithExistingKey`
-  seeder (existing-key form) for the two-host fixture re-seed. **No production source change** — the
-  gated path already worked; this pins it. The live Iris→Lemmy leg stays blocked by the Lemmy-side
-   signature/egress gap (136.3/136.2), not an Iris code gap. 1 new test; Iris.Server.Tests 1159 passed.
-   → [docs/changes/13604-phase136-community-peering-handshake.md](docs/changes/13604-phase136-community-peering-handshake.md)
+    Iris.Server.Tests 1162 passed, 0 failed. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
 
 ## Keeping the docs lean
 
