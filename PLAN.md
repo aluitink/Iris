@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.3 HTTP signatures + canonical verification matrix**
-    - Capture signed `POST` requests from both systems and verify signature headers are accepted.
-    - Test canonicalization edge cases (header ordering/date skew/replay window) within safe bounds.
-    - Validate rejection paths are explicit (4xx with actionable logs) for intentionally bad signatures.
-    - Exit when valid signatures pass consistently and invalid signatures fail deterministically.
-
 - **136.4 Peering handshake (Follow/Accept for communities)**
     - Model how Lemmy peers communities (community follow, accept flow, actor relationship updates).
     - Execute Lemmy -> Iris and Iris -> Lemmy follow handshakes for community actors.
@@ -222,6 +216,17 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   discovery, ld+json negotiation, Lemmy-shape key). Finding: Lemmy→Iris WebFinger fails live (an
   ops/egress issue — `504` on the `iris-dev2.luit.ink` proxy — not an Iris code gap); does not block
   136.3. → [docs/changes/13602-phase136-federation-discovery-identity-resolution.md](docs/changes/13602-phase136-federation-discovery-identity-resolution.md)
+
+- **136.3 HTTP signatures + canonical verification matrix** — the wire-level accept/reject contract
+  for `HttpSignatureVerifier` is now pinned by a 15-test canonical matrix (`CanonicalSignatureMatrixTests`):
+  accepts well-formed RSA/EC × both profiles, a Lemmy-style `#main-key` keyId, an optional `created`
+  parameter, and a peer's reordered component list; deterministically rejects malformed headers, a
+  missing parameter, a wrong-key signature, an unparseable keyId, an empty component list, and a
+  non-base64 value. **No source change** — Iris's outbound header is well-formed draft-cavage-03
+  (captured + verified this turn); the 135.1b(4) Lemmy rejection is a Lemmy-side parser strictness +
+  egress gap, not an Iris format defect. Secondary (still open, queued as next candidate): Iris's
+  site root `/` serves the HTML SPA, not a JSON-LD `DiasporaFederated` doc (blocks instance-level
+  federation). 136.4 is now the top of Up Next. → [docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md](docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md)
 
 - **136.1 Lemmy interop foundation (env + observability)** — federation trace collector: a
   process-local, bounded, time-ordered trace of every inbound + outbound federation request
