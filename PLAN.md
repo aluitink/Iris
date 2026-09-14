@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.16 Search and discoverability checks**
-    - Confirm federated communities and posts become discoverable in both UIs after handshake + first delivery.
-    - Validate direct URL deep links resolve for remote posts/comments without requiring prior local cache.
-    - Measure discovery lag (publish to searchable/visible) and record expected eventual-consistency window.
-    - Exit when operators can reliably find remote communities/content by name or URL on both sides.
-
 - **136.17 Duplicate/replay defense validation**
     - Re-send identical activities (same ID/signature window) and confirm strict idempotent handling.
     - Replay near-expiry and expired signed requests to verify acceptance/rejection boundaries are enforced.
@@ -134,6 +128,17 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.16 Search and discoverability checks** — six cross-instance integration tests
+  (`CrossInstanceSearchDiscoverabilityIntegrationTests`, two-instance `TestServer` fixture: A
+  `search-a.domain.local` alice with federated + deep-link posts, B `search-b.domain.local` lumen
+  community with a follow edge to alice and a delivered remote post) verify that federated content
+  is discoverable via community search and global search on both instances, and that direct-URL
+  deep links resolve on the origin instance (and 404 on non-origin instances, as expected).
+  Key findings: community search is federated (follows' content admitted without community tag);
+  global search is local-only (delivered objects searchable once stored); object-document
+  resolution is local-only (remote IRIs 404 on non-origin). 136.17 is now the top of Up Next. →
+  [docs/changes/13616-phase136-search-discoverability.md](docs/changes/13616-phase136-search-discoverability.md)
 
 - **136.15 Pagination and backfill consistency** — three cross-instance integration tests
   (`CrossInstancePaginationIntegrationTests`, two-instance `TestServer` fixture: A
