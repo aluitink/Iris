@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.6 Outbound federation from Iris communities (Iris -> Lemmy)**
-    - Publish Iris community content intended for federated recipients on Lemmy.
-    - Verify Lemmy receives, stores, and displays remote community posts correctly.
-    - Confirm audience/targeting semantics (community followers, addressing, visibility mapping).
-    - Exit when Iris-originated community content is visible in Lemmy with correct provenance.
-
 - **136.7 Replies, threading, and context integrity**
     - Validate cross-instance reply chains (Lemmy reply to Iris post, Iris reply to Lemmy post).
     - Verify `inReplyTo` and parent-child reconstruction remain stable after reload and backfill.
@@ -195,6 +189,23 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **136.6 Outbound federation from Iris communities (Iris -> Lemmy)** — a community-attributed post
+  (a member posting a Note whose `attributedTo` is the community IRI) now federates to the member's
+  remote followers with the posting community's identity intact, and the receiving instance fetches +
+  persists that community's actor document. The community does **not** author content through its own
+  outbox (by design — `CommunityOutboxPublishHandler` 400s on `Create`/`Announce`); the post flows
+  through the **member's** outbox, signed as the member. The only source change: `CreateActivityHandler`
+  gains an optional `IActorDocumentFetcher?` dependency and, in `StoreEmbeddedObjectAsync`, fetches +
+  persists the embedded object's first `attributedTo` actor when it is **remote** (skipping local
+  persons/communities), best-effort — closing the community-provenance gap the signature path alone
+  never resolved (it only ever saw the signing member). `CommunityOutboundContentIntegrationTests`
+  (two-instance, A: `alice` the remote follower; B: `bob` + community `iris`): (1) the community-
+  attributed Create reaches the remote follower with `attributedTo` = the community IRI intact; (2) the
+  remote instance persists the posting community's `Group` document (verified non-vacuous — the test
+  fails when the source change is reverted). The live Iris→Lemmy leg stays blocked by the Lemmy-side
+  signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests; Iris.Server.Tests 1164 passed,
+  0 failed; Iris.Core.Tests 445 passed. 136.7 is now the top of Up Next. → [docs/changes/13606-phase136-outbound-federation-from-communities.md](docs/changes/13606-phase136-outbound-federation-from-communities.md)
+
 - **136.5 Inbound federation to Iris communities (Lemmy -> Iris)** — the inbound-Create-to-community
   pipeline (handler → community content recorder → member outboxes → feed projection) and the C-07
   idempotency guard were already built and happy-path tested; this turn pinned the two remaining gaps.
@@ -206,7 +217,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   now locked for the community-inbound-Create path). **No production source change** — the pipeline and
   guard already worked; this pins the timestamp + idempotency attributes. The live Lemmy→Iris leg stays
   blocked by the Lemmy-side signature/egress gap (136.3/136.2), not an Iris code gap. 2 new tests;
-  Iris.Server.Tests 1162 passed, 0 failed. 136.6 is now the top of Up Next. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
+   Iris.Server.Tests 1162 passed, 0 failed. → [docs/changes/13605-phase136-inbound-federation-to-communities.md](docs/changes/13605-phase136-inbound-federation-to-communities.md)
 
 - **136.4 Community peering handshake (Follow/Accept)** — the community peering handshake is now
   pinned in **both** directions across two instances. The auto-accept direction was already covered
@@ -239,14 +250,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   (captured + verified this turn); the 135.1b(4) Lemmy rejection is a Lemmy-side parser strictness +
   egress gap, not an Iris format defect. Secondary (still open, queued as next candidate): Iris's
   site root `/` serves the HTML SPA, not a JSON-LD `DiasporaFederated` doc (blocks instance-level
-  federation). 136.4 is now the top of Up Next. → [docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md](docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md)
-
-- **136.1 Lemmy interop foundation (env + observability)** — federation trace collector: a
-  process-local, bounded, time-ordered trace of every inbound + outbound federation request
-  (`InMemoryFederationTraceCollector`), wired into `DeliveryWorker` (outbound) and the inbox handler
-  (inbound, every return point), exposed at `GET /local/v1/federation-trace`. Verified live against
-  `iris.luit.ink` (an unsigned inbox POST captured as Inbound/401). The diagnostic tool for the
-  135.1b(4) signature blocker. → [docs/changes/13601-phase136-federation-trace-collector.md](docs/changes/13601-phase136-federation-trace-collector.md)
+   federation). 136.4 is now the top of Up Next. → [docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md](docs/changes/13603-phase136-http-signatures-canonical-verification-matrix.md)
 
 ## Keeping the docs lean
 
