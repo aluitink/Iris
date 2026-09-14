@@ -603,6 +603,7 @@ public static class WebAppFactory
         MapSessionEndpoints(app, app.Services.GetRequiredService<IOptions<ActivityPubServerOptions>>());
         MapAdminEndpoints(app);
         MapMetricsEndpoint(app);
+        MapFederationTraceEndpoint(app);
 
         // OpenAPI 3.1 spec endpoint (49.3): GET /openapi/v1.json returns the auto-generated spec.
         app.MapOpenApi();
@@ -1213,6 +1214,39 @@ public static class WebAppFactory
     /// alerting. No authentication (a Prometheus scraper on the internal network reaches it
     /// without credentials; the reverse proxy's rate limit is the only gate).
     /// </summary>
+    /// <summary>
+    /// Maps <c>GET /local/v1/federation-trace</c> — a read-only, time-ordered snapshot of the
+    /// process-local federation trace (Phase 136.1). Returns every captured inbound and outbound
+    /// federation request (direction, method, url, status, peer, acting actor, activity type) as
+    /// JSON. This is the diagnostic surface for the 135.1b(4) signature blocker: an operator can see
+    /// the exact request line and status on both sides of a failed exchange. Like
+    /// <c>/local/v1/metrics</c> it is an operator-internal endpoint (no auth; not reverse-proxied
+    /// publicly) and the snapshot is process-local (multi-replica deployments report per-replica).
+    /// </summary>
+    public static void MapFederationTraceEndpoint(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapGet("/local/v1/federation-trace", (Iris.Server.Observability.IFederationTraceCollector? trace) =>
+        {
+            var entries = trace?.Snapshot() ?? [];
+            var payload = new
+            {
+                count = entries.Count,
+                entries = entries.Select(e => new
+                {
+                    timestamp = e.Timestamp.ToString("O"),
+                    direction = e.Direction.ToString(),
+                    method = e.Method,
+                    url = e.Url,
+                    status = e.Status,
+                    peerIri = e.PeerIri,
+                    actorIri = e.ActorIri,
+                    activityType = e.ActivityType,
+                }),
+            };
+            return Results.Json(payload);
+        });
+    }
+
     public static void MapMetricsEndpoint(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/local/v1/metrics", (Iris.Server.Observability.IrisDeliveryMetrics? metrics) =>
