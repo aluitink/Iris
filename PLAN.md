@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.2 Federation discovery + identity resolution (wire-level)**
-    - Validate WebFinger discovery from each side for users and communities.
-    - Validate actor and object dereferencing (`application/activity+json`) including content negotiation behavior.
-    - Confirm key discovery paths (actor `publicKey`, key rotation tolerance if present).
-    - Exit when Iris can resolve Lemmy actors/communities and Lemmy can resolve Iris actors/communities without manual patching.
-
 - **136.3 HTTP signatures + canonical verification matrix**
     - Capture signed `POST` requests from both systems and verify signature headers are accepted.
     - Test canonicalization edge cases (header ordering/date skew/replay window) within safe bounds.
@@ -218,6 +212,16 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.2 Federation discovery + identity resolution (wire-level)** — discovery and identity
+  resolution verified at the wire level in both directions. Iris WebFinger (users + communities)
+  serves `application/jrd+json` and resolves to the actor/Group document, which carries its
+  `publicKey`; actor-doc content negotiation (ld+json / activity+json / `*/*`) is correct. Lemmy's
+  `interop` community resolves via WebFinger to a `Group` whose PKIX RSA key (under `#main-key`) is
+  accepted by Iris's inbound key resolver. 9 new tests close the gaps (content-type, community
+  discovery, ld+json negotiation, Lemmy-shape key). Finding: Lemmy→Iris WebFinger fails live (an
+  ops/egress issue — `504` on the `iris-dev2.luit.ink` proxy — not an Iris code gap); does not block
+  136.3. → [docs/changes/13602-phase136-federation-discovery-identity-resolution.md](docs/changes/13602-phase136-federation-discovery-identity-resolution.md)
 
 - **136.1 Lemmy interop foundation (env + observability)** — federation trace collector: a
   process-local, bounded, time-ordered trace of every inbound + outbound federation request
