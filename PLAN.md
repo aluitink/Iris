@@ -95,12 +95,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.19 Data lifecycle and tombstone retention**
-    - Define retention/expiry expectations for tombstones and deleted remote references in Iris.
-    - Validate behavior when old remote links are revisited after delete propagation (UI, API, cache, and logs).
-    - Confirm retention policy does not reanimate deleted content during re-sync/backfill.
-    - Exit when delete lifecycle outcomes are deterministic and operator-documented.
-
 - **136.20 Final release federation gate**
     - Create a concise go/no-go checklist referencing mandatory green scenarios across all prior phases.
     - Mark known interop gaps as explicit release exceptions with severity, impact, and workaround.
@@ -116,6 +110,14 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- **136.19 Data lifecycle and tombstone retention** — fixed the re-animation gap: three write paths
+  (`CreateActivityHandler`, `UpdateActivityHandler`, AP proxy re-store) now check for a stored
+  `Tombstone` before `PutObjectAsync`, so a re-delivered Create, late Update, or proxy re-fetch cannot
+  resurrect a deleted object. Tombstones are permanent (no TTL/expiry); read paths already exclude
+  them from search/listing. Three cross-instance integration tests pin the guard. 136.20 is now the
+  top of Up Next. →
+  [docs/changes/13619-phase136-data-lifecycle-tombstone-retention.md](docs/changes/13619-phase136-data-lifecycle-tombstone-retention.md)
 
 - **136.18 Privacy and visibility policy alignment** — four cross-instance integration tests
   (`CrossInstanceVisibilityIntegrationTests`, two-instance `TestServer` fixture) verify the current
@@ -135,37 +137,13 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
   [docs/changes/13617-phase136-duplicate-replay-defense.md](docs/changes/13617-phase136-duplicate-replay-defense.md)
 
 - **136.16 Search and discoverability checks** — six cross-instance integration tests
-  (`CrossInstanceSearchDiscoverabilityIntegrationTests`, two-instance `TestServer` fixture: A
-  `search-a.domain.local` alice with federated + deep-link posts, B `search-b.domain.local` lumen
-  community with a follow edge to alice and a delivered remote post) verify that federated content
-  is discoverable via community search and global search on both instances, and that direct-URL
-  deep links resolve on the origin instance (and 404 on non-origin instances, as expected).
-  Key findings: community search is federated (follows' content admitted without community tag);
-  global search is local-only (delivered objects searchable once stored); object-document
-  resolution is local-only (remote IRIs 404 on non-origin). 136.17 is now the top of Up Next. →
+  (`CrossInstanceSearchDiscoverabilityIntegrationTests`) verify federated content is discoverable via
+  community/global search and that deep links resolve on origin (404 on non-origin). →
   [docs/changes/13616-phase136-search-discoverability.md](docs/changes/13616-phase136-search-discoverability.md)
 
 - **136.15 Pagination and backfill consistency** — three cross-instance integration tests
-  (`CrossInstancePaginationIntegrationTests`, two-instance `TestServer` fixture: A
-  `page-a.domain.local` alice with a 50-post outbox, B `page-b.domain.local` lumen community
-  with `FeedOptions.PagesPerActor=3, MaxItems=60`) verify that federated community content
-  pages correctly across instance boundaries and that the historical backfill window includes
-  the expected post count with stable ordering: A's outbox paginates correctly (page 1
-  `OrderedCollection` with `first`/`next`, page 2 `OrderedCollectionPage` with
-  `startIndex=21`/`prev`/`next`/`partOf`, 20 items per page newest-first); B's community feed
-  includes all 50 posts from alice's outbox (3 pages × 20 capacity); the feed returns the same
-  items in the same order across repeated reads (with and without `?refresh=true`). Key design
-  decision: the `ICommunityFeedService` is registered by `AddActivityPubServer` with a factory
-  that creates its own `IActivityPubClient` via `IActivityPubClientFactory.Create()` with a real
-  `HttpClientHandler` (not the DI-registered client), so overriding `IActivityPubClient` in DI
-  has no effect — the fix is to override `IActivityPubClientFactory` in a new `PreServices`
-  property (runs before `AddActivityPubServer`) with a `RoutingClientFactory` that creates
-  clients routed to A's `TestServer` with `Caches = null`. Cache-bypass testing (new remote post
-  appears after `?refresh=true`) is deferred: the feed endpoint is not served through the
-  `LocalCollectionPageCache` (it re-walks remote outboxes on every request), so `?refresh=true`
-  is a no-op; the `IActivityPubClient`'s `CollectionPageCache` is the relevant cache and
-  clearing it on `?refresh=true` is a production change for a separate slice. 136.16 is now the
-  top of Up Next. →
+  (`CrossInstancePaginationIntegrationTests`) verify federated community content pages correctly and
+  the backfill window includes the expected post count. →
   [docs/changes/13615-phase136-pagination-backfill-consistency.md](docs/changes/13615-phase136-pagination-backfill-consistency.md)
 
 - **136.14–136.6** (media interop, regression checklist, performance audit, delivery reliability,

@@ -222,6 +222,18 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         var embedded = activity.ExtractEmbeddedObject();
         if (embedded is not null)
         {
+            // 136.19 (re-animation guard): if the object's IRI already holds a Tombstone (the object was
+            // deleted), do not re-store the live content — a Create for a tombstoned IRI (a re-delivered
+            // activity, a re-post, or a backfill re-fetch) would otherwise overwrite the tombstone and
+            // resurrect the deleted object. The Tombstone is the authoritative final state.
+            var objectIriCheck = embedded.ResolveObjectIri();
+            if (objectIriCheck is { } oi
+                && await _persistence.Objects.TryGetObjectAsync(oi, out var existing, ct).ConfigureAwait(false)
+                && existing is Tombstone)
+            {
+                return;
+            }
+
             if (embedded.Published is null)
             {
                 embedded.Published = activity.Published ?? DateTime.UtcNow;

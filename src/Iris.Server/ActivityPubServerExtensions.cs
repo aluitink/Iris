@@ -1700,27 +1700,43 @@ public static class ActivityPubServerExtensions
                 var parsed = ActivityJson.Deserialize<IObjectOrLink>(body);
                 if (parsed is IObject obj && !string.IsNullOrWhiteSpace(obj.Id))
                 {
-                    await persistence.Objects.PutObjectAsync(obj, ct).ConfigureAwait(false);
-                    if (options.BaseUri is { } instanceBase)
+                    // 136.19 (re-animation guard): if the local copy is a Tombstone (the object was
+                    // deleted), a proxied re-fetch must not overwrite it with the remote's live content —
+                    // the remote may still serve the original (the Delete has not propagated there yet),
+                    // and re-storing it would resurrect the deleted object. The Tombstone is the
+                    // authoritative final state. (A re-fetch that returns a Tombstone is harmless — the
+                    // guard only skips non-Tombstone content.)
+                    var reanimationIri = new Iri(obj.Id);
+                    if (await persistence.Objects.TryGetObjectAsync(reanimationIri, out var reanimationExisting, ct).ConfigureAwait(false)
+                        && reanimationExisting is Tombstone)
                     {
-                        await mediaWarmer.WarmAsync(obj, instanceBase, ct).ConfigureAwait(false);
+                        // The local copy is tombstoned; skip the re-store (and the interaction sync,
+                        // which would re-walk the deleted object's collections).
                     }
-
-                    // 132.1 — interaction count sync for a proxied (remote) object: after storing the
-                    // object, walk the remote object's /likes, /shares, and /replies collections and
-                    // record the discovered likers / announcers / replies as edges in the local stores,
-                    // so a subsequent local read of the object (the object-document endpoint's
-                    // iris:likedCount / iris:sharedCount / iris:repliedCount) reflects the object's real
-                    // interaction counts instead of 0 (a proxied read previously stored the object but
-                    // never its interactions, so the object-detail page showed "0 likes · 0 boosts").
-                    // Best-effort and bounded (a limited, capped walk): a remote that does not serve the
-                    // collections (or is slow / unreachable) simply yields nothing, and the object is
-                    // then served with the counts of the interactions this instance has already recorded
-                    // (the "known edges" fallback — there is nothing more to do). Never breaks the relay.
-                    if (!IsLocallyAuthoredObject(obj, options.BaseUri))
+                    else
                     {
-                        await SyncProxiedObjectInteractionsAsync(client, persistence, new Iri(obj.Id), ct)
-                            .ConfigureAwait(false);
+                        await persistence.Objects.PutObjectAsync(obj, ct).ConfigureAwait(false);
+                        if (options.BaseUri is { } instanceBase)
+                        {
+                            await mediaWarmer.WarmAsync(obj, instanceBase, ct).ConfigureAwait(false);
+                        }
+
+                        // 132.1 — interaction count sync for a proxied (remote) object: after storing the
+                        // object, walk the remote object's /likes, /shares, and /replies collections and
+                        // record the discovered likers / announcers / replies as edges in the local stores,
+                        // so a subsequent local read of the object (the object-document endpoint's
+                        // iris:likedCount / iris:sharedCount / iris:repliedCount) reflects the object's real
+                        // interaction counts instead of 0 (a proxied read previously stored the object but
+                        // never its interactions, so the object-detail page showed "0 likes · 0 boosts").
+                        // Best-effort and bounded (a limited, capped walk): a remote that does not serve the
+                        // collections (or is slow / unreachable) simply yields nothing, and the object is
+                        // then served with the counts of the interactions this instance has already recorded
+                        // (the "known edges" fallback — there is nothing more to do). Never breaks the relay.
+                        if (!IsLocallyAuthoredObject(obj, options.BaseUri))
+                        {
+                            await SyncProxiedObjectInteractionsAsync(client, persistence, new Iri(obj.Id), ct)
+                                .ConfigureAwait(false);
+                        }
                     }
                 }
             }

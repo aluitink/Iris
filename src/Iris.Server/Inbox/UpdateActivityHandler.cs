@@ -134,6 +134,15 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
+        // 136.19 (re-animation guard): if the stored object is a Tombstone (the object was deleted), an
+        // Update must not re-store the live content — a late-arriving Update for a tombstoned IRI (an edit
+        // delivered after the Delete, or a re-delivery) would otherwise overwrite the tombstone and
+        // resurrect the deleted object. The Tombstone is the authoritative final state.
+        if (stored is Tombstone)
+        {
+            return;
+        }
+
         // Owner guard: the updating actor must own the stored object. Both local and remote actors are
         // checked: the stored object must be <c>attributedTo</c> the updating actor. A local author who
         // created the object on this instance is attributed to it (the <c>CreateActivityHandler</c> /
