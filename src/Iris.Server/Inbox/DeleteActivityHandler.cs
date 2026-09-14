@@ -46,6 +46,11 @@ namespace Iris.Server.Inbox;
 /// parent → child reply edge is removed from the <see cref="IReplyStore"/> so the parent's
 /// <c>replies</c> collection no longer lists the deleted reply. (The remote parent's edge — if the
 /// parent is remote-owned — is the target of the propagation; this instance's edge is local state.)
+/// Conversely, when the deleted object is a <em>parent</em> (it has replies to it), the thread under it
+/// is collapsed: each child's parent → child reply edge is removed so the tombstoned parent's
+/// <c>replies</c> collection is empty (136.9 — without this, a deleted post leaves its replies orphaned
+/// but still served under the now-tombstoned parent). The child objects remain stored (fetchable by
+/// direct IRI); only the thread listing is collapsed.
 /// </para>
 public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
 {
@@ -148,6 +153,22 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
         {
             await _persistence.Replies
                 .RemoveReplyAsync(parent, objectIri.Value, ct)
+                .ConfigureAwait(false);
+        }
+
+        // F-12 (136.9): when the deleted object is a <em>parent</em> (it has replies), collapse the thread
+        // under it: remove each child's parent → child reply edge so the tombstoned parent's
+        // <c>replies</c> collection is empty. Without this, deleting a post leaves its replies orphaned
+        // but still listed (and served) under the now-tombstoned parent — a stale, still-visible thread.
+        // The child objects themselves remain stored (fetchable by direct IRI); only the thread listing
+        // is collapsed. This is local state; the federated half is the Delete propagation below, which
+        // delivers the Delete to the remote instances holding copies so they apply the same cleanup.
+        foreach (var childIri in await _persistence.Replies
+                .GetRepliesAsync(objectIri.Value, ct)
+                .ConfigureAwait(false))
+        {
+            await _persistence.Replies
+                .RemoveReplyAsync(objectIri.Value, childIri, ct)
                 .ConfigureAwait(false);
         }
 
