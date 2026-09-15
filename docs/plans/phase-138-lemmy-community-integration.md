@@ -270,6 +270,25 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   and still correct for Mastodon-style peers).
   **Check:** a live Lemmy-rendered post with all fields intact; any dropped/mangled field is logged as
   a follow-up defect with repro.
+   **Status (2026-09-15): 3 actor-doc defects fixed; live fidelity check partially complete.**
+   Live interop against Lemmy 0.19.20 identified and fixed 3 actor-document defects that prevented
+   any Iris→Lemmy federation: (1) PEM CRLF line endings [FIXED, `1ee58de`], (2) missing
+   `endpoints.sharedInbox` [FIXED, `1ee58de`], (3) instance actor at the root must be `Application`
+   type [FIXED, `1ee58de` — dedicated `Application` site actor seeded at the bare base IRI,
+   `InstanceActorIri` option, alice remains `Person` at `/ap/v1/u/alice`].
+   **New findings (138.11 live probe):** (a) Lemmy 0.19's `UntaggedEither<Person, Group>` actor
+   dereference requires the activity's `actor` to be `Person`/`Service`/`Organization` (Person) or
+   `Group` — an `Application` type is rejected, so the cross-post's `actor` must be the authoring
+   local `Person` (alice), not the site actor (consistent with decision 058: "signed as the
+   authoring local actor"). (b) A hand-rolled probe-script (HTTP Signature, RSA PKCS#1 v1.5) delivery
+   with `actor: alice` fails Lemmy's signature verification, while the same probe with
+   `actor: <site actor>` passes signature but fails the `PersonOrGroup` actor dereference — the
+   probe's signing does not byte-match Iris's own outbound signature profile for `Person` actors.
+   **Remaining:** exercise the cross-post through **Iris's own delivery pipeline** (the 138.10
+   `GetCrossPostTargetsAsync` leg) against live Lemmy to confirm a Lemmy-rendered post with all
+   fields intact; the probe-script signature artifact is a test-harness limitation, not an Iris
+   defect. Note-vs-Page determination still pending a successful live delivery.
+   [Change doc](../changes/13811-phase138-cross-post-fidelity-check.md).
 
 ### Stage D — Inbound: Lemmy post → Iris
 
