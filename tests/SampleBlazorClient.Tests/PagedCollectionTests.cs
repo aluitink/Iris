@@ -70,6 +70,15 @@ public class PagedCollectionTests
         public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
