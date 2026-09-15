@@ -70,9 +70,9 @@ public class SignatureHeaderTests
         var wire = header.Format();
 
         Assert.StartsWith("keyId=\"k\"", wire);
-        Assert.Contains(", algorithm=\"rsa-sha256\"", wire);
-        Assert.Contains(", headers=\"(request-target) host date\"", wire);
-        Assert.EndsWith(", signature=\"c2ln\"", wire);
+        Assert.Contains(",algorithm=\"rsa-sha256\"", wire);
+        Assert.Contains(",headers=\"(request-target) host date\"", wire);
+        Assert.EndsWith(",signature=\"c2ln\"", wire);
     }
 
     [Fact]

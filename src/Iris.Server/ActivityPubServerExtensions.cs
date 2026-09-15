@@ -3403,7 +3403,7 @@ public static class ActivityPubServerExtensions
                 // excluded (no duplicate delivery). A blocked recipient is excluded (the trust boundary).
                 // Best-effort: an unresolvable/unreachable target simply does not deliver — the follower
                 // fan-out and the local record already succeeded.
-                var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, actorIri, create, recipients, ct)
+                var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, baseUrl, actorIri, create, recipients, ct)
                     .ConfigureAwait(false);
                 foreach (var target in crossPostTargets)
                 {
@@ -5175,15 +5175,26 @@ public static class ActivityPubServerExtensions
     /// <c>Create</c>'s <c>to</c> audience and deliver the <c>Create</c> to that community's inbox, exactly
     /// as a Lemmy/Mastodon client cross-posts. This method reads the composed <c>to</c> audience (preserved
     /// by <see cref="RewriteOutboundAudienceAsync"/>, which only appends to <c>cc</c> and to a reply's
-    /// <c>to</c>) and returns the subset that is (a) remote (not a local actor — a local recipient is on
-    /// this instance, no cross-instance hop), (b) not the public-audience sentinel, (c) not already
-    /// fanned out to a follower (no duplicate delivery), and (d) not blocked (the trust boundary). The
-    /// result is delivered by the caller via <c>DeliverToActorAsync</c> (which resolves the recipient's
-    /// <c>sharedInbox</c>/<c>inbox</c> and signs as the acting local actor).
+    /// <c>to</c>) and returns the subset that is (a) remote (hosted on a different instance — a
+    /// recipient on this instance's own host needs no cross-instance hop), (b) not the public-audience
+    /// sentinel, (c) not already fanned out to a follower (no duplicate delivery), and (d) not blocked
+    /// (the trust boundary). The result is delivered by the caller via <c>DeliverToActorAsync</c> (which
+    /// resolves the recipient's <c>sharedInbox</c>/<c>inbox</c> and signs as the acting local actor).
+    /// </remarks>
+    /// <remarks>
+    /// The "remote" test is <em>host-based</em>, not actor-store-membership-based: a remote community
+    /// that this instance has followed (and therefore cached in its own actor store — the peered-Lemmy
+    /// case) must still be a cross-post target, because it lives on the remote host. The store
+    /// membership check (<see cref="ILocalActorResolver.IsLocalActorAsync"/>) would misclassify such a
+    /// cached remote as local and drop the cross-post entirely; the host comparison against
+    /// <paramref name="instanceBaseUrl"/> is the authoritative "is this on my instance" signal.
     /// </remarks>
     /// <param name="persistence">The persistence provider (provides the moderation store for the block
     /// check).</param>
-    /// <param name="localActors">Resolves whether a candidate recipient is a local actor.</param>
+    /// <param name="localActors">Resolves whether a candidate recipient is a local actor (secondary
+    /// guard; the primary "remote" test is the host comparison).</param>
+    /// <param name="instanceBaseUrl">The instance's base IRI (its advertised host) as a URI string; the
+    /// authoritative "is this recipient on my instance" signal for the host comparison.</param>
     /// <param name="authorIri">The acting local actor (the author; the block edge is checked
     /// <c>recipient → author</c>, i.e. whether the recipient blocked the author).</param>
     /// <param name="create">The outbound <see cref="Create"/> whose <c>to</c> audience is read.</param>
@@ -5194,6 +5205,7 @@ public static class ActivityPubServerExtensions
     private static async Task<IReadOnlyList<Iri>> GetCrossPostTargetsAsync(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
+        string? instanceBaseUrl,
         Iri authorIri,
         Create create,
         IEnumerable<Iri> alreadyFannedOut,
@@ -5208,33 +5220,89 @@ public static class ActivityPubServerExtensions
         var targets = new List<Iri>();
         var seen = new HashSet<Iri>(AudienceIriComparer.Instance);
 
-        foreach (var entry in create.To ?? [])
+        // Collect the cross-post audience from BOTH the activity-level `to` AND the embedded object's
+        // `to`. Clients differ in where they compose the audience: a raw ActivityPub client (and the
+        // integration tests) put the community IRI on the Create's `to`, while the Iris
+        // <see cref="IActivityPubClient.PostNoteAsync"/> client composes it on the embedded Note's `to`
+        // (leaving the Create's `to` empty). Reading only the activity-level `to` would silently drop the
+        // cross-post for the latter (the stored Create would have an empty `to` and no target). Unioning
+        // both (deduped by the `seen` set) makes the leg robust to either client form.
+        var audiences = new List<IEnumerable<IObjectOrLink>?> { create.To };
+        if (create.ExtractEmbeddedObject()?.To is { } embeddedTo)
         {
-            var target = entry.ResolveObjectIri();
-            if (target is not { } resolved || resolved.IsPublicAudience() || !seen.Add(resolved))
-            {
-                continue;
-            }
+            audiences.Add(embeddedTo);
+        }
 
-            if (fannedOut.Contains(resolved))
+        foreach (var audience in audiences)
+        {
+            foreach (var entry in audience ?? [])
             {
-                continue;
-            }
+                var target = entry.ResolveObjectIri();
+                if (target is not { } resolved || resolved.IsPublicAudience() || !seen.Add(resolved))
+                {
+                    continue;
+                }
 
-            if (await localActors.IsLocalActorAsync(resolved, ct).ConfigureAwait(false))
-            {
-                continue;
-            }
+                if (fannedOut.Contains(resolved))
+                {
+                    continue;
+                }
 
-            if (await persistence.Moderation.IsBlockedAsync(resolved, authorIri, ct).ConfigureAwait(false))
-            {
-                continue;
-            }
+                // Skip recipients on THIS instance (no cross-instance hop). The check is host-based, NOT
+                // the actor-store membership: a remote community/actor that this instance has followed
+                // (and hence cached in its own actor store, e.g. a peered Lemmy community) must still be a
+                // cross-post target — it lives on the remote host, so the Create must be delivered there.
+                // The store check (IsLocalActorAsync) would misclassify such a cached remote as local and
+                // drop the cross-post entirely (the common "peered community" case). A host match is the
+                // authoritative "is this on my instance" signal.
+                if (IsOnInstance(resolved, instanceBaseUrl))
+                {
+                    continue;
+                }
 
-            targets.Add(resolved);
+                // Belt-and-suspenders: a recipient that is a genuinely local actor (present in the local
+                // store AND on this instance's host) is also skipped. In practice the host check above
+                // already covers this; the store check remains as a secondary guard for edge cases (e.g.
+                // an actor IRI that is on this host but was seeded under a non-canonical form).
+                if (await localActors.IsLocalActorAsync(resolved, ct).ConfigureAwait(false)
+                    && IsOnInstance(resolved, instanceBaseUrl))
+                {
+                    continue;
+                }
+
+                if (await persistence.Moderation.IsBlockedAsync(resolved, authorIri, ct).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                targets.Add(resolved);
+            }
         }
 
         return targets;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="iri"/> is hosted on the same host as <paramref name="instanceBaseUrl"/>
+    /// (i.e., the instance itself). Returns <see langword="false"/> when either IRI is null or not an
+    /// absolute http(s) URI with a comparable host.
+    /// </summary>
+    /// <param name="iri">The recipient IRI to test.</param>
+    /// <param name="instanceBaseUrl">The instance's base IRI (its advertised host) as a URI string.</param>
+    /// <returns><see langword="true"/> when both are absolute and their hosts match (case-insensitive).</returns>
+    private static bool IsOnInstance(Iri iri, string? instanceBaseUrl)
+    {
+        if (instanceBaseUrl is null
+            || !Uri.TryCreate(instanceBaseUrl, UriKind.Absolute, out var instanceUri))
+        {
+            return false;
+        }
+
+        var instanceHost = instanceUri.Host;
+        var targetHost = iri.Uri.IsAbsoluteUri ? iri.Uri.Host : null;
+        return instanceHost.Length > 0
+            && targetHost is not null
+            && string.Equals(instanceHost, targetHost, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

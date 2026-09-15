@@ -101,15 +101,22 @@ public sealed record SignatureHeader(
     /// <returns>The <c>Signature</c> header value.</returns>
     public string Format()
     {
+        // The parameters are comma-separated WITHOUT spaces, per draft-cavage-http-signatures-03.
+        // Some HTTP Signature verification libraries (notably the Rust http_signature_normalization
+        // crate used by Lemmy 0.19.x) split the header on ',' and do NOT trim the resulting key, so
+        // a space after a comma (e.g. "keyId=..., algorithm=...") makes every field after the first
+        // unparseable — the key becomes " algorithm" (with a leading space) instead of "algorithm",
+        // and the "signature" field is never found, producing a "Error when parsing signature from
+        // Http Signature" 400. Omitting the spaces is the wire-compatible form.
         var builder = new StringBuilder();
         builder.Append("keyId=\"").Append(KeyId).Append('"');
-        builder.Append(", algorithm=\"").Append(Algorithm).Append('"');
-        builder.Append(", headers=\"").Append(Headers).Append('"');
-        builder.Append(", signature=\"").Append(Signature).Append('"');
+        builder.Append(",algorithm=\"").Append(Algorithm).Append('"');
+        builder.Append(",headers=\"").Append(Headers).Append('"');
+        builder.Append(",signature=\"").Append(Signature).Append('"');
         if (Created > 0)
         {
             // The created parameter is a Unix timestamp in seconds (unquoted), per draft-cavage-03.
-            builder.Append(", created=").Append(Created);
+            builder.Append(",created=").Append(Created);
         }
 
         return builder.ToString();

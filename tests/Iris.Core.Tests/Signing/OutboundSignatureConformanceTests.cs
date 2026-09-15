@@ -126,8 +126,9 @@ public class OutboundSignatureConformanceTests
             "gJRbVZXso3vPTaeW/knMadHDeiaZJnvHCNbQLXMA3lhjMiP8tJ4jC4lfxdBUwdA1BjU9q1oTsIEh2xHmWloursnNQY4c1Gbi4FpoiIzUow/xEzEm6WDGSBtRIcAvHj5hkbfQ8wMQNxDZ6PjQyoIlE6ZDiawLwRbyuk78gMzs7kQTZQd3f7lW8jGQz6cVErWQGnITmVfvrGYjJE6raKpbnfWBVd2yjC5GkvbXTdrwr/YQTJ4hWoiIb1GsjfaUpFyXfZM3komLtrkOb5wG7uRS6GZ3MPLLz5d05YdoE0lCfoNNZCjZnzMLeBLuqKPVlWdlI1bkT+M3ZvPbW4OV+92vFw==";
         Assert.Equal(expectedSignature, h.Signature);
 
-        // The wire format places created as an unquoted integer after the quoted parameters.
-        Assert.EndsWith($", created={ExpectedCreated}", wire);
+        // The wire format places created as an unquoted integer after the quoted parameters (no
+        // spaces after commas, per draft-cavage-03 — the form some verification libraries require).
+        Assert.EndsWith($",created={ExpectedCreated}", wire);
     }
 
     [Fact]
