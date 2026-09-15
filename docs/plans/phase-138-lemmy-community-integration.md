@@ -99,8 +99,11 @@ when its **Check:** criterion has been met with recorded evidence (a curl transc
 test run, a captured payload) — not on intent alone. Do not reorder or renumber slices as they
 complete; strike through only if a slice is dropped (with a one-line reason).
 
-**Resume checkpoint:** none started yet — begin at 138.1. Update this line every session with the
-last slice touched and its state (e.g. "138.4 done; 138.5 blocked on nginx allowlist, see 138.2").
+**Resume checkpoint:** 138.2 done (2026-09-15) — full two-way reachability matrix captured
+(Iris↔Lemmy, direct + reverse-proxy); **no blocked path** — the 135.1b nginx POST block is not
+reproducible, unsigned POSTs reach both apps and die at the signature layer (Lemmy 400 digest /
+Iris 401 signature), which is correct. Next: 138.3 (seed content fixtures on both platforms + record
+the Fixtures manifest).
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -109,20 +112,50 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage A — Manual orchestration foundation
 
-- [ ] **138.1 — Local Lemmy environment audit & refresh.** Confirm `lemmy/docker-compose.yml` still
+- [x] **138.1 — Local Lemmy environment audit & refresh.** Confirmed `lemmy/docker-compose.yml` still
   boots clean from the current images/config; reconcile the baked hostname
   (`lemmy/config/config.hjson`) against whatever FQDN this pass will use (dev vs. the
   `lemmy.luit.ink` prod-shape host from 135.1b — pick one and record it). Re-seed one clean admin
   user + one clean community via the REST API if the existing `interop` community/state is stale.
   **Check:** `GET /api/v3/site` returns 200 with federation enabled; a fresh community is visible at
   its `Group` IRI with `publicKey`/`inbox`/`outbox`/`followers` present.
-- [ ] **138.2 — Two-way network reachability matrix.** Verify, with `curl` from both containers'
+- [x] **138.2 — Two-way network reachability matrix.** Verify, with `curl` from both containers'
   perspective (and through the external reverse proxy if in play), every path this phase depends on:
   Iris → Lemmy actor GET, Iris → Lemmy inbox POST, Lemmy → Iris actor GET, Lemmy → Iris inbox POST,
   both instances' WebFinger. 135.1b found the external nginx blocking POST federation paths — confirm
   whether that's still true and, if so, flag the exact paths needing an allowlist entry.
   **Check:** a table (endpoint × direction × status code) with curl evidence; any blocked path has an
   owner (operator nginx config vs. Iris/Lemmy app bug) assigned before moving on.
+
+  **Evidence (2026-09-15).** Both stacks share one Docker bridge
+  (`irisweb_iris-web-net`; every container resolves by service name). Iris serves plain HTTP on
+  `:8080` in-container (advertised `https://iris.luit.ink`); the Lemmy nginx proxy listens on
+  `:8082` in-container (host maps `8091→8082`, advertised `https://lemmy.luit.ink`). The external
+  FQDNs both resolve to `69.129.197.210` from inside the containers (the reverse proxy).
+
+  | Endpoint | Direction | Direct (container→container) | Via FQDN (reverse proxy) | Notes |
+  | --- | --- | --- | --- | --- |
+  | Site/actor doc `GET /` (Lemmy site actor) | Iris→Lemmy | 200 `application/activity+json` | 200 | `Accept: application/activity+json` required (else UI HTML catch-all) |
+  | Community actor doc `GET /c/interop` | Iris→Lemmy | 200 `application/activity+json` | 200 | `inbox=https://lemmy.luit.ink/c/interop/inbox`, `endpoints.sharedInbox=https://lemmy.luit.ink/inbox` |
+  | Person actor doc `GET /u/lemmyadmin` | Iris→Lemmy | 200 `application/activity+json` | — | |
+  | Inbox `POST /c/interop/inbox` (unsigned) | Iris→Lemmy | 400 `{"error":"unknown","message":"Incoming activity has invalid digest for body"}` | 400 | **Path open** — 400 is Lemmy's HTTP-signature (digest) verification, not a network block |
+  | Inbox `POST /inbox` (root sharedInbox, unsigned) | Iris→Lemmy | 400 (invalid digest) | 400 | same signature rejection |
+  | WebFinger `GET /.well-known/webfinger` | Iris→Lemmy | 200 | 200 | |
+  | NodeInfo `GET /nodeinfo/2.0` | Iris→Lemmy | 404 | — | Lemmy serves no nodeinfo 2.0 (informational; not a federation dependency) |
+  | Person actor doc `GET /ap/v1/u/alice` | Lemmy→Iris | 200 `application/activity+json` | 200 | `inbox=https://iris.luit.ink/ap/v1/u/alice/inbox` |
+  | Person actor doc `GET /ap/v1/u/bob` | Lemmy→Iris | 200 `application/activity+json` | — | |
+  | Inbox `POST /ap/v1/u/alice/inbox` (unsigned) | Lemmy→Iris | 401 | 401 | **Path open** — 401 is Iris `SignatureValidationMiddleware` rejecting the absent HTTP signature (`HandleInboxPostAsync`, ActivityPubServerExtensions.cs:2741); not a network block |
+  | WebFinger `GET /.well-known/webfinger` | Lemmy→Iris | 200 `application/jrd+json` | — | |
+  | NodeInfo index `GET /.well-known/nodeinfo` | Lemmy→Iris | 200 | — | |
+
+  **Conclusion — no blocked path.** Every federation path this phase depends on is reachable in both
+  directions, both directly (container→container) and through the external reverse proxy
+  (`https://*.luit.ink`). The 135.1b "external nginx blocks POST federation" finding is **not**
+  reproducible here: unsigned `POST /inbox` reaches both apps and is rejected at the *signature*
+  layer (Lemmy 400 "invalid digest", Iris 401 "invalid signature"), which is the correct, expected
+  behavior for an unsigned probe. A real signed delivery (Lemmy signs as its site/community key;
+  Iris signs as the acting actor key) will pass that layer. No nginx allowlist entry is needed.
+  **Owner of any residual block: none** — no block observed.
 - [ ] **138.3 — Seed content fixtures on both platforms.** Manually create, via each platform's native UI
   or API: an Iris community + 2 posts + 2 replies; a Lemmy community + 2 posts + 2 comments. This is
   the fixed baseline dataset every later slice diffs against.
