@@ -838,6 +838,17 @@ public static class ActivityPubServerExtensions
         // privateKey + keyAlgorithm extensions when the request is authenticated (Basic auth).
         group.MapGet("/u/{handle}", ActorDocumentHandler);
 
+        // Instance-actor document at the instance root: GET / (content-negotiated). A remote platform
+        // (notably Lemmy, 138.4) dereferences the *site actor* from the instance's root URL before it
+        // will resolve any object on the instance; when the root serves only the SPA shell (HTML) that
+        // dereference fails and every remote→local resolve is blocked. When the request is an
+        // ActivityPub client (its Accept header names an ActivityStreams/JSON-LD media type), serve the
+        // configured instance actor's public document here so the site-actor dereference succeeds; for
+        // any other request the SPA fallback (mapped later) still serves the shell. Mapped on the root
+        // endpoint (NOT the versioned group) because the instance root is the host root, not
+        // /ap/v1. The route is exact (GET "/") so it never shadows the SPA's non-root client routes.
+        endpoints.MapGet("/", InstanceActorDocumentHandler).WithName("instance-actor-document-endpoint");
+
         // WebFinger: GET /ap/v1/.well-known/webfinger?resource=acct:{handle}@{host}.
         group.MapGet("/.well-known/webfinger", WebFingerHandler);
 
@@ -1403,6 +1414,120 @@ public static class ActivityPubServerExtensions
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
         return Results.Text(rendered, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// The instance-actor document at the instance root (<c>GET /</c>, 138.4). A remote platform
+    /// (notably Lemmy) dereferences the site actor from the instance's root URL before resolving any
+    /// object on the instance; when the root served only the SPA shell (HTML), that dereference failed
+    /// and every remote→local resolve was blocked. This handler content-negotiates: when the request is
+    /// an ActivityPub client (its <c>Accept</c> header names an ActivityStreams or JSON-LD media type),
+    /// it serves the configured instance actor's <em>public</em> document (the same document
+    /// <see cref="ActorDocumentHandler"/> serves at <c>/ap/v1/u/{handle}</c>), so the site-actor
+    /// dereference succeeds. For any other request — a browser navigating to the home page, a curl with
+    /// no Accept — it returns <see cref="Results.NotFound"/> so the host app's SPA fallback (mapped
+    /// after the ActivityPub endpoints) serves the shell.
+    /// <para>
+    /// Only the <em>public</em> form is ever served here (never the owner-only <c>privateKey</c>
+    /// extension): the instance root is a public discovery URL and the owner-only extension requires the
+    /// request to be authenticated <em>for the instance actor specifically</em>, which a bare root
+    /// GET is not. A host that wants the authenticated form still uses <c>/ap/v1/u/{handle}</c>.
+    /// </para>
+    /// </summary>
+    /// <param name="context">The HTTP context (negotiates the content type and cache control).</param>
+    /// <param name="persistence">The persistence provider (the actor store holding the instance actor).</param>
+    /// <param name="optionsAccessor">The ActivityPub options (the <see cref="ActivityPubServerOptions.InstanceActorId"/>
+    /// and base URI used to locate and render the instance actor's document).</param>
+    /// <param name="actorDocumentCache">The local actor document cache (the public document is served through
+    /// it, exactly as <see cref="ActorDocumentHandler"/> does, so the root and the versioned route share one
+    /// cached rendering).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The instance actor's public document (serialized) when the request is an ActivityPub client
+    /// and the instance actor exists; <see cref="Results.NotFound"/> when the request is not an ActivityPub
+    /// client (so the SPA fallback serves the shell) or the instance actor is unconfigured/absent.</returns>
+    private static async Task<IResult> InstanceActorDocumentHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalActorDocumentCache actorDocumentCache,
+        CancellationToken ct)
+    {
+        // Content negotiation: only an ActivityPub client (its Accept names an ActivityStreams or
+        // JSON-LD media type) gets the instance-actor document. Anything else (a browser, a curl with no
+        // Accept) falls through to 404 so the host's SPA fallback serves the shell.
+        if (!WantsActivityStreams(context))
+        {
+            return Results.NotFound();
+        }
+
+        var options = optionsAccessor.Value;
+        if (options.InstanceActorId is not { } instanceActorIri)
+        {
+            return Results.NotFound();
+        }
+
+        // Serve the instance actor's PUBLIC document through the local actor document cache (the same
+        // rendering ActorDocumentHandler uses for the public path) so the root and the versioned route
+        // share one cached copy. The owner-only (privateKey) extension is never served here.
+        var (rendered, _, _) = await actorDocumentCache
+            .GetAsync(
+                instanceActorIri,
+                bypassCache: false,
+                async key =>
+                {
+                    if (await persistence.Actors.TryGetActorAsync(key, out var actor, ct).ConfigureAwait(false) &&
+                        actor is not null)
+                    {
+                        var doc = BuildActorDocument(actor, key, null, persistence, options);
+                        return ActivityJson.Serialize(doc);
+                    }
+
+                    return null;
+                },
+                ct)
+            .ConfigureAwait(false);
+
+        if (rendered is null)
+        {
+            return Results.NotFound();
+        }
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(rendered, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// Whether the request is an ActivityPub client: its <c>Accept</c> header names an ActivityStreams
+    /// or JSON-LD media type (<c>application/activity+json</c>, <c>application/ld+json</c>, or a
+    /// wildcard such as <c>application/*</c>). Used by <see cref="InstanceActorDocumentHandler"/> to
+    /// content-negotiate the instance-actor document at the root against the SPA shell.
+    /// </summary>
+    /// <param name="context">The HTTP context (reads the <c>Accept</c> header).</param>
+    /// <returns><c>true</c> when the Accept header signals an ActivityPub/JSON-LD client; otherwise <c>false</c>.</returns>
+    private static bool WantsActivityStreams(HttpContext context)
+    {
+        if (context.Request.Headers.Accept is not { Count: > 0 } accept)
+        {
+            return false;
+        }
+
+        foreach (var value in accept)
+        {
+            if (value is not { Length: > 0 } v)
+            {
+                continue;
+            }
+
+            if (v.Contains("activity+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("ld+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("application/*", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
