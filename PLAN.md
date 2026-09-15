@@ -114,8 +114,8 @@ Progress for both phases is tracked **inside their own docs**, not enumerated he
 
 ## Recently Completed
 
-- **138.23 (deletion vs. mod-removal semantics) — implemented:** `DeleteActivityHandler` accepts a remote actor's `Delete` when the actor is the `attributedTo` owner (author delete) or a member of a community in the object's `to`/`cc` (mod removal); tombstone carries `iris:removedBy` for mod-removals; outbox cleanup resolves the author from `attributedTo`. 5 integration tests. [Change doc](docs/changes/13823-phase138-deletion-vs-mod-removal.md).
-- **138.22 (edit/update propagation) — verified:** `UpdateActivityHandler` handles Lemmy-side `Update` for locally-archived copies. 5 integration tests.
+- **138.24 (Lemmy metadata extension terms) — designed:** 5 new `iris:` terms (`communityNsfw`, `locked`, `featured`, `language`, `postingRestrictedToMods`); 5 previously-missing terms added to namespace doc; `GetBool` bug fixed; 6 client readers; 7 integration tests. [Change doc](docs/changes/13824-phase138-lemmy-metadata-extension-terms.md).
+- **138.23 (deletion vs. mod-removal semantics) — implemented:** `DeleteActivityHandler` accepts community-member deletes; `iris:removedBy` tombstone extension; outbox cleanup resolves author from `attributedTo`. 5 integration tests.
 - **138.21 (local rebuild verification) — verified:** local store is self-sufficient after a Lemmy thread sync. 5 integration tests.
 - **138.20 (full-thread backfill) — implemented:** remote outbox items persisted to local object store + member outboxes. 2 integration tests.
 - **138.19 (shares/boosts) — verified platform asymmetry:** Lemmy's `Announce` is community-relay-only; no code changes. 1 integration test.

@@ -158,13 +158,12 @@ the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationT
 `Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
 envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
 renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
-**138.23 (deletion vs. mod-removal semantics) is DONE** (2026-09-15) — `DeleteActivityHandler`
-accepts a remote actor's `Delete` when the actor is the `attributedTo` owner (author delete)
-**or** a member of a community in the object's `to`/`cc` (mod removal); the tombstone carries
-`iris:removedBy` for mod-removals (distinguishing restorable from permanent); outbox cleanup
-resolves the author from `attributedTo`, not the deleting actor. 5 integration tests.
-**Next concrete step is 138.24** (Lemmy-specific metadata inventory + extension-term design —
-enumerate every Lemmy-only field Iris drops; design `iris:`-namespaced extension terms).
+**138.24 (Lemmy metadata inventory + extension-term design) is DONE** (2026-09-15) —
+5 new `iris:` extension terms designed and added (`communityNsfw`, `locked`, `featured`,
+`language`, `postingRestrictedToMods`); 5 previously-missing terms added to the namespace
+doc; `GetBool` client-reader bug fixed; 6 new client readers; 7 integration tests.
+**Next concrete step is 138.25** (implement + render the new extension terms — wire into
+object/community document builders; surface `locked`/`featured`/`communityNsfw` in the UI).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -424,7 +423,7 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage G — Extension-based metadata parity (Mastodon-style tracking, applied to Lemmy)
 
-- [ ] **138.24 — Lemmy-specific metadata inventory + extension-term design.** Enumerate every
+- [x] **138.24 — Lemmy-specific metadata inventory + extension-term design.** Enumerate every
   Lemmy-only field Iris currently drops when storing synced content: community-level `nsfw`,
   `locked`, `featured`/pinned (via Add/Remove to a featured collection), the removed-vs-deleted
   distinction from 138.23, `language`, `postingRestrictedToMods`. Design `iris:`-namespaced extension
