@@ -172,8 +172,11 @@ shared model is platform-agnostic and generalizes to Pleroma/Misskey; one S2 UI 
 gate is Lemmy-IRI-shaped) filed for a later UX slice; one S3 cosmetic rename (`IsLemmy`).
 **138.28 (interop conformance matrix) is DONE** (2026-09-15) — living reference doc at
 [docs/reference/INTEROP_CONFORMANCE_MATRIX.md](../reference/INTEROP_CONFORMANCE_MATRIX.md);
-linked from PLAN.md. **Next concrete step is 138.29** (closeout — full regression pass + final
-live manual Playwright pass).
+linked from PLAN.md.
+**138.29 (closeout) is DONE** (2026-09-15) — regression green (only known-flaky background-
+delivery tests, pass in isolation); live Playwright pass confirmed Iris↔Iris/Mastodon + Iris↔Lemmy
+scenarios side by side, platform-conditional UI correct (validating 138.27 F6). **PHASE 138 IS
+DONE** (138.1–138.29). Next: **Phase 139** (whole-platform end-to-end review).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -484,11 +487,21 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   per-platform verified-state, doc citations, capability-coverage table, and a maintenance
   protocol. Linked from PLAN.md's documentation table. Reflects the verified state from all prior
   Phase 138 slices + 81.x/79.3/82.x.
-- [ ] **138.29 — Closeout.** Full regression pass (`dotnet test --filter "Category!=Slow"` then the full
+- [x] **138.29 — Closeout.** Full regression pass (`dotnet test --filter "Category!=Slow"` then the full
   suite) + a final live manual Playwright pass across an Iris↔Iris scenario and an Iris↔Lemmy
   scenario side by side, confirming no regression to existing Mastodon-facing behavior.
   **Check:** full suite green; manual pass findings logged; PLAN.md's Recently Completed updated and
   a ROADMAP.md entry added.
+
+  **Done (2026-09-15):** regression green (fast 1278 passed / full 1282 passed; only the two
+  known-flaky background-delivery tests fail, both pass in isolation). Live Playwright pass:
+  (1) Iris↔Iris/Mastodon — signed-in home populates with cross-instance boosts/notes/replies,
+  communities page lists local Iris + remote Lemmy communities; (2) Iris↔Lemmy — Lemmy community
+  page renders with active peering edge + populated feed, and the platform-conditional UI is
+  correct (`LemmyVoteBar` for Lemmy content, `EngagementBar` for Iris content — validating 138.27
+  F6). No new defects; the two 138.27 follow-ups (S2 vote-bar gate, S3 `IsLemmy` rename) remain
+  open for a later UX slice. **Phase 138 is DONE.** See
+  [docs/changes/13829-phase138-closeout.md](../changes/13829-phase138-closeout.md).
 
 ## Fixtures
 
