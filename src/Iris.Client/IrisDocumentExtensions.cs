@@ -696,6 +696,54 @@ public static class IrisDocumentExtensions
     }
 
     /// <summary>
+    /// Determines whether a content object should be rendered behind a content warning (CW) overlay,
+    /// combining the object's own <c>sensitive</c> flag with its source community's
+    /// <c>iris:communityNsfw</c> flag (138.26). A Lemmy community can be flagged NSFW at the
+    /// community level, which implicitly marks all its posts as sensitive even when individual posts
+    /// do not carry the per-post <c>sensitive</c> flag. This helper returns <see langword="true"/>
+    /// when either flag is set, so the client can apply a CW overlay without the server mutating
+    /// stored posts (the community's NSFW flag can change later; retro-applying it to already-stored
+    /// posts would be incorrect).
+    /// </summary>
+    /// <remarks>
+    /// When <paramref name="community"/> is null (the object is not associated with a known
+    /// community, e.g. a person-to-person note), only the object's own <c>sensitive</c> flag is
+    /// considered. When the community document is present but does not carry
+    /// <c>iris:communityNsfw</c> (a locally-created community or a non-Lemmy source), the community
+    /// flag is treated as <see langword="false"/>.
+    /// </remarks>
+    /// <param name="content">The content object (a <see cref="Page"/>, <see cref="Note"/>, etc.).
+    /// Must not be null.</param>
+    /// <param name="community">The source community document (a <see cref="Group"/>), or null when the
+    /// object is not community-associated.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns>
+    /// <see langword="true"/> when the object's own <c>sensitive</c> flag is <c>true</c> OR the
+    /// community's <c>iris:communityNsfw</c> flag is <c>true</c>; otherwise <see langword="false"/>.
+    /// </returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="content"/> is null.</exception>
+    public static bool RequiresCw(
+        IObject content,
+        IObject? community,
+        string namespaceIri = DefaultNamespaceIri)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (content.IsSensitive())
+        {
+            return true;
+        }
+
+        if (community is not null &&
+            community.GetCommunityNsfw(namespaceIri) == true)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Shared implementation for the integer-valued counter extension readers
     /// (<c>likedCount</c> / <c>sharedCount</c> / <c>repliedCount</c>): reads the int-valued
     /// <paramref name="term"/> from <see cref="IObject.ExtensionData"/> and returns it, or
