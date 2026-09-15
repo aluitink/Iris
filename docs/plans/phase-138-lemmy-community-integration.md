@@ -158,8 +158,8 @@ the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationT
 `Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
 envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
 renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
-**Next concrete step is 138.20** (Full-thread backfill on first peer — verify the feed/backfill
-mechanism walks the Lemmy outbox pages and persists historical posts/comments locally).
+**Next concrete step is 138.21** (Local rebuild verification — the core archival acceptance bar:
+stop Lemmy entirely and confirm the Iris-rendered thread still renders from the local store alone).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -385,11 +385,13 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage F — Archival / local thread reconstruction
 
-- [ ] **138.20 — Full-thread backfill on first peer.** When Iris first peers with a Lemmy community that
+- [x] **138.20 — Full-thread backfill on first peer.** When Iris first peers with a Lemmy community that
   already has history, verify the feed/backfill mechanism (136.15) walks the Lemmy outbox pages and
   persists historical posts/comments locally, not just activity from the peering moment forward.
   **Check:** after first peering with a pre-populated Lemmy community, Iris's local store contains the
-  pre-existing posts, not just new ones.
+  pre-existing posts, not just new ones. **Done:** `CommunityFeedService.GetFeedAsync` now persists
+  remote outbox items (embedded `Page`/`Note` objects + `Create` activities) to the local store and
+  members' outboxes during the peering branch walk. 2 integration tests (`CommunityBackfillIntegrationTests`).
 - [ ] **138.21 — Local rebuild verification (the core archival acceptance bar).** Pick one Lemmy post
   with a multi-level comment thread and multiple votes; after syncing, stop the Lemmy container
   entirely and confirm the Iris-rendered thread (post + nested replies + like/dislike counts) still
