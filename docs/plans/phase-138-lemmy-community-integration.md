@@ -158,8 +158,9 @@ the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationT
 `Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
 envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
 renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
-**Next concrete step is 138.22** (Edit/update propagation into the archive — verify a Lemmy-side
-post/comment `Update` is reflected in Iris's local store).
+**Next concrete step is 138.23** (Deletion vs. moderator-removal semantics — capture the real
+activity payload Lemmy sends for author-delete vs. mod-removal, and ensure Iris's tombstone model
+only permanently tombstones the author-delete case).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -401,10 +402,14 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   (`LocalRebuildVerificationIntegrationTests`) verify the local store is self-sufficient after a
   thread sync: all objects retrievable by IRI, reply edges correctly link parent→children, vote
   edges recorded, member outbox complete, nested `inReplyTo` chain intact.
-- [ ] **138.22 — Edit/update propagation into the archive.** Verify a Lemmy-side post/comment `Update`
+- [x] **138.22 — Edit/update propagation into the archive.** Verify a Lemmy-side post/comment `Update`
   updates Iris's locally archived copy (not just a live proxy read), so the archive doesn't go stale.
   **Check:** editing the fixture post/comment on Lemmy updates the same object's content in Iris's
-  local store within one delivery cycle.
+  local store within one delivery cycle. **Done:** 5 integration tests
+  (`LemmyUpdatePropagationIntegrationTests`) verify the existing `UpdateActivityHandler` correctly
+  handles a remote author's Update for a locally-archived copy: local store refreshed in place,
+  owner guard rejects non-owner updates, tombstone re-animation guard works, unknown objects not
+  created.
 - [ ] **138.23 — Deletion vs. moderator-removal semantics.** Capture the *real* activity payload Lemmy
   sends for (a) an author's own delete and (b) a moderator's removal (and restore, if supported) —
   do not assume; these may differ by Lemmy version. Ensure Iris's tombstone model (Phase 129/136.19)
