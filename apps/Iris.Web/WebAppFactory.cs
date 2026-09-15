@@ -192,6 +192,37 @@ public static class WebAppFactory
     }
 
     /// <summary>
+    /// Whether the request is an ActivityPub client: its <c>Accept</c> header names an ActivityStreams
+    /// or JSON-LD media type. Mirrors the logic in
+    /// <see cref="Iris.Server.ActivityPubServerExtensions"/> so the SPA-shell middleware can
+    /// content-negotiate the root path the same way the instance-actor endpoint does.
+    /// </summary>
+    private static bool WantsActivityStreams(HttpContext context)
+    {
+        if (context.Request.Headers.Accept is not { Count: > 0 } accept)
+        {
+            return false;
+        }
+
+        foreach (var value in accept)
+        {
+            if (value is not { Length: > 0 } v)
+            {
+                continue;
+            }
+
+            if (v.Contains("activity+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("ld+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("application/*", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Reads the antiforgery toggle from <paramref name="configuration"/> (Phase 94). Antiforgery is
     /// enabled unless the value bound to <see cref="EnableAntiforgeryConfigKey"/> parses to <c>false</c>
     /// (case-insensitive). Unset/blank or any non-<c>false</c> value → enabled (the production default),
@@ -535,6 +566,24 @@ public static class WebAppFactory
                 ctx.Response.ContentType = "text/html";
                 await ctx.Response.WriteAsync(content, ctx.RequestAborted);
                 return;
+            }
+            // GET / for a browser (non-ActivityPub) request: serve the SPA shell. The
+            // InstanceActorDocumentHandler endpoint (mapped in MapActivityPubEndpoints) catches
+            // GET / and returns 404 for non-AP clients, which prevents the SPA fallback from
+            // ever serving the shell. This middleware intercepts the request before routing so
+            // a browser hitting / gets the Blazor WASM app instead of a 404.
+            if (reqPath == "/" && ctx.Request.Method == "GET" && !WantsActivityStreams(ctx))
+            {
+                var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+                var htmlPath = Path.Combine(env.WebRootPath, "index.html");
+                if (File.Exists(htmlPath))
+                {
+                    var content = await System.IO.File.ReadAllTextAsync(htmlPath, ctx.RequestAborted);
+                    ctx.Response.Headers.CacheControl = "no-cache";
+                    ctx.Response.ContentType = "text/html";
+                    await ctx.Response.WriteAsync(content, ctx.RequestAborted);
+                    return;
+                }
             }
             await next();
         });
