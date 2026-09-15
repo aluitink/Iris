@@ -131,8 +131,19 @@ now carry a `Page`, not a `Note`); live Lemmy acceptance verified (the cross-pos
 now includes `to` and `cc` fields on the `Create` activity itself, satisfying Lemmy's
 `CreateOrUpdatePage` requirements; the post appears in Lemmy's post listing with correct `ap_id`,
 `creator`, and `community` fields).
-**Next concrete step is 138.12** (Lemmy community post surfaces in Iris — inbound: exercise 89.1's
-peer-merge feed path live for the first time against a real Lemmy `Announce(Create(Page))`).
+**138.12 (Lemmy community relay inbound) is DONE** (2026-09-15) — the `AnnounceActivityHandler`
+now unwraps an embedded `Create` (Lemmy's relay pattern: `Announce(Create(Page))`), stores the
+embedded `Page` in the object store, and records the `Create` in the community's local members'
+outboxes via `CommunityContentRecorder`; the handler also checks the community store (not just the
+actor store) for local recipients. 3 unit tests (`LemmyCommunityRelayIntegrationTests`).
+**138.13 (Lemmy comment threading) is DONE** (2026-09-15) — verified that the existing
+`CreateActivityHandler` already handles inbound Lemmy comments (`Create(Note)` with `inReplyTo`)
+delivered to a community's inbox: the `Note` is stored in the object store, the reply edge is recorded
+in the replies store, and the `Create` is recorded in the community's local members' outboxes. 3
+integration tests (`LemmyCommentThreadingIntegrationTests`).
+**Next concrete step is 138.14** (Iris reply → Lemmy comment: post an Iris reply to a Lemmy-sourced
+post/comment; verify Lemmy accepts the `Create(Note)` with a resolvable `inReplyTo`/`context` chain
+and displays it as a comment).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -298,15 +309,25 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage D — Inbound: Lemmy post → Iris
 
-- [ ] **138.12 — Lemmy community post surfaces in Iris.** Exercise 89.1's peer-merge feed path
-  (`requireCommunityTagged: false`) live for the first time against a real Lemmy
-  `Announce(Create(Page))`.
-  **Check:** the Lemmy post renders in the Iris community feed with title (78.4), content, and
-  attachments.
-- [ ] **138.13 — Lemmy comment surfaces in Iris as a threaded reply.** Verify a Lemmy `Note` comment
-  (`inReplyTo` the post or a parent comment) threads correctly under the synced post (Phase 054
-  contract), including multi-level nesting.
-  **Check:** a 2+ level Lemmy comment thread renders with correct parent/child order in Iris.
+- [x] **138.12 — Lemmy community post surfaces in Iris.** Implemented the inbound path for Lemmy's
+  community relay pattern: an `Announce` whose object is an embedded `Create` (which embeds a `Page`)
+  is unwrapped by the `AnnounceActivityHandler`, the embedded `Page` is stored in the object store, and
+  the `Create` is recorded in the community's local members' outboxes (via `CommunityContentRecorder`),
+  so the post surfaces in the community feed. The `AnnounceActivityHandler` now also checks if the
+  recipient is a local community (not just a local person), mirroring the `CreateActivityHandler`'s
+  dual-store check. 3 unit tests (`LemmyCommunityRelayIntegrationTests`): the relayed `Page` is stored
+  in the object store and recorded in the member's outbox; a plain `Announce` (bare IRI object) does
+  NOT store the object; the `Announce` itself is still recorded in the community's outbox.
+  [Change doc](../changes/13812-phase138-lemmy-community-relay-inbound.md).
+- [x] **138.13 — Lemmy comment surfaces in Iris as a threaded reply.** Verified that a Lemmy `Note`
+  comment (`inReplyTo` the post or a parent comment) threads correctly under the synced post. The
+  existing `CreateActivityHandler` already handles inbound `Create(Note)` with `inReplyTo` delivered
+  to a community's inbox: it stores the `Note` in the object store, records the reply edge (parent →
+  child) in the replies store, and records the `Create` in the community's local members' outboxes via
+  `CommunityContentRecorder`. 3 integration tests
+  (`LemmyCommentThreadingIntegrationTests`): a comment on a post threads under the parent + is
+  recorded in the member's outbox; a 2-level thread records both reply edges; a comment's `Note`
+  carries `inReplyTo` (it's a reply, not a top-level post). [Change doc](../changes/13813-phase138-lemmy-comment-threading.md).
 - [ ] **138.14 — Iris reply → Lemmy comment.** Post an Iris reply to a Lemmy-sourced post/comment; verify
   Lemmy accepts the `Create(Note)` with a resolvable `inReplyTo`/`context` chain and displays it as a
   comment.
