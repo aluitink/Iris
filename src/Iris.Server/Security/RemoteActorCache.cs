@@ -53,6 +53,13 @@ public sealed class RemoteActorCache
     public bool Invalidate(Iri key) => _cache.Invalidate(key);
 
     /// <summary>
+    /// Removes all cached actor documents (e.g. after a host's persistence is reset, so stale cached
+    /// documents do not survive the reset and mislead key resolution). A no-op when the underlying
+    /// cache is not a <see cref="MemoryCache{TValue}"/>.
+    /// </summary>
+    public void Clear() => _cache.Clear();
+
+    /// <summary>
     /// Gets the cached remote actor for <paramref name="key"/>, fetching with <paramref name="factory"/> on
     /// a miss (or when <paramref name="bypassCache"/> is set).
     /// </summary>

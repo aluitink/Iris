@@ -8,7 +8,9 @@ namespace Iris.Server.Inbox;
 /// Handles inbound <see cref="Accept"/> activities: when a remote actor accepts a follow that a
 /// <em>local</em> actor (a person or a community) made, the local follow edge is finalized — recorded in
 /// the <see cref="IFollowStore"/> for a person follower, or in the community's follows set
-/// (<see cref="ICommunityStore.AddFollowAsync"/>) for a community follower.
+/// (<see cref="ICommunityStore.AddFollowAsync"/>) and followers set (<see cref="ICommunityStore.AddFollowerAsync"/>)
+/// for a community follower (both directed edges, mirroring the inbound <see cref="FollowActivityHandler"/>'s
+/// community branch).
 /// </summary>
 /// <remarks>
 /// On the follower side, a follow is <em>provisional</em> until the followed side accepts it. The
@@ -26,11 +28,15 @@ namespace Iris.Server.Inbox;
 /// <strong>Community follower (G-3).</strong> A community is a <see cref="Group"/> actor, not a person in
 /// the actor store, so <see cref="ILocalActorResolver.IsLocalActorAsync(Iri, CancellationToken)"/> does
 /// not see it as local (the base guard would no-op). This handler overrides the local check to also treat
-/// a local community as local, and finalizes a community's follow by recording the edge in the community's
-/// follows set — the inverse of the inbound <see cref="FollowActivityHandler"/>'s community branch. This is
-/// what makes the follower side of a community-initiated follow (published via the community outbox, gap
-/// G-3) two-sided: the followed side's <c>Accept</c> delivered back to the community's inbox finalizes the
-/// community's <c>following</c> collection.
+/// a local community as local, and finalizes a community's follow by recording BOTH directed edges in the
+/// community store — the community's follows set (the community → target, the inverse of the inbound
+/// <see cref="FollowActivityHandler"/>'s community branch, driving the community's <c>following</c>
+/// collection) and the target's followers set (the target → community, populating the target community's
+/// <c>followers</c> collection). This mirrors the <see cref="FollowActivityHandler"/>'s community branch
+/// (which records both edges when a community is followed) and is what makes the follower side of a
+/// community-initiated follow (published via the community outbox, gap G-3) two-sided: the followed
+/// side's <c>Accept</c> delivered back to the community's inbox finalizes both the community's
+/// <c>following</c> and the peer community's <c>followers</c> collections.
 /// </remarks>
 public sealed class AcceptActivityHandler : FollowResponseActivityHandler<Accept>
 {
@@ -69,11 +75,15 @@ public sealed class AcceptActivityHandler : FollowResponseActivityHandler<Accept
     protected override async Task ApplyAsync(Iri followerIri, Iri targetIri, CancellationToken ct)
     {
         // A community follower (in the community store): finalize the community's own follow by recording
-        // the edge in the community's follows set — the inverse of the FollowActivityHandler's community
-        // branch (a community follow is recorded in the community store, not the person follow store).
+        // BOTH directed edges — the community's follows set (the community → target, the inverse of the
+        // FollowActivityHandler's community branch, driving the federated feed) AND the community's
+        // followers set (the target → community, populating the community's `followers` collection). This
+        // mirrors the FollowActivityHandler's community branch, which records both edges when the
+        // community is followed; the Accept finalizes the follower side of that two-sided edge.
         if (await _persistence.Communities.TryGetCommunityAsync(followerIri, out _, ct).ConfigureAwait(false))
         {
             await _persistence.Communities.AddFollowAsync(followerIri, targetIri, ct).ConfigureAwait(false);
+            await _persistence.Communities.AddFollowerAsync(targetIri, followerIri, ct).ConfigureAwait(false);
             return;
         }
 

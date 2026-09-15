@@ -63,6 +63,13 @@ public class RemoteKeyCache
     public virtual bool Invalidate(Iri key) => _cache.Invalidate(key);
 
     /// <summary>
+    /// Removes all cached keys (e.g. after a host's persistence is reset, so a stale cached key does not
+    /// survive the reset and mislead signature validation). A no-op when the underlying cache is not a
+    /// <see cref="MemoryCache{TValue}"/>.
+    /// </summary>
+    public virtual void Clear() => _cache.Clear();
+
+    /// <summary>
     /// Gets the cached key for <paramref name="key"/>, fetching with <paramref name="factory"/> on a miss
     /// (or when <paramref name="bypassCache"/> is set).
     /// </summary>
