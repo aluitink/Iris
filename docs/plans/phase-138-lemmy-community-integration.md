@@ -158,12 +158,13 @@ the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationT
 `Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
 envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
 renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
-**138.24 (Lemmy metadata inventory + extension-term design) is DONE** (2026-09-15) —
-5 new `iris:` extension terms designed and added (`communityNsfw`, `locked`, `featured`,
-`language`, `postingRestrictedToMods`); 5 previously-missing terms added to the namespace
-doc; `GetBool` client-reader bug fixed; 6 new client readers; 7 integration tests.
-**Next concrete step is 138.25** (implement + render the new extension terms — wire into
-object/community document builders; surface `locked`/`featured`/`communityNsfw` in the UI).
+**138.25 (implement + render the new extension terms) is DONE** (2026-09-15) —
+`ServeObjectDocument` renders `iris:locked`/`iris:featured`/`iris:language` from stored
+objects' bare Lemmy keys; `CommunityDocumentHandler` renders `iris:communityNsfw`/
+`iris:postingRestrictedToMods` from stored communities' bare Lemmy keys. 7 integration
+tests. UI surfacing (disabled composer, pinned indicator, CW gate) is a follow-up.
+**Next concrete step is 138.26** (community-level NSFW alignment — decide whether Iris
+retro-applies a CW flag to every synced post from an NSFW Lemmy community).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -430,7 +431,7 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   terms for each, following the existing `IrisExtensionTerms` per-term XML-doc convention.
   **Check:** a reviewed list of new `IrisExtensionTerms` additions with the same rigor as the existing
   ones (purpose, wire key, when present/absent).
-- [ ] **138.25 — Implement + render the new extension terms.** Wire the 138.24 terms into the
+- [x] **138.25 — Implement + render the new extension terms.** Wire the 138.24 terms into the
   object/community document builders (mirroring `EnrichNoteForMastodon`/`BuildNamespaceDocument`);
   surface `locked` (disable the reply composer), `featured`/pinned, and the removed/deleted
   distinction in the Iris Web UI for synced Lemmy content.
