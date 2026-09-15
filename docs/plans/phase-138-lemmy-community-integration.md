@@ -154,12 +154,12 @@ integration tests (`LemmyLikeInboundIntegrationTests`).
 Lemmy-sourced post (a `Page`) is delivered to the object's home via the existing outbound Like
 federation path; the like edge is recorded on the object's home and the `/likes` collection lists
 the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationTests`).
-**138.18 (score reconciliation policy) is DONE** (2026-09-15) — decided: keep separate counters +
-derived `iris:score` (= `likedCount - dislikedCount`, the Lemmy-equivalent net score). 4 new extension
-terms, rendered on the object document + collection-page items. 3 integration tests
-(`ObjectDocumentScoreReconIntegrationTests`).
-**Next concrete step is 138.19** (Shares/boosts interop — confirm Lemmy has no user-initiated boost
-concept; verify Iris's Announce-unwrap logic treats it as a fan-out envelope, not a user share).
+**138.19 (shares/boosts interop) is DONE** (2026-09-15) — verified platform asymmetry: Lemmy's
+`Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
+envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
+renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
+**Next concrete step is 138.20** (Full-thread backfill on first peer — verify the feed/backfill
+mechanism walks the Lemmy outbox pages and persists historical posts/comments locally).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -375,12 +375,13 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   dislikedCount` (the `iris:score` extension). New extension terms: `iris:dislikedCount`, `iris:score`,
   `iris:isDisliked`, `iris:dislikeActivityIri`. Rendered on the object document + collection-page items.
   3 integration tests (`ObjectDocumentScoreReconIntegrationTests`). [Change doc](../changes/13818-phase138-score-reconciliation-policy.md).
-- [ ] **138.19 — Shares/boosts interop (platform-asymmetry documentation).** Confirm Lemmy has no
-  user-initiated boost concept — its `Announce` is community-relay-only. Verify Iris's existing
-  Announce-unwrap logic in the community-feed merge path already treats it as a fan-out envelope, not
-  a user share, and that the UI does not offer a "boost" control on Lemmy-sourced content.
-  **Check:** no boost affordance rendered for Lemmy-sourced posts; the merge path correctly attributes
-  the underlying `Create`'s author, not the relaying community, as the content author.
+- [x] **138.19 — Shares/boosts interop (platform-asymmetry documentation).** Verified: Lemmy has no
+  user-initiated boost (its `Announce` is community-relay-only); Iris's `AnnounceActivityHandler`
+  relay-unwrap (138.12) treats it as a fan-out envelope, not a user share; the merge path attributes
+  the content to the `Create`'s actor (original author), not the relaying community; the UI renders
+  `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test
+  (`LemmyCommunityRelay_ContentAttributedToOriginalAuthor_NotRelayingCommunity`).
+  [Change doc](../changes/13819-phase138-shares-boosts-interop.md).
 
 ### Stage F — Archival / local thread reconstruction
 
