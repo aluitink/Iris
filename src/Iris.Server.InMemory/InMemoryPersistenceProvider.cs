@@ -155,6 +155,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _likes.Clear();
         _announces.Clear();
         _replies.Clear();
+        _dislikes.Clear();
         _moderation.Clear();
         _relays.Clear();
         _objects.Clear();

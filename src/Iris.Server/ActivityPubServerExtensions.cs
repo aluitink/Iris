@@ -6312,11 +6312,14 @@ public static class ActivityPubServerExtensions
         var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
         bool? isLikedValue = null;
         bool? isSharedValue = null;
+        bool? isDislikedValue = null;
         int? likedCountValue = null;
         int? sharedCountValue = null;
         int? repliedCountValue = null;
+        int? dislikedCountValue = null;
         Iri? likeActivityIriValue = null;
         Iri? announceActivityIriValue = null;
+        Iri? dislikeActivityIriValue = null;
         if (obj is not KristofferStrube.ActivityStreams.Tombstone)
         {
             isLikedValue = requesterIri is { } r
@@ -6325,24 +6328,29 @@ public static class ActivityPubServerExtensions
             isSharedValue = requesterIri is { } s
                 ? await persistence.Announces.HasAnnouncedAsync(s, objectIri, ct).ConfigureAwait(false)
                 : null;
+            isDislikedValue = requesterIri is { } d
+                ? await persistence.Dislikes.HasDislikedAsync(d, objectIri, ct).ConfigureAwait(false)
+                : null;
 
-            // The per-object interaction counters (iris:likedCount / iris:sharedCount / iris:repliedCount):
-            // cacheable, not per-requester (the same value for every requester), so they are computed on
-            // every read and rendered onto the object document. A client (e.g. the object-detail page and
-            // the EngagementBar) reads them off the document it already fetched instead of re-walking the
-            // /likes, /shares, and /replies collections (54.8). The reply count is derived from the
-            // IReplyStore reverse index (the parent → [child] reply edges recorded by the
-            // CreateActivityHandler when an inbound reply is stored), so it reflects the replies this
+            // The per-object interaction counters (iris:likedCount / iris:sharedCount / iris:repliedCount /
+            // iris:dislikedCount): cacheable, not per-requester (the same value for every requester), so
+            // they are computed on every read and rendered onto the object document. A client (e.g. the
+            // object-detail page and the EngagementBar) reads them off the document it already fetched
+            // instead of re-walking the /likes, /shares, and /replies collections (54.8). The reply count
+            // is derived from the IReplyStore reverse index (the parent → [child] reply edges recorded by
+            // the CreateActivityHandler when an inbound reply is stored), so it reflects the replies this
             // instance knows about for the object — local or remote (a proxied remote object's replies
             // are synced into the local reply store, 132.1).
             likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
             sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
             repliedCountValue = (await persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            dislikedCountValue = (await persistence.Dislikes.GetDislikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
 
-            // The requester's minted Like / Announce activity IRIs (72.2, per-requester read-time state,
-            // like isLiked / isShared): when the requester has (net) liked / boosted this object, resolve
-            // the id an unlike / un-boost (Undo) references so the object-detail page can read it off the
-            // document instead of walking the /likes or /shares collection to recover it.
+            // The requester's minted Like / Announce / Dislike activity IRIs (72.2, per-requester read-time
+            // state, like isLiked / isShared / isDisliked): when the requester has (net) liked / boosted /
+            // disliked this object, resolve the id an unlike / un-boost / un-dislike (Undo) references so
+            // the object-detail page can read it off the document instead of walking the /likes, /shares,
+            // or /dislikes collection to recover it.
             var (likeIris, announceIris) = await GetRequesterActivityIrisAsync(
                 persistence, requesterIri, [objectIri], ct).ConfigureAwait(false);
             if (isLikedValue is true &&
@@ -6355,6 +6363,14 @@ public static class ActivityPubServerExtensions
             {
                 announceActivityIriValue = announceIri;
             }
+            // The dislike activity IRI: resolve via the activity store (a single sweep for the requester's
+            // Dislike activity on this object).
+            if (isDislikedValue is true &&
+                requesterIri is { } dislikeRequester)
+            {
+                dislikeActivityIriValue = await GetDislikeActivityIriAsync(
+                    persistence, dislikeRequester, objectIri, ct).ConfigureAwait(false);
+            }
         }
 
         // Cache-Control: an object (or its tombstone) is a stable, addressable document; cache it like
@@ -6366,8 +6382,10 @@ public static class ActivityPubServerExtensions
             ActivityPubServerConstants.ActorCacheControl;
         return Results.Text(
             ServeObjectDocument(
-                obj, objectIri, isLikedValue, isSharedValue, likedCountValue, sharedCountValue,
-                repliedCountValue, likeActivityIriValue, announceActivityIriValue, IrisExtensionNamespace(options)),
+                obj, objectIri, isLikedValue, isSharedValue, isDislikedValue,
+                likedCountValue, sharedCountValue, repliedCountValue, dislikedCountValue,
+                likeActivityIriValue, announceActivityIriValue, dislikeActivityIriValue,
+                IrisExtensionNamespace(options)),
             NegotiateContentType(context));
     }
 
@@ -6421,9 +6439,17 @@ public static class ActivityPubServerExtensions
     /// <param name="isShared">The requesting user's net boost state on the object (the
     /// <c>iris:isShared</c> extension); when <c>true</c> a <c>true</c> is rendered, when
     /// <c>null</c>/<c>false</c> the extension is omitted.</param>
+    /// <param name="isDisliked">The requesting user's net dislike state on the object (the
+    /// <c>iris:isDisliked</c> extension); when <c>true</c> a <c>true</c> is rendered, when
+    /// <c>null</c>/<c>false</c> the extension is omitted.</param>
     /// <param name="likedCount">The number of distinct likers (the <c>iris:likedCount</c> extension;
     /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
     /// <param name="sharedCount">The number of distinct announcers (the <c>iris:sharedCount</c>
+    /// extension; cacheable, not per-requester); when non-null it is rendered, when null the extension is
+    /// omitted.</param>
+    /// <param name="repliedCount">The number of replies (the <c>iris:repliedCount</c> extension;
+    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
+    /// <param name="dislikedCount">The number of distinct dislikers (the <c>iris:dislikedCount</c>
     /// extension; cacheable, not per-requester); when non-null it is rendered, when null the extension is
     /// omitted.</param>
     /// <param name="likeActivityIri">The requesting user's minted <c>Like</c> activity IRI for this object
@@ -6433,16 +6459,21 @@ public static class ActivityPubServerExtensions
     /// object (the <c>iris:announceActivityIri</c> extension; per-requester, read-time state); when
     /// non-null (and the requester has boosted the object) it is rendered, when null the extension is
     /// omitted.</param>
-    /// <param name="repliedCount">The number of replies (the <c>iris:repliedCount</c> extension;
-    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
+    /// <param name="dislikeActivityIri">The requesting user's minted <c>Dislike</c> activity IRI for this
+    /// object (the <c>iris:dislikeActivityIri</c> extension; per-requester, read-time state); when
+    /// non-null (and the requester has disliked the object) it is rendered, when null the extension is
+    /// omitted.</param>
     /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (the <c>@vocab</c> the
-    /// document declares); the <c>isLiked</c> / <c>isShared</c> / <c>likedCount</c> / <c>sharedCount</c> /
-    /// <c>repliedCount</c> / <c>likeActivityIri</c> / <c>announceActivityIri</c> terms are written as
+    /// document declares); the <c>isLiked</c> / <c>isShared</c> / <c>isDisliked</c> / <c>likedCount</c> /
+    /// <c>sharedCount</c> / <c>repliedCount</c> / <c>dislikedCount</c> / <c>score</c> /
+    /// <c>likeActivityIri</c> / <c>announceActivityIri</c> / <c>dislikeActivityIri</c> terms are written as
     /// <c>{irisNamespace}&lt;term&gt;</c>.</param>
     /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
     private static string ServeObjectDocument(
-        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, int? likedCount, int? sharedCount,
-        int? repliedCount, Iri? likeActivityIri, Iri? announceActivityIri, string? irisNamespace)
+        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, bool? isDisliked,
+        int? likedCount, int? sharedCount, int? repliedCount, int? dislikedCount,
+        Iri? likeActivityIri, Iri? announceActivityIri, Iri? dislikeActivityIri,
+        string? irisNamespace)
     {
         if (obj is KristofferStrube.ActivityStreams.Tombstone)
         {
@@ -6490,6 +6521,18 @@ public static class ActivityPubServerExtensions
                 }
             }
 
+            if (isDisliked is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsDisliked] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (dislikeActivityIri is { } dislikeIri)
+                {
+                    document.ExtensionData[ns + IrisExtensionTerms.DislikeActivityIri] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(dislikeIri.ToString());
+                }
+            }
+
             // The per-object interaction counters (cacheable, not per-requester): rendered whenever a
             // count is supplied, so a client reads them off the object document instead of re-walking the
             // /likes and /shares collections (54.8).
@@ -6513,6 +6556,22 @@ public static class ActivityPubServerExtensions
                 document.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
                     System.Text.Json.JsonSerializer.SerializeToElement(replies);
             }
+
+            if (dislikedCount is { } dislikes)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(dislikes);
+            }
+
+            // The net score (138.18): likedCount - dislikedCount, the Lemmy-equivalent net score.
+            // Rendered whenever both counts are available (i.e. for non-tombstone objects).
+            if (likedCount is { } l && dislikedCount is { } dl)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.Score] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(l - dl);
+            }
         }
 
         return ActivityJson.Serialize(document);
@@ -6526,6 +6585,8 @@ public static class ActivityPubServerExtensions
     /// <item><c>iris:likedCount</c> — the number of distinct likers (from <see cref="ILikeStore.GetLikersAsync"/>).</item>
     /// <item><c>iris:sharedCount</c> — the number of distinct announcers (from <see cref="IAnnounceStore.GetAnnouncersAsync"/>).</item>
     /// <item><c>iris:repliedCount</c> — the number of replies (from <see cref="IReplyStore.GetRepliesAsync"/>).</item>
+    /// <item><c>iris:dislikedCount</c> — the number of distinct dislikers (from <see cref="IDislikeStore.GetDislikersAsync"/>).</item>
+    /// <item><c>iris:score</c> — the net score (<c>likedCount - dislikedCount</c>), the Lemmy-equivalent net score (138.18).</item>
     /// <item><c>iris:isLiked</c> / <c>iris:isShared</c> — when a requester IRI is supplied, the requester's
     /// net like/boost state on the embedded object (per-requester, read-time state).</item>
     /// <item><c>iris:likeActivityIri</c> / <c>iris:announceActivityIri</c> (72.2) — when a requester IRI is
@@ -6672,6 +6733,14 @@ public static class ActivityPubServerExtensions
                 copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
                     System.Text.Json.JsonSerializer.SerializeToElement(repliesByObject.TryGetValue(oid, out var rp) ? rp.Count : 0);
 
+                var dislikedCount = (await persistence.Dislikes.GetDislikersAsync(oid, ct).ConfigureAwait(false)).Count;
+                copyObj.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(dislikedCount);
+
+                var likedCount = likersByObject.TryGetValue(oid, out var lk2) ? lk2.Count : 0;
+                copyObj.ExtensionData[ns + IrisExtensionTerms.Score] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(likedCount - dislikedCount);
+
                 if (likedByRequester.Contains(oid))
                 {
                     copyObj.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
@@ -6797,6 +6866,61 @@ public static class ActivityPubServerExtensions
         }
 
         return (likes, announces);
+    }
+
+    /// <summary>
+    /// Resolves the IRI of the requesting user's minted <c>Dislike</c> activity against the supplied
+    /// object (72.2, mirroring <see cref="GetRequesterActivityIrisAsync"/> for the Dislike case) — the id
+    /// an un-dislike <c>Undo</c> references. A single <see cref="IActivityStore.GetAllActivitiesAsync"/>
+    /// sweep is filtered to the requester's <c>Dislike</c> activities targeting <paramref name="objectIri"/>.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (for the activity store).</param>
+    /// <param name="requesterIri">The requesting user's IRI.</param>
+    /// <param name="objectIri">The object IRI to resolve against.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The IRI of the requester's most recent Dislike activity against the object, or
+    /// <see langword="null"/> when no such activity exists.</returns>
+    private static async Task<Iri?> GetDislikeActivityIriAsync(
+        IPersistenceProvider persistence,
+        Iri requesterIri,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        Iri? latestIri = null;
+        foreach (var stored in all)
+        {
+            if (stored is not Activity activity)
+            {
+                continue;
+            }
+
+            if (activity is not Dislike)
+            {
+                continue;
+            }
+
+            if (activity.Actor is not { } actorRef ||
+                actorRef.FirstOrDefault()?.ResolveObjectIri() is not { } actorIri ||
+                !string.Equals(actorIri.ToString(), requesterIri.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (activity.Object is not { } objRef ||
+                objRef.FirstOrDefault()?.ResolveObjectIri() is not { } targetIri ||
+                !string.Equals(targetIri.ToString(), objectIri.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (activity.Id is { Length: > 0 } activityIri)
+            {
+                latestIri = new Iri(activityIri);
+            }
+        }
+
+        return latestIri;
     }
 
     /// <summary>

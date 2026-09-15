@@ -155,4 +155,46 @@ public static class IrisExtensionTerms
     /// <c>{NamespaceIri}announceActivityIri</c>.
     /// </summary>
     public const string AnnounceActivityIri = "announceActivityIri";
+
+    /// <summary>
+    /// The <c>isDisliked</c> extension (per-object dislike state): a <c>bool</c> rendered on a content
+    /// object's document that is <c>true</c> when the <em>requesting</em> user currently has a dislike
+    /// (downvote) on the object (the dislike edge is present — i.e. the object is in the requester's net
+    /// <c>disliked</c> state, after any intervening Dislike/Undo squashing to the present). Absent
+    /// (omitted) when the request is unauthenticated or the requester has not disliked the object. This is
+    /// a per-requester, read-time convenience: the object document is served to each requester with their
+    /// own <c>isDisliked</c>, so the client can render a lit downvote marker without first reading the
+    /// requester's <c>/disliked</c> collection. The full wire key is <c>{NamespaceIri}isDisliked</c>.
+    /// </summary>
+    public const string IsDisliked = "isDisliked";
+
+    /// <summary>
+    /// The <c>dislikedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of distinct actors that have disliked
+    /// (downvoted) the object (the dislike reverse-index count). This is a cacheable, per-object
+    /// interaction counter: it is not per-requester, so it is safe to serve from the local collection-page
+    /// response cache. The full wire key is <c>{NamespaceIri}dislikedCount</c>.
+    /// </summary>
+    public const string DislikedCount = "dislikedCount";
+
+    /// <summary>
+    /// The <c>score</c> extension (138.18): an <c>int</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating the net score, computed as
+    /// <c>likedCount - dislikedCount</c>. This is the Lemmy-equivalent net score (Lemmy's
+    /// <c>score = upvotes - downvotes</c>). Cacheable, per-object, not per-requester. The full wire key
+    /// is <c>{NamespaceIri}score</c>.
+    /// </summary>
+    public const string Score = "score";
+
+    /// <summary>
+    /// The <c>dislikeActivityIri</c> extension (72.2, mirroring <see cref="LikeActivityIri"/>): the IRI
+    /// of the <see cref="KristofferStrube.ActivityStreams.Dislike"/> activity the <em>requesting</em> user
+    /// issued against the object, rendered on the object's document (including nested objects in
+    /// collection items) <em>only when</em> the requester currently has a (net) dislike on it (the
+    /// <c>isDisliked</c> edge stands). This is the minted activity id an un-dislike (an <c>Undo</c>)
+    /// references. Per-requester, read-time state. Absent (omitted) when the request is unauthenticated
+    /// or the requester has not disliked the object. The full wire key is
+    /// <c>{NamespaceIri}dislikeActivityIri</c>.
+    /// </summary>
+    public const string DislikeActivityIri = "dislikeActivityIri";
 }
