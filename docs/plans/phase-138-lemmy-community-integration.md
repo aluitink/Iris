@@ -108,12 +108,15 @@ DONE** (2026-09-15) — an integration test
 `POST /local/v1/c/{name}/follow/{targetIri}` endpoint drives a genuine cross-instance discovery: an
 Iris community follows a remote `Group` on a non-Iris instance, and the delivery's inbox-resolution
 fetch persists the remote `Group` to Iris's durable community store (the 135.1 `RemoteCommunityPersister`
-path), served back by `GET /ap/v1/actor?iri=…`. **Next concrete step is 138.6** (mutual peering
-handshake verification: drive both 138.4 and 138.5 so each side's `following`/`followers` lists the
-other, and confirm Lemmy auto-accepts). **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL
-UI does not surface the Iris `interop` community, so the full "follow the Iris community from Lemmy"
-acceptance still needs a working follow mechanism. Also still open: the `interop` webfinger
-name-collision edge case (user shadows community).
+path), served back by `GET /ap/v1/actor?iri=…`. **138.6 (mutual peering handshake) is DONE**
+(2026-09-15) — `AcceptActivityHandler` now records both follow and follower edges on the community
+branch; 3 integration tests (`MutualPeeringHandshakeIntegrationTests`) verify both `/following` and
+both `/followers` collections populate on both sides of a cross-wired two-host fixture, plus the peer
+Group persisted on both sides. **Next concrete step is 138.7** (peering trust/identity checks: confirm
+HTTP Signature validation against the real Lemmy instance). **Still open for 138.4 (Lemmy-side):** its
+search/resolve-by-URL UI does not surface the Iris `interop` community, so the full "follow the Iris
+community from Lemmy" acceptance still needs a working follow mechanism. Also still open: the `interop`
+webfinger name-collision edge case (user shadows community).
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -213,10 +216,16 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   on A returns the persisted `Group` document (id + type + its own B-hosted inbox). A non-owner follow
   is rejected (403) with no edge and no persisted community. The remote community is a *different
   instance* (B), so this is a genuine cross-instance discovery, not a same-host fixture.
-- [ ] **138.6 — Mutual peering handshake verification.** Drive both 138.4 and 138.5 so each side's
+- [x] **138.6 — Mutual peering handshake verification.** Drive both 138.4 and 138.5 so each side's
   `following`/`followers` collection lists the other.
   **Check:** Iris's Peers tab (89.1 UI) shows the Lemmy community; confirm and document that Lemmy
   auto-accepted with no manual approval step (expected platform behavior, not a defect).
+  (Done 2026-09-15: `AcceptActivityHandler` community branch now records both follow+follower edges;
+  `RemoteActorCache`/`RemoteKeyCache` gained `Clear()`; 3 integration tests on a cross-wired two-host
+  fixture verify both `/following`, both `/followers` (auto-accept round trip), and the peer Group
+  persisted on both sides. Root cause of the delivery `TransportError`: re-seeding community keys in
+  `InitializeAsync` disposed the RSA material in the `IdentityKeys` key store via
+  `InMemoryKeyStore.PutKey`'s replace-and-dispose; fixed by `SeedCommunityWithExistingKey`.)
 - [ ] **138.7 — Peering trust/identity checks.** Confirm HTTP Signature validation against the *real*
   Lemmy actor key succeeds in both directions (not just Iris-to-Iris tests). Specifically re-check
   Digest header casing (230) and signature-component construction against Lemmy's validator.
