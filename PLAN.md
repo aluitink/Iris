@@ -110,7 +110,8 @@ Progress for both phases is tracked **inside their own docs**, not enumerated he
 
 ## Recently Completed
 
-- **138 Stage A (138.1–138.3) — manual orchestration foundation:** local Lemmy stack audited, two-way reachability matrix confirmed (no blocked path), and matched content fixtures seeded on both platforms (Iris `interop` community + 2 posts + 2 replies; Lemmy `interop` community + 2 posts + 2 comments). Fixtures manifest recorded in [docs/plans/phase-138-lemmy-community-integration.md](docs/plans/phase-138-lemmy-community-integration.md). Next: Stage B (138.4 Lemmy→Iris community discovery).
+- **138.4 (unblock) — instance-actor document at the instance root:** Iris now serves the configured instance actor's public document at `GET /` when the request is an ActivityPub client (content-negotiated via `Accept`), fixing the defect that blocked Lemmy from resolving any Iris object (its site-actor dereference from the instance root was getting the HTML shell). 5 integration tests + live-verified from the Lemmy container. [Change doc](docs/changes/13804-phase138-iris-instance-actor-at-root.md).
+- **138 Stage A (138.1–138.3) — manual orchestration foundation:** local Lemmy stack audited, two-way reachability matrix confirmed (no blocked path), and matched content fixtures seeded on both platforms (Iris `interop` community + 2 posts + 2 replies; Lemmy `interop` community + 2 posts + 2 comments). Fixtures manifest recorded in [docs/plans/phase-138-lemmy-community-integration.md](docs/plans/phase-138-lemmy-community-integration.md).
 
 ## Keeping the docs lean
 
