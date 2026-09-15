@@ -6582,6 +6582,39 @@ public static class ActivityPubServerExtensions
                 document.ExtensionData[ns + IrisExtensionTerms.Score] =
                     System.Text.Json.JsonSerializer.SerializeToElement(l - dl);
             }
+
+            // 138.25: Lemmy-specific metadata terms — re-render the bare Lemmy fields from the stored
+            // object's ExtensionData under the iris: namespace. The stored object carries the raw Lemmy
+            // keys (locked, language, sensitive) in its ExtensionData; the deep-copy preserves them, but
+            // clients read the iris:-namespaced keys. Only render when the bare key is present (absent
+            // for locally-created objects that don't have these fields).
+            if (obj.ExtensionData is { } srcExt)
+            {
+                if (srcExt.TryGetValue("locked", out var lockedEl) &&
+                    lockedEl.ValueKind == System.Text.Json.JsonValueKind.True)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Locked] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+
+                if (srcExt.TryGetValue("featured", out var featEl) &&
+                    featEl.ValueKind == System.Text.Json.JsonValueKind.True)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Featured] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+
+                if (srcExt.TryGetValue("language", out var langEl) &&
+                    langEl.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    langEl.GetString() is { Length: > 0 } lang)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Language] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(lang);
+                }
+            }
         }
 
         return ActivityJson.Serialize(document);
@@ -8554,6 +8587,30 @@ public static class ActivityPubServerExtensions
                     communityIri.OutboxOf().Value);
                 changed = true;
             }
+        }
+
+        // 138.25: Lemmy community-level metadata — re-render the bare Lemmy fields from the stored
+        // community's ExtensionData under the iris: namespace. A stored Lemmy community carries
+        // `sensitive` (the NSFW flag) and `postingRestrictedToMods` in its ExtensionData; the deep-copy
+        // preserves them, but clients read the iris:-namespaced keys. Only render when the bare key is
+        // present and true (absent for locally-created communities).
+        var lemmyNs = IrisExtensionNamespace(options);
+        if (ext.TryGetValue("sensitive", out var sensEl) &&
+            sensEl.ValueKind == System.Text.Json.JsonValueKind.True &&
+            !ext.ContainsKey(lemmyNs + IrisExtensionTerms.CommunityNsfw))
+        {
+            ext[lemmyNs + IrisExtensionTerms.CommunityNsfw] =
+                System.Text.Json.JsonSerializer.SerializeToElement(true);
+            changed = true;
+        }
+
+        if (ext.TryGetValue("postingRestrictedToMods", out var prtmEl) &&
+            prtmEl.ValueKind == System.Text.Json.JsonValueKind.True &&
+            !ext.ContainsKey(lemmyNs + IrisExtensionTerms.PostingRestrictedToMods))
+        {
+            ext[lemmyNs + IrisExtensionTerms.PostingRestrictedToMods] =
+                System.Text.Json.JsonSerializer.SerializeToElement(true);
+            changed = true;
         }
 
         if (changed)
