@@ -170,7 +170,10 @@ retro-apply (the community's NSFW flag can change later). 8 integration tests.
 **138.27 (full-platform terminology & model audit) is DONE** (2026-09-15) — 12-finding audit;
 shared model is platform-agnostic and generalizes to Pleroma/Misskey; one S2 UI leak (vote-bar
 gate is Lemmy-IRI-shaped) filed for a later UX slice; one S3 cosmetic rename (`IsLemmy`).
-**Next concrete step is 138.28** (interop conformance matrix — living reference doc).
+**138.28 (interop conformance matrix) is DONE** (2026-09-15) — living reference doc at
+[docs/reference/INTEROP_CONFORMANCE_MATRIX.md](../reference/INTEROP_CONFORMANCE_MATRIX.md);
+linked from PLAN.md. **Next concrete step is 138.29** (closeout — full regression pass + final
+live manual Playwright pass).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -468,13 +471,19 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   affordance — filed for a later UX slice (generalize to `dislikedCount > 0` / `dislike`
   capability; rename `LemmyVoteBar` → `VoteBar`). One S3 cosmetic: `IsLemmy` rename. See
   [docs/changes/13827-phase138-cross-platform-terminology-audit.md](../changes/13827-phase138-cross-platform-terminology-audit.md).
-- [ ] **138.28 — Interop conformance matrix (living reference doc).** Produce a single reference table —
+- [x] **138.28 — Interop conformance matrix (living reference doc).** Produce a single reference table —
   peer software × capability (follow, post, reply, like, dislike/no-dislike, boost/no-boost, edit,
   delete, community moderation, NSFW) — capturing what's supported/verified per remote platform.
   Place it in [docs/reference/](../reference/) (not scattered across change docs) as the ongoing
   "are we consistent" artifact.
   **Check:** the matrix exists, is linked from PLAN.md's documentation table, and reflects the
   verified state from all prior slices in this phase.
+
+  **Done (2026-09-15):** [docs/reference/INTEROP_CONFORMANCE_MATRIX.md](../reference/INTEROP_CONFORMANCE_MATRIX.md)
+  created — peer×capability grid (Mastodon/Pleroma/Misskey/PeerTube/Lemmy × 10 capabilities) with
+  per-platform verified-state, doc citations, capability-coverage table, and a maintenance
+  protocol. Linked from PLAN.md's documentation table. Reflects the verified state from all prior
+  Phase 138 slices + 81.x/79.3/82.x.
 - [ ] **138.29 — Closeout.** Full regression pass (`dotnet test --filter "Category!=Slow"` then the full
   suite) + a final live manual Playwright pass across an Iris↔Iris scenario and an Iris↔Lemmy
   scenario side by side, confirming no regression to existing Mastodon-facing behavior.

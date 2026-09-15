@@ -15,6 +15,7 @@ A set of .NET libraries for ActivityPub, designed to be embedded in existing app
 | [docs/phase-notes/](docs/phase-notes/README.md) | Phase rationale and test-count notes | archival |
 | [docs/plans/](docs/plans/) | Deep-dive scope docs for multi-turn workstreams (e.g. [phase-22-closeout.md](docs/plans/phase-22-closeout.md)) | read when picking up that workstream |
 | [docs/reference/ARCHITECTURE.md](docs/reference/ARCHITECTURE.md) | Design principles, solution layout, cross-cutting concerns | reference |
+| [docs/reference/INTEROP_CONFORMANCE_MATRIX.md](docs/reference/INTEROP_CONFORMANCE_MATRIX.md) | Living peer×capability conformance matrix (the "are we consistent" artifact) | reference; update as interop slices land |
 | [docs/reference/PROJECTS.md](docs/reference/PROJECTS.md) | Per-project details for Iris libraries | reference |
 | [docs/reference/TESTING.md](docs/reference/TESTING.md) | Integration-first testing strategy | reference |
 | [docs/reference/CODING_STYLE.md](docs/reference/CODING_STYLE.md) | Binding conventions and ActivityStreams rules | before every coding turn |
@@ -114,11 +115,11 @@ Progress for both phases is tracked **inside their own docs**, not enumerated he
 
 ## Recently Completed
 
+- **138.28 (interop conformance matrix) — reference doc:** living peer×capability grid (5 platforms × 10 capabilities) at [docs/reference/INTEROP_CONFORMANCE_MATRIX.md](docs/reference/INTEROP_CONFORMANCE_MATRIX.md); linked from PLAN.md.
 - **138.27 (cross-platform terminology & model audit) — reviewed:** 12-finding audit; shared model platform-agnostic, generalizes to Pleroma/Misskey; one S2 UI leak (vote-bar gate is Lemmy-IRI-shaped) + one S3 cosmetic rename filed. [Change doc](docs/changes/13827-phase138-cross-platform-terminology-audit.md).
 - **138.26 (community-level NSFW alignment) — decided + implemented:** `RequiresCw(content, community)` client helper; no server-side retro-apply. 8 tests.
 - **138.25 (Lemmy metadata rendering) — implemented:** `ServeObjectDocument`/`CommunityDocumentHandler` render the new `iris:` terms. 7 tests.
 - **138.24 (Lemmy metadata extension terms) — designed:** 5 new `iris:` terms; namespace doc updated; `GetBool` bug fixed; 6 client readers; 7 tests.
-- **138.23 (deletion vs. mod-removal) — implemented:** `DeleteActivityHandler` accepts community-member deletes; `iris:removedBy` tombstone. 5 tests.
  ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**
