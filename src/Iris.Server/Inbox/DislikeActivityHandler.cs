@@ -15,6 +15,14 @@ public sealed class DislikeActivityHandler : ActivityHandlerBase<Dislike>
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
 
+    /// <summary>
+    /// Initializes a new <see cref="DislikeActivityHandler"/>.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IDislikeStore"/>,
+    /// <see cref="IObjectStore"/>, and <see cref="ICommunityStore"/>).</param>
+    /// <param name="localActors">Resolves whether the recipient is a local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
+    /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public DislikeActivityHandler(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
@@ -27,6 +35,7 @@ public sealed class DislikeActivityHandler : ActivityHandlerBase<Dislike>
         _localActors = localActors;
     }
 
+    /// <inheritdoc/>
     public override async Task HandleAsync(InboxDelivery delivery, Dislike dislike, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(delivery);
