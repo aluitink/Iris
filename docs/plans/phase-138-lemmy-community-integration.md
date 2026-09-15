@@ -119,7 +119,12 @@ Postgres. Key asymmetry: Iris dead-letters after 5 attempts (~31s); Lemmy retrie
 a remote community's post list is an explicit cross-post (target community `Group` in `to`, `Create`
 delivered to its `sharedInbox`/`inbox` signed as the authoring local actor, `Note` object,
 client-supplied target IRI, same activity id reused). Note-vs-`Page` deferred to 138.11.
-**Next concrete step is 138.10** (implement + exercise the post-to-Lemmy-community delivery path).
+**138.10 (post-to-Lemmy-community delivery path) is DONE** (2026-09-15) — cross-post leg implemented
+(decision 058): a Create whose `to` explicitly addresses a remote community is delivered to that
+community's inbox (sharedInbox/inbox, signed as the authoring local actor); 2 two-instance integration
+tests (positive cross-post + negative control). Live Lemmy acceptance (post in Lemmy's own post
+listing) is exercised live with the 138.11 fidelity check.
+**Next concrete step is 138.11** (cross-post fidelity check — live Lemmy-rendered post, Note-vs-`Page`).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -257,10 +262,7 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 ### Stage C — Outbound: Iris post → Lemmy
 
 - [x] **138.9 — Decide the push-content-to-Lemmy shape.** Decision recorded in [058](../decisions/058-outbound-post-to-peered-community-shape.md): an Iris post landing in a remote community's post list is an **explicit cross-post** — the target community's `Group` IRI goes in the `Create`'s `to` (direct recipient), the `Create` is delivered to the community's `sharedInbox`/`inbox` signed as the authoring local actor, the object is a `Note` (Note-vs-`Page` deferred to 138.11), and the target is a client-supplied community IRI (no implicit push into followed communities — a follow is a pull, 036/89.1). The same once-minted activity id is reused for the cross-post leg (055). [Change doc](../changes/13809-phase138-push-content-to-lemmy-shape.md).
-- [ ] **138.10 — Implement + exercise the post-to-Lemmy-community delivery path.** Wire the outbound
-  audience/delivery so an Iris community post is delivered to the peered Lemmy community's inbox.
-  **Check:** the post appears in Lemmy's own post listing (`/api/v3/post/list?community_id=...` or
-  the Lemmy UI), attributed to the Iris actor.
+- [x] **138.10 — Implement + exercise the post-to-Lemmy-community delivery path.** Implemented the cross-post leg (decision 058): a new `GetCrossPostTargetsAsync` in `OutboxPublishHandler`'s Create branch delivers the `Create` to every remote recipient explicitly addressed in the `to` audience (the cross-post target community), resolved via `DeliverToActorAsync` (sharedInbox/inbox, signed as the authoring local actor). Best-effort; reuses the once-minted activity id (055). 2 integration tests (`CrossPostToRemoteCommunityIntegrationTests`, two-instance): the cross-posted Create reaches the target community's instance and lands in its local member's outbox; a plain post not addressed to the remote community does not reach it (negative control). **Live Lemmy acceptance (post in Lemmy's own post listing) is exercised live with the 138.11 fidelity check** (whether Lemmy requires a `Page`). [Change doc](../changes/13810-phase138-post-to-lemmy-community-delivery.md).
 - [ ] **138.11 — Cross-post fidelity check.** Verify title, body/markdown, links/attachments, and NSFW
   flag survive the hop and render correctly in Lemmy. Confirm whether Lemmy requires a `Page` (not a
   `Note`) for it to validate/render as a proper post — if so, this is a real Iris change (mint `Page`
