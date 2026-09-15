@@ -170,35 +170,28 @@ a top-level content object that Lemmy's `PageType` enum accepts (Lemmy's `ApubPa
 3. The local outbox and follower fan-out retain the original `Note` (no impact on local users or
    Mastodon-style peers that accept `Note` for top-level posts).
 
-### Live Lemmy acceptance: still pending (HTTP 400)
+### Live Lemmy acceptance: RESOLVED (commit `9534ff8` + `to`/`cc` fix)
 
-Despite the `Page` transformation, live Lemmy acceptance is still failing. When Iris delivers the
-cross-posted `Create(Page)` to Lemmy's shared inbox (`https://lemmy.luit.ink/inbox`), Lemmy returns
-HTTP 400 with:
+The live Lemmy acceptance was failing with HTTP 400:
 
 ```
 data did not match any variant of untagged enum AnnouncableActivities
 ```
 
-This is the top-level activity deserialization failing in Lemmy's `SharedInboxActivities` enum. The
-`Create` activity should match the `RawAnnouncableActivities` catch-all variant (which accepts any
-activity with an `id` and `actor`), but it's not matching. The root cause is not yet determined.
+**Root cause:** Lemmy's `CreateOrUpdatePage` struct requires both `to` and `cc` fields on the `Create`
+activity itself (neither has a serde default). The Iris client sends the audience (`to`) only on the
+embedded `Note`/`Page` object, not on the `Create` activity. When `TransformCreateForCrossPost`
+transformed the `Note` to a `Page`, it copied `create.To` (which was null) to the new `Create`, so the
+delivered `Create` had no `to` field. Lemmy's `CreateOrUpdatePage` deserialization failed because `to`
+is required.
 
-**Investigation so far:**
-- The `Page` object is correctly serialized with `type: "Page"`, `id`, `attributedTo`, `content`, etc.
-- The `Create` activity is correctly serialized with `type: "Create"`, `actor`, `object`, `id`, etc.
-- The `@context` field is present.
-- The `Content-Type` is `application/activity+json`.
-- The HTTP signature is being sent (the 400 is not a signature error).
+**Fix:** `TransformCreateForCrossPost` now copies the embedded object's `to` and `cc` to the `Create`
+activity when the `Create` doesn't have them. This ensures the delivered `Create` has both `to` and
+`cc` fields, satisfying Lemmy's `CreateOrUpdatePage` requirements.
 
-**Next steps for investigation:**
-1. Capture the exact JSON body that Iris is sending to Lemmy (add debug logging to the delivery worker).
-2. Compare it byte-for-byte with what Lemmy's `RawAnnouncableActivities` deserializer expects.
-3. Check if there's a JSON serialization issue (e.g., a field that's being serialized as an array
-   instead of a scalar, or a missing required field).
-4. Check if Lemmy's `SharedInboxActivities` enum is trying to match the `Create` against one of the
-   earlier variants (e.g., `AnnounceActivity`) and failing in a way that prevents the catch-all from
-   being tried.
+**Verification:** After the fix, a live cross-post from Iris (alice) to the Lemmy `interop` community
+succeeds. The post appears in Lemmy's post listing with the correct `ap_id`, `creator`, and `community`
+fields.
 
 ## Files changed (defects #1, #2, #3 — commit `1ee58de`)
 

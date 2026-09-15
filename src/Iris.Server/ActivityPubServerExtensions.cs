@@ -5212,13 +5212,27 @@ public static class ActivityPubServerExtensions
             Source = note.Source,
         };
 
+        // Lemmy's CreateOrUpdatePage requires a `to` field on the Create activity itself (not just on
+        // the embedded object). Copy the embedded object's `to` (which includes the target community
+        // IRI) to the Create activity's `to` so Lemmy can validate the audience.
+        var to = create.To is { } createTo && createTo.Any()
+            ? create.To
+            : note.To;
+
+        // Lemmy's CreateOrUpdatePage requires both `to` and `cc` fields on the Create activity
+        // (neither has a serde default). Copy the embedded object's `to` and `cc` (which include
+        // the target community IRI and Public) to the Create activity so Lemmy can validate them.
+        var cc = create.Cc is { } createCc && createCc.Any()
+            ? create.Cc
+            : note.Cc;
+
         return new Create
         {
             Id = create.Id,
             Actor = create.Actor,
             Object = [page],
-            To = create.To,
-            Cc = create.Cc,
+            To = to ?? [],
+            Cc = cc ?? [],
         };
     }
 
