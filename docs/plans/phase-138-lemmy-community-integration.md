@@ -150,8 +150,12 @@ two-instance integration tests (`LemmyReplyToPostIntegrationTests`).
 records a Lemmy upvote on a synced post identically to a remote Mastodon like; the like edge is
 recorded in the `ILikeStore` and, for community inbox deliveries, in local members' outboxes. 3
 integration tests (`LemmyLikeInboundIntegrationTests`).
-**Next concrete step is 138.16** (Iris → Lemmy likes: verify an Iris-authored `Like` delivered to the
-Lemmy post's inbox is accepted and reflected in Lemmy's score).
+**138.16 (Iris → Lemmy likes) is DONE** (2026-09-15) — verified that an Iris-authored `Like` of a
+Lemmy-sourced post (a `Page`) is delivered to the object's home via the existing outbound Like
+federation path; the like edge is recorded on the object's home and the `/likes` collection lists
+the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationTests`).
+**Next concrete step is 138.17** (Dislikes/downvotes — new Iris capability: Lemmy downvotes are
+`Dislike` activities; add an inbound `Dislike`/`Undo(Dislike)` handler mirroring the Like model).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -351,9 +355,12 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   Mastodon like: the like edge is recorded in the `ILikeStore`, and when delivered to a community's
   inbox the like is also recorded in local members' outboxes. 3 integration tests
   (`LemmyLikeInboundIntegrationTests`). [Change doc](../changes/13815-phase138-lemmy-like-inbound.md).
-- [ ] **138.16 — Likes (upvotes): Iris → Lemmy.** Verify an Iris-authored `Like` delivered to the Lemmy
-  post's inbox is accepted and reflected in Lemmy's score.
-  **Check:** Lemmy's displayed score/upvote count increases after the Iris like.
+- [x] **138.16 — Likes (upvotes): Iris → Lemmy.** Verified that an Iris-authored `Like` of a
+  Lemmy-sourced post (a `Page`) is delivered to the object's home (the Lemmy stand-in) via the
+  existing outbound Like federation path (Phase 24.1 `ResolveObjectOwnerForDeliveryAsync` +
+  server→server delivery); the like edge is recorded on the object's home and the `/likes`
+  collection lists the Iris liker. 2 two-instance integration tests
+  (`LemmyLikeOutboundIntegrationTests`). [Change doc](../changes/13816-phase138-iris-like-to-lemmy.md).
 - [ ] **138.17 — Dislikes (downvotes) — new Iris capability.** Lemmy downvotes are `Dislike` activities,
   which Iris does not model at all today. Add an inbound `Dislike`/`Undo(Dislike)` handler mirroring
   the `Like`/`Undo(Like)` edge model (new reverse-index + `iris:dislikedCount`/`iris:isDisliked`
