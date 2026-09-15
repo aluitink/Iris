@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Iris.Server.Inbox;
 
 /// <summary>
-/// Handles an inbound <see cref="Delete"/> activity: when the deleting actor is a local actor and the
+/// Handles an inbound <see cref="Delete"/> activity: when the deleting actor is authorized and the
 /// referenced object is one this instance stores, the stored object is replaced by a
 /// <see cref="Tombstone"/> (the AS2.0 "deleted" marker, F-03/F-10).
 /// </summary>
@@ -19,17 +19,24 @@ namespace Iris.Server.Inbox;
 /// spec's "deleted" marker (F-10).
 /// </remarks>
 /// <para>
-/// <strong>Owner guard.</strong> Only the object's owner (the activity's <c>actor</c>) may delete it. The
-/// handler requires that the actor is a <em>local</em> actor on this instance <em>and</em> that an object
-/// with the referenced IRI is actually stored here; otherwise it is a no-op (a delete for an object this
-/// instance does not hold, or a delete purporting to be from a remote actor, is not this instance's
-/// concern). This prevents a remote actor from tombstoning content it does not own.
+/// <strong>Authorization guard (138.23).</strong> The deleting actor must be authorized to delete the
+/// stored object. Two cases are accepted:
+/// <list type="bullet">
+/// <item><em>Author delete:</em> the actor is the object's <c>attributedTo</c> owner (or a local actor).
+/// This is the permanent author-delete case.</item>
+/// <item><em>Mod removal:</em> the actor is a member of a community referenced in the object's
+/// <c>to</c>/<c>cc</c> array (the Lemmy moderator-removal case, where a community moderator deletes
+/// another member's post). The tombstone records <c>iris:removedBy</c> so the UI can distinguish the
+/// two cases.</item>
+/// </list>
+/// A remote actor that is neither the owner nor a member of an associated community is rejected.
 /// </para>
 /// <para>
-/// <strong>Tombstone <c>formerType</c>.</strong> When the deleted object was stored (an
-/// <see cref="IObject"/>), its AS2.0 <c>type</c> is recorded in the tombstone's <c>formerType</c> so a
-/// client can tell what was deleted. When the stored object cannot be read (should not happen after the
-/// guard), the tombstone omits <c>formerType</c>.
+/// <strong>Tombstone <c>formerType</c> and <c>iris:removedBy</c>.</strong> When the deleted object was
+/// stored (an <see cref="IObject"/>), its AS2.0 <c>type</c> is recorded in the tombstone's
+/// <c>formerType</c> so a client can tell what was deleted. The <c>iris:removedBy</c> extension records
+/// the deleting actor's IRI, distinguishing an author delete (actor == attributedTo) from a mod removal
+/// (actor is a community member, not the owner).
 /// </para>
 /// <para>
 /// <strong>Federated propagation (the federated half of F-03).</strong> After tombstoning the object
@@ -61,8 +68,8 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
     /// <summary>
     /// Initializes a new <see cref="DeleteActivityHandler"/>.
     /// </summary>
-    /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/> and
-    /// <see cref="IReplyStore"/>).</param>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/>,
+    /// <see cref="IReplyStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether the deleting actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Delete"/> to the
     /// remote actors that need the tombstone, the federated half of F-03).</param>
@@ -105,23 +112,22 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
 
         // Tombstone only an object this instance actually stores (one created by a Create, or previously
         // stored). An object with no local record is not this instance's to delete. Read the stored
-        // object first so the tombstone can record its formerType and so the owner guard (below) can
-        // check attribution for a federated delete.
+        // object first so the tombstone can record its formerType and so the authorization guard (below)
+        // can check attribution / community membership for a federated delete.
         if (!await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out var stored, ct).ConfigureAwait(false))
         {
             return;
         }
 
-        // Owner guard: the deleting actor must own the stored object. A <em>local</em> author is always
-        // the owner of an object this instance stores (it created it); a <em>remote</em> author is
-        // accepted only when this instance holds a copy of the author's object (stored via the outbound
-        // <c>Create</c> federation) and the stored object is attributed to that author. This is the
-        // federated half of F-03: a remote instance that received an author's post stores a copy and must
-        // apply the author's later <c>Delete</c> to it (the actor is remote, so it is not "local" here,
-        // but it is the owner of this instance's copy). A remote actor deleting an object it does not own
-        // is rejected.
+        // Authorization guard (138.23): the deleting actor must be authorized to delete the stored object.
+        // (a) A local actor is always authorized.
+        // (b) A remote actor is authorized if it is the object's attributedTo owner (author delete).
+        // (c) A remote actor is authorized if it is a member of a community referenced in the object's
+        //     to/cc array (mod removal — the Lemmy moderator-removal case).
         var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri.Value, ct).ConfigureAwait(false);
-        if (!actorIsLocal && (stored is null || !IsAttributedTo(stored, actorIri)))
+        var isAuthor = stored is not null && IsAttributedTo(stored, actorIri);
+        var isModRemoval = !actorIsLocal && !isAuthor && await IsCommunityMemberOfAssociatedCommunityAsync(stored, actorIri.Value, ct).ConfigureAwait(false);
+        if (!actorIsLocal && !isAuthor && !isModRemoval)
         {
             return;
         }
@@ -142,8 +148,17 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
         }
 
         var formerType = stored?.Type?.FirstOrDefault();
+        var tombstone = objectIri.Value.BuildTombstone(formerType);
+        // 138.23: record the deleting actor's IRI on the tombstone so the UI can distinguish an
+        // author delete (no removedBy) from a mod removal (removedBy present).
+        if (!isAuthor && !actorIsLocal)
+        {
+            tombstone.ExtensionData ??= new System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement>();
+            var removedBy = System.Text.Json.JsonDocument.Parse($"\"{actorIri.Value}\"").RootElement.Clone();
+            tombstone.ExtensionData[IrisExtensionTerms.RemovedBy] = removedBy;
+        }
         await _persistence.Objects
-            .PutObjectAsync(objectIri.Value.BuildTombstone(formerType), ct)
+            .PutObjectAsync(tombstone, ct)
             .ConfigureAwait(false);
 
         // F-12: when the deleted object is a reply, remove the local parent → child reply edge so the
@@ -178,12 +193,16 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
         // Create time), not derived from the object IRI — the note's ULID and its Create's ULID are
         // independent, so the old "sibling by last segment" derivation no longer holds. A missing link
         // (object not created through a Create this instance recorded) is a no-op.
+        // 138.23: for a mod-removal the deleting actor is the moderator, not the author. The outbox
+        // entry was recorded under the author's IRI (the object's attributedTo), so resolve the
+        // author from the stored object, not from the activity's actor.
         if (await _persistence.Creates
                 .TryGetCreateIriAsync(objectIri.Value, ct)
                 .ConfigureAwait(false) is { } createIri)
         {
+            var outboxOwnerIri = ResolveOutboxOwnerIri(stored, actorIri);
             await _persistence.Activities
-                .RemoveFromOutboxAsync(actorIri.Value, createIri, ct)
+                .RemoveFromOutboxAsync(outboxOwnerIri, createIri, ct)
                 .ConfigureAwait(false);
             await _persistence.Creates
                 .RemoveAsync(objectIri.Value, ct)
@@ -207,7 +226,7 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
     /// <summary>
     /// Reports whether the stored object is attributed to <paramref name="actorIri"/> (its
     /// <c>attributedTo</c> link resolves to that IRI). Used to accept a federated <see cref="Delete"/>
-    /// from a remote owner of a copy this instance holds.
+    /// from a remote owner of a copy this instance holds (the author-delete case).
     /// </summary>
     private static bool IsAttributedTo(IObject stored, Iri? actorIri)
     {
@@ -224,5 +243,57 @@ public sealed class DeleteActivityHandler : ActivityHandlerBase<Delete>
 
         var iri = attributed.ResolveObjectIri();
         return iri is { } a && string.Equals(a.Value, actor.Value, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Resolves the IRI of the actor whose outbox the deleted object's <c>Create</c> was recorded in.
+    /// For an author delete (or a local delete) this is the deleting actor. For a mod-removal this is
+    /// the object's <c>attributedTo</c> owner (the author), since the <c>Create</c> was recorded in the
+    /// author's outbox, not the moderator's.
+    /// </summary>
+    private static Iri ResolveOutboxOwnerIri(IObject? stored, Iri? actorIri)
+    {
+        if (stored is ActivityObject obj)
+        {
+            var attributed = obj.AttributedTo?.FirstOrDefault();
+            if (attributed is not null && attributed.ResolveObjectIri() is { } attrIri)
+            {
+                return attrIri;
+            }
+        }
+
+        return actorIri ?? new Iri(string.Empty);
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="actorIri"/> is a member of any community referenced in the
+    /// stored object's <c>to</c> or <c>cc</c> array (the mod-removal case, 138.23). A Lemmy moderator
+    /// who removes a community member's post sends a <c>Delete</c> with the moderator as actor; the
+    /// stored object's <c>to</c>/<c>cc</c> names the community, and the moderator is a member of that
+    /// community.
+    /// </summary>
+    private async Task<bool> IsCommunityMemberOfAssociatedCommunityAsync(
+        IObject? stored, Iri actorIri, CancellationToken ct)
+    {
+        if (stored is not ActivityObject obj)
+        {
+            return false;
+        }
+
+        foreach (var audience in (obj.To ?? []) .Concat(obj.Cc ?? []))
+        {
+            var communityIri = audience.ResolveObjectIri();
+            if (communityIri is not { } ci)
+            {
+                continue;
+            }
+
+            if (await _persistence.Communities.IsMemberAsync(ci, actorIri, ct).ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

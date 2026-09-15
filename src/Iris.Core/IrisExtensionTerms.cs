@@ -197,4 +197,15 @@ public static class IrisExtensionTerms
     /// <c>{NamespaceIri}dislikeActivityIri</c>.
     /// </summary>
     public const string DislikeActivityIri = "dislikeActivityIri";
+
+    /// <summary>
+    /// The <c>removedBy</c> extension (138.23): the IRI of the actor who deleted/removed the object,
+    /// rendered on a <c>Tombstone</c> document <em>only when</em> the deleter is not the object's
+    /// <c>attributedTo</c> owner (i.e. a moderator removal, not an author delete). This allows the UI to
+    /// distinguish "deleted by author" (no <c>removedBy</c> — the tombstone's <c>formerType</c> is
+    /// sufficient) from "removed by moderator" (<c>removedBy</c> present — the content is hidden by a
+    /// moderation action and may be restorable). Cacheable, per-object (tombstones are permanent). The
+    /// full wire key is <c>{NamespaceIri}removedBy</c>.
+    /// </summary>
+    public const string RemovedBy = "removedBy";
 }
