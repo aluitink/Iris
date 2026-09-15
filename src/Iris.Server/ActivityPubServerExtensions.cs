@@ -3383,6 +3383,25 @@ public static class ActivityPubServerExtensions
                 // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
                 // star-subscribed fan-out servers) so they can re-fan the content to the wider federation.
                 await DeliverToRelaysAsync(persistence, delivery, actorIri, activity, ct).ConfigureAwait(false);
+
+                // 138.10 / decision 058 (cross-post): when the author explicitly addresses a REMOTE
+                // community (or actor) in the Create's `to` audience — a deliberate cross-post to a peered
+                // non-Iris community, e.g. a Lemmy community — deliver the Create to that recipient's
+                // inbox, exactly as a Lemmy/Mastodon client cross-posts. The target is the client's
+                // composed `to` entry (the cross-post target community's Group IRI), preserved by
+                // RewriteOutboundAudienceAsync (which only appends to `cc`/the reply's `to`). The follower
+                // fan-out above already covers the author's followers; this leg adds the explicitly-
+                // addressed remote recipients. Local recipients are excluded (they are on this instance —
+                // no cross-instance hop); recipients already fanned out (followers) and relays are
+                // excluded (no duplicate delivery). A blocked recipient is excluded (the trust boundary).
+                // Best-effort: an unresolvable/unreachable target simply does not deliver — the follower
+                // fan-out and the local record already succeeded.
+                var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, actorIri, create, recipients, ct)
+                    .ConfigureAwait(false);
+                foreach (var target in crossPostTargets)
+                {
+                    await delivery.DeliverToActorAsync(target, activity, actorIri, ct).ConfigureAwait(false);
+                }
             }
             else if (activity is Announce announce)
             {
@@ -5134,6 +5153,81 @@ public static class ActivityPubServerExtensions
         {
             await delivery.DeliverToActorAsync(relayIri, activity, actorIri, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Computes the cross-post targets of an outbound <see cref="Create"/> published to a local actor's
+    /// outbox (138.10 / decision 058): the REMOTE recipients the author explicitly addressed in the
+    /// activity's <c>to</c> audience, minus the recipients the follower fan-out already covers.
+    /// </summary>
+    /// <remarks>
+    /// A community *follow* is a pull (decision 036 / Phase 89.1): the follower subscribes to the
+    /// followed side's content; it does not push the follower's own posts into the followed community.
+    /// For an Iris-authored post to land *inside* a peered non-Iris community's post list (a Lemmy
+    /// community, e.g.), the author must cross-post: explicitly address the target community in the
+    /// <c>Create</c>'s <c>to</c> audience and deliver the <c>Create</c> to that community's inbox, exactly
+    /// as a Lemmy/Mastodon client cross-posts. This method reads the composed <c>to</c> audience (preserved
+    /// by <see cref="RewriteOutboundAudienceAsync"/>, which only appends to <c>cc</c> and to a reply's
+    /// <c>to</c>) and returns the subset that is (a) remote (not a local actor — a local recipient is on
+    /// this instance, no cross-instance hop), (b) not the public-audience sentinel, (c) not already
+    /// fanned out to a follower (no duplicate delivery), and (d) not blocked (the trust boundary). The
+    /// result is delivered by the caller via <c>DeliverToActorAsync</c> (which resolves the recipient's
+    /// <c>sharedInbox</c>/<c>inbox</c> and signs as the acting local actor).
+    /// </remarks>
+    /// <param name="persistence">The persistence provider (provides the moderation store for the block
+    /// check).</param>
+    /// <param name="localActors">Resolves whether a candidate recipient is a local actor.</param>
+    /// <param name="authorIri">The acting local actor (the author; the block edge is checked
+    /// <c>recipient → author</c>, i.e. whether the recipient blocked the author).</param>
+    /// <param name="create">The outbound <see cref="Create"/> whose <c>to</c> audience is read.</param>
+    /// <param name="alreadyFannedOut">The recipients the follower fan-out already delivered to (excluded
+    /// to avoid a duplicate delivery).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The remote, non-blocked, explicitly-addressed cross-post targets; possibly empty.</returns>
+    private static async Task<IReadOnlyList<Iri>> GetCrossPostTargetsAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        Iri authorIri,
+        Create create,
+        IEnumerable<Iri> alreadyFannedOut,
+        CancellationToken ct)
+    {
+        var fannedOut = new HashSet<Iri>(AudienceIriComparer.Instance);
+        foreach (var recipient in alreadyFannedOut)
+        {
+            fannedOut.Add(recipient);
+        }
+
+        var targets = new List<Iri>();
+        var seen = new HashSet<Iri>(AudienceIriComparer.Instance);
+
+        foreach (var entry in create.To ?? [])
+        {
+            var target = entry.ResolveObjectIri();
+            if (target is not { } resolved || resolved.IsPublicAudience() || !seen.Add(resolved))
+            {
+                continue;
+            }
+
+            if (fannedOut.Contains(resolved))
+            {
+                continue;
+            }
+
+            if (await localActors.IsLocalActorAsync(resolved, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            if (await persistence.Moderation.IsBlockedAsync(resolved, authorIri, ct).ConfigureAwait(false))
+            {
+                continue;
+            }
+
+            targets.Add(resolved);
+        }
+
+        return targets;
     }
 
     /// <summary>
