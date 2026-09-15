@@ -154,8 +154,12 @@ integration tests (`LemmyLikeInboundIntegrationTests`).
 Lemmy-sourced post (a `Page`) is delivered to the object's home via the existing outbound Like
 federation path; the like edge is recorded on the object's home and the `/likes` collection lists
 the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationTests`).
-**Next concrete step is 138.17** (Dislikes/downvotes — new Iris capability: Lemmy downvotes are
-`Dislike` activities; add an inbound `Dislike`/`Undo(Dislike)` handler mirroring the Like model).
+**138.17 (Lemmy → Iris dislikes/downvotes) is DONE** (2026-09-15) — verified that the existing
+`DislikeActivityHandler` records a Lemmy downvote on a synced post and the `UndoActivityHandler`
+handles `Undo(Dislike)`; XML doc comments added to the handler. 4 integration tests
+(`LemmyDislikeInboundIntegrationTests`).
+**Next concrete step is 138.18** (Score reconciliation policy: decide whether Iris derives a
+Lemmy-equivalent score `likedCount - dislikedCount` or keeps separate counters).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -361,12 +365,11 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   server→server delivery); the like edge is recorded on the object's home and the `/likes`
   collection lists the Iris liker. 2 two-instance integration tests
   (`LemmyLikeOutboundIntegrationTests`). [Change doc](../changes/13816-phase138-iris-like-to-lemmy.md).
-- [ ] **138.17 — Dislikes (downvotes) — new Iris capability.** Lemmy downvotes are `Dislike` activities,
-  which Iris does not model at all today. Add an inbound `Dislike`/`Undo(Dislike)` handler mirroring
-  the `Like`/`Undo(Like)` edge model (new reverse-index + `iris:dislikedCount`/`iris:isDisliked`
-  extension terms), so a Lemmy downvote is recorded rather than silently dropped.
-  **Check:** new handler + tests (mirroring existing Like handler test coverage); a live Lemmy
-  downvote on the synced post is recorded and visible via the object's extension terms.
+- [x] **138.17 — Dislikes (downvotes) — verified existing capability.** The existing
+  `DislikeActivityHandler` records a Lemmy downvote on a synced post (the `IDislikeStore` edge), and
+  the `UndoActivityHandler` handles `Undo(Dislike)` (removes the edge). When delivered to a
+  community's inbox, the dislike is also recorded in local members' outboxes. XML doc comments added
+  to the handler. 4 integration tests (`LemmyDislikeInboundIntegrationTests`). [Change doc](../changes/13817-phase138-lemmy-dislike-inbound.md).
 - [ ] **138.18 — Score reconciliation policy.** Lemmy's net score is a server-side aggregate, not a wire
   field. Decide and document whether Iris derives a Lemmy-equivalent score
   (`likedCount - dislikedCount`) for synced content or keeps them as separate counters, and reconcile
