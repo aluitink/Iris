@@ -180,4 +180,59 @@ public sealed class LemmyCommunityRelayIntegrationTests
         var communityOutbox = (await _persistence.Activities.GetOutboxAsync(_aCommunityIri)).ToList();
         Assert.Contains(communityOutbox, a => a is Announce { Id: var id } && id == announceIri.Value);
     }
+
+    /// <summary>
+    /// 138.19 (shares/boosts interop) — the relay-unwrap path correctly attributes the content to the
+    /// underlying <c>Create</c>'s actor (the original Lemmy member), NOT to the relaying community
+    /// (the <c>Announce</c>'s actor). The community-feed merge path shows the original author, and the
+    /// UI renders a <c>LemmyVoteBar</c> (upvote/downvote/score) instead of the <c>EngagementBar</c>
+    /// (which carries the Boost button), so no boost affordance is offered for Lemmy-sourced content.
+    /// </summary>
+    [Fact]
+    public async Task LemmyCommunityRelay_ContentAttributedToOriginalAuthor_NotRelayingCommunity()
+    {
+        var pageIri = new Iri($"https://lemmy.luit.ink/post/3");
+        var createIri = new Iri($"https://lemmy.luit.ink/c/interop/125");
+        var announceIri = new Iri($"https://lemmy.luit.ink/activities/announce/create/51a65ff2");
+        var lemmyCommunityIri = new Iri($"https://lemmy.luit.ink/c/interop");
+        var lemmyMemberIri = new Iri($"https://lemmy.luit.ink/u/lemmyadmin");
+
+        var page = new Page
+        {
+            Id = pageIri.Value,
+            Name = ["Original author's post"],
+            Content = ["<p>Content</p>"],
+            AttributedTo = [new Link { Href = lemmyMemberIri.Uri }],
+        };
+
+        var create = new Create
+        {
+            Id = createIri.Value,
+            Actor = [new Link { Href = lemmyMemberIri.Uri }],
+            Object = [page],
+        };
+
+        var announce = new Announce
+        {
+            Id = announceIri.Value,
+            Actor = [new Link { Href = lemmyCommunityIri.Uri }],
+            Object = [create],
+        };
+
+        var delivery = new InboxDelivery(_aCommunityIri, announce);
+
+        await _processor.ProcessAsync(delivery, CancellationToken.None);
+
+        // The Create in bob's outbox is attributed to the original Lemmy member (the Create's actor),
+        // NOT to the relaying community (the Announce's actor).
+        var bobOutbox = (await _persistence.Activities.GetOutboxAsync(_bobActorIri)).ToList();
+        var recordedCreate = bobOutbox.OfType<Create>().FirstOrDefault(
+            c => c.Object?.OfType<Page>().Any(p => p.Id == pageIri.Value) == true);
+        Assert.NotNull(recordedCreate);
+
+        var actorRef = recordedCreate!.Actor?.FirstOrDefault();
+        Assert.NotNull(actorRef);
+        var actorIri = actorRef?.ResolveObjectIri();
+        Assert.Equal(lemmyMemberIri.Value, actorIri?.ToString());
+    }
 }
