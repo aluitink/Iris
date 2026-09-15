@@ -99,12 +99,14 @@ when its **Check:** criterion has been met with recorded evidence (a curl transc
 test run, a captured payload) — not on intent alone. Do not reorder or renumber slices as they
 complete; strike through only if a slice is dropped (with a one-line reason).
 
-**Resume checkpoint:** 138.3 done (2026-09-15) — content fixtures seeded on both platforms and the
-Fixtures manifest recorded in this doc's "Fixtures" section. Iris: `interop` community
-(`https://iris.luit.ink/ap/v1/c/interop`) + 2 posts + 2 replies (created via the native compose UI,
-author `interop`). Lemmy: `interop` community (id 2) + 2 posts + 2 comments (author `lemmyadmin`).
-Stage A (manual orchestration foundation) is now complete. Next: 138.4 (Lemmy → Iris community
-discovery — follow the Iris `Group` by URL from Lemmy).
+**Resume checkpoint:** 138.3 done (2026-09-15); Stage A (138.1–138.3) complete — fixtures seeded on
+both platforms, manifest recorded below (Iris `interop` community + 2 posts + 2 replies; Lemmy
+`interop` community + 2 posts + 2 comments). **Next: 138.4 is BLOCKED** by an Iris interop defect —
+Lemmy dereferences the Iris *site actor* from the instance root `https://iris.luit.ink/` and fails
+because Iris serves its HTML splash page there, not an ActivityStreams instance-actor document
+(`Failed to parse object https://iris.luit.ink/ with content <!DOCTYPE html>` in the Lemmy log). Fix
+before re-attempting 138.4: serve a resolvable instance/site actor document at the Iris instance root
+(see the 138.4 slice note + the name-collision webfinger edge case for the `interop` handle).
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -167,8 +169,22 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage B — Peer-to-peer relationship
 
-- [ ] **138.4 — Lemmy → Iris community discovery.** From the Lemmy UI/API, resolve and "follow by URL"
+- [~] **138.4 — Lemmy → Iris community discovery.** From the Lemmy UI/API, resolve and "follow by URL"
   the Iris community's actor id; confirm Lemmy successfully fetches the Iris `Group` document.
+  **Blocked (2026-09-15) — instance-actor dereference gap.** Lemmy (0.19.20) can reach Iris (webfinger
+  + `Group` doc both 200, confirmed via `docker exec lemmy-1 curl irisweb-iris-web-1:8080`), but its
+  `resolve_object`/search path first dereferences the Iris *site actor* from the instance root
+  `https://iris.luit.ink/` and fails there. Lemmy log:
+  `lemmy_apub::objects::instance: Failed to dereference site for https://iris.luit.ink/: Unknown:
+  Failed to parse object https://iris.luit.ink/ with content <!DOCTYPE html> …`. Iris serves its HTML
+  splash page at `/` (even with `Accept: application/activity+json`) instead of an ActivityStreams
+  instance-actor document, so Lemmy cannot resolve **any** Iris object — this blocks 138.4 (and every
+  later Lemmy→Iris slice) until Iris serves a resolvable site/instance actor at the root.
+  *Secondary:* for the `interop` handle, Iris webfinger resolves to the **user** `/u/interop` (not the
+  `Group`) because a same-named local user exists — the community webfinger fallback
+  (`ActivityPubServerExtensions.WebFingerHandler`, ~line 6789) only fires when no user matches the
+  handle (verified working with `test-882` → `/c/test-882`). Name-collision edge case to resolve once
+  the root-actor gap is fixed.
   **Check:** the Iris community's IRI appears in Lemmy's own remote-community/follow state (Lemmy UI
   or DB), and Iris's server log shows the actor-document GET from Lemmy's user agent.
 - [ ] **138.5 — Iris → Lemmy community discovery.** Use the existing `/local/v1/c/{name}/follow/{targetIri}`
