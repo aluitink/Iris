@@ -114,11 +114,11 @@ Progress for both phases is tracked **inside their own docs**, not enumerated he
 
 ## Recently Completed
 
-- **138.26 (community-level NSFW alignment) — decided + implemented:** `RequiresCw(content, community)` client helper; no server-side retro-apply. 8 integration tests. [Change doc](docs/changes/13826-phase138-community-nsfw-alignment.md).
-- **138.25 (Lemmy metadata rendering) — implemented:** `ServeObjectDocument` renders `iris:locked`/`featured`/`language`; `CommunityDocumentHandler` renders `iris:communityNsfw`/`postingRestrictedToMods`. 7 tests.
+- **138.27 (cross-platform terminology & model audit) — reviewed:** 12-finding audit; shared model platform-agnostic, generalizes to Pleroma/Misskey; one S2 UI leak (vote-bar gate is Lemmy-IRI-shaped) + one S3 cosmetic rename filed. [Change doc](docs/changes/13827-phase138-cross-platform-terminology-audit.md).
+- **138.26 (community-level NSFW alignment) — decided + implemented:** `RequiresCw(content, community)` client helper; no server-side retro-apply. 8 tests.
+- **138.25 (Lemmy metadata rendering) — implemented:** `ServeObjectDocument`/`CommunityDocumentHandler` render the new `iris:` terms. 7 tests.
 - **138.24 (Lemmy metadata extension terms) — designed:** 5 new `iris:` terms; namespace doc updated; `GetBool` bug fixed; 6 client readers; 7 tests.
 - **138.23 (deletion vs. mod-removal) — implemented:** `DeleteActivityHandler` accepts community-member deletes; `iris:removedBy` tombstone. 5 tests.
-- **138.21 (local rebuild verification) — verified:** local store self-sufficient after thread sync. 5 tests.
  ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**

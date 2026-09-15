@@ -167,8 +167,10 @@ tests. UI surfacing (disabled composer, pinned indicator, CW gate) is a follow-u
 client-side CW derivation: `IrisDocumentExtensions.RequiresCw(content, community)` combines the
 object's own `sensitive` flag with the community's `iris:communityNsfw` flag; no server-side
 retro-apply (the community's NSFW flag can change later). 8 integration tests.
-**Next concrete step is 138.27** (full-platform terminology & model audit — cross-platform
-consistency review).
+**138.27 (full-platform terminology & model audit) is DONE** (2026-09-15) — 12-finding audit;
+shared model is platform-agnostic and generalizes to Pleroma/Misskey; one S2 UI leak (vote-bar
+gate is Lemmy-IRI-shaped) filed for a later UX slice; one S3 cosmetic rename (`IsLemmy`).
+**Next concrete step is 138.28** (interop conformance matrix — living reference doc).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -451,13 +453,21 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage H — Cross-platform consistency review
 
-- [ ] **138.27 — Full-platform terminology & model audit.** Compare how Iris models the same concept
+- [x] **138.27 — Full-platform terminology & model audit.** Compare how Iris models the same concept
   across Mastodon-style peers (`Person`/`Note`/`Announce`-boost/`Like`) and Lemmy-style peers
   (`Group`/`Page`/`Note`-comment/`Like`+`Dislike`-vote/community-`Announce`-relay), checking that
   naming, extension terms, and UI language stay platform-agnostic — no Lemmy-only or Mastodon-only
   assumption leaks into shared components. Cross-check against Pleroma/Misskey/PeerTube interop
   (Phase 79.3/81.x) to confirm the model generalizes rather than special-casing two platforms.
   **Check:** a written findings list; any leaked platform-specific assumption gets a follow-up defect.
+
+  **Done (2026-09-15):** 12-finding audit. The shared *model* (iris: extension terms, stores,
+  client readers, wire adaptation, Iri helpers) is platform-agnostic and generalizes to
+  Pleroma/Misskey. One S2 UI leak: the vote-bar render gate in `ObjectView` is Lemmy-IRI-shaped
+  (`/post/{id}`), so a future downvote-capable non-Lemmy peer would not get the downvote
+  affordance — filed for a later UX slice (generalize to `dislikedCount > 0` / `dislike`
+  capability; rename `LemmyVoteBar` → `VoteBar`). One S3 cosmetic: `IsLemmy` rename. See
+  [docs/changes/13827-phase138-cross-platform-terminology-audit.md](../changes/13827-phase138-cross-platform-terminology-audit.md).
 - [ ] **138.28 — Interop conformance matrix (living reference doc).** Produce a single reference table —
   peer software × capability (follow, post, reply, like, dislike/no-dislike, boost/no-boost, edit,
   delete, community moderation, NSFW) — capturing what's supported/verified per remote platform.
