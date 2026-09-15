@@ -44,14 +44,14 @@ new learned here.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5  - [ ] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–3 done (F-3 found + fixed) — begin at scenario 4.
+**Resume checkpoint:** scenarios 1–4 done (F-3 fixed; F-4 Lemmy `/replies` limitation) — begin at scenario 5.
 
 ## Findings tracker (class + severity, per Loop protocol)
 
@@ -59,7 +59,31 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
 |---|---|---|---|---|---|
 | F-1 | 1 | UX | S3 | **Lemmy community WebFinger returns 400** — Lemmy does not serve WebFinger for communities (only persons). The Web UI's `!community@host` lookup (`Directory`/`Search`/`CommunityDetail`) strips the `!` then queries WebFinger, which 400s for a community. The supported + working path is **pasting the full community IRI** (`/c/{name}`), which the UI hint already documents, and which is exactly what the 138.5 federation path (`POST /local/v1/c/{name}/follow/{targetIri}`) uses. | No defect in the federation path. Optional UX polish (a later UX slice): auto-construct the `/c/{name}` IRI from a `!community@host` handle for Lemmy, instead of relying on WebFinger. |
 | F-2 | 2 | UX | S3 | **Lemmy person `/followers` + `/following` collections return 404** — Lemmy does not expose person collections (verified: direct fetch of `lemmy.luit.ink/u/lemmyadmin/{followers,following}` → 404). The ActorDetail page requests both collections via the proxy; they 404 and the page logs 2 console errors, but renders correctly (handle + avatar monogram fallback, "No posts yet", no crash). | Not an Iris defect (Lemmy platform limitation). The page already degrades gracefully. Optional polish (a later UX slice): skip the collections fetch for actors whose document has no `followers`/`following` link, to avoid the console 404s. |
+| F-4 | 4 | UX | S3 | **Lemmy does not serve a post's `/replies` collection** — an Iris→Lemmy reply (e.g. andrew replying to a Lemmy post) is stored on Iris with the correct `inReplyTo` (the Lemmy post IRI) and the reply edge, but the object detail's "Replies" tab for a **remote Lemmy parent** reads `{parent}/replies` (proxied to Lemmy), which Lemmy does not serve (empty/404). So the reply is not visible in the Lemmy parent's Replies tab. | Not an Iris defect (Lemmy platform limitation — Lemmy addresses comments differently and exposes no standard AS `/replies` for posts). The reply **does** thread correctly on the Iris side (verified live: the reply's object detail renders the "In reply to alice" parent-context with the parent preview — Phase 054 contract). Inbound Lemmy comment threading (a Lemmy member commenting on a post) is verified by 16 passing server tests (`LemmyCommentThreadingIntegrationTests` + `CrossInstanceReplyThreadIntegrationTests` + `ReplyIntegrationTests`). Optional polish (later UX slice): for a remote parent, fall back to the Iris-side reply store (the recorded reply edges) when the remote `/replies` is empty. |
 | F-3 | 3 | bug | S2 | **Cross-posted Note→Page renders its body twice** — alice's 138.11 cross-post (an Iris `Note` delivered to Lemmy as a `Page`) showed in the Lemmy community feed with the body rendered **twice**: once as the `name`/title and once as the `content`. Root cause: Iris composes Notes with **no `name`** (`ComposeNote.Build` sets only `Content`); when `TransformCreateForCrossPost` (`ActivityPubServerExtensions.cs:5208`) copies the null `Name` onto the Lemmy `Page`, **Lemmy derives the `Page`'s `name` from its content** on ingest — so `name` ≈ `content` in Lemmy's outbox. `ObjectView`'s Create + Announce/boosted branches each rendered both the title and the body without deduplicating. Normal Lemmy posts (`name` ≠ `content`) rendered correctly. | **Fixed + verified.** Added `NameDuplicatesContent` (HTML-stripped, case-insensitive equality/containment) in `ObjectView.razor.cs` + `ActivityTitleDuplicatesContent` / `BoostedTitleDuplicatesContent` guards; the `.razor` Create branch (line 46) and the Announce/boosted branch (line 241) now suppress `object-title` when the title duplicates the body. Build clean (0 warnings); live Playwright re-check confirms the duplicate is gone and distinct titles still render. |
+
+## Scenario 4 — Inbound reply/comment threading (evidence, 2026-09-15)
+
+**Inbound Lemmy comment threading (server):** 16 passing integration tests cover a Lemmy community
+member's comment (a `Create(Note)` with `inReplyTo` pointing to a parent post/comment) threading
+correctly under its parent — the comment `Note` is stored, the reply edge (parent → child) is
+recorded, and the comment is recorded in the community's local member's outbox. Also covers
+cross-instance reply threads. (`LemmyCommentThreadingIntegrationTests` +
+`CrossInstanceReplyThreadIntegrationTests` + `ReplyIntegrationTests` — 16/16 pass.)
+
+**Reply threading UI render (Phase 054 contract, live):** posted a real reply from andrew to the
+Lemmy post `lemmy.luit.ink/post/3` (HTTP 202, stored on Iris with `inReplyTo` = the Lemmy post IRI).
+The reply's object detail renders the parent-context correctly: author `andrew`, the reply content,
+and an **"In reply to alice"** block with the parent post's preview — the Phase 054 nesting contract
+(parent author + preview) working for a cross-platform (Iris→Lemmy) reply.
+
+**F-4 (Lemmy limitation):** the Lemmy parent's "Replies" tab reads `{parent}/replies` (proxied to
+Lemmy), which Lemmy does not serve — so an Iris→Lemmy reply is not surfaced in the Lemmy parent's
+Replies tab. Not an Iris defect; the reply threads correctly on the Iris side. See F-4.
+
+**Pass:** reply threading is correct — inbound Lemmy comments thread under their parent (16 server
+tests), and the reply-threading UI render (parent-context nesting) works for a cross-platform reply
+(live). The one platform limitation found (F-4, Lemmy `/replies`) is documented.
 
 ## Scenario 3 — Inbound Create (post) rendering (evidence, 2026-09-15)
 
