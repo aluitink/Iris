@@ -154,12 +154,12 @@ integration tests (`LemmyLikeInboundIntegrationTests`).
 Lemmy-sourced post (a `Page`) is delivered to the object's home via the existing outbound Like
 federation path; the like edge is recorded on the object's home and the `/likes` collection lists
 the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationTests`).
-**138.17 (Lemmy → Iris dislikes/downvotes) is DONE** (2026-09-15) — verified that the existing
-`DislikeActivityHandler` records a Lemmy downvote on a synced post and the `UndoActivityHandler`
-handles `Undo(Dislike)`; XML doc comments added to the handler. 4 integration tests
-(`LemmyDislikeInboundIntegrationTests`).
-**Next concrete step is 138.18** (Score reconciliation policy: decide whether Iris derives a
-Lemmy-equivalent score `likedCount - dislikedCount` or keeps separate counters).
+**138.18 (score reconciliation policy) is DONE** (2026-09-15) — decided: keep separate counters +
+derived `iris:score` (= `likedCount - dislikedCount`, the Lemmy-equivalent net score). 4 new extension
+terms, rendered on the object document + collection-page items. 3 integration tests
+(`ObjectDocumentScoreReconIntegrationTests`).
+**Next concrete step is 138.19** (Shares/boosts interop — confirm Lemmy has no user-initiated boost
+concept; verify Iris's Announce-unwrap logic treats it as a fan-out envelope, not a user share).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -370,12 +370,11 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   the `UndoActivityHandler` handles `Undo(Dislike)` (removes the edge). When delivered to a
   community's inbox, the dislike is also recorded in local members' outboxes. XML doc comments added
   to the handler. 4 integration tests (`LemmyDislikeInboundIntegrationTests`). [Change doc](../changes/13817-phase138-lemmy-dislike-inbound.md).
-- [ ] **138.18 — Score reconciliation policy.** Lemmy's net score is a server-side aggregate, not a wire
-  field. Decide and document whether Iris derives a Lemmy-equivalent score
-  (`likedCount - dislikedCount`) for synced content or keeps them as separate counters, and reconcile
-  against Lemmy's own displayed score for the same post as a correctness spot-check.
-  **Check:** decision recorded; the chosen counter(s) match Lemmy's displayed score for the fixture
-  post within the test window.
+- [x] **138.18 — Score reconciliation policy.** Iris keeps separate like and dislike counters (mirroring
+  Lemmy's `upvotes` / `downvotes`) and derives the Lemmy-equivalent net score as `likedCount -
+  dislikedCount` (the `iris:score` extension). New extension terms: `iris:dislikedCount`, `iris:score`,
+  `iris:isDisliked`, `iris:dislikeActivityIri`. Rendered on the object document + collection-page items.
+  3 integration tests (`ObjectDocumentScoreReconIntegrationTests`). [Change doc](../changes/13818-phase138-score-reconciliation-policy.md).
 - [ ] **138.19 — Shares/boosts interop (platform-asymmetry documentation).** Confirm Lemmy has no
   user-initiated boost concept — its `Announce` is community-relay-only. Verify Iris's existing
   Announce-unwrap logic in the community-feed merge path already treats it as a fan-out envelope, not
