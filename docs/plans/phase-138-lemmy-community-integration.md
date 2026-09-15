@@ -141,9 +141,13 @@ actor store) for local recipients. 3 unit tests (`LemmyCommunityRelayIntegration
 delivered to a community's inbox: the `Note` is stored in the object store, the reply edge is recorded
 in the replies store, and the `Create` is recorded in the community's local members' outboxes. 3
 integration tests (`LemmyCommentThreadingIntegrationTests`).
-**Next concrete step is 138.14** (Iris reply → Lemmy comment: post an Iris reply to a Lemmy-sourced
-post/comment; verify Lemmy accepts the `Create(Note)` with a resolvable `inReplyTo`/`context` chain
-and displays it as a comment).
+**138.14 (Iris reply → Lemmy comment) is DONE** (2026-09-15) — verified that Phase 136.7's
+cross-instance reply integrity already delivers an Iris reply to a remote `Page` parent (Lemmy's post
+format) to the parent's home instance; the reply `Note` is stored on the parent's home and the reply
+edge (Page → Note) is recorded, so Lemmy can serve it under the parent's `/replies` collection. 2
+two-instance integration tests (`LemmyReplyToPostIntegrationTests`).
+**Next concrete step is 138.15** (like/sync: Iris user likes a Lemmy post; Lemmy displays the like;
+the like is visible in Iris).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -328,10 +332,13 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   (`LemmyCommentThreadingIntegrationTests`): a comment on a post threads under the parent + is
   recorded in the member's outbox; a 2-level thread records both reply edges; a comment's `Note`
   carries `inReplyTo` (it's a reply, not a top-level post). [Change doc](../changes/13813-phase138-lemmy-comment-threading.md).
-- [ ] **138.14 — Iris reply → Lemmy comment.** Post an Iris reply to a Lemmy-sourced post/comment; verify
-  Lemmy accepts the `Create(Note)` with a resolvable `inReplyTo`/`context` chain and displays it as a
-  comment.
-  **Check:** the Iris-authored reply appears as a comment in Lemmy's UI under the correct parent.
+- [x] **138.14 — Iris reply → Lemmy comment.** Verified that an Iris reply to a Lemmy-sourced post (a
+  `Page`) is correctly delivered to the parent's home instance (Lemmy) via Phase 136.7's
+  cross-instance reply integrity path. The reply (`Create(Note)` with `inReplyTo` pointing to the
+  `Page`) is stored on the parent's home and the reply edge (Page → Note) is recorded, so Lemmy can
+  serve it under the parent's `/replies` collection. 2 two-instance integration tests
+  (`LemmyReplyToPostIntegrationTests`): the reply is delivered to the parent's home + threaded there;
+  the reply's `Note` carries `inReplyTo` pointing to the `Page` IRI. [Change doc](../changes/13814-phase138-iris-reply-to-lemmy-comment.md).
 
 ### Stage E — Engagement propagation
 
