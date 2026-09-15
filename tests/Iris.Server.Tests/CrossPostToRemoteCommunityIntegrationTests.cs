@@ -149,12 +149,12 @@ public sealed class CrossPostToRemoteCommunityIntegrationTests : IDisposable
 
         // (b) The cross-post landed in the target community: the community's local member (bob) has the
         // cross-posted Create in his outbox (CommunityContentRecorder recorded it on A's inbound Create
-        // path), so it surfaces in the community feed. The embedded object is an Article (138.11
-        // Note-vs-Page: a top-level cross-post carries an Article, not a Note).
+        // path), so it surfaces in the community feed. The embedded object is a Page (138.11
+        // Note-vs-Page: a top-level cross-post carries a Page, not a Note).
         var bobOutbox = (await _aPersistence.Activities.GetOutboxAsync(_bobActorIri)).ToList();
         Assert.Contains(bobOutbox, a =>
             a is Create crossPost
-                && crossPost.Object?.OfType<Article>().Any(n => n.Id == noteIri.Value) == true);
+                && crossPost.Object?.OfType<Page>().Any(n => n.Id == noteIri.Value) == true);
     }
 
     // --- Negative control: a post NOT addressed to the remote community does not reach it --------

@@ -103,8 +103,8 @@ internal static class CommunityContentRecorder
         }
 
         // For a Create, create a new Create with a tagged copy of the embedded content object.
-        // 138.11 (Lemmy interop): handle both Note and Article — a top-level cross-post to a
-        // non-Iris community (Lemmy) carries an Article (Lemmy's Note struct requires inReplyTo);
+        // 138.11 (Lemmy interop): handle Note, Article, and Page — a top-level cross-post to a
+        // non-Iris community (Lemmy) carries a Page (Lemmy's Note struct requires inReplyTo);
         // a reply or an Iris-to-Iris post carries a Note.
         if (activity is Create create)
         {
@@ -114,6 +114,10 @@ internal static class CommunityContentRecorder
                 if (obj is Note note)
                 {
                     newObjects.Add(TagNote(note, communityIri));
+                }
+                else if (obj is Page page)
+                {
+                    newObjects.Add(TagPage(page, communityIri));
                 }
                 else if (obj is Article article)
                 {
@@ -157,6 +161,37 @@ internal static class CommunityContentRecorder
             Published = note.Published,
             To = note.To,
             Cc = note.Cc,
+        };
+    }
+
+    /// <summary>
+    /// Creates a copy of the page with the community IRI added to its <c>attributedTo</c>.
+    /// </summary>
+    /// <remarks>
+    /// 138.11 (Lemmy interop): a Page is a top-level content object (a cross-post to a non-Iris
+    /// community, e.g. Lemmy, where a Note would be rejected because Lemmy's Note struct requires
+    /// inReplyTo). The tagging mirrors <see cref="TagNote"/>.
+    /// </remarks>
+    private static Page TagPage(Page page, Iri communityIri)
+    {
+        var attributedTo = page.AttributedTo is null
+            ? new List<IObjectOrLink> { new Link { Href = new Uri(communityIri.Value) } }
+            : page.AttributedTo.Concat([new Link { Href = new Uri(communityIri.Value) }]).ToList();
+
+        return new Page
+        {
+            Id = page.Id,
+            Content = page.Content,
+            AttributedTo = attributedTo,
+            Published = page.Published,
+            To = page.To,
+            Cc = page.Cc,
+            Name = page.Name,
+            Image = page.Image,
+            Attachment = page.Attachment,
+            MediaType = page.MediaType,
+            Updated = page.Updated,
+            Source = page.Source,
         };
     }
 

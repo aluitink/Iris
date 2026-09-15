@@ -5196,7 +5196,7 @@ public static class ActivityPubServerExtensions
             return create;
         }
 
-        var article = new Article
+        var page = new Page
         {
             Id = note.Id,
             Content = note.Content,
@@ -5216,7 +5216,7 @@ public static class ActivityPubServerExtensions
         {
             Id = create.Id,
             Actor = create.Actor,
-            Object = [article],
+            Object = [page],
             To = create.To,
             Cc = create.Cc,
         };
