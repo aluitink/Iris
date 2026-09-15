@@ -158,8 +158,8 @@ the Iris liker. 2 two-instance integration tests (`LemmyLikeOutboundIntegrationT
 `Announce` is community-relay-only (no user boost); Iris's relay-unwrap treats it as a fan-out
 envelope; the merge path attributes content to the `Create`'s actor (original author); the UI
 renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integration test.
-**Next concrete step is 138.21** (Local rebuild verification — the core archival acceptance bar:
-stop Lemmy entirely and confirm the Iris-rendered thread still renders from the local store alone).
+**Next concrete step is 138.22** (Edit/update propagation into the archive — verify a Lemmy-side
+post/comment `Update` is reflected in Iris's local store).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -392,12 +392,15 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   pre-existing posts, not just new ones. **Done:** `CommunityFeedService.GetFeedAsync` now persists
   remote outbox items (embedded `Page`/`Note` objects + `Create` activities) to the local store and
   members' outboxes during the peering branch walk. 2 integration tests (`CommunityBackfillIntegrationTests`).
-- [ ] **138.21 — Local rebuild verification (the core archival acceptance bar).** Pick one Lemmy post
+- [x] **138.21 — Local rebuild verification (the core archival acceptance bar).** Pick one Lemmy post
   with a multi-level comment thread and multiple votes; after syncing, stop the Lemmy container
   entirely and confirm the Iris-rendered thread (post + nested replies + like/dislike counts) still
   renders complete and correctly ordered from Iris's local store alone.
   **Check:** full thread renders correctly in Iris with Lemmy offline — no broken links, no missing
-  replies, no zeroed-out counts.
+  replies, no zeroed-out counts. **Done:** 5 integration tests
+  (`LocalRebuildVerificationIntegrationTests`) verify the local store is self-sufficient after a
+  thread sync: all objects retrievable by IRI, reply edges correctly link parent→children, vote
+  edges recorded, member outbox complete, nested `inReplyTo` chain intact.
 - [ ] **138.22 — Edit/update propagation into the archive.** Verify a Lemmy-side post/comment `Update`
   updates Iris's locally archived copy (not just a live proxy read), so the archive doesn't go stale.
   **Check:** editing the fixture post/comment on Lemmy updates the same object's content in Iris's
