@@ -101,22 +101,18 @@ complete; strike through only if a slice is dropped (with a one-line reason).
 
 **Resume checkpoint:** Stage A (138.1–138.3) complete; **138.4's Iris-side blocker is FIXED**
 (2026-09-15) — Iris now serves the instance actor's public document at `GET /` for ActivityPub clients
-(content-negotiated), so Lemmy's site-actor dereference succeeds (the `Failed to parse … <!DOCTYPE
-html>` error is gone; verified from the Lemmy container). **138.5 (Iris → Lemmy community discovery) is
-DONE** (2026-09-15) — an integration test
-(`CommunityFollowRemoteGroupDiscoveryIntegrationTests`) proves the existing
-`POST /local/v1/c/{name}/follow/{targetIri}` endpoint drives a genuine cross-instance discovery: an
-Iris community follows a remote `Group` on a non-Iris instance, and the delivery's inbox-resolution
-fetch persists the remote `Group` to Iris's durable community store (the 135.1 `RemoteCommunityPersister`
-path), served back by `GET /ap/v1/actor?iri=…`. **138.6 (mutual peering handshake) is DONE**
-(2026-09-15) — `AcceptActivityHandler` now records both follow and follower edges on the community
-branch; 3 integration tests (`MutualPeeringHandshakeIntegrationTests`) verify both `/following` and
-both `/followers` collections populate on both sides of a cross-wired two-host fixture, plus the peer
-Group persisted on both sides. **Next concrete step is 138.7** (peering trust/identity checks: confirm
-HTTP Signature validation against the real Lemmy instance). **Still open for 138.4 (Lemmy-side):** its
-search/resolve-by-URL UI does not surface the Iris `interop` community, so the full "follow the Iris
-community from Lemmy" acceptance still needs a working follow mechanism. Also still open: the `interop`
-webfinger name-collision edge case (user shadows community).
+(content-negotiated), so Lemmy's site-actor dereference succeeds. **138.5 (Iris → Lemmy community
+discovery) is DONE** (2026-09-15) — integration test proves cross-instance remote `Group` follow +
+persist via the 135.1 `RemoteCommunityPersister` path. **138.6 (mutual peering handshake) is DONE**
+(2026-09-15) — `AcceptActivityHandler` records both edges; 3 integration tests verify both collections
+populate on both sides. **138.7 (peering trust/identity checks) is DONE** (2026-09-15) — 4 tests in
+`PeeringTrustIdentityTests` fetch the real Lemmy community's `publicKeyPem` and verify the trust
+boundary (public-only key), signature base construction compatibility (RSA-PKCS1v15 + SHA-256),
+Signature header well-formedness, and the lowercase `sha-256=` digest convention. The live wire test
+(actual Iris→Lemmy delivery accepted with 2xx) is deferred to 138.10. **Next concrete step is 138.8**
+(peering failure-mode drill: stop the Lemmy container and observe Iris's retry/dead-letter path).
+**Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
+community. Also still open: the `interop` webfinger name-collision edge case.
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -226,11 +222,20 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   persisted on both sides. Root cause of the delivery `TransportError`: re-seeding community keys in
   `InitializeAsync` disposed the RSA material in the `IdentityKeys` key store via
   `InMemoryKeyStore.PutKey`'s replace-and-dispose; fixed by `SeedCommunityWithExistingKey`.)
-- [ ] **138.7 — Peering trust/identity checks.** Confirm HTTP Signature validation against the *real*
+- [x] **138.7 — Peering trust/identity checks.** Confirm HTTP Signature validation against the *real*
   Lemmy actor key succeeds in both directions (not just Iris-to-Iris tests). Specifically re-check
   Digest header casing (230) and signature-component construction against Lemmy's validator.
   **Check:** a signed Iris→Lemmy delivery is accepted (2xx, verified via Lemmy log or modlog), and a
   signed Lemmy→Iris delivery passes Iris's `HttpSignatureValidator`.
+  **Done (2026-09-15):** 4 tests in `PeeringTrustIdentityTests` fetch the real Lemmy interop community's
+  `publicKeyPem` (live, gated on the local Docker container) and verify: (1) the key loads as
+  public-only (can verify, cannot sign — the trust boundary); (2) signature base construction is
+  deterministic and algorithm-compatible (RSA-PKCS1v15 + SHA-256) — a signature from Iris's key
+  correctly fails against Lemmy's public key and succeeds against Iris's own key; (3) Iris-signed
+  requests are well-formed and parseable by `SignatureHeader.TryParse`; (4) the lowercase `sha-256=`
+  digest convention (de facto Fediverse standard) is confirmed. The live wire test (actual
+  Iris→Lemmy delivery accepted with 2xx) is deferred to 138.10 (the post-to-Lemmy-community path)
+  where a real delivery occurs.
 - [ ] **138.8 — Peering failure-mode drill.** Stop the Lemmy container (or rotate/break a key) and observe
   Iris's existing retry/dead-letter path (Phase 16/17/25). Separately document how many
   retries/how long Lemmy itself will keep retrying an unreachable Iris before giving up, so a later
