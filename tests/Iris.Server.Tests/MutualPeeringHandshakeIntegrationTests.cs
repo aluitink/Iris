@@ -377,6 +377,18 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
         var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
         var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
 
+        // Increase the delivery retry budget for this fixture: under full-suite load the
+        // in-process TestServer can be slow to respond, and the default 5-attempt/31s budget
+        // is occasionally exhausted before the delivery round trip completes. 50 attempts with
+        // a 100ms base delay gives ~25s of retry headroom without meaningfully slowing the
+        // happy-path case (which completes on the first attempt).
+        static void BumpRetryBudget(IServiceCollection s)
+            => s.AddSingleton(new Iris.Server.Delivery.DeliveryRetryOptions
+            {
+                MaxAttempts = 50,
+                BaseDelay = TimeSpan.FromMilliseconds(100),
+            });
+
         var optionsA = new ActivityPubHostOptions
         {
             Host = AHost,
@@ -397,6 +409,7 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
             // A's fetcher reaches B (resolves the peer community's inbox) AND persists the fetched peer
             // community's Group to A's community store — the 135.1 RemoteCommunityPersister path.
             Fetcher = BuildRemoteFetcher(AHost, "alice", aSeeded.Key, serverBRef, aPersistence.Communities, aBaseUri),
+            PreServices = BumpRetryBudget,
         };
 
         var optionsB = new ActivityPubHostOptions
@@ -418,6 +431,7 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
             // B's fetcher reaches A (resolves the peer community's inbox) AND persists the fetched peer
             // community's Group to B's community store — the 135.1 RemoteCommunityPersister path.
             Fetcher = BuildRemoteFetcher(BHost, "bob", bSeeded.Key, serverARef, bPersistence.Communities, bBaseUri),
+            PreServices = BumpRetryBudget,
         };
 
         return (optionsA, optionsB);
