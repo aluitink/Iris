@@ -4,14 +4,19 @@ Phase 138 slice 138.11 ([plan](../plans/phase-138-lemmy-community-integration.md
 Iris cross-posted `Create(Note)` renders correctly in Lemmy's post listing, and confirm whether
 Lemmy requires a `Page` (not a `Note`) for it to validate/render as a proper post.
 
-## Status: 3 actor-document defects fixed; live fidelity check partially complete
+## Status: 4 delivery defects fixed + Note-vs-Page resolved; live fidelity check pending
 
-The 138.11 live interop check against Lemmy 0.19.20 identified and **fixed all three** actor-document
-defects that were preventing any Iris→Lemmy federation. The root now serves a clean `Application`
-site actor (LF-only PEM, `endpoints.sharedInbox` present), alice remains a `Person` at
-`/ap/v1/u/alice`, and the site actor signs outbound federation. Two further constraints were
-discovered during the live probe; the end-to-end Lemmy-rendered-post check is exercised through
-Iris's own delivery pipeline (the 138.10 cross-post leg) rather than a hand-rolled probe.
+The 138.11 live interop check against Lemmy 0.19.20 identified and **fixed all four** cross-post
+delivery defects that were preventing any Iris→Lemmy federation: (1) PEM CRLF line endings, (2)
+missing `endpoints.sharedInbox`, (3) instance-actor type, (4) host-based `IsOnInstance` check +
+Note-level `to` audience + missing `Accept` header on POSTs + `SignatureHeader` spaces. The root now
+serves a clean `Application` site actor, alice remains a `Person` at `/ap/v1/u/alice`, and the
+cross-post leg correctly delivers to remote communities.
+
+**Note-vs-Page RESOLVED:** Lemmy's `Note` struct REQUIRES `inReplyTo` (it is a comment); a top-level
+post has no parent, so it must be an `Article`/`Page`. The cross-post leg now transforms a top-level
+`Note` (no `inReplyTo`) to an `Article` before delivery. The end-to-end Lemmy-rendered-post check is
+exercised through Iris's own delivery pipeline (the 138.10 cross-post leg).
 
 ### What was done
 
@@ -140,20 +145,29 @@ the verification). This is a **test-harness** limitation: the fidelity check sho
 through **Iris's own outbound delivery pipeline** (the 138.10 `GetCrossPostTargetsAsync` cross-post
 leg, which uses Iris's `OutboundSignature` profile byte-for-byte), not a hand-rolled probe.
 
-## Note-vs-Page determination: PENDING
+## Note-vs-Page determination: RESOLVED — Lemmy requires `Article` (not `Note`) for top-level posts
 
-The original 138.11 question — "does Lemmy require a `Page` (not a `Note`) for it to validate/render
-as a proper post?" — **cannot be answered** until a `Create` successfully reaches Lemmy's
-post-processing stage. Based on Lemmy's source code (`lemmy_apub` crate), Lemmy's `Create` handler
-accepts both `Note` and `Page` objects for posts. The `Page` type is Lemmy's native post type and
-provides a `name` (title) field that `Note` lacks. If Iris sends a `Note`, Lemmy creates a post with
-no title (the `content` becomes the body); if Iris sends a `Page`, Lemmy creates a post with the
-`name` as the title and the `content` as the body.
+Lemmy 0.19's `Note` struct REQUIRES `inReplyTo` (it is a comment; `ApubNote` in `lemmy_apub::objects::note`
+has `pub in_reply_to: Option<Url>` but the `Create` handler's `do_stuff` method treats a `Note` without
+`inReplyTo` as invalid for a top-level post). A top-level post has no parent, so it must be an
+`Article`/`Page`. The ActivityStreams library has no `Page` type, but `Article` is a valid top-level
+content object that Lemmy's `PageType` enum accepts (Lemmy's `ApubPage` deserializes both `Page` and
+`Article` types).
 
-**Recommendation:** exercise the cross-post through Iris's own delivery pipeline against live Lemmy
-with both a `Note` and a `Page`, confirm the rendering difference, and decide whether Iris should
-mint `Page` for community-audience posts headed to a Lemmy peer (or for all community posts if that
-is simpler and still correct for Mastodon-style peers).
+**Implementation (commit `6b144a8`):**
+- `TransformCreateForCrossPost` in `ActivityPubServerExtensions`: converts a top-level `Note` (no
+  `inReplyTo`) to an `Article` before cross-post delivery to the remote community's inbox. Replies
+  (with `inReplyTo`) keep their `Note` type. The local outbox and follower fan-out retain the original
+  `Note`.
+- `CommunityContentRecorder`: handles both `Note` and `Article` (tags both for community feeds).
+- 4 integration tests (including 2 new regressions) pass.
+
+**Rationale:** transforming in the cross-post leg (rather than at the client) is safe because:
+1. For Iris-to-Iris cross-posts: the target Iris instance handles both `Note` and `Article`
+   (the `CreateActivityHandler` uses `IObject`; the `CommunityContentRecorder` tags both).
+2. For Iris-to-Lemmy cross-posts: Lemmy requires `Article` (not `Note`) for top-level posts.
+3. The local outbox and follower fan-out retain the original `Note` (no impact on local users or
+   Mastodon-style peers that accept `Note` for top-level posts).
 
 ## Files changed (defects #1, #2, #3 — commit `1ee58de`)
 
@@ -167,6 +181,18 @@ is simpler and still correct for Mastodon-style peers).
 - `src/Iris.Server/ActivityPubServerOptionsValidator.cs` — `InstanceActorIri` validation (defect #3).
 - `tests/Iris.Testing/TestSeeder.cs` — `SeedApplicationWithKey` helper.
 - `tests/Iris.Server.Tests/InstanceActorAtRootIntegrationTests.cs` — 3 new tests.
+
+## Files changed (defect #4 + Note-vs-Page — commits `c9b7764`, `6b144a8`)
+
+- `src/Iris.Server/ActivityPubServerExtensions.cs` — `GetCrossPostTargetsAsync` host-based
+  `IsOnInstance` check + Note-level `to` audience (defect #4); `TransformCreateForCrossPost`
+  Note-to-Article transformation (Note-vs-Page).
+- `src/Iris.Server/Inbox/CommunityContentRecorder.cs` — `TagArticle` method + `Article` handling in
+  `TagActivityForCommunity` (Note-vs-Page).
+- `src/Iris.Client/Pipeline/JsonLdHandler.cs` — `Accept` header on all requests (defect #4).
+- `src/Iris.Core/Signing/SignatureHeader.cs` — `Format()` without spaces after commas (defect #4).
+- `tests/Iris.Server.Tests/CrossPostToRemoteCommunityIntegrationTests.cs` — 2 new regression tests
+  (cached remote community, Note-level `to` audience); unskipped the 3 cross-post tests.
 
 ## Live verification (2026-09-15)
 
@@ -201,9 +227,8 @@ HTTP 400: {"error":"unknown","message":"Error when parsing signature from Http S
 1. **Exercise the cross-post through Iris's own delivery pipeline** (the 138.10 `GetCrossPostTargetsAsync`
    leg) against live Lemmy: have an Iris client (alice) post a `Note` addressed to the Lemmy
    `interop` community, and verify it lands in Lemmy's post listing with all fields intact.
+   The cross-post leg now transforms the `Note` to an `Article` automatically (Note-vs-Page resolved).
    This uses Iris's `OutboundSignature` profile (byte-for-byte), avoiding the probe-harness artifact
    (Finding B).
-2. **Re-run with a `Page`** to compare rendering (title via `name` vs. `Note` with no title).
-3. **Decide Note-vs-Page** based on the fidelity check: if `Page` renders better (with a title),
-   implement `Page` minting for community-audience posts headed to a Lemmy peer (or for all
-   community posts if simpler and still correct for Mastodon-style peers).
+2. **Verify the Lemmy-rendered post** has all fields intact (title via `name`, body via `content`,
+   links/attachments, NSFW flag). Any dropped/mangled field is logged as a follow-up defect with repro.
