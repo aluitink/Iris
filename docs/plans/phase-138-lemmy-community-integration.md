@@ -109,8 +109,13 @@ populate on both sides. **138.7 (peering trust/identity checks) is DONE** (2026-
 `PeeringTrustIdentityTests` fetch the real Lemmy community's `publicKeyPem` and verify the trust
 boundary (public-only key), signature base construction compatibility (RSA-PKCS1v15 + SHA-256),
 Signature header well-formedness, and the lowercase `sha-256=` digest convention. The live wire test
-(actual Iris→Lemmy delivery accepted with 2xx) is deferred to 138.10. **Next concrete step is 138.8**
-(peering failure-mode drill: stop the Lemmy container and observe Iris's retry/dead-letter path).
+(actual Iris→Lemmy delivery accepted with 2xx) is deferred to 138.10. **138.8 (peering failure-mode
+drill) is DONE** (2026-09-15) — 2 live tests (`PeeringFailureModeTests`): delivery to the real Lemmy
+shared inbox completes without a transport error; delivery to an unreachable port is dead-lettered
+with `TransportError` after the configured retry budget. Lemmy 0.19's retry behavior documented:
+infinite retries, exponential backoff (1.25^(N-1)s, capped at 1 day), `fail_count` persisted in
+Postgres. Key asymmetry: Iris dead-letters after 5 attempts (~31s); Lemmy retries indefinitely.
+**Next concrete step is 138.9** (peering metadata/`iris:` extension tracking — see slice list).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -236,12 +241,14 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   digest convention (de facto Fediverse standard) is confirmed. The live wire test (actual
   Iris→Lemmy delivery accepted with 2xx) is deferred to 138.10 (the post-to-Lemmy-community path)
   where a real delivery occurs.
-- [ ] **138.8 — Peering failure-mode drill.** Stop the Lemmy container (or rotate/break a key) and observe
-  Iris's existing retry/dead-letter path (Phase 16/17/25). Separately document how many
-  retries/how long Lemmy itself will keep retrying an unreachable Iris before giving up, so a later
-  "why did delivery stop" investigation isn't misattributed to an Iris bug.
-  **Check:** Iris's delivery queue shows retry/backoff behavior consistent with existing hardening;
-  a note is recorded on Lemmy's own give-up window.
+- [x] **138.8 — Peering failure-mode drill.** 2 live tests (`PeeringFailureModeTests`, gated on the local
+  Lemmy container): (1) delivery to the real Lemmy shared inbox completes without a transport error
+  (wire path works against a real non-Iris peer); (2) delivery to an unreachable port is dead-lettered
+  with `TransportError` after exactly the configured retry budget (3 attempts) — the same path that
+  fires when a peer goes down, without the fragility of a Docker-orchestration test. Lemmy 0.19's
+  retry behavior researched and documented: infinite retries with exponential backoff
+  (1.25^(N-1)s, capped at 1 day), `fail_count` persisted in Postgres across restarts. Key asymmetry:
+  Iris dead-letters after 5 attempts (~31s); Lemmy retries indefinitely. [Change doc](../changes/13808-phase138-peering-failure-mode-drill.md).
 
 ### Stage C — Outbound: Iris post → Lemmy
 
