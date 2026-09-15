@@ -208,4 +208,58 @@ public static class IrisExtensionTerms
     /// full wire key is <c>{NamespaceIri}removedBy</c>.
     /// </summary>
     public const string RemovedBy = "removedBy";
+
+    /// <summary>
+    /// The <c>communityNsfw</c> extension (138.24): a <c>bool</c> rendered on a community (Group)
+    /// document indicating that the source community is flagged as NSFW/sensitive. When present and
+    /// <c>true</c>, clients should render a content warning or age gate on all content from that
+    /// community, mirroring Lemmy's community-level <c>sensitive</c> flag (which applies to every
+    /// post in the community, not just individual posts). This is a cacheable, per-community flag: it
+    /// changes only when the source community's moderation settings change. Absent (omitted) when the
+    /// source community is not NSFW or the community is locally-created (no source flag to mirror).
+    /// The full wire key is <c>{NamespaceIri}communityNsfw</c>.
+    /// </summary>
+    public const string CommunityNsfw = "communityNsfw";
+
+    /// <summary>
+    /// The <c>locked</c> extension (138.24): a <c>bool</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating that the source post/comment is
+    /// locked — no new replies are accepted. When present and <c>true</c>, clients should disable
+    /// the reply composer for that object. This mirrors Lemmy's per-post <c>locked</c> flag (set by
+    /// a moderator to close a thread). Cacheable, per-object, not per-requester. Absent (omitted)
+    /// when the object is not locked. The full wire key is <c>{NamespaceIri}locked</c>.
+    /// </summary>
+    public const string Locked = "locked";
+
+    /// <summary>
+    /// The <c>featured</c> extension (138.24): a <c>bool</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating that the object is featured (pinned)
+    /// in its source community. When present and <c>true</c>, clients should render a pinned/featured
+    /// indicator on the object. This mirrors Lemmy's per-community <c>featured</c> collection
+    /// (posts added to the community's featured collection are pinned). Cacheable, per-object, not
+    /// per-requester. Absent (omitted) when the object is not featured. The full wire key is
+    /// <c>{NamespaceIri}featured</c>.
+    /// </summary>
+    public const string Featured = "featured";
+
+    /// <summary>
+    /// The <c>language</c> extension (138.24): an ISO-639-1/2 language code (e.g. <c>"en"</c>,
+    /// <c>"de"</c>) rendered on a content object's document (including nested objects in collection
+    /// items) indicating the primary language of the content. This mirrors Lemmy's per-post
+    /// <c>language</c> field (an ISO-639 language code or array). Cacheable, per-object, not
+    /// per-requester. Absent (omitted) when the source content has no language set. The full wire
+    /// key is <c>{NamespaceIri}language</c>.
+    /// </summary>
+    public const string Language = "language";
+
+    /// <summary>
+    /// The <c>postingRestrictedToMods</c> extension (138.24): a <c>bool</c> rendered on a community
+    /// (Group) document indicating that the source community restricts posting to moderators only.
+    /// When present and <c>true</c>, clients should disable the post composer for non-moderator users
+    /// in that community. This mirrors Lemmy's community-level <c>postingRestrictedToMods</c> flag.
+    /// Cacheable, per-community, not per-requester. Absent (omitted) when the community does not
+    /// restrict posting (the common case) or the community is locally-created. The full wire key is
+    /// <c>{NamespaceIri}postingRestrictedToMods</c>.
+    /// </summary>
+    public const string PostingRestrictedToMods = "postingRestrictedToMods";
 }

@@ -558,6 +558,120 @@ public static class IrisDocumentExtensions
     }
 
     /// <summary>
+    /// Reads the <c>iris:removedBy</c> extension property from a <c>Tombstone</c> document, returning the
+    /// IRI of the actor who removed the object (138.23). Present only when the deleter is not the
+    /// object's <c>attributedTo</c> owner (a moderator removal, not an author delete). Returns
+    /// <see langword="null"/> when the property is absent (an author delete, or a non-Iris tombstone).
+    /// </summary>
+    /// <param name="document">The tombstone document (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns>The removing actor's IRI, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri? GetRemovedBy(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetCollectionIri(document, namespaceIri + IrisExtensionTerms.RemovedBy);
+
+    /// <summary>
+    /// Reads the <c>iris:communityNsfw</c> extension property from a community (Group) document, returning
+    /// <see langword="true"/> when the source community is flagged as NSFW/sensitive (138.24). When
+    /// present and <c>true</c>, clients should render a content warning or age gate on all content from
+    /// that community. Returns <see langword="false"/> when the term is present but <c>false</c>, and
+    /// <see langword="null"/> when the term is absent (a non-NSFW community, a locally-created community,
+    /// or a non-Iris document).
+    /// </summary>
+    /// <param name="document">The community document (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns><see langword="true"/> when NSFW, <see langword="false"/> when present but not NSFW, or
+    /// <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetCommunityNsfw(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetBool(document, namespaceIri + IrisExtensionTerms.CommunityNsfw);
+
+    /// <summary>
+    /// Reads the <c>iris:locked</c> extension property from a content object (including a nested object in
+    /// a collection item), returning <see langword="true"/> when the source post/comment is locked — no
+    /// new replies are accepted (138.24). When present and <c>true</c>, clients should disable the reply
+    /// composer for that object. Returns <see langword="false"/> when the term is present but <c>false</c>,
+    /// and <see langword="null"/> when the term is absent (the object is not locked, or a non-Iris
+    /// document).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns><see langword="true"/> when locked, <see langword="false"/> when present but not locked,
+    /// or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetLocked(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetBool(document, namespaceIri + IrisExtensionTerms.Locked);
+
+    /// <summary>
+    /// Reads the <c>iris:featured</c> extension property from a content object (including a nested object
+    /// in a collection item), returning <see langword="true"/> when the object is featured (pinned) in its
+    /// source community (138.24). When present and <c>true</c>, clients should render a pinned/featured
+    /// indicator on the object. Returns <see langword="false"/> when the term is present but <c>false</c>,
+    /// and <see langword="null"/> when the term is absent (the object is not featured, or a non-Iris
+    /// document).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns><see langword="true"/> when featured, <see langword="false"/> when present but not
+    /// featured, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetFeatured(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetBool(document, namespaceIri + IrisExtensionTerms.Featured);
+
+    /// <summary>
+    /// Reads the <c>iris:language</c> extension property from a content object (including a nested object
+    /// in a collection item), returning the ISO-639 language code (e.g. <c>"en"</c>, <c>"de"</c>) of the
+    /// content (138.24). Returns <see langword="null"/> when the property is absent (no language set, or a
+    /// non-Iris document).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns>The language code, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static string? GetLanguage(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetString(document, namespaceIri + IrisExtensionTerms.Language);
+
+    /// <summary>
+    /// Reads the <c>iris:postingRestrictedToMods</c> extension property from a community (Group) document,
+    /// returning <see langword="true"/> when the source community restricts posting to moderators only
+    /// (138.24). When present and <c>true</c>, clients should disable the post composer for
+    /// non-moderator users in that community. Returns <see langword="false"/> when the term is present but
+    /// <c>false</c>, and <see langword="null"/> when the term is absent (posting is not restricted, a
+    /// locally-created community, or a non-Iris document).
+    /// </summary>
+    /// <param name="document">The community document (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns><see langword="true"/> when restricted, <see langword="false"/> when present but not
+    /// restricted, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetPostingRestrictedToMods(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetBool(document, namespaceIri + IrisExtensionTerms.PostingRestrictedToMods);
+
+    /// <summary>
+    /// Shared implementation for the string-valued extension readers (<c>language</c>): reads the
+    /// string-valued <paramref name="term"/> from <see cref="IObject.ExtensionData"/> and returns it, or
+    /// <see langword="null"/> when the term is absent or not a JSON string.
+    /// </summary>
+    private static string? GetString(IObject document, string term)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (document.ExtensionData is not { } ext ||
+            !ext.TryGetValue(term, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind == System.Text.Json.JsonValueKind.String ? value.GetString() : null;
+    }
+
+    /// <summary>
     /// Shared implementation for the un-prefixed collection-endpoint extension readers: reads the
     /// string-valued <paramref name="term"/> from <see cref="IObject.ExtensionData"/> and returns it as an
     /// <see cref="Iri"/>, or <see langword="null"/> when the term is absent or not a valid IRI.
@@ -607,9 +721,10 @@ public static class IrisDocumentExtensions
 
     /// <summary>
     /// Shared implementation for the boolean-valued extension readers
-    /// (<c>isLiked</c> / <c>isShared</c>): reads the bool-valued <paramref name="term"/> from
+    /// (<c>isLiked</c> / <c>isShared</c> / <c>communityNsfw</c> / <c>locked</c> / <c>featured</c> /
+    /// <c>postingRestrictedToMods</c>): reads the bool-valued <paramref name="term"/> from
     /// <see cref="IObject.ExtensionData"/> and returns <see langword="true"/> when it is JSON <c>true</c>,
-    /// <see langword="false"/> when present but a different value (e.g. JSON <c>false</c>), and
+    /// <see langword="false"/> when present but JSON <c>false</c>, and
     /// <see langword="null"/> when the term is absent.
     /// </summary>
     private static bool? GetBool(IObject document, string term)
@@ -622,7 +737,6 @@ public static class IrisDocumentExtensions
             return null;
         }
 
-        return value.ValueKind is System.Text.Json.JsonValueKind.True or
-               System.Text.Json.JsonValueKind.False;
+        return value.ValueKind == System.Text.Json.JsonValueKind.True;
     }
 }

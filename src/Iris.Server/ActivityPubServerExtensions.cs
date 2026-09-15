@@ -5618,6 +5618,16 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.RepliedCount] = "integer",
                 [IrisExtensionTerms.LikeActivityIri] = "@id",
                 [IrisExtensionTerms.AnnounceActivityIri] = "@id",
+                [IrisExtensionTerms.IsDisliked] = "boolean",
+                [IrisExtensionTerms.DislikedCount] = "integer",
+                [IrisExtensionTerms.Score] = "integer",
+                [IrisExtensionTerms.DislikeActivityIri] = "@id",
+                [IrisExtensionTerms.RemovedBy] = "@id",
+                [IrisExtensionTerms.CommunityNsfw] = "boolean",
+                [IrisExtensionTerms.Locked] = "boolean",
+                [IrisExtensionTerms.Featured] = "boolean",
+                [IrisExtensionTerms.Language] = "string",
+                [IrisExtensionTerms.PostingRestrictedToMods] = "boolean",
             },
         };
 
