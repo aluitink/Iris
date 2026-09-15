@@ -124,11 +124,13 @@ public sealed class MutualFollowDeliveryLoopIntegrationTests : IDisposable
             await _bPersistence.Activities.TryGetActivityAsync(mintedId, out _),
             timeout: TimeSpan.FromSeconds(30));
         // Let the (absent) mutual-follow echo loop run: poll until the outbound delivery counter is
-        // stable for 500ms (a healthy bounded system settles in well under the original fixed 8s),
-        // bounded by the original 8s budget so an unbounded re-delivery loop still accumulates before
-        // the boundedness assertion below (pre-fix it grew to 140k+).
+        // stable for 1200ms (a healthy bounded system settles in well under the original fixed 8s; the
+        // longer window absorbs a slow in-flight echo that could otherwise land after a shorter stable
+        // gap and break the boundedness assertion). Bounded by the original 8s budget so an unbounded
+        // re-delivery loop — which increments continuously and never holds a stable window — still
+        // accumulates before the assertion below (pre-fix it grew to 140k+).
         await TestFederation.WaitForStableAsync(() => Task.FromResult(_toB.Total),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(8));
+            settleWindow: TimeSpan.FromMilliseconds(1200), timeout: TimeSpan.FromSeconds(8));
 
         // The Create must have landed on B (the federation worked) ...
         Assert.True(
@@ -179,10 +181,13 @@ public sealed class MutualFollowDeliveryLoopIntegrationTests : IDisposable
         await DeliverDirectly(_aliceAActorIri, _aliceAKey, inbox, create, target: () => _b!);
         await DeliverDirectly(_aliceAActorIri, _aliceAKey, inbox, create, target: () => _b!);
         // Let any (absent) re-fan-out echo settle: poll until B's outbound delivery counter is stable
-        // for 500ms (a healthy bounded system settles in well under the original fixed 6s), bounded by
-        // the original 6s budget so an unbounded re-fan-out loop still accumulates before the assertion.
+        // for 1200ms (a healthy bounded system settles in well under the original fixed 6s; the longer
+        // window absorbs a slow in-flight echo that could otherwise land after a shorter stable gap and
+        // break the boundedness assertion). Bounded by the original 6s budget so an unbounded re-fan-out
+        // loop — which increments continuously and never holds a stable window — still accumulates
+        // before the assertion.
         await TestFederation.WaitForStableAsync(() => Task.FromResult(_toA.Total),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(6));
+            settleWindow: TimeSpan.FromMilliseconds(1200), timeout: TimeSpan.FromSeconds(6));
 
         // B stored the Create exactly once.
         Assert.True(
