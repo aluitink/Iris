@@ -102,12 +102,18 @@ complete; strike through only if a slice is dropped (with a one-line reason).
 **Resume checkpoint:** Stage A (138.1–138.3) complete; **138.4's Iris-side blocker is FIXED**
 (2026-09-15) — Iris now serves the instance actor's public document at `GET /` for ActivityPub clients
 (content-negotiated), so Lemmy's site-actor dereference succeeds (the `Failed to parse … <!DOCTYPE
-html>` error is gone; verified from the Lemmy container). **Remaining for 138.4 (Lemmy-side):** its
-search/resolve-by-URL UI does not surface the Iris `interop` community, so the full "follow the Iris
-community from Lemmy" acceptance still needs a working follow mechanism — next concrete step is 138.5
-(Iris → Lemmy community discovery via the existing `/local/v1/c/{name}/follow/{targetIri}` endpoint),
-which also exercises the now-fixed root actor in the reverse direction. Also still open: the
-`interop` webfinger name-collision edge case (user shadows community).
+html>` error is gone; verified from the Lemmy container). **138.5 (Iris → Lemmy community discovery) is
+DONE** (2026-09-15) — an integration test
+(`CommunityFollowRemoteGroupDiscoveryIntegrationTests`) proves the existing
+`POST /local/v1/c/{name}/follow/{targetIri}` endpoint drives a genuine cross-instance discovery: an
+Iris community follows a remote `Group` on a non-Iris instance, and the delivery's inbox-resolution
+fetch persists the remote `Group` to Iris's durable community store (the 135.1 `RemoteCommunityPersister`
+path), served back by `GET /ap/v1/actor?iri=…`. **Next concrete step is 138.6** (mutual peering
+handshake verification: drive both 138.4 and 138.5 so each side's `following`/`followers` lists the
+other, and confirm Lemmy auto-accepts). **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL
+UI does not surface the Iris `interop` community, so the full "follow the Iris community from Lemmy"
+acceptance still needs a working follow mechanism. Also still open: the `interop` webfinger
+name-collision edge case (user shadows community).
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -191,11 +197,22 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   a local user handle.
   **Check:** the Iris community's IRI appears in Lemmy's own remote-community/follow state (Lemmy UI
   or DB), and Iris's server log shows the actor-document GET from Lemmy's user agent.
-- [ ] **138.5 — Iris → Lemmy community discovery.** Use the existing `/local/v1/c/{name}/follow/{targetIri}`
+- [x] **138.5 — Iris → Lemmy community discovery.** Use the existing `/local/v1/c/{name}/follow/{targetIri}`
   endpoint (Phase 89.1) to have an Iris community follow the live Lemmy community — the first time
   this runs against a real non-Iris `Group`, not a `TestServer` fixture.
   **Check:** `GET /ap/v1/actor?iri=<lemmy-community-iri>` on Iris returns the persisted Lemmy `Group`
   document (135.1a's `RemoteCommunityPersister` path, now proven live).
+  **Done:** Integration test `CommunityFollowRemoteGroupDiscoveryIntegrationTests` (3 tests) drives a
+  real two-instance federation: instance A's community follows a remote `Group` on instance B (a
+  non-Iris, Lemmy-shaped host) via `POST /local/v1/c/{name}/follow/{targetIri}`. The Follow delivery
+  resolves the remote community's inbox by fetching its `Group` document through A's
+  `IActorDocumentFetcher`, which persists it to A's durable community store via the
+  `RemoteCommunityPersister` (135.1 path). The test proves: (a) the remote `Group` is persisted to A's
+  `ICommunityStore` (it was not present before the follow), (b) the follow edge is recorded on A and
+  listed in the community's `/following` collection, and (c) `GET /ap/v1/actor?iri=<lemmy-community-iri>`
+  on A returns the persisted `Group` document (id + type + its own B-hosted inbox). A non-owner follow
+  is rejected (403) with no edge and no persisted community. The remote community is a *different
+  instance* (B), so this is a genuine cross-instance discovery, not a same-host fixture.
 - [ ] **138.6 — Mutual peering handshake verification.** Drive both 138.4 and 138.5 so each side's
   `following`/`followers` collection lists the other.
   **Check:** Iris's Peers tab (89.1 UI) shows the Lemmy community; confirm and document that Lemmy
