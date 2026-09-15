@@ -99,11 +99,12 @@ when its **Check:** criterion has been met with recorded evidence (a curl transc
 test run, a captured payload) — not on intent alone. Do not reorder or renumber slices as they
 complete; strike through only if a slice is dropped (with a one-line reason).
 
-**Resume checkpoint:** 138.2 done (2026-09-15) — full two-way reachability matrix captured
-(Iris↔Lemmy, direct + reverse-proxy); **no blocked path** — the 135.1b nginx POST block is not
-reproducible, unsigned POSTs reach both apps and die at the signature layer (Lemmy 400 digest /
-Iris 401 signature), which is correct. Next: 138.3 (seed content fixtures on both platforms + record
-the Fixtures manifest).
+**Resume checkpoint:** 138.3 done (2026-09-15) — content fixtures seeded on both platforms and the
+Fixtures manifest recorded in this doc's "Fixtures" section. Iris: `interop` community
+(`https://iris.luit.ink/ap/v1/c/interop`) + 2 posts + 2 replies (created via the native compose UI,
+author `interop`). Lemmy: `interop` community (id 2) + 2 posts + 2 comments (author `lemmyadmin`).
+Stage A (manual orchestration foundation) is now complete. Next: 138.4 (Lemmy → Iris community
+discovery — follow the Iris `Group` by URL from Lemmy).
 
 When a full Stage (A–H) closes, add one line to PLAN.md's Recently Completed pointing back here.
 Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) closes.
@@ -156,11 +157,13 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   behavior for an unsigned probe. A real signed delivery (Lemmy signs as its site/community key;
   Iris signs as the acting actor key) will pass that layer. No nginx allowlist entry is needed.
   **Owner of any residual block: none** — no block observed.
-- [ ] **138.3 — Seed content fixtures on both platforms.** Manually create, via each platform's native UI
+- [x] **138.3 — Seed content fixtures on both platforms.** Manually create, via each platform's native UI
   or API: an Iris community + 2 posts + 2 replies; a Lemmy community + 2 posts + 2 comments. This is
   the fixed baseline dataset every later slice diffs against.
-  **Check:** a fixtures manifest (actor/community/post IRIs and ids) recorded in this doc's "Fixtures"
-  section (below), reused verbatim by every subsequent slice's repro steps.
+   **Check:** a fixtures manifest (actor/community/post IRIs and ids) recorded in this doc's "Fixtures"
+   section (below), reused verbatim by every subsequent slice's repro steps. *(Done 2026-09-15:
+   Iris `interop` community + 2 posts + 2 replies created via the native compose UI; Lemmy `interop`
+   community + 2 posts + 2 comments confirmed. Full manifest in the "Fixtures" section below.)*
 
 ### Stage B — Peer-to-peer relationship
 
@@ -327,14 +330,36 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 *(Fill in as 138.1–138.3 are executed — actor/community/post IRIs and ids used as the fixed baseline
 for every later slice's repro steps.)*
 
-| Platform | Kind | Handle / id | IRI |
+Actors (used by every slice):
+
+| Platform | Kind | Handle | IRI |
 |---|---|---|---|
-| Iris | Community | | |
-| Iris | Post | | |
-| Iris | Post | | |
-| Lemmy | Community | | |
-| Lemmy | Post | | |
-| Lemmy | Post | | |
+| Iris | Actor (author) | `interop` | `https://iris.luit.ink/ap/v1/u/interop` |
+| Lemmy | Actor (author) | `lemmyadmin` | `https://lemmy.luit.ink/u/lemmyadmin` |
+
+Content:
+
+| Platform | Kind | Handle / id | IRI / id |
+|---|---|---|---|
+| Iris | Community | `interop` | `https://iris.luit.ink/ap/v1/c/interop` |
+| Iris | Post (1) | note `06GA63P41QETT34FSQSQF6RNH8` | `https://iris.luit.ink/ap/v1/u/interop/notes/06GA63P41QETT34FSQSQF6RNH8` |
+| Iris | Post (2) | note `06GA63RNNF7ECR6DSB6PBXF1P0` | `https://iris.luit.ink/ap/v1/u/interop/notes/06GA63RNNF7ECR6DSB6PBXF1P0` |
+| Iris | Reply (to Post 1) | note `06GA64VQDNJTRSFQVYRHWCY19M` | `https://iris.luit.ink/ap/v1/u/interop/notes/06GA64VQDNJTRSFQVYRHWCY19M` |
+| Iris | Reply (to Post 2) | note `06GA64Y4EE9VP4D2001ZCSK800` | `https://iris.luit.ink/ap/v1/u/interop/notes/06GA64Y4EE9VP4D2001ZCSK800` |
+| Lemmy | Community | `interop` (id 2) | `https://lemmy.luit.ink/c/interop` |
+| Lemmy | Post (1) | id 1 | `https://lemmy.luit.ink/post/1` |
+| Lemmy | Post (2) | id 2 | `https://lemmy.luit.ink/post/2` |
+| Lemmy | Comment (top-level, on Post 2) | id 1 | `https://lemmy.luit.ink/comment/1` |
+| Lemmy | Comment (reply to C1, on Post 2) | id 2 | `https://lemmy.luit.ink/comment/2` |
+
+Notes:
+
+- Iris community display name rendered as `interopX` (a stray character captured during manual
+  seeding); the handle/IRI `…/c/interop` is correct and is what every slice references.
+- Iris posts are `Note` objects addressed to the community followers collection + `#Public`;
+  replies carry `inReplyTo` set to the parent note (verified in the `interop` outbox).
+- Lemmy Post (1) "Hello from Lemmy interop" predates 138.3; Post (2) + both comments were seeded
+  for the baseline. Lemmy comment ids 1 and 2 are both on Post (2).
 
 ## Open questions to resolve during the phase
 

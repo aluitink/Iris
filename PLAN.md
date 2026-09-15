@@ -110,6 +110,7 @@ Progress for both phases is tracked **inside their own docs**, not enumerated he
 
 ## Recently Completed
 
+- **138 Stage A (138.1–138.3) — manual orchestration foundation:** local Lemmy stack audited, two-way reachability matrix confirmed (no blocked path), and matched content fixtures seeded on both platforms (Iris `interop` community + 2 posts + 2 replies; Lemmy `interop` community + 2 posts + 2 comments). Fixtures manifest recorded in [docs/plans/phase-138-lemmy-community-integration.md](docs/plans/phase-138-lemmy-community-integration.md). Next: Stage B (138.4 Lemmy→Iris community discovery).
 
 ## Keeping the docs lean
 
