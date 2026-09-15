@@ -145,29 +145,60 @@ the verification). This is a **test-harness** limitation: the fidelity check sho
 through **Iris's own outbound delivery pipeline** (the 138.10 `GetCrossPostTargetsAsync` cross-post
 leg, which uses Iris's `OutboundSignature` profile byte-for-byte), not a hand-rolled probe.
 
-## Note-vs-Page determination: RESOLVED — Lemmy requires `Article` (not `Note`) for top-level posts
+## Note-vs-Page determination: RESOLVED — Lemmy requires `Page` (not `Note`) for top-level posts
 
 Lemmy 0.19's `Note` struct REQUIRES `inReplyTo` (it is a comment; `ApubNote` in `lemmy_apub::objects::note`
 has `pub in_reply_to: Option<Url>` but the `Create` handler's `do_stuff` method treats a `Note` without
-`inReplyTo` as invalid for a top-level post). A top-level post has no parent, so it must be an
-`Article`/`Page`. The ActivityStreams library has no `Page` type, but `Article` is a valid top-level
-content object that Lemmy's `PageType` enum accepts (Lemmy's `ApubPage` deserializes both `Page` and
-`Article` types).
+`inReplyTo` as invalid for a top-level post). A top-level post has no parent, so it must be a `Page`.
+The ActivityStreams library has both `Article` and `Page` types; `Page` is the standard AS2.0 type for
+a top-level content object that Lemmy's `PageType` enum accepts (Lemmy's `ApubPage` deserializes
+`Page`, `Article`, `Note`, `Video`, and `Event` types).
 
-**Implementation (commit `6b144a8`):**
+**Implementation (commits `6b144a8`, `9534ff8`):**
 - `TransformCreateForCrossPost` in `ActivityPubServerExtensions`: converts a top-level `Note` (no
-  `inReplyTo`) to an `Article` before cross-post delivery to the remote community's inbox. Replies
+  `inReplyTo`) to a `Page` before cross-post delivery to the remote community's inbox. Replies
   (with `inReplyTo`) keep their `Note` type. The local outbox and follower fan-out retain the original
   `Note`.
-- `CommunityContentRecorder`: handles both `Note` and `Article` (tags both for community feeds).
+- `CommunityContentRecorder`: handles `Note`, `Page`, and `Article` (tags all three for community
+  feeds).
 - 4 integration tests (including 2 new regressions) pass.
 
 **Rationale:** transforming in the cross-post leg (rather than at the client) is safe because:
-1. For Iris-to-Iris cross-posts: the target Iris instance handles both `Note` and `Article`
-   (the `CreateActivityHandler` uses `IObject`; the `CommunityContentRecorder` tags both).
-2. For Iris-to-Lemmy cross-posts: Lemmy requires `Article` (not `Note`) for top-level posts.
+1. For Iris-to-Iris cross-posts: the target Iris instance handles `Note`, `Page`, and `Article`
+   (the `CreateActivityHandler` uses `IObject`; the `CommunityContentRecorder` tags all three).
+2. For Iris-to-Lemmy cross-posts: Lemmy requires `Page` (not `Note`) for top-level posts.
 3. The local outbox and follower fan-out retain the original `Note` (no impact on local users or
    Mastodon-style peers that accept `Note` for top-level posts).
+
+### Live Lemmy acceptance: still pending (HTTP 400)
+
+Despite the `Page` transformation, live Lemmy acceptance is still failing. When Iris delivers the
+cross-posted `Create(Page)` to Lemmy's shared inbox (`https://lemmy.luit.ink/inbox`), Lemmy returns
+HTTP 400 with:
+
+```
+data did not match any variant of untagged enum AnnouncableActivities
+```
+
+This is the top-level activity deserialization failing in Lemmy's `SharedInboxActivities` enum. The
+`Create` activity should match the `RawAnnouncableActivities` catch-all variant (which accepts any
+activity with an `id` and `actor`), but it's not matching. The root cause is not yet determined.
+
+**Investigation so far:**
+- The `Page` object is correctly serialized with `type: "Page"`, `id`, `attributedTo`, `content`, etc.
+- The `Create` activity is correctly serialized with `type: "Create"`, `actor`, `object`, `id`, etc.
+- The `@context` field is present.
+- The `Content-Type` is `application/activity+json`.
+- The HTTP signature is being sent (the 400 is not a signature error).
+
+**Next steps for investigation:**
+1. Capture the exact JSON body that Iris is sending to Lemmy (add debug logging to the delivery worker).
+2. Compare it byte-for-byte with what Lemmy's `RawAnnouncableActivities` deserializer expects.
+3. Check if there's a JSON serialization issue (e.g., a field that's being serialized as an array
+   instead of a scalar, or a missing required field).
+4. Check if Lemmy's `SharedInboxActivities` enum is trying to match the `Create` against one of the
+   earlier variants (e.g., `AnnounceActivity`) and failing in a way that prevents the catch-all from
+   being tried.
 
 ## Files changed (defects #1, #2, #3 — commit `1ee58de`)
 
@@ -182,17 +213,20 @@ content object that Lemmy's `PageType` enum accepts (Lemmy's `ApubPage` deserial
 - `tests/Iris.Testing/TestSeeder.cs` — `SeedApplicationWithKey` helper.
 - `tests/Iris.Server.Tests/InstanceActorAtRootIntegrationTests.cs` — 3 new tests.
 
-## Files changed (defect #4 + Note-vs-Page — commits `c9b7764`, `6b144a8`)
+## Files changed (defect #4 + Note-vs-Page — commits `c9b7764`, `6b144a8`, `9534ff8`)
 
 - `src/Iris.Server/ActivityPubServerExtensions.cs` — `GetCrossPostTargetsAsync` host-based
   `IsOnInstance` check + Note-level `to` audience (defect #4); `TransformCreateForCrossPost`
-  Note-to-Article transformation (Note-vs-Page).
-- `src/Iris.Server/Inbox/CommunityContentRecorder.cs` — `TagArticle` method + `Article` handling in
-  `TagActivityForCommunity` (Note-vs-Page).
+  Note-to-Page transformation (Note-vs-Page, updated from `Article` to `Page` in `9534ff8`).
+- `src/Iris.Server/Inbox/CommunityContentRecorder.cs` — `TagPage` + `TagArticle` methods +
+  `Page`/`Article` handling in `TagActivityForCommunity` (Note-vs-Page).
 - `src/Iris.Client/Pipeline/JsonLdHandler.cs` — `Accept` header on all requests (defect #4).
 - `src/Iris.Core/Signing/SignatureHeader.cs` — `Format()` without spaces after commas (defect #4).
 - `tests/Iris.Server.Tests/CrossPostToRemoteCommunityIntegrationTests.cs` — 2 new regression tests
-  (cached remote community, Note-level `to` audience); unskipped the 3 cross-post tests.
+  (cached remote community, Note-level `to` audience); unskipped the 3 cross-post tests; updated
+  assertions to expect `Page` (not `Article`) in `9534ff8`.
+- `tests/Iris.Server.Tests/ArticleSerializationTest.cs` — 3 new tests verifying `Article`/`Page`
+  serialization and deserialization (added in `9534ff8`).
 
 ## Live verification (2026-09-15)
 
@@ -224,11 +258,14 @@ HTTP 400: {"error":"unknown","message":"Error when parsing signature from Http S
 
 ## Next steps
 
-1. **Exercise the cross-post through Iris's own delivery pipeline** (the 138.10 `GetCrossPostTargetsAsync`
-   leg) against live Lemmy: have an Iris client (alice) post a `Note` addressed to the Lemmy
-   `interop` community, and verify it lands in Lemmy's post listing with all fields intact.
-   The cross-post leg now transforms the `Note` to an `Article` automatically (Note-vs-Page resolved).
-   This uses Iris's `OutboundSignature` profile (byte-for-byte), avoiding the probe-harness artifact
-   (Finding B).
-2. **Verify the Lemmy-rendered post** has all fields intact (title via `name`, body via `content`,
+1. **Investigate the live Lemmy 400 error** (see "Live Lemmy acceptance: still pending" above).
+   Capture the exact JSON body that Iris is sending to Lemmy and compare it byte-for-byte with what
+   Lemmy's `RawAnnouncableActivities` deserializer expects.
+2. **Once the 400 is resolved**, exercise the cross-post through Iris's own delivery pipeline (the
+   138.10 `GetCrossPostTargetsAsync` leg) against live Lemmy: have an Iris client (alice) post a
+   `Note` addressed to the Lemmy `interop` community, and verify it lands in Lemmy's post listing
+   with all fields intact. The cross-post leg now transforms the `Note` to a `Page` automatically
+   (Note-vs-Page resolved). This uses Iris's `OutboundSignature` profile (byte-for-byte), avoiding
+   the probe-harness artifact (Finding B).
+3. **Verify the Lemmy-rendered post** has all fields intact (title via `name`, body via `content`,
    links/attachments, NSFW flag). Any dropped/mangled field is logged as a follow-up defect with repro.
