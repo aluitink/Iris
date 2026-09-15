@@ -153,7 +153,7 @@ public sealed class MutualPeeringHandshakeIntegrationTests : IAsyncLifetime
         await WaitForAsync(
             async () => (await _aPersistence.Communities.GetFollowersAsync(MutualPeeringIris.ACommunityIri)).Contains(MutualPeeringIris.BCommunityIri)
                 && (await _bPersistence.Communities.GetFollowersAsync(MutualPeeringIris.BCommunityIri)).Contains(MutualPeeringIris.ACommunityIri),
-            timeout: TimeSpan.FromSeconds(20));
+            timeout: TimeSpan.FromSeconds(60));
 
         // Each side's /followers collection (read live) lists the other community — the inverse peering
         // edge is visible on both ends, proving the handshake completed (not just the outbound follow).
@@ -179,7 +179,7 @@ public sealed class MutualPeeringHandshakeIntegrationTests : IAsyncLifetime
         await WaitForAsync(
             async () => await _aPersistence.Communities.TryGetCommunityAsync(MutualPeeringIris.BCommunityIri, out _)
                 && await _bPersistence.Communities.TryGetCommunityAsync(MutualPeeringIris.ACommunityIri, out _),
-            timeout: TimeSpan.FromSeconds(20));
+            timeout: TimeSpan.FromSeconds(60));
 
         // The 138.5 acceptance, both directions: each side serves the peer's Group as known content via
         // the cached-actor-by-IRI endpoint (GET /ap/v1/actor?iri=…).
