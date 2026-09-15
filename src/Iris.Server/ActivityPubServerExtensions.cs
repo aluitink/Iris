@@ -3405,9 +3405,15 @@ public static class ActivityPubServerExtensions
                 // fan-out and the local record already succeeded.
                 var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, baseUrl, actorIri, create, recipients, ct)
                     .ConfigureAwait(false);
+                // 138.11 (Lemmy interop, Note-vs-Page): a top-level cross-post (no inReplyTo) to ANY
+                // remote community carries an Article, not a Note. Lemmy's Note struct REQUIRES inReplyTo
+                // (it is a comment); a top-level post has no parent, so it must be an Article/Page. An
+                // Iris target handles both (CreateActivityHandler uses IObject; CommunityContentRecorder
+                // tags both Note and Article). Replies (which have inReplyTo) keep their Note type.
+                var crossPostActivity = TransformCreateForCrossPost(create);
                 foreach (var target in crossPostTargets)
                 {
-                    await delivery.DeliverToActorAsync(target, activity, actorIri, ct).ConfigureAwait(false);
+                    await delivery.DeliverToActorAsync(target, crossPostActivity, actorIri, ct).ConfigureAwait(false);
                 }
             }
             else if (activity is Announce announce)
@@ -5160,6 +5166,60 @@ public static class ActivityPubServerExtensions
         {
             await delivery.DeliverToActorAsync(relayIri, activity, actorIri, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Transforms an outbound <see cref="Create"/> for cross-post delivery (138.11 / Lemmy interop,
+    /// Note-vs-Page): if the embedded object is a top-level <see cref="Note"/> (no <c>inReplyTo</c>), it
+    /// is replaced with an <see cref="Article"/> that carries the same content, audience, and
+    /// attribution. Replies (which have <c>inReplyTo</c>) are returned unchanged.
+    /// </summary>
+    /// <remarks>
+    /// Lemmy's <c>Note</c> struct REQUIRES <c>inReplyTo</c> (it is a comment); a top-level post has no
+    /// parent, so it must be an <c>Article</c>/<c>Page</c>. The ActivityStreams library has no
+    /// <c>Page</c> type, but <c>Article</c> is a valid top-level content object that Lemmy's
+    /// <c>PageType</c> enum accepts. An Iris target handles both <c>Note</c> and <c>Article</c>
+    /// (the <c>CreateActivityHandler</c> uses <c>IObject</c>; the <c>CommunityContentRecorder</c> tags
+    /// both). This transformation is applied only to the cross-post delivery (the activity delivered to
+    /// the remote community's inbox); the activity stored in the local outbox and the follower fan-out
+    /// retain the original <see cref="Note"/> type.
+    /// </remarks>
+    /// <param name="create">The outbound <see cref="Create"/> to transform.</param>
+    /// <returns>A new <see cref="Create"/> with the embedded object transformed (if applicable), or the
+    /// original <paramref name="create"/> (when the embedded object is not a top-level
+    /// <see cref="Note"/>).</returns>
+    private static Activity TransformCreateForCrossPost(Create create)
+    {
+        var embedded = create.ExtractEmbeddedObject();
+        if (embedded is not Note note || (note.InReplyTo is { } replyTo && replyTo.Any()))
+        {
+            return create;
+        }
+
+        var article = new Article
+        {
+            Id = note.Id,
+            Content = note.Content,
+            AttributedTo = note.AttributedTo,
+            To = note.To,
+            Cc = note.Cc,
+            Image = note.Image,
+            Attachment = note.Attachment,
+            Name = note.Name,
+            MediaType = note.MediaType,
+            Published = note.Published,
+            Updated = note.Updated,
+            Source = note.Source,
+        };
+
+        return new Create
+        {
+            Id = create.Id,
+            Actor = create.Actor,
+            Object = [article],
+            To = create.To,
+            Cc = create.Cc,
+        };
     }
 
     /// <summary>

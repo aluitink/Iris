@@ -119,7 +119,7 @@ public sealed class CrossPostToRemoteCommunityIntegrationTests : IDisposable
 
     // --- The cross-posted Create reaches the remote community and lands there --------------------
 
-    [Fact(Skip = "hangs >30s; Note-vs-Page transformation (138.11) not yet implemented")]
+    [Fact]
     public async Task CrossPostToRemoteCommunity_DeliversCreateToCommunityInbox_AndLandsThere()
     {
         // alice (B) cross-posts to A's community by addressing the community in the Create's `to`
@@ -149,11 +149,12 @@ public sealed class CrossPostToRemoteCommunityIntegrationTests : IDisposable
 
         // (b) The cross-post landed in the target community: the community's local member (bob) has the
         // cross-posted Create in his outbox (CommunityContentRecorder recorded it on A's inbound Create
-        // path), so it surfaces in the community feed.
+        // path), so it surfaces in the community feed. The embedded object is an Article (138.11
+        // Note-vs-Page: a top-level cross-post carries an Article, not a Note).
         var bobOutbox = (await _aPersistence.Activities.GetOutboxAsync(_bobActorIri)).ToList();
         Assert.Contains(bobOutbox, a =>
             a is Create crossPost
-                && crossPost.Object?.OfType<Note>().Any(n => n.Id == noteIri.Value) == true);
+                && crossPost.Object?.OfType<Article>().Any(n => n.Id == noteIri.Value) == true);
     }
 
     // --- Negative control: a post NOT addressed to the remote community does not reach it --------
@@ -191,7 +192,7 @@ public sealed class CrossPostToRemoteCommunityIntegrationTests : IDisposable
 
     // --- Regression: a cached remote community is still a cross-post target ----------------------
 
-    [Fact(Skip = "hangs >30s; Note-vs-Page transformation (138.11) not yet implemented")]
+    [Fact]
     public async Task CrossPostToCachedRemoteCommunity_StillDelivers()
     {
         // The peered-Lemmy case (138.11 live defect): the authoring instance (B) has FOLLOWED the target
@@ -241,7 +242,7 @@ public sealed class CrossPostToRemoteCommunityIntegrationTests : IDisposable
 
     // --- Regression: the Iris client composes `to` on the embedded Note, not the Create ----------
 
-    [Fact(Skip = "hangs >30s; Note-vs-Page transformation (138.11) not yet implemented")]
+    [Fact]
     public async Task CrossPostWithNoteLevelAudience_StillDelivers()
     {
         // The Iris <see cref="IActivityPubClient.PostNoteAsync"/> client composes the audience on the

@@ -102,7 +102,10 @@ internal static class CommunityContentRecorder
             return activity;
         }
 
-        // For a Create, create a new Create with a tagged copy of the embedded note.
+        // For a Create, create a new Create with a tagged copy of the embedded content object.
+        // 138.11 (Lemmy interop): handle both Note and Article — a top-level cross-post to a
+        // non-Iris community (Lemmy) carries an Article (Lemmy's Note struct requires inReplyTo);
+        // a reply or an Iris-to-Iris post carries a Note.
         if (activity is Create create)
         {
             var newObjects = new List<IObjectOrLink>();
@@ -111,6 +114,10 @@ internal static class CommunityContentRecorder
                 if (obj is Note note)
                 {
                     newObjects.Add(TagNote(note, communityIri));
+                }
+                else if (obj is Article article)
+                {
+                    newObjects.Add(TagArticle(article, communityIri));
                 }
                 else
                 {
@@ -150,6 +157,37 @@ internal static class CommunityContentRecorder
             Published = note.Published,
             To = note.To,
             Cc = note.Cc,
+        };
+    }
+
+    /// <summary>
+    /// Creates a copy of the article with the community IRI added to its <c>attributedTo</c>.
+    /// </summary>
+    /// <remarks>
+    /// 138.11 (Lemmy interop): an Article is a top-level content object (a cross-post to a non-Iris
+    /// community, e.g. Lemmy, where a Note would be rejected because Lemmy's Note struct requires
+    /// inReplyTo). The tagging mirrors <see cref="TagNote"/>.
+    /// </remarks>
+    private static Article TagArticle(Article article, Iri communityIri)
+    {
+        var attributedTo = article.AttributedTo is null
+            ? new List<IObjectOrLink> { new Link { Href = new Uri(communityIri.Value) } }
+            : article.AttributedTo.Concat([new Link { Href = new Uri(communityIri.Value) }]).ToList();
+
+        return new Article
+        {
+            Id = article.Id,
+            Content = article.Content,
+            AttributedTo = attributedTo,
+            Published = article.Published,
+            To = article.To,
+            Cc = article.Cc,
+            Name = article.Name,
+            Image = article.Image,
+            Attachment = article.Attachment,
+            MediaType = article.MediaType,
+            Updated = article.Updated,
+            Source = article.Source,
         };
     }
 

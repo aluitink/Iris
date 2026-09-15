@@ -263,32 +263,30 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 - [x] **138.9 — Decide the push-content-to-Lemmy shape.** Decision recorded in [058](../decisions/058-outbound-post-to-peered-community-shape.md): an Iris post landing in a remote community's post list is an **explicit cross-post** — the target community's `Group` IRI goes in the `Create`'s `to` (direct recipient), the `Create` is delivered to the community's `sharedInbox`/`inbox` signed as the authoring local actor, the object is a `Note` (Note-vs-`Page` deferred to 138.11), and the target is a client-supplied community IRI (no implicit push into followed communities — a follow is a pull, 036/89.1). The same once-minted activity id is reused for the cross-post leg (055). [Change doc](../changes/13809-phase138-push-content-to-lemmy-shape.md).
 - [x] **138.10 — Implement + exercise the post-to-Lemmy-community delivery path.** Implemented the cross-post leg (decision 058): a new `GetCrossPostTargetsAsync` in `OutboxPublishHandler`'s Create branch delivers the `Create` to every remote recipient explicitly addressed in the `to` audience (the cross-post target community), resolved via `DeliverToActorAsync` (sharedInbox/inbox, signed as the authoring local actor). Best-effort; reuses the once-minted activity id (055). 2 integration tests (`CrossPostToRemoteCommunityIntegrationTests`, two-instance): the cross-posted Create reaches the target community's instance and lands in its local member's outbox; a plain post not addressed to the remote community does not reach it (negative control). **Live Lemmy acceptance (post in Lemmy's own post listing) is exercised live with the 138.11 fidelity check** (whether Lemmy requires a `Page`). [Change doc](../changes/13810-phase138-post-to-lemmy-community-delivery.md).
-- [ ] **138.11 — Cross-post fidelity check.** Verify title, body/markdown, links/attachments, and NSFW
-  flag survive the hop and render correctly in Lemmy. Confirm whether Lemmy requires a `Page` (not a
-  `Note`) for it to validate/render as a proper post — if so, this is a real Iris change (mint `Page`
-  for community-audience posts headed to a Lemmy peer, or for all community posts if that's simpler
-  and still correct for Mastodon-style peers).
-  **Check:** a live Lemmy-rendered post with all fields intact; any dropped/mangled field is logged as
-  a follow-up defect with repro.
-   **Status (2026-09-15): 3 actor-doc defects fixed; live fidelity check partially complete.**
-   Live interop against Lemmy 0.19.20 identified and fixed 3 actor-document defects that prevented
-   any Iris→Lemmy federation: (1) PEM CRLF line endings [FIXED, `1ee58de`], (2) missing
-   `endpoints.sharedInbox` [FIXED, `1ee58de`], (3) instance actor at the root must be `Application`
-   type [FIXED, `1ee58de` — dedicated `Application` site actor seeded at the bare base IRI,
-   `InstanceActorIri` option, alice remains `Person` at `/ap/v1/u/alice`].
-   **New findings (138.11 live probe):** (a) Lemmy 0.19's `UntaggedEither<Person, Group>` actor
-   dereference requires the activity's `actor` to be `Person`/`Service`/`Organization` (Person) or
-   `Group` — an `Application` type is rejected, so the cross-post's `actor` must be the authoring
-   local `Person` (alice), not the site actor (consistent with decision 058: "signed as the
-   authoring local actor"). (b) A hand-rolled probe-script (HTTP Signature, RSA PKCS#1 v1.5) delivery
-   with `actor: alice` fails Lemmy's signature verification, while the same probe with
-   `actor: <site actor>` passes signature but fails the `PersonOrGroup` actor dereference — the
-   probe's signing does not byte-match Iris's own outbound signature profile for `Person` actors.
-   **Remaining:** exercise the cross-post through **Iris's own delivery pipeline** (the 138.10
-   `GetCrossPostTargetsAsync` leg) against live Lemmy to confirm a Lemmy-rendered post with all
-   fields intact; the probe-script signature artifact is a test-harness limitation, not an Iris
-   defect. Note-vs-Page determination still pending a successful live delivery.
-   [Change doc](../changes/13811-phase138-cross-post-fidelity-check.md).
+ - [ ] **138.11 — Cross-post fidelity check.** Verify title, body/markdown, links/attachments, and NSFW
+   flag survive the hop and render correctly in Lemmy. Confirm whether Lemmy requires a `Page` (not a
+   `Note`) for it to validate/render as a proper post — if so, this is a real Iris change (mint `Page`
+   for community-audience posts headed to a Lemmy peer, or for all community posts if that's simpler
+   and still correct for Mastodon-style peers).
+   **Check:** a live Lemmy-rendered post with all fields intact; any dropped/mangled field is logged as
+   a follow-up defect with repro.
+    **Status (2026-09-15): 4 delivery defects fixed + Note-vs-Page resolved; live fidelity check pending.**
+    Live interop against Lemmy 0.19.20 identified and fixed 4 cross-post delivery defects:
+    (1) PEM CRLF line endings [FIXED, `1ee58de`], (2) missing `endpoints.sharedInbox` [FIXED, `1ee58de`],
+    (3) instance actor at the root must be `Application` type [FIXED, `1ee58de`], (4) host-based
+    `IsOnInstance` check for cross-post target detection + Note-level `to` audience + missing `Accept`
+    header on POSTs + `SignatureHeader` spaces after commas [FIXED, `c9b7764`].
+    **Note-vs-Page RESOLVED:** Lemmy 0.19's `Note` struct REQUIRES `inReplyTo` (it is a comment); a
+    top-level post has no parent, so it must be an `Article`/`Page`. The ActivityStreams library has no
+    `Page` type, but `Article` is a valid top-level content object that Lemmy's `PageType` enum accepts.
+    **Implementation:** the cross-post leg (`TransformCreateForCrossPost` in `ActivityPubServerExtensions`)
+    transforms a top-level `Note` (no `inReplyTo`) to an `Article` before delivery to the remote
+    community's inbox. Replies (with `inReplyTo`) keep their `Note` type. The local outbox and follower
+    fan-out retain the original `Note`. The `CommunityContentRecorder` handles both `Note` and `Article`
+    (tags both for community feeds). 4 integration tests (including 2 new regressions) pass.
+    **Remaining:** exercise the cross-post through **Iris's own delivery pipeline** against live Lemmy
+    to confirm a Lemmy-rendered post with all fields intact.
+    [Change doc](../changes/13811-phase138-cross-post-fidelity-check.md).
 
 ### Stage D — Inbound: Lemmy post → Iris
 
