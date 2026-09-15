@@ -1,6 +1,7 @@
 using Iris.Core;
 using Iris.Server.InMemory;
 using Iris.Server.Observability;
+using Iris.Server.Stores;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
@@ -216,6 +217,7 @@ public sealed class DegradedModeTests : IDisposable
         public ICommunityStore Communities => _inner.Communities;
         public IKeyStore Keys => _inner.Keys;
         public IMediaStore Media => _inner.Media;
+        public IDislikeStore Dislikes => null!;
     }
 
     /// <summary>

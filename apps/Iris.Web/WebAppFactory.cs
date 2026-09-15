@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Claims;
 using System.Text.Json;
 using Iris.Client.Auth;
@@ -623,29 +624,150 @@ public static class WebAppFactory
 
         // SPA fallback: any non-API, non-static path serves the WASM client's index.html so the
         // client-side router can handle it (e.g. /home, /compose, /profile). Must be mapped LAST so
-        // it doesn't shadow the API endpoints above. The shell is a fixed URL: if the browser cached
-        // the old shell, it keeps loading the old _framework/ build after a redeploy. In the
-        // development cache-bypass mode (Phase 131.6) we therefore mark it no-store so the next
-        // navigation fetches the fresh shell (which references the new content-hashed _framework/
-        // assets); in production mode it is served with no Cache-Control (the pre-131.6 behavior).
-        // Served as an explicit endpoint (not MapFallbackToFile) so the Cache-Control header can be
-        // set unambiguously alongside the body.
-        app.MapFallback(async (HttpContext ctx, IWebHostEnvironment env) =>
+        // it doesn't shadow the API endpoints above. Served as an explicit endpoint (not
+        // MapFallbackToFile) so the shell can be (a) version-stamped in memory and (b) given an
+        // unambiguous Cache-Control header alongside the body.
+        //
+        // Version stamping (Phase 137.x): the shell's FIXED-URL tags (the blazor.webassembly.js
+        // loader, app.css, and the app's js/*.js) are the only WASM assets that go stale after a
+        // redeploy — the rest of _framework/ is content-hashed (immutable) and index.html is the
+        // entry that points at them. The shell is therefore served with a per-build query string
+        // (?v=<build>) on those tags, rewritten in memory on every request (StampShellVersion): the
+        // browser sees a distinct URL per build and fetches the fresh loader/CSS instead of
+        // replaying the cached pre-redeploy copy. The stamp is the published client assembly's
+        // AssemblyInformationalVersion (e.g. "1.0.0+3f9a2c1b" — the build number is a content hash
+        // of the _framework/ payload, computed at build time in Iris.Web.Client.csproj), so the
+        // stamp always matches the exact WASM build this server is serving — no build-time file
+        // rewrite, and it works for dotnet run, the client publish, and Docker alike.
+        //
+        // Cache-Control: the shell is ALWAYS served no-cache (revalidate on every load) in BOTH
+        // production and dev — a tiny HTML document whose only job is to carry the current ?v=
+        // stamp, so it must never be served stale. (The pre-131.6 production behavior left it
+        // header-less and relied on browser heuristic caching, which is exactly what let a browser
+        // keep an old shell — and with it an old loader — after a redeploy.) The dev cache-bypass
+        // mode (Phase 131.6) additionally revalidates the CSS/JS static assets (no-cache); in
+        // production those keep their 24h heuristic cache, now keyed per-build by the ?v= stamp.
+        // The shell's version stamp (the published client assembly's build number), resolved once
+        // per host build. Null → the shell is served un-stamped (no-cache still protects it).
+        var shellVersion = ResolveShellVersion(app.Environment.WebRootPath);
+        app.MapFallback(async (HttpContext ctx) =>
         {
-            var path = Path.Combine(env.WebRootPath, "index.html");
+            var path = Path.Combine(app.Environment.WebRootPath, "index.html");
             if (!File.Exists(path))
             {
                 return Results.NotFound();
             }
 
             var content = await File.ReadAllTextAsync(path, System.Text.Encoding.UTF8);
-            if (devCacheBypass)
+            ctx.Response.Headers.CacheControl = "no-cache";
+            return Results.Content(StampShellVersion(content, shellVersion), "text/html");
+        });
+    }
+
+    /// <summary>
+    /// Resolves the per-build version stamp for the WASM shell's fixed-URL tags (Phase 137.x): a
+    /// short content hash of the published <c>_framework/</c> payload the server is actually serving,
+    /// or <c>null</c> when the directory is absent or empty (the shell is then served un-stamped,
+    /// with the no-cache header still protecting against a stale shell).
+    /// </summary>
+    /// <param name="webRootPath">The server's web root (where the WASM <c>_framework/</c> output lives).</param>
+    /// <remarks>
+    /// The stamp is derived from the <em>payload on disk</em>, not from an assembly attribute: the
+    /// Blazor WebAssembly SDK's <c>PublishTrimmed</c> output has no plain <c>Iris.Web.Client.dll</c>
+    /// (the main assembly is the content-hashed <c>Iris.Web.Client.{hash}.wasm</c>), so there is no
+    /// stable file to read a version from. Instead, the stamp is a SHA-256 over the sorted
+    /// <c>(name, size)</c> of every asset under <c>_framework/</c>, prefixed with the app's
+    /// <c>Major.Minor.Build</c>. The asset names are themselves content-hashed per build (each file
+    /// is <c>&lt;assembly&gt;.&lt;hash&gt;.&lt;ext&gt;</c>), so the set of names changes whenever the WASM
+    /// payload changes; the size is folded in as a belt-and-braces signal so a content change is
+    /// caught even in the (unlikely) case it left every name unchanged. The result is stable across
+    /// identical rebuilds and distinct across different builds — exactly the property a cache-bust
+    /// key needs. It is computed once per host start (the _framework/ directory does not change for
+    /// the life of a running server), so the per-request shell rewrite is a cheap in-memory string
+    /// operation.
+    /// </remarks>
+    internal static string? ResolveShellVersion(string webRootPath)
+    {
+        var frameworkDir = Path.Combine(webRootPath, "_framework");
+        if (!Directory.Exists(frameworkDir))
+        {
+            return null;
+        }
+
+        try
+        {
+            // The payload identity is each asset's (name, size): the Blazor WASM SDK names files
+            // <assembly>.<contenthash>.<ext>, so the name already encodes the content — but folding
+            // in the size too makes the fingerprint robust even if an asset's content changes without
+            // its name (e.g. a same-length edit). Sizes are read from the directory entry (no file
+            // I/O of the megabytes of wasm bodies).
+            var entries = Directory
+                .EnumerateFiles(frameworkDir)
+                .Select(p => new KeyValuePair<string, long>(
+                    Path.GetFileName(p)!,
+                    new FileInfo(p).Length))
+                .Where(kv => kv.Key.Length > 0)
+                .OrderBy(kv => kv.Key, StringComparer.Ordinal)
+                .ToList();
+            if (entries.Count == 0)
             {
-                ctx.Response.Headers.CacheControl = "no-store";
+                return null;
             }
 
-            return Results.Content(content, "text/html");
-        });
+            var fingerprint = string.Join("|", entries.Select(kv => kv.Key + ":" + kv.Value));
+            var digest = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(fingerprint));
+            var shortHash = Convert.ToHexString(digest)[..8].ToLowerInvariant();
+            var v = Assembly.GetExecutingAssembly().GetName().Version;
+            return $"{v?.Major}.{v?.Minor}.{v?.Build}+{shortHash}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Stamps the WASM shell's fixed-URL tags with a per-build query string (Phase 137.x), so a
+    /// redeploy gives the browser a fresh URL for the loader script, the app stylesheet, and the
+    /// app's <c>js/*.js</c> files instead of a stale cached copy. Rewrites:
+    /// <list type="bullet">
+    /// <item><c>&lt;script src="_framework/..."&gt;</c> → <c>src="_framework/...?v={version}"</c></item>
+    /// <item>relative <c>&lt;link href="...css"&gt;</c> / <c>&lt;script src="...js"&gt;</c> → the same
+    /// <c>?v={version}</c> suffix (absolute and favicon URLs are left alone).</item>
+    /// </list>
+    /// Idempotent: an already-stamped URL is re-stamped (the previous <c>?v=</c> is replaced), so a
+    /// shell that was stamped at an earlier build (e.g. a leftover wwwroot) converges on the current
+    /// version rather than accumulating suffixes. A <c>null</c> version returns the content unchanged.
+    /// </summary>
+    internal static string StampShellVersion(string shellHtml, string? version)
+    {
+        if (string.IsNullOrEmpty(version))
+        {
+            return shellHtml;
+        }
+
+        // The stamp (e.g. "1.0.0+e37bba3b") is already URL-safe in a query string: digits, dots, and
+        // '+' are all legal, and '+' in a query (not a form body) is transmitted literally. No
+        // escaping needed — escaping would turn it into the uglier "1.0.0%2Be37bba3b".
+        var stamp = version;
+
+        // The fixed-URL tags that go stale after a redeploy: the _framework/ loader script and the
+        // relative app CSS/JS (css/app.css, js/WebCrypto.js, js/error-ui.js, ...). Absolute URLs and
+        // the favicon (no .css/.js extension) are left alone. Idempotent: a previous ?v=... is
+        // replaced, not accumulated.
+        var html = System.Text.RegularExpressions.Regex.Replace(
+            shellHtml,
+            "src=\"(_framework/[^\"]*?)(?:\\?v=[^\"]*)?\"",
+            $"src=\"${{1}}?v={stamp}\"");
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            "href=\"((?!/)[^\"]*?\\.(?:css|js))(?:\\?v=[^\"]*)?\"",
+            $"href=\"${{1}}?v={stamp}\"");
+        html = System.Text.RegularExpressions.Regex.Replace(
+            html,
+            "src=\"((?!/|_framework/)[^\"]*?\\.js)(?:\\?v=[^\"]*)?\"",
+            $"src=\"${{1}}?v={stamp}\"");
+        return html;
     }
 
     /// <summary>

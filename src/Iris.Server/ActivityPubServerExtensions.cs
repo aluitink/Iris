@@ -347,6 +347,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, DeleteActivityHandler>();
         services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
+        services.AddSingleton<IActivityHandler, DislikeActivityHandler>();
         services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, FlagActivityHandler>();
         // Mute (24.2): Mute is not an ActivityStreams type (the library has no Mute class), so an inbound

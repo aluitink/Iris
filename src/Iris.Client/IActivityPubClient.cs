@@ -56,6 +56,17 @@ public interface IActivityPubClient : IDisposable
     public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default);
 
     /// <summary>
+    /// Fetches a Lemmy post's score data (upvotes, downvotes, net score, comment count) from the
+    /// Lemmy REST API (<c>GET {instance}/api/v3/post?id={id}</c>). The ActivityPub document for a
+    /// Lemmy post does not carry vote information; it is only available via Lemmy's own REST API.
+    /// </summary>
+    /// <param name="postIri">The post's ActivityPub IRI (e.g. <c>https://lemmy.example/post/1</c>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The parsed <see cref="LemmyPostScore"/>, or null if the IRI is not a recognizable
+    /// Lemmy post IRI, the request failed, or the body was not valid Lemmy JSON.</returns>
+    public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Sends an ActivityPub activity to the given target IRI, signed with the
     /// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
     /// <c>content-type</c>). The target is typically the author's own outbox (the write surface for the
@@ -301,6 +312,30 @@ public interface IActivityPubClient : IDisposable
     /// the 2xx body.
     /// </remarks>
     public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Dislikes an object as <paramref name="actorId"/>: builds a
+    /// <see cref="KristofferStrube.ActivityStreams.Dislike"/> (actor = <paramref name="actorId"/>, object =
+    /// <paramref name="objectId"/>) and publishes it to the disliker's own outbox. The inverse of
+    /// <see cref="LikeAsync"/> — used for Lemmy-style downvotes.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor disliking the object.</param>
+    /// <param name="objectId">The IRI of the object being disliked.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a dislike as <paramref name="actorId"/> (the inverse of <see cref="DislikeAsync"/>): builds an
+    /// <c>Undo</c> referencing the original <see cref="KristofferStrube.ActivityStreams.Dislike"/> by its
+    /// learned id and publishes it to the actor's own outbox.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor removing the dislike.</param>
+    /// <param name="originalDislikeId">The id the server minted for the original dislike (from
+    /// <see cref="DeliveryResult.MintedId"/> when the dislike was made via <see cref="DislikeAsync"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default);
 
     /// <summary>
     /// Boosts (re-shares) an object as <paramref name="actorId"/>: builds an

@@ -283,6 +283,14 @@
             // exhausted, so the first screenful is actually relevant.
             await TopUpFilteredPagesAsync();
         }
+        catch (System.Threading.Tasks.TaskCanceledException)
+        {
+            // A bounded-timeout (137.3) or connection-level failure: the community's host is
+            // unreachable (a stale IRI whose reverse proxy no longer routes it, or a network
+            // partition). Distinguish from a transient failure so the user knows the community
+            // is not reachable rather than that something transient went wrong.
+            LoadError = "This community could not be reached. Its host may be unreachable or the community may have been removed.";
+        }
         catch (Exception)
         {
             LoadError = "Failed to load. Please try again.";
@@ -359,6 +367,10 @@
             // screenful of matching items rather than a single (possibly all-foreign) page.
             await TopUpFilteredPagesAsync();
         }
+        catch (System.Threading.Tasks.TaskCanceledException)
+        {
+            LoadError = "This community could not be reached. Its host may be unreachable or the community may have been removed.";
+        }
         catch (Exception)
         {
             LoadError = "Failed to load more items. Please try again.";
@@ -390,6 +402,10 @@
             HasMore = false;
             _resumeFrom = null;
             await EnumerateOnePageAsync();
+        }
+        catch (System.Threading.Tasks.TaskCanceledException)
+        {
+            LoadError = "This community could not be reached. Its host may be unreachable or the community may have been removed.";
         }
         catch (Exception)
         {

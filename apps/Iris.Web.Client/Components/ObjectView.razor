@@ -194,7 +194,18 @@
             }
             @if (IsContentCreate)
             {
-                <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
+                @if (IsLemmyPost)
+                {
+                    <LemmyVoteBar ObjectIri="@CreatedObjectIri" Score="LemmyScore" />
+                    @if (LemmyScore is { } ls)
+                    {
+                        <span class="lemmy-score-comments" title="Comments">@ls.Comments comments</span>
+                    }
+                }
+                else
+                {
+                    <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
+                }
             }
         </div>
     }
@@ -227,6 +238,10 @@
                                 <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
                             }
                         </div>
+                        @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor))
+                        {
+                            <div class="object-title">@boostedTitle</div>
+                        }
                         @if (boosted is Actor)
                         {
                             <div class="object-content">
@@ -249,7 +264,25 @@
                             }
                         }
                         <MediaGallery Attachments="ResolveBoostedAttachments(boosted)" Blurred="false" />
-                        <EngagementBar ObjectIri="@targetIri" Object="boosted" />
+                        @if (IsLemmyPost)
+                        {
+                            <LemmyVoteBar ObjectIri="@(BoostedContentIri ?? targetIri)" Score="LemmyScore" />
+                            @if (LemmyScore is { } ls2)
+                            {
+                                <span class="lemmy-score-comments" title="Comments">@ls2.Comments comments</span>
+                            }
+                        }
+                        else
+                        {
+                            @if (BoostedContentIri is { } contentIri)
+                            {
+                                <EngagementBar ObjectIri="@contentIri" Object="boosted" />
+                            }
+                            else
+                            {
+                                <EngagementBar ObjectIri="@targetIri" Object="boosted" />
+                            }
+                        }
                     </div>
                 }
                 else
@@ -575,7 +608,15 @@
                     </div>
                 </div>
             }
-            @if (obj is Note or Article)
+            @if (IsLemmyPost)
+            {
+                <LemmyVoteBar ObjectIri="@BareObjectIri" Score="LemmyScore" />
+                @if (LemmyScore is { } lsBare)
+                {
+                    <span class="lemmy-score-comments" title="Comments">@lsBare.Comments comments</span>
+                }
+            }
+            else if (obj is Note or Article)
             {
                 <EngagementBar ObjectIri="@BareObjectIri" Object="obj" />
             }

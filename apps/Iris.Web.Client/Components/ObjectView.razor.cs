@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Text;
+using Iris.Client;
 using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Core.Rendering;
@@ -17,6 +18,9 @@ public partial class ObjectView
 
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
+
+    [Microsoft.AspNetCore.Components.Inject]
+    private Iris.Web.Client.Ui.UiContext Ui { get; set; } = default!;
 
     private IObject? Obj => Item as IObject;
 
@@ -49,6 +53,10 @@ public partial class ObjectView
     // "View boosted post →". When the target is link-only this is resolved so the card shows a
     // content preview (author, text, media) like Mastodon.
     private IObject? _announcedObject;
+
+    // Lemmy score data (fetched from the Lemmy REST API) for the current post, when the post
+    // is a Lemmy post. Null when not a Lemmy post or the fetch failed.
+    private LemmyPostScore? _lemmyScore;
 
     private DateTime? Published => Obj?.Published;
     private DateTime? Updated => Obj?.GetUpdated();
@@ -356,7 +364,48 @@ public partial class ObjectView
         }
     }
 
-    private bool IsContentCreate => Item is Create && ActivityEmbeddedObject is Note or Article;
+    private bool IsContentCreate => Item is Create && ActivityEmbeddedObject is ActivityObject;
+
+    /// <summary>
+    /// Whether the current post is a Lemmy post (a Page object whose IRI matches the
+    /// <c>/post/{id}</c> pattern). Used to decide whether to show the Lemmy-style vote bar
+    /// instead of the standard engagement bar.
+    /// </summary>
+    private bool IsLemmyPost
+    {
+        get
+        {
+            IObject? contentObj = Item switch
+            {
+                Create c => ActivityEmbeddedObject,
+                Announce a => UnwrapCreate(ActivityEmbeddedObject ?? _announcedObject),
+                IObject o => o,
+                _ => null
+            };
+            if (contentObj is { Id: { Length: > 0 } id })
+            {
+                return LemmyPostScore.TryParsePostIri(new Iri(id)) is not null;
+            }
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Recursively unwraps a <c>Create</c> activity to find the underlying content object.
+    /// Lemmy outbox items are often nested as Announce → Create → Page; this method peels
+    /// through any wrapping <c>Create</c> activities to return the actual content object
+    /// (a <see cref="ActivityObject"/> such as a Page, Note, or Article).
+    /// </summary>
+    private static IObject? UnwrapCreate(IObject? obj)
+    {
+        var current = obj;
+        while (current is Create { Object: { } inner } && inner.FirstOrDefault() is IObject innerObj)
+        {
+            current = innerObj;
+        }
+
+        return current is ActivityObject ? current : null;
+    }
 
     private Iri? AnnounceTargetIri
     {
@@ -432,7 +481,7 @@ public partial class ObjectView
     {
         get
         {
-            if (Obj is not (Note or Article))
+            if (Obj is not (Note or Article) && !IsLemmyPost)
             {
                 return null;
             }
@@ -513,23 +562,77 @@ public partial class ObjectView
     /// carries the full object) or the fetched object (when the target is a bare link and has been
     /// resolved in <see cref="OnInitializedAsync"/>). Null when neither is available.
     /// </summary>
-    private IObject? BoostedObject => ActivityEmbeddedObject ?? _announcedObject;
+    private IObject? BoostedObject
+    {
+        get
+        {
+            var raw = ActivityEmbeddedObject ?? _announcedObject;
+            // Lemmy outbox Announce items nest as Announce → Create → Page. Unwrap the Create
+            // so the boosted card renders the actual post content, not the wrapper activity.
+            return UnwrapCreate(raw) ?? raw;
+        }
+    }
+
+    /// <summary>
+    /// The IRI of the unwrapped boosted content object (the Page/Note/Article), distinct from
+    /// the Announce target IRI (which may point to the Create activity). Used for the
+    /// EngagementBar so like/boost/reply counts target the actual post.
+    /// </summary>
+    private Iri? BoostedContentIri
+    {
+        get
+        {
+            var raw = ActivityEmbeddedObject ?? _announcedObject;
+            var unwrapped = UnwrapCreate(raw);
+            if (unwrapped is { Id: { Length: > 0 } id })
+            {
+                return new Iri(id);
+            }
+
+            return null;
+        }
+    }
 
     /// <summary>
     /// 121.7 — The author IRI of the boosted object, preferring the activity-level author and
     /// falling back to the boosted object's own <c>attributedTo</c>.
     /// </summary>
     private Iri? BoostedAuthorIri
-        => AnnounceAuthorIri
-           ?? (BoostedObject as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+    {
+        get
+        {
+            // Prefer the unwrapped content object's attributedTo (the original post author).
+            if (BoostedObject is ActivityObject { AttributedTo: { } at } &&
+                at.FirstOrDefault()?.ResolveObjectIri() is { } author)
+            {
+                return author;
+            }
+
+            return AnnounceAuthorIri;
+        }
+    }
 
     /// <summary>
-    /// 121.7 — The published time of the boosted object, preferring the activity-level published
-    /// and falling back to the boosted object's own <c>published</c>.
+    /// 121.7 — The published time of the boosted object, preferring the unwrapped content
+    /// object's <c>published</c> and falling back to the activity-level published.
     /// </summary>
     private DateTime? BoostedPublished
-        => ActivityPublished
-           ?? (BoostedObject as ActivityObject)?.Published;
+    {
+        get
+        {
+            if (BoostedObject is ActivityObject { Published: not null } p)
+            {
+                return p.Published;
+            }
+
+            return ActivityPublished;
+        }
+    }
+
+    /// <summary>
+    /// The <c>name</c> of the boosted content object (the post title for Lemmy Page objects).
+    /// </summary>
+    private string? BoostedName => (BoostedObject as ActivityObject)?.Name?.FirstOrDefault();
 
     /// <summary>
     /// 121.7 — Renders the content of a boosted object (from either the embedded or the fetched
@@ -554,9 +657,12 @@ public partial class ObjectView
     /// </summary>
     private IReadOnlyList<RichAttachment> ResolveBoostedAttachments(IObject boosted)
     {
-        if (ActivityEmbeddedObject is { } embedded)
+        // Prefer the unwrapped content object's attachments (the Page/Note/Article), not the
+        // wrapper Create activity's (which has none).
+        var unwrapped = UnwrapCreate(ActivityEmbeddedObject ?? boosted);
+        if (unwrapped is { } u)
         {
-            return embedded.GetRichAttachments();
+            return u.GetRichAttachments();
         }
 
         return boosted.GetRichAttachments();
@@ -908,6 +1014,65 @@ public partial class ObjectView
                 }
             }
         }
+
+        // Lemmy score fetch: when the rendered post is a Lemmy post (a Page object with a
+        // /post/{id} IRI), fetch its score data from the Lemmy REST API so the card can show
+        // the vote count in a Lemmy-style layout. Best-effort: a failure to fetch the score
+        // simply means the score is not displayed.
+        var scoreIri = ResolveLemmyScoreIri();
+        if (scoreIri is { } si)
+        {
+            try
+            {
+                var score = await Ui.GetLemmyPostScoreAsync(si, CancellationToken.None);
+                if (score is not null)
+                {
+                    _lemmyScore = score;
+                    StateHasChanged();
+                }
+            }
+            catch
+            {
+                // Non-fatal: the score simply won't show.
+            }
+        }
+    }
+
+    /// <summary>
+    /// The Lemmy score data for the current post, or null when the post is not a Lemmy post
+    /// or the score fetch has not completed. Used by the template to display the vote count.
+    /// </summary>
+    public LemmyPostScore? LemmyScore => _lemmyScore;
+
+    /// <summary>
+    /// Resolves the IRI of the Lemmy post to fetch the score for, or null when the current
+    /// item is not a Lemmy post. Handles both the direct Create branch (a Create of a Page)
+    /// and the Announce branch (an Announce wrapping a Create wrapping a Page).
+    /// </summary>
+    private Iri? ResolveLemmyScoreIri()
+    {
+        IObject? contentObj = null;
+
+        if (Item is Create)
+        {
+            contentObj = ActivityEmbeddedObject;
+        }
+        else if (Item is Announce)
+        {
+            contentObj = UnwrapCreate(ActivityEmbeddedObject ?? _announcedObject);
+        }
+        else
+        {
+            contentObj = Obj;
+        }
+
+        if (contentObj is { Id: { Length: > 0 } id } &&
+            LemmyPostScore.TryParsePostIri(new Iri(id)) is not null)
+        {
+            return new Iri(id);
+        }
+
+        return null;
     }
 
     /// <summary>

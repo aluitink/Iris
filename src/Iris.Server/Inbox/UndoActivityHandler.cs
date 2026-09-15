@@ -124,6 +124,17 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
             return;
         }
 
+        // An undislike: when the Undo's object is a Dislike, remove the recorded dislike edge (the
+        // inverse of the DislikeActivityHandler). Handled before the follow path like the like branch.
+        if (await ResolveDislikeEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } dislikeEdge)
+        {
+            await _persistence.Dislikes
+                .RemoveDislikeAsync(dislikeEdge.Disliker, dislikeEdge.DislikedObject, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
         // An un-boost: when the Undo's object is an Announce, remove the recorded announce edge (the
         // inverse of the AnnounceActivityHandler) and remove the boost from the announcer's outbox.
         // Handled before the follow path like the block/flag/like branches — an Announce has no follow
@@ -393,6 +404,37 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (likerIri.Value, likedObjectIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original dislike's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Dislike"/>, by IRI) when the undone activity is a <see cref="Dislike"/>.
+    /// </summary>
+    private async Task<(Iri Disliker, Iri DislikedObject)?> ResolveDislikeEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var dislikeIri = responseObject.ResolveObjectIri();
+        if (!dislikeIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(dislikeIri.Value, out var stored, ct)
+                .ConfigureAwait(false) ||
+            stored is not Dislike dislike)
+        {
+            return null;
+        }
+
+        var dislikerIri = dislike.Actor?.FirstOrDefault().ResolveObjectIri();
+        var dislikedObjectIri = dislike.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!dislikerIri.HasValue || !dislikedObjectIri.HasValue)
+        {
+            return null;
+        }
+
+        return (dislikerIri.Value, dislikedObjectIri.Value);
     }
 
     /// <summary>

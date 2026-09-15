@@ -283,6 +283,12 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
         return new ActivityPubClientOptions
         {
             ActorId = actorId,
+            // Bounded timeout (137.3): a dead or unreachable community host (a stale IRI whose
+            // reverse proxy no longer routes the host) would otherwise hang the HttpClient forever
+            // (the default is Timeout.InfiniteTimeSpan), leaving PagedCollection stuck on "Loading…"
+            // with no error. A 30s timeout produces a TaskCanceledException that PagedCollection's
+            // existing catch converts to a "Failed to load" error state.
+            HttpClientTimeout = TimeSpan.FromSeconds(30),
             ProxyBaseUrl = new Iri(baseUri.ToString()),
             ProxyCredentials = null,
             DialBaseUri = baseUri,

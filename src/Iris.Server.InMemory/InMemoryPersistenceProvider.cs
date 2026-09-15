@@ -16,6 +16,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     private readonly InMemoryActivityStore _activities;
     private readonly InMemoryFollowStore _follows;
     private readonly InMemoryLikeStore _likes;
+    private readonly InMemoryDislikeStore _dislikes;
     private readonly InMemoryAnnounceStore _announces;
     private readonly InMemoryReplyStore _replies;
     private readonly InMemoryModerationStore _moderation;
@@ -31,7 +32,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// </summary>
     public InMemoryPersistenceProvider()
         : this(new InMemoryActorStore(), new InMemoryActivityStore(), new InMemoryFollowStore(),
-            new InMemoryLikeStore(), new InMemoryAnnounceStore(), new InMemoryReplyStore(),
+            new InMemoryLikeStore(), new InMemoryDislikeStore(), new InMemoryAnnounceStore(), new InMemoryReplyStore(),
             new InMemoryModerationStore(), new InMemoryRelayStore(), new InMemoryObjectStore(),
             new InMemoryCreateIndex(), new InMemoryCommunityStore(), new InMemoryKeyStore(),
             new InMemoryMediaStore())
@@ -45,6 +46,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
     /// <param name="activities">The activity store.</param>
     /// <param name="follows">The follow store.</param>
     /// <param name="likes">The like store.</param>
+    /// <param name="dislikes">The dislike store.</param>
     /// <param name="announces">The announce (boost) store.</param>
     /// <param name="replies">The reply (thread) store (F-12).</param>
     /// <param name="moderation">The moderation (block) store (F-07).</param>
@@ -59,6 +61,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         InMemoryActivityStore activities,
         InMemoryFollowStore follows,
         InMemoryLikeStore likes,
+        InMemoryDislikeStore dislikes,
         InMemoryAnnounceStore announces,
         InMemoryReplyStore replies,
         InMemoryModerationStore moderation,
@@ -73,6 +76,7 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
         _follows = follows ?? throw new ArgumentNullException(nameof(follows));
         _likes = likes ?? throw new ArgumentNullException(nameof(likes));
+        _dislikes = dislikes ?? throw new ArgumentNullException(nameof(dislikes));
         _announces = announces ?? throw new ArgumentNullException(nameof(announces));
         _replies = replies ?? throw new ArgumentNullException(nameof(replies));
         _moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
@@ -95,6 +99,9 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public ILikeStore Likes => _likes;
+
+    /// <inheritdoc/>
+    public IDislikeStore Dislikes => _dislikes;
 
     /// <inheritdoc/>
     public IAnnounceStore Announces => _announces;

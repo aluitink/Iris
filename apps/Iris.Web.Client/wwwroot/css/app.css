@@ -1525,6 +1525,72 @@ ul.object-list li {
     text-decoration: underline;
 }
 
+.object-lemmy-score {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-25);
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+}
+
+.lemmy-score-value {
+    font-weight: 600;
+}
+
+.lemmy-score-comments {
+    opacity: 0.8;
+}
+
+.lemmy-vote-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-25);
+}
+
+.lemmy-vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--muted);
+    transition: background 0.15s, color 0.15s;
+}
+
+.lemmy-vote-btn:hover {
+    background: var(--surface-hover);
+}
+
+.lemmy-vote-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.lemmy-vote-btn--active-up {
+    color: var(--accent);
+}
+
+.lemmy-vote-btn--active-down {
+    color: var(--danger);
+}
+
+.lemmy-vote-count {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+}
+
+.lemmy-vote-score {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--muted);
+    margin-left: var(--space-1);
+}
+
 /* Phase 102 — minimalistic moderation (block / mute / report) on the RIGHT of the card header.
    A compact, low-key icon group that sits before the timestamp and only becomes prominent on hover,
    so the card header stays clean but the actions are reachable without opening a menu. */
@@ -3967,3 +4033,4 @@ body > #app {
     font-size: var(--font-size-sm);
     color: var(--muted);
 }
+

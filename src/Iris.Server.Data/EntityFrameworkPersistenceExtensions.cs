@@ -57,6 +57,7 @@ public static class EntityFrameworkPersistenceExtensions
         services.TryAddSingleton<EfActivityStore>();
         services.TryAddSingleton<EfFollowStore>();
         services.TryAddSingleton<EfLikeStore>();
+        services.TryAddSingleton<EfDislikeStore>();
         services.TryAddSingleton<EfAnnounceStore>();
         services.TryAddSingleton<EfReplyStore>();
         services.TryAddSingleton<EfModerationStore>();
@@ -95,6 +96,7 @@ public static class EntityFrameworkPersistenceExtensions
             sp.GetRequiredService<EfActivityStore>(),
             sp.GetRequiredService<EfFollowStore>(),
             sp.GetRequiredService<EfLikeStore>(),
+            sp.GetRequiredService<EfDislikeStore>(),
             sp.GetRequiredService<EfReplyStore>(),
             sp.GetRequiredService<EfAnnounceStore>(),
             sp.GetRequiredService<EfModerationStore>(),

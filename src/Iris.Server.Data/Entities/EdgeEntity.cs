@@ -135,4 +135,10 @@ public enum EdgeKind
     /// Rejects the request. The inverse of the community's <see cref="CommunityJoinRequest"/>.
     /// </summary>
     FollowRequest = 17,
+
+    /// <summary>
+    /// A dislike (downvote) edge: disliker → disliked object (the AS2.0 Dislike activity, Lemmy-style
+    /// downvotes).
+    /// </summary>
+    Dislike = 18,
 }

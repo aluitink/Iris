@@ -7,6 +7,7 @@
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using Microsoft.AspNetCore.Components.Web
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
@@ -165,6 +166,7 @@ else
                 Description="@FeedCollectionDescription"
                 PageSize="5"
                 ShowRefreshButton="true"
+                ItemFilter="@(FeedIsActivityFeed ? FeedItemFilter : null)"
                 EmptyMessage="@FeedCollectionEmptyMessage" />
         </div>
     }
@@ -400,8 +402,53 @@ else
         }
     }
 
-    private Iri? FeedIri => CommunityIri?.FeedOf();
-    private Iri? MembersIri => CommunityIri is { } iri ? AppendSegment(iri, "members") : null;
+    // Capability-aware feed/members resolution (137.2): read the community's own document and resolve the
+    // routes by what the server advertises / supports. An Iris community → its advertised endpoints
+    // (iris:feed / bare members); a Lemmy community → outbox (posts) / followers (members); a
+    // Mastodon/Pleroma community → the /feed + /members convention. This is what lets the client browse a
+    // Lemmy community (whose posts live in /outbox and members in /followers) rather than a hardcoded
+    // /feed + /members that Lemmy does not serve.
+    private Iri? FeedIri
+    {
+        get
+        {
+            if (CommunityDoc is null || CommunityIri is not { } iri)
+            {
+                return null;
+            }
+
+            return CommunityDoc.ResolveFeedIri(iri);
+        }
+    }
+
+    private Iri? MembersIri
+    {
+        get
+        {
+            if (CommunityDoc is null || CommunityIri is not { } iri)
+            {
+                return null;
+            }
+
+            return CommunityDoc.ResolveMembersIri(iri);
+        }
+    }
+
+    // True when the resolved feed is a non-Iris, activity-shaped feed (a Lemmy outbox of
+    // Create/Announce activities): such a feed must be filtered to content items so social activities
+    // (Follow/Like/etc.) don't render as empty cards. An Iris/Mastodon /feed is already content-only.
+    private bool FeedIsActivityFeed
+    {
+        get
+        {
+            if (CommunityDoc is null || CommunityIri is not { } iri)
+            {
+                return false;
+            }
+
+            return CommunityDoc.IsActivityFeed(iri);
+        }
+    }
 
     // Community feed search (Phase 99): a query box above the feed that, when active, points the
     // feed's PagedCollection at the community's /search specialized collection (?q=…) instead of the
@@ -419,17 +466,22 @@ else
     {
         get
         {
-            if (CommunityIri is not { } communityIri)
-            {
-                return null;
-            }
-
+            // No active search: enumerate the capability-resolved feed (an Iris /feed, a Lemmy outbox,
+            // or a Mastodon/Pleroma /feed).
             if (!HasActiveFeedSearch)
             {
-                return communityIri.FeedOf();
+                return FeedIri;
             }
 
-            var searchBase = AppendSegment(communityIri, "search");
+            // An active search is only available on an Iris community (its /search ?q= collection); a
+            // Lemmy (outbox) or Mastodon/Pleroma community has no such endpoint, so fall back to its
+            // plain feed rather than 404 on a route the server doesn't serve.
+            if (FeedIsActivityFeed)
+            {
+                return FeedIri;
+            }
+
+            var searchBase = AppendSegment(CommunityIri!.Value, "search");
             return new Iri($"{searchBase.Value}?q={Uri.EscapeDataString(ActiveFeedQuery!)}");
         }
     }
@@ -446,6 +498,33 @@ else
         => HasActiveFeedSearch
             ? "No posts in this community match your search."
             : "No posts in this community yet.";
+
+    /// <summary>
+    /// Content-item filter for an <em>activity-shaped</em> community feed (a Lemmy outbox, whose items are
+    /// the community's <c>Create</c>/<c>Announce</c> activities). Keeps the post items — a <c>Create</c> of
+    /// a content object (a Note/Article, or a Lemmy <c>Page</c>, which the ActivityStreams library maps to
+    /// the base <c>Object</c>) or any <c>Announce</c> (a boost) — and drops social activities
+    /// (<c>Follow</c>/<c>Like</c>/<c>Accept</c>/…), which would otherwise render as empty cards. Mirrors the
+    /// home timeline's content filter. An Iris/Mastodon <c>/feed</c> is already content-only, so this
+    /// filter is only applied when <see cref="FeedIsActivityFeed"/>.
+    /// </summary>
+    private static bool FeedItemFilter(IObjectOrLink item)
+    {
+        if (item is Create create && create.Object is { } objects)
+        {
+            foreach (var obj in objects)
+            {
+                if (obj is Note or Article or ActivityObject)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        return item is Announce;
+    }
 
     /// <summary>
     /// Submits the feed search (from the form or Enter): sets the active query, which repoints the
@@ -511,12 +590,14 @@ else
     private async Task LoadMemberCountAsync(Iri communityIri)
     {
         var client = Client;
-        if (client is null)
+        if (client is null || CommunityDoc is null)
         {
             return;
         }
 
-        var membersIri = AppendSegment(communityIri, "members");
+        // Capability-aware: the member count is read from the same members collection the Members tab
+        // enumerates (an Iris /members, a Lemmy /followers, or a Mastodon/Pleroma /members).
+        var membersIri = CommunityDoc.ResolveMembersIri(communityIri);
         try
         {
             MemberCount = await GetFirstPageTotalAsync(client, membersIri);

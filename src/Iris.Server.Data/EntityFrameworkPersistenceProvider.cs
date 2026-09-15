@@ -19,6 +19,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
     /// <param name="activities">The activity store. Must not be null.</param>
     /// <param name="follows">The follow store. Must not be null.</param>
     /// <param name="likes">The like store. Must not be null.</param>
+    /// <param name="dislikes">The dislike store. Must not be null.</param>
     /// <param name="replies">The reply store. Must not be null.</param>
     /// <param name="announces">The announce store. Must not be null.</param>
     /// <param name="moderation">The moderation store. Must not be null.</param>
@@ -34,6 +35,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
         IActivityStore activities,
         IFollowStore follows,
         ILikeStore likes,
+        IDislikeStore dislikes,
         IReplyStore replies,
         IAnnounceStore announces,
         IModerationStore moderation,
@@ -49,6 +51,7 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
         Activities = activities ?? throw new ArgumentNullException(nameof(activities));
         Follows = follows ?? throw new ArgumentNullException(nameof(follows));
         Likes = likes ?? throw new ArgumentNullException(nameof(likes));
+        Dislikes = dislikes ?? throw new ArgumentNullException(nameof(dislikes));
         Replies = replies ?? throw new ArgumentNullException(nameof(replies));
         Announces = announces ?? throw new ArgumentNullException(nameof(announces));
         Moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
@@ -72,6 +75,9 @@ public sealed class EntityFrameworkPersistenceProvider : IPersistenceProvider
 
     /// <inheritdoc/>
     public ILikeStore Likes { get; }
+
+    /// <inheritdoc/>
+    public IDislikeStore Dislikes { get; }
 
     /// <inheritdoc/>
     public IReplyStore Replies { get; }

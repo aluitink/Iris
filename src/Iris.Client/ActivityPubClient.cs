@@ -176,6 +176,39 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public async Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default)
+    {
+        if (LemmyPostScore.TryParsePostIri(postIri) is not { } parsed)
+        {
+            return null;
+        }
+
+        var (instance, postId) = parsed;
+        var instanceStr = instance.ToString().TrimEnd('/');
+        var apiIri = new Iri($"{instanceStr}/api/v3/post?id={postId}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, apiIri.Value);
+        request.Headers.Accept.ParseAdd("application/json");
+
+        try
+        {
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return LemmyPostScore.FromJson(json);
+        }
+        catch
+        {
+            // Non-fatal: the score is a best-effort enrichment; a failure to fetch it
+            // should not break the card rendering.
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)
@@ -499,6 +532,33 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         {
             Actor = [new Link { Href = actorId.Uri }],
             Object = [new Link { Href = originalLikeId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // A Dislike is the inverse of a Like: published to the disliker's OWN outbox, federated to
+        // the object's owner. Mirrors LikeAsync but uses the Dislike activity type (AS2.0).
+        var dislike = new Dislike
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = objectId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), dislike, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default)
+    {
+        // An undislike is an Undo whose object references the original Dislike by id.
+        var undo = new Undo
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = originalDislikeId.Uri }],
         };
 
         return DeliverAsync(actorId.OutboxOf(), undo, ct);
@@ -1457,6 +1517,15 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         if (collection is Collection { First: { } first })
         {
             return first.ResolveCollectionIri();
+        }
+
+        // A collection that carries its items directly (an OrderedCollection with orderedItems, or a
+        // Collection with items) and has no `first` link: the collection's own IRI is the first page.
+        // Lemmy serves its outbox this way (an OrderedCollection with orderedItems, no first link).
+        if (collection is Collection col &&
+            (col.OrderedItems is { } oi && oi.Any() || col.Items is { } ci && ci.Any()))
+        {
+            return collectionId;
         }
 
         return null;

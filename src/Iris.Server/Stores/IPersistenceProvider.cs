@@ -36,6 +36,12 @@ public interface IPersistenceProvider
     public ILikeStore Likes { get; }
 
     /// <summary>
+    /// The dislike (downvote) store: the <c>disliker → dislikedObject</c> edges and the
+    /// <c>dislikedObject → dislikers</c> reverse index.
+    /// </summary>
+    public IDislikeStore Dislikes { get; }
+
+    /// <summary>
     /// The reply (thread) store (F-12).
     /// </summary>
     public IReplyStore Replies { get; }

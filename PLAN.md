@@ -95,11 +95,10 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **136.20 Final release federation gate**
-    - Create a concise go/no-go checklist referencing mandatory green scenarios across all prior phases.
-    - Mark known interop gaps as explicit release exceptions with severity, impact, and workaround.
-    - Require sign-off evidence artifacts (trace IDs, screenshots, console-clean confirmations) per critical flow.
-    - Exit when a release can be approved or blocked using this gate without ad hoc interpretation.
+- **138 — Lemmy interop environment refresh:** clean-boot the local Lemmy stack ([lemmy/](lemmy/)), map two-way network reachability (Iris↔Lemmy, direct + reverse-proxy), and seed matched fixtures on both platforms. First slice of a long, manually-orchestrated phase to establish real peer-to-peer federation with the local Lemmy server: push Iris posts into a peered Lemmy community, sync likes/dislikes/replies both ways, archive a locally-rebuildable copy, track Lemmy metadata via `iris:` extensions (parity with Mastodon tracking), and close with a cross-platform (Mastodon/Lemmy/Pleroma/Misskey/PeerTube) consistency review. Full slice list (138.1–138.29), progress checkboxes, and a **Resume checkpoint** line to update every session: [docs/plans/phase-138-lemmy-community-integration.md](docs/plans/phase-138-lemmy-community-integration.md).
+- **139 — Whole-platform end-to-end review:** after Phase 138 lands, a full cross-cutting review of every subsystem (federation/interop, security/trust boundary, data lifecycle, UI/UX + accessibility, performance/scalability, moderation/governance, deployment/ops, extension/API + docs), each with its own detailed test-scenario catalog, a per-area Status cell, and a per-scenario checklist + **Resume checkpoint**. Index + area docs: [docs/plans/phase-139-platform-e2e-review.md](docs/plans/phase-139-platform-e2e-review.md).
+
+Progress for both phases is tracked **inside their own docs**, not enumerated here: check off slice/scenario checkboxes and update each doc's Resume checkpoint line as work happens. Only touch this Up Next section when the *whole* phase's status changes (starts, a Stage/area fully closes, or the phase completes) — then move the finished line to Recently Completed and add a [docs/ROADMAP.md](docs/ROADMAP.md) entry.
 
 ## Inbox
 
@@ -111,44 +110,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **136.19 Data lifecycle and tombstone retention** — fixed the re-animation gap: three write paths
-  (`CreateActivityHandler`, `UpdateActivityHandler`, AP proxy re-store) now check for a stored
-  `Tombstone` before `PutObjectAsync`, so a re-delivered Create, late Update, or proxy re-fetch cannot
-  resurrect a deleted object. Tombstones are permanent (no TTL/expiry); read paths already exclude
-  them from search/listing. Three cross-instance integration tests pin the guard. 136.20 is now the
-  top of Up Next. →
-  [docs/changes/13619-phase136-data-lifecycle-tombstone-retention.md](docs/changes/13619-phase136-data-lifecycle-tombstone-retention.md)
-
-- **136.18 Privacy and visibility policy alignment** — four cross-instance integration tests
-  (`CrossInstanceVisibilityIntegrationTests`, two-instance `TestServer` fixture) verify the current
-  visibility behavior and pin two significant gaps: (1) the read path does not filter by visibility
-  (a DM post is visible in the public feed and search), and (2) federation does not suppress
-  non-public content (a DM post is stored on the remote instance). Iris uses AS2 `to`/`cc`
-  addressing (no first-class visibility field). 136.19 is now the top of Up Next. →
-  [docs/changes/13618-phase136-privacy-visibility-policy.md](docs/changes/13618-phase136-privacy-visibility-policy.md)
-
-- **136.17 Duplicate/replay defense validation** — three cross-instance integration tests
-  (`CrossInstanceReplayDefenseIntegrationTests`, two-instance `TestServer` fixture) verify that
-  duplicate Create delivery is idempotent (stored once, handler runs once, both 202), that a
-  replayed signed request (same date/signature) is accepted (pinning the current no-expiry
-  behavior — a known gap), and that wire-header reordering does not break canonical signature
-  validation. Key finding: no signature expiry/freshness check exists in the validation path
-  (documented as a future-slice candidate). 136.18 is now the top of Up Next. →
-  [docs/changes/13617-phase136-duplicate-replay-defense.md](docs/changes/13617-phase136-duplicate-replay-defense.md)
-
-- **136.16 Search and discoverability checks** — six cross-instance integration tests
-  (`CrossInstanceSearchDiscoverabilityIntegrationTests`) verify federated content is discoverable via
-  community/global search and that deep links resolve on origin (404 on non-origin). →
-  [docs/changes/13616-phase136-search-discoverability.md](docs/changes/13616-phase136-search-discoverability.md)
-
-- **136.15 Pagination and backfill consistency** — three cross-instance integration tests
-  (`CrossInstancePaginationIntegrationTests`) verify federated community content pages correctly and
-  the backfill window includes the expected post count. →
-  [docs/changes/13615-phase136-pagination-backfill-consistency.md](docs/changes/13615-phase136-pagination-backfill-consistency.md)
-
-- **136.14–136.6** (media interop, regression checklist, performance audit, delivery reliability,
-  moderation, update/delete/undo, reactions, reply integrity, community outbound) — all in
-  [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Keeping the docs lean
 

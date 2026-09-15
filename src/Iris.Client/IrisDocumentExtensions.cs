@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 
 namespace Iris.Client;
@@ -122,6 +124,187 @@ public static class IrisDocumentExtensions
     /// <returns>The members IRI, or <see langword="null"/> when the property is absent.</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
     public static Iri? GetMembersIri(this IObject document) => GetCollectionIri(document, CollectionExtensionNames.Members);
+
+    // --------------------------------------------------------------------------------------------
+    // Server-capability detection + capability-aware feed/members IRI resolution (137.2).
+    //
+    // A remote community may be served by a server that does not expose the same collection
+    // endpoints Iris does. Iris advertises its specialized, non-core-AP endpoints on the public
+    // document (the <c>iris:feed</c> / bare <c>members</c> extensions above); a Mastodon- or
+    // Pleroma-shaped server exposes <c>{actor}/feed</c> / <c>{community}/members</c> by convention; a
+    // <strong>Lemmy</strong> server exposes neither — a Lemmy community's posts live in its
+    // <c>outbox</c> (a collection of <c>Create</c>/<c>Announce</c> activities) and its members in its
+    // <c>followers</c>. Rather than hardcoding a server's quirk at each call site, the client reads the
+    // community's own document and resolves the feed/members IRIs by capability: prefer what the
+    // document advertises, fall back to the server's convention, and (for Lemmy) remap to the routes it
+    // actually serves. This keeps the client ActivityPub-native: it adapts to whatever server/service it
+    // is talking to.
+    // --------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The <c>@context</c> IRI that identifies a document as authored by a <strong>Lemmy</strong> server
+    /// (Lemmy stamps <c>https://join-lemmy.org/context.json</c> into the <c>@context</c> of every public
+    /// document it serves).
+    /// </summary>
+    public const string LemmyContextIri = "https://join-lemmy.org/context.json";
+
+    /// <summary>
+    /// Reports whether a community document is a <strong>non-Iris Group</strong> whose content is served
+    /// through its <c>outbox</c> and whose members are served through its <c>followers</c> — the standard
+    /// ActivityStreams shape for a Group actor (the shape Lemmy, and any AP-compliant Group server,
+    /// uses). A Group's posts are the <c>Create</c>/<c>Announce</c> activities in its outbox, and its
+    /// members are its followers. This is the capability signal the client uses to resolve the feed
+    /// (outbox) and members (followers) IRIs for a community that does not advertise Iris-specific
+    /// endpoints (137.2).
+    /// <para>
+    /// An <strong>Iris</strong> community is a Group that advertises <c>iris:</c>-namespaced extension
+    /// properties on its public document (e.g. <c>{namespace}feed</c>, <c>{namespace}capabilities</c>).
+    /// The namespace base is deployment-configurable, so detection scans the <see cref="IObject.ExtensionData"/>
+    /// for any key containing a <c>#</c> fragment separator (the JSON-LD namespace marker) rather than
+    /// matching a fixed namespace. A Lemmy (or other non-Iris) Group document has no such keys — its
+    /// <c>@context</c> is stripped by the JSON deserializer — so the absence of any <c>#</c>-containing
+    /// extension key is the reliable "not Iris" signal.
+    /// </para>
+    /// </summary>
+    /// <param name="document">The actor/community document (an <see cref="IObject"/>). Must not be null.</param>
+    /// <returns><see langword="true"/> when the document is a <see cref="Group"/> with an <c>outbox</c> link and no <c>iris:</c>-namespaced extension properties.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool IsLemmy(this IObject document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        // Must be a Group with an outbox (the AP-standard shape for a community whose posts are
+        // Create/Announce activities in its outbox and whose members are its followers).
+        if (document is not Group { Outbox: not null })
+        {
+            return false;
+        }
+
+        // An Iris community advertises iris:-namespaced extension properties on its public document.
+        // The namespace base is deployment-configurable (ActivityPubServerOptions.NamespaceIri), so we
+        // cannot match a fixed namespace. Instead, scan the ExtensionData for any key containing a '#'
+        // fragment separator — the JSON-LD namespace marker. A Lemmy (or other non-Iris) Group document
+        // has no such keys (its @context is stripped by the JSON deserializer), so the absence of any
+        // '#' -containing extension key is the reliable "not Iris" signal.
+        if (document.ExtensionData is { } ext)
+        {
+            foreach (var key in ext.Keys)
+            {
+                if (key.AsSpan().Contains('#'))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the community/actor's <strong>feed</strong> collection IRI by capability. The client reads
+    /// the document's own advertised endpoints and the server it talks to, in priority order:
+    /// <list type="number">
+    /// <item>the <c>iris:feed</c> extension, when the server advertises it (an <em>Iris</em> instance —
+    /// its feed endpoint, which also supports the <c>?q=</c> content-search the community feed search
+    /// relies on);</item>
+    /// <item>otherwise, for a <strong>Lemmy</strong> community, <c>{actor}/outbox</c> — Lemmy has no
+    /// <c>/feed</c> endpoint; a community's posts are the <c>Create</c>/<c>Announce</c> activities in its
+    /// outbox (rendered by the client's content-object view, which unwraps the activity's object);</item>
+    /// <item>otherwise, <c>{actor}/feed</c> — the Mastodon/Pleroma convention for a followed feed.</item>
+    /// </list>
+    /// The single, capability-aware read a UI uses to point its feed collection at the right route for
+    /// whatever server the community lives on (137.2).
+    /// </summary>
+    /// <param name="document">The community (or actor) document. Must not be null.</param>
+    /// <param name="actorIri">The actor/community IRI (the base the fallback routes are appended to).</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's value, or
+    /// <see cref="DefaultNamespaceIri"/> when it does not override it).</param>
+    /// <returns>The feed collection IRI.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri ResolveFeedIri(this IObject document, Iri actorIri, string namespaceIri = DefaultNamespaceIri)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        // 1. An Iris instance advertises its feed endpoint on the document (the only feed that also
+        //    supports ?q= content search) — prefer it when present.
+        if (GetCollectionIri(document, namespaceIri + CollectionExtensionNames.Feed) is { } irisFeed)
+        {
+            return irisFeed;
+        }
+
+        // 2. A Lemmy community has no /feed: its posts are the activities in its outbox.
+        if (document.IsLemmy())
+        {
+            return actorIri.OutboxOf();
+        }
+
+        // 3. Mastodon/Pleroma convention for a followed feed.
+        return actorIri.FeedOf();
+    }
+
+    /// <summary>
+    /// Resolves the community's <strong>members</strong> collection IRI by capability. In priority order:
+    /// the bare <c>members</c> extension, when the server advertises it (Iris / Mastodon-Pleroma, served at
+    /// <c>{community}/members</c>); otherwise, for a <strong>Lemmy</strong> community, <c>{community}/followers</c>
+    /// — Lemmy has no <c>/members</c> endpoint and exposes a community's members through its followers
+    /// collection (137.2).
+    /// </summary>
+    /// <param name="document">The community document. Must not be null.</param>
+    /// <param name="communityIri">The community IRI (the base the fallback route is appended to).</param>
+    /// <returns>The members collection IRI.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static Iri ResolveMembersIri(this IObject document, Iri communityIri)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        if (GetCollectionIri(document, CollectionExtensionNames.Members) is { } members)
+        {
+            return members;
+        }
+
+        if (document.IsLemmy())
+        {
+            return communityIri.FollowersOf();
+        }
+
+        return AppendPathSegment(communityIri, "members");
+    }
+
+    /// <summary>
+    /// Reports whether the community's feed collection is a <strong>non-Iris, activity-shaped</strong> feed —
+    /// i.e. one resolved to the server's outbox (Lemmy) rather than an Iris/Mastodon <c>/feed</c> endpoint.
+    /// A UI uses this to decide whether to apply a content-item filter to the feed (an outbox is a mixed
+    /// collection of <c>Create</c>/<c>Announce</c>/social activities and must be filtered to content items;
+    /// an Iris/Mastodon feed is already content-only).
+    /// </summary>
+    /// <param name="document">The community document. Must not be null.</param>
+    /// <param name="actorIri">The community IRI. Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI.</param>
+    /// <returns><see langword="true"/> when the resolved feed is the Lemmy outbox (an activity feed).</returns>
+    public static bool IsActivityFeed(this IObject document, Iri actorIri, string namespaceIri = DefaultNamespaceIri)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+
+        return document.GetFeedIri(namespaceIri) is null && document.IsLemmy();
+    }
+
+    /// <summary>
+    /// Appends a single path segment to an absolute IRI (the client-side derivation of a fallback
+    /// collection route, e.g. <c>{community}/members</c>). Mirrors the server's <c>IriExtensions</c>
+    /// segment append for the one route that has no typed helper.
+    /// </summary>
+    private static Iri AppendPathSegment(Iri iri, string segment)
+    {
+        var builder = new UriBuilder(iri.Uri);
+        var path = builder.Path;
+        if (path.Length == 0 || !path.EndsWith('/'))
+        {
+            path += "/";
+        }
+
+        builder.Path = path + segment;
+        return new Iri(builder.Uri);
+    }
 
     /// <summary>
     /// Reads the <c>iris:blocks</c> extension property from an actor/community document, returning the IRI

@@ -19,10 +19,12 @@ public sealed class UiContext
     private static readonly TimeSpan FollowingTtl = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan ActorTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MembershipTtl = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan LemmyScoreTtl = TimeSpan.FromMinutes(5);
 
     private sealed record FollowingEntry(HashSet<string> Set, List<Iri> List, DateTime At);
     private sealed record ActorEntry(IObject Doc, DateTime At);
     private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
+    private sealed record LemmyScoreEntry(LemmyPostScore? Score, DateTime At);
 
     /// <summary>
     /// The result of walking a content object's <c>/likes</c> + <c>/shares</c> collections (72.1):
@@ -57,6 +59,8 @@ public sealed class UiContext
     // per-circuit UiContext means a re-created bar for the same post reuses the already-loaded
     // counts instead of re-firing the /likes + /shares round-trips. Mirrors the 64.1 actor gate.
     private readonly ConcurrentDictionary<string, Task<EngagementCounts>> _engagement = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, LemmyScoreEntry> _lemmyScores = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Task<LemmyPostScore?>> _lemmyScoreInFlight = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _membershipGate = new(1, 1);
 
     private readonly IActorSessionAccessor _session;
@@ -553,7 +557,12 @@ public sealed class UiContext
             var members = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                var membersIri = AppendSegment(communityIri, "members");
+                // Capability-aware: resolve the members IRI from the community document (137.2).
+                // A Lemmy community exposes members via /followers; Iris/Mastodon via /members.
+                var communityDoc = await GetActorAsync(communityIri);
+                var membersIri = communityDoc is not null
+                    ? communityDoc.ResolveMembersIri(communityIri)
+                    : AppendSegment(communityIri, "members");
                 await foreach (var item in client.GetCollectionItemsAsync(membersIri, new CollectionQuery(BypassCache: true)))
                 {
                     var iri = item.ResolveObjectIri()?.Value;
@@ -584,6 +593,59 @@ public sealed class UiContext
     public void InvalidateMembership(Iri communityIri)
     {
         _memberships.TryRemove(communityIri.Value, out _);
+    }
+
+    /// <summary>
+    /// Fetches a Lemmy post's score data (upvotes, downvotes, net score, comment count) from the
+    /// Lemmy REST API, with a per-circuit TTL cache. The ActivityPub document for a Lemmy post
+    /// does not carry vote information; this is the only way to surface it in the Iris client.
+    /// Returns null when the post IRI is not a recognizable Lemmy post IRI or the fetch fails.
+    /// </summary>
+    public async Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default)
+    {
+        if (_lemmyScores.TryGetValue(postIri.Value, out var cached)
+            && DateTime.UtcNow - cached.At < LemmyScoreTtl)
+        {
+            return cached.Score;
+        }
+
+        var fetchTask = _lemmyScoreInFlight.GetOrAdd(postIri.Value, _ => FetchLemmyScoreAsync(postIri, ct));
+        try
+        {
+            var score = await fetchTask;
+            _lemmyScores[postIri.Value] = new LemmyScoreEntry(score, DateTime.UtcNow);
+            return score;
+        }
+        finally
+        {
+            _lemmyScoreInFlight.TryRemove(postIri.Value, out _);
+        }
+    }
+
+    private async Task<LemmyPostScore?> FetchLemmyScoreAsync(Iri postIri, CancellationToken ct)
+    {
+        try
+        {
+            await _session.EnsureReadyAsync();
+        }
+        catch
+        {
+            return null;
+        }
+
+        if (_session.Client is not { } client)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await client.GetLemmyPostScoreAsync(postIri, ct);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static Iri AppendSegment(Iri iri, string segment)

@@ -27,6 +27,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     private readonly IActivityStore _activities;
     private readonly IFollowStore _follows;
     private readonly ILikeStore _likes;
+    private readonly IDislikeStore _dislikes;
     private readonly IAnnounceStore _announces;
     private readonly IReplyStore _replies;
     private readonly IModerationStore _moderation;
@@ -52,6 +53,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _activities = new FileBackedActivityStore(Path.Combine(directory, "activities.json"));
         _follows = new FileBackedFollowStore(Path.Combine(directory, "follows.json"));
         _likes = new FileBackedLikeStore(Path.Combine(directory, "likes.json"));
+        _dislikes = new SimpleDislikeStore();
         _announces = new FileBackedAnnounceStore(Path.Combine(directory, "announces.json"));
         _replies = new FileBackedReplyStore(Path.Combine(directory, "replies.json"));
         _moderation = new FileBackedModerationStore(Path.Combine(directory, "moderation.json"));
@@ -71,6 +73,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
     /// <param name="activities">The activity store.</param>
     /// <param name="follows">The follow store.</param>
     /// <param name="likes">The like store.</param>
+    /// <param name="dislikes">The dislike store.</param>
     /// <param name="announces">The announce (boost) store.</param>
     /// <param name="replies">The reply (thread) store (F-12).</param>
     /// <param name="moderation">The moderation (block) store (F-07).</param>
@@ -85,6 +88,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         IActivityStore activities,
         IFollowStore follows,
         ILikeStore likes,
+        IDislikeStore dislikes,
         IAnnounceStore announces,
         IReplyStore replies,
         IModerationStore moderation,
@@ -99,6 +103,7 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
         _activities = activities ?? throw new ArgumentNullException(nameof(activities));
         _follows = follows ?? throw new ArgumentNullException(nameof(follows));
         _likes = likes ?? throw new ArgumentNullException(nameof(likes));
+        _dislikes = dislikes ?? throw new ArgumentNullException(nameof(dislikes));
         _announces = announces ?? throw new ArgumentNullException(nameof(announces));
         _replies = replies ?? throw new ArgumentNullException(nameof(replies));
         _moderation = moderation ?? throw new ArgumentNullException(nameof(moderation));
@@ -121,6 +126,9 @@ public sealed class FileBackedPersistenceProvider : IPersistenceProvider, IDispo
 
     /// <inheritdoc/>
     public ILikeStore Likes => _likes;
+
+    /// <inheritdoc/>
+    public IDislikeStore Dislikes => _dislikes;
 
     /// <inheritdoc/>
     public IAnnounceStore Announces => _announces;
