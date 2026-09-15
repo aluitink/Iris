@@ -41,6 +41,10 @@ services:
       # base URI is what the app tells the fediverse / browsers it is reachable at. Default is the real
       # public FQDN (https://iris.luit.ink); the reverse proxy forwards to host 8088.
       Iris__AdvertiseBase: ${IRIS_ADVERTISE_BASE:-https://iris.luit.ink}
+      # Shared inbox IRI (federation): advertised in the actor document's endpoints.sharedInbox so remote
+      # instances can deliver activity. REQUIRED for Lemmy interop (Lemmy's Endpoints struct mandates
+      # sharedInbox — without it, Lemmy rejects the actor doc). Maps to Iris:SharedInboxIri.
+      Iris__SharedInboxIri: ${IRIS_SHAREDINBOXIRI:-}
       # A connection string is present -> EF Core (PostgreSQL) persistence; absent -> in-memory.
       # Assembled from the POSTGRES_* vars (Host=db is the compose service name on the internal network).
       ConnectionStrings__Iris: "Host=db;Port=5432;Database=${POSTGRES_DB:-iris};Username=${POSTGRES_USER:-iris};Password=${POSTGRES_PASSWORD}"

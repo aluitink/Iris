@@ -705,6 +705,7 @@ public static class ActivityPubServerExtensions
         {
             if (irisSection["BaseUri"] is { } baseUri) o.BaseUri = new Iri(baseUri);
             if (irisSection["InstanceActorId"] is { } actorId) o.InstanceActorId = new Iri(actorId);
+            if (irisSection["InstanceActorIri"] is { } actorIri) o.InstanceActorIri = new Iri(actorIri);
             if (irisSection["SharedInboxIri"] is { } inbox) o.SharedInboxIri = new Iri(inbox);
             if (irisSection["InstanceName"] is { } name) o.InstanceName = name;
             if (irisSection["NamespaceIri"] is { } ns) o.NamespaceIri = new Iri(ns);
@@ -1461,7 +1462,13 @@ public static class ActivityPubServerExtensions
         }
 
         var options = optionsAccessor.Value;
-        if (options.InstanceActorId is not { } instanceActorIri)
+        // 138.11: the root serves the dedicated site actor's document when InstanceActorIri is set
+        // (an Application-type actor, as Lemmy's objects::instance requires for a site), otherwise it
+        // falls back to the signing actor (InstanceActorId) — the pre-138.11 behavior. The two are
+        // distinct IRIs so the instance can sign outbound federation as one actor (InstanceActorId)
+        // while presenting a site-actor Application at the root (InstanceActorIri).
+        var rootActorIri = options.InstanceActorIri ?? options.InstanceActorId;
+        if (rootActorIri is not { } instanceActorIri)
         {
             return Results.NotFound();
         }

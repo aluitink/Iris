@@ -80,6 +80,47 @@ public static class TestSeeder
     }
 
     /// <summary>
+    /// Seeds an <see cref="Application"/> actor (the ActivityPub <em>site actor</em> — the instance's
+    /// operator/bot identity, 138.11) at an explicit IRI, together with a real RSA signing key. Unlike
+    /// <see cref="SeedPersonWithKey"/>, the IRI is supplied directly (a site actor's IRI is the bare
+    /// instance base, not <c>/ap/v1/u/{handle}</c>) and the actor is type <c>Application</c>. The key is
+    /// stored in the provider's <see cref="IPersistenceProvider.Keys"/> and the public key is served as
+    /// PEM (<c>publicKeyPem</c>) in the actor's <c>publicKey</c> extension. Idempotent (re-seeding
+    /// replaces the actor and key).
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="actorIriString">The actor's IRI (e.g. <c>https://a.domain.local</c>).</param>
+    /// <param name="name">The actor's display name (the instance name).</param>
+    /// <param name="handle">The actor's preferred username (the instance handle).</param>
+    /// <returns>The seeded key, the actor's IRI, and the key's IRI (<c>{actorIri}#key-1</c>).</returns>
+    public static (KeyPair Key, Iri ActorIri, Iri KeyId) SeedApplicationWithKey(
+        InMemoryPersistenceProvider persistence, string actorIriString, string name, string handle)
+    {
+        var actorIri = new Iri(actorIriString);
+        var keyId = new Iri($"{actorIriString}#key-1");
+
+        var key = KeyPairGenerator.GenerateRsa(keyId);
+        persistence.Keys.PutKey(key);
+
+        var actor = new Application
+        {
+            Id = actorIriString,
+            PreferredUsername = handle,
+            Name = [name],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyId.Value,
+            owner = actorIriString,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        persistence.ActorStore.PutActorAsync(actor).GetAwaiter().GetResult();
+
+        return (key, actorIri, keyId);
+    }
+
+    /// <summary>
     /// Seeds a <see cref="Person"/> actor together with a real Ed25519 signing key, storing the key in
     /// the provider's <see cref="IPersistenceProvider.Keys"/> and serving the key's public key as PEM
     /// (<c>publicKeyPem</c>) in the actor's <c>publicKey</c> extension (with a <c>keyAlgorithm</c>

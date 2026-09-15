@@ -46,6 +46,18 @@ public sealed class ActivityPubServerOptions
     public Iri? InstanceActorId { get; set; }
 
     /// <summary>
+    /// The IRI of the local actor whose <em>public document</em> is served at the instance root
+    /// (<c>GET /</c>). Some peers (notably Lemmy) dereference the site actor from the instance's root
+    /// URL before resolving any object on the instance and require that document to be an
+    /// <c>Application</c>-type actor (the ActivityPub site-actor convention, as Mastodon/Pleroma/Friendica
+    /// follow it). When set, the root serves the actor at this IRI (typically a dedicated
+    /// <c>Application</c> whose IRI is the bare instance base) rather than the signing actor at
+    /// <see cref="InstanceActorId"/>. When null (the default), the root falls back to serving
+    /// <see cref="InstanceActorId"/> — the pre-138.11 behavior.
+    /// </summary>
+    public Iri? InstanceActorIri { get; set; }
+
+    /// <summary>
     /// The IRI of this instance's <em>shared inbox</em>: a single collection that accepts activity for
     /// every local actor and community (the ActivityPub <c>endpoints.sharedInbox</c> property). When set,
     /// it is advertised on the public actor and community documents so remote instances may deliver to

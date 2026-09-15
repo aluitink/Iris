@@ -62,6 +62,14 @@ public static class WebAppFactory
     public const string SeedHandle = "alice";
 
     /// <summary>
+    /// The preferred username of the seeded <strong>site actor</strong> — the dedicated
+    /// <c>Application</c>-type actor whose IRI is the bare instance base and which the instance root
+    /// serves (138.11, the Lemmy site-actor convention). It is the instance's operator identity in
+    /// dev mode (authenticated as <c>@{InstanceHandle}</c> / <c>{InstanceHandle}</c>).
+    /// </summary>
+    public const string InstanceHandle = "iris";
+
+    /// <summary>
     /// The host port the app listens on and (by default) advertises. This is the production port for
     /// <c>https://iris.luit.ink</c> (the reverse proxy targets host 8088).
     /// </summary>
@@ -245,6 +253,14 @@ public static class WebAppFactory
         var baseUri = new Iri(baseString);
         var baseNoSlash = baseUri.Value.TrimEnd('/');
         var actorIri = new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}");
+        // 138.11: the instance's site actor — a dedicated Application whose IRI is the bare instance base
+        // (the ActivityPub convention: the site actor IS the instance root, as Mastodon/Pleroma/Friendica
+        // follow it). Lemmy's objects::instance dereferences the root URL before resolving any object on
+        // the instance and requires it to be type Application, so the root must present this site actor
+        // rather than the seeded Person (alice). It also signs outbound federation (InstanceActorId) so
+        // a remote peer verifies the signature against the site actor's own key — the same actor the root
+        // serves.
+        var instanceActorIri = new Iri(baseNoSlash);
 
         // 1. The ActivityPub server (unchanged library call). The namespace is derived from the
         //    advertised base URI ({base}/ns#) — the production default when NamespaceIri is unset
@@ -253,8 +269,19 @@ public static class WebAppFactory
         {
             options.BaseUri = baseUri;
             options.InstanceName = $"iris-{HostLabel(baseString)}";
-            options.InstanceActorId = actorIri;
+            // The site actor (InstanceActorIri) is what the instance root serves (138.11); the instance
+            // also signs outbound federation as it (InstanceActorId), so both point at the site actor.
+            options.InstanceActorIri = instanceActorIri;
+            options.InstanceActorId = instanceActorIri;
             options.NamespaceIri = new Iri($"{baseNoSlash}/{ActivityPubServerConstants.NamespaceRouteSegment}#");
+            // Shared inbox IRI (federation): advertised in the actor document's endpoints.sharedInbox so
+            // remote instances (Lemmy, Mastodon, Pleroma) can deliver activity. REQUIRED for Lemmy interop
+            // (Lemmy's Endpoints struct mandates sharedInbox — without it, Lemmy rejects the actor doc
+            // with "data did not match any variant of untagged enum PersonOrGroup"). Read from
+            // Iris:SharedInboxIri; defaults to {base}/ap/v1/shared-inbox when unset.
+            var sharedInboxIri = builder.Configuration["Iris:SharedInboxIri"];
+            options.SharedInboxIri = new Iri(
+                string.IsNullOrWhiteSpace(sharedInboxIri) ? $"{baseNoSlash}/ap/v1/shared-inbox" : sharedInboxIri);
         });
 
         // 3. Persistence: the EF Core (PostgreSQL) provider when a connection string is configured
@@ -301,9 +328,18 @@ public static class WebAppFactory
         builder.Services.AddSingleton<IActorCredentialValidator>(new BasicAuthCredentialValidator(
             (actorIri, username, password) =>
             {
-                var valid = actorIri == new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}")
-                    && username == SeedHandle
-                    && password == SeedHandle;
+                // 138.11: two dev-mode credentials. The seeded Person (alice) authenticates as her own
+                // handle (alice/alice) for her owner-only surfaces. The site actor (the Application at the
+                // bare base IRI) authenticates as @iris/iris — it is now InstanceActorId, so the operator
+                // key-rotation/admin endpoints (which gate on the instance actor) resolve to it. The
+                // '@' prefix avoids colliding with the handle-only Basic-auth form (username@host) used for
+                // other local actors.
+                var valid = (actorIri == new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}")
+                        && username == SeedHandle
+                        && password == SeedHandle)
+                    || (actorIri == instanceActorIri
+                        && username == "@" + InstanceHandle
+                        && password == InstanceHandle);
                 return new ValueTask<bool>(valid);
             }));
 
@@ -1692,7 +1728,11 @@ public static class WebAppFactory
             persistence.EnsureCreatedAsync(configuration).GetAwaiter().GetResult();
         }
         SeedActor(persistence, keyStore, new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}"), SeedHandle);
-        // Register the seeded actor's key so the proxy / DeliveryWorker can sign as it.
+        // 138.11: the site actor (Application at the bare base) — served at the instance root and used to
+        // sign outbound federation. Seeded after alice; both keys are registered below.
+        SeedInstanceActor(persistence, keyStore, new Iri(baseNoSlash), $"iris-{HostLabel(baseString)}", InstanceHandle);
+        // Register the seeded actors' keys so the proxy / DeliveryWorker can sign as them (the site actor
+        // is InstanceActorId, so it is the outbound federation signer).
         RegisterSeedKey(services, baseNoSlash);
 
         // Bootstrap the first admin (idempotent; no-op unless App:Admin:Username/Password are set). This
@@ -1753,18 +1793,21 @@ public static class WebAppFactory
     }
 
     /// <summary>
-    /// Registers the seeded local actor's signing key with the server's <see cref="IKeyProvider"/>, so the
-    /// proxy endpoint and the outbound <c>DeliveryWorker</c> can sign as it. Resolves the
-    /// <see cref="IKeyProvider"/> from the given provider and registers the seeded key IRI
-    /// (<c>{actor}/#key-1</c>).
+    /// Registers the seeded local actors' signing keys with the server's <see cref="IKeyProvider"/>, so the
+    /// proxy endpoint and the outbound <c>DeliveryWorker</c> can sign as them. Resolves the
+    /// <see cref="IKeyProvider"/> from the given provider and registers each seeded key IRI
+    /// (<c>{actor}/#key-1</c>). 138.11: the site actor (the <c>Application</c> at the bare base IRI) is
+    /// registered alongside alice — it is now <c>InstanceActorId</c> and signs outbound federation.
     /// </summary>
     /// <param name="services">The application service provider.</param>
     /// <param name="baseString">The advertised public base URI (slash-free).</param>
     public static void RegisterSeedKey(IServiceProvider services, string baseString)
     {
         var baseNoSlash = new Iri(baseString).Value.TrimEnd('/');
-        var actorIri = new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}");
-        services.GetRequiredService<IKeyProvider>().RegisterKey(actorIri, new Iri($"{actorIri}#key-1"));
+        var keyProvider = services.GetRequiredService<IKeyProvider>();
+        keyProvider.RegisterKey(new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}"), new Iri($"{baseNoSlash}/ap/v1/u/{SeedHandle}#key-1"));
+        // 138.11: the site actor (Application at the bare base) signs outbound federation (InstanceActorId).
+        keyProvider.RegisterKey(new Iri(baseNoSlash), new Iri($"{baseNoSlash}#key-1"));
     }
 
     /// <summary>
@@ -1796,6 +1839,52 @@ public static class WebAppFactory
             Id = actorIri.Value,
             PreferredUsername = handle,
             Name = [handle],
+        };
+        actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+        actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
+        {
+            id = keyIri.Value,
+            owner = actorIri.Value,
+            publicKeyPem = key.ExportPublicKeyPem(),
+        });
+        persistence.Actors.PutActorAsync(actor).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Seeds the instance's <strong>site actor</strong> (138.11): a dedicated <see cref="Application"/>
+    /// whose IRI is the bare instance base (the ActivityPub site-actor convention). It is served at the
+    /// instance root and signs outbound federation (it is <c>InstanceActorId</c>). Idempotent by IRI: the
+    /// document is re-stored, but the signing key is <em>reused</em> when one is already present in the
+    /// key store (a restart with a durable key store keeps the same key, so the public key in the root
+    /// document is stable) — a fresh deployment mints one.
+    /// </summary>
+    /// <param name="persistence">The persistence provider to seed.</param>
+    /// <param name="keyStore">The key store the seeded signing key is read from / written to.</param>
+    /// <param name="actorIri">The site actor's IRI (the bare instance base, e.g.
+    /// <c>https://iris.luit.ink</c>).</param>
+    /// <param name="name">The site actor's display name (the instance name).</param>
+    /// <param name="handle">The site actor's preferred username (the instance handle).</param>
+    internal static void SeedInstanceActor(IPersistenceProvider persistence, IKeyStore keyStore, Iri actorIri, string name, string handle)
+    {
+        ArgumentNullException.ThrowIfNull(persistence);
+        ArgumentNullException.ThrowIfNull(keyStore);
+        var keyIri = new Iri($"{actorIri}#key-1");
+        // Reuse the persisted key when present (restart) so the site actor's public key is stable;
+        // otherwise mint a fresh RSA key (first boot).
+        var key = keyStore.TryGetKey(keyIri, out var existing) && existing is not null
+            ? existing
+            : KeyPairGenerator.GenerateRsa(keyIri);
+        keyStore.PutKey(key);
+
+        // The site actor's Endpoints (sharedInbox, OAuth2) are NOT set here: BuildActorDocument fills them
+        // from the instance's ActivityPubServerOptions (SharedInboxIri + the OAuth2 endpoints) at render
+        // time, for every local actor — so the stored document stays minimal and the served root document
+        // carries the instance-level endpoints like any other actor.
+        var actor = new Application
+        {
+            Id = actorIri.Value,
+            PreferredUsername = handle,
+            Name = [name],
         };
         actor.ExtensionData ??= new Dictionary<string, JsonElement>();
         actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new

@@ -17,6 +17,9 @@ namespace Iris.Server;
 /// <item><see cref="ActivityPubServerOptions.InstanceActorId"/> — when set, must be an absolute http(s)
 /// IRI (it is the actor the instance signs outbound federation as; a malformed IRI would break
 /// every outbound request's signature).</item>
+/// <item><see cref="ActivityPubServerOptions.InstanceActorIri"/> — when set, must be an absolute
+/// http(s) IRI (it names the actor whose public document the instance root serves; a malformed IRI
+/// would 404 the site-actor dereference that peers such as Lemmy perform before resolving any object).</item>
 /// <item><see cref="ActivityPubServerOptions.SharedInboxIri"/> — when set, must be an absolute http(s)
 /// IRI (it is advertised as the shared-inbox endpoint; a malformed IRI would reject every inbound
 /// delivery).</item>
@@ -44,6 +47,12 @@ public sealed class ActivityPubServerOptionsValidator : IValidateOptions<Activit
         {
             errors.Add($"Iris:InstanceActorId must be an absolute http(s) IRI (got '{actorId.Value}'). " +
                 "It is the actor the instance signs outbound federation requests as.");
+        }
+
+        if (options.InstanceActorIri is { } actorIri && !IsValidHttpIri(actorIri))
+        {
+            errors.Add($"Iris:InstanceActorIri must be an absolute http(s) IRI (got '{actorIri.Value}'). " +
+                "It is the actor whose public document is served at the instance root.");
         }
 
         if (options.SharedInboxIri is { } inbox && !IsValidHttpIri(inbox))
