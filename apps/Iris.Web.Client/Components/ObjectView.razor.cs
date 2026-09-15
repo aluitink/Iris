@@ -635,6 +635,55 @@ public partial class ObjectView
     private string? BoostedName => (BoostedObject as ActivityObject)?.Name?.FirstOrDefault();
 
     /// <summary>
+    /// 139.1 F-3 — Whether the boosted object's <c>name</c> duplicates its <c>content</c> (HTML-stripped,
+    /// case-insensitive). When a cross-posted Note is delivered to a platform that derives a Page's
+    /// <c>name</c> from its content (Lemmy), the title and body are identical and rendering both
+    /// duplicates the visible text. The render suppresses the title in that case.
+    /// </summary>
+    private bool BoostedTitleDuplicatesContent
+        => BoostedObject is ActivityObject bao
+            && NameDuplicatesContent(bao.Name?.FirstOrDefault(), JoinStrings(bao.Content));
+
+    /// <summary>
+    /// 139.1 F-3 — Whether the <c>Create</c> branch's embedded object's <c>name</c> duplicates its
+    /// <c>content</c> (the same cross-posted-Note case as <see cref="BoostedTitleDuplicatesContent"/>,
+    /// for a direct <c>Create</c> rather than an <c>Announce</c> wrapper).
+    /// </summary>
+    private bool ActivityTitleDuplicatesContent
+        => ActivityEmbeddedObject is ActivityObject aeo
+            && NameDuplicatesContent(aeo.Name?.FirstOrDefault(), JoinStrings(aeo.Content));
+
+    /// <summary>
+    /// 139.1 F-3 — Reports whether a content object's <c>name</c> duplicates its <c>content</c> as plain
+    /// text (HTML stripped, case-insensitive). A title identical to (or contained within) the body would
+    /// render as a visible duplicate, so the UI suppresses the title when this is true.
+    /// </summary>
+    private static bool NameDuplicatesContent(string? name, string? content)
+    {
+        if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        var nameText = HtmlStrip(name).Trim();
+        var contentText = HtmlStrip(content).Trim();
+        if (nameText.Length == 0 || contentText.Length == 0)
+        {
+            return false;
+        }
+
+        return nameText.Equals(contentText, StringComparison.OrdinalIgnoreCase)
+            || contentText.Contains(nameText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Strips HTML tags from a string (139.1 F-3) so a <c>name</c> can be compared against its
+    /// <c>content</c> as plain text.
+    /// </summary>
+    private static string HtmlStrip(string html)
+        => System.Text.RegularExpressions.Regex.Replace(html, "<[^>]+>", " ");
+
+    /// <summary>
     /// 121.7 — Renders the content of a boosted object (from either the embedded or the fetched
     /// object) as a safe HTML markup string, converting markdown to HTML when needed.
     /// </summary>

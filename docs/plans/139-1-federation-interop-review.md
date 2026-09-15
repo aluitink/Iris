@@ -44,11 +44,81 @@ new learned here.
 
 ## Progress tracking
 
-- [ ] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5  - [ ] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** none started yet — begin at scenario 1.
+**Resume checkpoint:** scenarios 1–3 done (F-3 found + fixed) — begin at scenario 4.
+
+## Findings tracker (class + severity, per Loop protocol)
+
+| # | Scenario | Class | Severity | Finding | Disposition |
+|---|---|---|---|---|---|
+| F-1 | 1 | UX | S3 | **Lemmy community WebFinger returns 400** — Lemmy does not serve WebFinger for communities (only persons). The Web UI's `!community@host` lookup (`Directory`/`Search`/`CommunityDetail`) strips the `!` then queries WebFinger, which 400s for a community. The supported + working path is **pasting the full community IRI** (`/c/{name}`), which the UI hint already documents, and which is exactly what the 138.5 federation path (`POST /local/v1/c/{name}/follow/{targetIri}`) uses. | No defect in the federation path. Optional UX polish (a later UX slice): auto-construct the `/c/{name}` IRI from a `!community@host` handle for Lemmy, instead of relying on WebFinger. |
+| F-2 | 2 | UX | S3 | **Lemmy person `/followers` + `/following` collections return 404** — Lemmy does not expose person collections (verified: direct fetch of `lemmy.luit.ink/u/lemmyadmin/{followers,following}` → 404). The ActorDetail page requests both collections via the proxy; they 404 and the page logs 2 console errors, but renders correctly (handle + avatar monogram fallback, "No posts yet", no crash). | Not an Iris defect (Lemmy platform limitation). The page already degrades gracefully. Optional polish (a later UX slice): skip the collections fetch for actors whose document has no `followers`/`following` link, to avoid the console 404s. |
+| F-3 | 3 | bug | S2 | **Cross-posted Note→Page renders its body twice** — alice's 138.11 cross-post (an Iris `Note` delivered to Lemmy as a `Page`) showed in the Lemmy community feed with the body rendered **twice**: once as the `name`/title and once as the `content`. Root cause: Iris composes Notes with **no `name`** (`ComposeNote.Build` sets only `Content`); when `TransformCreateForCrossPost` (`ActivityPubServerExtensions.cs:5208`) copies the null `Name` onto the Lemmy `Page`, **Lemmy derives the `Page`'s `name` from its content** on ingest — so `name` ≈ `content` in Lemmy's outbox. `ObjectView`'s Create + Announce/boosted branches each rendered both the title and the body without deduplicating. Normal Lemmy posts (`name` ≠ `content`) rendered correctly. | **Fixed + verified.** Added `NameDuplicatesContent` (HTML-stripped, case-insensitive equality/containment) in `ObjectView.razor.cs` + `ActivityTitleDuplicatesContent` / `BoostedTitleDuplicatesContent` guards; the `.razor` Create branch (line 46) and the Announce/boosted branch (line 241) now suppress `object-title` when the title duplicates the body. Build clean (0 warnings); live Playwright re-check confirms the duplicate is gone and distinct titles still render. |
+
+## Scenario 3 — Inbound Create (post) rendering (evidence, 2026-09-15)
+
+Verified live against the Lemmy interop community feed (`/community?iri=…/c/interop`, which reads the
+Lemmy community outbox directly per `ResolveFeedIri`'s Lemmy branch) and the home timeline
+(Mastodon/Pleroma inbound posts).
+
+| Peer | Item | Render |
+|---|---|---|
+| Lemmy (lemmyadmin post) | `Announce → Create → Page` (`name` "Hello from Lemmy interop" ≠ `content`) | ✅ distinct title + body both render; `LemmyVoteBar` (score + comment count) |
+| Lemmy (lemmyadmin post 2) | `Announce → Create → Page` (`name` "138.3 fixture post two" ≠ `content`) | ✅ distinct title + body both render |
+| Iris→Lemmy cross-post (alice) | `Announce → Create → Page` (`name` ≈ `content`, Note cross-posted as Page) | ✅ **single** body render (title suppressed — see F-3 fix) |
+| Mastodon (home timeline) | `Create → Note` | ✅ content + link + media/card attachment + boost/like controls |
+| Pleroma (home timeline) | `Create → Note` | ✅ content renders |
+
+**F-3 found + fixed.** alice's cross-post rendered its body **twice** (once as `name`/title, once as
+`content`) because Iris composes Notes with no `name` (`ComposeNote.Build`), `TransformCreateForCrossPost`
+copies the null `Name` onto the Lemmy `Page`, and Lemmy then derives the `Page`'s `name` from its
+content on ingest — so `name` ≈ `content` in Lemmy's outbox. `ObjectView`'s Create + Announce/boosted
+branches each rendered both the title and the body without deduplicating. **Fix:** added
+`NameDuplicatesContent` (HTML-stripped, case-insensitive equality/containment) in
+`ObjectView.razor.cs` + `ActivityTitleDuplicatesContent` / `BoostedTitleDuplicatesContent` guards; the
+`.razor` Create branch (line 46) and the Announce/boosted branch (line 241) now suppress
+`object-title` when the title duplicates the body. Normal Lemmy posts (distinct title) are unaffected
+(verified live: titles still render). Build clean (0 warnings). Live Playwright re-check: the duplicate
+is gone, distinct titles intact.
+
+**Pass:** every peer's inbound Create renders with no raw-JSON fallback, no truncation, no duplicate
+text. The one defect found (F-3) is fixed and verified.
+
+## Scenario 2 — Actor document round-trip (evidence, 2026-09-15)
+
+| Peer | Core fields present | Missing (documented limitation) | UI render |
+|---|---|---|---|
+| Iris Person (andrew) | id, type=Person, inbox, outbox, publicKey, icon, preferredUsername, name | summary, manuallyApprovesFollowers | ✅ full profile (avatar + name + handle) |
+| Lemmy Person (lemmyadmin) | id, type=Person, inbox, outbox, publicKey, preferredUsername | **icon, name** (Lemmy Persons carry neither) | ✅ handle + monogram avatar fallback; 2 console 404s on `/followers`+`/following` (F-2, Lemmy limitation) |
+| Lemmy Group (interop) | id, type=Group, inbox, outbox, publicKey, preferredUsername, name, summary | **icon** | ✅ name + summary + monogram avatar fallback (no icon) |
+| Iris Group (interopX) | id, type=Group, inbox, outbox, publicKey, preferredUsername, name | icon, summary | ✅ name + monogram avatar fallback |
+| Mastodon (real external) | id, type=Person, inbox, outbox, publicKey, icon, preferredUsername, name | — | ✅ (verified via direct fetch; actor doc renders all core fields) |
+
+**Pass:** every peer's actor doc renders in `ActorProfile` with no blank/broken fields. The documented
+platform limitations (Lemmy Person: no `name`/`icon`; Lemmy Group: no `icon`) are handled by the
+avatar monogram fallback + handle-only display, exactly as `ActorProfile` is designed (null-checks for
+Name/Summary/Icon/Banner). The only console noise is the F-2 Lemmy person-collections 404 (a Lemmy
+limitation; the page degrades gracefully).
+
+## Scenario 1 — Cold WebFinger resolution (evidence, 2026-09-15)
+
+| Peer | Query | Result |
+|---|---|---|
+| Iris Person (local) | `acct:andrew@iris.luit.ink` | ✅ resolves → `https://iris.luit.ink/ap/v1/u/andrew` (also `alice` → `/ap/v1/u/alice`) |
+| Lemmy Person | `acct:lemmyadmin@lemmy.luit.ink` | ✅ resolves → `https://lemmy.luit.ink/u/lemmyadmin` (Person) |
+| Lemmy Community | `acct:interop!lemmy.luit.ink` / `acct:c/interop@lemmy.luit.ink` | ⚠️ **400** (Lemmy doesn't serve community WebFinger) — see F-1 |
+| Mastodon (real external) | `acct:RayvenMX@mastodon.world` | ✅ resolves → `https://mastodon.world/users/RayvenMX` |
+| Misskey | `acct:misskey@misskey.io` | ✅ resolves → `https://misskey.io/users/7rkr40rk13` |
+| Pleroma / PieFed / PeerTube | — | ✅ verified via existing fixture round-trip tests (9 pass: `MisskeyInteropRoundTripTests` + `PleromaFamilyInteropRoundTripTests`); live WebFinger is host-dependent (fosstodon.org 404s the webfinger endpoint; piefed.social 200s). |
+
+**Pass:** every peer type resolves to the correct actor type without manual surprises. The only
+platform-specific behavior is the Lemmy community WebFinger 400 (F-1), which is a Lemmy-side
+limitation and does not affect the Iris federation path (138.5 uses direct IRI, not WebFinger, for
+Lemmy communities). No host mismatches; no `!`-stripping surprise in the federation path (the `!`
+is only a Web UI input convention).

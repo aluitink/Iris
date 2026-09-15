@@ -43,7 +43,7 @@
                         }
                     </div>
                 }
-                @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor))
+                @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor) && !ActivityTitleDuplicatesContent)
                 {
                     <div class="object-title">@title</div>
                 }
@@ -238,7 +238,7 @@
                                 <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
                             }
                         </div>
-                        @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor))
+                        @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor) && !BoostedTitleDuplicatesContent)
                         {
                             <div class="object-title">@boostedTitle</div>
                         }
