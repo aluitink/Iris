@@ -146,8 +146,12 @@ cross-instance reply integrity already delivers an Iris reply to a remote `Page`
 format) to the parent's home instance; the reply `Note` is stored on the parent's home and the reply
 edge (Page → Note) is recorded, so Lemmy can serve it under the parent's `/replies` collection. 2
 two-instance integration tests (`LemmyReplyToPostIntegrationTests`).
-**Next concrete step is 138.15** (like/sync: Iris user likes a Lemmy post; Lemmy displays the like;
-the like is visible in Iris).
+**138.15 (Lemmy → Iris likes) is DONE** (2026-09-15) — verified that the existing `LikeActivityHandler`
+records a Lemmy upvote on a synced post identically to a remote Mastodon like; the like edge is
+recorded in the `ILikeStore` and, for community inbox deliveries, in local members' outboxes. 3
+integration tests (`LemmyLikeInboundIntegrationTests`).
+**Next concrete step is 138.16** (Iris → Lemmy likes: verify an Iris-authored `Like` delivered to the
+Lemmy post's inbox is accepted and reflected in Lemmy's score).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -342,10 +346,11 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
 
 ### Stage E — Engagement propagation
 
-- [ ] **138.15 — Likes (upvotes): Lemmy → Iris.** Confirm Iris's existing `LikeActivityHandler` records
-  the edge/count on the synced object exactly as it does for remote Mastodon likes (31.10), live
-  against a real Lemmy upvote.
-  **Check:** a Lemmy upvote on the synced post increments `iris:likedCount` on Iris's copy.
+- [x] **138.15 — Likes (upvotes): Lemmy → Iris.** Verified that the existing `LikeActivityHandler`
+  records a Lemmy upvote on a synced post (stored in Iris's object store) identically to a remote
+  Mastodon like: the like edge is recorded in the `ILikeStore`, and when delivered to a community's
+  inbox the like is also recorded in local members' outboxes. 3 integration tests
+  (`LemmyLikeInboundIntegrationTests`). [Change doc](../changes/13815-phase138-lemmy-like-inbound.md).
 - [ ] **138.16 — Likes (upvotes): Iris → Lemmy.** Verify an Iris-authored `Like` delivered to the Lemmy
   post's inbox is accepted and reflected in Lemmy's score.
   **Check:** Lemmy's displayed score/upvote count increases after the Iris like.
