@@ -163,8 +163,12 @@ renders `LemmyVoteBar` (no Boost button) for Lemmy-sourced content. 1 new integr
 objects' bare Lemmy keys; `CommunityDocumentHandler` renders `iris:communityNsfw`/
 `iris:postingRestrictedToMods` from stored communities' bare Lemmy keys. 7 integration
 tests. UI surfacing (disabled composer, pinned indicator, CW gate) is a follow-up.
-**Next concrete step is 138.26** (community-level NSFW alignment — decide whether Iris
-retro-applies a CW flag to every synced post from an NSFW Lemmy community).
+**138.26 (community-level NSFW alignment) is DONE** (2026-09-15) —
+client-side CW derivation: `IrisDocumentExtensions.RequiresCw(content, community)` combines the
+object's own `sensitive` flag with the community's `iris:communityNsfw` flag; no server-side
+retro-apply (the community's NSFW flag can change later). 8 integration tests.
+**Next concrete step is 138.27** (full-platform terminology & model audit — cross-platform
+consistency review).
 **Still open for 138.4 (Lemmy-side):** its search/resolve-by-URL UI does not surface the Iris `interop`
 community. Also still open: the `interop` webfinger name-collision edge case.
 
@@ -437,10 +441,13 @@ Only add a [docs/ROADMAP.md](../ROADMAP.md) entry when the whole phase (138.29) 
   distinction in the Iris Web UI for synced Lemmy content.
   **Check:** a locked Lemmy post shows a disabled composer in Iris; a pinned post shows a pinned
   indicator; tests cover the new term rendering.
-- [ ] **138.26 — Community-level NSFW alignment.** Decide whether Iris should retro-apply a
-  sensitive/CW flag to every synced post from an NSFW-flagged Lemmy community, and implement if so.
-  **Check:** decision recorded and, if implemented, verified live against an NSFW-flagged Lemmy
-  community's posts rendering with a CW in Iris.
+- [x] **138.26 — Community-level NSFW alignment.** Decide whether Iris should retro-apply a
+   sensitive/CW flag to every synced post from an NSFW-flagged Lemmy community, and implement if so.
+   **Check:** decision recorded and, if implemented, verified live against an NSFW-flagged Lemmy
+   community's posts rendering with a CW in Iris.
+   **Done (2026-09-15):** Decision: client-side CW derivation, no server-side retro-apply. Added
+   `IrisDocumentExtensions.RequiresCw(content, community)` which combines the object's own
+   `sensitive` flag with the community's `iris:communityNsfw` flag. 8 integration tests.
 
 ### Stage H — Cross-platform consistency review
 
