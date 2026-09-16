@@ -96,19 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **147.1 — Performance re-audit: request-spam + cache hit-rate sanity (F-136.12.10, F-142.7) (IN PROGRESS):**
-  - Cache metrics now enabled in production (was NullCacheMetrics, all zeros). Hit rate ~68% under normal browsing.
-  - Partial dedup of current-user actor fetch (reduced 3→2 on some pages; race window remains).
-  - **Findings + fixes:**
-    - S2: Cache metrics disabled in production (NullCacheMetrics, all zeros) — **FIXED** (commit 3333f00). Hit rate now ~68%.
-    - S2: Duplicate current-user actor fetch on every page load — **PARTIALLY FIXED** (commit 3333f00; race window remains).
-    - S2: Directory page N+1 (6-7 individual actor fetches) — **FIXED** (commit 7569a28; SkipFetch=true in ActorCard).
-    - S2: Profile page — duplicate proxy fetch for same remote object (2× POST /ap/v1/proxy/…RayvenMX…). **OPEN.**
-    - S2: Notifications page — unread-count polled 4× per page load. **OPEN.**
-    - S3: Duplicate remote actor fetch on notifications (Gargron ×2). **OPEN.**
-    - S3: Home timeline blocks rendering until all remote object fetches complete. **OPEN.**
-  - Remaining: fix duplicate proxy + unread-count polling; write request-count table + findings doc.
-- **147.2 — Feed query performance at scale:** Seed a large dataset (1000+ posts, 50+ follows) in the EF/Postgres test container; measure home/community feed p50/p95 latency. Compare against Phase 116.1 baseline (feed P95=9.3 ms). Flag any query missing an index. Deliverable: timing capture + index audit.
+- **147.2 — Feed query performance at scale:** Seed a large dataset (1000+ posts, 50+ follows) in the EF/Postgres test container; measure home/community feed p50/p95 latency. Compare against Phase 116.1 baseline (feed P95=9.3 ms). Flag any query missing an index. Deliverable: timing capture + index audit. **Also:** investigate server-side feed progressive-render (FeedService.BuildFeedAsync sequentially awaits remote follows — parallel fetch + bounded timeout or remote-outbox cache).
 - **147.3 — Delivery worker throughput under burst:** Measure outbound delivery throughput under a burst of posts to many followers/peers. Verify bounded concurrency (Phase 16.1) holds, no unbounded queue growth. Deliverable: metrics dump + concurrency verification.
 
 ## Inbox
@@ -125,6 +113,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **147.1 (Request-spam + cache hit-rate re-audit) — complete:** 7 findings (4 fixed, 1 partially fixed, 1 not-a-bug, 1 deferred to 147.2). Enabled production cache metrics (was NullCacheMetrics); dedup'd current-user actor fetch; eliminated directory N+1 (SkipFetch); coalesced duplicate content-object proxy fetches (UiContext.GetContentObjectAsync); eliminated notification Gargron duplicate (defer avatar). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1471-phase147-request-spam-cache-hit-rate.md).
 - **146 (Performance follow-ups) — complete:** 146.1+146.2: wired `ActorCache` into outbound client (F-136.12.7/1). 146.3: wired `CollectionPageCache` into outbound client (F-136.12.3/5). Full suite green (1285 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **145 (Deterministic delivery in flaky integration tests) — complete:** Replaced the racy background `DeliveryWorker` pump in the two known-flaky round-trip tests with a synchronous `DeterministicDeliveryDriver` + `TestDeliveryQueue`. Full suite green (1283 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **144 (General UI/UX review) — complete:** 8 findings; 6 fixed, 2 reviewed-no-change. [findings](docs/plans/phase-144-ux-review.md).
