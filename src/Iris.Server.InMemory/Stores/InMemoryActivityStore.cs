@@ -123,6 +123,18 @@ public sealed class InMemoryActivityStore : IActivityStore
     }
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> GetActivitiesForObjectAsync(Iri objectIri, string activityType, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = _activities.Values
+            .Where(a => a is Activity { Object: { } obj } act
+                && act.Type?.FirstOrDefault() == activityType
+                && obj.FirstOrDefault()?.ResolveObjectIri() == objectIri)
+            .ToList();
+        return Task.FromResult<IReadOnlyList<IObject>>(result);
+    }
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();

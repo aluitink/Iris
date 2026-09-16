@@ -7100,22 +7100,15 @@ public static class ActivityPubServerExtensions
         // durably stored degrades to a Link to the liker (the count stays exact; the item simply lacks the
         // minted id / object reference).
         //
-        // 136.12: a single GetAllActivitiesAsync sweep (O(total_activities)) instead of one per liker
-        // (O(k × total_activities)): the sweep is done once, then the likers are matched in memory.
-        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        // 141.2: an indexed per-object lookup (O(k) via the (ActivityType, ObjectIri) index) instead of
+        // the previous O(total_activities) GetAllActivitiesAsync sweep.
+        var likes = await persistence.Activities.GetActivitiesForObjectAsync(parentIri, "Like", ct).ConfigureAwait(false);
         var likerToActivity = new Dictionary<Iri, IObjectOrLink>(likers.Count, AudienceIriComparer.Instance);
-        foreach (var activity in all)
+        foreach (var activity in likes)
         {
-            if (activity is not KristofferStrube.ActivityStreams.Like like
-                || like.Actor is not { } actors
-                || like.Object is not { } objects)
-            {
-                continue;
-            }
-
-            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri
-                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri
-                && objectIri == parentIri)
+            if (activity is KristofferStrube.ActivityStreams.Like like
+                && like.Actor is { } actors
+                && actors.FirstOrDefault().ResolveObjectIri() is { } actorIri)
             {
                 likerToActivity[actorIri] = like;
             }
@@ -7174,22 +7167,15 @@ public static class ActivityPubServerExtensions
         // Announce was never durably stored degrades to a Link to the announcer (the count stays exact; the
         // item simply lacks the minted id / object reference).
         //
-        // 136.12: a single GetAllActivitiesAsync sweep (O(total_activities)) instead of one per announcer
-        // (O(k × total_activities)): the sweep is done once, then the announcers are matched in memory.
-        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        // 141.2: an indexed per-object lookup (O(k) via the (ActivityType, ObjectIri) index) instead of
+        // the previous O(total_activities) GetAllActivitiesAsync sweep.
+        var announces = await persistence.Activities.GetActivitiesForObjectAsync(parentIri, "Announce", ct).ConfigureAwait(false);
         var announcerToActivity = new Dictionary<Iri, IObjectOrLink>(announcers.Count, AudienceIriComparer.Instance);
-        foreach (var activity in all)
+        foreach (var activity in announces)
         {
-            if (activity is not KristofferStrube.ActivityStreams.Announce announce
-                || announce.Actor is not { } actors
-                || announce.Object is not { } objects)
-            {
-                continue;
-            }
-
-            if (actors.FirstOrDefault().ResolveObjectIri() is { } actorIri
-                && objects.FirstOrDefault().ResolveObjectIri() is { } objectIri
-                && objectIri == parentIri)
+            if (activity is KristofferStrube.ActivityStreams.Announce announce
+                && announce.Actor is { } actors
+                && actors.FirstOrDefault().ResolveObjectIri() is { } actorIri)
             {
                 announcerToActivity[actorIri] = announce;
             }

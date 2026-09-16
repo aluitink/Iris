@@ -211,6 +211,31 @@ public sealed class FileBackedActivityStore : IActivityStore, IDisposable
         }, ct);
 
     /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> GetActivitiesForObjectAsync(Iri objectIri, string activityType, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<IObject>>(s =>
+        {
+            var map = ActivityMap(s);
+            var result = new List<IObject>();
+            foreach (var entry in map.Values)
+            {
+                if (entry is null)
+                {
+                    continue;
+                }
+
+                var activity = ActivityJson.Deserialize<IObjectOrLink>(entry.Json) as IObject;
+                if (activity is Activity { Object: { } obj } act
+                    && act.Type?.FirstOrDefault() == activityType
+                    && obj.FirstOrDefault()?.ResolveObjectIri() == objectIri)
+                {
+                    result.Add(activity);
+                }
+            }
+
+            return result;
+        }, ct);
+
+    /// <inheritdoc/>
     public Task<IReadOnlyList<IObjectOrLink>> GetInboxAsync(Iri actorIri, CancellationToken ct = default)
         => _file.SnapshotAsync<IReadOnlyList<IObjectOrLink>>(s =>
         {

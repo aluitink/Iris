@@ -87,8 +87,10 @@ public sealed class IrisDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.Property(e => e.Id).HasMaxLength(1024);
             entity.Property(e => e.ActivityType).HasMaxLength(128);
+            entity.Property(e => e.ObjectIri).HasMaxLength(1024);
             entity.Property(e => e.Document).HasColumnType("jsonb");
             entity.HasIndex(e => e.ActivityType);
+            entity.HasIndex(e => new { e.ActivityType, e.ObjectIri });
         });
     }
 

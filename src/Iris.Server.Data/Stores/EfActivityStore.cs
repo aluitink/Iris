@@ -57,6 +57,7 @@ public sealed class EfActivityStore : IActivityStore
         ct.ThrowIfCancellationRequested();
         var iri = activity.Id;
         var type = TypeOf(activity);
+        var objectIri = ObjectIriOf(activity);
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var existing = await db.Set<ActivityEntity>().FirstOrDefaultAsync(e => e.Id == iri, ct).ConfigureAwait(false);
         if (existing is null)
@@ -65,6 +66,7 @@ public sealed class EfActivityStore : IActivityStore
             {
                 Id = iri,
                 ActivityType = type,
+                ObjectIri = objectIri,
                 CreatedAt = DateTimeOffset.UtcNow,
                 Document = AsDocument.Serialize(activity),
             });
@@ -72,6 +74,7 @@ public sealed class EfActivityStore : IActivityStore
         else
         {
             existing.ActivityType = type;
+            existing.ObjectIri = objectIri;
             existing.Document = AsDocument.Serialize(activity);
         }
 
@@ -84,6 +87,13 @@ public sealed class EfActivityStore : IActivityStore
     /// </summary>
     private static string TypeOf(IObject activity)
         => activity.Type?.FirstOrDefault() ?? activity.GetType().Name;
+
+    /// <summary>
+    /// The IRI of the object the activity references (the first entry of the activity's <c>object</c>
+    /// property), or null when the activity has no resolvable object reference.
+    /// </summary>
+    private static string? ObjectIriOf(IObject activity)
+        => activity is Activity { Object: { } obj } ? obj.FirstOrDefault()?.ResolveObjectIri()?.Value : null;
 
     /// <inheritdoc/>
     public async Task<bool> TryAddActivityAsync(IObject activity, CancellationToken ct = default)
@@ -107,6 +117,7 @@ public sealed class EfActivityStore : IActivityStore
         {
             Id = iri,
             ActivityType = TypeOf(activity),
+            ObjectIri = ObjectIriOf(activity),
             CreatedAt = DateTimeOffset.UtcNow,
             Document = AsDocument.Serialize(activity),
         });
@@ -201,6 +212,7 @@ public sealed class EfActivityStore : IActivityStore
                 {
                     Id = itemIri,
                     ActivityType = TypeOf(activity),
+                    ObjectIri = ObjectIriOf(activity),
                     CreatedAt = DateTimeOffset.UtcNow,
                     Document = AsDocument.Serialize(item),
                 });
@@ -253,6 +265,28 @@ public sealed class EfActivityStore : IActivityStore
         ct.ThrowIfCancellationRequested();
         await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
         var entities = await db.Set<ActivityEntity>().AsNoTracking().ToListAsync(ct).ConfigureAwait(false);
+        var result = new List<IObject>(entities.Count);
+        foreach (var entity in entities)
+        {
+            if (AsDocument.Deserialize(entity.Document) is IObject activity)
+            {
+                result.Add(activity);
+            }
+        }
+
+        return result;
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<IObject>> GetActivitiesForObjectAsync(Iri objectIri, string activityType, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var db = await _factory.CreateDbContextAsync(ct).ConfigureAwait(false);
+        var entities = await db.Set<ActivityEntity>()
+            .AsNoTracking()
+            .Where(e => e.ActivityType == activityType && e.ObjectIri == objectIri.Value)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
         var result = new List<IObject>(entities.Count);
         foreach (var entity in entities)
         {

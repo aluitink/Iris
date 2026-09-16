@@ -23,6 +23,13 @@ public sealed class ActivityEntity
     public string? ActivityType { get; set; }
 
     /// <summary>
+    /// The IRI of the object this activity references (the activity's <c>object</c>), extracted for
+    /// per-object lookups (e.g. "find all Likes of object X"). Null when the activity has no resolvable
+    /// object reference (e.g. a bare-link <c>Undo</c> whose target is not stored).
+    /// </summary>
+    public string? ObjectIri { get; set; }
+
+    /// <summary>
     /// When the row was created (a stable sort key).
     /// </summary>
     public DateTimeOffset CreatedAt { get; set; }
