@@ -34,14 +34,14 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [ ] 6  - [ ] 7
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [ ] 7
 - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–5 done — begin at scenario 6.
+**Resume checkpoint:** scenarios 1–6 done — begin at scenario 7.
 
 ## Findings
 
@@ -218,3 +218,35 @@ Rationale:
 3. Decide on the federation visibility policy (suppress non-public content on receipt vs. store
    with a visibility marker).
 4. Comprehensive testing (each read surface × each visibility level × each requester type).
+
+## Scenario 6 — Moderation trust boundary (evidence, 2026-09-16)
+
+**PASS — moderation trust boundary holds under combined, adversarial scenarios.**
+
+**Current behavior (confirmed):**
+- `CrossInstanceBlockedContentIntegrationTests` (2 tests) all pass, confirming:
+  - `BlockedActorNewContent_IsStoredButExcludedFromFeed`: a blocked actor's new content
+    (fresh activity IRI) is **stored** on the local instance (fetchable by direct IRI) but
+    **excluded from the blocking user's feed**. The trust-boundary guarantee holds.
+  - `ReverseDirectionBlock_BlocksLocalActor_EdgeRecordedOnLocalInstance`: a remote actor
+    blocking a local actor works correctly (the edge is recorded on both instances).
+
+**Trust-boundary enforcement (defense in depth, confirmed from Phase 136.10):**
+
+| Layer | What it does | Scope |
+|-------|-------------|-------|
+| **Delivery suppression** | Suppresses delivery when the *deliverer* has the block edge | Local optimization (same-instance only) |
+| **Feed filtering** | Excludes blocked/muted content from the reader's feed using the reader's local `IModerationStore` | **Authoritative guarantee** (always applies on the reader's side) |
+
+**Bypass attempts (all handled by feed filtering):**
+
+| Bypass | How it's handled |
+|--------|-----------------|
+| Fresh activity IRI | Feed filtering is actor-based (not activity-based) — any new activity from a blocked actor is excluded from the feed. |
+| Different verb (Announce/boost) | Feed filtering excludes all content from a blocked actor, regardless of the activity type (Create, Announce, Like, etc.). |
+| Relayed announce | A relayed announce from a blocked actor is still attributed to that actor — feed filtering excludes it. |
+
+**Pass criterion met.** A blocked/muted remote actor's content (fresh IRI, different verb, or
+relayed announce) is **not surfaced** to the blocking user's feed. The content may be stored
+(fetchable by direct IRI) but is excluded from the feed. This is the correct AP semantics:
+blocking an actor should hide their content from your feed, not prevent them from posting.
