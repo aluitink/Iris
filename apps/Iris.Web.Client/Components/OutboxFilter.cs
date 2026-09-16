@@ -17,10 +17,16 @@ internal static class OutboxFilter
 {
     /// <summary>
     /// Whether an outbox item is a content item — a <c>Create</c> whose object is a <c>Note</c> or
-    /// <c>Article</c>. Social and moderation activities return <c>false</c>.
+    /// <c>Article</c>, or an <c>Announce</c> (boost). Social and moderation activities return
+    /// <c>false</c>.
     /// </summary>
     public static bool IsContentItem(IObjectOrLink item)
     {
+        if (item is Announce)
+        {
+            return true;
+        }
+
         if (item is not Create create)
         {
             return false;
@@ -47,7 +53,8 @@ internal static class OutboxFilter
     /// specific actor**. Used by the signed-in user's "Your posts" tab: the server mirrors
     /// followed (remote) content into the local actor's outbox as <c>Create</c> activities whose
     /// <c>actor</c> is the **remote** author, not the local user. Without this filter those foreign
-    /// notes render in "Your posts" alongside the user's own (B-005). When <paramref name="authorIri"/>
+    /// notes render in "Your posts" alongside the user's own (B-005). For <c>Announce</c> items the
+    /// check applies to the booster (the <c>actor</c> of the Announce). When <paramref name="authorIri"/>
     /// is <c>null</c> the author check is skipped and the behavior matches <see cref="IsContentItem"/>.
     /// </summary>
     public static bool IsOwnContentItem(IObjectOrLink item, Iri? authorIri)
