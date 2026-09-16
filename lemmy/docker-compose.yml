@@ -28,7 +28,12 @@
 # federation settings are set via the Lemmy REST API (see the 135.1b change doc).
 
 services:
-  db:
+  # Named `lemmy-db` (not `db`) to avoid a DNS alias collision on the shared `iris-web-net`
+  # network: Iris's stack also has a `db` service, and Docker auto-aliases each service by its
+  # name on the network. Two services both aliased `db` made `db` resolve to both Postgres
+  # instances — the Iris app round-robined between them and intermittently hit Lemmy's DB
+  # (wrong password -> 28P01 auth failures). Renaming to `lemmy-db` gives it a unique alias.
+  lemmy-db:
     image: postgres:16
     environment:
       POSTGRES_DB: lemmy
@@ -59,7 +64,7 @@ services:
     # NOT published to the host — only the `proxy` service owns the host port. Reachable on the
     # shared network as lemmy-1:8536 (by the UI SSR and the proxy).
     depends_on:
-      db:
+      lemmy-db:
         condition: service_healthy
     networks: [iris-web-net]
 

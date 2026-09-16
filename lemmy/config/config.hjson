@@ -24,9 +24,10 @@
   # issues https IRIs (required for federation to work).
   tls_enabled: true
 
-  # Postgres (the dedicated `db` service in this compose file).
+  # Postgres (the dedicated `lemmy-db` service in this compose file — named `lemmy-db` to avoid a
+  # DNS alias collision with Iris's `db` service on the shared `iris-web-net` network).
   database: {
-    host: "db"
+    host: "lemmy-db"
     port: 5432
     user: "lemmy"
     password: "lemmy-test-pw"
