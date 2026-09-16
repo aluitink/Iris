@@ -20,30 +20,37 @@
 else
 {
     <div class="card create-community-card">
-        <h2>Create a community</h2>
-        <div class="form-group">
-            <label for="community-name">Name</label>
-            <input id="community-name" type="text" @bind="NewName" placeholder="My Community" maxlength="100" />
-        </div>
-        <div class="form-group">
-            <label for="community-handle">Handle</label>
-            <input id="community-handle" type="text" @bind="NewHandle" placeholder="my-community" maxlength="63" pattern="[a-z0-9\-]*" />
-            <span class="muted text-sm">Lowercase letters, digits, and hyphens.</span>
-        </div>
-        <div class="form-group">
-            <label for="community-description">Description <span class="muted">(optional)</span></label>
-            <textarea id="community-description" @bind="NewDescription" placeholder="What is this community about?" rows="3" maxlength="500"></textarea>
-        </div>
-        <button class="button button--primary" @onclick="CreateAsync" disabled="@(CreateBusy || string.IsNullOrWhiteSpace(NewName) || string.IsNullOrWhiteSpace(NewHandle))">
-            @(CreateBusy ? "Creating…" : "Create community")
-        </button>
-        @if (CreateError is not null)
+        @if (ShowCreateForm)
         {
-            <div class="error" style="margin-top: 0.5rem;" role="alert">@CreateError</div>
+            <h2>Create a community</h2>
+            <div class="form-group">
+                <label for="community-name">Name</label>
+                <input id="community-name" type="text" @bind="NewName" placeholder="My Community" maxlength="100" />
+            </div>
+            <div class="form-group">
+                <label for="community-handle">Handle</label>
+                <input id="community-handle" type="text" @bind="NewHandle" placeholder="my-community" maxlength="63" pattern="[a-z0-9\-]*" />
+                <span class="muted text-sm">Lowercase letters, digits, and hyphens.</span>
+            </div>
+            <div class="form-group">
+                <label for="community-description">Description <span class="muted">(optional)</span></label>
+                <textarea id="community-description" @bind="NewDescription" placeholder="What is this community about?" rows="3" maxlength="500"></textarea>
+            </div>
+            <button class="button button--primary" @onclick="CreateAsync" disabled="@(CreateBusy || string.IsNullOrWhiteSpace(NewName) || string.IsNullOrWhiteSpace(NewHandle))">
+                @(CreateBusy ? "Creating…" : "Create community")
+            </button>
+            @if (CreateError is not null)
+            {
+                <div class="error" style="margin-top: 0.5rem;" role="alert">@CreateError</div>
+            }
+            @if (CreateSuccess)
+            {
+                <div class="success" style="margin-top: 0.5rem;" role="status">Community created!</div>
+            }
         }
-        @if (CreateSuccess)
+        else
         {
-            <div class="success" style="margin-top: 0.5rem;" role="status">Community created!</div>
+            <button class="button button--ghost" @onclick='() => ShowCreateForm = true'>+ Create a community</button>
         }
     </div>
 
@@ -134,6 +141,7 @@ else
     private string NewName { get; set; } = string.Empty;
     private string NewHandle { get; set; } = string.Empty;
     private string NewDescription { get; set; } = string.Empty;
+    private bool ShowCreateForm { get; set; }
     private bool CreateBusy { get; set; }
     private string? CreateError { get; set; }
     private bool CreateSuccess { get; set; }
@@ -193,6 +201,7 @@ else
                 NewName = string.Empty;
                 NewHandle = string.Empty;
                 NewDescription = string.Empty;
+                ShowCreateForm = false;
                 await LoadCommunitiesAsync();
             }
             else
