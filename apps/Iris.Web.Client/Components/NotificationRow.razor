@@ -620,6 +620,12 @@
             return $"View {segments[^1]}";
         }
 
+        // Remote status/note IRI (e.g. /users/{user}/statuses/{id} on another instance) — show "View post"
+        if (segments.Contains("statuses") || segments.Contains("notes"))
+        {
+            return "View post";
+        }
+
         return ShortLabel(iri);
     }
 

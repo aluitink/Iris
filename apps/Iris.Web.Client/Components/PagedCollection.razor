@@ -79,7 +79,7 @@
             }
             @if (HasMore)
             {
-                <div class="paged-collection-sentinel" @onclick="LoadMoreAsync" role="button" aria-label="Load more items" tabindex="0"></div>
+                <div class="paged-collection-sentinel" @onclick="LoadMoreAsync"></div>
                 @if (LoadingMore)
                 {
                     <div class="card-loading card-loading-inline">
