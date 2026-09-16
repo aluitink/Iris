@@ -147,6 +147,15 @@ public static class ActivityPubServerExtensions
             return new WebFingerCache(policies?.WebFinger, metrics: metrics);
         });
 
+        // Client-side actor cache for the outbound IActivityPubClient (146.1, F-136.12.7): caches
+        // fetched remote object documents by IRI so repeated fetches (e.g. resolving a reply parent's
+        // author on successive publishes) are served from cache instead of hitting the wire.
+        services.TryAddSingleton<Iris.Client.Caching.ActorCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new Iris.Client.Caching.ActorCache(metrics: metrics);
+        });
+
         // The collection-page cache is also registered standalone so the outbound remote-collection
         // fetch path (IrisRemoteCollectionFetcher) can resolve it directly by type; ServerCaches reuses
         // the same instance below.
@@ -276,6 +285,8 @@ public static class ActivityPubServerExtensions
                     {
                         ActorId = configuredInstanceActor,
                         EnableRetry = false,
+                        Caches = new Iris.Client.Caching.ClientCaches(
+                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>()),
                     },
                     new HttpClientHandler()));
         }
