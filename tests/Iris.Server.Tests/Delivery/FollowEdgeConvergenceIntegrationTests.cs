@@ -268,9 +268,11 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
     /// <summary>
     /// Publishes <paramref name="activity"/> to <paramref name="actorIri"/>'s outbox (the write surface
     /// for activities an actor authors), signed as <paramref name="actorIri"/> (key
-    /// <paramref name="key"/>), through a hosted delivery worker whose transport routes to
-    /// <paramref name="target"/>. The worker's <see cref="IActivityPubClient"/> runs the full
-    /// JsonLd → signing pipeline, so the request is a correctly signed ActivityPub POST.
+    /// <paramref name="key"/>), delivered synchronously via a <see cref="DeterministicDeliveryDriver"/>
+    /// whose transport routes to <paramref name="target"/>. The driver's <see cref="IActivityPubClient"/>
+    /// runs the full JsonLd → signing pipeline, so the request is a correctly signed ActivityPub POST.
+    /// Delivery is synchronous (no background worker, no delay) — the driver dequeues the single job
+    /// and POSTs it inline before returning.
     /// </summary>
     private static async Task PublishToOutboxAsync(
         Iri actorIri, KeyPair key, Activity activity, Func<TestServer> target)
@@ -282,33 +284,17 @@ public sealed class FollowEdgeConvergenceIntegrationTests : IDisposable
         var signer = new HttpSignatureSigner(keyStore);
 
         var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            target().CreateHandler());
         var queue = new InMemoryDeliveryQueue();
         var loggerFactory = NullLoggerFactory.Instance;
         var service = new Iris.Server.Delivery.DeliveryService(
             queue, loggerFactory.CreateLogger<Iris.Server.Delivery.DeliveryService>());
-        var worker = new Iris.Server.Delivery.DeliveryWorker(
-            queue, factory,
-            () => target().CreateHandler(),
-            Microsoft.Extensions.Options.Options.Create(
-                new ActivityPubServerOptions { InstanceActorId = actorIri }),
-            loggerFactory.CreateLogger<Iris.Server.Delivery.DeliveryWorker>());
 
-        using var host = Host.CreateDefaultBuilder()
-            .ConfigureLogging(l => l.ClearProviders())
-            .ConfigureServices(s => s.AddHostedService(_ => worker))
-            .Build();
-
-        await host.StartAsync(CancellationToken.None);
-        try
-        {
-            await service.DeliverAsync(actorIri.OutboxOf(), activity);
-            // Let the (single) delivery settle before returning.
-            await Task.Delay(TimeSpan.FromMilliseconds(500));
-        }
-        finally
-        {
-            await host.StopAsync(CancellationToken.None);
-        }
+        var driver = new DeterministicDeliveryDriver(queue, client);
+        await service.DeliverAsync(actorIri.OutboxOf(), activity);
+        await driver.DrainAsync();
     }
 
     /// <summary>

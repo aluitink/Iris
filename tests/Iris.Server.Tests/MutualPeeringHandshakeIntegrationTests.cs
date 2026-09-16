@@ -148,12 +148,13 @@ public sealed class MutualPeeringHandshakeIntegrationTests : IAsyncLifetime
 
         // The followed side (B, for A's follow) records the follower in its community's followers set
         // and auto-accepts (no manual approval — the expected platform behavior). The follower side's
-        // AcceptActivityHandler then finalizes the edge. Wait for both followers edges to land on both
-        // instances (they require the round trip: A→B Follow → B Accept → A, and the symmetric path).
-        await WaitForAsync(
+        // AcceptActivityHandler then finalizes the edge. Deterministically pump the round trip
+        // (A→B Follow → B Accept → A, and the symmetric path) instead of relying on the background
+        // DeliveryWorker (whose async continuations go unscheduled under full-suite load).
+        await PumpDeliveryRoundTripAsync(
             async () => (await _aPersistence.Communities.GetFollowersAsync(MutualPeeringIris.ACommunityIri)).Contains(MutualPeeringIris.BCommunityIri)
                 && (await _bPersistence.Communities.GetFollowersAsync(MutualPeeringIris.BCommunityIri)).Contains(MutualPeeringIris.ACommunityIri),
-            timeout: TimeSpan.FromSeconds(120));
+            timeout: TimeSpan.FromSeconds(30));
 
         // Each side's /followers collection (read live) lists the other community — the inverse peering
         // edge is visible on both ends, proving the handshake completed (not just the outbound follow).
@@ -208,6 +209,76 @@ public sealed class MutualPeeringHandshakeIntegrationTests : IAsyncLifetime
 
         using var response = await http.SendAsync(request);
         return response.StatusCode;
+    }
+
+    /// <summary>
+    /// Deterministically pumps the mutual-follow round trip: takes all pending jobs from both hosts'
+    /// test delivery queues and delivers them inline (synchronously), repeating until the convergence
+    /// condition is met or the timeout expires. Replaces the racy background <c>DeliveryWorker</c> pump
+    /// (whose async continuations go unscheduled under full-suite load, leaving jobs stuck in-flight).
+    /// </summary>
+    private async Task PumpDeliveryRoundTripAsync(Func<Task<bool>> converged, TimeSpan timeout)
+    {
+        var factoryA = _fixture.ServerA.Services.GetRequiredService<IActivityPubClientFactory>();
+        var factoryB = _fixture.ServerB.Services.GetRequiredService<IActivityPubClientFactory>();
+
+        // A's client routes to B (A's outbound delivery target); B's routes to A.
+        var clientA = factoryA.Create(
+            new ActivityPubClientOptions { ActorId = MutualPeeringIris.ACommunityIri, EnableRetry = false },
+            _fixture.ServerB.CreateHandler());
+        var clientB = factoryB.Create(
+            new ActivityPubClientOptions { ActorId = MutualPeeringIris.BCommunityIri, EnableRetry = false },
+            _fixture.ServerA.CreateHandler());
+
+        var driverA = new DeterministicDeliveryDriver(_fixture.QueueA, clientA);
+        var driverB = new DeterministicDeliveryDriver(_fixture.QueueB, clientB);
+
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            // Pump A's queue (delivers A→B jobs, which may enqueue B→A accepts).
+            var jobsA = _fixture.QueueA.TakeAll();
+            foreach (var job in jobsA)
+            {
+                await DeliverJobInlineAsync(clientA, job);
+            }
+
+            // Pump B's queue (delivers B→A jobs, which may enqueue A→B accepts).
+            var jobsB = _fixture.QueueB.TakeAll();
+            foreach (var job in jobsB)
+            {
+                await DeliverJobInlineAsync(clientB, job);
+            }
+
+            if (await converged())
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
+        }
+
+        throw new TimeoutException("Mutual follow round trip did not converge within the timeout.");
+    }
+
+    private static async Task DeliverJobInlineAsync(IActivityPubClient client, Iris.Server.Delivery.DeliveryJob job)
+    {
+        var json = ActivityJson.Serialize(job.Activity);
+        var body = System.Text.Encoding.UTF8.GetBytes(json);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, job.InboxIri.Value)
+        {
+            Content = new ByteArrayContent(body),
+        };
+        request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(ActivityJson.ActivityJsonContentType);
+
+        if (job.ActorIri is { } actorIri)
+        {
+            request.Headers.Add("X-Iris-Actor", actorIri.Value);
+        }
+
+        using var response = await client.SendAsync(request);
+        response.EnsureSuccessStatusCode();
     }
 
     /// <summary>
@@ -295,9 +366,20 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
     private const string AHost = "a.domain.local";
     private const string BHost = "b.domain.local";
 
+    private readonly TestDeliveryQueue _queueA;
+    private readonly TestDeliveryQueue _queueB;
+
+    /// <summary>Host A's test delivery queue (the background worker idles; the test drives delivery).</summary>
+    public TestDeliveryQueue QueueA => _queueA;
+
+    /// <summary>Host B's test delivery queue (the background worker idles; the test drives delivery).</summary>
+    public TestDeliveryQueue QueueB => _queueB;
+
     public MutualPeeringHandshakeSharedHost()
         : base(BuildOptions())
     {
+        _queueA = ServerA.Services.GetRequiredService<TestDeliveryQueue>();
+        _queueB = ServerB.Services.GetRequiredService<TestDeliveryQueue>();
     }
 
     /// <summary>
@@ -377,17 +459,22 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
         var serverARef = SharedHostFixture.ServerRefFor(aPersistence);
         var serverBRef = SharedHostFixture.ServerRefFor(bPersistence);
 
-        // Increase the delivery retry budget for this fixture: under full-suite load the
-        // in-process TestServer can be slow to respond, and the default 5-attempt/31s budget
-        // is occasionally exhausted before the delivery round trip completes. 50 attempts with
-        // a 100ms base delay gives ~25s of retry headroom without meaningfully slowing the
-        // happy-path case (which completes on the first attempt).
-        static void BumpRetryBudget(IServiceCollection s)
-            => s.AddSingleton(new Iris.Server.Delivery.DeliveryRetryOptions
-            {
-                MaxAttempts = 50,
-                BaseDelay = TimeSpan.FromMilliseconds(100),
-            });
+        // Test-only delivery queues: the background DeliveryWorker idles (TryDequeueAsync always
+        // returns null), so the test drives delivery deterministically via TakeAll + inline POST.
+        var queueA = new TestDeliveryQueue();
+        var queueB = new TestDeliveryQueue();
+
+        void PreServicesA(IServiceCollection s)
+        {
+            s.AddSingleton(queueA);
+            s.AddSingleton<Iris.Server.Delivery.IDeliveryQueue>(queueA);
+        }
+
+        void PreServicesB(IServiceCollection s)
+        {
+            s.AddSingleton(queueB);
+            s.AddSingleton<Iris.Server.Delivery.IDeliveryQueue>(queueB);
+        }
 
         var optionsA = new ActivityPubHostOptions
         {
@@ -409,7 +496,7 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
             // A's fetcher reaches B (resolves the peer community's inbox) AND persists the fetched peer
             // community's Group to A's community store — the 135.1 RemoteCommunityPersister path.
             Fetcher = BuildRemoteFetcher(AHost, "alice", aSeeded.Key, serverBRef, aPersistence.Communities, aBaseUri),
-            PreServices = BumpRetryBudget,
+            PreServices = PreServicesA,
         };
 
         var optionsB = new ActivityPubHostOptions
@@ -431,7 +518,7 @@ public sealed class MutualPeeringHandshakeSharedHost : SharedTwoHostFixture
             // B's fetcher reaches A (resolves the peer community's inbox) AND persists the fetched peer
             // community's Group to B's community store — the 135.1 RemoteCommunityPersister path.
             Fetcher = BuildRemoteFetcher(BHost, "bob", bSeeded.Key, serverARef, bPersistence.Communities, bBaseUri),
-            PreServices = BumpRetryBudget,
+            PreServices = PreServicesB,
         };
 
         return (optionsA, optionsB);
