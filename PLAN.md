@@ -96,7 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **147.2 — Feed query performance at scale:** Seed a large dataset (1000+ posts, 50+ follows) in the EF/Postgres test container; measure home/community feed p50/p95 latency. Compare against Phase 116.1 baseline (feed P95=9.3 ms). Flag any query missing an index. Deliverable: timing capture + index audit. **Also:** investigate server-side feed progressive-render (FeedService.BuildFeedAsync sequentially awaits remote follows — parallel fetch + bounded timeout or remote-outbox cache).
+- **147.2 — Feed query performance at scale (IN PROGRESS):** **KEY FINDING:** feed is 1000× slower than baseline (P50=7,472 ms vs 9.3 ms) — not a DB query issue but **sequential remote HTTP fetches** (11 remote follows, each 0.5-10 s, no timeout, no cache). Local queries are fast (all indexes present). Fix deferred: needs remote-outbox cache (30-60 s TTL) + parallel fetch + bounded timeout. [findings](docs/changes/1472-phase147-feed-query-at-scale.md). **Next:** implement remote-outbox cache + parallel fetch (follow-up slice).
 - **147.3 — Delivery worker throughput under burst:** Measure outbound delivery throughput under a burst of posts to many followers/peers. Verify bounded concurrency (Phase 16.1) holds, no unbounded queue growth. Deliverable: metrics dump + concurrency verification.
 
 ## Inbox
