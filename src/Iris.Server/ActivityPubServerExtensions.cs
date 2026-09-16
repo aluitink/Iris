@@ -8208,8 +8208,7 @@ public static class ActivityPubServerExtensions
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
-        var refresh = context.Request.Query["refresh"].ToString()
-            .Equals("true", StringComparison.OrdinalIgnoreCase);
+        var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{actorIri}/{collectionName}");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
