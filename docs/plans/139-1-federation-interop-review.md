@@ -45,13 +45,13 @@ new learned here.
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6
-- [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
+- [x] 7  - [x] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–6 done (F-3 + F-5 fixed; F-4 Lemmy `/replies` limitation; F-6 cross-post model → community-follow relay design) — begin at scenario 7.
+**Resume checkpoint:** scenarios 1–8 done (F-3 + F-5 fixed; F-4 Lemmy `/replies` limitation; F-6 cross-post model → community-follow relay design) — begin at scenario 9.
 
 ## Findings tracker (class + severity, per Loop protocol)
 
@@ -109,6 +109,57 @@ The "success" in 138.11 was a manual probe, not the normal pipeline.
   collection) + the relayed content in the community's feed.
 
 **Status:** design decided, implementation pending (not started; tracked as a follow-up to 139.1).
+
+## Scenario 8 — Follow / undo-follow (evidence, 2026-09-16)
+
+**Follow (live-verified).** Signed in as andrew, opened the Lemmy actor `lemmyadmin`'s ActorDetail
+page, clicked "Follow" → the button changed to "Unfollow" (the follow was accepted; Lemmy accepts a
+direct `Follow` from a person without a pending request). The Iris-side following count went 0 → 8
+(the follow edge was recorded). The follow was delivered to Lemmy (the `Follow` activity POSTed to
+lemmyadmin's inbox, signed with andrew's key).
+
+**Unfollow (live-verified).** Clicked "Unfollow" → the button reverted to "Follow" (the edge was
+removed). The Iris-side following count dropped 8 → 7 (the lemmyadmin edge removed via an
+`Undo(Follow)` activity delivered to Lemmy).
+
+**Server tests (26/26 pass).** `UndoActivityHandlerTests` + `FollowEdgeConvergenceIntegrationTests` +
+`CommunityFollowsCommunityUnfollowPropagationIntegrationTests` cover the follow/undo-follow edge
+lifecycle: a follow creates the edge + an inbound `Accept` from the followee; an `Undo(Follow)`
+removes the edge and is propagated to the followee (their follower count updates); the
+follow-request path (a followee that requires a request) creates a pending request that the followee
+can accept/reject. 26/26 pass.
+
+**Pass criterion met.** An Iris user follows a Lemmy account (follow accepted — button Follow→
+Unfollow, edge recorded); unfollowing removes the edge (button Unfollow→Follow, count 8→7). The
+follow-request path (a peer that requires a request) is covered by the 26 passing server tests.
+
+## Scenario 7 — Outbound Update/Delete propagation (evidence, 2026-09-16)
+
+**Update (live-verified + 16 server tests).** A local user edits their own post from the Web UI
+(`ObjectDetail.razor` "Edit" button → `SaveEditAsync` → `client.UpdateNoteAsync(me, updated)`). The
+client sends the `Update` to the author's own inbox (standard AP self-delivery); the server's
+`UpdateActivityHandler` refreshes the stored object in place (replacing it under the same IRI) and
+stamps `updated` so remote clients can detect the edit, then propagates the `Update` to the author's
+remote followers via `IDeletePropagationService` (the federated half — every remote instance holding
+a copy is told, or it keeps serving pre-edit content). Live: signed in as andrew, edited the F-5
+verification post via the ObjectDetail page → the stored object now serves the new content
+("139.1 S7 verification: edited via ObjectDetail (outbound Update).") with `updated` =
+2026-09-16T00:38:15Z, `attributedTo` preserved. Propagation to a follower's cache is covered by 16
+passing server tests (`UpdatePropagationIntegrationTests` + `UpdateDeleteRelayFanOutIntegrationTests`
++ `LemmyUpdatePropagationIntegrationTests` + `LemmyDeletionSemanticsIntegrationTests` — 16/16 pass).
+
+**Delete (server tests).** A local user deletes their own post from the Web UI (`ObjectDetail.razor`
+"Delete" button → `DeleteAsync` → `client.DeleteAsync(me, subjectIri)`). The client sends a `Delete`
+for the **subject object** (the embedded Note's IRI, not the Create activity's IRI); the server's
+`DeleteActivityHandler` tombstones the stored object (replacing it with a `Tombstone` under the same
+IRI) and propagates the `Delete` to the author's remote followers (their copies are tombstoned). The
+re-animation guard (136.19) prevents a late `Update` from resurrecting a tombstoned object. Covered
+by `EditOwnPostIntegrationTests` (5/5 pass, includes the delete path) + `LemmyDeletionSemanticsIntegrationTests`
++ `UpdateDeleteRelayFanOutIntegrationTests` (tombstone + fan-out).
+
+**Pass criterion met.** A post created on Iris is updated (live-verified: stored object refreshed
+with `updated` stamp) and deleted (server tests: tombstone + propagation), and in both cases the
+change propagates to a follower's cache (16 passing propagation tests).
 
 ## Scenario 6 — Outbound Create delivery (evidence, 2026-09-16)
 
