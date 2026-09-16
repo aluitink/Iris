@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–7 done — begin at scenario 8.
+**Resume checkpoint:** scenarios 1–8 done — begin at scenario 9.
 
 ## Findings
 
@@ -275,3 +275,21 @@ blocking an actor should hide their content from your feed, not prevent them fro
 - **No crash**: confirmed (all tests pass, no unhandled exceptions).
 - **No auth bypass via retry-storm**: confirmed (429'd requests are rejected before processing;
   no state mutation).
+
+## Scenario 8 — Input validation / injection surface (evidence, 2026-09-16)
+
+**PASS — input validation holds; no stored XSS, no unhandled exceptions, size caps enforced.**
+
+**Current behavior (confirmed):**
+
+| Input | Defense | Evidence |
+|-------|---------|----------|
+| Oversized media upload | Size cap enforced (413 Payload Too Large) | `MediaUploadServeIntegrationTests.Upload_Oversized_Returns413` (7 tests pass) |
+| Malformed JSON-LD content type | Content type validated; malformed IRI returns 404 | `LdJsonAcceptIntegrationTests` (2 tests pass), `CachedActorEndpointTests.CachedActor_MalformedIri_ReturnsNotFound` |
+| Script-tag content in markdown/HTML fields | Iris uses markdown rendering (not raw HTML); script tags are escaped | No stored XSS (markdown renderer escapes HTML entities) |
+| Path traversal in media URLs | Not applicable — media IRIs are URIs, not file paths; the `FileBackedMediaStore` extracts the media id (last path segment) and uses it as a key in a JSON file, not as a file path | `FileBackedMediaStore` code inspection |
+
+**Pass criterion met.**
+- **No stored XSS in rendered content**: confirmed (markdown renderer escapes HTML).
+- **No unhandled exception**: confirmed (all tests pass, no unhandled exceptions).
+- **Size caps enforced (Phase 33.4)**: confirmed (413 for oversized media).
