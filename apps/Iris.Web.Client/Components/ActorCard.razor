@@ -14,7 +14,7 @@
             </div>
         }
         <div class="actor-card-main">
-            <ActorAvatar ActorIri="@ActorIri" DisplayName="@Name" IconIriOverride="@IconIri" CssClass="actor-card-avatar" />
+            <ActorAvatar ActorIri="@ActorIri" DisplayName="@Name" IconIriOverride="@IconIri" SkipFetch="true" CssClass="actor-card-avatar" />
             <div class="actor-card-body">
                 <div class="actor-card-identity">
                     @if (PreferredUsername is { Length: > 0 } username)
