@@ -34,14 +34,14 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5  - [ ] 6  - [ ] 7
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [ ] 6  - [ ] 7
 - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–4 done — begin at scenario 5.
+**Resume checkpoint:** scenarios 1–5 done — begin at scenario 6.
 
 ## Findings
 
@@ -162,3 +162,59 @@ Rationale:
 `DateTimeOffset.UtcNow` with a configurable tolerance, default e.g. 5 minutes, in
 `ActivityPubServerOptions`). This should be done as a dedicated security-hardening slice with
 comprehensive clock-skew testing, not as part of the Phase 139 review.
+
+## Scenario 5 — Audience/visibility bypass (evidence, 2026-09-16)
+
+**CONFIRMED — current behavior matches Phase 136.18's documented gaps. Decision: defer (S1 privacy
+issue, tracked as a high-priority follow-up).**
+
+**Current behavior (confirmed):**
+- `CrossInstanceVisibilityIntegrationTests` (4 tests) all pass, confirming:
+  - `DirectPost_StoredInOutbox_VisibleInPublicFeed_CurrentGap`: a DM post (`to=[bob]`, no
+    `as:Public`) is visible in the **public feed** and **global search**. Gap #1 (read path)
+    confirmed.
+  - `DirectPost_FederatedToRemote_StoredOnRemote_CurrentGap`: a DM post federated to B is
+    **stored** on B. Gap #2 (federation) confirmed.
+  - `PublicPost_VisibleInPublicFeed_Outbox_Search_OnOrigin`: a public post is correctly visible
+    in all read surfaces. (Expected behavior, not a gap.)
+  - `PublicPost_FederatedToRemote_VisibleInRemoteObjectStore`: a public post federated to B is
+    stored in B's object store. (Expected behavior.)
+
+**Visibility posture (confirmed unchanged from Phase 136.18):**
+
+| Visibility | Public feed | Follow feed | Outbox GET | Search |
+|------------|-------------|-------------|------------|--------|
+| Public | Visible (correct) | Visible (correct) | Visible (correct) | Visible (correct) |
+| Followers-only | **Visible (gap)** | Visible (correct for followers) | **Visible (gap)** | **Visible (gap)** |
+| Direct/DM | **Visible (gap)** | **Visible (gap)** | **Visible (gap)** | **Visible (gap)** |
+
+**Decision: defer with a tracked high-priority follow-up.**
+
+Rationale:
+1. **This is a S1 privacy issue.** A DM post is currently as visible as a public post. Users who
+   send a DM expect it to be private, but it's visible to everyone on the instance. This is a
+   significant privacy violation.
+2. **Fixing Gap #1 (read path) is non-trivial.** It requires:
+   - A design decision on how to pass the requesting actor's IRI through the read path (the
+     current read endpoints are public and don't track the requesting actor).
+   - Implementation in multiple read surfaces: `PublicFeedService`, `FeedService`,
+     `CommunityFeedService`, outbox GET endpoint, `GlobalSearchService`,
+     `IObjectStore.SearchObjectsAsync`.
+   - The check: exclude content whose `to`/`cc` does not include the requesting actor (or
+     `as:Public`).
+   - Comprehensive testing (each read surface × each visibility level × each requester type).
+3. **Phase 139 is a review phase.** The review's job is to confirm the behavior and make the
+   decision, not to implement new features. The gap is documented and tracked.
+4. **Gap #2 (federation) is less impactful in practice.** The remote instance stores the content,
+   but the read path gap (#1) means it's visible to everyone anyway. Once #1 is fixed, #2 becomes
+   relevant: the remote instance should either suppress non-public content on receipt or store it
+   with a visibility marker that the read path can check.
+
+**Follow-up (tracked, S1 priority):** A future slice should:
+1. Design the actor-aware read path (how to pass the requesting actor's IRI through the read
+   surfaces).
+2. Implement the audience check in each read surface (public feed, follow feed, outbox GET,
+   search).
+3. Decide on the federation visibility policy (suppress non-public content on receipt vs. store
+   with a visibility marker).
+4. Comprehensive testing (each read surface × each visibility level × each requester type).
