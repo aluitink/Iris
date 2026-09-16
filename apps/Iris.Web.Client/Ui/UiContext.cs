@@ -320,6 +320,23 @@ public sealed class UiContext
         return !string.Equals(actorUri.Host, homeBase.Host, StringComparison.OrdinalIgnoreCase);
     }
 
+    private bool IsRemoteObjectIri(Iri objectIri)
+    {
+        if (!Uri.TryCreate(objectIri.Value, UriKind.Absolute, out var objUri)
+            || objUri.Scheme != Uri.UriSchemeHttp && objUri.Scheme != Uri.UriSchemeHttps)
+        {
+            return false;
+        }
+
+        var homeBase = _httpClientFactory.CreateClient("iris").BaseAddress;
+        if (homeBase is null)
+        {
+            return true;
+        }
+
+        return !string.Equals(objUri.Host, homeBase.Host, StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Fetches a remote actor's document from the home instance's cached-actor endpoint
     /// (<c>GET /ap/v1/actor?iri={absolute-actor-iri}</c>, 134.1). The endpoint serves the actor
@@ -396,6 +413,15 @@ public sealed class UiContext
         {
             // No client (signed out / unavailable): report empty. Not cached — a later call with a
             // client can still walk.
+            return new EngagementCounts(0, 0, false, false, null, null);
+        }
+
+        // Remote (cross-origin) objects: the /likes and /shares collections live on the remote
+        // instance. Walking them through the proxy returns 401 (the remote does not expose these
+        // without auth) and floods the console with errors. The user cannot like/boost remote
+        // objects from Iris anyway, so report empty counts and skip the walk entirely.
+        if (IsRemoteObjectIri(objectIri))
+        {
             return new EngagementCounts(0, 0, false, false, null, null);
         }
 
