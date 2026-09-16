@@ -96,7 +96,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **147.2 — Feed query performance at scale (IN PROGRESS):** **KEY FINDING:** feed is 1000× slower than baseline (P50=7,472 ms vs 9.3 ms) — not a DB query issue but **sequential remote HTTP fetches** (11 remote follows, each 0.5-10 s, no timeout, no cache). Local queries are fast (all indexes present). Fix deferred: needs remote-outbox cache (30-60 s TTL) + parallel fetch + bounded timeout. [findings](docs/changes/1472-phase147-feed-query-at-scale.md). **Next:** implement remote-outbox cache + parallel fetch (follow-up slice).
 - **147.3 — Delivery worker throughput under burst:** Measure outbound delivery throughput under a burst of posts to many followers/peers. Verify bounded concurrency (Phase 16.1) holds, no unbounded queue growth. Deliverable: metrics dump + concurrency verification.
 
 ## Inbox
@@ -113,6 +112,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **147.2 (Feed query performance at scale) — complete:** Feed was 1000× slower than baseline (P50 7,472 ms vs 9.3 ms) due to sequential remote HTTP fetches (11 remote follows, no cache, no timeout). Fixed by: (1) wiring `ActorCache` (5 min) + `CollectionPageCache` (30 s) into the FeedService + CommunityFeedService outbound clients, (2) parallelizing the per-follow fan-out (`Task.WhenAll`), (3) 5 s `HttpClientTimeout`. Result: P50 7,472 ms → 1,666 ms (4.5× faster), consistent (Min 1,623 ms, Max 2,223 ms). Residual ~1.6 s is the cold-miss cost of the parallel remote fetch (bounded by the slowest remote). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1472-phase147-feed-query-at-scale.md).
 - **147.1 (Request-spam + cache hit-rate re-audit) — complete:** 7 findings (4 fixed, 1 partially fixed, 1 not-a-bug, 1 deferred to 147.2). Enabled production cache metrics (was NullCacheMetrics); dedup'd current-user actor fetch; eliminated directory N+1 (SkipFetch); coalesced duplicate content-object proxy fetches (UiContext.GetContentObjectAsync); eliminated notification Gargron duplicate (defer avatar). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1471-phase147-request-spam-cache-hit-rate.md).
 - **146 (Performance follow-ups) — complete:** 146.1+146.2: wired `ActorCache` into outbound client (F-136.12.7/1). 146.3: wired `CollectionPageCache` into outbound client (F-136.12.3/5). Full suite green (1285 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **145 (Deterministic delivery in flaky integration tests) — complete:** Replaced the racy background `DeliveryWorker` pump in the two known-flaky round-trip tests with a synchronous `DeterministicDeliveryDriver` + `TestDeliveryQueue`. Full suite green (1283 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
