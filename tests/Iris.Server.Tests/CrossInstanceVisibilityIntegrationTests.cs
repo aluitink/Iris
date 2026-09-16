@@ -264,7 +264,11 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
     private static List<string> GetItemIds(JsonElement root)
     {
         var ids = new List<string>();
-        if (root.TryGetProperty("items", out var items))
+        // Prefer `orderedItems` (the canonical AS2.0 form, 139.1 F-7); fall back to `items`.
+        var items = root.TryGetProperty("orderedItems", out var ordered)
+            ? ordered
+            : root.TryGetProperty("items", out var plain) ? plain : default;
+        if (items.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in items.EnumerateArray())
             {

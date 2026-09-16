@@ -254,7 +254,12 @@ public sealed class CrossInstancePaginationIntegrationTests : IAsyncLifetime
     private static List<string> GetItemIds(JsonElement root)
     {
         var items = new List<string>();
-        if (!root.TryGetProperty("items", out var itemsProp))
+        // Prefer `orderedItems` (the canonical AS2.0 OrderedCollectionPage form, 139.1 F-7); fall
+        // back to `items` (the non-ordered CollectionPage property).
+        var itemsProp = root.TryGetProperty("orderedItems", out var ordered)
+            ? ordered
+            : root.TryGetProperty("items", out var plain) ? plain : default;
+        if (itemsProp.ValueKind != JsonValueKind.Array)
         {
             return items;
         }

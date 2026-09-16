@@ -184,7 +184,8 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
-        var items = doc.RootElement.GetProperty("items");
+        // 139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).
+        var items = doc.RootElement.GetProperty("orderedItems");
         Assert.Equal(JsonValueKind.Array, items.ValueKind);
         Assert.Equal(0, items.GetArrayLength());
     }
@@ -225,8 +226,9 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
 
-        // An empty feed renders an empty `items` array (and a self-referencing `first`).
-        var items = doc.RootElement.GetProperty("items");
+        // An empty feed renders an empty `orderedItems` array (and a self-referencing `first`).
+        // (139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).)
+        var items = doc.RootElement.GetProperty("orderedItems");
         Assert.Equal(JsonValueKind.Array, items.ValueKind);
         Assert.Equal(0, items.GetArrayLength());
         Assert.True(doc.RootElement.TryGetProperty("first", out _));

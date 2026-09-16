@@ -393,8 +393,11 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
         // Page 2 holds exactly the single oldest item (the unique 21st activity id) — not page 1's
         // newest 20 items. This is the assertion that distinguishes "page 2 was relayed" from "page 1
-        // was relayed again".
-        var items = doc.RootElement.GetProperty("items");
+        // was relayed again". (139.1 F-7: read `orderedItems` (canonical) or `items` (the proxied
+        // remote's shape).)
+        var items = doc.RootElement.TryGetProperty("orderedItems", out var orderedItems)
+            ? orderedItems
+            : doc.RootElement.GetProperty("items");
         Assert.Equal(1, items.GetArrayLength());
         var firstItem = items[0];
         Assert.Equal(

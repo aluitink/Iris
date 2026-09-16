@@ -210,21 +210,23 @@ public sealed class CollectionEndpointIntegrationTests : IDisposable
         Assert.False(doc.RootElement.TryGetProperty("next", out _));
     }
 
-    // --- items is always a JSON array (never a bare one-or-many scalar) ------------
+    // --- orderedItems is always a JSON array (never a bare one-or-many scalar) -----
 
     [Fact]
-    public async Task SingleItemCollection_ItemsIsAlwaysAJsonArray()
+    public async Task SingleItemCollection_OrderedItemsIsAlwaysAJsonArray()
     {
-        // Alice follows exactly one actor (dave), so this is the single-item case. The ActivityStreams
-        // one-or-many convention would allow a bare scalar here, but the spec defines
-        // OrderedCollection.items as a list and naive clients read it as an array — so Iris always
-        // emits `items` as a JSON array, even for a single element. (Regression: the library's
-        // one-or-multiple converter used to collapse a 1-item page to a bare string.)
+        // Alice follows exactly one actor (dave), so this is the single-item case. The
+        // ActivityStreams one-or-many convention would allow a bare scalar here, but the spec
+        // defines OrderedCollectionPage.orderedItems as a list and naive clients read it as an
+        // array — so Iris always emits `orderedItems` as a JSON array, even for a single element.
+        // (Regression: the library's one-or-multiple converter used to collapse a 1-item page to a
+        // bare string. 139.1 F-7: the property is `orderedItems` (the canonical AS2.0 form), not
+        // `items`.)
         var response = await _http.GetAsync($"{_base}/ap/v1/u/{Alice}/following?refresh=true");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        var itemsElement = doc.RootElement.GetProperty("items");
+        var itemsElement = doc.RootElement.GetProperty("orderedItems");
         Assert.Equal(JsonValueKind.Array, itemsElement.ValueKind);
         var items = itemsElement.EnumerateArray().ToArray();
         Assert.Single(items);

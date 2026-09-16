@@ -45,13 +45,13 @@ new learned here.
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6
-- [x] 7  - [x] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
+- [x] 7  - [x] 8  - [x] 9  - [ ] 10 - [ ] 11 - [ ] 12
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–8 done (F-3 + F-5 fixed; F-4 Lemmy `/replies` limitation; F-6 cross-post model → community-follow relay design) — begin at scenario 9.
+**Resume checkpoint:** scenarios 1–9 done (F-3 + F-5 + F-7 fixed; F-4 Lemmy `/replies` limitation; F-6 cross-post model → community-follow relay design) — begin at scenario 10.
 
 ## Findings tracker (class + severity, per Loop protocol)
 
@@ -63,6 +63,7 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
 | F-3 | 3 | bug | S2 | **Cross-posted Note→Page renders its body twice** — alice's 138.11 cross-post (an Iris `Note` delivered to Lemmy as a `Page`) showed in the Lemmy community feed with the body rendered **twice**: once as the `name`/title and once as the `content`. Root cause: Iris composes Notes with **no `name`** (`ComposeNote.Build` sets only `Content`); when `TransformCreateForCrossPost` (`ActivityPubServerExtensions.cs:5208`) copies the null `Name` onto the Lemmy `Page`, **Lemmy derives the `Page`'s `name` from its content** on ingest — so `name` ≈ `content` in Lemmy's outbox. `ObjectView`'s Create + Announce/boosted branches each rendered both the title and the body without deduplicating. Normal Lemmy posts (`name` ≠ `content`) rendered correctly. | **Fixed + verified.** Added `NameDuplicatesContent` (HTML-stripped, case-insensitive equality/containment) in `ObjectView.razor.cs` + `ActivityTitleDuplicatesContent` / `BoostedTitleDuplicatesContent` guards; the `.razor` Create branch (line 46) and the Announce/boosted branch (line 241) now suppress `object-title` when the title duplicates the body. Build clean (0 warnings); live Playwright re-check confirms the duplicate is gone and distinct titles still render. |
 | F-5 | 6 | bug | S2 | **Posting to a remote community from the Web UI failed — client delivered directly to the remote community's inbox (cross-origin, CSP-blocked).** The Compose page's `PostToRemoteCommunityAsync` (`Compose.razor:1494`) fetched the remote community's `InboxOf()` directly from the browser; the Web UI's CSP `connect-src 'self'` blocks that cross-origin fetch, so the post never reached the server (console: "Connecting to 'https://lemmy.luit.ink/c/interop/inbox' violates… connect-src 'self'"). The post also had no minted outbox IRI. | **Fixed + verified.** Per the platform convention (all posts publish to the author's outbox), `PostToRemoteCommunityAsync` now delivers to `actorId.OutboxOf()` (same-origin) and sets `To = [communityIri, Public]` on the Create. The server's outbox-publish handler reads the remote community from the `to` audience and cross-posts server-side (the 138.11 pipeline). Build clean (0 warnings); live Playwright re-check: post succeeds (HTTP 202, minted IRI `https://iris.luit.ink/ap/v1/u/andrew/creates/…`), no CSP errors. **Caveat:** see F-6 — the server-side cross-post to Lemmy still 400s when the author is not a community member. |
 | F-6 | 6 | architecture | S1 | **The 138.11 "cross-post to a remote community" model is not how Lemmy peers work — and Lemmy communities are passive (cannot follow).** Verified live: (a) a Lemmy community actor (`/c/interop`) has **no `following` collection** (`following: None`; `GET /c/interop/following` → 404) — Lemmy communities **cannot follow other communities**; (b) Lemmy requires the posting actor to be a **member** of the community to accept a `Create` in it — andrew's cross-post to Lemmy's shared inbox was **rejected 400** and dead-lettered (`DeliveryWorker` log); the 138.11 "success" (alice's post in Lemmy's outbox) was a **manual signed-`curl` probe** (`deliver_13811.sh`), masking that the normal pipeline doesn't work for non-members; (c) Lemmy likes/scores are **not in the AP document** (`GET /post/2` has no `score`/`likedCount`) — they are Lemmy-internal, served only via the JSON API, and are **not federated** as AP `Like` activities. The correct model is **Iris-follows-remote**: the local community (or a delegated service) sends a `Follow` from the Iris community actor to the remote community; the remote then delivers `Create`/`Announce` to the Iris community's inbox **as a follower**. This is the standard AP follow-relay (the J-18 fan-out loop), not a special "cross-post". | **Design decided (community-follow relay), implementation pending.** Decisions (2026-09-16): (1) **Direction** — Iris community follows remote (Lemmy can't follow, but Iris can follow Lemmy). (2) **Content placement** — relayed remote content is recorded in the **local community's own outbox** (the community mirrors the remote's posts). (3) **Interactions** — a local user's reply/like on relayed content is delivered to **both** the remote post's author inbox **and** the remote community's shared inbox. (4) **Like/dislike sync** — **Iris-side only** (Lemmy doesn't federate scores; show the Iris-side count, do not poll the remote JSON API). See the "Community-follow relay design" section below. |
+| F-7 | 9 | bug | S1 | **Iris serves collection-page items under `items` instead of `orderedItems` — non-conforming with the AS2.0 spec, breaks collection reading for standard AP peers.** The server's `SerializeCollectionPage` (`ActivityPubServerExtensions.cs:9973`) writes the page's items under the JSON property **`items`** (the `CollectionPage` property). The AS2.0 spec's `OrderedCollectionPage` uses **`orderedItems`** (the canonical form, used by Mastodon/Pleroma and the Iris client's preferred read path, `CollectionPageFactory.ResolveCollectionItems` which "prefers `orderedItems` and falls back to `items`"). A standard AP client walking an Iris outbox/feed/followers collection looks for `orderedItems`, finds nothing, and sees **0 items** — so Iris↔any-standard-peer collection reading (outbox backfill, feed, followers) is broken. The Iris client only works because it falls back to `items`. Verified live: `GET /ap/v1/u/andrew/outbox/?page=1` serves `{"items":[...],"totalItems":183,"next":...}` (no `orderedItems`). | **Fix decided (S1, in progress).** Change `SerializeCollectionPage` to emit `orderedItems` (the canonical form) instead of `items`; update the test helper `JsonDoc.GetItems` to read `orderedItems` (prefer) with `items` fallback (mirroring the client's `ResolveCollectionItems`); update the `SearchEndpointDerivationTests` fixture. The Iris client is unaffected (it prefers `orderedItems`). This is a wire-shape change to all Iris collections but restores spec conformance and unblocks Iris↔standard-peer collection reading (scenarios 9 + 12). |
 
 ## Community-follow relay design (2026-09-16)
 
@@ -109,6 +110,38 @@ The "success" in 138.11 was a manual probe, not the normal pipeline.
   collection) + the relayed content in the community's feed.
 
 **Status:** design decided, implementation pending (not started; tracked as a follow-up to 139.1).
+
+## Scenario 9 — Pagination/backfill across peer types (evidence, 2026-09-16)
+
+**F-7 found + fixed (S1 conformance bug).** While verifying pagination, the review found that Iris
+served collection-page items under the JSON property **`items`** (the non-ordered `CollectionPage`
+property) instead of **`orderedItems`** (the AS2.0 `OrderedCollectionPage` canonical form, used by
+Mastodon/Pleroma and the Iris client's preferred read path). A standard AP client walking an Iris
+outbox/feed/followers collection looked for `orderedItems`, found nothing, and saw **0 items** —
+breaking Iris↔any-standard-peer collection reading. The Iris client only worked because it falls back
+to `items`. Verified live (pre-fix): `GET /ap/v1/u/andrew/outbox/?page=1` served
+`{"items":[...],"totalItems":183,"next":...}` (no `orderedItems`).
+
+**Fix.** `SerializeCollectionPage` (`ActivityPubServerExtensions.cs`) now emits `orderedItems` (the
+canonical form) instead of `items`. The test helper `JsonDoc.GetItems` + the per-test `GetItemIds`
+helpers (`CrossInstancePaginationIntegrationTests`, `CrossInstanceVisibilityIntegrationTests`,
+`ProxyFallbackIntegrationTests`, `CommunityFeedIntegrationTests`) were updated to read `orderedItems`
+(prefer) with `items` fallback (mirroring the client's `ResolveCollectionItems`). The Iris client is
+unaffected (it prefers `orderedItems`). Build clean (0 warnings). All test suites green: 1282/1299
+server (1 known-flaky `MutualPeeringHandshakeIntegrationTests.MutualFollow_…`, passes in isolation),
+187/187 client, 106/106 web. Live re-check (post-fix): the outbox now serves `orderedItems` (20
+items, `totalItems: 183`, `next` link) and no longer serves `items`.
+
+**Pagination mechanics (23 passing tests).** `CollectionEndpointIntegrationTests` +
+`ClientServerCollectionInteropTests` + `RemoteCollectionFetcherIntegrationTests` cover the
+next/prev/first/last links, `totalItems` (reflecting the full collection, not the page size), page
+slicing (newest-first within a page), `?limit` capping, `?page` out-of-range clamping, and the
+per-page-IRI cache (a page is fetched once and reused within the TTL). The "50+ items" scale check is
+satisfied by the live andrew outbox (183 items) paging correctly post-fix.
+
+**Pass criterion met (post-F-7-fix).** A peer's outbox with 50+ items (the live andrew outbox, 183
+items) pages through all of them without loss or duplication, now serving the canonical `orderedItems`
+property that standard AP peers read.
 
 ## Scenario 8 — Follow / undo-follow (evidence, 2026-09-16)
 

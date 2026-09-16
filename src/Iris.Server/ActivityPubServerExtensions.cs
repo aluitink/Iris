@@ -9969,8 +9969,14 @@ public static class ActivityPubServerExtensions
         {
             writer.WriteStartObject();
 
-            // `items` is always a JSON array — including the single-item and empty cases.
-            writer.WritePropertyName("items");
+            // `orderedItems` is the AS2.0 `OrderedCollectionPage` property (the canonical form, used
+            // by Mastodon/Pleroma and the Iris client's preferred read path,
+            // `CollectionPageFactory.ResolveCollectionItems`). It is always a JSON array — including
+            // the single-item and empty cases. (139.1 F-7: previously emitted under `items`, the
+            // non-ordered `CollectionPage` property, which a standard AP client reading an
+            // `OrderedCollectionPage` would not find — breaking Iris↔standard-peer collection
+            // reading.)
+            writer.WritePropertyName("orderedItems");
             writer.WriteStartArray();
             foreach (var item in slice)
             {
