@@ -55,7 +55,7 @@ End state for this phase:
 | # | Area | Doc | Status |
 |---|---|---|---|
 | 139.1 | Federation & interop conformance | [139-1-federation-interop-review.md](139-1-federation-interop-review.md) | done (all 12 scenarios; F-3 + F-5 + F-7 fixed; F-4/F-6/F-8 documented) |
-| 139.2 | Security & trust boundary | [139-2-security-trust-boundary-review.md](139-2-security-trust-boundary-review.md) | not started |
+| 139.2 | Security & trust boundary | [139-2-security-trust-boundary-review.md](139-2-security-trust-boundary-review.md) | in progress (scenario 1 done) |
 | 139.3 | Data lifecycle & persistence | [139-3-data-lifecycle-persistence-review.md](139-3-data-lifecycle-persistence-review.md) | not started |
 | 139.4 | UI/UX & accessibility | [139-4-ui-ux-accessibility-review.md](139-4-ui-ux-accessibility-review.md) | not started |
 | 139.5 | Performance & scalability | [139-5-performance-scalability-review.md](139-5-performance-scalability-review.md) | not started |
