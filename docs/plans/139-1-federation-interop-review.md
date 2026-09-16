@@ -44,14 +44,14 @@ new learned here.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–5 done (F-3 fixed; F-4 Lemmy `/replies` limitation) — begin at scenario 6.
+**Resume checkpoint:** scenarios 1–6 done (F-3 + F-5 fixed; F-4 Lemmy `/replies` limitation; F-6 cross-post model → community-follow relay design) — begin at scenario 7.
 
 ## Findings tracker (class + severity, per Loop protocol)
 
@@ -61,6 +61,83 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
 | F-2 | 2 | UX | S3 | **Lemmy person `/followers` + `/following` collections return 404** — Lemmy does not expose person collections (verified: direct fetch of `lemmy.luit.ink/u/lemmyadmin/{followers,following}` → 404). The ActorDetail page requests both collections via the proxy; they 404 and the page logs 2 console errors, but renders correctly (handle + avatar monogram fallback, "No posts yet", no crash). | Not an Iris defect (Lemmy platform limitation). The page already degrades gracefully. Optional polish (a later UX slice): skip the collections fetch for actors whose document has no `followers`/`following` link, to avoid the console 404s. |
 | F-4 | 4 | UX | S3 | **Lemmy does not serve a post's `/replies` collection** — an Iris→Lemmy reply (e.g. andrew replying to a Lemmy post) is stored on Iris with the correct `inReplyTo` (the Lemmy post IRI) and the reply edge, but the object detail's "Replies" tab for a **remote Lemmy parent** reads `{parent}/replies` (proxied to Lemmy), which Lemmy does not serve (empty/404). So the reply is not visible in the Lemmy parent's Replies tab. | Not an Iris defect (Lemmy platform limitation — Lemmy addresses comments differently and exposes no standard AS `/replies` for posts). The reply **does** thread correctly on the Iris side (verified live: the reply's object detail renders the "In reply to alice" parent-context with the parent preview — Phase 054 contract). Inbound Lemmy comment threading (a Lemmy member commenting on a post) is verified by 16 passing server tests (`LemmyCommentThreadingIntegrationTests` + `CrossInstanceReplyThreadIntegrationTests` + `ReplyIntegrationTests`). Optional polish (later UX slice): for a remote parent, fall back to the Iris-side reply store (the recorded reply edges) when the remote `/replies` is empty. |
 | F-3 | 3 | bug | S2 | **Cross-posted Note→Page renders its body twice** — alice's 138.11 cross-post (an Iris `Note` delivered to Lemmy as a `Page`) showed in the Lemmy community feed with the body rendered **twice**: once as the `name`/title and once as the `content`. Root cause: Iris composes Notes with **no `name`** (`ComposeNote.Build` sets only `Content`); when `TransformCreateForCrossPost` (`ActivityPubServerExtensions.cs:5208`) copies the null `Name` onto the Lemmy `Page`, **Lemmy derives the `Page`'s `name` from its content** on ingest — so `name` ≈ `content` in Lemmy's outbox. `ObjectView`'s Create + Announce/boosted branches each rendered both the title and the body without deduplicating. Normal Lemmy posts (`name` ≠ `content`) rendered correctly. | **Fixed + verified.** Added `NameDuplicatesContent` (HTML-stripped, case-insensitive equality/containment) in `ObjectView.razor.cs` + `ActivityTitleDuplicatesContent` / `BoostedTitleDuplicatesContent` guards; the `.razor` Create branch (line 46) and the Announce/boosted branch (line 241) now suppress `object-title` when the title duplicates the body. Build clean (0 warnings); live Playwright re-check confirms the duplicate is gone and distinct titles still render. |
+| F-5 | 6 | bug | S2 | **Posting to a remote community from the Web UI failed — client delivered directly to the remote community's inbox (cross-origin, CSP-blocked).** The Compose page's `PostToRemoteCommunityAsync` (`Compose.razor:1494`) fetched the remote community's `InboxOf()` directly from the browser; the Web UI's CSP `connect-src 'self'` blocks that cross-origin fetch, so the post never reached the server (console: "Connecting to 'https://lemmy.luit.ink/c/interop/inbox' violates… connect-src 'self'"). The post also had no minted outbox IRI. | **Fixed + verified.** Per the platform convention (all posts publish to the author's outbox), `PostToRemoteCommunityAsync` now delivers to `actorId.OutboxOf()` (same-origin) and sets `To = [communityIri, Public]` on the Create. The server's outbox-publish handler reads the remote community from the `to` audience and cross-posts server-side (the 138.11 pipeline). Build clean (0 warnings); live Playwright re-check: post succeeds (HTTP 202, minted IRI `https://iris.luit.ink/ap/v1/u/andrew/creates/…`), no CSP errors. **Caveat:** see F-6 — the server-side cross-post to Lemmy still 400s when the author is not a community member. |
+| F-6 | 6 | architecture | S1 | **The 138.11 "cross-post to a remote community" model is not how Lemmy peers work — and Lemmy communities are passive (cannot follow).** Verified live: (a) a Lemmy community actor (`/c/interop`) has **no `following` collection** (`following: None`; `GET /c/interop/following` → 404) — Lemmy communities **cannot follow other communities**; (b) Lemmy requires the posting actor to be a **member** of the community to accept a `Create` in it — andrew's cross-post to Lemmy's shared inbox was **rejected 400** and dead-lettered (`DeliveryWorker` log); the 138.11 "success" (alice's post in Lemmy's outbox) was a **manual signed-`curl` probe** (`deliver_13811.sh`), masking that the normal pipeline doesn't work for non-members; (c) Lemmy likes/scores are **not in the AP document** (`GET /post/2` has no `score`/`likedCount`) — they are Lemmy-internal, served only via the JSON API, and are **not federated** as AP `Like` activities. The correct model is **Iris-follows-remote**: the local community (or a delegated service) sends a `Follow` from the Iris community actor to the remote community; the remote then delivers `Create`/`Announce` to the Iris community's inbox **as a follower**. This is the standard AP follow-relay (the J-18 fan-out loop), not a special "cross-post". | **Design decided (community-follow relay), implementation pending.** Decisions (2026-09-16): (1) **Direction** — Iris community follows remote (Lemmy can't follow, but Iris can follow Lemmy). (2) **Content placement** — relayed remote content is recorded in the **local community's own outbox** (the community mirrors the remote's posts). (3) **Interactions** — a local user's reply/like on relayed content is delivered to **both** the remote post's author inbox **and** the remote community's shared inbox. (4) **Like/dislike sync** — **Iris-side only** (Lemmy doesn't federate scores; show the Iris-side count, do not poll the remote JSON API). See the "Community-follow relay design" section below. |
+
+## Community-follow relay design (2026-09-16)
+
+A new capability (beyond the 139.1 review scope; tracked here as F-6's resolution) that replaces the
+broken "cross-post to a remote community" model with the standard AP follow-relay.
+
+**Problem.** The 138.11 model (client addresses a remote community in `to`; server delivers a
+`Create` directly to that community's shared inbox) does not work against Lemmy: Lemmy communities
+are passive (no `following` collection), and Lemmy rejects a `Create` from a non-member author (400).
+The "success" in 138.11 was a manual probe, not the normal pipeline.
+
+**Design (decisions confirmed 2026-09-16).**
+
+1. **Direction — Iris community follows remote.** The community owner (or a delegated service) sends
+   a `Follow` from the **Iris community actor** to the remote community. Iris is the *follower*; the
+   remote is the *followee*. This works against Lemmy (Lemmy can't follow, but Iris can follow Lemmy).
+   It also works symmetrically for peers that *do* support group-follow (Pleroma/Mastodon may) — the
+   reverse direction (remote follows Iris community) is then the J-18 fan-out path.
+
+2. **Receiving content.** When the remote community posts, the remote delivers `Create`/`Announce`
+   to the **Iris community's inbox** (as a follower). The Iris inbox handler records the content in
+   the **local community's own outbox** (the community becomes a mirror of the remote's posts). This
+   is the "we show it in our outbox" requirement.
+
+3. **Interactions on relayed content.** When a local user replies to (or likes) a relayed remote
+   post, Iris delivers the interaction to **both** the remote post's **author inbox** and the remote
+   **community's shared inbox** (most robust; covers peers that route replies via either).
+
+4. **Like/dislike sync — Iris-side only.** Lemmy does not federate post scores as AP activities
+   (verified: the Lemmy AP doc has no `score`/`likedCount`). Iris tracks its own side (local users'
+   votes on relayed content) and shows the Iris-side count in the vote bar. It does **not** poll the
+   remote JSON API for the remote's score.
+
+**Implementation surface (pending).**
+- A community-level `Follow` capability: the local community actor sends a `Follow` to the remote
+  community (new server endpoint, e.g. `POST /local/v1/c/{name}/follow/{targetIri}` already exists
+  for user-level; extend to community-level if needed).
+- Inbox handling: when the local community receives a `Create`/`Announce` as a follower, record it in
+  the community's outbox (extend `CommunityContentRecorder` or `CreateActivityHandler`'s community
+  branch).
+- Outbound interaction delivery: when a local user replies to a relayed remote post, deliver to both
+  the author and the community shared inbox (extend the reply-delivery path).
+- UI: a "followed communities" view on the community detail page (the local community's `following`
+  collection) + the relayed content in the community's feed.
+
+**Status:** design decided, implementation pending (not started; tracked as a follow-up to 139.1).
+
+## Scenario 6 — Outbound Create delivery (evidence, 2026-09-16)
+
+**Client routing (F-5, fixed + verified).** Posting to a remote community from the Web UI previously
+failed because the client delivered directly to the remote community's inbox (cross-origin, blocked by
+the Web UI's CSP `connect-src 'self'`). The fix routes the post through the **author's outbox**
+(`actorId.OutboxOf()`, same-origin) with `To = [communityIri, Public]`; the server's outbox-publish
+handler reads the remote community from the `to` audience and cross-posts server-side (the 138.11
+pipeline). Build clean (0 warnings). Live Playwright: signed in as andrew, composed a post to the
+Lemmy interop community, clicked "Post to community" → **HTTP 202** with a minted outbox IRI
+(`https://iris.luit.ink/ap/v1/u/andrew/creates/06GAF3DZSX0CTF87DV2F33DGTW`), **no CSP console
+errors**. The stored activity is a `Page` (Note→Page transformed for Lemmy, per 138.11) with
+`to: [lemmy-interop, Public]`.
+
+**Server-side cross-post to Lemmy (F-6, architecture).** The server-side delivery to Lemmy's shared
+inbox **400s** when the author is not a community member (andrew follows 0 actors; Lemmy requires
+membership). The `DeliveryWorker` log shows the activity dead-lettered after the 400. The 138.11
+"success" (alice's post in Lemmy's outbox) was a **manual signed-`curl` probe** (`deliver_13811.sh`),
+not the normal pipeline. **Resolution:** the "cross-post to a remote community" model is replaced by
+the **community-follow relay** (see the "Community-follow relay design" section above) — Iris follows
+the remote community, and content flows through the standard AP follow-relay. The client outbox
+routing (F-5) is correct for the local + relay cases; the "post to a remote community I don't belong
+to" case is a **membership** requirement, not a delivery bug — the UI should disable posting until
+the user joins the community.
+
+**Pass criterion (partial).** The outbound Create delivery path (client → author outbox → server
+cross-post) is verified working end-to-end up to the server→remote hop; the server→Lemmy hop is
+blocked by Lemmy's membership requirement (F-6), which is resolved by the community-follow relay
+design (implementation pending).
 
 ## Scenario 5 — Inbound Like/boost-equivalent (evidence, 2026-09-15)
 

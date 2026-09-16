@@ -1484,13 +1484,21 @@
     }
 
     /// <summary>
-    /// Posts to a <em>remote</em> (different-host) community as a Lemmy-compatible <c>Page</c>, delivered
-    /// to the community's inbox. The object is addressed <c>to</c> the community + the public and
-    /// <c>cc</c>'d to the community's followers collection (the Lemmy cross-check order), carries
-    /// <c>content</c> as Markdown-rendered HTML plus a <c>source</c> of the original Markdown, and is
-    /// <c>attributedTo</c> both the author and the community. The <c>Create</c> carries a minted id
-    /// (inbox-received activities are not id-minted server-side).
+    /// Posts to a <em>remote</em> (different-host) community as a Lemmy-compatible <c>Page</c>, published
+    /// to the <em>author's own outbox</em> (the standard post path — the server's outbox-publish handler
+    /// detects the remote community in the <c>to</c> audience and cross-posts it server-side, transforming
+    /// a Note to a Page for Lemmy per 138.11). The object is addressed <c>to</c> the community + the
+    /// public and <c>cc</c>'d to the community's followers collection (the Lemmy cross-check order),
+    /// carries <c>content</c> as Markdown-rendered HTML plus a <c>source</c> of the original Markdown,
+    /// and is <c>attributedTo</c> both the author and the community.
     /// </summary>
+    /// <remarks>
+    /// 139.1 F-5 — this used to deliver <em>directly</em> to the remote community's inbox
+    /// (<c>communityIri.InboxOf()</c>), a cross-origin fetch the browser's CSP (<c>connect-src 'self'</c>)
+    /// blocks, so posting to a remote community from the Web UI failed. Publishing to the author's own
+    /// outbox instead keeps all posts on the same-origin path; the server (not bound by the browser's
+    /// CSP) performs the cross-instance cross-post delivery.
+    /// </remarks>
     private async Task<DeliveryResult> PostToRemoteCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
     {
         var content = Content.Trim();
@@ -1547,10 +1555,18 @@
         {
             Id = $"{actorId.Value.TrimEnd('/')}/creates/{Guid.NewGuid():N}",
             Actor = [new Link { Href = new Uri(actorId.Value) }],
-            Object = [page]
+            Object = [page],
+            To =
+            [
+                new Link { Href = new Uri(communityIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ]
         };
 
-        return await client.DeliverAsync(communityIri.InboxOf(), create);
+        // 139.1 F-5 — publish to the author's own outbox (same-origin), not the remote community's
+        // inbox (a cross-origin fetch the browser's CSP blocks). The server's outbox-publish handler
+        // reads the remote community from the `to` audience and cross-posts it server-side (138.11).
+        return await client.DeliverAsync(actorId.OutboxOf(), create);
     }
 
     /// <summary>
