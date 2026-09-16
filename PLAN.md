@@ -96,8 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **145 — Deterministic delivery in flaky integration tests:** The two known-flaky round-trip tests (`MutualPeeringHandshakeIntegrationTests.MutualFollow_...`, `FollowEdgeConvergenceIntegrationTests.Follow_Unfollow_...`) intermittently hang under full-suite load because the background `DeliveryWorker` pump task can go unscheduled. Fix: inject a test delivery-driver into those specific tests that pumps the `IDeliveryQueue` synchronously to completion, eliminating the race. See Known flake section below.
-- **144 — General UI/UX review and improvements — complete:** 8 findings cataloged; 6 fixed (`e65645b`, `ce157c2`, `812c4d0`, `5d41afc`), 2 reviewed-no-change. See [phase-144-ux-review](docs/plans/phase-144-ux-review.md).
+- *(empty — Phase 145 complete; next phase TBD)*
 
 ## Inbox
 
@@ -109,16 +108,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Known flake (non-blocking)
 
-- **Background-delivery round-trip tests flake under full-suite load:** `MutualPeeringHandshakeIntegrationTests.MutualFollow_BothFollowersCollections_ListTheOther` (138.6) and `FollowEdgeConvergenceIntegrationTests.Follow_Unfollow_Refollow_Cycle_..._StableCollections` intermittently time out when the *whole* suite runs (each builds many in-process `TestServer`s, each with a background `DeliveryWorker` pump; under load a delivery's async continuation can go unscheduled and the round trip hangs in-flight — diagnosed: dead-letter store **and** queue both empty on timeout, i.e. stuck in-flight, not failed). Both pass in isolation and on most full runs. A thread-pool min-threads initializer (200) + 120s wait window (`TestThreadPoolInitializer.cs`) made 2 of 3 consecutive full runs green and cut Iris.Server.Tests ~2m→~24s, but the residual deadlock (the worker's own pump task can still be unscheduled long enough to hang) is a genuine next-work-item: **drive these specific tests' delivery deterministically** (e.g. a test delivery-driver that pumps the `IDeliveryQueue` synchronously to completion) instead of relying on the background pump. Non-blocking: if a full-suite run hits it, re-run the suite (or the two classes) in isolation — they pass.
+- *(none — Phase 145 eliminated the known background-delivery flake by driving the two affected tests' delivery deterministically.)*
 
 ## Recently Completed
 
-- **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
+- **145 (Deterministic delivery in flaky integration tests) — complete:** Replaced the racy background `DeliveryWorker` pump in the two known-flaky round-trip tests with a synchronous `DeterministicDeliveryDriver` + `TestDeliveryQueue`. Full suite green (1283 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **144 (General UI/UX review) — complete:** 8 findings; 6 fixed, 2 reviewed-no-change. [findings](docs/plans/phase-144-ux-review.md).
+- **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
 - **142 (cross-cutting consistency review) — complete:** 20 findings cataloged (11 UI + 9 backend); consumed by Phase 143. [findings](docs/plans/phase-142-consistency-review.md).
 - **141 (Collection & engagement tracking consistency) — closed:** 141.2/141.3/141.4/141.5 done, 141.1 deferred. [plan](docs/plans/phase-141-engagement-tracking-consistency.md).
-- **140 (inbound signature-verification) — closed:** root cause was Docker DNS alias collision, not Iris code. No Iris code change needed.
-- **139 (platform-wide e2e review) — closed:** 139.1/139.2 done; 139.3–139.8 superseded. [plan](docs/plans/phase-139-platform-e2e-review.md).
  ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**
