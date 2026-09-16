@@ -9,11 +9,14 @@
 <div class="notification-card" data-type="@(Activity?.Type?.FirstOrDefault())">
     <div class="notification-card__header">
         <div class="notification-card__avatar">
-            <ActorAvatar
-                ActorIri="@(Item is Activity a && a.Actor is { } act ? act.FirstOrDefault()?.ResolveObjectIri() : null)"
-                DisplayName="@(Item is Activity a2 ? GetDisplayName(a2) : null)"
-                IconIriOverride="@(Item is Activity a3 ? GetIconIri(a3) : null)"
-                SkipFetch="@IsSelfDeleteActivity" />
+            @if (_actorLoaded)
+            {
+                <ActorAvatar
+                    ActorIri="@(Item is Activity a && a.Actor is { } act ? act.FirstOrDefault()?.ResolveObjectIri() : null)"
+                    DisplayName="@(Item is Activity a2 ? GetDisplayName(a2) : null)"
+                    IconIriOverride="@(Item is Activity a3 ? GetIconIri(a3) : null)"
+                    SkipFetch="@IsSelfDeleteActivity" />
+            }
         </div>
         <div class="notification-card__meta">
             <div class="notification-card__actor-row">
@@ -76,6 +79,15 @@
     private readonly Dictionary<string, IObject?> _actorDocs = new();
 
     /// <summary>
+    /// Whether the actor document has been fetched (or the fetch is not needed). The avatar is
+    /// only rendered once this is true, so the avatar's own <c>GetActorAsync</c> call is skipped
+    /// (its <c>DisplayName</c>/<c>IconIriOverride</c> params are already populated by the row's
+    /// fetch, triggering the avatar's skip-optimization). Prevents a duplicate proxy fetch for
+    /// the same remote actor (147.1).
+    /// </summary>
+    private bool _actorLoaded;
+
+    /// <summary>
     /// Fetches the actor's document (via the <see cref="UiContext"/>'s per-circuit cache) so the row
     /// can render the avatar + display name. Runs after the <c>Item</c> parameter is set.
     /// </summary>
@@ -83,12 +95,14 @@
     {
         if (Item is not Activity { Actor: { } actors } activity)
         {
+            _actorLoaded = true;
             return;
         }
 
         var actorIri = actors.FirstOrDefault()?.ResolveObjectIri();
         if (actorIri is not { } iri)
         {
+            _actorLoaded = true;
             return;
         }
 
@@ -99,11 +113,13 @@
         // avatar fallback and the "deleted their account" caption, no document needed.
         if (IsSelfDelete(activity))
         {
+            _actorLoaded = true;
             return;
         }
 
         var doc = await Ui.GetActorAsync(iri);
         _actorDocs[iri.Value] = doc;
+        _actorLoaded = true;
         StateHasChanged();
     }
 
