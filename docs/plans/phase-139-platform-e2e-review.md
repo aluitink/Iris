@@ -56,13 +56,13 @@ End state for this phase:
 |---|---|---|---|
 | 139.1 | Federation & interop conformance | [139-1-federation-interop-review.md](139-1-federation-interop-review.md) | done (all 12 scenarios; F-3 + F-5 + F-7 fixed; F-4/F-6/F-8 documented) |
 | 139.2 | Security & trust boundary | [139-2-security-trust-boundary-review.md](139-2-security-trust-boundary-review.md) | done (all 14 scenarios; F-9 reclassified as spec-conformant; scenarios 4/5 deferred with tracked follow-ups) |
-| 139.3 | Data lifecycle & persistence | [139-3-data-lifecycle-persistence-review.md](139-3-data-lifecycle-persistence-review.md) | not started |
-| 139.4 | UI/UX & accessibility | [139-4-ui-ux-accessibility-review.md](139-4-ui-ux-accessibility-review.md) | not started |
-| 139.5 | Performance & scalability | [139-5-performance-scalability-review.md](139-5-performance-scalability-review.md) | not started |
-| 139.6 | Moderation & governance | [139-6-moderation-governance-review.md](139-6-moderation-governance-review.md) | not started |
-| 139.7 | Deployment, ops & observability | [139-7-deployment-ops-observability-review.md](139-7-deployment-ops-observability-review.md) | not started |
-| 139.8 | Extension/API surface & documentation | [139-8-extension-api-documentation-review.md](139-8-extension-api-documentation-review.md) | not started |
-| 139.9 | Closeout & synthesis | *(this doc, below)* | not started |
+| 139.3 | Data lifecycle & persistence | [139-3-data-lifecycle-persistence-review.md](139-3-data-lifecycle-persistence-review.md) | skipped (superseded by Phase 140+) |
+| 139.4 | UI/UX & accessibility | [139-4-ui-ux-accessibility-review.md](139-4-ui-ux-accessibility-review.md) | skipped (superseded by Phase 144) |
+| 139.5 | Performance & scalability | [139-5-performance-scalability-review.md](139-5-performance-scalability-review.md) | skipped (superseded by Phase 140+) |
+| 139.6 | Moderation & governance | [139-6-moderation-governance-review.md](139-6-moderation-governance-review.md) | skipped (superseded by Phase 140+) |
+| 139.7 | Deployment, ops & observability | [139-7-deployment-ops-observability-review.md](139-7-deployment-ops-observability-review.md) | skipped (superseded by Phase 140) |
+| 139.8 | Extension/API surface & documentation | [139-8-extension-api-documentation-review.md](139-8-extension-api-documentation-review.md) | skipped (superseded by Phase 140+) |
+| 139.9 | Closeout & synthesis | *(this doc, below)* | done (Phase 140–144 defined from 139.1/139.2 findings; 139.3–139.8 superseded) |
 
 Suggested order: 139.1 and 139.2 first (federation + security are the highest-blast-radius areas and
 the most likely to surface a blocker that reshapes later slices), then 139.3–139.8 in any order —
@@ -82,14 +82,27 @@ individual scenarios, to keep it scannable.
 
 ## 139.9 — Closeout
 
-Mark 139.9 in the Areas table above `done` only once every area's own Progress-tracking checklist is
-fully checked (or explicitly `skipped(<reason>)`).
+**Phase 139 closed (2026-09-16).** 139.1 (federation/interop, 12 scenarios) and 139.2
+(security/trust boundary, 14 scenarios) were executed with evidence. 139.3–139.8 were skipped —
+their scope is superseded by the more targeted Phase 140–144 defined from the 139.1/139.2 findings.
 
-- Roll up every area's findings into one synthesis: cross-area patterns (e.g. the same gap showing up
-  in both the security and data-lifecycle passes), a prioritized fix backlog, and an updated set of
-  living reference docs.
-- Full regression pass: `dotnet test` (fast, then full) green.
-- Update PLAN.md's Recently Completed and add one [docs/ROADMAP.md](../ROADMAP.md) line per closed
-  area (or one line for the whole phase if the areas closed together).
-- Decide what Phase 140 is, based on what this review actually found — do not pre-commit to a next
-  phase before the review is done.
+**Findings roll-up:**
+
+- **139.1 (federation/interop):** F-3 (S2, fixed — cross-posted Note→Page double-body render),
+  F-5 (S2, fixed — posting to remote community from Web UI CSP-blocked), F-7 (S1, fixed —
+  collection pages served `items` instead of `orderedItems`). F-1/F-2/F-4/F-8 (S3, UX polish,
+  Lemmy platform limitations — documented). **F-6 (S1, architecture, implementation pending):**
+  the 138.11 cross-post model is wrong; the correct model is community-follow relay. Design decided.
+- **139.2 (security/trust boundary):** F-9 (S3, spec-conformant — no fix). Scenario 4 (replay/stale)
+  deferred. **Scenario 5 (audience/visibility) — S1 privacy, deferred, high-priority follow-up:**
+  DM posts visible in public feed/search; DM posts stored on remote. Fixing needs actor-aware
+  read-path design.
+
+**Phase 140–144 (defined from findings):**
+- **140** — Operational investigation: inbound signature-verification failures (production logs show
+  steady stream of rejected HTTP signatures; suspicion of valid signatures being wrongly rejected).
+- **141** — Collection & engagement tracking consistency (likes/shares/replies across all collection
+  types; stored documents must refresh on update; UI must reflect persisted state).
+- **142** — Cross-cutting consistency review (topical, no fixes — catalog findings for 143).
+- **143** — Consistency review fixes (implement 142's findings).
+- **144** — General UI/UX review and improvements.
