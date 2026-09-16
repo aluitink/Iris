@@ -6260,7 +6260,7 @@ public static class ActivityPubServerExtensions
         if (isReplies)
         {
             var parentPath = path.Substring(0, path.Length - (repliesSegment.Length + 1));
-            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
+            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, IrisExtensionNamespace(optionsAccessor.Value), ct).ConfigureAwait(false);
         }
 
         // Per-object interaction collections (decision 056 (d)): when the catch-all path ends in a
@@ -7004,6 +7004,7 @@ public static class ActivityPubServerExtensions
         string parentPath,
         IPersistenceProvider persistence,
         string normalizedBase,
+        string namespaceIri,
         CancellationToken ct)
     {
         // The object IRI IS the endpoint IRI (no serving prefix), so the parent IRI is base + route
@@ -7033,7 +7034,8 @@ public static class ActivityPubServerExtensions
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = parentIri.RepliesOf();
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items,
+            supportsRefresh: true, namespaceIri: namespaceIri);
 
         var refresh = HasRefreshBypass(context);
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
@@ -8232,7 +8234,9 @@ public static class ActivityPubServerExtensions
                     collectionIri,
                     page,
                     limit,
-                    itemsToRender);
+                    itemsToRender,
+                    supportsRefresh: true,
+                    namespaceIri: ns);
             },
             ct).ConfigureAwait(false);
 
@@ -8664,15 +8668,18 @@ public static class ActivityPubServerExtensions
 
         var collectionIri = new Iri($"{communityIri.Value}/{collectionPath}");
 
-        // The cache key is the page IRI, extended with the content filter (?q, the feed's F-23 filter)
-        // when present: a filtered read and an unfiltered read of the same collection+page are distinct
-        // entries (they render different items), so the filter must be part of the key or a ?q= read
-        // would return a stale unfiltered page (or vice versa).
-        var query = context.Request.Query["q"].ToString();
-        var keySuffix = query.Length > 0 ? $"?q={Uri.EscapeDataString(query)}" : string.Empty;
+        // The cache key is the page IRI, extended with the content filter (?q) when the collection
+        // supports it (feed only): a filtered read and an unfiltered read of the same collection+page
+        // are distinct entries (they render different items), so the filter must be part of the key
+        // or a ?q= read would return a stale unfiltered page (or vice versa). For non-feed collections
+        // (?q is silently ignored), the filter is excluded from the key to avoid cache pollution
+        // (F-142.6: unbounded distinct entries per query string for identical content).
+        var supportsQuery = collectionPath == "feed";
+        var query = supportsQuery ? context.Request.Query["q"].ToString() : string.Empty;
+        var qSuffix = query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty;
         var pageIri = page == 1
-            ? (query.Length > 0 ? new Iri($"{collectionIri}{keySuffix}") : collectionIri)
-            : new Iri($"{collectionIri}/?page={page}{(query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty)}");
+            ? (query.Length > 0 ? new Iri($"{collectionIri}?{qSuffix.TrimStart('&')}") : collectionIri)
+            : new Iri($"{collectionIri}/?page={page}{qSuffix}");
 
         // Read (or render on a miss) through the local collection-page response cache. A ?refresh=true
         // read bypasses the cache (re-rendering now) and still writes back a fresh entry. The feed
@@ -8689,7 +8696,14 @@ public static class ActivityPubServerExtensions
                     itemsToRender = await EnrichCollectionItemsAsync(
                         items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
                 }
-                return BuildCollectionPageDocument(collectionIri, page, limit, itemsToRender);
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender,
+                    supportsRefresh: true,
+                    supportsQuery: supportsQuery,
+                    namespaceIri: ns);
             },
             ct).ConfigureAwait(false);
 
@@ -8815,7 +8829,13 @@ public static class ActivityPubServerExtensions
             {
                 var itemsToRender = await EnrichCollectionItemsAsync(
                     items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
-                return BuildCollectionPageDocument(collectionIri, page, limit, itemsToRender);
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender,
+                    supportsRefresh: true,
+                    namespaceIri: ns);
             },
             ct).ConfigureAwait(false);
 
