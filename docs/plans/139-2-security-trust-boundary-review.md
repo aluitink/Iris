@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [x] 9  - [x] 10 - [x] 11 - [ ] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [x] 9  - [x] 10 - [x] 11 - [x] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–11 done — begin at scenario 12.
+**Resume checkpoint:** scenarios 1–12 done — begin at scenario 13.
 
 ## Findings
 
@@ -388,3 +388,20 @@ converges on the new key.**
 - **Old key rejected after rotation completes**: confirmed (old key invalidated, old-key-signed
   requests rejected).
 - **Peer picks up the new key**: confirmed (convergence on refresh / automatic convergence).
+
+## Scenario 12 — Dependency/supply-chain spot-check (evidence, 2026-09-16)
+
+**PASS — no unaddressed high/critical CVEs.**
+
+**Current behavior (confirmed):**
+- `dotnet list package --vulnerable` (run against all 24 projects) reports **no vulnerable
+  packages** for any project. All projects are clean against the NuGet vulnerability database.
+
+**Projects scanned (24 total):**
+Iris.Web.Client, Iris.Web, IrisStaticHost, SampleBlazorClient, SampleServer,
+Iris.Client.Extensions, Iris.Client, Iris.Core, Iris.Server.Data, Iris.Server.InMemory,
+Iris.Server, Iris.WebCrypto, Iris.Client.Extensions.Tests, Iris.Client.Tests, Iris.Core.Tests,
+Iris.LiveInterop.Tests, Iris.Server.Data.Tests, Iris.Server.Tests, Iris.Testing, Iris.Web.Tests,
+Iris.WebCrypto.Tests, SampleBlazorClient.Tests, SampleServer.Tests, IrisSigner.
+
+**Pass criterion met.** No unaddressed high/critical CVEs. All dependencies are clean.
