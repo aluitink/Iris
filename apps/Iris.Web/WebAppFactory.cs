@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Iris.Client.Auth;
 using Iris.Core;
+using Iris.Core.Caching;
 using Iris.Core.Identity;
 using Iris.Core.Signing;
 using Iris.Server;
@@ -313,6 +314,7 @@ public static class WebAppFactory
             var sharedInboxIri = builder.Configuration["Iris:SharedInboxIri"];
             options.SharedInboxIri = new Iri(
                 string.IsNullOrWhiteSpace(sharedInboxIri) ? $"{baseNoSlash}/ap/v1/shared-inbox" : sharedInboxIri);
+            options.CacheMetrics = new CacheMetrics();
         });
 
         // 3. Persistence: the EF Core (PostgreSQL) provider when a connection string is configured

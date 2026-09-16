@@ -209,6 +209,27 @@ public sealed class UiContext
             return cached.Doc;
         }
 
+        // The session's key-load fetches the current user's actor document (147.1): reuse it instead
+        // of issuing a redundant GET /u/{handle}. Match on the document's id (not the claim-derived
+        // ActorId) to avoid IRI normalization mismatches. When the state is loaded but the key-load
+        // is still in progress (ActorDocument null), await EnsureReadyAsync (idempotent) to let it
+        // finish before falling through to a network fetch.
+        if (_session.HasLoadedState)
+        {
+            if (_session.ActorDocument is not { Id: { Length: > 0 } })
+            {
+                await _session.EnsureReadyAsync();
+            }
+
+            if (_session.ActorDocument is { Id: { Length: > 0 } docId }
+                && string.Equals(docId, actorIri.Value, StringComparison.OrdinalIgnoreCase))
+            {
+                var doc = _session.ActorDocument;
+                _actors[actorIri.Value] = new ActorEntry(doc, DateTime.UtcNow);
+                return doc;
+            }
+        }
+
         // Coalesce in-flight fetches for this IRI: the first caller starts the fetch and publishes
         // its Task; concurrent callers await the same Task instead of each hitting the network.
         var fetchTask = _actorInFlight.GetOrAdd(actorIri.Value, _ => FetchActorAsync(actorIri));

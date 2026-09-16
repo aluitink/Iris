@@ -78,6 +78,20 @@ public interface IActorSessionAccessor
     Iri? ActorId { get; }
 
     /// <summary>
+    /// The signed-in user's actor document, fetched during <see cref="EnsureReadyAsync"/>. Non-null
+    /// once the key load has succeeded; null when signed out or the load has not yet completed.
+    /// Allows consumers (e.g. <c>UiContext</c>) to avoid a redundant fetch of the current user's
+    /// actor document.
+    /// </summary>
+    IObject? ActorDocument { get; }
+
+    /// <summary>
+    /// Whether the authentication state has been loaded (i.e. <see cref="EnsureReadyAsync"/> has been
+    /// called at least once). A cheap, non-blocking check that does not trigger a load.
+    /// </summary>
+    bool HasLoadedState { get; }
+
+    /// <summary>
     /// The deployment's <c>iris:</c> namespace base IRI (the full-IRI prefix the server uses for its
     /// JSON-LD extension properties — e.g. <c>likedCount</c>, <c>isLiked</c> — whose wire key is
     /// <c>{NamespaceBase}{term}</c>). Derived from the instance's canonical base (the advertised FQDN when
@@ -175,6 +189,7 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
     private ILocalModerationClient? _localModeration;
     private IMediaClient? _mediaClient;
     private Task<bool>? _keyLoaded;
+    private IObject? _actorDocument;
 
     /// <summary>
     /// Initializes the accessor.
@@ -339,6 +354,10 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
             return value is not null && Iri.TryParse(value, out var iri) ? (Iri?)iri : null;
         }
     }
+
+    public IObject? ActorDocument => _actorDocument;
+
+    public bool HasLoadedState => _state is not null;
 
     /// <inheritdoc/>
     /// <remarks>
@@ -656,6 +675,8 @@ public sealed class ActorSessionAccessor : IActorSessionAccessor
             {
                 return false;
             }
+
+            _actorDocument = actor;
 
             var pem = ExtractPrivateKey(actor);
             if (string.IsNullOrWhiteSpace(pem))
