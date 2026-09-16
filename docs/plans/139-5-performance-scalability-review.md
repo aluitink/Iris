@@ -29,7 +29,7 @@ silently accepted.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5
 - [x] 6  - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
