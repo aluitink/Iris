@@ -96,8 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **143 — Consistency review fixes (from Phase 142 findings) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred). F-142.7 (cache key omits limit) deferred — requires invalidation refactor. F-142.10/15/18 skipped (debatable/intentional). See [phase-142 findings](docs/plans/phase-142-consistency-review.md) + change docs 1431–1436.
-- **144 — General UI/UX review and improvements:** a broad Playwright-driven review pass across the app's pages focused on usability, visual polish, and general UX quality (not just cross-component consistency, which is Phase 141/142's scope) — layout, responsiveness, affordances, loading/empty/error states, accessibility basics, copy clarity, and overall feel. Log findings with page/component, expected vs. actual, and severity; implement fixes in scope where straightforward, otherwise route larger items to a follow-up slice.
+- **144 — General UI/UX review and improvements (in progress):** Findings cataloged in [phase-144-ux-review](docs/plans/phase-144-ux-review.md). 3 fixed this turn (`e65645b`): F-144.1 duplicate Load-more sentinel, F-144.3 reply pluralization, F-144.6 notification labels. 5 open: F-144.2 timestamp consistency, F-144.4 console error noise (401/404 on remote proxy/actor), F-144.5 profile tab label, F-144.8 HTML in community descriptions, F-144.9 create-community form UX.
 
 ## Inbox
 
@@ -114,6 +113,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 ## Recently Completed
 
 - **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
+- **144 (General UI/UX review) — in progress:** 3 of 8 findings fixed (`e65645b`); 5 open. [findings](docs/plans/phase-144-ux-review.md).
 - **142 (cross-cutting consistency review) — complete:** 20 findings cataloged (11 UI + 9 backend); consumed by Phase 143. [findings](docs/plans/phase-142-consistency-review.md).
 - **141 (Collection & engagement tracking consistency) — closed:** 141.2/141.3/141.4/141.5 done, 141.1 deferred. [plan](docs/plans/phase-141-engagement-tracking-consistency.md).
 - **140 (inbound signature-verification) — closed:** root cause was Docker DNS alias collision, not Iris code. No Iris code change needed.
