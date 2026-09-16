@@ -186,7 +186,8 @@ public sealed class SampleServerTests : IDisposable
         var root = doc.RootElement;
         Assert.Equal("OrderedCollection", root.GetProperty("type").GetString());
 
-        var items = root.GetProperty("items");
+        // 139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).
+        var items = root.GetProperty("orderedItems");
         Assert.True(items.GetArrayLength() >= 2,
             "the community must have at least two seeded members");
     }
@@ -202,7 +203,8 @@ public sealed class SampleServerTests : IDisposable
         var root = doc.RootElement;
         Assert.Equal("OrderedCollection", root.GetProperty("type").GetString());
 
-        var items = root.GetProperty("items");
+        // 139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).
+        var items = root.GetProperty("orderedItems");
         Assert.True(items.GetArrayLength() >= 2,
             "the community feed must contain at least the two seeded posts");
     }

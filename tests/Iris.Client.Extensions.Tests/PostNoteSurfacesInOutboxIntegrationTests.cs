@@ -99,7 +99,8 @@ public sealed class PostNoteSurfacesInOutboxIntegrationTests : IDisposable
         response.EnsureSuccessStatusCode();
 
         var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var itemsElement = doc.RootElement.GetProperty("items");
+        // 139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).
+        var itemsElement = doc.RootElement.GetProperty("orderedItems");
 
         // The outbox has a single item (the one post), so the OneOrMultipleConverter serialized
         // "items" as a JSON object (not an array). Handle both shapes: an array of items, or a single
