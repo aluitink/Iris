@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [x] 9  - [x] 10 - [x] 11 - [x] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [x] 9  - [x] 10 - [x] 11 - [x] 12 - [x] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–12 done — begin at scenario 13.
+**Resume checkpoint:** scenarios 1–13 done — begin at scenario 14 (final).
 
 ## Findings
 
@@ -405,3 +405,25 @@ Iris.LiveInterop.Tests, Iris.Server.Data.Tests, Iris.Server.Tests, Iris.Testing,
 Iris.WebCrypto.Tests, SampleBlazorClient.Tests, SampleServer.Tests, IrisSigner.
 
 **Pass criterion met.** No unaddressed high/critical CVEs. All dependencies are clean.
+
+## Scenario 13 — Secrets handling (evidence, 2026-09-16)
+
+**PASS — no accidentally-logged credentials, keys, or tokens in deployed config/compose files or
+code.**
+
+**Current behavior (confirmed):**
+- **Docker compose** (`apps/Iris.Web/docker-compose.yml`): all secrets are externalized via
+  environment variable substitution — no hardcoded values:
+  - `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in apps/Iris.Web/.env}` —
+    required (fails fast if unset).
+  - `POSTGRES_USER` — defaults to `iris` (not a secret, just a username).
+  - `POSTGRES_DB` — defaults to `iris` (not a secret, just a database name).
+  - `App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}` — optional (defaults to empty).
+  - Connection string uses `${POSTGRES_PASSWORD}` substitution — no hardcoded password.
+- **Code** (`src/`, `apps/`): grep for hardcoded credentials/secrets/tokens/keys (8+ char
+  literals) found **no matches** (excluding test/sample/mock code). Passwords are handled
+  correctly (hashed via `PasswordHasher`, compared via `==` against the hash) but never logged.
+- **Logs**: no `logger.Log*` calls that log password, secret, token, or key values.
+
+**Pass criterion met.** No accidentally-logged credentials, keys, or tokens. All secrets are
+properly externalized via environment variables.
