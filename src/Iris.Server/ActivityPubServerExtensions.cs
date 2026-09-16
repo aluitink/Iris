@@ -156,6 +156,17 @@ public static class ActivityPubServerExtensions
             return new Iris.Client.Caching.ActorCache(metrics: metrics);
         });
 
+        // Client-side collection-page cache for the outbound IActivityPubClient (146.3, F-136.12.3/5):
+        // caches fetched remote outbox/collection pages by page IRI (30 s TTL) so a follow-feed refresh
+        // does not re-fetch the same pages over the wire. Consulted by GetCollectionAsync's
+        // FetchCollectionPageAsync path.
+        services.TryAddSingleton<Iris.Client.Collections.CollectionPageCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new Iris.Client.Collections.CollectionPageCache(policies?.CollectionPage, metrics: metrics);
+        });
+
         // The collection-page cache is also registered standalone so the outbound remote-collection
         // fetch path (IrisRemoteCollectionFetcher) can resolve it directly by type; ServerCaches reuses
         // the same instance below.
@@ -286,7 +297,8 @@ public static class ActivityPubServerExtensions
                         ActorId = configuredInstanceActor,
                         EnableRetry = false,
                         Caches = new Iris.Client.Caching.ClientCaches(
-                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>()),
+                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                            CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
                     },
                     new HttpClientHandler()));
         }
