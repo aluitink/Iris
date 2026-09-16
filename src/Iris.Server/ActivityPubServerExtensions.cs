@@ -3819,8 +3819,12 @@ public static class ActivityPubServerExtensions
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            context.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Iris.Server.CommunityOutboxPublishHandler")
+                .LogError(ex, "Community outbox publish for {Name} ({Type}) failed.", name, payload?.GetType().Name ?? "unknown");
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
@@ -8657,8 +8661,7 @@ public static class ActivityPubServerExtensions
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
-        var refresh = context.Request.Query["refresh"].ToString()
-            .Equals("true", StringComparison.OrdinalIgnoreCase);
+        var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{communityIri.Value}/{collectionPath}");
 
