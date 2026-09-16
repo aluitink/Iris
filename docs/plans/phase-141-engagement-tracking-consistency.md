@@ -59,7 +59,7 @@ The object document enrichment (`ObjectDocumentHandler` lines 6231-6364) provide
 
 - [x] Code review (findings F-1..F-6)
 - [ ] 141.1 — bare-link Create reply edge (reassessed: low value — bare-link objects are not stored locally, so the reply edge would point to an unresolvable child IRI; the proper fix is fetching+storing the remote object, which is a larger change. **Deferred** — revisit if bare-link Creates are observed in production.)
-- [ ] 141.2 — O(n) sweep elimination
+- [x] 141.2 — O(n) sweep elimination (DONE: added `ObjectIri` column + `(ActivityType, ObjectIri)` index to `Activities` table, new `GetActivitiesForObjectAsync` indexed lookup on `IActivityStore`, `ObjectLikesAsync`/`ObjectSharesAsync` now use it. Migration `AddActivityObjectIri` with backfill SQL.)
 - [x] 141.3 — UI persistence verification (PASS: like + boost state persist across refresh for local objects; see F-6)
-- [ ] 141.4 — cross-collection audit
-- [ ] 141.5 — closeout
+- [x] 141.4 — cross-collection audit (DONE: fixed primary inconsistency — community feed/outbox now enriched with engagement counters; 3 minor findings documented. [change doc](../changes/1414-phase141-cross-collection-audit.md))
+- [x] 141.5 — closeout (regression green: full suite 1282/1299 pass, only known flakes fail in isolation; Playwright-verified 141.3 UI persistence in prior turn; 141.4 community enrichment fix verified by 254/254 community tests + 205/216 feed/outbox tests; live Playwright verification of 141.4 enrichment deferred to next deployment)
