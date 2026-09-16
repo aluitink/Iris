@@ -96,7 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **146.3 — Cache outbox page GETs in follow-feed hydration (F-136.12.3/5):** The follow-feed endpoint walks each remote follow's outbox page-by-page, making O(follows × pages) uncached GETs per feed request. Add a short-TTL cache (e.g. 30 s) for remote outbox pages so a user with many remote follows does not re-fetch the same pages on every feed refresh. Integration test: a follow feed with 2 remote follows + 2 pages each makes 4 outbox GETs on the first call and 0 on the second (within TTL).
+- *(Phase 146 complete — no remaining items. Next phase to be defined.)*
 
 ## Inbox
 
@@ -112,7 +112,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **146.1 + 146.2 (Outbound client caching + dedup) — complete:** Wired a client-side `ActorCache` into the server's outbound `IActivityPubClient` so repeated remote-object fetches (e.g. `ResolveObjectAuthorForDeliveryAsync` called twice for the same reply parent) are served from cache. Full suite green (1284 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
+- **146 (Performance follow-ups) — complete:** 146.1+146.2: wired `ActorCache` into outbound client (F-136.12.7/1). 146.3: wired `CollectionPageCache` into outbound client (F-136.12.3/5). Full suite green (1285 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **145 (Deterministic delivery in flaky integration tests) — complete:** Replaced the racy background `DeliveryWorker` pump in the two known-flaky round-trip tests with a synchronous `DeterministicDeliveryDriver` + `TestDeliveryQueue`. Full suite green (1283 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **144 (General UI/UX review) — complete:** 8 findings; 6 fixed, 2 reviewed-no-change. [findings](docs/plans/phase-144-ux-review.md).
 - **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
