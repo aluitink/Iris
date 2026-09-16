@@ -34,14 +34,14 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [ ] 7
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
 - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–6 done — begin at scenario 7.
+**Resume checkpoint:** scenarios 1–7 done — begin at scenario 8.
 
 ## Findings
 
@@ -250,3 +250,28 @@ Rationale:
 relayed announce) is **not surfaced** to the blocking user's feed. The content may be stored
 (fetchable by direct IRI) but is excluded from the feed. This is the correct AP semantics:
 blocking an actor should hide their content from your feed, not prevent them from posting.
+
+## Scenario 7 — Rate limiting under burst (evidence, 2026-09-16)
+
+**PASS — rate limiting holds under burst; 429s with correct Retry-After, no crash, no auth bypass.**
+
+**Current behavior (confirmed):**
+- `InboundRateLimitIntegrationTests` (5 tests) all pass, confirming:
+  - A peer that exceeds its per-minute budget is rejected with **429 Too Many Requests**.
+  - The 429 carries a **Retry-After** header (HTTP-date form, Phase 18.3) so the client can
+    back off precisely.
+  - A 429'd request is **not processed** (no state mutation).
+- `InboundRateLimiterUnitTests` (8 tests) all pass, confirming:
+  - Enabled limiter permits up to max requests, rejects beyond max.
+  - Different peers are independent (per-peer budget).
+  - Host is case-insensitive.
+  - Window expires (allows new requests after the window resets).
+  - Disabled limiter always permits (no state tracking).
+- `DeliveryWorkerRateLimitTests` (burst to a single peer is throttled) all pass.
+- `ProxyFallbackIntegrationTests.Proxy_RateLimitExceeded_IsRejectedWith429` passes.
+
+**Pass criterion met.** Under burst:
+- **429s with correct Retry-After**: confirmed (HTTP-date form, in the future).
+- **No crash**: confirmed (all tests pass, no unhandled exceptions).
+- **No auth bypass via retry-storm**: confirmed (429'd requests are rejected before processing;
+  no state mutation).
