@@ -20,11 +20,13 @@ public sealed class UiContext
     private static readonly TimeSpan ActorTtl = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan MembershipTtl = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan LemmyScoreTtl = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ContentObjectTtl = TimeSpan.FromMinutes(2);
 
     private sealed record FollowingEntry(HashSet<string> Set, List<Iri> List, DateTime At);
     private sealed record ActorEntry(IObject Doc, DateTime At);
     private sealed record MembershipEntry(HashSet<string> Set, DateTime At);
     private sealed record LemmyScoreEntry(LemmyPostScore? Score, DateTime At);
+    private sealed record ContentObjectEntry(IObject Doc, DateTime At);
 
     /// <summary>
     /// The result of walking a content object's <c>/likes</c> + <c>/shares</c> collections (72.1):
@@ -46,11 +48,16 @@ public sealed class UiContext
     private readonly ConcurrentDictionary<string, FollowingEntry> _following = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ActorEntry> _actors = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, MembershipEntry> _memberships = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ContentObjectEntry> _contentObjects = new(StringComparer.OrdinalIgnoreCase);
     // In-flight actor fetches, keyed by actor IRI value. Coalesces concurrent requests for the
     // same actor (e.g. N feed cards rendering the same author at once) into a single network
     // call — without this, each concurrent caller misses the TTL cache and fires its own GET
     // (local) / POST-proxy (remote) for the same IRI.
     private readonly ConcurrentDictionary<string, Task<IObject?>> _actorInFlight = new(StringComparer.OrdinalIgnoreCase);
+    // In-flight content-object fetches, keyed by object IRI value (147.1). Coalesces concurrent
+    // requests for the same content object (e.g. a reply parent + an announce target pointing at
+    // the same remote post) into a single network call.
+    private readonly ConcurrentDictionary<string, Task<IObject?>> _contentInFlight = new(StringComparer.OrdinalIgnoreCase);
     // Per-object engagement counts (72.1): the /likes + /shares collection walk for a content
     // object, keyed by object IRI. A feed renders one EngagementBar per post; when the page
     // re-renders (e.g. ActorAvatar's async actor-fetch completes -> StateHasChanged) the bar is
@@ -244,6 +251,51 @@ public sealed class UiContext
             // by the time this caller finishes, which is safe because any concurrent caller that
             // already grabbed `fetchTask` holds its own reference to it.
             _actorInFlight.TryRemove(actorIri.Value, out _);
+        }
+    }
+
+    /// <summary>
+    /// Fetches a content object (a Note, Article, …) by IRI, with per-circuit caching and
+    /// concurrent-request coalescing (147.1). Mirrors <see cref="GetActorAsync"/> for non-actor
+    /// objects: a reply parent and an announce target pointing at the same remote post collapse
+    /// into a single network call. Returns null when the fetch fails or the object is not found.
+    /// </summary>
+    public async Task<IObject?> GetContentObjectAsync(Iri objectIri)
+    {
+        if (_contentObjects.TryGetValue(objectIri.Value, out var cached)
+            && DateTime.UtcNow - cached.At < ContentObjectTtl)
+        {
+            return cached.Doc;
+        }
+
+        if (_session.Client is null)
+        {
+            return null;
+        }
+
+        var fetchTask = _contentInFlight.GetOrAdd(objectIri.Value, async _ =>
+        {
+            try
+            {
+                return await _session.Client!.GetObjectAsync(objectIri, CancellationToken.None);
+            }
+            catch
+            {
+                return null;
+            }
+        });
+        try
+        {
+            var doc = await fetchTask;
+            if (doc is not null)
+            {
+                _contentObjects[objectIri.Value] = new ContentObjectEntry(doc, DateTime.UtcNow);
+            }
+            return doc;
+        }
+        finally
+        {
+            _contentInFlight.TryRemove(objectIri.Value, out _);
         }
     }
 

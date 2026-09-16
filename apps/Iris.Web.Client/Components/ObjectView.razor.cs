@@ -952,11 +952,11 @@ public partial class ObjectView
         // detail page — `ParentIri`). A short text preview is kept as a fallback link label when the
         // parent can't be rendered inline.
         var parentIri = EffectiveParentIri;
-        if (parentIri is { } iri && Session.Client is { } client)
+        if (parentIri is { } iri)
         {
             try
             {
-                var parent = await client.GetObjectAsync(iri, CancellationToken.None);
+                var parent = await Ui.GetContentObjectAsync(iri);
                 if (parent is { } parentObj)
                 {
                     _parentObject = parentObj;
@@ -998,31 +998,15 @@ public partial class ObjectView
         {
             try
             {
-                await Session.EnsureReadyAsync();
+                var liked = await Ui.GetContentObjectAsync(likedIri);
+                if (liked is { } likedObj)
+                {
+                    _likedObject = likedObj;
+                }
             }
-            catch
+            finally
             {
-                // Non-fatal: the card falls back to the bare-link rendering.
-            }
-
-            if (Session.Client is { } likeClient)
-            {
-                try
-                {
-                    var liked = await likeClient.GetObjectAsync(likedIri, CancellationToken.None);
-                    if (liked is { } likedObj)
-                    {
-                        _likedObject = likedObj;
-                    }
-                }
-                catch
-                {
-                    // Non-fatal: the card falls back to the bare-link rendering.
-                }
-                finally
-                {
-                    StateHasChanged();
-                }
+                StateHasChanged();
             }
         }
 
@@ -1036,31 +1020,15 @@ public partial class ObjectView
         {
             try
             {
-                await Session.EnsureReadyAsync();
+                var announced = await Ui.GetContentObjectAsync(announceIri);
+                if (announced is { } announcedObj)
+                {
+                    _announcedObject = announcedObj;
+                }
             }
-            catch
+            finally
             {
-                // Non-fatal: the card falls back to the bare-link rendering.
-            }
-
-            if (Session.Client is { } announceClient)
-            {
-                try
-                {
-                    var announced = await announceClient.GetObjectAsync(announceIri, CancellationToken.None);
-                    if (announced is { } announcedObj)
-                    {
-                        _announcedObject = announcedObj;
-                    }
-                }
-                catch
-                {
-                    // Non-fatal: the card falls back to the bare-link rendering.
-                }
-                finally
-                {
-                    StateHasChanged();
-                }
+                StateHasChanged();
             }
         }
 
