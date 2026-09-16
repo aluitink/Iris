@@ -96,7 +96,7 @@ else
                             }
                             @if (summary is { Length: > 0 })
                             {
-                                <p class="directory-item-summary">@Truncate(summary, 150)</p>
+                                <p class="directory-item-summary">@Truncate(StripHtml(summary), 150)</p>
                             }
                         </div>
                     </div>
@@ -271,4 +271,11 @@ else
 
     private static string Truncate(string value, int max)
         => value.Length <= max ? value : value[..max] + "…";
+
+    private static string StripHtml(string value)
+    {
+        var stripped = System.Text.RegularExpressions.Regex.Replace(value, "<[^>]*>", " ");
+        stripped = System.Net.WebUtility.HtmlDecode(stripped);
+        return System.Text.RegularExpressions.Regex.Replace(stripped, @"\s+", " ").Trim();
+    }
 }
