@@ -21,11 +21,11 @@ directory, search, settings, actor detail, community detail, object detail.
 | F-144.6 | S2 (UX bug) | Notifications | Remote content notifications show raw IRI path fragments as link text: "statuses 117271175753958692", "statuses 117272501948282332". `ShortLabel` takes the last two path segments which is meaningless for remote Mastodon IRIs. | **Fixed** `e65645b` — `FriendlyLabel` now returns "View post" for any IRI containing `/statuses/` or `/notes/`. |
 | F-144.7 | — | Notifications | Only a single "Load more" button (no duplicate). Confirms the duplicate was specific to `PagedCollection`. | N/A |
 | F-144.8 | S3 (data) | Communities | Community descriptions from Lemmy render raw HTML: `<p>A community…</p>`, `<a href=…>`. The client should strip HTML or render it safely. | **Fixed** `812c4d0` — `StripHtml` helper removes tags, decodes entities, collapses whitespace. |
-| F-144.9 | S3 (UX) | Communities | "Create a community" form is always expanded, pushing the list down. A "Create community" button that toggles the form would be cleaner. | Open — low priority. |
+| F-144.9 | S3 (UX) | Communities | "Create a community" form is always expanded, pushing the list down. A "Create community" button that toggles the form would be cleaner. | **Fixed** `5d41afc` — form collapses behind a "+ Create a community" button; auto-collapses after success. |
 
 ## Summary
 
-- **Fixed this turn:** F-144.1 (duplicate Load-more), F-144.3 (reply pluralization), F-144.6 (notification labels) — `e65645b`; F-144.4 (remote engagement 401s) — `ce157c2`; F-144.8 (HTML in community descriptions) — `812c4d0`.
+- **Fixed (6):** F-144.1 duplicate Load-more, F-144.3 reply pluralization, F-144.6 notification labels (`e65645b`); F-144.4 remote engagement 401s (`ce157c2`); F-144.8 HTML in community descriptions (`812c4d0`); F-144.9 create-community form toggle (`5d41afc`).
 - **Partially fixed:** F-144.4 — engagement 401s eliminated; residual actor-doc 404s are browser network-log noise (cannot suppress from app code).
-- **Reviewed — no change:** F-144.2 (timestamp 7-day threshold is correct), F-144.5 (profile "Your posts" tab is correct alongside the separate "Replies" tab).
-- **Open (next turns):** F-144.9 (create-community form UX — low priority).
+- **Reviewed — no change (2):** F-144.2 (timestamp 7-day threshold is correct), F-144.5 (profile "Your posts" tab is correct alongside the separate "Replies" tab).
+- **Phase 144 complete.** All 8 findings addressed.
