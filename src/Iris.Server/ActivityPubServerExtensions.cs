@@ -8666,11 +8666,22 @@ public static class ActivityPubServerExtensions
             : new Iri($"{collectionIri}/?page={page}{(query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty)}");
 
         // Read (or render on a miss) through the local collection-page response cache. A ?refresh=true
-        // read bypasses the cache (re-rendering now) and still writes back a fresh entry.
+        // read bypasses the cache (re-rendering now) and still writes back a fresh entry. The feed
+        // (content items) is enriched with engagement counters, mirroring the actor outbox/feed enrichment.
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            async _ =>
+            {
+                var itemsToRender = items;
+                if (collectionPath == "feed")
+                {
+                    itemsToRender = await EnrichCollectionItemsAsync(
+                        items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                }
+                return BuildCollectionPageDocument(collectionIri, page, limit, itemsToRender);
+            },
             ct).ConfigureAwait(false);
 
         // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
@@ -8785,10 +8796,18 @@ public static class ActivityPubServerExtensions
         var collectionIri = new Iri($"{communityIri.Value}/outbox");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
 
+        // 141.4: enrich the community outbox items with engagement counters, mirroring the actor
+        // outbox enrichment (CollectionEndpointHandler).
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            async _ =>
+            {
+                var itemsToRender = await EnrichCollectionItemsAsync(
+                    items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                return BuildCollectionPageDocument(collectionIri, page, limit, itemsToRender);
+            },
             ct).ConfigureAwait(false);
 
         var cacheControl = refresh
