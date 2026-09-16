@@ -53,10 +53,7 @@ else
                 <FollowButton TargetActor="CommunityDoc" />
                 <JoinButton CommunityActor="CommunityDoc" />
             }
-            @if (MemberCount is { } mc)
-            {
-                <span class="community-member-count">@mc member@(mc == 1 ? string.Empty : "s")</span>
-            }
+
         </div>
     </div>
 

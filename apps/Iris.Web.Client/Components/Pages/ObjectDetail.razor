@@ -308,7 +308,7 @@ else if (ObjectDoc is null)
                 var first = attr.FirstOrDefault();
                 if (first is Actor { PreferredUsername: { Length: > 0 } apx })
                 {
-                    return "@" + apx;
+                    return apx;
                 }
 
                 var iri = first?.ResolveObjectIri();
@@ -318,7 +318,7 @@ else if (ObjectDoc is null)
                     var last = path.Split('/').LastOrDefault();
                     if (!string.IsNullOrWhiteSpace(last))
                     {
-                        return "@" + last;
+                        return last;
                     }
                 }
             }
