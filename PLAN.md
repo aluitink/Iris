@@ -99,13 +99,15 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - **147.1 — Performance re-audit: request-spam + cache hit-rate sanity (F-136.12.10, F-142.7) (IN PROGRESS):**
   - Cache metrics now enabled in production (was NullCacheMetrics, all zeros). Hit rate ~68% under normal browsing.
   - Partial dedup of current-user actor fetch (reduced 3→2 on some pages; race window remains).
-  - **Findings so far:**
-    - S2: Directory page N+1 — search returns actor IRIs, client fetches each actor doc individually (7 fetches for 7 local actors).
-    - S2: Profile page — duplicate proxy fetch for same remote object (2× POST /ap/v1/proxy/…RayvenMX…).
-    - S2: Notifications page — unread-count polled 4× per page load.
-    - S3: Duplicate remote actor fetch on notifications (Gargron ×2).
-    - S3: Home timeline blocks rendering until all remote object fetches complete (should render progressively).
-  - Remaining: fix N+1 + duplicate proxy + unread-count polling; write request-count table + findings doc.
+  - **Findings + fixes:**
+    - S2: Cache metrics disabled in production (NullCacheMetrics, all zeros) — **FIXED** (commit 3333f00). Hit rate now ~68%.
+    - S2: Duplicate current-user actor fetch on every page load — **PARTIALLY FIXED** (commit 3333f00; race window remains).
+    - S2: Directory page N+1 (6-7 individual actor fetches) — **FIXED** (commit 7569a28; SkipFetch=true in ActorCard).
+    - S2: Profile page — duplicate proxy fetch for same remote object (2× POST /ap/v1/proxy/…RayvenMX…). **OPEN.**
+    - S2: Notifications page — unread-count polled 4× per page load. **OPEN.**
+    - S3: Duplicate remote actor fetch on notifications (Gargron ×2). **OPEN.**
+    - S3: Home timeline blocks rendering until all remote object fetches complete. **OPEN.**
+  - Remaining: fix duplicate proxy + unread-count polling; write request-count table + findings doc.
 - **147.2 — Feed query performance at scale:** Seed a large dataset (1000+ posts, 50+ follows) in the EF/Postgres test container; measure home/community feed p50/p95 latency. Compare against Phase 116.1 baseline (feed P95=9.3 ms). Flag any query missing an index. Deliverable: timing capture + index audit.
 - **147.3 — Delivery worker throughput under burst:** Measure outbound delivery throughput under a burst of posts to many followers/peers. Verify bounded concurrency (Phase 16.1) holds, no unbounded queue growth. Deliverable: metrics dump + concurrency verification.
 
