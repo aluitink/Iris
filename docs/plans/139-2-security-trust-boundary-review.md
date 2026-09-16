@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [x] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–8 done — begin at scenario 9.
+**Resume checkpoint:** scenarios 1–9 done — begin at scenario 10.
 
 ## Findings
 
@@ -293,3 +293,34 @@ blocking an actor should hide their content from your feed, not prevent them fro
 - **No stored XSS in rendered content**: confirmed (markdown renderer escapes HTML).
 - **No unhandled exception**: confirmed (all tests pass, no unhandled exceptions).
 - **Size caps enforced (Phase 33.4)**: confirmed (413 for oversized media).
+
+## Scenario 9 — CORS / same-origin enforcement (evidence, 2026-09-16)
+
+**PASS — same-origin-only by default; non-allowlisted origins blocked; no dev-mode CORS leakage.**
+
+**Current behavior (confirmed):**
+- `CorsIntegrationTests` (4 tests) all pass, confirming:
+  - `Default_NoCrossOriginAccess_AllowOriginHeaderAbsent`: with no `IRIS_CORS_ORIGINS`
+    configured (the default), **no** `Access-Control-Allow-Origin` header is emitted. A
+    cross-origin preflight/GET gets no CORS header and the browser blocks it. Same-origin-only
+    by default (the safe default for a public instance).
+  - `OptedIn_RegisteredOrigin_AllowOriginHeaderPresent`: when the operator sets
+    `IRIS_CORS_ORIGINS` to an allow-list, a request from a **registered** origin gets the
+    `Access-Control-Allow-Origin` header (cross-origin access granted).
+  - `OptedIn_UnregisteredOrigin_AllowOriginHeaderAbsent`: a request from a **non-allowlisted**
+    origin gets **no** `Access-Control-Allow-Origin` header (blocked).
+  - `OptedIn_RegisteredOrigin_Preflight_AllowsTheMethod`: a preflight from a registered origin
+    allows the requested method.
+
+**CORS posture (confirmed from Phase 33.5):**
+- **Default**: same-origin-only (no CORS policy registered, no `Access-Control-Allow-Origin`
+  header). The Blazor UI is same-origin and needs no CORS.
+- **Opt-in**: operator sets `IRIS_CORS_ORIGINS` to a comma-separated allow-list → a named policy
+  is registered that allows ONLY those origins (never `AllowAnyOrigin`), with credentials so a
+  cookie-authenticated cross-origin consumer can work.
+- **No dev-mode relaxation leaking into prod**: the default (no `IRIS_CORS_ORIGINS`) is
+  same-origin-only. There is no dev-mode flag that relaxes CORS.
+
+**Pass criterion met.** A cross-origin authenticated fetch from a non-allowlisted origin is
+**blocked** (no `Access-Control-Allow-Origin` header). No regression from any dev-mode CORS
+relaxation leaking into prod config (the default is same-origin-only).
