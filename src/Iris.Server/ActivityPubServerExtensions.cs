@@ -3095,9 +3095,9 @@ public static class ActivityPubServerExtensions
                 return id;
             }
 
-            if (item is ILink link)
+            if (item is ILink { Href: { } href })
             {
-                return link.ToString();
+                return href.AbsoluteUri;
             }
         }
 
