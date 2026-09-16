@@ -469,7 +469,18 @@ public static class ActivityPubServerExtensions
             {
                 var factory = sp.GetRequiredService<IActivityPubClientFactory>();
                 client = factory.Create(
-                    new ActivityPubClientOptions { ActorId = serverOptions.InstanceActorId.Value, EnableRetry = false },
+                    new ActivityPubClientOptions
+                    {
+                        ActorId = serverOptions.InstanceActorId.Value,
+                        EnableRetry = false,
+                        // 147.2: wire the client-side caches so remote outbox pages (and actor docs)
+                        // are fetched once per TTL window instead of on every community-feed request.
+                        Caches = new Iris.Client.Caching.ClientCaches(
+                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                            CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
+                        // Bound each remote fetch so a slow/unreachable member cannot stall the feed.
+                        HttpClientTimeout = TimeSpan.FromSeconds(5),
+                    },
                     new HttpClientHandler());
             }
 
@@ -515,6 +526,15 @@ public static class ActivityPubServerExtensions
                 ActorId = options.InstanceActorId.Value,
                 // Outbound outbox fetches do not need retries; keep the pipeline minimal.
                 EnableRetry = false,
+                // 147.2: wire the client-side caches so remote outbox pages (and actor docs) are
+                // fetched once per TTL window instead of on every feed request. Without these,
+                // every /feed call re-fetches all remote follows' outboxes over the wire (the
+                // 1000x latency regression vs Phase 116.1 baseline).
+                Caches = new Iris.Client.Caching.ClientCaches(
+                    Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                    CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
+                // Bound each remote fetch so a slow/unreachable follow cannot stall the whole feed.
+                HttpClientTimeout = TimeSpan.FromSeconds(5),
             };
 
             return new FeedService(

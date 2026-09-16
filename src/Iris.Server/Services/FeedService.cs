@@ -164,31 +164,42 @@ public sealed class FeedService : IFollowFeedService
             feed.Add(item);
         }
 
-        foreach (var followIri in ordered)
-        {
-            if (blocked.Contains(followIri) || muted.Contains(followIri))
-            {
-                // The actor blocked or muted this follow: its content is excluded from the feed (F-07).
-                continue;
-            }
+        // 147.2: parallelize the per-follow fan-out. Previously each follow's outbox (local or
+        // remote) was awaited sequentially, so a feed with N remote follows took the SUM of all
+        // their fetch latencies (11 follows × 0.5–10 s = 7–10 s). With Task.WhenAll the total
+        // latency is bounded by the SLOWEST single follow (plus the local DB reads), not the sum.
+        // A failed or slow remote contributes an empty list (it must not fail the whole feed),
+        // preserving the existing "one broken remote must not fail the feed" guarantee.
+        var eligible = ordered
+            .Where(f => !blocked.Contains(f) && !muted.Contains(f))
+            .ToList();
 
-            IReadOnlyList<IObjectOrLink> items =
-                await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
-                    ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
-                    : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
-
-            foreach (var item in items)
+        var perFollow = await Task.WhenAll(
+            eligible.Select(async followIri =>
             {
-                // 117.1/117.5: thread-aware reply filtering. Replies from followed actors are excluded
-                // from the home feed by default (they appear under the parent post's replies section).
-                // The threadDepth parameter allows opting in to include replies.
-                if (threadDepth is not (> 0) && IsFollowReply(item))
+                try
                 {
-                    continue;
-                }
+                    IReadOnlyList<IObjectOrLink> items =
+                        await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
+                            ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
+                            : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
 
-                feed.Add(item);
-            }
+                    return items
+                        .Where(item => threadDepth is (> 0) || !IsFollowReply(item))
+                        .ToList();
+                }
+                catch
+                {
+                    // A single broken follow must not fail the whole feed (147.2).
+                    return new List<IObjectOrLink>();
+                }
+            }));
+
+        // Merge in the deterministic IRI order of `eligible` (matches the previous sequential
+        // iteration order, so the feed is reproducible for a given set of follows).
+        for (var i = 0; i < eligible.Count; i++)
+        {
+            feed.AddRange(perFollow[i]);
         }
 
         return TruncateDedup(feed);
