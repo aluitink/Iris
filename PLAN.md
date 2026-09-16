@@ -96,7 +96,14 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **147.3 — Delivery worker throughput under burst:** Measure outbound delivery throughput under a burst of posts to many followers/peers. Verify bounded concurrency (Phase 16.1) holds, no unbounded queue growth. Deliverable: metrics dump + concurrency verification.
+**Phase 148 — Performance & scalability review (cont.)** — the remaining 7 scenarios of the Phase 139.5 review (scenarios 1, 2, 3, 6 are done in Phase 147). Each is a measurement/verification slice against a prior baseline; triage any regression as a perf finding.
+
+- **148.1 — Load test: realistic mixed workload (scenario 4):** Run `scripts/load-test-iris.py` against the production Docker app with a representative read/write mix. Pass: meets or exceeds the Phase 49.2 baseline; no error-rate spike. Deliverable: load-test report (rps, p50/p95, error rate) vs. 49.2 baseline.
+- **148.2 — WASM cold-start (scenario 5):** Measure first-load time (bundle size, loading-screen duration) on a throttled connection via Playwright. Pass: no regression vs. Phase 61.1 baseline. Deliverable: timing capture (bundle bytes, TTFI, loading-screen duration).
+- **148.3 — Pagination / backfill cost (scenario 7):** Measure the cost of a first-peer historical backfill (Phase 138.20) against a community with substantial history. Pass: completes in a bounded, documented time; doesn't block the UI thread/request. Deliverable: timing capture.
+- **148.4 — Media proxy overhead (scenario 8):** Measure latency added by the media/content proxy for cross-instance media vs. a direct fetch. Pass: overhead within an acceptable, documented bound. Deliverable: timing capture (proxy vs. direct, p50/p95).
+- **148.5 — Search performance (scenario 9):** Measure full-text search latency (Phase 61.2 indexing) at realistic content volume. Pass: no regression vs. Phase 61.2 baseline. Deliverable: timing capture.
+- **148.6 — Circuit breaker / retry cost under a flapping peer (scenario 10):** Simulate a peer that intermittently fails; confirm the circuit breaker (Phase 131.3) prevents cascading latency into unrelated requests. Pass: unrelated requests unaffected by one flapping peer. Deliverable: metrics dump.
 
 ## Inbox
 
@@ -112,6 +119,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **147.3 (Delivery worker throughput under burst) — complete:** Measured outbound delivery throughput under a burst. All three invariants hold — **no production change needed.** Throughput scales ~linearly with concurrency (serial c=1: 31.5/s → c=32: 783.7/s, ~25×); peak in-flight exactly equals the configured cap in every case (bounded concurrency verified); no unbounded queue growth (120 jobs into a capacity-32 queue: peak depth ≤ 32, drains to 0, all delivered). New `DeliveryWorkerThroughputTests.cs` (3 tests): 200-job multi-peer burst fully drains (Delivered==200, DeadLettered==0), queue-depth bounded by capacity, parallel < half the wall-clock of serial. Full suite green (2160 passed, 0 failed, 16 skipped). [findings](docs/changes/1473-phase147-delivery-throughput.md).
 - **147.2 (Feed query performance at scale) — complete:** Feed was 1000× slower than baseline (P50 7,472 ms vs 9.3 ms) due to sequential remote HTTP fetches (11 remote follows, no cache, no timeout). Fixed by: (1) wiring `ActorCache` (5 min) + `CollectionPageCache` (30 s) into the FeedService + CommunityFeedService outbound clients, (2) parallelizing the per-follow fan-out (`Task.WhenAll`), (3) 5 s `HttpClientTimeout`. Result: P50 7,472 ms → 1,666 ms (4.5× faster), consistent (Min 1,623 ms, Max 2,223 ms). Residual ~1.6 s is the cold-miss cost of the parallel remote fetch (bounded by the slowest remote). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1472-phase147-feed-query-at-scale.md).
 - **147.1 (Request-spam + cache hit-rate re-audit) — complete:** 7 findings (4 fixed, 1 partially fixed, 1 not-a-bug, 1 deferred to 147.2). Enabled production cache metrics (was NullCacheMetrics); dedup'd current-user actor fetch; eliminated directory N+1 (SkipFetch); coalesced duplicate content-object proxy fetches (UiContext.GetContentObjectAsync); eliminated notification Gargron duplicate (defer avatar). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1471-phase147-request-spam-cache-hit-rate.md).
 - **146 (Performance follow-ups) — complete:** 146.1+146.2: wired `ActorCache` into outbound client (F-136.12.7/1). 146.3: wired `CollectionPageCache` into outbound client (F-136.12.3/5). Full suite green (1285 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
