@@ -34,14 +34,14 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5  - [ ] 6  - [ ] 7
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5  - [ ] 6  - [ ] 7
 - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–3 done — begin at scenario 4.
+**Resume checkpoint:** scenarios 1–4 done — begin at scenario 5.
 
 ## Findings
 
@@ -120,3 +120,45 @@ Public `/ap/v1/` endpoints (correctly public by design):
 The 302 redirect is the Blazor Server pattern (redirect to login for browser requests); the 401 is
 for some API requests. Both are secure — no data is served, no state is mutated. All security headers
 present (CSP, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, HSTS).
+
+## Scenario 4 — Replayed / stale signed request (evidence, 2026-09-16)
+
+**CONFIRMED — current behavior matches Phase 136.17's documented gap. Decision: defer.**
+
+**Current behavior (confirmed):**
+- `CrossInstanceReplayDefenseIntegrationTests` (3 tests) all pass, confirming:
+  - `ReplayedSignedRequest_SameDateSameSignature_IsAccepted`: a signed request re-sent verbatim
+    (same Date, same Signature, same Digest, same body) is **accepted** (202). No freshness check.
+  - `DuplicateCreateDelivery_StoredOnce_HandlerRunsOnce`: a redelivered activity (same ID) is
+    stored **exactly once** (IRI dedup via `TryAddActivityAsync`), handler runs once.
+  - `ReorderedWireHeaders_StillValidate`: benign header reordering does not break validation.
+
+**Replay defense posture (confirmed unchanged from Phase 136.17):**
+
+| Attack | Defense | Status |
+|--------|---------|--------|
+| Body tamper | `digest` component cryptographically bound | Enforced (401) |
+| Date tamper | `date` component cryptographically bound | Enforced (401) |
+| Stale-date replay | **No freshness check** | Gap (accepted; IRI dedup prevents state duplication) |
+| Rate-limited spam | Per-peer inbound rate limiter | Enforced (429 + Retry-After) |
+| Duplicate activity | `TryAddActivityAsync` IRI dedup (C-07) | Enforced (stored once) |
+
+**Decision: defer the freshness-check gap.**
+
+Rationale:
+1. **Current posture is acceptable.** A stale-but-valid signature is accepted (202) but is a
+   no-op at the handler level (IRI dedup prevents state duplication). The cryptographic binding
+   prevents tampering; rate limiting prevents spam. The residual risk (a peer re-sending an old
+   activity) is mitigated by the IRI dedup.
+2. **Non-trivial to implement correctly.** A freshness check requires: a configurable tolerance in
+   `ActivityPubServerOptions`, handling clock skew between instances (NTP drift), and careful
+   testing to avoid rejecting legitimate requests from peers with slightly skewed clocks. This is
+   a defense-in-depth improvement, not a critical security fix.
+3. **Phase 139 is a review phase.** The review's job is to confirm the behavior and make the
+   decision, not to implement new features. The gap is documented and tracked.
+
+**Follow-up (tracked):** A future slice could add a freshness window to
+`HttpSignatureValidator.ValidateAsync` (comparing the `date` component against
+`DateTimeOffset.UtcNow` with a configurable tolerance, default e.g. 5 minutes, in
+`ActivityPubServerOptions`). This should be done as a dedicated security-hardening slice with
+comprehensive clock-skew testing, not as part of the Phase 139 review.
