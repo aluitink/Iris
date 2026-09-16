@@ -96,8 +96,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **146.1 — Outbound client caching (F-136.12.7):** The outbound `IActivityPubClient` used by the `DeliveryWorker` and `OutboxPublishHandler` has no `Caches` configured, so every remote-object fetch (e.g. resolving a reply parent's author, fetching an announce target's document) hits the wire even for repeated fetches of the same object. Wire the host's `RemoteActorCache` + `RemoteObjectCache` into the outbound client so repeated fetches are served from cache. Integration test: a reply to a remote parent published twice fetches the parent document only once (cache hit on the second publish).
-- **146.2 — Deduplicate remote object fetch per publish (F-136.12.1):** When a Create is a reply to a remote parent, the `ResolveReplyParentAuthorAsync` fetches the parent document AND the audience rewrite may fetch it again (two wire calls for the same object). Refactor so the parent document is fetched once and shared across the audience rewrite + owner resolution. Integration test: a reply to a remote parent produces exactly one outbound GET for the parent document (verified via a counting handler).
 - **146.3 — Cache outbox page GETs in follow-feed hydration (F-136.12.3/5):** The follow-feed endpoint walks each remote follow's outbox page-by-page, making O(follows × pages) uncached GETs per feed request. Add a short-TTL cache (e.g. 30 s) for remote outbox pages so a user with many remote follows does not re-fetch the same pages on every feed refresh. Integration test: a follow feed with 2 remote follows + 2 pages each makes 4 outbox GETs on the first call and 0 on the second (within TTL).
 
 ## Inbox
@@ -114,6 +112,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- **146.1 + 146.2 (Outbound client caching + dedup) — complete:** Wired a client-side `ActorCache` into the server's outbound `IActivityPubClient` so repeated remote-object fetches (e.g. `ResolveObjectAuthorForDeliveryAsync` called twice for the same reply parent) are served from cache. Full suite green (1284 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **145 (Deterministic delivery in flaky integration tests) — complete:** Replaced the racy background `DeliveryWorker` pump in the two known-flaky round-trip tests with a synchronous `DeterministicDeliveryDriver` + `TestDeliveryQueue`. Full suite green (1283 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
 - **144 (General UI/UX review) — complete:** 8 findings; 6 fixed, 2 reviewed-no-change. [findings](docs/plans/phase-144-ux-review.md).
 - **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
