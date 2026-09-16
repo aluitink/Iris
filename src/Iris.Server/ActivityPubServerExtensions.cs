@@ -8604,8 +8604,15 @@ public static class ActivityPubServerExtensions
             doc.ExtensionData = ext;
         }
 
+        // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
+        // re-read from the store; intermediates must not serve a stale copy). Otherwise the standard
+        // actor cache-control (max-age=60, stale-while-revalidate=300). Mirrors the actor document
+        // handler (F-142.1).
+        var bypassCache = HasRefreshBypass(context);
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.ActorCacheControl;
+            bypassCache
+                ? ActivityPubServerConstants.NoCacheCacheControl
+                : ActivityPubServerConstants.ActorCacheControl;
         return Results.Text(ActivityJson.Serialize(doc), NegotiateContentType(context));
     }
 
