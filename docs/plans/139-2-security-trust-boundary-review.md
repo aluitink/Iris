@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [x] 9  - [x] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [x] 9  - [x] 10 - [x] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–10 done — begin at scenario 11.
+**Resume checkpoint:** scenarios 1–11 done — begin at scenario 12.
 
 ## Findings
 
@@ -357,3 +357,34 @@ the TLS-terminating reverse proxy.
 **Pass criterion met.** Cookie flags are correct (`Secure` conditional, `HttpOnly`, `SameSite=Lax`).
 Session fixation is handled by the framework (session ID regenerated on login). Logout invalidation
 is handled by the framework (cookie cleared on logout). Old session is unusable after logout.
+
+## Scenario 11 — Key rotation trust (evidence, 2026-09-16)
+
+**PASS — key rotation works correctly; new key honored, old key rejected post-rotation, peer
+converges on the new key.**
+
+**Current behavior (confirmed):**
+- 17 key rotation tests all pass, confirming:
+  - `MoveKeyRotationIntegrationTests.Move_InvalidateOldKey_OldKeyRejectedAfterMove_NewKeyAcceptedAfterMove`:
+    a key rotation (Move) invalidates the old key; old-key-signed requests are **rejected** after
+    the move; new-key-signed requests are **accepted** after the move.
+  - `KeyRotationFederationIntegrationTests.RotatedRemoteKey_SameKeyId_IsAcceptedAfterInvalidation`:
+    a rotated remote key (same keyId, new public key) is **accepted** after the invalidation
+    propagates.
+  - `KeyRotationInvalidationTests` (5 tests): when signature verification fails (stale key), the
+    key cache is **invalidated** and the key is **re-resolved** once (not retried in a loop). If
+    the re-resolve returns null, the request is rejected (no second verify). A successful verify
+    does **not** invalidate the cache. A missing key does **not** invalidate the cache.
+  - `DocumentDerivedKeyProviderConvergenceTests.RotateOnInstanceA_InstanceB_ConvergesOnRefresh`:
+    a key rotation on instance A causes instance B to **converge** on the new key when it refreshes
+    its key provider.
+  - `KeyProviderRefreshServiceAutoConvergenceTests.RotateOnInstanceA_InstanceB_ConvergesAutomatically_NoExplicitRefresh`:
+    instance B **automatically** converges on the new key (no explicit refresh needed).
+  - `KeyProviderRehydrationTests.Rehydrate_RotatedActor_RegistersCurrentKey_NotStaleKey1`:
+    rehydrating a rotated actor registers the **current** key, not the stale key.
+
+**Pass criterion met.** After a key rotation:
+- **New key honored**: confirmed (new-key-signed requests accepted after rotation).
+- **Old key rejected after rotation completes**: confirmed (old key invalidated, old-key-signed
+  requests rejected).
+- **Peer picks up the new key**: confirmed (convergence on refresh / automatic convergence).
