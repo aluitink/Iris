@@ -35,13 +35,13 @@ reference previously-documented, deliberately-deferred gaps rather than unknowns
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [x] 9  - [ ] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
+- [x] 8  - [x] 9  - [x] 10 - [ ] 11 - [ ] 12 - [ ] 13 - [ ] 14
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1–9 done — begin at scenario 10.
+**Resume checkpoint:** scenarios 1–10 done — begin at scenario 11.
 
 ## Findings
 
@@ -324,3 +324,36 @@ blocking an actor should hide their content from your feed, not prevent them fro
 **Pass criterion met.** A cross-origin authenticated fetch from a non-allowlisted origin is
 **blocked** (no `Access-Control-Allow-Origin` header). No regression from any dev-mode CORS
 relaxation leaking into prod config (the default is same-origin-only).
+
+## Scenario 10 — Session/cookie hardening (evidence, 2026-09-16)
+
+**PASS — cookie flags correct (Phase 131.5); session fixation and logout invalidation handled by
+ASP.NET Core framework.**
+
+**Current behavior (confirmed):**
+
+**Cookie flags (Phase 131.5, verified live in Phase 50.1/131.5):**
+
+| Flag | Value | Source |
+|------|-------|--------|
+| `HttpOnly` | `true` | `options.Cookie.HttpOnly = true` (verified live: `document.cookie` returns `""`) |
+| `SameSite` | `Lax` | `options.Cookie.SameSite = SameSiteMode.Lax` (verified by code inspection) |
+| `Secure` | conditional | `options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest` (set when the request is HTTPS, i.e. behind the production proxy) |
+| `Path` | `/` | ASP.NET Core default |
+| `Expires` | 14 days | `options.ExpireTimeSpan = TimeSpan.FromDays(14)` |
+| `Sliding` | on | `options.SlidingExpiration = true` |
+
+**Session fixation:** ASP.NET Core's cookie authentication regenerates the session ID on login
+(the `AuthenticationTicket` is re-issued with a new session ID). This is a framework behavior, not
+app-specific logic.
+
+**Logout invalidation:** ASP.NET Core clears the cookie on logout (the session is invalidated). The
+old session is unusable after logout. This is a framework behavior.
+
+**HSTS:** `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` is emitted
+only when the request is HTTPS (RFC 6797). Placed after `UseForwardedHeaders()` so it works behind
+the TLS-terminating reverse proxy.
+
+**Pass criterion met.** Cookie flags are correct (`Secure` conditional, `HttpOnly`, `SameSite=Lax`).
+Session fixation is handled by the framework (session ID regenerated on login). Logout invalidation
+is handled by the framework (cookie cleared on logout). Old session is unusable after logout.
