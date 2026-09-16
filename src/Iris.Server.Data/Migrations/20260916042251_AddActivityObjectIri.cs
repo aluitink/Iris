@@ -23,16 +23,24 @@ namespace Iris.Server.Data.Migrations
                 columns: new[] { "ActivityType", "ObjectIri" });
 
             // Backfill existing rows: extract the activity's object IRI from the jsonb Document column.
-            // For activities that have an "object" property (Like, Announce, Create, etc.), the first
-            // entry's "id" (or "href" for links) is the object IRI. Activities without an object
-            // property (e.g. bare Undo) get NULL.
+            // "object" can be a single object (most activities) or an array (rare).
+            // For a single object, read "id" directly. For an array, read the first entry's "id" or "href".
+            // Activities without an object property (e.g. bare Undo) get NULL.
+            migrationBuilder.Sql(@"
+                UPDATE ""Activities""
+                SET ""ObjectIri"" = (""Document"" -> 'object' ->> 'id')
+                WHERE ""ObjectIri"" IS NULL
+                  AND ""Document"" ? 'object'
+                  AND jsonb_typeof(""Document"" -> 'object') = 'object'
+                  AND ""Document"" -> 'object' ? 'id';
+            ");
+
             migrationBuilder.Sql(@"
                 UPDATE ""Activities""
                 SET ""ObjectIri"" = (""Document"" -> 'object' -> 0 ->> 'id')
                 WHERE ""ObjectIri"" IS NULL
                   AND ""Document"" ? 'object'
                   AND jsonb_typeof(""Document"" -> 'object') = 'array'
-                  AND jsonb_array_length(""Document"" -> 'object') > 0
                   AND ""Document"" -> 'object' -> 0 ? 'id';
             ");
 
@@ -42,7 +50,6 @@ namespace Iris.Server.Data.Migrations
                 WHERE ""ObjectIri"" IS NULL
                   AND ""Document"" ? 'object'
                   AND jsonb_typeof(""Document"" -> 'object') = 'array'
-                  AND jsonb_array_length(""Document"" -> 'object') > 0
                   AND ""Document"" -> 'object' -> 0 ? 'href';
             ");
         }

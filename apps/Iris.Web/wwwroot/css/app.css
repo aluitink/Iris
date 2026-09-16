@@ -666,21 +666,7 @@ input[type="url"] {
 .paged-collection-sentinel {
     height: 1px;
     width: 100%;
-}
-
-.paged-collection-sentinel--clickable {
-    height: 48px;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.paged-collection-sentinel--clickable::after {
-    content: "Scroll to load more";
-    font-size: var(--font-size-sm);
-    color: var(--muted);
-    opacity: 0.6;
 }
 
 .paged-collection-loadmore-fallback {

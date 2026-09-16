@@ -49,8 +49,7 @@
             }
             @if (HasMore)
             {
-                <div class="paged-collection-sentinel paged-collection-sentinel--clickable" @onclick="LoadMoreAsync" role="button" aria-label="Load more" tabindex="0"></div>
-                <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                <div class="paged-collection-sentinel" @onclick="LoadMoreAsync" role="button" aria-label="Load more" tabindex="0"></div>
                 @if (LoadingMore)
                 {
                     <div class="card-loading card-loading-inline">
@@ -59,6 +58,10 @@
                         </svg>
                         <span class="muted">Loading…</span>
                     </div>
+                }
+                else
+                {
+                    <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
                 }
             }
         }
