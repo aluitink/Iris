@@ -63,6 +63,19 @@ public partial class ObjectView
     // content preview (author, text, media) like Mastodon.
     private IObject? _announcedObject;
 
+    // 152 — the original post a boosted reply was replying to. When the boosted object is itself a
+    // reply (its inReplyTo is set), the boost card renders the ORIGINAL post it answers to as the card
+    // body (just with the "Boosted by" indicator) rather than the reply. Fetched in OnInitializedAsync
+    // when BoostedObject.GetParentIri() is non-null. Null when the boosted object is not a reply (or the
+    // fetch has not completed / failed) — in that case the card renders the boosted object itself.
+    private IObject? _boostedParentObject;
+
+    // 152 — the original post a liked reply was replying to. When the liked object is itself a reply,
+    // the like card renders the ORIGINAL post it answers to as the card body (just with the "Liked"
+    // indicator) rather than the reply. Fetched in OnInitializedAsync when _likedObject.GetParentIri()
+    // is non-null. Null otherwise — the card renders the liked object itself.
+    private IObject? _likedParentObject;
+
     // Lemmy score data (fetched from the Lemmy REST API) for the current post, when the post
     // is a Lemmy post. Null when not a Lemmy post or the fetch failed.
     private LemmyPostScore? _lemmyScore;
@@ -583,17 +596,17 @@ public partial class ObjectView
     }
 
     /// <summary>
-    /// The IRI of the unwrapped boosted content object (the Page/Note/Article), distinct from
+    /// The IRI of the rendered target content object (the Page/Note/Article), distinct from
     /// the Announce target IRI (which may point to the Create activity). Used for the
-    /// EngagementBar so like/boost/reply counts target the actual post.
+    /// EngagementBar so like/boost/reply counts target the post the card renders. (152 — when the boost
+    /// is of a reply the target is the original post it answers to, so the bar shows that post's counts.)
     /// </summary>
     private Iri? BoostedContentIri
     {
         get
         {
-            var raw = ActivityEmbeddedObject ?? _announcedObject;
-            var unwrapped = UnwrapCreate(raw);
-            if (unwrapped is { Id: { Length: > 0 } id })
+            var target = BoostedRenderTarget;
+            if (target is { Id: { Length: > 0 } id })
             {
                 return new Iri(id);
             }
@@ -610,8 +623,9 @@ public partial class ObjectView
     {
         get
         {
-            // Prefer the unwrapped content object's attributedTo (the original post author).
-            if (BoostedObject is ActivityObject { AttributedTo: { } at } &&
+            // 152 — prefer the rendered target's attributedTo (the original post author when the boost is of
+            // a reply, the boosted object's author otherwise).
+            if (BoostedRenderTarget is ActivityObject { AttributedTo: { } at } &&
                 at.FirstOrDefault()?.ResolveObjectIri() is { } author)
             {
                 return author;
@@ -622,14 +636,15 @@ public partial class ObjectView
     }
 
     /// <summary>
-    /// 121.7 — The published time of the boosted object, preferring the unwrapped content
-    /// object's <c>published</c> and falling back to the activity-level published.
+    /// 121.7 — The published time of the rendered target, preferring the target's <c>published</c> and
+    /// falling back to the activity-level published. (152 — the target is the original post when the boost
+    /// is of a reply, the boosted object otherwise.)
     /// </summary>
     private DateTime? BoostedPublished
     {
         get
         {
-            if (BoostedObject is ActivityObject { Published: not null } p)
+            if (BoostedRenderTarget is ActivityObject { Published: not null } p)
             {
                 return p.Published;
             }
@@ -639,18 +654,78 @@ public partial class ObjectView
     }
 
     /// <summary>
-    /// The <c>name</c> of the boosted content object (the post title for Lemmy Page objects).
+    /// The <c>name</c> of the rendered target (the post title for Lemmy Page objects). (152 — the target is
+    /// the original post when the boost is of a reply, the boosted object otherwise.)
     /// </summary>
-    private string? BoostedName => (BoostedObject as ActivityObject)?.Name?.FirstOrDefault();
+    private string? BoostedName => (BoostedRenderTarget as ActivityObject)?.Name?.FirstOrDefault();
 
     /// <summary>
-    /// 139.1 F-3 — Whether the boosted object's <c>name</c> duplicates its <c>content</c> (HTML-stripped,
+    /// 152 — The original post a boosted reply was replying to, when the boosted object is itself a
+    /// reply. When non-null the boost card renders THIS object as the card body (the original post) and
+    /// shows the "Boosted by" indicator, rather than the reply the booster boosted. Null when the boosted
+    /// object is not a reply (top-level post) — the card then renders the boosted object itself.
+    /// </summary>
+    private IObject? BoostedReplyParent =>
+        BoostedObject?.GetParentIri() is { } && _boostedParentObject is { } ? _boostedParentObject : null;
+
+    /// <summary>
+    /// 152 — The object the boost card renders as its body: the original post the boosted reply answers to
+    /// (when the boosted object is a reply and its parent was resolved), otherwise the boosted object
+    /// itself.
+    /// </summary>
+    private IObject? BoostedRenderTarget => BoostedReplyParent ?? BoostedObject;
+
+    /// <summary>
+    /// 152 — Whether the boost card is rendering the original post a boosted reply answers to (so it can
+    /// show a "replying to …" context hint under the "Boosted by" line).
+    /// </summary>
+    private bool IsBoostOfReply => BoostedReplyParent is not null;
+
+    /// <summary>
+    /// 152 — The original post a liked reply was replying to, when the liked object is itself a reply.
+    /// When non-null the like card renders THIS object as the card body (the original post) and shows the
+    /// "Liked" indicator, rather than the reply the liker liked. Null otherwise — the card renders the
+    /// liked object itself.
+    /// </summary>
+    private IObject? LikedReplyParent =>
+        _likedObject?.GetParentIri() is { } && _likedParentObject is { } ? _likedParentObject : null;
+
+    /// <summary>
+    /// 152 — The object the like card renders as its body: the original post the liked reply answers to
+    /// (when the liked object is a reply and its parent was resolved), otherwise the liked object itself.
+    /// </summary>
+    private IObject? LikedRenderTarget => LikedReplyParent ?? _likedObject;
+
+    /// <summary>
+    /// 152 — Whether the like card is rendering the original post a liked reply answers to (so it can show
+    /// a "replying to …" context hint under the "Liked" line).
+    /// </summary>
+    private bool IsLikeOfReply => LikedReplyParent is not null;
+
+    /// <summary>
+    /// 152 — A short label for the reply target the boosted/liked object answers to, used for the
+    /// "replying to …" context hint. Prefers the original post's author handle, falling back to its IRI.
+    /// </summary>
+    private string? ReplyContextLabel(IObject? replyParent)
+    {
+        if (replyParent is null)
+        {
+            return null;
+        }
+
+        var author = (replyParent as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        return author is { } a ? HandleOf(a) : (replyParent as ActivityObject)?.Id;
+    }
+
+    /// <summary>
+    /// 139.1 F-3 — Whether the rendered target's <c>name</c> duplicates its <c>content</c> (HTML-stripped,
     /// case-insensitive). When a cross-posted Note is delivered to a platform that derives a Page's
     /// <c>name</c> from its content (Lemmy), the title and body are identical and rendering both
-    /// duplicates the visible text. The render suppresses the title in that case.
+    /// duplicates the visible text. The render suppresses the title in that case. (152 — the target is the
+    /// original post when the boost is of a reply, the boosted object otherwise.)
     /// </summary>
     private bool BoostedTitleDuplicatesContent
-        => BoostedObject is ActivityObject bao
+        => BoostedRenderTarget is ActivityObject bao
             && NameDuplicatesContent(bao.Name?.FirstOrDefault(), JoinStrings(bao.Content));
 
     /// <summary>
@@ -715,15 +790,23 @@ public partial class ObjectView
     /// </summary>
     private IReadOnlyList<RichAttachment> ResolveBoostedAttachments(IObject boosted)
     {
-        // Prefer the unwrapped content object's attachments (the Page/Note/Article), not the
-        // wrapper Create activity's (which has none).
+        // 152 — the caller passes the rendered target (the original post when the boost is of a reply,
+        // the boosted object otherwise). Prefer that target's attachments; fall back to the embedded
+        // object's (unwrapped, in case the target is still a wrapper Create activity) when the target has
+        // none of its own.
+        var targetAttachments = boosted.GetRichAttachments();
+        if (targetAttachments.Count > 0)
+        {
+            return targetAttachments;
+        }
+
         var unwrapped = UnwrapCreate(ActivityEmbeddedObject ?? boosted);
         if (unwrapped is { } u)
         {
             return u.GetRichAttachments();
         }
 
-        return boosted.GetRichAttachments();
+        return targetAttachments;
     }
 
     private PollData? ResolvePoll()
@@ -1038,6 +1121,48 @@ public partial class ObjectView
             finally
             {
                 StateHasChanged();
+            }
+        }
+
+        // 152 — when the boosted object is itself a reply (its inReplyTo is set), fetch the ORIGINAL post
+        // it answers to so the boost card can render that original post as its body (just with the
+        // "Boosted by" indicator) rather than the reply. Runs after the boosted object is known (embedded
+        // or fetched above). Best-effort: a fetch failure simply means the card renders the boosted
+        // object (the reply) as before.
+        if (Item is Announce && BoostedObject?.GetParentIri() is { } boostedReplyIri)
+        {
+            try
+            {
+                var parent = await Ui.GetContentObjectAsync(boostedReplyIri);
+                if (parent is { } parentObj)
+                {
+                    _boostedParentObject = parentObj;
+                    StateHasChanged();
+                }
+            }
+            catch
+            {
+                // Non-fatal: the boost card renders the boosted reply itself.
+            }
+        }
+
+        // 152 — when the liked object is itself a reply, fetch the ORIGINAL post it answers to so the like
+        // card can render that original post as its body (just with the "Liked" indicator) rather than the
+        // reply. Runs after the liked object is known (embedded or fetched above). Best-effort.
+        if (Item is Like && _likedObject?.GetParentIri() is { } likedReplyIri)
+        {
+            try
+            {
+                var parent = await Ui.GetContentObjectAsync(likedReplyIri);
+                if (parent is { } parentObj)
+                {
+                    _likedParentObject = parentObj;
+                    StateHasChanged();
+                }
+            }
+            catch
+            {
+                // Non-fatal: the like card renders the liked reply itself.
             }
         }
 

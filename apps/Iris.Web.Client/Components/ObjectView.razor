@@ -216,11 +216,19 @@
                     {
                         <time class="object-time object-boost-time" title="@boostTime.ToString("o")">@RelativeTime(boostTime)</time>
                     }
+                    @if (IsBoostOfReply)
+                    {
+                        // 152 — the boosted post was itself a reply; the card renders the ORIGINAL post it
+                        // answers to, so note that context under the "Boosted by" line.
+                        <span class="object-action object-boost-reply-hint">
+                            @("replying to " + (ReplyContextLabel(BoostedReplyParent) ?? "original post"))
+                        </span>
+                    }
                 </div>
             }
             @if (AnnounceTargetIri is { } targetIri)
             {
-                @if (BoostedObject is { } boosted)
+                @if (BoostedRenderTarget is { } boosted)
                 {
                     <div class="object-item object-item--boosted">
                         <div class="object-header">
@@ -303,12 +311,21 @@
                 {
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
+                @if (IsLikeOfReply)
+                {
+                    // 152 — the liked post was itself a reply; the card renders the ORIGINAL post it
+                    // answers to, so note that context under the "Liked" header.
+                    <span class="object-action object-like-reply-hint">
+                        @("replying to " + (ReplyContextLabel(LikedReplyParent) ?? "original post"))
+                    </span>
+                }
             </div>
-            @if (_likedObject is { } liked)
+            @if (LikedRenderTarget is { } liked)
             {
                 // 119.1 — the liked object was resolved: render it as a full, nested object card
                 // (author, content, media, engagement) under the "Liked" header, so the Likes tab
-                // shows the actual liked post rather than a bare link.
+                // shows the actual liked post rather than a bare link. 152 — when the liked post is a
+                // reply this is the ORIGINAL post it answers to (the render target), not the reply.
                 <div class="object-like-resolved">
                     <ObjectView Item="liked" />
                 </div>
