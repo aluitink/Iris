@@ -3,15 +3,6 @@
     {
         <div class="object-item">
             <div class="object-header">
-                @* Phase 133.1 — two-row header: the post date is a single top line (left-justified);
-                   the actor handle + moderation bar sit on the next line (moderation left-justified,
-                   directly after the handle) so long usernames don't crowd the timestamp. *@
-                @if (ActivityPublished is { } pub)
-                {
-                    <div class="object-header-time">
-                        <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
-                    </div>
-                }
                 <div class="object-header-actor">
                     @if (ActivityActorIri is { } actor)
                     {
@@ -25,6 +16,10 @@
                             OnReport="() => CardReportAsync(modAuthor)" />
                     }
                 </div>
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
             </div>
             @if (ActivityContentObject is { } contentObj)
             {
@@ -80,7 +75,7 @@
                 {
                     <a href="@ObjectHref(linkIri)" title="@linkIri" class="object-iri">@linkIri</a>
                 }
-                @if (ActivityParentIri is { } parent)
+                @if (ActivityParentIri is { } parent && !SuppressParentContext)
                 {
                     @if (HasParentContext)
                     {
@@ -405,15 +400,6 @@
     {
         <div class="object-item">
             <div class="object-header">
-                @* Phase 133.1 — two-row header: the post date is a single top line (left-justified);
-                   the actor handle + moderation bar sit on the next line (moderation left-justified,
-                   directly after the handle) so long usernames don't crowd the timestamp. *@
-                @if (Published is { } published)
-                {
-                    <div class="object-header-time">
-                        <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
-                    </div>
-                }
                 <div class="object-header-actor">
                     @if (AuthorIri is { } author)
                     {
@@ -427,6 +413,10 @@
                             OnReport="() => CardReportAsync(modAuthor)" />
                     }
                 </div>
+                @if (Published is { } published)
+                {
+                    <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
+                }
             </div>
             @if (AudienceIris.Count > 0)
             {
@@ -472,7 +462,7 @@
                     </a>
                 }
             }
-            @if (ParentIri is { } parent)
+            @if (ParentIri is { } parent && !SuppressParentContext)
             {
                 @if (HasParentContext)
                 {

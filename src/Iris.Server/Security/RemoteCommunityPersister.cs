@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Iris.Core;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
@@ -101,6 +102,60 @@ public sealed class RemoteCommunityPersister
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist remote community {Iri} to durable store", iri);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Replaces the stored copy of a remote community (Group) with a freshly fetched document (the
+    /// proxy endpoint's cache-refresh path): the stored document is overwritten and stamped with the
+    /// server-internal <c>iris:fetchedAt</c> freshness mark (the current UTC time) in
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> so the proxy's cache-first
+    /// read can tell a fresh cached document from a stale one. Local communities (IRI prefix matches
+    /// <see cref="_instanceBase"/>) are never touched — they are provisioned, not cached.
+    /// </summary>
+    /// <remarks>
+    /// Best-effort and idempotent like <see cref="PersistIfNewAsync(Group, CancellationToken)"/>: a
+    /// store failure is logged and never propagated (the refresh must not break the proxied read).
+    /// Unlike <see cref="PersistIfNewAsync(Group, CancellationToken)"/>, this OVERWRITES the stored
+    /// document and stamps the freshness mark so the next cache-first read within the freshness
+    /// window serves the refreshed copy without re-fetching.
+    /// </remarks>
+    /// <param name="community">The freshly fetched remote community (Group) document to store.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the stored copy was refreshed; <see langword="false"/>
+    /// when the community has no IRI, is a local community, or the store write failed.</returns>
+    public async Task<bool> RefreshAsync(Group? community, CancellationToken ct = default)
+    {
+        if (community is null || community.Id is not { } idStr)
+        {
+            return false;
+        }
+
+        var iri = new Iri(idStr);
+
+        // Skip local communities — they are provisioned by the community creation flow.
+        if (_instanceBase is { } instanceBase)
+        {
+            var prefix = instanceBase.Value.TrimEnd('/');
+            if (idStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            community.ExtensionData ??= new Dictionary<string, JsonElement>();
+            community.ExtensionData[ActivityPubExtensionNames.FetchedAt] =
+                JsonSerializer.SerializeToElement(DateTimeOffset.UtcNow.ToString("O"));
+            await _communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+            _logger.LogInformation("Refreshed cached remote community {Iri}", iri);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh cached remote community {Iri}", iri);
             return false;
         }
     }

@@ -1,7 +1,9 @@
-@using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
+
+@inject UiContext Ui
 
 @if (Client is null || LocalModeration is null || Session.ActorId is not { } me || TargetActorIri is null || IsSelf)
 {
@@ -35,6 +37,8 @@
     [Parameter]
     public IObjectOrLink? TargetActor { get; set; }
 
+    private string? _lastTargetIri;
+
     private IActivityPubClient? Client => Session.Client;
     private ILocalModerationClient? LocalModeration => Session.LocalModeration;
 
@@ -43,7 +47,6 @@
     private bool IsMuted { get; set; }
     private string? _blockIri;
     private string? _flagIri;
-    private string? _lastTargetIri;
 
     private Iri? TargetActorIri
     {
@@ -73,55 +76,28 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (TargetActor is not IObject { Id: { Length: > 0 } targetId })
+        var target = TargetActorIri;
+        if (target is not { } targetIri)
         {
             return;
         }
 
-        if (_lastTargetIri == targetId)
+        var targetValue = targetIri.Value;
+        if (_lastTargetIri == targetValue)
         {
             return;
         }
 
-        _lastTargetIri = targetId;
+        _lastTargetIri = targetValue;
         IsBlocked = false;
         IsMuted = false;
         _blockIri = null;
         _flagIri = null;
 
-        var client = Client;
-        if (client is not null && Session.ActorId is { } me)
-        {
-            try
-            {
-                IsBlocked = await ContainsIriAsync(client.GetBlocksAsync(me), targetId);
-                IsMuted = await ContainsIriAsync(client.GetMutesAsync(me), targetId);
-            }
-            catch
-            {
-                // Best-effort state read; leave defaults on failure.
-            }
-        }
-    }
-
-    private static async Task<bool> ContainsIriAsync(IAsyncEnumerable<IObjectOrLink> items, string iri)
-    {
-        await foreach (var item in items)
-        {
-            var value = item switch
-            {
-                IObject obj => obj.Id,
-                Link link => link.Href?.ToString(),
-                _ => null,
-            };
-
-            if (string.Equals(value, iri, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        // The blocks/mutes state comes from the UiContext's per-circuit moderation cache: the first
+        // card on a page walks the signed-in user's /blocks + /mutes collections once, and every
+        // other card (N-1 of them) is an O(1) lookup instead of 2N redundant collection reads.
+        (IsBlocked, IsMuted) = await Ui.GetModerationStateAsync(targetIri);
     }
 
     private async Task BlockAsync()
@@ -139,6 +115,7 @@
             {
                 IsBlocked = true;
                 _blockIri = result.MintedId;
+                Ui.InvalidateModeration();
             }
         }
         finally
@@ -162,6 +139,7 @@
             {
                 IsBlocked = false;
                 _blockIri = null;
+                Ui.InvalidateModeration();
             }
         }
         finally
@@ -184,6 +162,7 @@
             if (result.IsSuccess)
             {
                 IsMuted = true;
+                Ui.InvalidateModeration();
             }
         }
         finally
@@ -206,6 +185,7 @@
             if (result.IsSuccess)
             {
                 IsMuted = false;
+                Ui.InvalidateModeration();
             }
         }
         finally

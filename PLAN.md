@@ -95,15 +95,10 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 
 ## Up Next
+**Phase 149 - Community Page Renovations** The community page should show communities you are following, we should render a proper actor card (maybe a community specific actor card if there are additonal values for a Group actor that we want to display) We should show a Follow/Unfollow button (will be unfollow since these are communities we are following). We should update the Directory commnunity to use the same cards for display.
 
-**Phase 148 — Performance & scalability review (cont.)** — the remaining 7 scenarios of the Phase 139.5 review (scenarios 1, 2, 3, 6 are done in Phase 147). Each is a measurement/verification slice against a prior baseline; triage any regression as a perf finding.
 
-- **148.2 — WASM cold-start (scenario 5):** Measure first-load time (bundle size, loading-screen duration) on a throttled connection via Playwright. Pass: no regression vs. Phase 61.1 baseline. Deliverable: timing capture (bundle bytes, TTFI, loading-screen duration).
-- **148.3 — Pagination / backfill cost (scenario 7):** Measure the cost of a first-peer historical backfill (Phase 138.20) against a community with substantial history. Pass: completes in a bounded, documented time; doesn't block the UI thread/request. Deliverable: timing capture.
-- **148.4 — Media proxy overhead (scenario 8):** Measure latency added by the media/content proxy for cross-instance media vs. a direct fetch. Pass: overhead within an acceptable, documented bound. Deliverable: timing capture (proxy vs. direct, p50/p95).
-- **148.5 — Search performance (scenario 9):** Measure full-text search latency (Phase 61.2 indexing) at realistic content volume. Pass: no regression vs. Phase 61.2 baseline. Deliverable: timing capture.
-- **148.6 — Circuit breaker / retry cost under a flapping peer (scenario 10):** Simulate a peer that intermittently fails; confirm the circuit breaker (Phase 131.3) prevents cascading latency into unrelated requests. Pass: unrelated requests unaffected by one flapping peer. Deliverable: metrics dump.
-
+**Phase 155 - Signature Compatibility Check** Review the ui container logs for indications of failed signature validation and investigate.
 ## Inbox
 
 - *(empty)*
@@ -118,15 +113,6 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- **148.1 (Load test: realistic mixed workload) — complete:** Ran `scripts/load-test-iris.py` against the rebuilt production Docker app (localhost:8088 + public iris.luit.ink) at 10/50/100 concurrency. **PASS — no app regression:** 0.0% errors at all levels (0 of 2,700+ requests); p50/p95/p99 at or within variance of the Phase 49.2 baseline (p50 @10: 141 ms vs 144; p99 @100: 1.48 s vs 1.43 s); all 5 endpoints (health/ready/metrics/home/framework) perform equally; app healthy pre+post. Throughput ~8-16% below 49.2 rps (52-58 vs 62-65) — within the bounded Python test client's run-to-run variance (49.2 attributed that rps ceiling to the client, not the app). [findings](docs/changes/1481-phase148-load-test-mixed-workload.md).
-- **147.3 (Delivery worker throughput under burst) — complete:** Measured outbound delivery throughput under a burst. All three invariants hold — **no production change needed.** Throughput scales ~linearly with concurrency (serial c=1: 31.5/s → c=32: 783.7/s, ~25×); peak in-flight exactly equals the configured cap in every case (bounded concurrency verified); no unbounded queue growth (120 jobs into a capacity-32 queue: peak depth ≤ 32, drains to 0, all delivered). New `DeliveryWorkerThroughputTests.cs` (3 tests): 200-job multi-peer burst fully drains (Delivered==200, DeadLettered==0), queue-depth bounded by capacity, parallel < half the wall-clock of serial. Full suite green (2160 passed, 0 failed, 16 skipped). [findings](docs/changes/1473-phase147-delivery-throughput.md).
-- **147.2 (Feed query performance at scale) — complete:** Feed was 1000× slower than baseline (P50 7,472 ms vs 9.3 ms) due to sequential remote HTTP fetches (11 remote follows, no cache, no timeout). Fixed by: (1) wiring `ActorCache` (5 min) + `CollectionPageCache` (30 s) into the FeedService + CommunityFeedService outbound clients, (2) parallelizing the per-follow fan-out (`Task.WhenAll`), (3) 5 s `HttpClientTimeout`. Result: P50 7,472 ms → 1,666 ms (4.5× faster), consistent (Min 1,623 ms, Max 2,223 ms). Residual ~1.6 s is the cold-miss cost of the parallel remote fetch (bounded by the slowest remote). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1472-phase147-feed-query-at-scale.md).
-- **147.1 (Request-spam + cache hit-rate re-audit) — complete:** 7 findings (4 fixed, 1 partially fixed, 1 not-a-bug, 1 deferred to 147.2). Enabled production cache metrics (was NullCacheMetrics); dedup'd current-user actor fetch; eliminated directory N+1 (SkipFetch); coalesced duplicate content-object proxy fetches (UiContext.GetContentObjectAsync); eliminated notification Gargron duplicate (defer avatar). Full suite green (2157 passed, 0 failed). [findings](docs/changes/1471-phase147-request-spam-cache-hit-rate.md).
-- **146 (Performance follow-ups) — complete:** 146.1+146.2: wired `ActorCache` into outbound client (F-136.12.7/1). 146.3: wired `CollectionPageCache` into outbound client (F-136.12.3/5). Full suite green (1285 passed, 0 failed). See [ROADMAP ledger](docs/ROADMAP.md).
-- **144 (General UI/UX review) — complete:** 8 findings; 6 fixed, 2 reviewed-no-change. [findings](docs/plans/phase-144-ux-review.md).
-- **143 (Consistency review fixes) — complete:** 14 findings addressed (10 fixed, 3 reviewed-no-change, 1 deferred, 3 skipped). See [ROADMAP ledger](docs/ROADMAP.md) + [change docs 1431–1436](docs/changes/).
-- **142 (cross-cutting consistency review) — complete:** 20 findings cataloged (11 UI + 9 backend); consumed by Phase 143. [findings](docs/plans/phase-142-consistency-review.md).
-- **141 (Collection & engagement tracking consistency) — closed:** 141.2/141.3/141.4/141.5 done, 141.1 deferred. [plan](docs/plans/phase-141-engagement-tracking-consistency.md).
  ## Keeping the docs lean
 
 - **This file is the *only* one an agent must read and update every turn. Keep it short: bounded lists, not narrative.**

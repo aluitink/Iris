@@ -1,25 +1,29 @@
+@using Iris.Client
 @using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 
 @inject UiContext Ui
+@inject IActorSessionAccessor Session
+@inject NavigationManager Nav
 
 @if (Actor is { } actor)
 {
-    <div class="actor-card @(ShowBanner ? "actor-card--bannered" : string.Empty)">
-        @if (ShowBanner)
-        {
-            <div class="actor-card-banner" role="img" aria-label="Profile banner">
+    <div class="actor-card @(Href.Length > 0 ? "actor-card--clickable" : string.Empty)" @onclick:preventDefault @onclick='() => OpenActorAsync()'>
+        <div class="actor-card-banner" role="img" aria-label="Profile banner">
+            @if (ShowBanner)
+            {
                 <img src="@ActorIdentityHelper.RewriteMediaToSameOrigin(BannerIri!)" alt="" loading="lazy" />
-            </div>
-        }
+            }
+        </div>
         <div class="actor-card-main">
             <ActorAvatar ActorIri="@ActorIri" DisplayName="@Name" IconIriOverride="@IconIri" SkipFetch="true" CssClass="actor-card-avatar" />
             <div class="actor-card-body">
                 <div class="actor-card-identity">
                     @if (PreferredUsername is { Length: > 0 } username)
                     {
-                        <a href="@Href" title="@(ActorIdValue)" class="actor-card-handle">@username</a>
+                        <span class="actor-card-handle">@username</span>
                     }
                     else
                     {
@@ -38,19 +42,41 @@
                         <span class="actor-card-badge actor-card-badge--app">Bot</span>
                     }
                 </div>
-                @if (Summary is { Length: > 0 })
+                @if (ShowSummary && Summary is { Length: > 0 })
                 {
                     <div class="actor-card-summary">@RenderedSummary</div>
                 }
             </div>
         </div>
-        <div class="actor-card-actions">
-            @ChildContent
-            @if (ShowModeration)
-            {
-                <ModerationActions TargetActor="Actor" />
-            }
-        </div>
+        @if (HasFooterContent)
+        {
+            <div class="actor-card-footer">
+                @if (ShowStats && !ShowModeration && (PostsCount is not null || FollowersCount is not null || FollowingCount is not null))
+                {
+                    <div class="actor-card-stats">
+                        @if (PostsCount is { } posts)
+                        {
+                            <span class="actor-card-stat"><strong>@posts</strong> post@(posts == 1 ? string.Empty : "s")</span>
+                        }
+                        @if (FollowingCount is { } following)
+                        {
+                            <span class="actor-card-stat"><strong>@following</strong> following</span>
+                        }
+                        @if (FollowersCount is { } followers)
+                        {
+                            <span class="actor-card-stat"><strong>@followers</strong> follower@(followers == 1 ? string.Empty : "s")</span>
+                        }
+                    </div>
+                }
+                <div class="actor-card-actions" @onclick:stopPropagation>
+                    @if (ShowModeration)
+                    {
+                        <ModerationActions TargetActor="Actor" />
+                    }
+                    @ChildContent
+                </div>
+            </div>
+        }
     </div>
 }
 else
@@ -87,6 +113,23 @@ else
     [Parameter]
     public bool ShowModeration { get; set; } = true;
 
+    /// <summary>
+    /// When <c>true</c> (the default), the card renders the cached per-actor counters (posts /
+    /// following / followers) read off the document's <c>iris:</c> extension properties. Set to
+    /// <c>false</c> in compact contexts (e.g. the directory row) that show the stats in their own
+    /// footer instead.
+    /// </summary>
+    [Parameter]
+    public bool ShowStats { get; set; } = true;
+
+    /// <summary>
+    /// When <c>true</c>, the card renders the actor's summary/bio. Defaults to <c>false</c> in list
+    /// contexts (directory, communities, followers) to keep cards compact; set to <c>true</c> on the
+    /// profile/actor page header where there is room.
+    /// </summary>
+    [Parameter]
+    public bool ShowSummary { get; set; } = false;
+
     private string ActorIdValue => ActorId ?? Actor?.Id ?? string.Empty;
 
     private string Href => ActorIdValue.Length > 0
@@ -117,4 +160,35 @@ else
     private bool IsApplication => Actor is Application;
 
     private Iri? ActorIri => ActorIdValue.Length > 0 ? new Iri(ActorIdValue) : null;
+
+    /// <summary>
+    /// The cached per-actor counters (posts / following / followers) read off the document's
+    /// <c>iris:</c> extension properties (the Mastodon-style directory stat). Each is
+    /// <see langword="null"/> when the server did not render it (a remote actor from a non-Iris
+    /// instance, or a document fetched before the counters existed).
+    /// </summary>
+    private string NamespaceIri => Session.IrisNamespaceBase?.Value ?? IrisDocumentExtensions.DefaultNamespaceIri;
+
+    private int? PostsCount => Actor?.GetPostsCount(NamespaceIri);
+
+    private int? FollowingCount => Actor?.GetFollowingCount(NamespaceIri);
+
+    private int? FollowersCount => Actor?.GetFollowersCount(NamespaceIri);
+
+    private bool HasFooterContent => ChildContent is not null
+        || ShowModeration
+        || (ShowStats && !ShowModeration && (PostsCount is not null || FollowersCount is not null || FollowingCount is not null));
+
+    /// <summary>
+    /// Clicking the card body (anywhere but the actions column) opens the actor's full profile page,
+    /// where follow + moderation are managed. The actions column stop-propagates so a follow /
+    /// block / mute click does not also navigate.
+    /// </summary>
+    private void OpenActorAsync()
+    {
+        if (Href.Length > 0 && Href != "/directory")
+        {
+            Nav.NavigateTo(Href);
+        }
+    }
 }

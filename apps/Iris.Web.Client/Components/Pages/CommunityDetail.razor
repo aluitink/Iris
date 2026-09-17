@@ -4,14 +4,13 @@
 @using Iris.Client.Collections
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 @using Microsoft.AspNetCore.Components.Web
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <PageTitle>@PageHeading · Iris</PageTitle>
-
-<h1>@PageHeading</h1>
 
 @if (Client is null)
 {
@@ -37,24 +36,23 @@ else if (CommunityDoc is null)
 else
 {
     <div class="community-detail-header">
-        <ActorProfile Actor="CommunityDoc" ActorId="@(CommunityDoc.Id)" />
-        <div class="community-detail-actions">
-            @if (IsCreator)
-            {
-                <p class="muted">This is your community.</p>
-                <button class="btn" @onclick="StartEditCommunity">Edit community</button>
-            }
-            else if (IsSelf)
-            {
-                <p class="muted">This is your community.</p>
-            }
-            else
-            {
-                <FollowButton TargetActor="CommunityDoc" />
-                <JoinButton CommunityActor="CommunityDoc" />
-            }
-
+        <div class="community-card-header">
+            <ActorCard Actor="CommunityDoc" ActorId="@(CommunityDoc.Id)" ShowModeration="false" ShowStats="false" ShowSummary="true">
+                @if (IsCreator)
+                {
+                    <button class="button button--ghost" @onclick="StartEditCommunity">Edit community</button>
+                }
+                else if (!IsSelf)
+                {
+                    <FollowButton TargetActor="CommunityDoc" />
+                    <JoinButton CommunityActor="CommunityDoc" />
+                }
+            </ActorCard>
         </div>
+        @if (IsCreator)
+        {
+            <p class="muted">This is your community.</p>
+        }
     </div>
 
     @if (IsEditingCommunity)

@@ -46,7 +46,9 @@
                 <div class="actor-list-grid">
                     @foreach (var entry in Items)
                     {
-                        <ActorCard Actor="@entry.Doc" ActorId="@entry.IriValue" />
+                        <ActorCard Actor="@entry.Doc" ActorId="@entry.IriValue" ShowModeration="false">
+                            <FollowButton TargetActor="@entry.Doc" />
+                        </ActorCard>
                     }
                 </div>
             }

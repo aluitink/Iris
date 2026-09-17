@@ -1,85 +1,18 @@
 @using Iris.Core.Identity
 @using Iris.Web.Client.Components
 @using KristofferStrube.ActivityStreams
-@using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 <div class="directory-card">
-    <div class="directory-card-row">
-        <button type="button" class="directory-card-expand-btn" aria-expanded="@(IsExpanded)" aria-label="@(IsExpanded ? "Hide" : "Show") recent posts by @DisplayName" @onclick="ToggleAsync">
-            <ActorCard Actor="Actor" ActorId="@Actor.Id" ShowModeration="false" />
-        </button>
+    <ActorCard Actor="Actor" ActorId="@Actor.Id" ShowModeration="false" ShowStats="true">
         <FollowButton TargetActor="Actor" />
-        <span class="directory-card-chevron" aria-hidden="true">
-            <svg viewBox="0 0 16 16" width="14" height="14" class="directory-card-chevron-svg @(IsExpanded ? "is-expanded" : "")"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" /></svg>
-        </span>
-    </div>
-    @if (IsExpanded && Posts is not null)
-    {
-        <div class="directory-card-posts">
-            @if (Posts.Count == 0)
-            {
-                <p class="muted directory-card-empty">No recent posts.</p>
-            }
-            else
-            {
-                @foreach (var post in Posts)
-                {
-                    <div class="directory-card-post">
-                        <ObjectView Item="post" />
-                    </div>
-                }
-            }
-        </div>
-    }
+    </ActorCard>
 </div>
 
 @code {
+    /// <summary>
+    /// The actor to present (a person or community). Rendered as the unified actor card — the same
+    /// control the actor page's followers/following tabs use.
+    /// </summary>
     [Parameter]
     public Actor Actor { get; set; } = default!;
-
-    [Parameter]
-    public Func<Actor, Task> OnExpandPosts { get; set; } = default!;
-
-    [Parameter]
-    public Dictionary<string, List<IObjectOrLink>>? ExpandedPosts { get; set; }
-
-    [Parameter]
-    public HashSet<string>? ExpandedLoading { get; set; }
-
-    private bool IsExpanded => ExpandedPosts is { } map && map.ContainsKey(Actor.Id ?? string.Empty);
-    private List<IObjectOrLink>? Posts => ExpandedPosts is { } map && map.TryGetValue(Actor.Id ?? string.Empty, out var p) ? p : null;
-    private bool IsLoading => ExpandedLoading is { } set && set.Contains(Actor.Id ?? string.Empty);
-
-    /// <summary>
-    /// The actor's display name for the expand-button <c>aria-label</c>: the first <c>name</c> value
-    /// (the ActivityStreams <c>name</c> property is multi-valued — stringifying the whole list leaks
-    /// a <c>ListIterator</c> into the accessible name, B-003), falling back to the handle.
-    /// </summary>
-    private string DisplayName
-    {
-        get
-        {
-            var name = Actor.Name?.FirstOrDefault(n => !string.IsNullOrWhiteSpace(n));
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                return name;
-            }
-
-            var handle = Actor.PreferredUsername;
-            return string.IsNullOrWhiteSpace(handle) ? (Actor.Id ?? string.Empty) : handle;
-        }
-    }
-
-    private async Task ToggleAsync()
-    {
-        if (IsLoading || IsExpanded)
-        {
-            return;
-        }
-
-        if (OnExpandPosts is { } expand)
-        {
-            await expand(Actor);
-        }
-    }
 }

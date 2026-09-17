@@ -3,12 +3,11 @@
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>Profile · Iris</PageTitle>
-
-<h1>Your profile</h1>
 
 @if (LoadError is not null)
 {
@@ -18,27 +17,28 @@ else
 {
     @if (ActorDoc is not null)
     {
-        <ActorProfile Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" />
-
-        @if (_editing)
-        {
-            <EditProfileForm
-                InitialIconIri="@(GetIconIri())"
-                InitialName="@(ActorObj?.Name?.FirstOrDefault() ?? string.Empty)"
-                InitialSummary="@(ActorObj?.Summary?.FirstOrDefault() ?? string.Empty)"
-                InitialApproveFollowers="@(ActorObj?.GetManuallyApprovesFollowers() ?? false)"
-                Saving="_saving"
-                SaveError="@(SaveError)"
-                OnIconUpload="UploadIconAsync"
-                OnSubmit="SubmitEditAsync"
-                OnCancel="() => CancelEdit()" />
-        }
-        else
-        {
-            <div class="profile-actions">
-                <button class="btn" @onclick="StartEdit">Edit profile</button>
-            </div>
-        }
+        <div class="profile-card-header">
+            @if (_editing)
+            {
+                <ActorCard Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" ShowModeration="false" ShowStats="false" ShowSummary="true" />
+                <EditProfileForm
+                    InitialIconIri="@(GetIconIri())"
+                    InitialName="@(ActorObj?.Name?.FirstOrDefault() ?? string.Empty)"
+                    InitialSummary="@(ActorObj?.Summary?.FirstOrDefault() ?? string.Empty)"
+                    InitialApproveFollowers="@(ActorObj?.GetManuallyApprovesFollowers() ?? false)"
+                    Saving="_saving"
+                    SaveError="@(SaveError)"
+                    OnIconUpload="UploadIconAsync"
+                    OnSubmit="SubmitEditAsync"
+                    OnCancel="() => CancelEdit()" />
+            }
+            else
+            {
+                <ActorCard Actor="ActorDoc" ActorId="@(Session.ActorId?.Value)" ShowModeration="false" ShowStats="false" ShowSummary="true">
+                    <button class="btn" @onclick:stopPropagation @onclick="StartEdit">Edit profile</button>
+                </ActorCard>
+            }
+        </div>
     }
     else
     {

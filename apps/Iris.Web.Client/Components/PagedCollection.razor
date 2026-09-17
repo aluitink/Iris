@@ -470,9 +470,18 @@
         Items ??= [];
 
         // Extract items from the page.
-        if (root.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+        System.Text.Json.JsonElement? itemsElement = null;
+        if (root.TryGetProperty("orderedItems", out var oi) && oi.ValueKind == System.Text.Json.JsonValueKind.Array)
         {
-            foreach (var itemElement in itemsElement.EnumerateArray())
+            itemsElement = oi;
+        }
+        else if (root.TryGetProperty("items", out var it) && it.ValueKind == System.Text.Json.JsonValueKind.Array)
+        {
+            itemsElement = it;
+        }
+        if (itemsElement is { } items)
+        {
+            foreach (var itemElement in items.EnumerateArray())
             {
                 var itemJson = itemElement.GetRawText();
                 try

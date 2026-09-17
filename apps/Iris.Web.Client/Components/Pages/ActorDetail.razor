@@ -8,8 +8,6 @@
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
-<h1>@PageHeading</h1>
-
 @if (string.IsNullOrEmpty(IriParam))
 {
     <div class="card"><p class="muted">No actor specified. Use the directory to find people.</p></div>
@@ -30,41 +28,17 @@ else if (ActorDoc is null)
 else
 {
     <div class="actor-detail-header">
-        <div class="actor-detail-header-main">
-            <ActorProfile Actor="ActorDoc" ActorId="@(ActorDoc.Id)" />
-            @if (HasStats)
-            {
-                <div class="actor-detail-stats">
-                    @if (PostCount is { } postCt)
-                    {
-                        <span class="actor-detail-stat"><strong>@postCt</strong> post@(postCt == 1 ? string.Empty : "s")</span>
-                    }
-                    @if (FollowerCount is { } followerCt)
-                    {
-                        <span class="actor-detail-stat"><strong>@followerCt</strong> follower@(followerCt == 1 ? string.Empty : "s")</span>
-                    }
-                    @if (FollowingCount is { } followingCt)
-                    {
-                        <span class="actor-detail-stat"><strong>@followingCt</strong> following</span>
-                    }
-                </div>
-            }
-        </div>
-        @if (!IsSelf && Session.IsSignedIn)
-        {
-            <div class="actor-detail-actions">
-                <FollowButton TargetActor="ActorDoc" />
-                <ModerationActions TargetActor="ActorDoc" />
-            </div>
-        }
-        else if (!IsSelf && !Session.IsSignedIn)
+        <ActorCard Actor="ActorDoc" ActorId="@(ActorDoc.Id)" ShowModeration="true" ShowStats="false" ShowSummary="true">
+            <FollowButton TargetActor="ActorDoc" />
+        </ActorCard>
+        @if (!IsSelf && !Session.IsSignedIn)
         {
             <p class="muted actor-detail-signin"><a href="/login">Sign in</a> to follow or moderate.</p>
         }
     </div>
 
     <div class="tab-bar" role="tablist" aria-label="Actor sections">
-        <a href="#outbox" id="tab-outbox" role="tab" aria-selected="@(ActiveTab == "outbox")" aria-controls="panel-outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts</a>
+        <a href="#outbox" id="tab-outbox" role="tab" aria-selected="@(ActiveTab == "outbox")" aria-controls="panel-outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts@(PostCount is { } pc ? $" ({pc})" : string.Empty)</a>
         <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
         <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
         @if (ShowJoinRequestsTab)
@@ -82,7 +56,7 @@ else
             CollectionIri="OutboxIri"
             PageSize="5"
             ShowRefreshButton="@(Client is not null)"
-            ItemFilter="OutboxFilter.IsContentItem"
+            ItemFilter="OutboxItemFilter"
             EmptyMessage="No posts yet." />
         </div>
     }
@@ -281,8 +255,6 @@ else
     private int? FollowingCount { get; set; }
     private int? PostCount { get; set; }
 
-    private bool HasStats => FollowerCount is not null || FollowingCount is not null || PostCount is not null;
-
     protected override async Task OnParametersSetAsync()
     {
         await Session.EnsureReadyAsync();
@@ -309,7 +281,13 @@ else
             if (obj is not null)
             {
                 ActorDoc = obj;
-                _ = LoadCountsAsync(iri);
+                // The tab counts come from the cacheable per-actor counters the server renders on the
+                // document (iris:postsCount / iris:followersCount / iris:followingCount). A remote
+                // actor from a non-Iris instance has none, so its tabs show no count.
+                var ns = Session.IrisNamespaceBase?.Value ?? IrisDocumentExtensions.DefaultNamespaceIri;
+                PostCount = obj.GetPostsCount(ns);
+                FollowerCount = obj.GetFollowersCount(ns);
+                FollowingCount = obj.GetFollowingCount(ns);
             }
             else
             {
@@ -320,158 +298,6 @@ else
         {
             LoadError = "Failed to load actor. It may not exist or the server is unreachable.";
         }
-    }
-
-    private async Task LoadCountsAsync(Iri actorIri)
-    {
-        var client = Client;
-        try
-        {
-            if (client is not null)
-            {
-                FollowerCount = await GetFirstPageTotalAsync(client, actorIri.FollowersOf());
-                FollowingCount = await GetFirstPageTotalAsync(client, actorIri.FollowingOf());
-                PostCount = await GetPostCountAsync(client, actorIri.OutboxOf());
-            }
-            else
-            {
-                // Signed-out: read the public collection pages over plain HTTP (88.4).
-                FollowerCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowersOf());
-                FollowingCount = await GetFirstPageTotalAnonymousAsync(actorIri.FollowingOf());
-                PostCount = await GetPostCountAnonymousAsync(actorIri.OutboxOf());
-            }
-
-            StateHasChanged();
-        }
-        catch
-        {
-            // Counts are best-effort; a failure to fetch them should not break the page.
-        }
-    }
-
-    /// <summary>
-    /// Counts only Note/Article objects in the actor's outbox (126.1). The outbox contains all
-    /// activities (Create, Follow, Like, Announce, etc.); <c>totalItems</c> counts all of them,
-    /// which overstates the post count for actors with few posts but many non-post activities.
-    /// Fetches the first page (limit 30) and counts items whose <c>object</c> is a Note or Article.
-    /// </summary>
-    private static async Task<int?> GetPostCountAsync(IActivityPubClient client, Iri? outboxIri, CancellationToken ct = default)
-    {
-        if (outboxIri is not { } iri)
-        {
-            return null;
-        }
-
-        await foreach (var page in client.GetCollectionAsync(iri, ct: ct))
-        {
-            var count = 0;
-            foreach (var item in page.Items)
-            {
-                if (item is Activity activity &&
-                    activity.Object?.FirstOrDefault() is IObject noteObj &&
-                    noteObj.Type is { } types)
-                {
-                    foreach (var t in types)
-                    {
-                        if (t is "Note" or "Article")
-                        {
-                            count++;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            return count;
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// Signed-out variant of <see cref="GetPostCountAsync"/>: fetches the first page of the outbox
-    /// over plain HTTP and counts Note/Article objects (126.1).
-    /// </summary>
-    private async Task<int?> GetPostCountAnonymousAsync(Iri? outboxIri)
-    {
-        if (outboxIri is not { } iri || Http is not { } http)
-        {
-            return null;
-        }
-
-        var url = iri.Value + (iri.Value.Contains('?') ? '&' : '?') + "limit=30";
-        using var response = await http.GetAsync(url);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        var json = await response.Content.ReadAsStringAsync();
-        var doc = System.Text.Json.JsonDocument.Parse(json);
-        if (!doc.RootElement.TryGetProperty("orderedItems", out var items) &&
-            !doc.RootElement.TryGetProperty("items", out items))
-        {
-            return 0;
-        }
-
-        var count = 0;
-        foreach (var item in items.EnumerateArray())
-        {
-            if (item.TryGetProperty("type", out var typeProp) &&
-                item.TryGetProperty("object", out var objProp) &&
-                objProp.ValueKind == System.Text.Json.JsonValueKind.Object &&
-                objProp.TryGetProperty("type", out var objTypeProp))
-            {
-                var typeStr = typeProp.GetString() ?? string.Empty;
-                var objTypeStr = objTypeProp.GetString() ?? string.Empty;
-                if (typeStr == "Create" && (objTypeStr is "Note" or "Article"))
-                {
-                    count++;
-                }
-            }
-        }
-
-        return count;
-    }
-
-    /// <summary>
-    /// Reads the <c>totalItems</c> of the first page of a public collection over plain HTTP when
-    /// signed out (88.4). Returns null when the collection is absent or unreachable.
-    /// </summary>
-    private async Task<int?> GetFirstPageTotalAnonymousAsync(Iri? collectionIri)
-    {
-        if (collectionIri is not { } iri || Http is not { } http)
-        {
-            return null;
-        }
-
-        var url = iri.Value + (iri.Value.Contains('?') ? '&' : '?') + "limit=1";
-        using var response = await http.GetAsync(url);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        var json = await response.Content.ReadAsStringAsync();
-        var doc = System.Text.Json.JsonDocument.Parse(json);
-        return doc.RootElement.TryGetProperty("totalItems", out var total) && total.ValueKind == System.Text.Json.JsonValueKind.Number
-            ? total.GetInt32()
-            : null;
-    }
-
-    private static async Task<int?> GetFirstPageTotalAsync(IActivityPubClient client, Iri? collectionIri, CancellationToken ct = default)
-    {
-        if (collectionIri is not { } iri)
-        {
-            return null;
-        }
-
-        await foreach (var page in client.GetCollectionAsync(iri, ct: ct))
-        {
-            return page.TotalItems;
-        }
-
-        return null;
     }
 
     /// <summary>
@@ -624,6 +450,19 @@ else
             StateHasChanged();
         }
     }
+
+    /// <summary>
+    /// The actor-page "Posts" filter: a content item (<c>Create</c> of a Note/Article, or an
+    /// <c>Announce</c> boost) **authored by the actor whose page this is**. The server mirrors
+    /// followed remote content and inbound boosts into a local actor's outbox as items whose
+    /// <c>actor</c> is the remote author / booster, so an unscoped content filter
+    /// (<see cref="OutboxFilter.IsContentItem"/>) would render those foreign items in the Posts tab.
+    /// Scoping by the actor's own IRI (via <see cref="OutboxFilter.IsOwnContentItem"/>) keeps only the
+    /// actor's own content — the same treatment the signed-in user's profile "Your posts" tab gets
+    /// (Profile.razor). When the actor IRI is unavailable it falls back to the unscoped filter.
+    /// </summary>
+    private bool OutboxItemFilter(IObjectOrLink item)
+        => OutboxFilter.IsOwnContentItem(item, ActorIri);
 
     private static string DisplayHandle(string iri)
     {

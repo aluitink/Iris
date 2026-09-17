@@ -43,10 +43,12 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
 
     private readonly TestServer _server;
     private readonly HttpClient _http;
+    private readonly GlobalSearchSharedHost _fixture;
     private readonly string _base = $"https://{AHost}";
 
     public GlobalSearchIntegrationTests(GlobalSearchSharedHost fixture)
     {
+        _fixture = fixture;
         _server = fixture.Server;
         _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
@@ -54,7 +56,38 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
     public void Dispose()
     {
         _http.Dispose();
+
+        // This class is read-only (the collection's seeded persistence is shared), so undo any test
+        // mutations here to restore the baseline for the other (parallel) methods in the collection:
+        // remove the carol actor and the alice/bob outbox + follow edges the counter tests add.
+        var p = (InMemoryPersistenceProvider)_fixture.Persistence;
+        var alice = AliceIri;
+        var bob = new Iri($"https://{AHost}/ap/v1/u/{Bob}");
+        var carol = new Iri($"https://{AHost}/ap/v1/u/carol");
+        foreach (var actor in new[] { alice, bob, carol })
+        {
+            foreach (var item in p.Activities.GetOutboxAsync(actor).GetAwaiter().GetResult())
+            {
+                if (item is IObject { Id: { } id } && !string.IsNullOrEmpty(id))
+                {
+                    p.Activities.RemoveFromOutboxAsync(actor, new Iri(id)).GetAwaiter().GetResult();
+                }
+            }
+        }
+
+        var erin = new Iri($"https://{AHost}/ap/v1/u/erin");
+        foreach (var pair in new List<(Iri Follower, Iri Target)>
+        {
+            (bob, alice), (erin, alice), (alice, bob), (bob, carol), (carol, bob),
+        })
+        {
+            p.Follows.RemoveFollowAsync(pair.Follower, pair.Target).GetAwaiter().GetResult();
+        }
+
+        p.ActorStore.RemoveActorAsync(carol).GetAwaiter().GetResult();
     }
+
+    private Iri AliceIri => new($"https://{AHost}/ap/v1/u/{Alice}");
 
     // --- Search matches actors AND content case-insensitively -------------------------
 
@@ -285,6 +318,81 @@ public sealed class GlobalSearchIntegrationTests : IDisposable
 
         client.Dispose();
         Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}", Assert.Single(items));
+    }
+
+    // --- Cached per-actor counters on search results and the actor document (F-13) ----------
+
+    [Fact]
+    public async Task Search_TypeActor_IncludesCachedCountersOnActorItems()
+    {
+        // Seed alice's outbox with two content posts and a follow (a non-content activity that must not
+        // count), and two followers + one following. Counts are computed fresh per request (the actor
+        // document is cached, but the search path is not), so this is a deterministic assertion.
+        var p = (InMemoryPersistenceProvider)_fixture.Persistence;
+        var bobIri = new Iri($"https://{AHost}/ap/v1/u/{Bob}");
+
+        TestSeeder.AddCreateActivity(p, AliceIri, $"{AliceIri.Value}/activities/create-1", "a first post");
+        TestSeeder.AddCreateActivity(p, AliceIri, $"{AliceIri.Value}/activities/create-2", "a second post");
+        await p.Activities.AddToOutboxAsync(AliceIri, new Follow
+        {
+            Id = $"{AliceIri.Value}/activities/follow-1",
+            Actor = [new Link { Href = new Uri(AliceIri.Value) }],
+            Object = [new Link { Href = new Uri(bobIri.Value) }],
+        });
+        await p.Follows.RecordFollowAsync(bobIri, AliceIri);
+        await p.Follows.RecordFollowAsync(new Iri($"https://{AHost}/ap/v1/u/erin"), AliceIri);
+        await p.Follows.RecordFollowAsync(AliceIri, bobIri);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/search?type=Actor&q=ALIC&limit=10");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        var actorItems = JsonDoc.GetItems(doc.RootElement)
+            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("type", out var t) && t.GetString() == "Person")
+            .ToList();
+        var alice = Assert.Single(actorItems);
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Alice}", alice.GetProperty("id").GetString());
+
+        // The Mastodon-style directory stats ride on the search result itself (iris: extension terms,
+        // the default namespace) — no client-side counting of the outbox/follows collections.
+        Assert.Equal(2, alice.GetProperty($"{DefaultNamespace}postsCount").GetInt32());
+        Assert.Equal(2, alice.GetProperty($"{DefaultNamespace}followersCount").GetInt32());
+        Assert.Equal(1, alice.GetProperty($"{DefaultNamespace}followingCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task ActorDocument_IncludesCachedCounters()
+    {
+        // Seed a fresh local actor (carol) with a single content post plus a follow (which must not
+        // count) and one follower/following, then fetch the actor document directly — the counters must
+        // be present on the document. carol is used (not alice/bob) so this is the first fetch of that
+        // actor and the 60 s actor-document cache cannot return a stale, counter-less document from an
+        // earlier method in the class.
+        const string Carol = "carol";
+        var p = (InMemoryPersistenceProvider)_fixture.Persistence;
+        var carolIri = new Iri($"https://{AHost}/ap/v1/u/{Carol}");
+        var bobIri = new Iri($"https://{AHost}/ap/v1/u/{Bob}");
+
+        TestSeeder.SeedPerson(p, AHost, Carol);
+        TestSeeder.AddCreateActivity(p, carolIri, $"{carolIri.Value}/activities/create-doc", "a doc post");
+        await p.Activities.AddToOutboxAsync(carolIri, new Follow
+        {
+            Id = $"{carolIri.Value}/activities/follow-doc",
+            Actor = [new Link { Href = new Uri(carolIri.Value) }],
+            Object = [new Link { Href = new Uri(bobIri.Value) }],
+        });
+        await p.Follows.RecordFollowAsync(bobIri, carolIri);
+        await p.Follows.RecordFollowAsync(carolIri, bobIri);
+
+        var response = await _http.GetAsync($"{_base}/ap/v1/u/{Carol}");
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal($"https://{AHost}/ap/v1/u/{Carol}", doc.RootElement.GetProperty("id").GetString());
+        // Exactly one content post (the follow is excluded), one follower, one following.
+        Assert.Equal(1, doc.RootElement.GetProperty($"{DefaultNamespace}postsCount").GetInt32());
+        Assert.Equal(1, doc.RootElement.GetProperty($"{DefaultNamespace}followersCount").GetInt32());
+        Assert.Equal(1, doc.RootElement.GetProperty($"{DefaultNamespace}followingCount").GetInt32());
     }
 
     // --- Helpers ----------------------------------------------------------------------

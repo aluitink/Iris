@@ -200,4 +200,77 @@ public class RemoteActorPersisterTests
         // (the dot vs slash difference), so it should be persisted.
         Assert.True(result);
     }
+
+    // --- The general IObject overload (the proxy's "archive any remote object we fetch" seam) ----
+
+    [Fact]
+    public async Task PersistIfNew_IObject_RemoteActor_Stores()
+    {
+        var store = new InMemoryActorStore();
+        var sut = new RemoteActorPersister(store, LocalBase);
+
+        // A remote actor passed as a general IObject (the shape the proxy sees after deserializing
+        // the relayed body) is archived to the durable actor store.
+        IObject obj = MakeActor($"{RemoteHost.Value}/777", "browsed", "Browsed User");
+        var result = await sut.PersistIfNewAsync(obj);
+
+        Assert.True(result);
+        Assert.True(await store.TryGetActorAsync(new Iri($"{RemoteHost.Value}/777"), out var stored, default));
+        Assert.Equal("browsed", stored!.PreferredUsername);
+    }
+
+    [Fact]
+    public async Task PersistIfNew_IObject_Group_DoesNotStoreInActorStore()
+    {
+        var store = new InMemoryActorStore();
+        var sut = new RemoteActorPersister(store, LocalBase);
+
+        // A Group (a remote community) is NOT archived here: it belongs to the community store (the
+        // proxy routes Group documents to RemoteCommunityPersister). Archiving it into the actor store
+        // would duplicate it and could fail (a Group is not an Actor).
+        IObject obj = new Group { Id = $"{RemoteHost.Value}/groups/tech", PreferredUsername = "tech" };
+        var result = await sut.PersistIfNewAsync(obj);
+
+        Assert.False(result);
+        Assert.False(await store.TryGetActorAsync(new Iri($"{RemoteHost.Value}/groups/tech"), out _, default));
+    }
+
+    [Fact]
+    public async Task PersistIfNew_IObject_Note_DoesNotStore()
+    {
+        var store = new InMemoryActorStore();
+        var sut = new RemoteActorPersister(store, LocalBase);
+
+        // A content object (a Note) is not an actor; the overload skips it (content is archived to the
+        // object store by the proxy, not the actor store).
+        IObject obj = new Note { Id = $"{RemoteHost.Value}/notes/1", Content = ["<p>hi</p>"] };
+        var result = await sut.PersistIfNewAsync(obj);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public async Task PersistIfNew_IObject_LocalActor_Skips()
+    {
+        var store = new InMemoryActorStore();
+        var sut = new RemoteActorPersister(store, LocalBase);
+
+        // A local actor (IRI under the instance base) is never archived by this class.
+        IObject obj = MakeActor($"{LocalBase.Value}/u/alice", "alice", "Alice");
+        var result = await sut.PersistIfNewAsync(obj);
+
+        Assert.False(result);
+        Assert.False(await store.TryGetActorAsync(new Iri($"{LocalBase.Value}/u/alice"), out _, default));
+    }
+
+    [Fact]
+    public async Task PersistIfNew_IObject_Null_ReturnsFalse()
+    {
+        var store = new InMemoryActorStore();
+        var sut = new RemoteActorPersister(store, LocalBase);
+
+        var result = await sut.PersistIfNewAsync(null);
+
+        Assert.False(result);
+    }
 }

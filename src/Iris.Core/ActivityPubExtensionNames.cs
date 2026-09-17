@@ -66,4 +66,16 @@ public static class ActivityPubExtensionNames
     /// spec term), so it stays bare.
     /// </summary>
     public const string KeyAlgorithm = "keyAlgorithm";
+
+    /// <summary>
+    /// The server-internal <c>iris:fetchedAt</c> extension property: the UTC timestamp (ISO-8601) when
+    /// the server last fetched a remote document (an actor, a community Group, or a content object) and
+    /// cached it in the durable store. Carried in the stored document's
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> so it round-trips through
+    /// every store without a schema change. The proxy endpoint's cache-first read uses it for freshness
+    /// (a fresh cached document is served without a live fetch; a stale one is refreshed). This is a
+    /// server-internal field: the cached-document endpoints strip it before serving (it is not part of
+    /// the canonical remote document), and it is never emitted on local (provisioned) actors.
+    /// </summary>
+    public const string FetchedAt = "iris:fetchedAt";
 }

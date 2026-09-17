@@ -184,7 +184,13 @@ public sealed class ConformanceSuiteTests : IDisposable
         Assert.Equal(sharedInbox.Value, endpoints.GetProperty("sharedInbox").GetString());
     }
 
-    // --- ld+json content negotiation (F-31) ------------------------------------------
+    // --- content negotiation (F-31) -------------------------------------------------
+    //
+    // Iris ALWAYS emits application/activity+json (spec-valid, unconditionally accepted). It does NOT
+    // emit bare application/ld+json: Mastodon v4.6.x's key-resolution (ActivityPub::FetchRemoteKeyService
+    // -> fetch_resource -> valid_activitypub_content_type?) only accepts ld+json when it carries
+    // profile="https://www.w3.org/ns/activitystreams", and a bare ld+json made those hosts return 401
+    // "Unable to fetch key JSON". We still ACCEPT ld+json inbound (leniency) but never emit it.
 
     [Fact]
     public async Task ActorDocument_DefaultAccept_ReturnsActivityJson()
@@ -195,28 +201,30 @@ public sealed class ConformanceSuiteTests : IDisposable
     }
 
     [Fact]
-    public async Task ActorDocument_AcceptsLdJson_ReturnsLdJson()
+    public async Task ActorDocument_AcceptsLdJson_ReturnsActivityJson()
     {
+        // Even when the client Accepts application/ld+json, we emit application/activity+json
+        // (never bare ld+json) so Mastodon's valid_activitypub_content_type? check passes.
         using var request = new HttpRequestMessage(HttpMethod.Get, "/ap/v1/u/alice");
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     [Fact]
-    public async Task ActorDocument_AcceptsBoth_ReturnsLdJson()
+    public async Task ActorDocument_AcceptsBoth_ReturnsActivityJson()
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "/ap/v1/u/alice");
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/activity+json"));
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     [Fact]
-    public async Task ObjectDocument_AcceptsLdJson_ReturnsLdJson()
+    public async Task ObjectDocument_AcceptsLdJson_ReturnsActivityJson()
     {
         // Seed a content object so the object endpoint can serve it.
         var obj = new KristofferStrube.ActivityStreams.Note
@@ -233,7 +241,7 @@ public sealed class ConformanceSuiteTests : IDisposable
         request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/ld+json"));
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     // --- Helpers --------------------------------------------------------------------

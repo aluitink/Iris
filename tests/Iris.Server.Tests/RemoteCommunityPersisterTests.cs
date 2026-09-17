@@ -93,8 +93,13 @@ public sealed class RemoteCommunityPersisterTests
     // --- Endpoint: a cached remote community is served as-is (its original IRI) --------
 
     [Fact]
-    public async Task CachedActorEndpoint_ServesCachedRemoteCommunity()
+    public async Task CachedActorEndpoint_RemoteCommunity_ReturnsNotFound()
     {
+        // 138: the cached-actor-by-IRI endpoint is LOCAL-ONLY — it serves local actors / communities
+        // only. A cached REMOTE community is NOT served here; the client reads it through the proxy
+        // endpoint (POST /ap/v1/proxy/{target}), which is cache-first. The remote community is still
+        // cached in the community store (the persister did its job) — it just isn't served by this
+        // endpoint anymore.
         var persistence = new InMemoryPersistenceProvider();
         TestSeeder.SeedPerson(persistence, LocalHost, "alice");
         await persistence.Communities.PutCommunityAsync(new Group
@@ -105,17 +110,13 @@ public sealed class RemoteCommunityPersisterTests
             Summary = ["A community on the Lemmyverse."],
         });
 
+        // Sanity: the remote community IS in the community store (the persister cached it).
+        Assert.True(await persistence.Communities.TryGetCommunityAsync(new Iri(RemoteCommunityIri), out _));
+
         using var server = BuildServer(persistence);
         var http = new HttpClient(server.CreateHandler(), disposeHandler: false);
         var response = await http.GetAsync($"{InstanceBase}/actor?iri={Uri.EscapeDataString(RemoteCommunityIri)}");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        Assert.Equal(RemoteCommunityIri, doc.RootElement.GetProperty("id").GetString());
-        Assert.Equal("Group", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal("lemmyverse", doc.RootElement.GetProperty("preferredUsername").GetString());
-        Assert.Equal("Lemmyverse", doc.RootElement.GetProperty("name").GetString());
-        Assert.Equal("A community on the Lemmyverse.", doc.RootElement.GetProperty("summary").GetString());
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
     }
 
     // --- Endpoint: a community the instance has never cached 404s ----------------------

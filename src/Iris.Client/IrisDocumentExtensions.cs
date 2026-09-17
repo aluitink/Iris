@@ -421,6 +421,51 @@ public static class IrisDocumentExtensions
         => GetInt(document, namespaceIri + IrisExtensionTerms.RepliedCount);
 
     /// <summary>
+    /// Reads the <c>iris:postsCount</c> extension property from an actor/community document, returning the
+    /// number of content posts (Note/Article objects) in the actor's outbox. This is a cacheable,
+    /// per-actor counter (not per-requester): the server renders it on the public document and on
+    /// directory (search) results so a client can display a "N posts" stat without first reading the
+    /// outbox collection. Returns <see langword="null"/> when the property is absent (a non-Iris instance,
+    /// or an actor whose outbox the server has not indexed).
+    /// </summary>
+    /// <param name="document">The actor or community document. Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The post count, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetPostsCount(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetInt(document, namespaceIri + IrisExtensionTerms.PostsCount);
+
+    /// <summary>
+    /// Reads the <c>iris:followersCount</c> extension property from an actor/community document, returning
+    /// the number of actors following the actor (the followers-collection count). This is a cacheable,
+    /// per-actor counter (not per-requester). Returns <see langword="null"/> when the property is absent.
+    /// </summary>
+    /// <param name="document">The actor or community document. Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The follower count, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetFollowersCount(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetInt(document, namespaceIri + IrisExtensionTerms.FollowersCount);
+
+    /// <summary>
+    /// Reads the <c>iris:followingCount</c> extension property from an actor/community document, returning
+    /// the number of actors the actor follows (the following-collection count). This is a cacheable,
+    /// per-actor counter (not per-requester). Returns <see langword="null"/> when the property is absent.
+    /// </summary>
+    /// <param name="document">The actor or community document. Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The following count, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetFollowingCount(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetInt(document, namespaceIri + IrisExtensionTerms.FollowingCount);
+
+    /// <summary>
     /// Reads the <c>iris:isLiked</c> extension property from a content object, returning the
     /// <em>requesting</em> user's net like state on the object (per-requester, read-time state). Returns
     /// <see langword="true"/> when the term is present and <c>true</c> (the requester has liked the

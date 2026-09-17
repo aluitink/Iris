@@ -41,16 +41,11 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
             </svg>
-        </a>
-        @if (_replyCount > 0)
-        {
-            <a class="engagement-btn engagement-count-link"
-               href="/object?iri=@Uri.EscapeDataString(iri.Value)"
-               title="View thread"
-                aria-label="@(_replyCount == 1 ? "1 reply" : _replyCount + " replies")">
+            @if (_replyCount > 0)
+            {
                 <span class="engagement-count">@_replyCount</span>
-            </a>
-        }
+            }
+        </a>
         @if (CanModerate)
         {
             <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="_showModeration"

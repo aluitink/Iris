@@ -10,8 +10,6 @@
 
 <PageTitle>@PageHeading · Iris</PageTitle>
 
-<h1>@PageHeading</h1>
-
 @if (Client is null)
 {
     <div class="card"><p class="muted">Sign in to view objects.</p></div>
@@ -106,7 +104,7 @@ else if (ObjectDoc is null)
         }
         else
         {
-            <ObjectView Item="ObjectDoc" />
+            <ObjectView Item="ObjectDoc" SuppressParentContext="true" />
             @if (EngagementText is not null)
             {
                 <div class="object-detail-engagement">@EngagementText</div>

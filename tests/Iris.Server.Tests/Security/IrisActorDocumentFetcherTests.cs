@@ -202,8 +202,10 @@ public class IrisActorDocumentFetcherTests
         Assert.True(await persistence.Communities.TryGetCommunityAsync(new Iri(group.Id!), out var stored));
         Assert.Equal(group.Id, stored!.Id);
 
-        // 3) The cached-actor endpoint serves the persisted Lemmy community as-is, with the
-        //    Lemmy-specific fields (source, endpoints, featured, postingRestrictedToMods) intact.
+        // 3) 138: the cached-actor endpoint is LOCAL-ONLY, so it 404s for the remote Lemmy community
+        //    (the client reads it through the proxy endpoint instead). The community is still
+        //    persisted in the store with its Lemmy-specific fields intact — assert the round-trip
+        //    against the STORE (serialized), not the endpoint.
         using var server = ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
             Host = AHost,
@@ -214,9 +216,11 @@ public class IrisActorDocumentFetcherTests
         var http = new HttpClient(server.CreateHandler(), disposeHandler: false);
         var response = await http.GetAsync(
             $"https://{AHost}/ap/v1/actor?iri={Uri.EscapeDataString(group.Id!)}");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
 
+        // The persisted community round-trips its Lemmy-specific fields through the store (source,
+        // endpoints, featured, postingRestrictedToMods) — the fields a proxy read would serve.
+        using var doc = JsonDocument.Parse(ActivityJson.Serialize(stored));
         Assert.Equal("https://lemmy.example/c/lemmyverse", doc.RootElement.GetProperty("id").GetString());
         Assert.Equal("Group", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal("lemmyverse", doc.RootElement.GetProperty("preferredUsername").GetString());

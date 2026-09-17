@@ -31,6 +31,7 @@ public sealed class CachedActorEndpointTests : IDisposable
     private const string BHost = "b.domain.local";
     private const string Alice = "alice";
     private const string RemoteHandle = "remote";
+    private const string CommunityHandle = "devs";
 
     private readonly TestServer _server;
     private readonly HttpClient _http;
@@ -62,26 +63,35 @@ public sealed class CachedActorEndpointTests : IDisposable
         Assert.Equal(Alice, doc.RootElement.GetProperty("preferredUsername").GetString());
     }
 
-    // --- A cached remote actor is served as-is (its original remote IRI) --------------
+    // --- A remote actor is NOT served (local-only, 138): the client reads remote actors
+    //     through the proxy endpoint instead ----------------------------------------------
 
     [Fact]
-    public async Task CachedActor_RemoteActor_ReturnsStoredDocumentAsIs()
+    public async Task CachedActor_RemoteActor_ReturnsNotFound()
     {
-        // The remote actor (on b.domain.local) was cached in the actor store. The endpoint serves the
-        // stored document as-is — its id is the remote IRI (not rewritten to the local instance), and
-        // it carries the name/summary the remote instance published.
+        // The remote actor (on b.domain.local) is cached in the actor store, but this endpoint is
+        // LOCAL-ONLY (138): it serves local actors / communities only. A remote IRI 404s so the
+        // client routes the read through the proxy endpoint (POST /ap/v1/proxy/{target}), which is
+        // cache-first and refreshes the stored copy.
         var remoteIri = $"https://{BHost}/users/{RemoteHandle}";
         var response = await _http.GetAsync($"{_base}/ap/v1/actor?iri={Uri.EscapeDataString(remoteIri)}");
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    // --- A local community (Group) is served (138: the endpoint serves local communities
+    //     too, so a local /community?iri=… read resolves) ---------------------------------
+
+    [Fact]
+    public async Task CachedActor_LocalCommunity_ReturnsStoredDocument()
+    {
+        var communityIri = $"https://{AHost}/ap/v1/c/{CommunityHandle}";
+        var response = await _http.GetAsync($"{_base}/ap/v1/actor?iri={Uri.EscapeDataString(communityIri)}");
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
 
-        Assert.Equal(remoteIri, doc.RootElement.GetProperty("id").GetString());
-        Assert.Equal("Person", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal(RemoteHandle, doc.RootElement.GetProperty("preferredUsername").GetString());
-        Assert.Equal("Remote Person", doc.RootElement.GetProperty("name").GetString());
-        // The cached copy carries the remote actor's own summary (served as-is, not sanitized — the
-        // client sanitizes on render).
-        Assert.Equal("Hello from the remote instance.", doc.RootElement.GetProperty("summary").GetString());
+        Assert.Equal(communityIri, doc.RootElement.GetProperty("id").GetString());
+        Assert.Equal("Group", doc.RootElement.GetProperty("type").GetString());
+        Assert.Equal(CommunityHandle, doc.RootElement.GetProperty("preferredUsername").GetString());
     }
 
     // --- An actor the instance has never cached 404s ----------------------------------
@@ -123,13 +133,23 @@ public sealed class CachedActorEndpointTests : IDisposable
         TestSeeder.SeedPerson(persistence, AHost, Alice);
 
         // A remote actor the instance cached: a Person on b.domain.local (a different host than the
-        // instance's a.domain.local), stored in the actor store under its own remote IRI.
+        // instance's a.domain.local), stored in the actor store under its own remote IRI. (Still
+        // seeded so the local-only 404 test has a cached remote document to assert is NOT served.)
         persistence.ActorStore.PutActorAsync(new Person
         {
             Id = $"https://{BHost}/users/{RemoteHandle}",
             PreferredUsername = RemoteHandle,
             Name = ["Remote Person"],
             Summary = ["Hello from the remote instance."],
+        }).GetAwaiter().GetResult();
+
+        // A local community (Group) on the instance: stored in the community store. The local-only
+        // endpoint serves local communities too (a local /community?iri=… read resolves through it).
+        persistence.Communities.PutCommunityAsync(new Group
+        {
+            Id = $"https://{AHost}/ap/v1/c/{CommunityHandle}",
+            PreferredUsername = CommunityHandle,
+            Name = ["Local Devs"],
         }).GetAwaiter().GetResult();
     }
 }

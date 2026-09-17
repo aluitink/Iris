@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Iris.Core;
 using Iris.Server.Stores;
 using KristofferStrube.ActivityStreams;
@@ -95,6 +96,98 @@ public sealed class RemoteActorPersister
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to persist remote actor {Iri} to durable store", iri);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Archives a fetched remote ActivityStreams object when it is a remote <see cref="Actor"/> not
+    /// already stored. This is the general "archive any remote object we fetch" seam (Phase 117.3):
+    /// it is called from the proxy fallback, which is the single choke point for every client-originated
+    /// outbound fetch, so an actor the user browses (e.g. via the directory's external lookup) is
+    /// archived even though it never passes through the inbound signature-validation path (where
+    /// <see cref="IrisActorDocumentFetcher"/> would have persisted it).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A <see cref="Group"/> is deliberately NOT archived here: a Group is a remote community, and it
+    /// is persisted to the durable <see cref="ICommunityStore"/> by <see cref="RemoteCommunityPersister"/>
+    /// (the proxy routes Group documents to that persister). Archiving a Group into the actor store
+    /// would duplicate it and, depending on the store, could even fail (a Group is not an
+    /// <see cref="Actor"/> in the ActivityStreams model).
+    /// </para>
+    /// <para>
+    /// Like <see cref="PersistIfNewAsync(Actor, CancellationToken)"/>, this is best-effort and
+    /// idempotent: a non-actor object, a local actor, or an already-stored actor is skipped; a store
+    /// failure is logged but never propagated (archiving must not break the proxied read).
+    /// </para>
+    /// </remarks>
+    /// <param name="obj">The fetched ActivityStreams object (may be an actor, a community Group, or any other content object).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns><see langword="true"/> when a remote actor was newly persisted; <see langword="false"/>
+    /// when the object is not a remote actor (a Group, a non-actor, a local actor, or an already-stored actor).</returns>
+    public async Task<bool> PersistIfNewAsync(IObject? obj, CancellationToken ct = default)
+    {
+        // Only actors are archived here. A Group is a remote community (handled by the community
+        // persister); any other object (a Note, an Article, a collection, …) is content, not an actor.
+        if (obj is Group || obj is not Actor actor)
+        {
+            return false;
+        }
+
+        return await PersistIfNewAsync(actor, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Replaces the stored copy of a remote actor with a freshly fetched document (the proxy
+    /// endpoint's cache-refresh path): the stored document is overwritten and stamped with the
+    /// server-internal <c>iris:fetchedAt</c> freshness mark (the current UTC time) in
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> so the proxy's cache-first
+    /// read can tell a fresh cached document from a stale one. Local actors (IRI prefix matches
+    /// <see cref="_instanceBase"/>) are never touched — they are provisioned, not cached.
+    /// </summary>
+    /// <remarks>
+    /// Best-effort and idempotent like <see cref="PersistIfNewAsync(Actor, CancellationToken)"/>: a
+    /// store failure is logged and never propagated (the refresh must not break the proxied read).
+    /// Unlike <see cref="PersistIfNewAsync(Actor, CancellationToken)"/>, this OVERWRITES the stored
+    /// document (a profile update must land), and it stamps the freshness mark so the next cache-first
+    /// read within the freshness window serves the refreshed copy without re-fetching.
+    /// </remarks>
+    /// <param name="actor">The freshly fetched remote actor document to store.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns><see langword="true"/> when the stored copy was refreshed; <see langword="false"/>
+    /// when the actor has no IRI, is a local actor, or the store write failed.</returns>
+    public async Task<bool> RefreshAsync(Actor? actor, CancellationToken ct = default)
+    {
+        if (actor is null || actor.Id is not { } idStr)
+        {
+            return false;
+        }
+
+        var iri = new Iri(idStr);
+
+        // Skip local actors — they are provisioned by the registration flow, never cached.
+        if (_instanceBase is { } instanceBase)
+        {
+            var prefix = instanceBase.Value.TrimEnd('/');
+            if (idStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            actor.ExtensionData ??= new Dictionary<string, JsonElement>();
+            actor.ExtensionData[ActivityPubExtensionNames.FetchedAt] =
+                JsonSerializer.SerializeToElement(DateTimeOffset.UtcNow.ToString("O"));
+            await _actors.PutActorAsync(actor, ct).ConfigureAwait(false);
+            _logger.LogInformation("Refreshed cached remote actor {Iri}", iri);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to refresh cached remote actor {Iri}", iri);
             return false;
         }
     }

@@ -111,15 +111,17 @@ public sealed class CommunityFollowRemoteGroupDiscoveryIntegrationTests : IAsync
         Assert.NotNull(persisted);
         Assert.Equal(RemoteGroupDiscoveryIris.LemmyCommunityIri.Value, persisted!.Id);
 
-        // The 138.5 acceptance: the remote community's IRI is served as known content by the
-        // cached-actor-by-IRI endpoint (GET /ap/v1/actor?iri=…), the directory's "All known" read path.
+        // 138: the cached-actor-by-IRI endpoint is LOCAL-ONLY, so it 404s for the REMOTE community
+        // (the client reads it through the proxy endpoint instead). The community is still persisted
+        // in A's community store — assert the round-trip against the STORE (serialized): the
+        // persisted document is B's own Group (its inbox/outbox point at B, not A).
         var actorRequest = new HttpRequestMessage(HttpMethod.Get,
             $"{_baseA}/ap/v1/actor?iri={Uri.EscapeDataString(RemoteGroupDiscoveryIris.LemmyCommunityIri.Value)}");
         actorRequest.Headers.Accept.ParseAdd("application/activity+json");
         var response = await _httpA.SendAsync(actorRequest);
-        response.EnsureSuccessStatusCode();
-        var json = await response.Content.ReadAsStringAsync();
-        using var doc = JsonDocument.Parse(json);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+
+        using var doc = JsonDocument.Parse(ActivityJson.Serialize(persisted));
         Assert.Equal(RemoteGroupDiscoveryIris.LemmyCommunityIri.Value, doc.RootElement.GetProperty("id").GetString());
         Assert.Equal("Group", doc.RootElement.GetProperty("type").GetString());
         // The persisted document is B's own Group (its inbox/outbox point at B, not A).

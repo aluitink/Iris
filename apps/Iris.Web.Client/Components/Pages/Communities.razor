@@ -3,11 +3,10 @@
 @using Iris.Client
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
 @using KristofferStrube.ActivityStreams
 
 <PageTitle>Communities · Iris</PageTitle>
-
-<h1>Communities</h1>
 
 <p class="muted">
     Local communities on this instance — join one to post to its feed and connect with members.
@@ -86,27 +85,10 @@ else
         }
         else
         {
-            <div class="directory-list">
+            <div class="directory-cards">
                 @foreach (var community in Items)
                 {
-                    var name = community.Name?.FirstOrDefault() ?? "Unnamed";
-                    var summary = community.Summary?.FirstOrDefault();
-                    var handle = HandleOf(community);
-                    var iri = community.Id;
-
-                    <div class="directory-item">
-                        <div class="directory-item-body">
-                            <a href="@CommunityHref(iri)" class="directory-item-name">@name</a>
-                            @if (handle is { Length: > 0 })
-                            {
-                                <span class="directory-item-handle">@handle</span>
-                            }
-                            @if (summary is { Length: > 0 })
-                            {
-                                <p class="directory-item-summary">@Truncate(StripHtml(summary), 150)</p>
-                            }
-                        </div>
-                    </div>
+                    <DirectoryCard Actor="community" />
                 }
             </div>
         }
@@ -256,35 +238,4 @@ else
         }
     }
 
-    private static string? HandleOf(Actor actor)
-    {
-        if (actor.Id is not { Length: > 0 } id)
-        {
-            return null;
-        }
-
-        try
-        {
-            var uri = new Uri(id);
-            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
-            return segments.Length > 0 ? segments[^1] : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string? CommunityHref(string? iri)
-        => iri is not null ? $"/community?iri={Uri.EscapeDataString(iri)}" : null;
-
-    private static string Truncate(string value, int max)
-        => value.Length <= max ? value : value[..max] + "…";
-
-    private static string StripHtml(string value)
-    {
-        var stripped = System.Text.RegularExpressions.Regex.Replace(value, "<[^>]*>", " ");
-        stripped = System.Net.WebUtility.HtmlDecode(stripped);
-        return System.Text.RegularExpressions.Regex.Replace(stripped, @"\s+", " ").Trim();
-    }
 }

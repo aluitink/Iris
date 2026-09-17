@@ -202,7 +202,7 @@ select:focus-visible,
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: var(--space-125) var(--space-5);
+    padding: var(--space-4);
 }
 
 .card h1 {
@@ -412,15 +412,6 @@ a:hover {
         align-items: flex-start;
     }
 
-    .directory-item {
-        flex-direction: column;
-        gap: var(--space-45);
-    }
-
-    .directory-item .btn {
-        align-self: flex-end;
-    }
-
     /* Phase 102 — the card header avatar steps back down to 2rem on small screens so the handle +
        time keep room on the header line. The .object-item prefix raises specificity above the
        (later-declared) base .object-header .actor-avatar 2.5rem rule so the mobile size wins. */
@@ -481,11 +472,6 @@ a:hover {
         flex-basis: 100%;
     }
 
-    .community-detail-actions {
-        flex-direction: column;
-        align-items: flex-start;
-        width: 100%;
-    }
 }
 
 .main-nav a {
@@ -682,11 +668,9 @@ ul.object-list {
 }
 
 ul.object-list li {
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    padding: 0;
     margin-bottom: var(--space-3);
-    background: var(--surface-inset);
+    min-width: 0;
 }
 
 /* Reply thread (Phase 132.3): the object-detail Replies tab renders replies as a nested thread.
@@ -746,34 +730,35 @@ ul.object-list li {
 .object-item {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    transition: border-color 0.15s;
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
-/* Phase 133.1 — the card header is a two-row column: row 1 is the post date (a single top line,
-   left-justified); row 2 is the actor handle + moderation bar (moderation left-justified, directly
-   after the handle). Splitting the date off its own line stops long usernames from crowding the
-   timestamp and keeps the header calm on mobile. */
+.object-item:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+/* Single-row header: avatar + handle (left), timestamp (right). */
 .object-header {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-15);
-    margin-bottom: var(--space-35);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
 }
 
-/* Row 1: the post date, a single left-justified line. */
-.object-header-time {
-    width: 100%;
-}
-
-/* Row 2: the actor handle + moderation bar, left-justified (the moderation group sits right after
-   the handle rather than being pushed to the far right). */
 .object-header-actor {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    width: 100%;
     min-width: 0;
+    flex: 1;
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
@@ -840,62 +825,65 @@ ul.object-list li {
 
 .actor-card {
     display: flex;
-    gap: var(--space-4);
-    align-items: flex-start;
-    flex-wrap: wrap;
-}
-
-.actor-card--bannered {
     flex-direction: column;
-    gap: 0;
-}
-
-.actor-card--bannered .actor-card-banner {
-    width: 100%;
-    height: 4.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
     overflow: hidden;
-    background: var(--bg);
+    transition: border-color 0.15s;
 }
 
-.actor-card--bannered .actor-card-banner img {
+.actor-card--clickable {
+    cursor: pointer;
+}
+
+.actor-card--clickable:hover {
+    border-color: var(--accent);
+}
+
+.actor-card-banner {
+    width: 100%;
+    height: 6.5rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: var(--surface-inset);
+}
+
+.actor-card-banner img {
     width: 100%;
     height: 100%;
     object-fit: cover;
     display: block;
 }
 
-.actor-card--bannered .actor-card-main {
-    width: 100%;
+.actor-card-main {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    padding: 0 var(--space-4) var(--space-3);
 }
 
-.actor-card--bannered .actor-card-avatar {
-    margin-top: -1.5rem;
+.actor-card-main .actor-card-avatar {
+    margin-top: calc(-1 * 3.25rem);
     position: relative;
     z-index: 1;
     border: 3px solid var(--panel);
 }
 
-.actor-card-main {
-    display: flex;
-    gap: var(--space-4);
-    align-items: flex-start;
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
 .actor-card-avatar {
-    width: 4rem;
-    height: 4rem;
+    width: 4.5rem;
+    height: 4.5rem;
     flex-shrink: 0;
 }
 
 .actor-card-avatar img {
     width: 100%;
     height: 100%;
+    border-radius: 50%;
 }
 
 .actor-card-avatar-fallback {
-    font-size: 1.75rem;
+    font-size: 2rem;
 }
 
 .actor-card-body {
@@ -904,6 +892,7 @@ ul.object-list li {
     gap: var(--space-1);
     min-width: 0;
     flex: 1 1 auto;
+    padding-top: var(--space-4);
 }
 
 .actor-card-identity {
@@ -918,14 +907,9 @@ ul.object-list li {
     color: var(--text);
     font-weight: 700;
     font-size: 1.05rem;
-    text-decoration: none;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.actor-card-handle:hover {
-    color: var(--accent);
 }
 
 .actor-card-name {
@@ -959,11 +943,40 @@ ul.object-list li {
 .actor-card-summary {
     color: var(--muted);
     font-size: var(--font-size-base);
+    line-height: 1.4;
     margin-top: var(--space-1);
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Actor card footer: stats (left) + actions (right), full card width --- */
+
+.actor-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.actor-card-stats {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.actor-card-stat strong {
+    color: var(--text);
+    font-weight: 600;
+    margin-right: 0.15em;
 }
 
 .actor-card-actions {
@@ -972,7 +985,6 @@ ul.object-list li {
     gap: var(--space-2);
     flex-shrink: 0;
     margin-left: auto;
-    padding-top: var(--space-1);
 }
 
 /* --- Actor list panel (hydrated followers/following) --- */
@@ -987,40 +999,8 @@ ul.object-list li {
     gap: var(--space-3);
 }
 
-.actor-list-grid .actor-card {
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    transition: border-color 0.15s;
-    overflow: hidden;
-}
-
-.actor-list-grid .actor-card:hover {
-    border-color: var(--accent);
-}
-
-.actor-list-grid .actor-card--bannered {
-    padding: 0;
-}
-
-.actor-list-grid .actor-card--bannered .actor-card-main {
-    padding: 0 var(--space-4) var(--space-3);
-}
-
-.actor-list-grid .actor-card-avatar {
-    width: 3rem;
-    height: 3rem;
-}
-
-.actor-list-grid .actor-card-avatar img {
-    width: 100%;
-    height: 100%;
-    border-radius: 50%;
-}
-
-.actor-list-grid .actor-card-summary {
-    -webkit-line-clamp: 2;
-}
+/* The list contexts (followers / following) render the unified actor card with no size overrides —
+   the base .actor-card sizing applies so they match the directory cards exactly. */
 
 /* --- Clickable profile avatar link --- */
 
@@ -1048,12 +1028,12 @@ ul.object-list li {
     font-style: italic;
 }
 
-/* Phase 133.1 — the date is a standalone top line (left-justified), so it no longer needs
-   margin-left: auto (that pushed it to the far right of the old single-row header). */
+/* Timestamp sits on the right side of the single-row header. */
 .object-time {
     color: var(--muted);
     font-size: var(--font-size-xs);
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .object-name {
@@ -1072,6 +1052,7 @@ ul.object-list li {
     color: var(--muted);
     font-size: var(--font-size-sm);
     word-break: break-all;
+    overflow-wrap: break-word;
     text-decoration: none;
 }
 
@@ -1173,6 +1154,7 @@ ul.object-list li {
     color: inherit;
     text-decoration: none;
     display: block;
+    min-width: 0;
 }
 
 .object-post-link:hover .object-content {
@@ -1184,14 +1166,16 @@ ul.object-list li {
     font-size: var(--font-size-base);
     color: var(--text);
     margin-bottom: var(--space-1);
+    overflow-wrap: break-word;
 }
 
 .object-content {
     color: var(--text);
     font-size: var(--font-size-base);
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-wrap: break-word;
-    opacity: 0.92;
+    word-break: break-word;
+    min-width: 0;
 }
 
 .object-content h1,
@@ -1212,6 +1196,8 @@ ul.object-list li {
 .object-content a {
     color: var(--success);
     text-decoration: underline;
+    overflow-wrap: break-word;
+    word-break: break-all;
 }
 
 .object-audience,
@@ -1462,22 +1448,22 @@ ul.object-list li {
 
 .engagement-bar {
     display: flex;
-    gap: var(--space-3);
-    margin-top: var(--space-45);
-    padding-top: var(--space-25);
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
 }
 
 .engagement-btn {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-25);
+    gap: var(--space-2);
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: var(--font-size-sm);
-    padding: var(--space-25) var(--space-25);
+    font-size: 0.85rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-sm);
     text-decoration: none;
     transition: color 0.15s, background 0.15s;
@@ -1485,12 +1471,12 @@ ul.object-list li {
 
 .engagement-btn:hover {
     color: var(--accent);
-    background: color-mix(in srgb, var(--success) 10%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .engagement-btn svg {
-    width: var(--space-4);
-    height: var(--space-4);
+    width: 1.4rem;
+    height: 1.4rem;
 }
 
 .engagement-btn--active {
@@ -2111,8 +2097,8 @@ ul.object-list li {
 
 .actor-profile-avatar {
     flex: 0 0 auto;
-    width: 4rem;
-    height: 4rem;
+    width: 5rem;
+    height: 5rem;
     border-radius: 50%;
     overflow: hidden;
     display: inline-flex;
@@ -2123,8 +2109,8 @@ ul.object-list li {
 }
 
 .actor-profile-avatar-img {
-    width: 4rem;
-    height: 4rem;
+    width: 5rem;
+    height: 5rem;
     border-radius: 50%;
     object-fit: cover;
 }
@@ -2139,7 +2125,7 @@ ul.object-list li {
 
 /* The fallback initial when the actor has no icon: a large, muted glyph centered in the frame. */
 .actor-profile-avatar-fallback {
-    font-size: 1.75rem;
+    font-size: 2rem;
     font-weight: 600;
     color: var(--accent);
 }
@@ -2447,53 +2433,6 @@ ul.object-list li {
     font-size: var(--font-size-base);
 }
 
-.directory-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    margin-top: var(--space-2);
-}
-
-.directory-item {
-    display: flex;
-    align-items: flex-start;
-    gap: var(--space-3);
-    padding: var(--space-45) var(--space-3);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--surface-inset);
-}
-
-.directory-item-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-}
-
-.directory-item-name {
-    font-weight: 600;
-    font-size: var(--font-size-base);
-    color: var(--text);
-    text-decoration: none;
-}
-
-.directory-item-name:hover {
-    color: var(--accent);
-}
-
-.directory-item-handle {
-    font-size: var(--font-size-sm);
-    color: var(--muted);
-}
-
-.directory-item-summary {
-    font-size: var(--font-size-sm);
-    color: var(--muted);
-    margin: 0;
-}
-
 /* Directory scope toggle (This instance / All known actors). */
 .directory-toolbar {
     display: flex;
@@ -2547,94 +2486,11 @@ ul.object-list li {
     margin-top: var(--space-2);
 }
 
-.directory-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-inset);
-    overflow: hidden;
-}
-
-.directory-card-row {
-    display: flex;
-    align-items: center;
-    gap: var(--space-45);
-    padding: var(--space-3);
-}
-
-.directory-card-expand-btn {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: block;
-    width: 100%;
-    background: none;
-    border: none;
-    color: inherit;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
-    padding: 0;
-}
-
-.directory-card-expand-btn .actor-card {
-    flex-wrap: nowrap;
-}
-
-.directory-card-expand-btn .actor-card-actions {
-    display: none;
-}
-
-.directory-card-expand-btn .actor-card-summary {
-    -webkit-line-clamp: 1;
+/* The directory card is the unified actor card — the same control (and size/shape) the actor page's
+   followers/following tabs render. The base .actor-card supplies all framing and sizing; the wrapper
+   only holds the column layout. */
+.directory-card .actor-card-summary {
     font-size: var(--font-size-sm);
-}
-
-.directory-card-expand-btn:hover .actor-card-handle {
-    color: var(--accent);
-}
-
-/* The directory's follow button hugs the card edge (no extra min-width). */
-.directory-card .follow-button {
-    min-width: 0;
-    padding: var(--space-35) var(--space-35);
-}
-
-.directory-card-chevron {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--muted);
-    padding: var(--space-1);
-}
-
-.directory-card-chevron-svg {
-    transition: transform 0.15s ease;
-}
-
-.directory-card-chevron-svg.is-expanded {
-    transform: rotate(180deg);
-}
-
-.directory-card-posts {
-    border-top: 1px solid var(--border);
-    padding: var(--space-2) var(--space-3) var(--space-3);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-
-/* 114: empty message inside an expanded directory-card row — lighter, smaller
-   than the page-level empty state since it sits within an already-nested card. */
-.directory-card-empty {
-    margin: var(--space-1) 0;
-    font-size: var(--font-size-sm);
-}
-
-.directory-card-post {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: var(--space-2) var(--space-65);
-    background: var(--bg);
 }
 
 .follow-button {
@@ -2683,56 +2539,14 @@ ul.object-list li {
 }
 
 .actor-detail-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-4);
-    flex-wrap: wrap;
+    margin-bottom: var(--space-4);
 }
 
-.actor-detail-header-main {
-    flex: 1;
-    min-width: 200px;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-
-.actor-detail-header-main .actor-profile {
-    flex: 1;
-    min-width: 200px;
-}
-
-.actor-detail-stats {
-    display: flex;
-    gap: var(--space-4);
-    flex-wrap: wrap;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-}
-
-.actor-detail-stat strong {
-    color: var(--text-primary);
-    font-weight: 600;
-}
-
-.actor-detail-actions {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    align-items: stretch;
-    flex-shrink: 0;
-}
-
-.actor-detail-actions .moderation-actions {
-    display: flex;
-    gap: var(--space-45);
-    flex-wrap: wrap;
-}
+/* The actor page presents the actor as the unified directory-style card — the same control and the
+   same size/shape as the directory and the followers/following lists. No size overrides here. */
 
 .actor-detail-signin {
-    flex-shrink: 0;
-    margin: var(--space-1) 0 0;
+    margin: var(--space-3) 0 0;
 }
 
 .object-detail .object-content {
@@ -2751,6 +2565,8 @@ ul.object-list li {
     border-left: 3px solid var(--accent);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-parent-separator {
@@ -2801,6 +2617,8 @@ ul.object-list li {
     margin-bottom: var(--space-45);
     font-size: 0.82rem;
     color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-recipient-label {
@@ -2853,6 +2671,8 @@ ul.object-list li {
     margin-bottom: var(--space-45);
     font-size: var(--font-size-sm);
     color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-boost-time {
@@ -3241,20 +3061,45 @@ ul.object-list li {
     cursor: not-allowed;
 }
 
+/* The community page presents the community as the unified directory-style card — the same control
+   and the same size/shape as the directory and the followers/following lists. */
 .community-detail-header {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-4);
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: var(--space-2);
     margin-bottom: var(--space-4);
 }
 
-.community-detail-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-shrink: 0;
+.community-card-header {
+    width: 100%;
+}
+
+/* Profile / actor / community page header: the card reads as a profile, so it gets a bigger
+   banner, avatar, and body. */
+.actor-detail-header .actor-card-banner,
+.community-card-header .actor-card-banner,
+.profile-card-header .actor-card-banner {
+    height: 8.5rem;
+}
+
+.actor-detail-header .actor-card-main .actor-card-avatar,
+.community-card-header .actor-card-main .actor-card-avatar,
+.profile-card-header .actor-card-main .actor-card-avatar {
+    width: 6.5rem;
+    height: 6.5rem;
+    margin-top: calc(-1 * 3.25rem);
+}
+
+.actor-detail-header .actor-card-avatar-fallback,
+.community-card-header .actor-card-avatar-fallback,
+.profile-card-header .actor-card-avatar-fallback {
+    font-size: 2.75rem;
+}
+
+.actor-detail-header .actor-card-body,
+.community-card-header .actor-card-body,
+.profile-card-header .actor-card-body {
+    min-height: 6rem;
 }
 
 .community-member-count {
@@ -3861,8 +3706,8 @@ body > #app {
 .media-gallery {
     display: grid;
     gap: 4px;
-    margin: var(--space-2) 0;
-    border-radius: var(--space-2);
+    margin: var(--space-3) 0 0;
+    border-radius: var(--radius-sm);
     overflow: hidden;
 }
 
@@ -3892,12 +3737,11 @@ body > #app {
     position: relative;
     cursor: pointer;
     overflow: hidden;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 16 / 9;
 }
 
 .media-gallery--single .media-gallery-item {
-    aspect-ratio: auto;
-    max-height: 500px;
+    aspect-ratio: 16 / 9;
 }
 
 .media-gallery-item img {

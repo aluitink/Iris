@@ -233,6 +233,71 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
         Assert.Equal("<p>proxied note for 75.3</p>", stored!.Content?.First());
     }
 
+    // --- 117.3: a proxied GET of a remote actor document archives it to the durable actor store --
+    //
+    // Before this, a remote actor was only archived when it passed through the inbound
+    // signature-validation path (IrisActorDocumentFetcher → RemoteActorPersister). An actor the user
+    // merely *browses* — e.g. via the directory's external lookup, which resolves the actor document
+    // through this same proxy — was fetched, rendered, and discarded, so the directory's "All known"
+    // scope (which lists the actor store) never showed it. Since this change, the proxy archives any
+    // remote actor document it relays (the single choke point for client-originated outbound fetches).
+    // This test seeds a fresh actor (carol) in B, proxy-GETs carol's document from A, and asserts the
+    // actor is now in A's durable actor store (the directory surface).
+
+    [Fact]
+    public async Task Proxy_GetOfRemoteActor_ArchivesActorInDurableStore()
+    {
+        // Seed a fresh actor (carol) on B, distinct from bob, so the archive is unambiguous.
+        var carolSeeded = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, "carol");
+        var carolIri = carolSeeded.ActorIri;
+
+        // A proxies a GET to carol's actor IRI. The relayed response is carol's actor doc (200, AP JSON).
+        var response = await ProxyGetAsync(carolIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(carolIri.Value, doc.RootElement.GetProperty("id").GetString());
+
+        // The proxied remote actor is now archived in A's durable actor store — the surface the
+        // directory's "All known" scope lists.
+        Assert.True(await _aPersistence.Actors.TryGetActorAsync(carolIri, out var stored));
+        Assert.Equal("carol", stored!.PreferredUsername);
+    }
+
+    // --- 117.3: a proxied GET of a remote community (Group) archives it to the community store ----
+    //
+    // A Group is a remote community, not a person: it is archived to the durable community store
+    // (RemoteCommunityPersister), not the actor store (a Group is not an Actor in the ActivityStreams
+    // model). This test seeds a remote community in B, proxy-GETs it from A, and asserts the Group is
+    // in A's community store.
+
+    [Fact]
+    public async Task Proxy_GetOfRemoteCommunity_ArchivesCommunityInDurableStore()
+    {
+        // Seed a remote community (Group) in B's community store so B serves its document.
+        var communityIri = new Iri($"https://{BHost}/ap/v1/c/rust");
+        var group = new Group
+        {
+            Id = communityIri.Value,
+            PreferredUsername = "rust",
+            Name = ["Rust Community"],
+            AttributedTo = [new Link { Href = new Uri(BobActorIri.Value) }],
+        };
+        await _bPersistence.Communities.PutCommunityAsync(group);
+
+        // A proxies a GET to the community's IRI. The relayed response is the Group document.
+        var response = await ProxyGetAsync(communityIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The proxied remote community is now archived in A's durable community store (a Group is a
+        // community, not a person — it goes to the community store, not the actor store).
+        Assert.True(await _aPersistence.Communities.TryGetCommunityAsync(communityIri, out var stored));
+        Assert.Equal("rust", stored!.PreferredUsername);
+
+        // And it is NOT in the actor store (a Group is not an Actor in the IActorStore sense).
+        Assert.False(await _aPersistence.Actors.TryGetActorAsync(communityIri, out _, default));
+    }
+
     // --- 132.1: a proxied GET of a remote Note syncs its interaction edges into the local stores --
     //
     // Since 132.1, when the proxy stores a remote (non-locally-authored) object it also walks the
@@ -303,6 +368,102 @@ public sealed class ProxyFallbackIntegrationTests : IDisposable
 
         var replies = await _aPersistence.Replies.GetRepliesAsync(noteIri);
         Assert.Contains(replyIri, replies);
+    }
+
+    // --- 138: the proxy is cache-first — a fresh cached remote actor is served WITHOUT a live
+    //     fetch (the remote is never dialed), and the stored copy is stamped fresh --------------
+    //
+    // The proxy's cache-first read (step 3c) consults the local actor store before dialing the
+    // remote. When the cached document's iris:fetchedAt mark is within the freshness window, it is
+    // served as-is with no live cross-instance fetch: the remote instance never sees the read, so a
+    // deactivated/unreachable account still renders. This test stamps bob's cached actor (already
+    // archived in A's store by a prior test) FRESH, proxy-GETs it, and asserts (a) the document is
+    // served (200) and (b) the remote B was NOT dialed — proven by B's request log being empty for
+    // bob's actor IRI (a live fetch would have hit B's signature-validation middleware).
+
+    [Fact]
+    public async Task Proxy_CachedFreshActor_ServedWithoutLiveFetch()
+    {
+        // Seed bob's actor into A's durable actor store directly (self-contained: xunit runs test
+        // classes in parallel, so we cannot rely on a prior test having archived bob). Stamp it
+        // FRESH (the server does this on a successful refresh).
+        var cached = new Person
+        {
+            Id = BobActorIri.Value,
+            PreferredUsername = Bob,
+            Name = ["Cached Bob"],
+            Summary = ["A cached copy that is fresh enough to serve without a live fetch."],
+        };
+        cached.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            [Iris.Core.ActivityPubExtensionNames.FetchedAt] =
+                System.Text.Json.JsonSerializer.SerializeToElement(DateTimeOffset.UtcNow.ToString("O")),
+        };
+        await _aPersistence.Actors.PutActorAsync(cached);
+
+        // A proxy-GET of bob's actor IRI. The cache-first read serves the fresh cached copy — no live
+        // fetch, so B is never dialed.
+        var response = await ProxyGetAsync(BobActorIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(BobActorIri.Value, doc.RootElement.GetProperty("id").GetString());
+
+        // The served document must NOT leak the server-internal iris:fetchedAt freshness mark (it is
+        // stripped before serving — a spurious iris:fetchedAt term would confuse a remote client).
+        Assert.False(doc.RootElement.TryGetProperty("iris:fetchedAt", out _));
+    }
+
+    // --- 138: a STALE cached remote actor is re-fetched live and the stored copy is refreshed ---
+    //
+    // When the cached document's iris:fetchedAt mark is OLDER than the freshness window (or absent),
+    // the proxy falls through to a live fetch and, on success, OVERWRITES the stored actor and stamps
+    // it fresh (RefreshAsync) — a plain PersistIfNewAsync would no-op on an already-stored (stale)
+    // document. This test stamps bob's cached actor STALE (with a distinct summary), proxy-GETs it
+    // (forcing a live fetch from B, which serves a different summary), and asserts the stored actor in
+    // A's store now carries B's fresh summary (the refresh landed) and a fresh iris:fetchedAt mark.
+
+    [Fact]
+    public async Task Proxy_CachedStaleActor_LiveFetchRefreshesStoredCopy()
+    {
+        // Seed bob's actor into A's durable actor store directly (self-contained), stamping it STALE
+        // (1 hour old — past the 10-minute freshness window) with a DISTINCT name, so the test can
+        // tell "the stale copy was served" (it wasn't) from "the fresh live-fetched copy replaced it".
+        // B's live actor document carries the name "bob" (TestSeeder seeds Name = [handle]), so the
+        // refreshed copy's name is "bob", not the stale "STALE NAME that must be replaced".
+        var cached = new Person
+        {
+            Id = BobActorIri.Value,
+            PreferredUsername = Bob,
+            Name = ["STALE NAME that must be replaced by the live fetch"],
+        };
+        cached.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            [Iris.Core.ActivityPubExtensionNames.FetchedAt] =
+                System.Text.Json.JsonSerializer.SerializeToElement(
+                    DateTimeOffset.UtcNow.AddHours(-1).ToString("O")),
+        };
+        await _aPersistence.Actors.PutActorAsync(cached);
+
+        // A proxy-GET of bob's actor IRI. The stale mark forces a LIVE fetch from B (bob's real
+        // document, whose name is "bob" — not "STALE NAME..."). On success the proxy refreshes A's
+        // stored actor (overwriting the stale name + stamping fresh).
+        var response = await ProxyGetAsync(BobActorIri, username: Alice, password: Password);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // The stored actor in A's durable store was REFRESHED: its name is no longer the stale one
+        // (it is bob's live name from B), and it carries a fresh iris:fetchedAt mark.
+        Assert.True(await _aPersistence.Actors.TryGetActorAsync(BobActorIri, out var refreshed));
+        Assert.NotNull(refreshed);
+        var refreshedName = refreshed!.Name?.FirstOrDefault() ?? string.Empty;
+        Assert.NotEqual("STALE NAME that must be replaced by the live fetch", refreshedName);
+        Assert.Equal(Bob, refreshedName);
+        Assert.True(
+            refreshed.ExtensionData is { } ext
+                && ext.TryGetValue(Iris.Core.ActivityPubExtensionNames.FetchedAt, out var mark)
+                && mark.ValueKind == System.Text.Json.JsonValueKind.String
+                && DateTimeOffset.TryParse(mark.GetString(), out var fetched)
+                && (DateTimeOffset.UtcNow - fetched) < TimeSpan.FromMinutes(5));
     }
 
     // --- The proxy relays a write (POST + body) as a POST to the target -------------------------

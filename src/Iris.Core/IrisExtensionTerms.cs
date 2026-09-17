@@ -262,4 +262,35 @@ public static class IrisExtensionTerms
     /// <c>{NamespaceIri}postingRestrictedToMods</c>.
     /// </summary>
     public const string PostingRestrictedToMods = "postingRestrictedToMods";
+
+    /// <summary>
+    /// The <c>postsCount</c> extension: an <c>int</c> rendered on an actor/community document indicating
+    /// the number of content posts (Note/Article objects) in the actor's outbox. This is a cacheable,
+    /// per-actor counter (not per-requester): the server computes it from the actor's outbox and renders
+    /// it on the public document and on directory (search) results, so a client can display a "N posts"
+    /// stat without first reading the outbox collection. Absent (omitted) when the count is not known
+    /// (e.g. a remote actor cached from a non-Iris instance whose outbox the server has not indexed).
+    /// The full wire key is <c>{NamespaceIri}postsCount</c>.
+    /// </summary>
+    public const string PostsCount = "postsCount";
+
+    /// <summary>
+    /// The <c>followersCount</c> extension: an <c>int</c> rendered on an actor/community document
+    /// indicating the number of actors following the actor (the followers-collection count). This is a
+    /// cacheable, per-actor counter (not per-requester): the server computes it from the follow store and
+    /// renders it on the public document and on directory (search) results, so a client can display a
+    /// "N followers" stat without first reading the followers collection. Absent (omitted) when the count
+    /// is not known. The full wire key is <c>{NamespaceIri}followersCount</c>.
+    /// </summary>
+    public const string FollowersCount = "followersCount";
+
+    /// <summary>
+    /// The <c>followingCount</c> extension: an <c>int</c> rendered on an actor/community document
+    /// indicating the number of actors the actor follows (the following-collection count). This is a
+    /// cacheable, per-actor counter (not per-requester): the server computes it from the follow store and
+    /// renders it on the public document and on directory (search) results, so a client can display a
+    /// "N following" stat without first reading the following collection. Absent (omitted) when the count
+    /// is not known. The full wire key is <c>{NamespaceIri}followingCount</c>.
+    /// </summary>
+    public const string FollowingCount = "followingCount";
 }

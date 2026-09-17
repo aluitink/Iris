@@ -16,6 +16,15 @@ public partial class ObjectView
     [Parameter]
     public IObjectOrLink? Item { get; set; }
 
+    /// <summary>
+    /// Suppress the inline "In reply to" parent-context card (the fetched-parent context that would
+    /// otherwise render below the post body). Set by the object detail page, which renders the full
+    /// thread context (parent + grandparent) as a dedicated card above the main object card; without
+    /// this the reply's own parent would render twice.
+    /// </summary>
+    [Parameter]
+    public bool SuppressParentContext { get; set; }
+
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
 

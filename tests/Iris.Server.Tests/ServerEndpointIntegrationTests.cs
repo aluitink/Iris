@@ -439,16 +439,17 @@ public class ServerEndpointIntegrationTests : IDisposable
     // --- Content negotiation (F-31 / Phase 136.2) -------------------------------
 
     [Fact]
-    public async Task ActorDoc_AcceptLdJson_ServesLdJson()
+    public async Task ActorDoc_AcceptLdJson_ServesActivityJson()
     {
-        // F-31: when the client Accepts application/ld+json, the actor document is served as
-        // application/ld+json (some federation clients — e.g. certain Mastodon/PeerTube builds —
-        // negotiate for ld+json specifically).
+        // F-31 (revised): even when the client Accepts application/ld+json, the actor document is
+        // served as application/activity+json (never bare ld+json). Mastodon v4.6.x's key-resolution
+        // (valid_activitypub_content_type?) only accepts ld+json WITH profile=".../activitystreams";
+        // a bare ld+json made those hosts return 401 "Unable to fetch key JSON".
         var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ld+json"));
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     [Fact]
@@ -473,16 +474,16 @@ public class ServerEndpointIntegrationTests : IDisposable
     }
 
     [Fact]
-    public async Task ActorDoc_MixedAccept_ServesLdJsonWhenOffered()
+    public async Task ActorDoc_MixedAccept_ServesActivityJsonWhenOffered()
     {
-        // A multi-type Accept that includes ld+json (e.g. the common "application/activity+json,
-        // application/ld+json") is answered with ld+json — the server prefers ld+json when it is among
-        // the accepted types.
+        // A multi-type Accept that includes ld+json (the common "application/activity+json,
+        // application/ld+json") is still answered with application/activity+json — we never emit bare
+        // ld+json (see the F-31 revision note in ActorDoc_AcceptLdJson_ServesActivityJson).
         var request = new HttpRequestMessage(HttpMethod.Get, $"/ap/v1/u/{Handle}");
         request.Headers.Accept.ParseAdd("application/activity+json, application/ld+json");
         var response = await _client.SendAsync(request);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("application/ld+json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal("application/activity+json", response.Content.Headers.ContentType!.MediaType);
     }
 
     // --- NodeInfo --------------------------------------------------------------

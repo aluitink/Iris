@@ -9,8 +9,6 @@
 
 <PageTitle>Directory · Iris</PageTitle>
 
-<h1>Directory</h1>
-
 <p class="muted">
     Browse people and communities on this instance, or find someone on another server.
 </p>
@@ -96,10 +94,7 @@ else
                 <div class="directory-cards">
                     @foreach (var person in People)
                     {
-                        <DirectoryCard Actor="person"
-                                       OnExpandPosts="ExpandAsync"
-                                       ExpandedPosts="@_expandedPosts"
-                                       ExpandedLoading="@_expandedLoading" />
+                        <DirectoryCard Actor="person" />
                     }
                 </div>
             }
@@ -117,10 +112,7 @@ else
                 <div class="directory-cards">
                     @foreach (var community in Communities)
                     {
-                        <DirectoryCard Actor="community"
-                                       OnExpandPosts="ExpandAsync"
-                                       ExpandedPosts="@_expandedPosts"
-                                       ExpandedLoading="@_expandedLoading" />
+                        <DirectoryCard Actor="community" />
                     }
                 </div>
             }
@@ -341,11 +333,6 @@ else
         }
     }
 
-    private readonly Dictionary<string, List<IObjectOrLink>> _expandedPosts = new();
-    private readonly HashSet<string> _expandedLoading = new();
-    private Dictionary<string, List<IObjectOrLink>> ExpandedPosts => _expandedPosts;
-    private HashSet<string> ExpandedLoading => _expandedLoading;
-
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
@@ -423,59 +410,6 @@ else
         finally
         {
             Busy = false;
-        }
-    }
-
-    private async Task ExpandAsync(Actor actor)
-    {
-        var iri = actor.Id;
-        if (string.IsNullOrEmpty(iri) || Client is not { } client)
-        {
-            return;
-        }
-
-        if (_expandedPosts.ContainsKey(iri) || _expandedLoading.Contains(iri))
-        {
-            return;
-        }
-
-        _expandedLoading.Add(iri);
-        StateHasChanged();
-
-        try
-        {
-            var outboxIri = new Iri(iri).OutboxOf();
-            var posts = new List<IObjectOrLink>();
-            await foreach (var page in client.GetCollectionAsync(outboxIri, ct: CancellationToken.None))
-            {
-                foreach (var item in page.Items)
-                {
-                    if (OutboxFilter.IsContentItem(item))
-                    {
-                        posts.Add(item);
-                        if (posts.Count >= 3)
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                if (posts.Count >= 3)
-                {
-                    break;
-                }
-            }
-
-            _expandedPosts[iri] = posts;
-        }
-        catch (Exception)
-        {
-            _expandedPosts[iri] = [];
-        }
-        finally
-        {
-            _expandedLoading.Remove(iri);
-            StateHasChanged();
         }
     }
 }

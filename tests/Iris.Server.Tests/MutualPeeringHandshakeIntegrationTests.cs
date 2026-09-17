@@ -182,12 +182,20 @@ public sealed class MutualPeeringHandshakeIntegrationTests : IAsyncLifetime
                 && await _bPersistence.Communities.TryGetCommunityAsync(MutualPeeringIris.ACommunityIri, out _),
             timeout: TimeSpan.FromSeconds(120));
 
-        // The 138.5 acceptance, both directions: each side serves the peer's Group as known content via
-        // the cached-actor-by-IRI endpoint (GET /ap/v1/actor?iri=…).
+        // 138: the cached-actor-by-IRI endpoint is LOCAL-ONLY, so each side 404s for the REMOTE peer's
+        // Group (the client reads it through the proxy endpoint instead). The peer's Group is still
+        // persisted in each side's community store (the WaitForAsync above already asserted both are
+        // present) — the peering handshake completed.
         var aServesB = await ActorByIriAsync(_httpA, _baseA, MutualPeeringIris.BCommunityIri);
         var bServesA = await ActorByIriAsync(_httpB, _baseB, MutualPeeringIris.ACommunityIri);
-        Assert.Equal(HttpStatusCode.OK, aServesB);
-        Assert.Equal(HttpStatusCode.OK, bServesA);
+        Assert.Equal(HttpStatusCode.NotFound, aServesB);
+        Assert.Equal(HttpStatusCode.NotFound, bServesA);
+
+        // The peer's Group IS persisted on each side (the handshake completed, both directions).
+        Assert.True(
+            await _aPersistence.Communities.TryGetCommunityAsync(MutualPeeringIris.BCommunityIri, out _));
+        Assert.True(
+            await _bPersistence.Communities.TryGetCommunityAsync(MutualPeeringIris.ACommunityIri, out _));
     }
 
     // --- Helpers --------------------------------------------------------------------------

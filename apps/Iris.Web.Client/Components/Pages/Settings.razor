@@ -9,8 +9,6 @@
 
 <PageTitle>Settings · Iris</PageTitle>
 
-<h1>Settings</h1>
-
 @if (Client is null)
 {
     <div class="card"><p class="muted">Sign in to manage your settings.</p></div>
@@ -699,6 +697,7 @@ else
             BlockedActors = BlockedActors is { } blocks
                 ? blocks.Where(b => b != target).ToList()
                 : [];
+            Ui.InvalidateModeration();
             if (BlockActivityIris is { } bm)
             {
                 bm.Remove(target.Value);
@@ -732,6 +731,7 @@ else
             MutedActors = MutedActors is { } mutes
                 ? mutes.Where(m => m != target).ToList()
                 : [];
+            Ui.InvalidateModeration();
         }
         catch (Exception)
         {
