@@ -118,6 +118,19 @@ public sealed class ActivityPubServerOptions
     public TimeSpan CacheInvalidationPollInterval { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// How often the <strong>object-interaction-count refresh</strong> hosted service (Phase 151 —
+    /// background processing) re-computes the per-object interaction counters
+    /// (<c>iris:likedCount</c>/<c>sharedCount</c>/<c>repliedCount</c>/<c>dislikedCount</c>/<c>score</c>) and
+    /// persists them onto the stored object documents: a like/boost/reply/dislike recorded on this
+    /// instance becomes visible on the object document (and in collection pages) within one interval, so
+    /// reads can serve the pre-computed counters instead of walking the reverse indexes on every read.
+    /// Defaults to 30 s. A non-positive value disables the periodic refresh (the startup refresh pass
+    /// still runs). The service is a no-op when the instance stores no objects, so an empty store is
+    /// unaffected.
+    /// </summary>
+    public TimeSpan ObjectInteractionRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// The shared hit/miss counter for all server-side caches. When null (the default), each cache
     /// uses a no-op <see cref="NullCacheMetrics"/>. Set a <see cref="CacheMetrics"/> instance to
     /// collect per-cache counters, exposed via <c>GET /ap/v1/diagnostics/caches</c>.

@@ -754,6 +754,26 @@ public static class ActivityPubServerExtensions
         // the provider from DI (it reads IPersistenceProvider.Actors, not a concrete IActorStore).
         services.TryAddSingleton<IPersistenceProvider>(sp => sp.GetRequiredService<IPersistenceProvider>());
 
+        // 151: object-interaction-count refresh (background processing). The service pre-computes the
+        // per-object interaction counters (iris:likedCount/sharedCount/repliedCount/dislikedCount/score)
+        // on a fixed interval and persists them onto the stored object documents, so the object-document
+        // and collection-page read paths can serve the pre-computed counters instead of walking the
+        // reverse indexes on every read. It is registered unconditionally in the main overload (the one a
+        // host such as Iris.Web uses) and is inert when no persistence provider is registered or the
+        // instance stores no objects — the common empty-store test harness is unaffected. A host that wants
+        // a different cadence (or to disable the periodic pass) sets Iris:ObjectInteractionRefreshInterval.
+        // It resolves the (possibly null) IPersistenceProvider via the factory above.
+        // Registered via AddHostedService (a TryAddEnumerable of IHostedService) so it coexists with the
+        // other hosted services (DeliveryWorker, PersistenceDegradedModeProbe, ...) — a plain
+        // TryAddSingleton<IHostedService> would only register the FIRST hosted service. The factory
+        // resolves the (possibly null) IPersistenceProvider so a host without persistence gets an inert
+        // service rather than a resolution failure.
+        services.AddHostedService(sp =>
+            new Stores.ObjectInteractionCountRefreshService(
+                sp.GetService<IPersistenceProvider>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Stores.ObjectInteractionCountRefreshService>>()));
+
         return services;
     }
 
@@ -794,6 +814,15 @@ public static class ActivityPubServerExtensions
                 && TimeSpan.TryParse(refreshInterval, out var parsedRefreshInterval))
             {
                 o.KeyProviderRefreshInterval = parsedRefreshInterval;
+            }
+
+            // 151: object-interaction-count refresh interval. When Iris:ObjectInteractionRefreshInterval is
+            // set (a .NET TimeSpan string), the refresh hosted service re-computes the per-object counters
+            // on that cadence (a non-positive value disables the periodic pass). Unset keeps the 30 s default.
+            if (irisSection["ObjectInteractionRefreshInterval"] is { } objectRefreshInterval
+                && TimeSpan.TryParse(objectRefreshInterval, out var parsedObjectRefreshInterval))
+            {
+                o.ObjectInteractionRefreshInterval = parsedObjectRefreshInterval;
             }
 
             var proxySection = irisSection.GetSection("ProxySettings");
@@ -849,6 +878,11 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<Identity.KeyProviderRefreshService>();
         services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
             sp => sp.GetRequiredService<Identity.KeyProviderRefreshService>());
+
+        // NOTE: the 151 object-interaction-count refresh service is registered in the main overload
+        // (AddActivityPubServer(services, configure)) — which this config overload delegates to — so it is
+        // not re-registered here. It resolves the (possibly null) IPersistenceProvider and is inert when
+        // there is no persistence provider or no stored objects.
 
         // 84.6: cache-invalidation channel (the scale-out half for the in-memory actor/edge caches). The
         // publisher seam defaults to a no-op (the single-instance default: with one instance there is no
@@ -6868,18 +6902,34 @@ public static class ActivityPubServerExtensions
                 : null;
 
             // The per-object interaction counters (iris:likedCount / iris:sharedCount / iris:repliedCount /
-            // iris:dislikedCount): cacheable, not per-requester (the same value for every requester), so
-            // they are computed on every read and rendered onto the object document. A client (e.g. the
-            // object-detail page and the EngagementBar) reads them off the document it already fetched
-            // instead of re-walking the /likes, /shares, and /replies collections (54.8). The reply count
-            // is derived from the IReplyStore reverse index (the parent → [child] reply edges recorded by
-            // the CreateActivityHandler when an inbound reply is stored), so it reflects the replies this
-            // instance knows about for the object — local or remote (a proxied remote object's replies
-            // are synced into the local reply store, 132.1).
-            likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
-            sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
-            repliedCountValue = (await persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
-            dislikedCountValue = (await persistence.Dislikes.GetDislikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            // iris:dislikedCount): cacheable, not per-requester (the same value for every requester). A
+            // client (e.g. the object-detail page and the EngagementBar) reads them off the document it
+            // already fetched instead of re-walking the /likes, /shares, and /replies collections (54.8).
+            //
+            // Phase 151 — background processing: the ObjectInteractionCountRefreshService pre-computes
+            // these counters and persists them onto the stored object's ExtensionData under the iris:
+            // namespace. When present, they are served directly (no per-read reverse-index sweep); when
+            // absent (the refresh has not yet run, or the object is remote and not in the local store),
+            // the per-read sweep is the fallback. The reply count is derived from the IReplyStore reverse
+            // index (the parent → [child] reply edges recorded by the CreateActivityHandler when an
+            // inbound reply is stored), so it reflects the replies this instance knows about for the
+            // object — local or remote (a proxied remote object's replies are synced into the local reply
+            // store, 132.1).
+            var ns = IrisExtensionNamespace(options);
+            if (!TryReadStoredCounts(obj, ns, out var preLiked, out var preShared, out var preReplied, out var preDisliked))
+            {
+                likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                repliedCountValue = (await persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                dislikedCountValue = (await persistence.Dislikes.GetDislikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            }
+            else
+            {
+                likedCountValue = preLiked;
+                sharedCountValue = preShared;
+                repliedCountValue = preReplied;
+                dislikedCountValue = preDisliked;
+            }
 
             // The requester's minted Like / Announce / Dislike activity IRIs (72.2, per-requester read-time
             // state, like isLiked / isShared / isDisliked): when the requester has (net) liked / boosted /
@@ -6951,6 +7001,75 @@ public static class ActivityPubServerExtensions
         }
 
         return outcome.ActorIri;
+    }
+
+    /// <summary>
+    /// Reads the pre-computed per-object interaction counters that
+    /// <see cref="Stores.ObjectInteractionCountRefreshService"/> persists onto the stored object's
+    /// <see cref="IObject.ExtensionData"/> (Phase 151). Returns <see langword="true"/> when all four
+    /// counters (<c>iris:likedCount</c>/<c>sharedCount</c>/<c>repliedCount</c>/<c>dislikedCount</c>) are
+    /// present and are integers (so the caller serves them directly, skipping the per-read reverse-index
+    /// sweep); <see langword="false"/> when any is absent or malformed (the caller falls back to the
+    /// per-read sweep). The <c>iris:</c> namespace base is required: without it the keys are unknown and
+    /// the counters cannot be located.
+    /// </summary>
+    private static bool TryReadStoredCounts(
+        IObject obj,
+        string? irisNamespace,
+        out int likedCount,
+        out int sharedCount,
+        out int repliedCount,
+        out int dislikedCount)
+    {
+        likedCount = 0;
+        sharedCount = 0;
+        repliedCount = 0;
+        dislikedCount = 0;
+
+        if (string.IsNullOrEmpty(irisNamespace))
+        {
+            return false;
+        }
+
+        var ext = obj.ExtensionData;
+        if (ext is null)
+        {
+            return false;
+        }
+
+        var ns = irisNamespace!;
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.LikedCount, out likedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.SharedCount, out sharedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.RepliedCount, out repliedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.DislikedCount, out dislikedCount))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Reads an integer extension property from a dictionary, returning <see langword="false"/> when the
+    /// key is absent or the value is not an integer.
+    /// </summary>
+    private static bool TryGetInt(
+        System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> ext,
+        string key,
+        out int value)
+    {
+        value = 0;
+        return ext.TryGetValue(key, out var el)
+            && el.ValueKind == System.Text.Json.JsonValueKind.Number
+            && el.TryGetInt32(out value);
     }
 
     /// <summary>
@@ -7227,26 +7346,38 @@ public static class ActivityPubServerExtensions
             return items;
         }
 
-        // Phase 2: batch-fetch all interaction counts and per-requester state.
+        // Phase 2: batch-fetch interaction counts and per-requester state.
+        //
+        // Phase 151 — background processing: the ObjectInteractionCountRefreshService pre-computes the
+        // per-object counters and persists them onto each stored object's ExtensionData under the iris:
+        // namespace. An object that already carries all four counters is served from its stored values
+        // (no reverse-index sweep for it); only objects that lack them (the refresh has not yet run, or
+        // the object is remote and not in the local store) are batch-fetched here as the fallback. The
+        // per-requester state (isLiked / isShared) is always computed — it is never stored.
         var objectIris = new List<Iri>();
+        var needsCountFallback = new List<Iri>();
         foreach (var e in entries)
         {
             if (e.ObjectIri is { } oi)
             {
                 objectIris.Add(oi);
+                if (!TryReadStoredCounts(e.Obj, ns, out _, out _, out _, out _))
+                {
+                    needsCountFallback.Add(oi);
+                }
             }
         }
 
-        var likersByObject = objectIris.Count > 0
-            ? await persistence.Likes.GetLikersBatchAsync(objectIris, ct).ConfigureAwait(false)
+        var likersByObject = needsCountFallback.Count > 0
+            ? await persistence.Likes.GetLikersBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
             : new Dictionary<Iri, IReadOnlyList<Iri>>();
 
-        var announcersByObject = objectIris.Count > 0
-            ? await persistence.Announces.GetAnnouncersBatchAsync(objectIris, ct).ConfigureAwait(false)
+        var announcersByObject = needsCountFallback.Count > 0
+            ? await persistence.Announces.GetAnnouncersBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
             : new Dictionary<Iri, IReadOnlyList<Iri>>();
 
-        var repliesByObject = objectIris.Count > 0
-            ? await persistence.Replies.GetRepliesBatchAsync(objectIris, ct).ConfigureAwait(false)
+        var repliesByObject = needsCountFallback.Count > 0
+            ? await persistence.Replies.GetRepliesBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
             : new Dictionary<Iri, IReadOnlyList<Iri>>();
 
         var likedByRequester = (requesterIri is { } req && objectIris.Count > 0)
@@ -7292,20 +7423,32 @@ public static class ActivityPubServerExtensions
             if (objectIri is { } oid)
             {
                 copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
-                copyObj.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(likersByObject.TryGetValue(oid, out var lk) ? lk.Count : 0);
 
-                copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(announcersByObject.TryGetValue(oid, out var an) ? an.Count : 0);
+                // Phase 151: serve the pre-computed counters when the embedded object already carries
+                // them (the ObjectInteractionCountRefreshService persisted them); otherwise fall back to
+                // the batch sweep (and the per-object dislike read) for this object only.
+                int likedCount, sharedCount, repliedCount, dislikedCount;
+                if (TryReadStoredCounts(embeddedObj, ns, out likedCount, out sharedCount, out repliedCount, out dislikedCount))
+                {
+                    // The deep copy preserves the stored counters; nothing to re-annotate.
+                }
+                else
+                {
+                    likedCount = likersByObject.TryGetValue(oid, out var lk) ? lk.Count : 0;
+                    sharedCount = announcersByObject.TryGetValue(oid, out var an) ? an.Count : 0;
+                    repliedCount = repliesByObject.TryGetValue(oid, out var rp) ? rp.Count : 0;
+                    dislikedCount = (await persistence.Dislikes.GetDislikersAsync(oid, ct).ConfigureAwait(false)).Count;
 
-                copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(repliesByObject.TryGetValue(oid, out var rp) ? rp.Count : 0);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(likedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(sharedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(repliedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(dislikedCount);
+                }
 
-                var dislikedCount = (await persistence.Dislikes.GetDislikersAsync(oid, ct).ConfigureAwait(false)).Count;
-                copyObj.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
-                    System.Text.Json.JsonSerializer.SerializeToElement(dislikedCount);
-
-                var likedCount = likersByObject.TryGetValue(oid, out var lk2) ? lk2.Count : 0;
                 copyObj.ExtensionData[ns + IrisExtensionTerms.Score] =
                     System.Text.Json.JsonSerializer.SerializeToElement(likedCount - dislikedCount);
 
