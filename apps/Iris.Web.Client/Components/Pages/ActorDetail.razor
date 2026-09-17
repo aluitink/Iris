@@ -57,6 +57,7 @@ else
             PageSize="5"
             ShowRefreshButton="@(Client is not null)"
             ItemFilter="OutboxItemFilter"
+            ItemTemplate="OutboxItemTemplate"
             EmptyMessage="No posts yet." />
         </div>
     }
@@ -463,6 +464,21 @@ else
     /// </summary>
     private bool OutboxItemFilter(IObjectOrLink item)
         => OutboxFilter.IsOwnContentItem(item, ActorIri);
+
+    /// <summary>
+    /// The actor-page "Posts" card template (155): the same common <c>ObjectView</c> card every feed
+    /// uses, but with <c>ShowModeration="false"</c>. The moderation actions (Block / Mute / Report)
+    /// are offered once, at the actor level, in the page header — rendering them again on every post
+    /// card in the outbox would be redundant, so the per-post buttons are suppressed here.
+    /// </summary>
+    private RenderFragment<IObjectOrLink> OutboxItemTemplate
+        => item => builder =>
+        {
+            builder.OpenComponent<ObjectView>(0);
+            builder.AddComponentParameter(1, nameof(ObjectView.Item), item);
+            builder.AddComponentParameter(2, nameof(ObjectView.ShowModeration), false);
+            builder.CloseComponent();
+        };
 
     private static string DisplayHandle(string iri)
     {

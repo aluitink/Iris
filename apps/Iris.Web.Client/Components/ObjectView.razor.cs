@@ -25,6 +25,17 @@ public partial class ObjectView
     [Parameter]
     public bool SuppressParentContext { get; set; }
 
+    /// <summary>
+    /// Whether to render the per-card moderation buttons (Block / Mute / Report) for the post's author
+    /// (155). Defaults to <c>true</c> so the common card keeps its moderation controls in the main feed,
+    /// the object detail page, and elsewhere. Set to <c>false</c> where moderation is offered at the
+    /// actor level instead of per post — the actor detail page's posts feed, which already carries
+    /// actor-level Block / Mute / Report controls in its header, renders its outbox cards with this off
+    /// so the per-post buttons don't duplicate them.
+    /// </summary>
+    [Parameter]
+    public bool ShowModeration { get; set; } = true;
+
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
 
