@@ -299,9 +299,16 @@ public static class IriExtensions
         var mentions = new List<Iri>();
         foreach (var tag in tags)
         {
-            if (tag is Mention mention && mention.Href is { } href)
+            // A mention tag is a <c>tag</c> entry that is a link (the mentioned actor's IRI): either a
+            // full Mention object (the ActivityStreams Mention type) or a compact Link (a bare IRI string
+            // in the tag array — the form the server's ingestion normalization stores for Iris-authored
+            // and many remote mentions). Both carry the mentioned actor's IRI as the link's href. A
+            // hashtag tag, by contrast, is an Object (type Hashtag), not a link, so it is excluded here
+            // (and read by GetHashtagTags).
+            if (tag is ILink
+                && tag.ResolveObjectIri() is { } iri)
             {
-                mentions.Add(new Iri(href));
+                mentions.Add(iri);
             }
         }
 

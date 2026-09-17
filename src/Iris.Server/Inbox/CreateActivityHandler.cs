@@ -73,6 +73,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly IMediaWarmer _mediaWarmer;
     private readonly IOptions<ActivityPubServerOptions> _options;
     private readonly IActorDocumentFetcher? _actorDocuments;
+    private readonly IInboundTagNormalizer? _tagNormalizer;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -91,6 +92,10 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// <c>attributedTo</c> actor — the posting community, for a community-attributed post — so the remote
     /// instance can resolve its name/icon for display, Phase 136.6). May be <see langword="null"/> (no
     /// community-identity warming).</param>
+    /// <param name="tagNormalizer">The inbound tag normalizer (adds <c>Mention</c>/<c>Hashtag</c> tags for
+    /// <c>@mention</c>/<c>#hashtag</c> tokens in the note's content that are not already declared in its
+    /// <c>tag</c> — Phase 156, Slice C). May be <see langword="null"/> (no inbound tag resolution — the
+    /// note is stored as the remote server sent it).</param>
     /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
@@ -100,6 +105,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         IMediaWarmer mediaWarmer,
         IOptions<ActivityPubServerOptions> options,
         IActorDocumentFetcher? actorDocuments = null,
+        IInboundTagNormalizer? tagNormalizer = null,
         ILogger<CreateActivityHandler>? logger = null)
         : base(logger)
     {
@@ -114,6 +120,7 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         _mediaWarmer = mediaWarmer;
         _options = options;
         _actorDocuments = actorDocuments;
+        _tagNormalizer = tagNormalizer;
     }
 
     /// <inheritdoc/>
@@ -244,6 +251,17 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
             // preserved. Otherwise the server derives it (top-level → own IRI; reply → parent's
             // conversationId or parent IRI). Best-effort: a missing parent leaves it unset.
             await EnsureConversationIdAsync(embedded, ct).ConfigureAwait(false);
+
+            // 156 (Slice C): resolve any @mention / #hashtag tokens in the note's content that are not
+            // already declared in its `tag` array, adding the structured tags so the note renders with
+            // tappable links (display-side linkify, Slice B) and carries mention/hashtag references.
+            // Best-effort + bounded + non-federating (see IInboundTagNormalizer); a no-op when the remote
+            // server already shipped a complete `tag` array (the common case) or when no normalizer is
+            // registered. Runs pre-store, mirroring EnsureConversationIdAsync.
+            if (_tagNormalizer is not null)
+            {
+                await _tagNormalizer.NormalizeAsync(embedded, ct).ConfigureAwait(false);
+            }
 
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
 

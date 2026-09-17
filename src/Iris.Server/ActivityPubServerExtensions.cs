@@ -744,6 +744,12 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<IWebFingerResolver>(sp => sp.GetRequiredService<WebFingerClient>());
         services.TryAddSingleton<IAccountResolver, WebFingerAccountResolver>();
 
+        // 156 (Slice C): the inbound tag normalizer (resolves @mention/#hashtag tokens in an inbound
+        // note's content into tag entries when the remote server did not ship them). Consumed by the
+        // CreateActivityHandler (pre-store). A host may swap in a different normalizer (or none — the
+        // handler tolerates a null, leaving the note as the remote sent it).
+        services.TryAddSingleton<IInboundTagNormalizer, InboundTagNormalizer>();
+
         // IPersistenceProvider is a seam — a concrete provider is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer does
         // NOT register a concrete provider, keeping Iris.Server free of a dependency on any specific

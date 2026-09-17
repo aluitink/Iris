@@ -282,17 +282,41 @@ public class IriExtensionsTests
     [Fact]
     public void GetMentionIris_IgnoresNonMentionTags()
     {
+        // A hashtag tag is an Object (type Hashtag), not a link — it is excluded from the mention set
+        // (read by GetHashtagTags). A compact mention, by contrast, is a bare link (a bare IRI string in
+        // the tag array) and IS a mention.
+        var hashtag = new ActivityObject { Type = ["Hashtag"], Name = ["#example"] };
         IObject note = new Note
         {
             Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
             Tag =
             [
-                new Link { Href = new Uri("https://example.com/tags/hashtag") },
+                hashtag,
                 new Mention { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
             ],
         };
 
         Assert.Equal([new Iri("https://b.domain.local/ap/v1/u/carol")], note.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetMentionIris_IncludesCompactLinkMentions()
+    {
+        // A compact mention (a bare IRI string in the tag array, the form the server's ingestion
+        // normalization stores) deserializes as a Link and is a mention.
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r2",
+            Tag =
+            [
+                new Link { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
+                new Mention { Href = new Uri("https://c.domain.local/ap/v1/u/dave") },
+            ],
+        };
+
+        Assert.Equal(
+            [new Iri("https://b.domain.local/ap/v1/u/carol"), new Iri("https://c.domain.local/ap/v1/u/dave")],
+            note.GetMentionIris());
     }
 
     [Fact]
