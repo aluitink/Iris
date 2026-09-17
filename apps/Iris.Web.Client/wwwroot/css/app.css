@@ -744,6 +744,38 @@ ul.object-list li {
     border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
 }
 
+/* 153 — whole-card clickable. The card is position:relative so the stretched-link overlay (an
+   absolutely-positioned <a> covering the whole card) can fill it. The link cursor signals the card is
+   clickable; the overlay is the single link, so the body text no longer reads as a link. */
+.object-item--clickable {
+    position: relative;
+    cursor: pointer;
+}
+
+.object-card-link {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+}
+
+/* Interactive children must sit above the stretched link so they keep their own click behavior. */
+.object-item--clickable .object-header,
+.object-item--clickable .object-recipient,
+.object-item--clickable .object-parent,
+.object-item--clickable .object-parent-context,
+.object-item--clickable .object-iri,
+.object-item--clickable .object-sensitive,
+.object-item--clickable .object-poll,
+.object-item--clickable .object-emojis,
+.object-item--clickable .engagement-bar,
+.object-item--clickable .lemmy-vote-bar,
+.object-item--clickable .object-media,
+.object-item--clickable .object-title {
+    position: relative;
+    z-index: 1;
+}
+
 /* Single-row header: avatar + handle (left), timestamp (right). */
 .object-header {
     display: flex;
@@ -759,6 +791,17 @@ ul.object-list li {
     gap: var(--space-2);
     min-width: 0;
     flex: 1;
+    /* 153 — thin banner strip behind the avatar + handle, tinted per author via --card-hue (set on the
+       card). The darker, low-saturation band gives the header "color and splash" while keeping the
+       handle legible. Only shows when the card sets --card-hue (content cards). */
+    background:
+        linear-gradient(
+            90deg,
+            hsl(var(--card-hue, 220) 45% 30% / 0.55),
+            hsl(var(--card-hue, 220) 45% 30% / 0.12)
+        );
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the

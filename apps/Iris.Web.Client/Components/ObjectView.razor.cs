@@ -84,10 +84,47 @@ public partial class ObjectView
     private DateTime? Updated => Obj?.GetUpdated();
     private DateTime? ArticlePublishedTime => (ActivityEmbeddedObject ?? Obj)?.GetPublishedTime();
     private string? ArticleInLanguage => (ActivityEmbeddedObject ?? Obj)?.GetInLanguage();
-    private TimeSpan? ArticleDuration => (ActivityEmbeddedObject ?? Obj) is ActivityObject { Duration: { } d } ? d : null;
+    private TimeSpan? ArticleDuration => (Obj as ActivityObject) is ActivityObject { Duration: { } d } ? d : null;
     private bool IsSensitive => Obj?.IsSensitive() ?? false;
     private string? Summary => Obj?.GetSummary();
     private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
+
+    // 153 — the object IRI the whole content card links to (the stretched-link overlay target). For a
+    // Create this is the created object's IRI; for a bare content object it is its own IRI. Null when
+    // the card has no navigable object (e.g. a link-only Create or an actor/tombstone card), in which
+    // case the card is not made whole-card-clickable.
+    private Iri? CardLinkIri =>
+        Item is Create ? CreatedObjectIri
+        : Obj is IObject { Id: { Length: > 0 } id } ? new Iri(id)
+        : null;
+
+    // 153 — a deterministic hue (0–359) derived from the card's primary author IRI, used to tint the
+    // actor-header banner strip so each author's cards carry a consistent personal color. Stable across
+    // renders for the same author (FNV-1a hash of the IRI string).
+    private string CardHueStyle =>
+        CardHueIri is { } iri ? $"--card-hue: {CardHue(iri.Value)};" : string.Empty;
+
+    /// <summary>
+    /// The actor IRI the banner-strip hue is derived from: the content author for a direct object, the
+    /// activity author for a Create, else null (no strip tint).
+    /// </summary>
+    private Iri? CardHueIri => Item is Create ? ActivityActorIri : AuthorIri;
+
+    /// <summary>
+    /// Maps a stable string (an actor IRI) to a hue in [0, 359] via FNV-1a, so the same author always
+    /// gets the same banner tint.
+    /// </summary>
+    private static int CardHue(string key)
+    {
+        uint hash = 2166136261;
+        foreach (char c in key)
+        {
+            hash ^= c;
+            hash *= 16777619;
+        }
+
+        return (int)(hash % 360u);
+    }
 
     /// <summary>
     /// The object's <c>name</c> property (the first string). For Lemmy Page objects this is the post

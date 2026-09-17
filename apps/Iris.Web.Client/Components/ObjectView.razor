@@ -1,7 +1,14 @@
 <div class="object-view">
     @if (Item is Create create)
     {
-        <div class="object-item">
+        <div class="object-item @(CardLinkIri is { } ? "object-item--clickable" : string.Empty)" style="@CardHueStyle">
+            @if (CardLinkIri is { } cardIri)
+            {
+                // 153 — stretched link: the whole card navigates to the object detail. Interactive
+                // children (moderation, engagement bar, sensitive toggle, parent/recipient links) sit
+                // above it via z-index so they keep their own behavior.
+                <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open post"></a>
+            }
             <div class="object-header">
                 <div class="object-header-actor">
                     @if (ActivityActorIri is { } actor)
@@ -60,14 +67,11 @@
                             <div class="object-content @(ActivityRevealed ? "" : "object-content--blurred")">@ActivityContent</div>
                         </div>
                     }
-                    else if (CreatedObjectIri is { } objIri)
-                    {
-                        <a href="@ObjectHref(objIri)" class="object-post-link">
-                            <div class="object-content">@ActivityContent</div>
-                        </a>
-                    }
                     else
                     {
+                        // 153 — the content is no longer its own link; the whole card is (see the
+                        // object-card-link stretched overlay above). A plain div keeps the text from
+                        // looking like a link on hover.
                         <div class="object-content">@ActivityContent</div>
                     }
                 }
@@ -415,7 +419,12 @@
     }
     else if (Item is IObject { Id: { Length: > 0 } id } obj)
     {
-        <div class="object-item">
+        <div class="object-item @(CardLinkIri is { } ? "object-item--clickable" : string.Empty)" style="@CardHueStyle">
+            @if (CardLinkIri is { } cardIri)
+            {
+                // 153 — stretched link: the whole card navigates to the object detail.
+                <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open post"></a>
+            }
             <div class="object-header">
                 <div class="object-header-actor">
                     @if (AuthorIri is { } author)
@@ -474,9 +483,8 @@
                 }
                 else
                 {
-                    <a href="@ObjectHref(new Iri(id))" class="object-post-link">
-                        <div class="object-content">@RenderedContent</div>
-                    </a>
+                    // 153 — the whole card is the link (stretched overlay above); plain div for the text.
+                    <div class="object-content">@RenderedContent</div>
                 }
             }
             @if (ParentIri is { } parent && !SuppressParentContext)
