@@ -404,7 +404,15 @@ public sealed class HttpSignatureValidator(
             return (default!, default!, false);
         }
 
+        // The form is label=:base64: — the label is everything before the first ':', minus a
+        // trailing '=' (the '=' is the separator between label and value in the RFC 9421 Signature
+        // header, e.g. "sig1=:...").
         var label = header[..firstColon].Trim();
+        if (label.EndsWith('='))
+        {
+            label = label[..^1].TrimEnd();
+        }
+
         var rest = header[(firstColon + 1)..];
         // The value is :base64: — strip the leading ':' and trailing ':' (if present).
         if (rest.StartsWith(':'))
