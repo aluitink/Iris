@@ -96,7 +96,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **Investigate sustained ~600-700% CPU in iris-web container** (not from Delete short-circuit — that path is cheap; CPU is present instantly after restart with zero requests; per-thread tick counts don't sum to reported CPU; needs `dotnet-trace`/`dotnet-counters` CPU profile to identify the spinning thread or allocation hotspot). Server GC is enabled (`System.GC.Server: true`). BGC/TP/Server threads show negligible ticks; main thread (dotnet) shows 68 ticks after ~45s. 1104 zombie dotnet processes on host (from prior test runs) — clean up separately.
+- **Investigate sustained ~600-900% CPU in iris-web container** (not from Delete short-circuit — that path is cheap; CPU is present instantly after restart with zero requests; NOT from GC — BGC ticks negligible, disabling ServerGarbageCollection did not help; NOT from any specific user-space thread — per-thread tick counts sum to ~200 while process utime is 51000+; thread count stable ~27 (not a thread leak); NOT from logging — zero log lines; cgroup user_usec=719s over ~65s runtime = ~11x realtime). Needs `dotnet-trace` or `perf` CPU profile to identify the spinning code. Possible causes: frequent page faults, excessive syscalls, or a kernel-level activity attributed to the process. 1104 zombie dotnet processes on host (from prior test runs) — clean up separately.
 
 ## Inbox
 
