@@ -45,26 +45,19 @@ ActivityStreams activity body:
 
 ### `HttpSignatureValidator` (modified — `src/Iris.Server/Security/HttpSignatureValidator.cs`)
 
-Three new behaviors:
+**Revised (commit a363daa):** The original "Delete short-circuit" (checking the local
+actor store before key resolution) was **reverted** because it dropped legitimate
+cross-instance Deletes. The short-circuit checked if the *acting actor* was in the local
+store and dropped the Delete if not — but for cross-instance federation the actor is
+remote (not in the local store) while the *object being deleted* IS local. This broke 5
+integration tests (`ObjectPropagationIntegrationTests`, `UpdateDeleteRelayFanOutIntegrationTests`,
+`CrossInstanceDeleteThreadCollapseIntegrationTests`, `CrossInstanceTombstoneRetentionIntegrationTests`).
 
-1. **Delete short-circuit** (before key resolution): for `Delete` activities, the
-   validator checks the local actor store **first**. If the actor is not in the store,
-   the Delete is dropped immediately (`isValid: false`) — no key resolution, no
-   outbound fetch. This eliminates the 410-fetch storm. If the actor **is** in the
-   store, the stored actor's `publicKey` is extracted and used to verify the embedded
-   proof; if the proof verifies, the result is `isValid: true` (the inbox handler then
-   removes the actor from the store).
-
-2. **Embedded proof fallback** (on key resolution failure, non-Delete activities):
-   when the HTTP header key cannot be resolved, the validator checks for an embedded
-   `RsaSignature2017` proof in the body, resolves the key from the proof's `creator`,
-   and verifies it.
-
-3. **Embedded proof fallback** (on cryptographic failure, non-Delete activities):
-   when the HTTP header signature fails verification, the same embedded-proof check is
-   attempted.
-
-`IActorStore` is wired in via `IPersistenceProvider.Actors` (DI).
+The embedded-proof fallback is retained and now applies to **all** activity types (not
+just Delete): when the HTTP header key cannot be resolved (e.g. 410 actor), the validator
+checks for an embedded `RsaSignature2017` proof in the body, resolves the key from the
+proof's `creator`, and verifies it. This handles the 410 case correctly without dropping
+legitimate Deletes.
 
 ## Tests
 
@@ -94,11 +87,5 @@ invoke `SignatureInputHeader.TryParse`).
 ## Verification
 
 - Build: 0 warnings, 0 errors (`TreatWarningsAsErrors` on).
-- `Iris.Core.Tests`: 465 passed, 7 skipped (pre-existing testhost-hang skips), 0 failed.
-- Deployed to `irisweb-iris-web-1`; service healthy.
-- Live verification: Delete deliveries from 410 actors are now **dropped** (actor not
-  in local store) with **zero** outbound key-resolution fetches. CPU and memory are
-  stable under Delete load (previously CPU climbed with each Delete due to repeated
-  410 fetches).
-- Log line for the drop: `Delete dropped: actor {Iri} not in local store on {Method} {Path}`.
-- Log line for a verified Delete: `Delete verified against store for actor {Iri} on {Method} {Path}`.
+- Full suite: 1293 passed, 25 skipped (pre-existing testhost-hang skips + slow tests), 0 failed.
+- The 5 previously-failing integration tests (Delete federation) now pass.
