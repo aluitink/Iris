@@ -78,7 +78,7 @@ public static partial class MentionLinkify
         var working = AnchorElement().Replace(html, m =>
         {
             protectedLinks.Add(m.Value);
-            return "" + (protectedLinks.Count - 1) + "";
+            return "\u0001" + (protectedLinks.Count - 1) + "\u0001";
         });
 
         if (hasMentions)
@@ -102,6 +102,157 @@ public static partial class MentionLinkify
 
         return working;
     }
+
+    /// <summary>
+    /// Display-side linkify for a note whose <c>content</c> is plain text / Markdown (NOT pre-rendered
+    /// HTML) but which carries a structured <c>tag</c> array declaring mentions and hashtags. This is the
+    /// display counterpart to the compose-time <see cref="Linkify"/>: it scans the plain body for
+    /// <c>@handle</c> / <c>@user@domain</c> and <c>#hashtag</c> tokens, links any token whose handle /
+    /// name matches a declared tag (the tag array is authoritative for a remote note), renders the body
+    /// through <see cref="Markdown.ToHtml"/>, and wraps the matched tokens in links.
+    /// </summary>
+    /// <remarks>
+    /// Only tokens that match a declared <paramref name="mentionIris"/> (by the actor handle, the IRI
+    /// path's last segment) or a declared <paramref name="hashtags"/> entry (by name, case-insensitive)
+    /// are linked — a bare <c>@word</c> or <c>#word</c> with no matching tag is left as plain text, so an
+    /// arbitrary note is not sprinkled with dead links. A hashtag without a declared <c>href</c> links to
+    /// <c>{instanceOrigin}/search?q=%23{tag}</c> when <paramref name="instanceOrigin"/> is supplied;
+    /// otherwise it is left as plain text. The input is HTML-escaped by <see cref="Markdown.ToHtml"/>
+    /// before the links are inserted, so the body is safe.
+    /// </remarks>
+    /// <param name="plainText">The note's plain-text / Markdown body. May be null or whitespace.</param>
+    /// <param name="instanceOrigin">
+    /// The instance origin (scheme + host) used to build a hashtag search URL when a hashtag tag carries
+    /// no <c>href</c> of its own (e.g. <c>https://iris.luit.ink</c>). May be null (then href-less
+    /// hashtags are not linked).
+    /// </param>
+    /// <param name="mentionIris">The actor IRIs declared in the note's <c>tag</c> (its mentions).</param>
+    /// <param name="hashtags">The hashtag tags declared in the note's <c>tag</c> (name + optional href).</param>
+    /// <returns>
+    /// The body rendered through Markdown with each matched mention/hashtag token wrapped in
+    /// <c>&lt;a class="mention" href="…"&gt;</c> / <c>&lt;a class="hashtag" href="…"&gt;</c>, or the
+    /// Markdown-rendered body unchanged when there are no matching tags (or the body is blank).
+    /// </returns>
+    public static string LinkifyPlain(
+        string? plainText,
+        string? instanceOrigin,
+        IReadOnlyList<Iri>? mentionIris,
+        IReadOnlyList<(string Name, Iri? Href)>? hashtags)
+    {
+        if (string.IsNullOrWhiteSpace(plainText))
+        {
+            return plainText ?? string.Empty;
+        }
+
+        var hasMentions = mentionIris is { Count: > 0 };
+        var hasHashtags = hashtags is { Count: > 0 };
+        if (!hasMentions && !hasHashtags)
+        {
+            return Markdown.ToHtml(plainText);
+        }
+
+        var html = Markdown.ToHtml(plainText);
+
+        var linkifyMentions = new List<Mention>();
+        if (hasMentions)
+        {
+            foreach (System.Text.RegularExpressions.Match match in MentionToken().Matches(html))
+            {
+                var display = match.Value;
+                var handle = HandleOfToken(display);
+                // Match the declared mention by the actor handle (the IRI path's last segment),
+                // case-insensitively. The first declared mention that matches wins (the composing
+                // surface / remote author de-duplicates mentions, so at most one should match).
+                var resolved = mentionIris!.FirstOrDefault(
+                    m => string.Equals(HandleOfIri(m), handle, StringComparison.OrdinalIgnoreCase));
+                if (resolved is { } iri)
+                {
+                    linkifyMentions.Add(new Mention(display, iri));
+                }
+            }
+        }
+
+        var linkifyHashtags = new List<Hashtag>();
+        if (hasHashtags)
+        {
+            foreach (System.Text.RegularExpressions.Match match in HashtagToken().Matches(html))
+            {
+                var display = match.Value;
+                var name = display[1..]; // strip the leading '#'
+                var tag = hashtags!.FirstOrDefault(
+                    h => string.Equals(NameOf(h.Name), name, StringComparison.OrdinalIgnoreCase));
+                if (tag is { } t)
+                {
+                    var href = t.Href?.Value
+                        ?? (instanceOrigin is { Length: > 0 } origin
+                            ? $"{origin.TrimEnd('/')}/search?q={Uri.EscapeDataString(display)}"
+                            : null);
+                    if (!string.IsNullOrEmpty(href))
+                    {
+                        linkifyHashtags.Add(new Hashtag(display, href!));
+                    }
+                }
+            }
+        }
+
+        return Linkify(html, linkifyMentions, linkifyHashtags);
+    }
+
+    /// <summary>
+    /// The actor handle of a mention token: the text after the last <c>@</c> (so <c>@user@domain</c>
+    /// yields <c>domain</c> is NOT wanted — we want the local part). For <c>@user@domain</c> the handle is
+    /// <c>user</c> (between the leading <c>@</c> and the second <c>@</c>); for <c>@handle</c> it is
+    /// <c>handle</c>.
+    /// </summary>
+    private static string HandleOfToken(string display)
+    {
+        // display is "@handle" or "@user@domain". The handle is the segment after the FIRST '@' up to the
+        // next '@' (if any) or the end.
+        var afterFirst = display.AsSpan(1);
+        var at = afterFirst.IndexOf('@');
+        return at >= 0 ? afterFirst[..at].ToString() : afterFirst.ToString();
+    }
+
+    /// <summary>
+    /// The actor handle of a mention IRI: the path's last segment (e.g. <c>…/u/alice</c> → <c>alice</c>,
+    /// <c>…/users/Gargron</c> → <c>Gargron</c>). Returns the full IRI value when it is not a parseable URI
+    /// or has no path segment, so a match simply fails (the token is left unlinked).
+    /// </summary>
+    private static string HandleOfIri(Iri iri)
+    {
+        try
+        {
+            var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+            var last = path.Split('/').LastOrDefault();
+            return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
+        }
+        catch (UriFormatException)
+        {
+            return iri.Value;
+        }
+    }
+
+    /// <summary>
+    /// The hashtag name without its leading <c>#</c> (for case-insensitive matching against a declared
+    /// tag's name, which may or may not carry the <c>#</c>).
+    /// </summary>
+    private static string NameOf(string name) => name.StartsWith('#') ? name[1..] : name;
+
+    /// <summary>
+    /// Matches an <c>@handle</c> or <c>@user@domain</c> mention token in the body (a leading <c>@</c>
+    /// followed by the local handle, optionally followed by <c>@domain</c>), at the start of the text or
+    /// after a non-word character, with a trailing word boundary.
+    /// </summary>
+    [GeneratedRegex(@"(?<![\w/""'])@([A-Za-z0-9_]+)(?:@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+))?")]
+    private static partial Regex MentionToken();
+
+    /// <summary>
+    /// Matches a <c>#hashtag</c> token in the body (a leading <c>#</c> followed by letters/digits, no
+    /// internal spaces), at the start of the text or after a non-word character, with a trailing word
+    /// boundary (so <c>100%#off</c> is not matched).
+    /// </summary>
+    [GeneratedRegex(@"(?<![\w/""'])#([A-Za-z0-9_]+)")]
+    private static partial Regex HashtagToken();
 
     /// <summary>
     /// Wraps a single token occurrence (a mention or hashtag, as it appears in the content) in an

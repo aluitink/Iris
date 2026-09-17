@@ -248,9 +248,61 @@ public partial class ObjectView
             // Pre-rendered HTML is emitted verbatim; Markdown/plain text is run through the safe
             // dependency-free Markdown renderer (HTML-escaped first, so raw markup is inert) so
             // Markdown-sourced content displays as formatted HTML instead of literal source.
-            return new MarkupString(
-                Obj is { } o && o.IsPreRenderedHtmlContent() ? content : Markdown.ToHtml(content));
+            // 156 (Slice B): the plain-text branch is also linkified (display-side) so a remote note that
+            // ships plain-text @mentions / #hashtags but carries them in its `tag` array renders tappable
+            // links (pre-rendered HTML is already self-linking, so it is emitted verbatim and untouched).
+            return new MarkupString(RenderObjectContent(Obj, content));
         }
+    }
+
+    /// <summary>
+    /// 156 (Slice B) — Renders an object's <c>content</c> for display: pre-rendered HTML is emitted
+    /// verbatim (it already carries its own <c>&lt;a class="mention"&gt;</c>/<c>&lt;a
+    /// class="hashtag"&gt;</c> links, e.g. from a remote Mastodon/Pluralsite author, or from Iris's own
+    /// compose-time linkify); plain text / Markdown is run through the safe Markdown renderer AND
+    /// display-linkified, so a note whose body is plain text but whose <c>tag</c> array declares mentions
+    /// and hashtags renders those tokens as tappable links. The mention/hashtag targets come from the
+    /// object's own <c>tag</c> (authoritative for a remote note); a hashtag without a declared
+    /// <c>href</c> links to the author's instance search.
+    /// </summary>
+    /// <param name="obj">The object whose content is rendered (supplies the <c>tag</c> + author origin).</param>
+    /// <param name="content">The joined content string (already non-blank by the caller).</param>
+    /// <returns>The safe HTML for the content (verbatim for pre-rendered, Markdown+linkified otherwise).</returns>
+    private static string RenderObjectContent(IObject? obj, string content)
+    {
+        if (obj is { } o && o.IsPreRenderedHtmlContent())
+        {
+            return content;
+        }
+
+        // Plain text / Markdown: render to HTML, then linkify any @mention / #hashtag token the object's
+        // tag array declares (display-side counterpart of the compose-time linkify — the tags are the
+        // authoritative link targets for a remote note). The origin used for a href-less hashtag search
+        // is the author's instance (a remote hashtag's search lives on the author's instance).
+        var authorIri = (obj as ActivityObject)?.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        string? origin = authorIri is { } a
+            ? SafeOrigin(a.Value)
+            : null;
+        return MentionLinkify.LinkifyPlain(
+            content,
+            origin,
+            obj?.GetMentionIris() ?? [],
+            obj?.GetHashtagTags() ?? []);
+    }
+
+    /// <summary>
+    /// The scheme+host origin of an IRI (e.g. <c>https://iris.luit.ink</c>), or null when the IRI is not a
+    /// parseable http(s) URI.
+    /// </summary>
+    private static string? SafeOrigin(string iri)
+    {
+        if (Uri.TryCreate(iri, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+        {
+            return uri.GetLeftPart(UriPartial.Authority);
+        }
+
+        return null;
     }
 
     private bool Revealed;
@@ -286,7 +338,7 @@ public partial class ObjectView
                 return new MarkupString(string.Empty);
             }
 
-            return new MarkupString(po.IsPreRenderedHtmlContent() ? content : Markdown.ToHtml(content));
+            return new MarkupString(RenderObjectContent(po, content));
         }
     }
 
@@ -394,8 +446,7 @@ public partial class ObjectView
                 return new MarkupString(string.Empty);
             }
 
-            return new MarkupString(
-                embedded.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
+            return new MarkupString(RenderObjectContent(embedded, content!));
         }
     }
 
@@ -414,8 +465,7 @@ public partial class ObjectView
                 return new MarkupString(string.Empty);
             }
 
-            return new MarkupString(
-                embedded.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
+            return new MarkupString(RenderObjectContent(embedded, content!));
         }
     }
 
@@ -827,8 +877,7 @@ public partial class ObjectView
             return new MarkupString(string.Empty);
         }
 
-        return new MarkupString(
-            boosted.IsPreRenderedHtmlContent() ? content! : Markdown.ToHtml(content!));
+        return new MarkupString(RenderObjectContent(boosted, content!));
     }
 
     /// <summary>
