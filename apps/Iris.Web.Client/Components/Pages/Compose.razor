@@ -457,18 +457,20 @@
         => value.Length <= max ? value : value[..max] + "…";
 
     /// <summary>
-    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text. A mention is an
-    /// <c>@</c> followed by a handle (alphanumerics + underscores), optionally followed by <c>@domain</c>
-    /// (a remote instance host), at the start of the text or after whitespace. Same-instance mentions
-    /// (<c>@handle</c>, no domain) are resolved to the signed-in actor's origin. Cross-instance mentions
-    /// (<c>@user@domain</c>) are resolved via WebFinger (RFC 8410) through the home instance's proxy
-    /// endpoint (the browser cannot reach a remote instance directly — CORS). An unresolvable
-    /// cross-instance mention (WebFinger 404, network failure, or no <c>self</c> link) is silently
-    /// dropped. Returns an empty list when no mentions are found or the session is unavailable.
+    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text, returning each
+    /// mention's resolved actor IRI paired with its display token (the <c>@handle</c> /
+    /// <c>@user@domain</c> text exactly as typed). A mention is an <c>@</c> followed by a handle
+    /// (alphanumerics + underscores), optionally followed by <c>@domain</c> (a remote instance host), at
+    /// the start of the text or after whitespace. Same-instance mentions (<c>@handle</c>, no domain) are
+    /// resolved to the signed-in actor's origin. Cross-instance mentions (<c>@user@domain</c>) are
+    /// resolved via WebFinger (RFC 8410) through the home instance's proxy endpoint (the browser cannot
+    /// reach a remote instance directly — CORS). An unresolvable cross-instance mention (WebFinger 404,
+    /// network failure, or no <c>self</c> link) is silently dropped. De-duplicated by resolved IRI in
+    /// first-seen order. Returns an empty list when no mentions are found or the session is unavailable.
     /// </summary>
-    private async Task<List<Iri>> DetectMentionsAsync(string text, Iri actorId)
+    private async Task<List<(Iri Iri, string Display)>> DetectMentionsWithDisplayAsync(string text, Iri actorId)
     {
-        var mentions = new List<Iri>();
+        var mentions = new List<(Iri Iri, string Display)>();
         // Matches @handle (same-instance) and @user@domain (cross-instance). The domain part is
         // optional: @user@domain has the domain after the second @; @handle has no second @.
         // The domain is alphanumerics + hyphens + dots (a valid host, possibly with a port).
@@ -498,17 +500,27 @@
                 resolved = await ResolveRemoteMentionAsync(handle, domain);
             }
 
-            if (resolved is { } iri)
+            if (resolved is { } iri
+                && !mentions.Any(m => m.Iri == iri))
             {
-                if (!mentions.Contains(iri))
-                {
-                    mentions.Add(iri);
-                }
+                // The display token is the full match as typed (the leading '@' plus the handle and,
+                // for a cross-instance mention, the '@domain'). This is the text the linkify pass looks
+                // for in the body, so it must be the raw typed form, not the resolved IRI.
+                mentions.Add((iri, match.Value));
             }
         }
 
         return mentions;
     }
+
+    /// <summary>
+    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text, returning only their
+    /// resolved actor IRIs (the audience / <c>tag</c> half of the mention convention). Delegates to
+    /// <see cref="DetectMentionsWithDisplayAsync"/> and discards the display tokens.
+    /// </summary>
+    private Task<List<Iri>> DetectMentionsAsync(string text, Iri actorId)
+        => DetectMentionsWithDisplayAsync(text, actorId)
+            .ContinueWith(t => t.Result.Select(m => m.Iri).ToList(), TaskScheduler.Default);
 
     /// <summary>
     /// Resolves a cross-instance mention (<c>@user@domain</c>) to an actor IRI via WebFinger
@@ -1344,8 +1356,10 @@
                 }
             }
 
-            var mentions = await DetectMentionsAsync(Content.Trim(), actorId);
-            var hashtags = DetectHashtags(Content.Trim());
+            var rawContent = Content.Trim();
+            var mentionPairs = await DetectMentionsWithDisplayAsync(rawContent, actorId);
+            var mentions = mentionPairs.Select(m => m.Iri).ToList();
+            var hashtags = DetectHashtags(rawContent);
             var mentionArg = mentions.Count > 0 ? mentions : null;
             var hashtagArg = hashtags.Count > 0 ? hashtags : null;
             // A hashtag tag's href points at this instance's hashtag search (so a reader's tap on the
@@ -1357,10 +1371,26 @@
             // community's own, set by the community path below).
             var audience = BuildAudience(actorId, mentionArg);
 
+            // 156: the note's body HTML with @mention / #hashtag tokens wrapped in links (the
+            // Mastodon/Pleroma convention — the content carries <a class="mention">/<a class="hashtag">
+            // alongside the structured `tag` array). The raw text is rendered through Markdown (so any
+            // Markdown the author typed is formatted) and then linkified; the result starts with a block
+            // tag, so the object view renders it verbatim (as live links) rather than re-escaping it.
+            // When there are no mentions/hashtags the text is left raw (the prior behavior — rendered as
+            // Markdown on display).
+            var linkifyMentions = mentionPairs
+                .Select(m => new MentionLinkify.Mention(m.Display, m.Iri))
+                .ToList();
+            var linkifyHashtags = hashtags
+                .Select(h => new MentionLinkify.Hashtag(h, hashtagHref(h) ?? string.Empty))
+                .Where(h => !string.IsNullOrEmpty(h.Href))
+                .ToList();
+            var bodyHtml = BuildLinkedBody(rawContent, linkifyMentions, linkifyHashtags);
+
             DeliveryResult result;
             if (ReplyToIri is { } parent)
             {
-                result = await client.PostReplyAsync(actorId, parent, Content.Trim(), mentions: mentionArg, to: [AsPublic], hashtags: hashtagArg);
+                result = await client.PostReplyAsync(actorId, parent, bodyHtml, mentions: mentionArg, to: [AsPublic], hashtags: hashtagArg);
             }
             else if (CommunityIri is { } community)
             {
@@ -1378,7 +1408,7 @@
             {
                 var note = ComposeNote.Build(
                     actorId,
-                    Content.Trim(),
+                    bodyHtml,
                     sensitive: IsSensitive,
                     summary: SensitiveSummary,
                     to: audience.To,
@@ -1418,6 +1448,26 @@
         {
             Busy = false;
         }
+    }
+
+    /// <summary>
+    /// Builds the authored note's body HTML with @mention / #hashtag tokens wrapped in links (156). The
+    /// raw text is first rendered through <see cref="Markdown.ToHtml"/> (so any Markdown the author typed
+    /// is formatted — headings, lists, bold, links), then the resolved mention and hashtag tokens are
+    /// wrapped in <c>&lt;a class="mention"&gt;</c> / <c>&lt;a class="hashtag"&gt;</c> links by
+    /// <see cref="MentionLinkify.Linkify"/>. When there are no mentions and no hashtags the raw text is
+    /// returned unchanged (the prior behavior — the object view renders it as Markdown on display), so a
+    /// plain post's stored content is untouched.
+    /// </summary>
+    private static string BuildLinkedBody(string rawContent, IReadOnlyList<MentionLinkify.Mention> mentions, IReadOnlyList<MentionLinkify.Hashtag> hashtags)
+    {
+        if (mentions.Count == 0 && hashtags.Count == 0)
+        {
+            return rawContent;
+        }
+
+        var html = Markdown.ToHtml(rawContent);
+        return MentionLinkify.Linkify(html, mentions, hashtags);
     }
 
     /// <summary>

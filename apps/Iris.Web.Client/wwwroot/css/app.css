@@ -1251,6 +1251,30 @@ ul.object-list li {
     word-break: break-all;
 }
 
+/* Phase 156: @mention and #hashtag tokens rendered as links in the note body
+   (the client composes them as <a class="mention"> / <a class="hashtag">).
+   Styled distinct from plain web links — mentions in the accent color, hashtags
+   in the accent color with the underline only on hover (Mastodon-faithful). */
+.object-content a.mention {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-content a.mention:hover {
+    text-decoration: underline;
+}
+
+.object-content a.hashtag {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-content a.hashtag:hover {
+    text-decoration: underline;
+}
+
 .object-audience,
 .object-parent,
 .object-mention,
