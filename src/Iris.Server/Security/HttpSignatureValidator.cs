@@ -39,8 +39,7 @@ public sealed class HttpSignatureValidator(
     RemoteKeyCache? remoteKeyCache = null,
     RemoteActorCache? remoteActorCache = null,
     ILogger<HttpSignatureValidator>? logger = null,
-    IPersistenceProvider? persistence = null,
-    IActorStore? actorStore = null) : ISignatureValidator
+    IPersistenceProvider? persistence = null) : ISignatureValidator
 {
     private readonly IInboundKeyResolver _keyResolver = keyResolver
         ?? throw new ArgumentNullException(nameof(keyResolver));
@@ -50,7 +49,6 @@ public sealed class HttpSignatureValidator(
     private readonly RemoteActorCache? _actorCache = remoteActorCache;
     private readonly ILogger<HttpSignatureValidator> _logger = logger ?? NullLogger<HttpSignatureValidator>.Instance;
     private readonly IPersistenceProvider? _persistence = persistence;
-    private readonly IActorStore? _actorStore = actorStore;
 
     /// <inheritdoc/>
     public async ValueTask<SignatureValidationResult?> ValidateAsync(HttpContext context, CancellationToken ct = default)
@@ -134,18 +132,11 @@ public sealed class HttpSignatureValidator(
             }
         }
 
-        // Delete short-circuit: for Delete activities, check the local store BEFORE attempting
-        // key resolution. If the actor is not in our store, drop the Delete immediately — no key
-        // resolution, no outbound fetch. This avoids a storm of repeated 410 fetches when a
-        // deleted actor's instance keeps re-delivering the same Delete.
-        if (activityType == "Delete" && actor is not null && _actorStore is not null)
-        {
-            var deleteResult = await TryVerifyDeleteAgainstStoreAsync(actor.Value, keyId, activityType, body, context, ct).ConfigureAwait(false);
-            if (deleteResult is not null)
-            {
-                return deleteResult;
-            }
-        }
+        // Delete short-circuit REMOVED (Phase 157.2 regression): the original short-circuit dropped
+        // Deletes from remote actors not in the local store, which broke cross-instance Delete
+        // federation (the object being deleted may be local even though the actor is remote). The
+        // existing key-resolution + embedded-proof fallback below already handles the 410 case
+        // correctly without dropping legitimate Deletes.
 
         // Resolve the signing key. A null result (unknown actor / missing publicKey / fetch
         // failure) is an invalid signature, not an error.
@@ -327,134 +318,6 @@ public sealed class HttpSignatureValidator(
             context.Request.Method,
             context.Request.Path,
             activityType);
-        return null;
-    }
-
-    /// <summary>
-    /// Verifies a Delete activity against the local actor store. If the actor does not exist in
-    /// the store, the Delete is dropped (nothing to delete). If the actor exists, the stored
-    /// actor's <c>publicKey</c> is used to verify the embedded <c>RsaSignature2017</c> proof;
-    /// if the proof verifies, the result is valid (the inbox handler will then remove the actor).
-    /// </summary>
-    /// <param name="actor">The acting actor IRI (the target of the Delete).</param>
-    /// <param name="keyId">The keyId from the HTTP header (for diagnostics).</param>
-    /// <param name="activityType">The ActivityStreams activity type.</param>
-    /// <param name="body">The buffered request body bytes.</param>
-    /// <param name="context">The HTTP context.</param>
-    /// <param name="ct">The cancellation token.</param>
-    /// <returns>
-    /// A <see cref="SignatureValidationResult"/> when the actor exists in the store and the embedded
-    /// proof verifies (valid), or when the actor does not exist in the store (invalid — drop the
-    /// Delete). Null when the actor store is unavailable or the proof cannot be verified.
-    /// </returns>
-    private async ValueTask<SignatureValidationResult?> TryVerifyDeleteAgainstStoreAsync(
-        Iri actor,
-        Iri keyId,
-        string? activityType,
-        byte[] body,
-        HttpContext context,
-        CancellationToken ct)
-    {
-        // Check if the actor exists in our local store.
-        var found = await _actorStore!.TryGetActorAsync(actor, out var storedActor, ct).ConfigureAwait(false);
-
-        if (!found || storedActor is null)
-        {
-            // The actor is not in our store — nothing to delete. Drop the Delete.
-            _logger.LogInformation(
-                "Delete dropped: actor {Actor} not in local store on {Method} {Path}",
-                actor.Value,
-                context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, keyId, actor);
-        }
-
-        // The actor exists in our store. Extract the publicKey from the stored actor and
-        // verify the embedded proof with it.
-        var publicKeyPem = ExtractPublicKeyFromActor(storedActor);
-        if (publicKeyPem is null)
-        {
-            _logger.LogWarning(
-                "Delete: stored actor {Actor} has no publicKey on {Method} {Path}",
-                actor.Value,
-                context.Request.Method,
-                context.Request.Path);
-            return null;
-        }
-
-        ISigningKey? key = null;
-        try
-        {
-            // RsaSignature2017 proofs use RSA keys. Try RSA first, then EC.
-            key = KeyPair.FromPem(publicKeyPem, KeyAlgorithm.Rsa, keyId);
-        }
-        catch (Exception)
-        {
-            try
-            {
-                key = KeyPair.FromPem(publicKeyPem, KeyAlgorithm.EcP256, keyId);
-            }
-            catch (Exception)
-            {
-                key = null;
-            }
-        }
-
-        if (key is null)
-        {
-            _logger.LogWarning(
-                "Delete: stored actor {Actor} publicKey is not parseable on {Method} {Path}",
-                actor.Value,
-                context.Request.Method,
-                context.Request.Path);
-            return null;
-        }
-
-        var isValid = EmbeddedSignatureVerifier.Verify(body, key);
-        (key as IDisposable)?.Dispose();
-
-        if (isValid)
-        {
-            _logger.LogInformation(
-                "Delete verified against store for actor {Actor} on {Method} {Path}",
-                actor.Value,
-                context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(true, keyId, actor);
-        }
-
-        _logger.LogWarning(
-            "Delete: embedded proof failed against store key for actor {Actor} on {Method} {Path}",
-            actor.Value,
-            context.Request.Method,
-            context.Request.Path);
-        return new SignatureValidationResult(false, keyId, actor);
-    }
-
-    /// <summary>
-    /// Extracts the <c>publicKeyPem</c> from a stored <see cref="Actor"/> document.
-    /// </summary>
-    private static string? ExtractPublicKeyFromActor(Actor actor)
-    {
-        if (actor is null)
-        {
-            return null;
-        }
-
-        // The publicKey is stored in the actor's ExtensionData under "publicKeyPem" (the
-        // owner-only PEM) or "publicKey" (the JWK). Try publicKeyPem first.
-        if (actor.ExtensionData != null)
-        {
-            foreach (var (key, value) in actor.ExtensionData)
-            {
-                if (key == "publicKeyPem" && value is JsonElement pemElement
-                    && pemElement.ValueKind == JsonValueKind.String)
-                {
-                    return pemElement.GetString();
-                }
-            }
-        }
-
         return null;
     }
 

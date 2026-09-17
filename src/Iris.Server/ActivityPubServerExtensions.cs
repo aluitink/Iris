@@ -223,8 +223,7 @@ public static class ActivityPubServerExtensions
             sp.GetService<RemoteKeyCache>(),
             sp.GetService<RemoteActorCache>(),
             sp.GetRequiredService<ILogger<HttpSignatureValidator>>(),
-            sp.GetService<IPersistenceProvider>(),
-            sp.GetService<IPersistenceProvider>()?.Actors));
+            sp.GetService<IPersistenceProvider>()));
         services.TryAddSingleton<IActorDocumentFetcher>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
