@@ -79,6 +79,8 @@ apps/Iris.Web/wwwroot/**/*.gz
 .tmp-bunitpump2/
 .tmp-bunitpump3/
 .tmp-bunitpump4/
+.tmp-test/
+.tmp-insp/
 .loop/
 probe_*.txt
 .ui-review/

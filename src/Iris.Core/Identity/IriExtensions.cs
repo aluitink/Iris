@@ -763,6 +763,7 @@ public static class IriExtensions
             string? type = null;
             string? name = null;
             Iri? preview = null;
+            string? mediaType = ResolveAttachmentMediaType(attachment);
 
             if (attachment is IObject { } ao)
             {
@@ -793,11 +794,56 @@ public static class IriExtensions
                     preview = ResolvePreviewIri(prevEl);
                 }
             }
+            else if (attachment is ILink { } link)
+            {
+                // A plain `Link` attachment (a `type:"Link"` entry, or a bare link) deserializes to the
+                // ActivityStreams `Link` class, which `GetRichAttachments` would otherwise skip for its
+                // type/name (those are read only off `IObject`). Surface the declared type ("Link") and
+                // name so a renderer can distinguish a genuine web link (rendered as a new-tab link card)
+                // from a bare media link (an image / video whose `type` is unset). Without this, a
+                // `type:"Link"` attachment and a bare image both surface `Type == null`, making them
+                // indistinguishable.
+                var linkTypes = link.Type?.ToList();
+                if (linkTypes is { Count: > 0 })
+                {
+                    type = linkTypes[^1];
+                }
 
-            list.Add(new RichAttachment(type, name, resolvedIri, preview));
+                var linkNames = link.Name?.ToList();
+                if (linkNames is { Count: > 0 })
+                {
+                    name = linkNames.First();
+                }
+            }
+
+            list.Add(new RichAttachment(type, name, resolvedIri, preview, mediaType));
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Reads the <c>mediaType</c> off an attachment — a plain <see cref="ILink"/> or an
+    /// <see cref="IObject"/> — so a renderer can pick the right player (video/audio/image) without
+    /// sniffing the URL. Both the AS <c>Link</c> and the <c>Object</c> family carry a
+    /// <c>mediaType</c> (it is not part of the shared <see cref="IObjectOrLink"/> contract, so this
+    /// pattern-matches the two concrete shapes). Returns null when the attachment carries none.
+    /// </summary>
+    /// <param name="attachment">The attachment to read. May be null.</param>
+    /// <returns>The MIME type, or null.</returns>
+    private static string? ResolveAttachmentMediaType(IObjectOrLink? attachment)
+    {
+        if (attachment is ILink { MediaType: { Length: > 0 } mt })
+        {
+            return mt;
+        }
+
+        if (attachment is IObject { } obj && obj is KristofferStrube.ActivityStreams.Object { MediaType: { Length: > 0 } om })
+        {
+            return om;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1343,10 +1389,11 @@ public sealed record PollData(
     bool Multiple);
 
 /// <summary>
-/// A rich attachment with its type, name, URL, and optional preview URL (F-11).
+/// A rich attachment with its type, name, URL, media type, and optional preview URL (F-11).
 /// </summary>
 /// <param name="Type">The AS2.0 type (e.g. <c>"Document"</c>, <c>"Audio"</c>, <c>"Video"</c>, <c>"Image"</c>), or <c>null</c> for a plain <c>Link</c>.</param>
 /// <param name="Name">The attachment's display name, when present.</param>
 /// <param name="Url">The attachment's media URL.</param>
 /// <param name="Preview">The attachment's preview image URL, when present (for Audio/Video).</param>
-public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview);
+/// <param name="MediaType">The MIME type of the media (e.g. <c>"video/mp4"</c>, <c>"application/pdf"</c>), when the attachment carries one. Lets a renderer pick the right player without sniffing the URL.</param>
+public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview, string? MediaType = null);

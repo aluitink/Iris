@@ -1385,8 +1385,12 @@ public class IriExtensionsTests
     }
 
     [Fact]
-    public void GetRichAttachments_FromLink_ReturnsNullType()
+    public void GetRichAttachments_FromLink_ReturnsLinkType()
     {
+        // A Link attachment (whether built directly or deserialized from `type:"Link"`) surfaces
+        // Type == "Link" — the ActivityStreams Link class always reports its type as "Link". This is
+        // what lets a renderer distinguish a genuine web link (a new-tab link card) from media
+        // attachments (Image/Video/Audio/Document).
         IObject note = new Note
         {
             Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
@@ -1395,8 +1399,31 @@ public class IriExtensionsTests
 
         var attachments = note.GetRichAttachments();
         Assert.Single(attachments);
-        Assert.Null(attachments[0].Type);
+        Assert.Equal("Link", attachments[0].Type);
         Assert.Equal(new Iri("https://example.com/page"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromLinkTypedAttachment_ReturnsLinkTypeAndName()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                { "href": "https://example.com/iris", "type": "Link", "name": "Iris project" }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Link", attachments[0].Type);
+        Assert.Equal("Iris project", attachments[0].Name);
+        Assert.Equal(new Iri("https://example.com/iris"), attachments[0].Url);
     }
 
     [Fact]

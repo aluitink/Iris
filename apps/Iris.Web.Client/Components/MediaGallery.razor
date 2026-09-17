@@ -30,8 +30,8 @@
 @foreach (var vid in videos)
 {
     <div class="media-player">
-        <video controls preload="metadata" class="media-player-video">
-            <source src="@Rewrite(vid.Url.Value)" />
+        <video controls preload="metadata" class="media-player-video" poster="@(MediaPoster(vid))">
+            <source src="@Rewrite(vid.Url.Value)" type="@(MediaMime(vid))" />
             Your browser does not support the video tag.
         </video>
         @if (vid.Name is { Length: > 0 } vname)
@@ -45,7 +45,7 @@
 {
     <div class="media-player">
         <audio controls preload="metadata" class="media-player-audio">
-            <source src="@Rewrite(aud.Url.Value)" />
+            <source src="@Rewrite(aud.Url.Value)" type="@(MediaMime(aud))" />
             Your browser does not support the audio tag.
         </audio>
         @if (aud.Name is { Length: > 0 } aname)
@@ -74,7 +74,12 @@
                     <div class="doc-gallery-placeholder">@IconFor(doc.Type)</div>
                 }
                 <div class="doc-gallery-label">
-                    <a href="@Rewrite(doc.Url.Value)" target="_blank" rel="noopener" class="doc-gallery-link" download>@(doc.Name ?? doc.Url.Value)</a>
+                    @{
+                        var isLink = IsPlainWebLink(doc);
+                        var href = isLink ? (RewriteDirect(doc.Url.Value) ?? Rewrite(doc.Url.Value)) : Rewrite(doc.Url.Value);
+                        var label = doc.Name ?? doc.Url.Value;
+                    }
+                    <a href="@href" target="_blank" rel="noopener" class="doc-gallery-link" download="@(isLink ? "" : label)">@label</a>
                     @if (doc.Type is { } dt)
                     {
                         <span class="doc-gallery-type">@dt</span>
@@ -172,11 +177,39 @@
                 || lower.EndsWith(".avif") || lower.EndsWith(".bmp"));
     }
 
+    // A video attachment is one whose AS type says Video, or whose mediaType/URL points at a video —
+    // the latter catches uploaded video files, which Iris stores as a `Document`-typed attachment
+    // (see ComposeNote.BuildMediaAttachment) and that carry `mediaType = "video/*"`.
     private static bool IsVideo(RichAttachment att)
-        => att.Type is not null && att.Type.Contains("Video", StringComparison.OrdinalIgnoreCase);
+        => (att.Type is not null && att.Type.Contains("Video", StringComparison.OrdinalIgnoreCase))
+            || IsVideoMedia(att.MediaType)
+            || IsVideoUrl(att.Url.Value);
 
     private static bool IsAudio(RichAttachment att)
-        => att.Type is not null && att.Type.Contains("Audio", StringComparison.OrdinalIgnoreCase);
+        => (att.Type is not null && att.Type.Contains("Audio", StringComparison.OrdinalIgnoreCase))
+            || IsAudioMedia(att.MediaType)
+            || IsAudioUrl(att.Url.Value);
+
+    private static bool IsVideoMedia(string? mediaType)
+        => mediaType is { Length: > 0 }
+            && (mediaType.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
+                || mediaType.Contains("mp4") || mediaType.Contains("webm") || mediaType.Contains("ogg")
+                || mediaType.Contains("ogv") || mediaType.Contains("mov") || mediaType.Contains("quicktime")
+                || mediaType.Contains("matroska") || mediaType.Contains("x-matroska"));
+
+    private static bool IsAudioMedia(string? mediaType)
+        => mediaType is { Length: > 0 }
+            && (mediaType.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+                || mediaType.Contains("mp3") || mediaType.Contains("mpeg") || mediaType.Contains("wav")
+                || mediaType.Contains("wave") || mediaType.Contains("aiff") || mediaType.Contains("midi")
+                || mediaType.Contains("midi") || mediaType.Contains("aac") || mediaType.Contains("m4a")
+                || mediaType.Contains("opus") || mediaType.Contains("flac") || mediaType.Contains("amr"));
+
+    private static string? MediaMime(RichAttachment att)
+        => att.MediaType is { Length: > 0 } mt ? mt : null;
+
+    private static string? MediaPoster(RichAttachment att)
+        => att.Preview is { } p ? Rewrite(p.Value) : null;
 
     private static string IconFor(string? type) => type?.ToLowerInvariant() switch
     {
@@ -197,8 +230,80 @@
         return lower.EndsWith(".pdf");
     }
 
+    private static bool IsVideoUrl(string url)
+    {
+        var lower = UrlPathLower(url);
+        return lower is { Length: > 0 }
+            && (lower.EndsWith(".mp4") || lower.EndsWith(".webm") || lower.EndsWith(".ogv")
+                || lower.EndsWith(".mov") || lower.EndsWith(".m4v") || lower.EndsWith(".mkv")
+                || lower.EndsWith(".avi"));
+    }
+
+    private static bool IsAudioUrl(string url)
+    {
+        var lower = UrlPathLower(url);
+        return lower is { Length: > 0 }
+            && (lower.EndsWith(".mp3") || lower.EndsWith(".ogg") || lower.EndsWith(".oga")
+                || lower.EndsWith(".wav") || lower.EndsWith(".m4a") || lower.EndsWith(".aac")
+                || lower.EndsWith(".flac") || lower.EndsWith(".opus") || lower.EndsWith(".wma"));
+    }
+
+    private static string UrlPathLower(string url)
+    {
+        var lower = url.ToLowerInvariant();
+        var q = lower.IndexOfAny(['?', '#']);
+        return q >= 0 ? lower[..q] : lower;
+    }
+
     private static bool IsImagePreview(string url) => IsImageUrl(url);
+
+    // A plain web link (a `Link` attachment pointing at a page, not a media file): no media MIME,
+    // no media-file URL extension, and no image preview. These open the original URL directly in a
+    // new tab (not through the media proxy, which is for media bytes); everything else in the
+    // documents bucket (downloads, PDFs, files with a preview) keeps the proxied/download link.
+    //
+    // The type check requires `doc.Type == "Link"` (not `null or "Link"`): the ActivityStreams
+    // library deserializes a `type:"Link"` attachment to the `Link` class, which `GetRichAttachments`
+    // does NOT read for its type/name (those are read only off `IObject`), so a `Link` attachment and
+    // a bare image both surface `Type == null`. Requiring the explicit "Link" type lets the model
+    // distinguish a genuine web link (rendered as a new-tab link card) from a bare image (rendered in
+    // the image gallery); a null-typed, non-media URL that is not a declared `Link` stays an image.
+    private static bool IsPlainWebLink(RichAttachment doc)
+    {
+        if (doc.Type != "Link")
+        {
+            return false;
+        }
+
+        if (IsPdf(doc) || IsVideoUrl(doc.Url.Value) || IsAudioUrl(doc.Url.Value) || IsImageUrl(doc.Url.Value))
+        {
+            return false;
+        }
+
+        if (doc.Preview is { } p && IsImagePreview(p.Value))
+        {
+            return false;
+        }
+
+        var mt = doc.MediaType;
+        if (!string.IsNullOrEmpty(mt))
+        {
+            if (mt.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+                || mt.StartsWith("video/", StringComparison.OrdinalIgnoreCase)
+                || mt.StartsWith("audio/", StringComparison.OrdinalIgnoreCase)
+                || mt.Contains("pdf") || mt.Contains("octet-stream"))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private static string Rewrite(string url)
         => ObjectView.RewriteMediaToSameOrigin(url);
+
+    private static string? RewriteDirect(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out var u)
+            && (u.Scheme == Uri.UriSchemeHttp || u.Scheme == Uri.UriSchemeHttps) ? url : null;
 }

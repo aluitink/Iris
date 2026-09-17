@@ -202,7 +202,7 @@ select:focus-visible,
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: var(--space-125) var(--space-5);
+    padding: var(--space-4);
 }
 
 .card h1 {
@@ -668,11 +668,9 @@ ul.object-list {
 }
 
 ul.object-list li {
-    padding: var(--space-3) var(--space-4);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
+    padding: 0;
     margin-bottom: var(--space-3);
-    background: var(--surface-inset);
+    min-width: 0;
 }
 
 /* Reply thread (Phase 132.3): the object-detail Replies tab renders replies as a nested thread.
@@ -732,34 +730,35 @@ ul.object-list li {
 .object-item {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    transition: border-color 0.15s;
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
-/* Phase 133.1 — the card header is a two-row column: row 1 is the post date (a single top line,
-   left-justified); row 2 is the actor handle + moderation bar (moderation left-justified, directly
-   after the handle). Splitting the date off its own line stops long usernames from crowding the
-   timestamp and keeps the header calm on mobile. */
+.object-item:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+/* Single-row header: avatar + handle (left), timestamp (right). */
 .object-header {
     display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--space-15);
-    margin-bottom: var(--space-35);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
 }
 
-/* Row 1: the post date, a single left-justified line. */
-.object-header-time {
-    width: 100%;
-}
-
-/* Row 2: the actor handle + moderation bar, left-justified (the moderation group sits right after
-   the handle rather than being pushed to the far right). */
 .object-header-actor {
     display: flex;
     align-items: center;
     gap: var(--space-2);
-    width: 100%;
     min-width: 0;
+    flex: 1;
 }
 
 /* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
@@ -985,6 +984,7 @@ ul.object-list li {
     align-items: center;
     gap: var(--space-2);
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 /* --- Actor list panel (hydrated followers/following) --- */
@@ -1028,12 +1028,12 @@ ul.object-list li {
     font-style: italic;
 }
 
-/* Phase 133.1 — the date is a standalone top line (left-justified), so it no longer needs
-   margin-left: auto (that pushed it to the far right of the old single-row header). */
+/* Timestamp sits on the right side of the single-row header. */
 .object-time {
     color: var(--muted);
     font-size: var(--font-size-xs);
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .object-name {
@@ -1052,6 +1052,7 @@ ul.object-list li {
     color: var(--muted);
     font-size: var(--font-size-sm);
     word-break: break-all;
+    overflow-wrap: break-word;
     text-decoration: none;
 }
 
@@ -1153,6 +1154,7 @@ ul.object-list li {
     color: inherit;
     text-decoration: none;
     display: block;
+    min-width: 0;
 }
 
 .object-post-link:hover .object-content {
@@ -1164,14 +1166,16 @@ ul.object-list li {
     font-size: var(--font-size-base);
     color: var(--text);
     margin-bottom: var(--space-1);
+    overflow-wrap: break-word;
 }
 
 .object-content {
     color: var(--text);
     font-size: var(--font-size-base);
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-wrap: break-word;
-    opacity: 0.92;
+    word-break: break-word;
+    min-width: 0;
 }
 
 .object-content h1,
@@ -1192,6 +1196,8 @@ ul.object-list li {
 .object-content a {
     color: var(--success);
     text-decoration: underline;
+    overflow-wrap: break-word;
+    word-break: break-all;
 }
 
 .object-audience,
@@ -1442,22 +1448,22 @@ ul.object-list li {
 
 .engagement-bar {
     display: flex;
-    gap: var(--space-3);
-    margin-top: var(--space-45);
-    padding-top: var(--space-25);
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
     border-top: 1px solid var(--border);
 }
 
 .engagement-btn {
     display: inline-flex;
     align-items: center;
-    gap: var(--space-25);
+    gap: var(--space-2);
     background: none;
     border: none;
     color: var(--muted);
     cursor: pointer;
-    font-size: var(--font-size-sm);
-    padding: var(--space-25) var(--space-25);
+    font-size: 0.85rem;
+    padding: var(--space-2) var(--space-3);
     border-radius: var(--radius-sm);
     text-decoration: none;
     transition: color 0.15s, background 0.15s;
@@ -1465,12 +1471,12 @@ ul.object-list li {
 
 .engagement-btn:hover {
     color: var(--accent);
-    background: color-mix(in srgb, var(--success) 10%, transparent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .engagement-btn svg {
-    width: var(--space-4);
-    height: var(--space-4);
+    width: 1.4rem;
+    height: 1.4rem;
 }
 
 .engagement-btn--active {
@@ -2487,6 +2493,36 @@ ul.object-list li {
     font-size: var(--font-size-sm);
 }
 
+/* The community card is the same unified actor card as the directory card — the base .actor-card
+   supplies all framing and sizing; the wrapper only holds the column layout. A community's card
+   looks identical whether you reach it from /communities or /directory. */
+.community-card .actor-card-summary {
+    font-size: var(--font-size-sm);
+}
+
+/* Phase 149.4 — the community card's avatar matches the feed-card avatar size (2.5rem, see the
+   .object-header .actor-avatar rule) rather than the larger profile-style 4.5rem .actor-card-avatar.
+   Scoped to .community-card so the actor/directory cards keep their current 4.5rem avatar. The banner
+   overlap margin is reduced to match the smaller avatar. */
+.community-card .actor-card-main .actor-card-avatar {
+    margin-top: calc(-1 * 1.25rem);
+    border-width: 2px;
+}
+
+.community-card .actor-card-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.community-card .actor-card-avatar img {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.community-card .actor-card-avatar-fallback {
+    font-size: var(--font-size-base);
+}
+
 .follow-button {
     flex-shrink: 0;
     white-space: nowrap;
@@ -2559,6 +2595,8 @@ ul.object-list li {
     border-left: 3px solid var(--accent);
     border-radius: var(--radius-md);
     margin-bottom: var(--space-3);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-parent-separator {
@@ -2609,6 +2647,8 @@ ul.object-list li {
     margin-bottom: var(--space-45);
     font-size: 0.82rem;
     color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-recipient-label {
@@ -2661,6 +2701,8 @@ ul.object-list li {
     margin-bottom: var(--space-45);
     font-size: var(--font-size-sm);
     color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
 }
 
 .object-boost-time {
@@ -3694,8 +3736,8 @@ body > #app {
 .media-gallery {
     display: grid;
     gap: 4px;
-    margin: var(--space-2) 0;
-    border-radius: var(--space-2);
+    margin: var(--space-3) 0 0;
+    border-radius: var(--radius-sm);
     overflow: hidden;
 }
 
@@ -3725,12 +3767,11 @@ body > #app {
     position: relative;
     cursor: pointer;
     overflow: hidden;
-    aspect-ratio: 1 / 1;
+    aspect-ratio: 16 / 9;
 }
 
 .media-gallery--single .media-gallery-item {
-    aspect-ratio: auto;
-    max-height: 500px;
+    aspect-ratio: 16 / 9;
 }
 
 .media-gallery-item img {

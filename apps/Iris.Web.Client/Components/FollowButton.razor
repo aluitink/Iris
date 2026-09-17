@@ -46,6 +46,14 @@
     [Parameter]
     public IObjectOrLink? TargetActor { get; set; }
 
+    /// <summary>
+    /// Optional callback invoked (fire-and-forget) after a successful follow/unfollow toggle. Hosts
+    /// that derive their own rendering from the following state (e.g. the /communities Following tab)
+    /// use this to re-read the following collection and re-render.
+    /// </summary>
+    [Parameter]
+    public EventCallback FollowChanged { get; set; }
+
     private IActivityPubClient? Client => Session.Client;
 
     private bool Busy { get; set; }
@@ -124,6 +132,11 @@
         finally
         {
             Busy = false;
+        }
+
+        if (FollowChanged.HasDelegate)
+        {
+            await FollowChanged.InvokeAsync();
         }
     }
 }

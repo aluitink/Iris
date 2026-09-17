@@ -4,12 +4,16 @@
 @using Iris.Core.Identity
 @using Iris.Web.Client.Accounts
 @using Iris.Web.Client.Components
+@using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
+
+@inject UiContext Ui
+@inject NavigationManager Nav
 
 <PageTitle>Communities · Iris</PageTitle>
 
 <p class="muted">
-    Local communities on this instance — join one to post to its feed and connect with members.
+    Communities you follow, and communities on this instance. Follow a community to see its posts in your home feed.
 </p>
 
 @if (Client is null)
@@ -53,6 +57,13 @@ else
         }
     </div>
 
+    <div class="directory-toolbar">
+        <div class="tab-bar" role="tablist" aria-label="Community sections">
+            <a href="#following" id="tab-community-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-community-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following</a>
+            <a href="#all" id="tab-community-all" role="tab" aria-selected="@(ActiveTab == "all")" aria-controls="panel-community-all" class="tab @(ActiveTab == "all" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("all")'>All on this instance</a>
+        </div>
+    </div>
+
     @if (Busy)
     {
         <div class="card-loading">
@@ -68,7 +79,8 @@ else
     }
     else if (Items is not null)
     {
-        @if (Items.Count == 0)
+        var shown = ActiveTab == "following" ? (Following ?? LocalFollowing) : All;
+        @if (shown.Count == 0)
         {
             <div class="card">
                 <div class="empty-state">
@@ -78,17 +90,25 @@ else
                         <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                     </svg>
-                    <p>No communities yet.</p>
-                    <p>Create one above to get started.</p>
+                    @if (ActiveTab == "following")
+                    {
+                        <p>No communities followed yet.</p>
+                        <p>Follow one from <a href="#all" @onclick:preventDefault @onclick='() => SwitchTab("all")'>all communities on this instance</a>, or create one above to get started.</p>
+                    }
+                    else
+                    {
+                        <p>No communities on this instance yet.</p>
+                        <p>Create one above to get started.</p>
+                    }
                 </div>
             </div>
         }
         else
         {
             <div class="directory-cards">
-                @foreach (var community in Items)
+                @foreach (var community in shown)
                 {
-                    <DirectoryCard Actor="community" />
+                    <CommunityCard Community="community" FollowChanged="FollowToggledAsync" />
                 }
             </div>
         }
@@ -100,9 +120,42 @@ else
     private IActorSessionAccessor Session { get; set; } = default!;
 
     private IActivityPubClient? Client => Session.Client;
+
+    private string ActiveTab { get; set; } = "following";
+
     private List<Group>? Items { get; set; }
     private bool Busy { get; set; }
     private string? Error { get; set; }
+
+    /// <summary>
+    /// The IRIs of the actors the signed-in actor follows (the full following collection). Empty
+    /// when signed out or the collection cannot be read.
+    /// </summary>
+    private List<Iri> FollowingIris { get; set; } = [];
+
+    /// <summary>
+    /// The communities the signed-in actor follows (the <c>Group</c> documents among the following
+    /// collection's targets, local or remote), in following order. Resolved lazily from the
+    /// following IRIs + the cached local search so the Following tab is populated immediately after
+    /// a follow toggle (the <see cref="FollowButton"/> invalidates the following cache, so the next
+    /// read re-walks the collection).
+    /// </summary>
+    private List<Group>? Following { get; set; }
+
+    private bool FollowingKnown { get; set; }
+
+    /// <summary>
+    /// Every community on this instance (the <c>local=true</c> actor search filtered to <c>Group</c>).
+    /// </summary>
+    private List<Group> All => Items ?? [];
+
+    /// <summary>
+    /// Fallback for the Following view when <see cref="Following"/> has not been resolved yet: the
+    /// local communities whose IRI is in the following set.
+    /// </summary>
+    private List<Group> LocalFollowing =>
+        Items?.Where(g => g.Id is { } id && FollowingIris.Any(f => string.Equals(f.Value, id, StringComparison.OrdinalIgnoreCase))).ToList()
+        ?? [];
 
     private Iri? InstanceBase
     {
@@ -131,36 +184,96 @@ else
     protected override async Task OnInitializedAsync()
     {
         await Session.EnsureReadyAsync();
-        if (Client is { } client && InstanceBase is { } baseIri)
-        {
-            Busy = true;
-            try
-            {
-                var results = new List<IObjectOrLink>();
-                await foreach (var item in client.SearchAsync(
-                                    baseIri,
-                                    string.Empty,
-                                    new SearchOptions { Type = "Actor" }))
-                {
-                    results.Add(item);
-                }
+        await LoadAsync();
+    }
 
-                Items = results
-                    .OfType<KristofferStrube.ActivityStreams.Object>()
-                    .Where(o => o is Group)
-                    .Cast<Group>()
-                    .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
-                    .ToList();
-            }
-            catch (Exception)
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+    }
+
+    private async Task LoadAsync()
+    {
+        if (Client is not { } client || InstanceBase is not { } baseIri)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        try
+        {
+            // Local-only: this page lists the instance's own communities (the directory's
+            // "This instance" scope). The unqualified search returns every cached actor the
+            // instance has ever stored (hundreds of remote accounts) and no local Group survives
+            // the page's limit — which is why the page rendered empty.
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                                baseIri,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor", LocalOnly = true }))
             {
-                Error = "We couldn't load the community list right now. Please check your connection and try again.";
+                results.Add(item);
             }
-            finally
+
+            Items = results
+                .OfType<Group>()
+                .OrderBy(g => g.PreferredUsername ?? g.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            FollowingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
+            Following = ResolveFollowingCommunities();
+            FollowingKnown = true;
+        }
+        catch (Exception)
+        {
+            Error = "We couldn't load the community list right now. Please check your connection and try again.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Re-reads the signed-in actor's following collection (after a follow/unfollow toggle) and
+    /// re-renders so the Following view reflects the new state. The <see cref="FollowButton"/>
+    /// invalidates the following cache before this runs, so the read below re-walks the collection.
+    /// </summary>
+    private async Task FollowToggledAsync()
+    {
+        FollowingIris = (await Ui.GetFollowingActorIrisAsync()).ToList();
+        Following = ResolveFollowingCommunities();
+        FollowingKnown = true;
+    }
+
+    /// <summary>
+    /// Resolves the followed communities: every followed <c>Group</c> IRI that is present in the
+    /// cached local search (the common case — a local community). A followed community that is not
+    /// in the local search (a remote community, or one created moments ago before the search cache
+    /// refreshed) is fetched by its IRI so the Following tab is never missing a followed community.
+    /// </summary>
+    private List<Group> ResolveFollowingCommunities()
+    {
+        if (FollowingIris.Count == 0 || Items is null)
+        {
+            return [];
+        }
+
+        var byIri = Items
+            .Where(g => g.Id is { Length: > 0 })
+            .ToDictionary(g => g.Id!, g => g, StringComparer.OrdinalIgnoreCase);
+
+        var found = new List<Group>();
+        foreach (var iri in FollowingIris)
+        {
+            if (byIri.TryGetValue(iri.Value, out var local))
             {
-                Busy = false;
+                found.Add(local);
             }
         }
+
+        return found;
     }
 
     private async Task CreateAsync()
@@ -184,7 +297,7 @@ else
                 NewHandle = string.Empty;
                 NewDescription = string.Empty;
                 ShowCreateForm = false;
-                await LoadCommunitiesAsync();
+                await LoadAsync();
             }
             else
             {
@@ -200,42 +313,4 @@ else
             CreateBusy = false;
         }
     }
-
-    private async Task LoadCommunitiesAsync()
-    {
-        if (Client is not { } client || InstanceBase is not { } baseIri)
-        {
-            return;
-        }
-
-        Busy = true;
-        Error = null;
-        try
-        {
-            var results = new List<IObjectOrLink>();
-            await foreach (var item in client.SearchAsync(
-                                baseIri,
-                                string.Empty,
-                                new SearchOptions { Type = "Actor" }))
-            {
-                results.Add(item);
-            }
-
-            Items = results
-                .OfType<KristofferStrube.ActivityStreams.Object>()
-                .Where(o => o is Group)
-                .Cast<Group>()
-                .OrderBy(g => g.Id ?? string.Empty, StringComparer.Ordinal)
-                .ToList();
-        }
-        catch (Exception)
-        {
-            Error = "We couldn't refresh the community list. Please try again.";
-        }
-        finally
-        {
-            Busy = false;
-        }
-    }
-
 }
