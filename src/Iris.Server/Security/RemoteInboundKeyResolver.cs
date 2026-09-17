@@ -3,6 +3,8 @@ using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Iris.Server.Security;
 
@@ -21,10 +23,12 @@ namespace Iris.Server.Security;
 /// </remarks>
 public sealed class RemoteInboundKeyResolver(
     IActorDocumentFetcher actorDocuments,
-    RemoteKeyCache remoteKeys) : IInboundKeyResolver
+    RemoteKeyCache remoteKeys,
+    ILogger<RemoteInboundKeyResolver>? logger = null) : IInboundKeyResolver
 {
     private readonly IActorDocumentFetcher _actorDocuments = actorDocuments!;
     private readonly RemoteKeyCache _remoteKeys = remoteKeys!;
+    private readonly ILogger<RemoteInboundKeyResolver> _logger = logger ?? NullLogger<RemoteInboundKeyResolver>.Instance;
 
     /// <inheritdoc/>
     public async Task<ISigningKey?> ResolveAsync(Iri keyId, CancellationToken ct = default)
@@ -70,6 +74,18 @@ public sealed class RemoteInboundKeyResolver(
         var actor = await _actorDocuments.GetActorAsync(ownerActorIri, ct).ConfigureAwait(false);
         if (actor is null)
         {
+            // The outbound fetch of the remote actor document failed (a non-success HTTP status, a
+            // transport error, or the IRI resolved to a non-actor). This is the most common cause of
+            // an inbound "could not resolve public key": the remote instance (e.g. Hachyderm,
+            // mastodon.social) requires the actor-doc GET to be signed and rejects it — often because
+            // it cannot itself resolve Iris's public key (a mutual key-resolution bootstrap failure).
+            // Log at Warning so the failure is diagnosable; previously the null was silent and the
+            // only symptom was the downstream "could not resolve public key" with no cause.
+            _logger.LogWarning(
+                "Key resolution: could not fetch remote actor document {ActorIri} (keyId {KeyId}); the " +
+                "outbound signed GET returned a non-success status or a non-actor. Inbound signatures " +
+                "from this actor will be rejected until the document is reachable.",
+                ownerActorIri, keyId);
             return null;
         }
 
@@ -77,6 +93,13 @@ public sealed class RemoteInboundKeyResolver(
             || !extension.TryGetValue(ActivityPubExtensionNames.PublicKey, out var publicKey)
             || publicKey.ValueKind != JsonValueKind.Object)
         {
+            // The actor document was fetched but carries no usable `publicKey` object. Log at Warning
+            // so the "could not resolve public key" downstream is attributable to the document shape
+            // (missing/malformed publicKey) rather than a fetch failure.
+            _logger.LogWarning(
+                "Key resolution: remote actor document {ActorIri} (keyId {KeyId}) has no usable " +
+                "`publicKey` object; inbound signatures from this actor will be rejected.",
+                ownerActorIri, keyId);
             return null;
         }
 
@@ -134,6 +157,15 @@ public sealed class RemoteInboundKeyResolver(
             return new JwkKey(key.GetPublicJwk(), Signatures.AlgorithmLabel(pemAlgorithm.Value));
         }
 
+        // The publicKey object is present but is neither a recognizable JWK (kty) nor a usable
+        // publicKeyPem. Log at Warning so the "could not resolve public key" downstream is
+        // attributable to an unsupported/malformed key format (with the raw shape for diagnosis)
+        // rather than a fetch failure.
+        _logger.LogWarning(
+            "Key resolution: remote actor document {ActorIri} (keyId {KeyId}) has a publicKey that is " +
+            "neither a recognizable JWK nor a usable publicKeyPem (raw: {PublicKeyRaw}); inbound " +
+            "signatures from this actor will be rejected.",
+            ownerActorIri, keyId, publicKey.GetRawText());
         return null;
     }
 

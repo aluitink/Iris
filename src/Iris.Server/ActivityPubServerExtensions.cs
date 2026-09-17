@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Iris.Client;
+using Iris.Client.Pipeline;
 using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Server.Identity;
@@ -270,8 +271,13 @@ public static class ActivityPubServerExtensions
                     logger: sp.GetService<ILogger<RemoteCommunityPersister>>());
             }
 
+            // TEMP(157): wrap the key-resolution pipeline in a logging handler to capture the exact
+            // outbound status + body for the bootstrap investigation. REMOVE after diagnosis.
+            var _logHandler = new ResponseLogHandler(
+                new HttpClientHandler(),
+                sp.GetService<ILogger<RemoteInboundKeyResolver>>());
             return new IrisActorDocumentFetcher(
-                factory.Create(clientOptions, new HttpClientHandler()),
+                factory.Create(clientOptions, _logHandler),
                 actorCache,
                 persister,
                 communityPersister);
@@ -7974,6 +7980,22 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // 157: the instance handle (e.g. @iris@iris.luit.ink) resolves to the SITE ACTOR — the
+        // Application at the bare instance base (options.InstanceActorIri), which is what the instance
+        // signs outbound federation as (InstanceActorId). A peer validating a signature from
+        // keyId {base}#key-1 does WebFinger for the instance handle; without this branch, the handler
+        // only checked {base}/ap/v1/u/{handle} and {base}/ap/v1/c/{handle} (neither of which the site
+        // actor lives at), returned 404, and the peer rejected the signature with
+        // "Webfinger error when resolving {handle}@{host}". Resolving the instance handle to the site
+        // actor closes that loop: the peer fetches {base}, reads the publicKey, and validates.
+        if (options.InstanceActorIri is Iri instanceActorIri
+            && await persistence.Actors.TryGetActorAsync(instanceActorIri, out var instanceActor, ct).ConfigureAwait(false)
+            && instanceActor is not null
+            && string.Equals(instanceActor.PreferredUsername, handle, StringComparison.OrdinalIgnoreCase))
+        {
+            return WebFingerResult(instanceActorIri, handle, instanceHost);
+        }
+
         var actorIri = BuildActorIri(baseUrl, handle);
 
         Iri? resolvedIri = null;
@@ -7993,12 +8015,21 @@ public static class ActivityPubServerExtensions
             }
         }
 
-        if (resolvedIri is null)
+        if (resolvedIri is not Iri resolved)
         {
             return Results.NotFound();
         }
 
-        // WebFinger response: { subject, links: [{ rel: self, type: activity+json, href: resolvedIri }] }.
+        return WebFingerResult(resolved, handle, instanceHost);
+    }
+
+    /// <summary>
+    /// Builds the RFC 8410 WebFinger JRD response for a resolved actor IRI:
+    /// <c>{ subject, links: [{ rel: self, type: activity+json, href }] }</c>, served as
+    /// <c>application/jrd+json</c>.
+    /// </summary>
+    private static IResult WebFingerResult(Iri resolvedIri, string handle, string instanceHost)
+    {
         // The href must be a plain string (the Iri struct serializes as an object with Uri/Value/etc.).
         var href = resolvedIri.ToString();
         var webFinger = new

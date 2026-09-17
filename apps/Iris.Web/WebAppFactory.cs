@@ -1792,6 +1792,14 @@ public static class WebAppFactory
         // is InstanceActorId, so it is the outbound federation signer).
         RegisterSeedKey(services, baseNoSlash);
 
+        // One-time (idempotent) repair: normalize CRLF → LF in local actors' publicKeyPem. Before 138.11
+        // the PEM emitter produced CRLF (RFC 4648), which some peers' key resolution rejects (Lemmy, and
+        // by extension the mastodon/hachyderm class that gates actor-doc GETs behind a resolvable key).
+        // Registered actors (provisioned at signup, not re-stamped by the seed) can carry a stale CRLF
+        // PEM indefinitely; re-normalize them here so the instance signer's public key is always served
+        // with LF-only line endings. A no-op once every local actor's PEM is LF-only.
+        NormalizeLocalActorPemLineEndings(persistence, new Iri(baseNoSlash));
+
         // Bootstrap the first admin (idempotent; no-op unless App:Admin:Username/Password are set). This
         // runs here — after the migration + seed, once persistence is ready — rather than as an
         // IHostedService (which would run at Build(), before the EF migration creates the tables).
@@ -1951,6 +1959,74 @@ public static class WebAppFactory
             publicKeyPem = key.ExportPublicKeyPem(),
         });
         persistence.Actors.PutActorAsync(actor).GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Normalizes CRLF → LF line endings in the <c>publicKeyPem</c> of every <strong>local</strong> actor
+    /// (one-time, idempotent repair, 157). Before 138.11 the PEM emitter produced CRLF (RFC 4648); a
+    /// peer that resolves a key from an actor's <c>publicKeyPem</c> — and that rejects CRLF (Lemmy's
+    /// deserializer, and the mastodon/hachyderm class that gates actor-doc GETs behind a resolvable key)
+    /// — could not parse such a PEM, so it rejected the instance's signed requests and the two instances
+    /// deadlocked in mutual key resolution. The 138.11 fix made the emitter LF-only, but it only
+    /// re-stamps actors the <em>seed</em> re-stores on boot; actors provisioned at <em>signup</em>
+    /// (the registration flow) are not re-stamped, so the instance signer (e.g. a registered account set
+    /// as <c>InstanceActorId</c>) could keep serving a stale CRLF PEM indefinitely.
+    /// </summary>
+    /// <remarks>
+    /// This walks every stored actor and, for each <strong>local</strong> actor (IRI prefix matches
+    /// <paramref name="instanceBase"/>) whose <c>publicKeyPem</c> contains a CRLF, replaces every
+    /// <c>\r\n</c> with <c>\n</c> and re-persists the document. The fix is a pure line-ending
+    /// normalization (the base64 key payload — and therefore the public key identity — is unchanged), so
+    /// no key material is re-derived and no relationship is disturbed. Remote cached actors (IRIs not
+    /// under the instance base) are never touched: their PEM belongs to the remote instance. The method
+    /// is a no-op once every local actor's PEM is LF-only.
+    /// </remarks>
+    /// <param name="persistence">The persistence provider (provides the <see cref="IActorStore"/>).</param>
+    /// <param name="instanceBase">The instance base IRI (e.g. <c>https://iris.luit.ink</c>); local actors
+    /// are those whose IRI starts with this prefix.</param>
+    internal static void NormalizeLocalActorPemLineEndings(IPersistenceProvider persistence, Iri instanceBase)
+    {
+        ArgumentNullException.ThrowIfNull(persistence);
+        var prefix = instanceBase.Value.TrimEnd('/');
+        var actors = persistence.Actors;
+
+        foreach (var actor in actors.ListActorsAsync().GetAwaiter().GetResult())
+        {
+            if (actor.Id is not { } idStr || !idStr.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                // Not a local actor (a remote cached actor) — its publicKeyPem belongs to the remote.
+                continue;
+            }
+
+            if (actor.ExtensionData is not { } extension
+                || !extension.TryGetValue(ActivityPubExtensionNames.PublicKey, out var publicKey)
+                || publicKey.ValueKind != JsonValueKind.Object
+                || !publicKey.TryGetProperty("publicKeyPem", out var pemEl)
+                || pemEl.ValueKind != JsonValueKind.String
+                || pemEl.GetString() is not { } pem
+                || !pem.Contains('\r'))
+            {
+                // No publicKey / no publicKeyPem / already LF-only — nothing to repair.
+                continue;
+            }
+
+            // JsonElement is immutable — rebuild the publicKey object with the normalized PEM,
+            // preserving the id + owner (the key identity is unchanged; only the line endings differ).
+            var normalized = pem.Replace("\r\n", "\n").Replace('\r', '\n');
+            var id = publicKey.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
+                ? idEl.GetString() ?? ""
+                : "";
+            var owner = publicKey.TryGetProperty("owner", out var ownerEl) && ownerEl.ValueKind == JsonValueKind.String
+                ? ownerEl.GetString() ?? ""
+                : "";
+            actor.ExtensionData[ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(new
+            {
+                id,
+                owner,
+                publicKeyPem = normalized,
+            });
+            actors.PutActorAsync(actor).GetAwaiter().GetResult();
+        }
     }
 
     /// <summary>
