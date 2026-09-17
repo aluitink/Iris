@@ -2,12 +2,18 @@
 @using Iris.Core.Identity
 @using Iris.Web.Client.Ui
 @using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+@using MouseEvent = Microsoft.AspNetCore.Components.Web.MouseEventArgs
 @using ActivityObject = KristofferStrube.ActivityStreams.Object
 
 @inject UiContext Ui
 
-<div class="notification-card" data-type="@(Activity?.Type?.FirstOrDefault())">
+<div class="notification-card @(IsNew ? "notification-card--new" : "")" data-type="@(Activity?.Type?.FirstOrDefault())">
     <div class="notification-card__header">
+        @if (IsNew)
+        {
+            <span class="notification-card__new" aria-label="New">New</span>
+        }
         <div class="notification-card__avatar">
             @if (_actorLoaded)
             {
@@ -62,6 +68,22 @@
     /// </summary>
     [Parameter]
     public Iri? SelfId { get; set; }
+
+    /// <summary>
+    /// Whether this notification is "new" (154): published after the user's last "mark all as read"
+    /// and not yet viewed. When true the card is highlighted (a left accent border + a "New" badge)
+    /// so unread items stand out from the rest of the list.
+    /// </summary>
+    [Parameter]
+    public bool IsNew { get; set; }
+
+    /// <summary>
+    /// Optional callback invoked when the user clicks through to the notification's target (154), so
+    /// the page can mark it viewed and clear its highlight immediately. Null when the page does not
+    /// track viewed state.
+    /// </summary>
+    [Parameter]
+    public EventCallback OnViewed { get; set; }
 
     private Activity? Activity => Item as Activity;
 
@@ -144,6 +166,12 @@
 
     private bool IsSelfDeleteActivity => Item is Activity a && IsSelfDelete(a);
 
+    /// <summary>
+    /// Marks the notification viewed when the user clicks through to its target (154). The page
+    /// clears the card's "new" highlight from this signal without a round-trip.
+    /// </summary>
+    private Task OnViewedClick() => OnViewed.InvokeAsync();
+
     private string? GetDisplayName(Activity activity)
     {
         var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
@@ -205,13 +233,25 @@
                 builder.AddContent(2, "deleted their account");
                 builder.CloseElement();
             }
-            else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity))
+            else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity) && IsContentNote(noteObj))
+            {
+                // 154 — render the notification's target as a normal object card (the same control the
+                // feeds use) instead of a compact preview box, so notifications look like the rest of
+                // the app. The "New" badge + accent bar on the card (above) still mark it unread.
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__object");
+                builder.OpenComponent(2, typeof(ObjectView));
+                builder.AddComponentParameter(3, nameof(ObjectView.Item), noteObj);
+                builder.CloseComponent();
+                builder.CloseElement();
+            }
+            else if (objectFirst is IObject otherObj && otherObj.GetType() != typeof(Activity))
             {
                 builder.OpenElement(0, "div");
                 builder.AddAttribute(1, "class", "notification-card__note");
 
                 // Note author
-                if (noteObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
+                if (otherObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
                 {
                     builder.OpenElement(2, "div");
                     builder.AddAttribute(3, "class", "notification-card__note-author");
@@ -233,7 +273,8 @@
                     {
                         builder.OpenElement(10, "a");
                         builder.AddAttribute(11, "href", ObjectHref(ti));
-                        builder.AddContent(12, preview);
+                        builder.AddAttribute(12, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
+                        builder.AddContent(13, preview);
                         builder.CloseElement();
                     }
                     else
@@ -253,7 +294,7 @@
                     builder.CloseElement();
                 }
 
-                // "View" link
+                // "View" link (154: clicking through marks the notification viewed → clears the highlight)
                 if (objectIri is { } vi)
                 {
                     builder.OpenElement(13, "div");
@@ -261,7 +302,8 @@
                     builder.OpenElement(15, "a");
                     builder.AddAttribute(16, "href", ObjectHref(vi));
                     builder.AddAttribute(17, "class", "notification-card__view-link");
-                    builder.AddContent(18, "View →");
+                    builder.AddAttribute(18, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
+                    builder.AddContent(19, "View →");
                     builder.CloseElement();
                     builder.CloseElement();
                 }
@@ -351,6 +393,17 @@
             : "?";
         var first = source.Trim().FirstOrDefault(c => char.IsLetterOrDigit(c));
         return first != default ? char.ToUpperInvariant(first).ToString() : "?";
+    }
+
+    /// <summary>
+    /// Whether the notification's target object is a content note (a <c>Note</c> or <c>Article</c>) that
+    /// should render as a full object card (154). Activity objects (Follow/Accept/Reject), actor
+    /// objects, and other non-content types fall through to the compact preview row.
+    /// </summary>
+    private static bool IsContentNote(IObject obj)
+    {
+        var type = obj.Type?.FirstOrDefault();
+        return type is "Note" or "Article";
     }
 
     /// <summary>

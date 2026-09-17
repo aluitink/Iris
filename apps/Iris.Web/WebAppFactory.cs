@@ -1052,11 +1052,17 @@ public static class WebAppFactory
             var page = filtered.Skip(safeOffset).Take(safeLimit).ToList();
             var hasMore = safeOffset + safeLimit < filtered.Count;
 
+            // 154 — expose the read cursor so the client can mark which items are "new" (published
+            // after the last "mark all as read"). The cursor already exists server-side (it drives the
+            // unread count); surfacing it means no per-item read flags need to be stored/serialized.
+            var readAt = account.NotificationsReadAt;
+
             return Results.Json(new
             {
                 items = page,
                 totalItems = filtered.Count,
                 nextPage = hasMore ? $"/local/v1/notifications?limit={safeLimit}&offset={safeOffset + safeLimit}{(string.IsNullOrWhiteSpace(type) ? "" : $"&type={type}")}" : null,
+                readAt,
             });
         }).RequireAuthorization();
 

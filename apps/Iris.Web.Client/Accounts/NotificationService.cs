@@ -81,7 +81,7 @@ public sealed class NotificationService
         var json = await _http.GetStringAsync($"/local/v1/notifications?{query}", ct);
         var page = System.Text.Json.JsonSerializer.Deserialize<NotificationPage>(json,
             new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-        return page ?? new NotificationPage([], 0, null);
+        return page ?? new NotificationPage([], 0, null, null);
     }
 
     /// <summary>
@@ -99,7 +99,13 @@ public sealed class NotificationService
 /// <param name="Items">The notification items (ActivityStreams activities).</param>
 /// <param name="TotalItems">The total number of matching notifications (before paging).</param>
 /// <param name="NextPage">The URL for the next page, or null when there is no next page.</param>
+/// <param name="ReadAt">
+/// The account's "mark all as read" cursor (154), or null when the user has never marked all as
+/// read. A notification whose <c>Published</c> is after this cursor is "new" and highlighted; the
+/// client computes per-item newness from this single value (no per-item read flags are stored).
+/// </param>
 public sealed record NotificationPage(
     IReadOnlyList<System.Text.Json.JsonElement> Items,
     int TotalItems,
-    string? NextPage);
+    string? NextPage,
+    DateTimeOffset? ReadAt);

@@ -3646,6 +3646,40 @@ body > #app {
     border-color: var(--border-hover, var(--border));
 }
 
+/* 154 — "new" notification: stands out from the rest of the list with a left accent bar + a tinted
+   surface, plus a small "New" badge in the header. Cleared when the user views it or marks all read. */
+.notification-card--new {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.notification-card__new {
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    border-radius: var(--radius-pill);
+    padding: 0 var(--space-2);
+    line-height: 1.5;
+    margin-bottom: var(--space-1);
+}
+
+/* 154 — wrapper for a full ObjectView card rendered inside a notification card. The ObjectView card
+   already carries its own surface/border, so we drop the notification card's padding here and let the
+   inner card own the spacing (avoids a double-bordered "card in a card"). */
+.notification-card__object {
+    margin-top: var(--space-1);
+}
+
+.notification-card__object > .object-item {
+    border: 1px solid var(--border);
+}
+
 .notification-card__header {
     display: flex;
     align-items: flex-start;
