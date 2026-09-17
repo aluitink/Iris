@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Iris.Core;
+using Iris.Core.Signing;
 using Iris.Server.Stores;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -75,6 +76,17 @@ public sealed class HttpSignatureValidator(
         // Parse the header to get the keyId; if it's malformed, the signature is invalid.
         if (!SignatureHeader.TryParse(signatureHeader, out var header) || header is null)
         {
+            // A header the legacy draft-cavage-03 parser rejects may be the RFC 9421 (new) format,
+            // in which the Signature header carries only a label + base64 signature (e.g.
+            // "sig1=:<base64>:"), with the parameters (keyid, created, covered components) in a
+            // separate Signature-Input header. Route those to the RFC 9421 verifier (Phase 157).
+            if (context.Request.Headers.TryGetValue(Signatures.SignatureInputHeaderName, out var signatureInputValues)
+                && SignatureInputHeader.TryParse(signatureInputValues.ToString(), out var signatureInput)
+                && signatureInput is not null)
+            {
+                return await ValidateRfc9421Async(context, signatureInput, metadata, body, ct).ConfigureAwait(false);
+            }
+
             _logger.LogWarning(
                 "Signature rejected: malformed Signature header on {Method} {Path}",
                 context.Request.Method,
@@ -209,6 +221,207 @@ public sealed class HttpSignatureValidator(
         finally
         {
             disposableKey?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Validates an RFC 9421 (new-format) signature: the <c>Signature</c> header carries only
+    /// <c>label=:base64:</c> and the parameters live in the <c>Signature-Input</c> header. This is
+    /// the format modern fediverse peers (Mastodon 4.5+, Pleroma 2024+, Misskey, GoToSocial) send.
+    /// </summary>
+    /// <param name="context">The HTTP context (provides the raw <c>Signature</c> header).</param>
+    /// <param name="signatureInput">The parsed <c>Signature-Input</c> header.</param>
+    /// <param name="metadata">The buffered request metadata snapshot.</param>
+    /// <param name="body">The buffered request body bytes.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The validation result (null is not returned here — an RFC 9421 signature that cannot
+    /// be validated is invalid).</returns>
+    private async ValueTask<SignatureValidationResult> ValidateRfc9421Async(
+        HttpContext context,
+        SignatureInputHeader signatureInput,
+        HttpRequestMetadata metadata,
+        byte[] body,
+        CancellationToken ct)
+    {
+        var signatureHeader = context.Request.Headers[Signatures.SignatureHeaderName].ToString();
+
+        // Find the Signature-Input member that matches the Signature label.
+        var (label, signatureB64, labelOk) = ExtractSignatureLabelAndValue(signatureHeader);
+        if (!labelOk)
+        {
+            _logger.LogWarning(
+                "Signature rejected: unparseable RFC 9421 Signature header on {Method} {Path}",
+                context.Request.Method,
+                context.Request.Path);
+            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+        }
+
+        var member = signatureInput.GetMember(label);
+        if (member is null || string.IsNullOrEmpty(member.KeyId))
+        {
+            _logger.LogWarning(
+                "Signature rejected: RFC 9421 Signature-Input has no member for label '{Label}' (or no keyid) on {Method} {Path}",
+                label,
+                context.Request.Method,
+                context.Request.Path);
+            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+        }
+
+        if (!Iri.TryParse(member.KeyId, out var keyId))
+        {
+            _logger.LogWarning(
+                "Signature rejected: unparseable keyId '{KeyId}' (RFC 9421) on {Method} {Path}",
+                member.KeyId,
+                context.Request.Method,
+                context.Request.Path);
+            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+        }
+
+        // A body-less request (a signed GET read) is only validated when the signer is a LOCAL actor,
+        // for the same reason as the legacy path (a remote GET key-resolve would recurse).
+        if (body.Length == 0 && _persistence is not null)
+        {
+            var keyOwner = OwnerActorIriFromKeyId(keyId);
+            if (!await _persistence.Actors.TryGetActorAsync(keyOwner, out _, ct).ConfigureAwait(false))
+            {
+                return new SignatureValidationResult(false, default, ExtractActorIri(body));
+            }
+        }
+
+        ISigningKey? key = null;
+        try
+        {
+            key = await _keyResolver.ResolveAsync(keyId, ct).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            key = null;
+        }
+
+        if (key is null)
+        {
+            _logger.LogWarning(
+                "Signature rejected: could not resolve public key for keyId {KeyId} (RFC 9421) on {Method} {Path}",
+                keyId,
+                context.Request.Method,
+                context.Request.Path);
+            return new SignatureValidationResult(false, keyId, ExtractActorIri(body));
+        }
+
+        var isValid = VerifyRfc9421AndDispose(key, metadata, member, signatureB64);
+
+        // F-21 key-rotation invalidation (same policy as the legacy path): a verification failure
+        // (as opposed to a missing key) signals a stale cached key. Invalidate + re-resolve once.
+        if (!isValid && _keyCache is not null)
+        {
+            _keyCache.Invalidate(keyId);
+            _actorCache?.Invalidate(OwnerActorIriFromKeyId(keyId));
+            try
+            {
+                key = await _keyResolver.ResolveAsync(keyId, ct).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                key = null;
+            }
+
+            if (key is not null)
+            {
+                isValid = VerifyRfc9421AndDispose(key, metadata, member, signatureB64);
+            }
+        }
+
+        if (!isValid)
+        {
+            _logger.LogWarning(
+                "Signature rejected: RFC 9421 cryptographic verification failed for keyId {KeyId} on {Method} {Path}",
+                keyId,
+                context.Request.Method,
+                context.Request.Path);
+        }
+
+        var actor = ExtractActorIri(body) ?? OwnerActorIriFromKeyId(keyId);
+        return new SignatureValidationResult(isValid, keyId, actor);
+    }
+
+    /// <summary>
+    /// Verifies an RFC 9421 signature with the given key and disposes the key when it is disposable.
+    /// </summary>
+    private bool VerifyRfc9421AndDispose(ISigningKey key, HttpRequestMetadata metadata, SignatureInputMember member, string signatureB64)
+    {
+        var disposableKey = key as IDisposable;
+        try
+        {
+            if (!TryDecodeBase64(signatureB64, out var signature))
+            {
+                return false;
+            }
+
+            byte[] baseBytes;
+            try
+            {
+                baseBytes = SignatureBase9421.Build(metadata, member, member.MemberValue);
+            }
+            catch (ArgumentException)
+            {
+                // A covered component that cannot be derived (unknown derived component, missing
+                // header) makes the signature invalid.
+                return false;
+            }
+
+            return Signatures.VerifyBase(key, baseBytes, signature);
+        }
+        finally
+        {
+            disposableKey?.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Extracts the label and base64 signature value from an RFC 9421 <c>Signature</c> header of the
+    /// form <c>label=:base64:</c>.
+    /// </summary>
+    private static (string Label, string Base64, bool Ok) ExtractSignatureLabelAndValue(string header)
+    {
+        var firstColon = header.IndexOf(':');
+        if (firstColon <= 0)
+        {
+            return (default!, default!, false);
+        }
+
+        var label = header[..firstColon].Trim();
+        var rest = header[(firstColon + 1)..];
+        // The value is :base64: — strip the leading ':' and trailing ':' (if present).
+        if (rest.StartsWith(':'))
+        {
+            rest = rest[1..];
+        }
+
+        if (rest.EndsWith(':'))
+        {
+            rest = rest[..^1];
+        }
+
+        rest = rest.Trim();
+        if (label.Length == 0 || rest.Length == 0)
+        {
+            return (default!, default!, false);
+        }
+
+        return (label, rest, true);
+    }
+
+    private static bool TryDecodeBase64(string value, out byte[] bytes)
+    {
+        try
+        {
+            bytes = Convert.FromBase64String(value);
+            return true;
+        }
+        catch (FormatException)
+        {
+            bytes = [];
+            return false;
         }
     }
 
