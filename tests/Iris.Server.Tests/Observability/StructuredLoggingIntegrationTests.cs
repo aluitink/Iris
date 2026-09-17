@@ -116,6 +116,47 @@ public sealed class StructuredLoggingIntegrationTests
             && e.Message.Contains("Signature rejected: malformed Signature header"));
     }
 
+    // --- The signature validator logs the activity type of a rejected delivery ---------------
+    //
+    // A 401 on an inbox POST is only actionable if the log says WHAT was being delivered (the
+    // activity type, e.g. Create / Follow) in addition to WHY the signature failed. The validator
+    // parses the buffered body for the ActivityStreams `type` and includes it in the rejection log.
+
+    [Fact]
+    public async Task Validator_LogsActivityType_WhenSignatureHeaderIsMalformed()
+    {
+        var logProvider = new CapturingLogProvider();
+        var validator = new HttpSignatureValidator(
+            new InMemoryInboundKeyResolver(),
+            new HttpSignatureVerifier(new InMemoryKeyStore()),
+            logger: logProvider.CreateLogger<HttpSignatureValidator>());
+
+        var body = """
+            {"@context":"https://www.w3.org/ns/activitystreams","type":"Create","id":"https://log-a.domain.local/activities/x","actor":"https://log-a.domain.local/u/alice"}
+            """;
+        var context = new DefaultHttpContext
+        {
+            Request =
+            {
+                Method = "POST",
+                Path = $"/ap/v1/u/{Alice}/inbox",
+                Body = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(body)),
+            },
+        };
+        context.Request.Headers.Host = AHost;
+        context.Request.Headers["Content-Type"] = "application/activity+json";
+        context.Request.Headers[Signatures.SignatureHeaderName] = "malformed-not-a-signature";
+
+        var result = await validator.ValidateAsync(context);
+
+        Assert.NotNull(result);
+        Assert.False(result!.IsValid);
+        Assert.Contains(logProvider.Entries, e =>
+            e.LogLevel == LogLevel.Warning
+            && e.Message.Contains("Signature rejected: malformed Signature header")
+            && e.Message.Contains("Create"));
+    }
+
     // --- Helpers --------------------------------------------------------------------------
 
     /// <summary>

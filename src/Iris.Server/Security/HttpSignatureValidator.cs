@@ -73,6 +73,11 @@ public sealed class HttpSignatureValidator(
 
         var metadata = ToMetadata(context, body);
 
+        // Bind the signature to the acting actor and note the activity type for diagnostics: the
+        // body's `actor` (a POST) is the acting actor; `type` is the ActivityStreams activity type
+        // (e.g. "Create", "Follow") so a rejection log shows WHAT was being delivered.
+        var (actor, activityType) = ExtractActivityFields(body);
+
         // Parse the header to get the keyId; if it's malformed, the signature is invalid.
         if (!SignatureHeader.TryParse(signatureHeader, out var header) || header is null)
         {
@@ -84,24 +89,27 @@ public sealed class HttpSignatureValidator(
                 && SignatureInputHeader.TryParse(signatureInputValues.ToString(), out var signatureInput)
                 && signatureInput is not null)
             {
-                return await ValidateRfc9421Async(context, signatureInput, metadata, body, ct).ConfigureAwait(false);
+                return await ValidateRfc9421Async(context, signatureInput, metadata, body.Length > 0, actor, activityType, ct)
+                    .ConfigureAwait(false);
             }
 
             _logger.LogWarning(
-                "Signature rejected: malformed Signature header on {Method} {Path}",
+                "Signature rejected: malformed Signature header on {Method} {Path} (activity type {ActivityType})",
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, default, actor);
         }
 
         if (!Iri.TryParse(header.KeyId, out var keyId))
         {
             _logger.LogWarning(
-                "Signature rejected: unparseable keyId '{KeyId}' on {Method} {Path}",
+                "Signature rejected: unparseable keyId '{KeyId}' on {Method} {Path} (activity type {ActivityType})",
                 header.KeyId,
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, default, actor);
         }
 
         // A body-less request (a signed GET read) is only validated when the signer is a LOCAL actor.
@@ -139,11 +147,12 @@ public sealed class HttpSignatureValidator(
         if (key is null)
         {
             _logger.LogWarning(
-                "Signature rejected: could not resolve public key for keyId {KeyId} on {Method} {Path}",
+                "Signature rejected: could not resolve public key for keyId {KeyId} on {Method} {Path} (activity type {ActivityType})",
                 keyId,
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, keyId, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, keyId, actor);
         }
 
         // Verify with the resolved key directly: the key came from a remote source (the sender's
@@ -185,21 +194,19 @@ public sealed class HttpSignatureValidator(
         if (!isValid)
         {
             _logger.LogWarning(
-                "Signature rejected: cryptographic verification failed for keyId {KeyId} on {Method} {Path}",
+                "Signature rejected: cryptographic verification failed for keyId {KeyId} on {Method} {Path} (activity type {ActivityType})",
                 keyId,
                 context.Request.Method,
-                context.Request.Path);
+                context.Request.Path,
+                activityType);
         }
 
-        // Bind the signature to the acting actor. The body's `actor` (a POST) is the acting actor;
-        // for a request with no body (a signed GET read) the signer is the cryptographically-verified
+        // For a request with no body (a signed GET read) the signer is the cryptographically-verified
         // key owner — the keyId with its #fragment removed (the ActivityPub keyId = actorIri#key-N
         // convention). Prefer the body actor when present, else fall back to the key owner so a signed
         // GET still carries an authenticated identity (the object-document handler uses it for the
         // per-requester iris:isLiked extension).
-        var actor = ExtractActorIri(body) ?? OwnerActorIriFromKeyId(keyId);
-
-        return new SignatureValidationResult(isValid, keyId, actor);
+        return new SignatureValidationResult(isValid, keyId, actor ?? OwnerActorIriFromKeyId(keyId));
     }
 
     /// <summary>
@@ -232,7 +239,9 @@ public sealed class HttpSignatureValidator(
     /// <param name="context">The HTTP context (provides the raw <c>Signature</c> header).</param>
     /// <param name="signatureInput">The parsed <c>Signature-Input</c> header.</param>
     /// <param name="metadata">The buffered request metadata snapshot.</param>
-    /// <param name="body">The buffered request body bytes.</param>
+    /// <param name="hasBody">Whether the request carried a body (a POST delivery, as opposed to a signed GET read).</param>
+    /// <param name="actor">The acting actor IRI extracted from the body (null when absent).</param>
+    /// <param name="activityType">The ActivityStreams activity type extracted from the body (for diagnostics).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>The validation result (null is not returned here — an RFC 9421 signature that cannot
     /// be validated is invalid).</returns>
@@ -240,7 +249,9 @@ public sealed class HttpSignatureValidator(
         HttpContext context,
         SignatureInputHeader signatureInput,
         HttpRequestMetadata metadata,
-        byte[] body,
+        bool hasBody,
+        Iri? actor,
+        string? activityType,
         CancellationToken ct)
     {
         var signatureHeader = context.Request.Headers[Signatures.SignatureHeaderName].ToString();
@@ -250,41 +261,44 @@ public sealed class HttpSignatureValidator(
         if (!labelOk)
         {
             _logger.LogWarning(
-                "Signature rejected: unparseable RFC 9421 Signature header on {Method} {Path}",
+                "Signature rejected: unparseable RFC 9421 Signature header on {Method} {Path} (activity type {ActivityType})",
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, default, actor);
         }
 
         var member = signatureInput.GetMember(label);
         if (member is null || string.IsNullOrEmpty(member.KeyId))
         {
             _logger.LogWarning(
-                "Signature rejected: RFC 9421 Signature-Input has no member for label '{Label}' (or no keyid) on {Method} {Path}",
+                "Signature rejected: RFC 9421 Signature-Input has no member for label '{Label}' (or no keyid) on {Method} {Path} (activity type {ActivityType})",
                 label,
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, default, actor);
         }
 
         if (!Iri.TryParse(member.KeyId, out var keyId))
         {
             _logger.LogWarning(
-                "Signature rejected: unparseable keyId '{KeyId}' (RFC 9421) on {Method} {Path}",
+                "Signature rejected: unparseable keyId '{KeyId}' (RFC 9421) on {Method} {Path} (activity type {ActivityType})",
                 member.KeyId,
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, default, actor);
         }
 
         // A body-less request (a signed GET read) is only validated when the signer is a LOCAL actor,
         // for the same reason as the legacy path (a remote GET key-resolve would recurse).
-        if (body.Length == 0 && _persistence is not null)
+        if (!hasBody && _persistence is not null)
         {
             var keyOwner = OwnerActorIriFromKeyId(keyId);
             if (!await _persistence.Actors.TryGetActorAsync(keyOwner, out _, ct).ConfigureAwait(false))
             {
-                return new SignatureValidationResult(false, default, ExtractActorIri(body));
+                return new SignatureValidationResult(false, default, actor);
             }
         }
 
@@ -301,11 +315,12 @@ public sealed class HttpSignatureValidator(
         if (key is null)
         {
             _logger.LogWarning(
-                "Signature rejected: could not resolve public key for keyId {KeyId} (RFC 9421) on {Method} {Path}",
+                "Signature rejected: could not resolve public key for keyId {KeyId} (RFC 9421) on {Method} {Path} (activity type {ActivityType})",
                 keyId,
                 context.Request.Method,
-                context.Request.Path);
-            return new SignatureValidationResult(false, keyId, ExtractActorIri(body));
+                context.Request.Path,
+                activityType);
+            return new SignatureValidationResult(false, keyId, actor);
         }
 
         var isValid = VerifyRfc9421AndDispose(key, metadata, member, signatureB64);
@@ -334,14 +349,14 @@ public sealed class HttpSignatureValidator(
         if (!isValid)
         {
             _logger.LogWarning(
-                "Signature rejected: RFC 9421 cryptographic verification failed for keyId {KeyId} on {Method} {Path}",
+                "Signature rejected: RFC 9421 cryptographic verification failed for keyId {KeyId} on {Method} {Path} (activity type {ActivityType})",
                 keyId,
                 context.Request.Method,
-                context.Request.Path);
+                context.Request.Path,
+                activityType);
         }
 
-        var actor = ExtractActorIri(body) ?? OwnerActorIriFromKeyId(keyId);
-        return new SignatureValidationResult(isValid, keyId, actor);
+        return new SignatureValidationResult(isValid, keyId, actor ?? OwnerActorIriFromKeyId(keyId));
     }
 
     /// <summary>
@@ -492,35 +507,49 @@ public sealed class HttpSignatureValidator(
     }
 
     /// <summary>
-    /// Extracts the <c>actor</c> IRI from an ActivityStreams activity body, when present and
-    /// parseable.
+    /// Extracts the <c>actor</c> IRI and the <c>type</c> from an ActivityStreams activity body, when
+    /// present and parseable. The type is the ActivityStreams activity type string (e.g. "Create",
+    /// "Follow") — logged on rejection so an operator can see WHAT was being delivered when a
+    /// signature failed.
     /// </summary>
     /// <param name="body">The raw activity JSON body.</param>
-    /// <returns>The actor IRI, or null when the body has no parseable <c>actor</c> field.</returns>
-    private static Iri? ExtractActorIri(byte[] body)
+    /// <returns>The actor IRI (null when unparseable) and the activity type (null when absent).</returns>
+    private static (Iri? Actor, string? ActivityType) ExtractActivityFields(byte[] body)
     {
         if (body.Length == 0)
         {
-            return null;
+            return (null, null);
         }
 
         try
         {
             using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("actor", out var actor)
-                && TryGetActorIri(actor, out var iriValue)
+            var root = doc.RootElement;
+
+            Iri? actor = null;
+            if (root.TryGetProperty("actor", out var actorProp)
+                && TryGetActorIri(actorProp, out var iriValue)
                 && iriValue is not null
                 && Iri.TryParse(iriValue, out var iri))
             {
-                return iri;
+                actor = iri;
             }
+
+            string? activityType = null;
+            if (root.TryGetProperty("type", out var typeProp)
+                && typeProp.ValueKind == JsonValueKind.String)
+            {
+                activityType = typeProp.GetString();
+            }
+
+            return (actor, activityType);
         }
         catch (JsonException)
         {
             // Not JSON: no actor binding.
         }
 
-        return null;
+        return (null, null);
     }
 
     private static bool TryGetActorIri(JsonElement actor, out string? iri)
