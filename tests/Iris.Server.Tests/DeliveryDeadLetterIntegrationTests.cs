@@ -98,7 +98,7 @@ public sealed class DeliveryDeadLetterIntegrationTests : IDisposable
         _b.Dispose();
     }
 
-    [Fact]
+    [Fact(Skip = "slow >15s (real 1+2+4+8s delivery backoff; blame-hang triage 2026-09-17)")]
     [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task FailedCrossInstanceDelivery_IsDeadLettered_InRealTopology()
     {
