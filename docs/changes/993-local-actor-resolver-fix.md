@@ -59,11 +59,21 @@ The DI registration in `ActivityPubServerExtensions` was updated to pass
 - All existing `DefaultLocalActorResolver` test usages are
   backwards-compatible (the `instanceBase` parameter defaults to `null`)
 
-## Remaining interop blocker
+## End-to-end verification
 
-The Iris Docker container cannot reach `mastodon.luit.ink` via HTTPS.
-The Mastodon proxy (`mastodon-proxy-1`) serves HTTP only on port 8082;
-the external TLS-terminating nginx is on the host and unreachable from
-inside the container's Docker network. The fix is correct but cannot be
-verified end-to-end until the container→Mastodon HTTPS path is resolved
-(e.g. add HTTPS to the proxy, or reconfigure the shared network).
+After fixing the networking (HTTPS on the Mastodon proxy port 443 with
+a self-signed cert, hosts entry + CA trust in the Iris container):
+
+1. Iris user `mastodtest` followed `mstest@mastodon.luit.ink`
+2. Delivery metrics: `iris_delivery_enqueued_total` incremented to 2
+   (1 Follow + 1 Undo from the unfollow/re-follow cycle)
+3. Mastodon followers collection: `totalItems` went from 0 to 1
+4. Mastodon sent an Accept activity back to Iris
+5. Iris processed the Accept:
+   `Inbox accepted: Accept from https://mastodon.luit.ink/... targeting
+   https://iris.luit.ink/ap/v1/u/mastodtest/follows/...`
+
+**Known issue (separate):** the `iris_delivery_delivered_total` counter
+stays at 0 even though deliveries succeed (the Mastodon followers count
+and Accept response prove the delivery worked). The metrics tracking
+code is not incrementing the `delivered` counter.
