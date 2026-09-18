@@ -98,10 +98,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **UI/UX: Fix like/boost count display** (S2) — All posts in the home timeline show "0" for likes and boosts. The counts are likely not being fetched from the remote objects or the stored values are not being read. Investigate whether the enrichment service is populating like/boost counts for remote objects, and ensure the UI displays the correct values.
-2. **UI/UX: Improve failed-proxy post fallback** (S3) — When a remote post's content cannot be fetched (404/418), the UI shows "View boosted post →". Change the fallback text to be more descriptive, e.g. "Content unavailable — view original post" so users understand why the content is missing.
-3. **UI/UX: Add pagination to notifications page** (S3) — The notifications page loads all notifications in a single scrollable list. Add pagination or infinite scroll to prevent performance issues for users with many notifications.
-4. **General UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
+1. **UI/UX: Improve failed-proxy post fallback** (S3) — When a remote post's content cannot be fetched (404/418), the UI shows "View boosted post →". Change the fallback text to be more descriptive, e.g. "Content unavailable — view original post" so users understand why the content is missing.
+2. **UI/UX: Add pagination to notifications page** (S3) — The notifications page loads all notifications in a single scrollable list. Add pagination or infinite scroll to prevent performance issues for users with many notifications.
+3. **General UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
 
 ## Inbox
 
@@ -113,6 +112,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- UI/UX: Fix like/boost count display (partial) — Added fallback to read likes.totalItems/shares.totalItems from remote objects when the iris: extensions are absent. The fix is correct in principle but partial: it will work for objects that have the collections with accurate totalItems, but objects stored locally without these collections will still show 0. A complete fix would require changes to how remote objects are stored or fetched. [change doc](docs/changes/994-like-boost-count-display.md)
 - Mastodon interop: full Iris↔Mastodon federation verified (follow + post both directions). Fixed 2 bugs: local-actor-resolver misclassification + delivery metrics not wired into production worker. [change doc](docs/changes/993-local-actor-resolver-fix.md)
 - Enrichment service closeout: verified remote object reply counts via Playwright + docker log federation traffic; actor + object counters fully wired. [change doc](docs/changes/992-actor-count-refresh-service.md)
 - Actor count read-path wiring: BuildActorDocumentAsync / AddActorCountersAsync / EnrichActorSearchResultsAsync prefer stored actor counters over the live outbox/follow sweep (1330 tests green). [change doc](docs/changes/992-actor-count-refresh-service.md)
