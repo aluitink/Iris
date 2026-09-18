@@ -29,7 +29,7 @@ doc.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5  - [ ] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
@@ -44,5 +44,12 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
   `95d6150`): backup copies via `docker compose exec` + tar of the volume root; restore resolves the
   real volume name from `docker compose config` and streams over stdin. Full round-trip re-verified
   clean (DB row counts identical, 5,204 blobs restored, app healthy). [change doc](../changes/1393-3-backup-restore-roundtrip.md)
+- Scenario 4 (tombstone permanence vs. mod-removal): **Author-delete permanence PASS** (live: posted +
+  deleted a note as andrew; object → `Tombstone`/`formerType=Note`/no `iris:removedBy`; IRI still
+  resolves to the marker; UI renders "Note post deleted"; re-animation guard covered by passing 136.19
+  integration tests). **Mod-removal FINDING:** a mod-removal is **over-tombstoned** (same `Tombstone`
+  as an author delete, differing only by the `iris:removedBy` display marker) — there is **no**
+  restoration path, contrary to the 138.23 "may be restorable" note. Logged as a doc-vs-behavior gap;
+  no code change (review slice). [change doc](../changes/1393-4-tombstone-permanence-vs-mod-removal.md)
 
-**Resume checkpoint:** scenarios 1–3 done. Next: scenario 4 (tombstone permanence vs. mod-removal reversibility).
+**Resume checkpoint:** scenarios 1–4 done. Next: scenario 5 (federated content archival completeness).
