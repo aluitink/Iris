@@ -2,3 +2,5 @@
 # Bakes the nginx config into the image (this host's Docker runtime bind mounts are broken).
 FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY certs/mastodon.crt /etc/nginx/certs/mastodon.crt
+COPY certs/mastodon.key /etc/nginx/certs/mastodon.key
