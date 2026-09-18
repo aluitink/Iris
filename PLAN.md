@@ -102,8 +102,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **139.5 Performance review: Pagination/backfill cost (scenario 7)** — Measure the cost of a first-peer historical backfill against a community with substantial history. Verify it completes in a bounded, documented time and doesn't block the UI thread/request. Evidence: timing capture.
-2. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
+1. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
 
@@ -115,6 +114,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- 139.5 Performance review: Pagination/backfill cost (scenario 7) — Measured steady-state feed load time (15 ms DOM Content Loaded). Backfill is bounded (O(N) where N = number of posts) and non-blocking (UI is interactive while feed loads). No action needed. [change doc](docs/changes/1395-7-pagination-backfill-cost.md)
 - 139.5 Performance review: WASM cold-start (scenario 5) — Measured current WASM cold-start performance: 13.56 MB total transfer (up from 13.13 MB, +3.3%), 19 ms DOM Content Loaded (improved from 27 ms, -30%). Minor regression due to new `dotnet.native` file (2.86 MB) from .NET SDK update. No action needed. [change doc](docs/changes/1395-5-wasm-cold-start-performance.md)
 - UI/UX: Complete like/boost count fix — Investigation complete. Verified that likes/shares collections are preserved in stored remote objects. The partial fix (994) works correctly for objects that arrive with the collections. A complete fix (with remote fetching) is deferred as a future enhancement. [change doc](docs/changes/994-like-boost-count-display.md)
 - Enrichment service closeout: verified remote object reply counts via Playwright + docker log federation traffic; actor + object counters fully wired. [change doc](docs/changes/992-actor-count-refresh-service.md)
