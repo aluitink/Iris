@@ -98,9 +98,12 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Active Slice
 
-**UI/UX: Complete like/boost count fix** (S2) — Investigating where `likes`/`shares` collections are lost for remote objects. The partial fix (994) is in place and works for objects that have the collections. For objects that don't, the collections are likely being lost when the object is first stored (or when the `ObjectInteractionCountRefreshService` re-stores it). Need to verify whether the embedded object from a Create activity includes `likes`/`shares`, and whether they survive the `PutObjectAsync` round-trip.
+*(none — the like/boost count fix investigation is complete; a complete fix with remote fetching is deferred)*
 
-`remaining:` Determine whether `likes`/`shares` are preserved in the stored object document. If not, fix the storage path to preserve them. If yes, investigate why the client's fallback to `likes.totalItems`/`shares.totalItems` is not working.
+## Up Next
+
+1. **General UI/UX review** (recurring) — Use MCP Playwright to test the Iris user interface as andrew:Password1. Identify any inconsistencies or improvements to be made. Once we have a list of improvements, work on them. Once the improvements are complete this item will come up again for further refinement.
+2. **Complete like/boost count fix (with remote fetching)** (S2, deferred) — Extend the `ObjectInteractionCountRefreshService` to fetch remote `likes`/`shares` counts for stored objects that are missing the collections. Requires adding an `IActivityPubClient` dependency + remote object fetch per object. Significant feature addition; do after the UI/UX review stabilizes.
 
 ## Inbox
 
@@ -112,11 +115,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
-- UI/UX: General UI/UX review — Reviewed all main pages (Home, Directory, Profile, Compose, Notifications, Settings, Search, Communities) via MCP Playwright as andrew:Password1. No major inconsistencies or improvements found. The UI looks consistent and reasonable. [change doc](docs/changes/997-ui-ux-review.md)
-- UI/UX: Add pagination to notifications page — Verified that the notifications page already has pagination (a "Load more" button that fetches 20 items at a time with offset-based paging). No changes needed; the item was outdated. [change doc](docs/changes/996-notifications-pagination-verified.md)
-- UI/UX: Improve failed-proxy post fallback — Changed "View boosted post →" to "Content unavailable — view original post" for remote posts whose content cannot be fetched (404/418). [change doc](docs/changes/995-failed-proxy-fallback-text.md)
-- UI/UX: Fix like/boost count display (partial) — Added fallback to read likes.totalItems/shares.totalItems from remote objects when the iris: extensions are absent. The fix is correct in principle but partial: it will work for objects that have the collections with accurate totalItems, but objects stored locally without these collections will still show 0. A complete fix would require changes to how remote objects are stored or fetched. [change doc](docs/changes/994-like-boost-count-display.md)
-- Mastodon interop: full Iris↔Mastodon federation verified (follow + post both directions). Fixed 2 bugs: local-actor-resolver misclassification + delivery metrics not wired into production worker. [change doc](docs/changes/993-local-actor-resolver-fix.md)
+- UI/UX: Complete like/boost count fix — Investigation complete. Verified that likes/shares collections are preserved in stored remote objects. The partial fix (994) works correctly for objects that arrive with the collections. A complete fix (with remote fetching) is deferred as a future enhancement. [change doc](docs/changes/994-like-boost-count-display.md)
 - Enrichment service closeout: verified remote object reply counts via Playwright + docker log federation traffic; actor + object counters fully wired. [change doc](docs/changes/992-actor-count-refresh-service.md)
 - Actor count read-path wiring: BuildActorDocumentAsync / AddActorCountersAsync / EnrichActorSearchResultsAsync prefer stored actor counters over the live outbox/follow sweep (1330 tests green). [change doc](docs/changes/992-actor-count-refresh-service.md)
 
