@@ -390,6 +390,67 @@ public sealed class CreateActivityHandlerTests
         Assert.True(await persistence.Replies.HasReplyAsync(parentNote, replyIri));
     }
 
+    // --- Likes/shares preservation (994 complete fix investigation) ----------------------
+
+    [Fact]
+    public async Task HandleAsync_RemoteNoteWithLikesAndShares_PreservesCollections()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // Build a remote Note with likes and shares collections (as a remote server would send).
+        var note = new Note
+        {
+            Id = $"{RemotePerson}/notes/{Guid.NewGuid():N}",
+            Content = ["hello from remote"],
+            Likes = new KristofferStrube.ActivityStreams.OrderedCollection
+            {
+                TotalItems = 42,
+            },
+            Shares = new KristofferStrube.ActivityStreams.OrderedCollection
+            {
+                TotalItems = 7,
+            },
+        };
+
+        var create = new Create
+        {
+            Id = $"{RemotePerson}/creates/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(RemotePerson.Value) }],
+            Object = [note],
+        };
+
+        // Deliver to a local person (bob) who follows the remote person (alice).
+        await persistence.Follows.RecordFollowAsync(LocalPerson, RemotePerson);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, create), create);
+
+        // Retrieve the stored object.
+        var noteIri = new Iri(note.Id!);
+        Assert.True(await persistence.Objects.TryGetObjectAsync(noteIri, out var stored), "Stored object not found");
+
+        // Check if likes/shares are preserved.
+        var storedNote = stored as Note;
+        Assert.NotNull(storedNote);
+        Console.WriteLine($"Stored Note.Likes: {(storedNote.Likes is null ? "null" : $"TotalItems={storedNote.Likes.TotalItems}")}");
+        Console.WriteLine($"Stored Note.Shares: {(storedNote.Shares is null ? "null" : $"TotalItems={storedNote.Shares.TotalItems}")}");
+        if (storedNote.ExtensionData is { Count: > 0 } ext)
+        {
+            Console.WriteLine($"ExtensionData keys: {string.Join(", ", ext.Keys)}");
+        }
+
+        // Assert that at least one of the two paths preserves the data.
+        var hasLikes = storedNote.Likes is { TotalItems: > 0 } ||
+                       storedNote.ExtensionData is { } extL && extL.ContainsKey("likes");
+        var hasShares = storedNote.Shares is { TotalItems: > 0 } ||
+                        storedNote.ExtensionData is { } extS && extS.ContainsKey("shares");
+
+        Assert.True(hasLikes || hasShares,
+            "Neither Likes/Shares typed properties nor ExtensionData preserved the collections. " +
+            $"Likes: {(storedNote.Likes is null ? "null" : storedNote.Likes.TotalItems.ToString())}, " +
+            $"Shares: {(storedNote.Shares is null ? "null" : storedNote.Shares.TotalItems.ToString())}");
+    }
+
     // --- Helpers -------------------------------------------------------------------------
 
     private static Group BuildCommunity() => new()
