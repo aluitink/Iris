@@ -29,7 +29,7 @@ doc.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
@@ -63,6 +63,21 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
    (follows `lemmy.world/c/technology`) 0→20 backfilled items (totalItems 50, within the 1-page
    window); `c/owner-test-5428` (follows `lemmy.luit.ink`) 0→3; 14 lemmy.world objects persisted to
    the local store. +regression test +Lemmy-shape client test (1306 green).
-   [change doc](../changes/1393-5-federated-content-archival-completeness.md)
+    [change doc](../changes/1393-5-federated-content-archival-completeness.md)
+  - Scenario 6 (offline rebuild): **PARTIAL PASS + 2 findings** (review slice, no code change). Core
+    offline-rebuild bar **holds**: with `lemmy-1` stopped, the public timeline (20+ posts, remote +
+    local), the `andrew` person feed (4.2s, 5 local + 15 cached-remote, `totalItems 197`), and a local
+    note object page (2.7ms) all render fully from local storage; the person feed degrades gracefully
+    (the 5s per-fetch cap means a downed *erroring* peer doesn't hang it). **Finding 1:** a community
+    feed following an *unreachable* peer (`iris-dev2.luit.ink`, a downed dev instance — TCP accepted,
+    TLS handshake stalls) is **blocked ~60–70s** before returning; `HttpClient.Timeout` (5s) bounds the
+    send phase but not the connection phase (falls back to the transport's 35s `ConnectTimeout`).
+    Follow-up: bound the connection phase (`SocketsHttpHandler.ConnectTimeout`) and/or parallelize the
+    feed's per-contributor fetches with a per-fetch timeout. **Finding 2:** a **foreign-IRI** remote
+    object page **404s** via the object catch-all (the endpoint reconstructs the lookup IRI as
+    `baseUrl + RoutePrefix + path` → a *local* IRI, so a stored `lemmy.luit.ink/post/1` is
+    unreachable by path); the UI's `/object?iri=` path already covers the user-facing case, so this is
+    a REST-addressability gap, not a UI gap. Follow-up: serve stored foreign objects by `?iri=` lookup
+    or document full-IRI addressing. [change doc](../changes/1393-6-offline-rebuild.md)
 
-**Resume checkpoint:** scenarios 1–5 done. Next: scenario 6 (offline rebuild).
+**Resume checkpoint:** scenarios 1–6 done. Next: scenario 7 (duplicate/replay delivery idempotency).
