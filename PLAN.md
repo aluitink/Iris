@@ -102,7 +102,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **139.5 Performance review: Media proxy overhead (scenario 8)** — Measure latency added by the media/content proxy for cross-instance media vs. direct fetch. Verify overhead is within an acceptable, documented bound. Evidence: timing capture.
+1. **139.5 Performance review: Circuit breaker / retry cost under a flapping peer (scenario 10)** — Simulate a peer that intermittently fails; confirm the circuit breaker (Phase 131.3) prevents cascading latency into unrelated requests. Evidence: metrics dump.
 2. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
@@ -115,9 +115,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- 139.5 Performance review: Media proxy overhead (scenario 8) — Measured media proxy latency: 0-1 ms (cached), 7 ms (uncached, 72 KB transfer). Overhead is minimal and acceptable. No action needed. [change doc](docs/changes/1395-8-media-proxy-overhead.md)
 - 139.5 Performance review: Search performance (scenario 9) — Measured search latency: 124-328 ms (4 searches, 10-78 results). Consistent with Phase 61.2 baseline (tsvector + GIN index). No action needed. [change doc](docs/changes/1395-9-search-performance.md)
 - 139.5 Performance review: WASM cold-start (scenario 5) — Measured current WASM cold-start performance: 13.56 MB total transfer (up from 13.13 MB, +3.3%), 19 ms DOM Content Loaded (improved from 27 ms, -30%). Minor regression due to new `dotnet.native` file (2.86 MB) from .NET SDK update. No action needed. [change doc](docs/changes/1395-5-wasm-cold-start-performance.md)
-- 139.5 Performance review: Pagination/backfill cost (scenario 7) — Measured steady-state feed load time (15 ms DOM Content Loaded). Backfill is bounded (O(N) where N = number of posts) and non-blocking (UI is interactive while feed loads). No action needed. [change doc](docs/changes/1395-7-pagination-backfill-cost.md)
 
 
   ## Keeping the docs lean
