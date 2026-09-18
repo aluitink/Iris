@@ -1,0 +1,4 @@
+# nginx proxy for the Mastodon interop instance.
+# Bakes the nginx config into the image (this host's Docker runtime bind mounts are broken).
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf

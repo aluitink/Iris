@@ -1,0 +1,174 @@
+# Mastodon server for the Iris <-> Mastodon interop instance.
+#
+# Deployed in its OWN folder (mastodon/), separate from the Iris app, mirroring the Lemmy setup.
+# Advertised under the public FQDN https://mastodon.luit.ink — the external nginx reverse proxy
+# forwards mastodon.luit.ink:443 -> host:8092 -> the `proxy` service (single port).
+#
+# SINGLE-PORT ARCHITECTURE: the host publishes exactly ONE port (8092), owned by the `proxy`
+# service (an nginx front). It forwards all traffic to the Mastodon `web` service (which serves
+# both the REST API, ActivityPub, and the React SPA from a single origin on port 3000).
+#
+# Runs on the shared `irisweb_iris-web-net` Docker network so Mastodon can reach the Iris instances
+# (iris.luit.ink on 8088) directly for federation, and Iris can reach Mastodon (via the FQDN).
+#
+# Bring up:   docker compose -f mastodon/docker-compose.yml up -d
+# Tear down:  docker compose -f mastodon/docker-compose.yml down -v
+# Logs:       docker compose -f mastodon/docker-compose.yml logs -f
+#
+# First run: after the DB is initialized, create the admin user + set site settings via the
+# Mastodon REST API (admin account sign-up, then registration mode + federation settings).
+
+services:
+  # Named `mastodon-db` (not `db`) to avoid a DNS alias collision on the shared `iris-web-net`
+  # network: Iris's stack also has a `db` service.
+  mastodon-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: mastodon_production
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: mastodon-test-pw
+    volumes:
+      - mastodon-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mastodon -d mastodon_production"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+
+  mastodon-redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+
+  mastodon-web:
+    image: ghcr.io/mastodon/mastodon:v4.7.2
+    container_name: mastodon-web-1
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "mastodon.luit.ink"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "mastodon-test-pw"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "8d5286080dc77dc879d18b4bf5a2588951976f299444c5b91ab3d1f0c9cd7fadd71aa731def46f06302f0bd04561beb784f7617b1eb5493978e927be9c0a18eb"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "a29364b89c95b29c305f379b38495c095779b3a1247403c2cf6af9f0e5cc80838d6e7ada0390885d6ea377703df7baf94f12f4bbf692ddf3d75dc5f7b7fdb7b4"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "461513d0d3f3410472a71e7d0371183c0f5a488db34a45cf47665bb4cdc8ca51206bc5bd109fec855b94f668c2931c9643420e4bbd344aee59c0cfc26f1d36cc"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_ALLOWED_HOSTS: "mastodon.luit.ink,mastodon-web-1,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      # Disable optional features not needed for interop testing.
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+    command: bundle exec puma -C config/puma.rb
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    networks: [iris-web-net]
+    volumes:
+      - mastodon-system:/mastodon/public/system
+
+  mastodon-sidekiq:
+    image: ghcr.io/mastodon/mastodon:v4.7.2
+    container_name: mastodon-sidekiq-1
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "mastodon.luit.ink"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "mastodon-test-pw"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "8d5286080dc77dc879d18b4bf5a2588951976f299444c5b91ab3d1f0c9cd7fadd71aa731def46f06302f0bd04561beb784f7617b1eb5493978e927be9c0a18eb"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "a29364b89c95b29c305f379b38495c095779b3a1247403c2cf6af9f0e5cc80838d6e7ada0390885d6ea377703df7baf94f12f4bbf692ddf3d75dc5f7b7fdb7b4"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "461513d0d3f3410472a71e7d0371183c0f5a488db34a45cf47665bb4cdc8ca51206bc5bd109fec855b94f668c2931c9643420e4bbd344aee59c0cfc26f1d36cc"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_ALLOWED_HOSTS: "mastodon.luit.ink,mastodon-web-1,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+    command: bundle exec sidekiq
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    networks: [iris-web-net]
+    volumes:
+      - mastodon-system:/mastodon/public/system
+
+  mastodon-streaming:
+    image: ghcr.io/mastodon/mastodon-streaming:v4.7.2
+    container_name: mastodon-streaming-1
+    platform: linux/x86_64
+    environment:
+      LOCAL_DOMAIN: "mastodon.luit.ink"
+      DB_HOST: "mastodon-db"
+      DB_USER: "mastodon"
+      DB_NAME: "mastodon_production"
+      DB_PASS: "mastodon-test-pw"
+      DB_PORT: "5432"
+      REDIS_HOST: "mastodon-redis"
+      REDIS_PORT: "6379"
+      SECRET_KEY_BASE: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0"
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: "8d5286080dc77dc879d18b4bf5a2588951976f299444c5b91ab3d1f0c9cd7fadd71aa731def46f06302f0bd04561beb784f7617b1eb5493978e927be9c0a18eb"
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: "a29364b89c95b29c305f379b38495c095779b3a1247403c2cf6af9f0e5cc80838d6e7ada0390885d6ea377703df7baf94f12f4bbf692ddf3d75dc5f7b7fdb7b4"
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: "461513d0d3f3410472a71e7d0371183c0f5a488db34a45cf47665bb4cdc8ca51206bc5bd109fec855b94f668c2931c9643420e4bbd344aee59c0cfc26f1d36cc"
+      RAILS_ENV: "production"
+      RAILS_SERVE_STATIC_FILES: "true"
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_ALLOWED_HOSTS: "mastodon.luit.ink,mastodon-web-1,localhost"
+      RACK_ENV: "production"
+      NODE_ENV: "production"
+      ES_ENABLED: "false"
+      S3_ENABLED: "false"
+    command: node ./streaming/index.js
+    depends_on:
+      mastodon-db:
+        condition: service_healthy
+      mastodon-redis:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+  # nginx front: the ONLY service published to the host (8092). Forwards all traffic to the
+  # Mastodon web service. TLS is terminated by the external nginx; we forward X-Forwarded-Proto: https.
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: mastodon-proxy-1
+    platform: linux/x86_64
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    ports:
+      - "8092:8082"
+    depends_on:
+      - mastodon-web
+    networks: [iris-web-net]
+
+networks:
+  iris-web-net:
+    external: true
+    name: irisweb_iris-web-net
+
+volumes:
+  mastodon-db-data:
+  mastodon-system:
