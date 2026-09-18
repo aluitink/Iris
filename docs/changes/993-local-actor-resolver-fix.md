@@ -105,3 +105,36 @@ After redeploying:
 - `iris_delivery_attempt_failed_total 0`
 - `iris_delivery_dead_lettered_total 0`
 - Per-type breakdown shows Follow, Undo, and Create all delivered.
+
+## Full interop verification (Iris ↔ Mastodon)
+
+With both bugs fixed, full end-to-end federation was verified:
+
+### Iris → Mastodon (follow + post)
+
+1. `mastodtest` followed `mstest@mastodon.luit.ink`
+   → Follow delivered → Mastodon followers `totalItems: 1`
+   → Mastodon sent Accept → Iris processed it
+2. `mastodtest` posted "Reverse follow verified..."
+   → Create delivered → post appeared in Mastodon's `statuses` table
+   (account_id=117290217141115163, uri=iris.luit.ink/.../notes/...)
+
+### Mastodon → Iris (reverse follow)
+
+1. Used `rails runner` + `FollowService` to make `mstest` follow
+   `mastodtest@iris.luit.ink` (had to generate RSA keys + set AP URIs
+   on the SQL-created account first)
+2. Follow delivered to Iris inbox
+   → `FollowActivityHandler` processed → ok
+3. `mastodtest`'s followers on Iris: `totalItems: 1`
+   (includes `mstest` from Mastodon)
+
+### Notes on Mastodon test account setup
+
+The `mstest` account was created via direct SQL (bypassing Rails
+validations). Before it could federate, it needed:
+- `uri`, `inbox_url`, `outbox_url`, `followers_url`, `following_url`,
+  `shared_inbox_url` set to proper AP URIs
+- `public_key` / `private_key` generated (RSA 2048)
+- The `FollowService` expects an `Account` (not `User`) as the
+  `source_account` parameter
