@@ -786,6 +786,17 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
                 sp.GetRequiredService<ILogger<Stores.ObjectInteractionCountRefreshService>>()));
 
+        // The actor-count refresh service pre-computes the per-actor counters (postsCount / followersCount /
+        // followingCount) and persists them onto the stored actor documents. Registered the same way as the
+        // object-interaction-count service: AddHostedService (TryAddEnumerable) so it coexists with the other
+        // hosted services, and a factory that resolves the (possibly null) IPersistenceProvider so a host
+        // without persistence gets an inert service rather than a resolution failure.
+        services.AddHostedService(sp =>
+            new Stores.ActorCountRefreshService(
+                sp.GetService<IPersistenceProvider>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Stores.ActorCountRefreshService>>()));
+
         return services;
     }
 

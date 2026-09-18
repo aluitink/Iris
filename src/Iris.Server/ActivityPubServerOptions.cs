@@ -131,6 +131,17 @@ public sealed class ActivityPubServerOptions
     public TimeSpan ObjectInteractionRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// How often the <strong>actor-count refresh</strong> hosted service re-computes the per-actor
+    /// counters (<c>iris:postsCount</c>/<c>followersCount</c>/<c>followingCount</c>) and persists them
+    /// onto the stored actor documents: a new post, follow, or unfollow becomes visible on the actor
+    /// document within one interval, so reads can serve the pre-computed counters instead of walking
+    /// the outbox and follow store on every read. Defaults to 30 s. A non-positive value disables the
+    /// periodic refresh (the startup refresh pass still runs). The service is a no-op when the instance
+    /// stores no actors, so an empty store is unaffected.
+    /// </summary>
+    public TimeSpan ActorCountRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// The shared hit/miss counter for all server-side caches. When null (the default), each cache
     /// uses a no-op <see cref="NullCacheMetrics"/>. Set a <see cref="CacheMetrics"/> instance to
     /// collect per-cache counters, exposed via <c>GET /ap/v1/diagnostics/caches</c>.
