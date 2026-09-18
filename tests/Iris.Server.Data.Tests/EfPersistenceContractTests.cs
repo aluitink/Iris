@@ -1,5 +1,6 @@
 using Iris.Server.Data;
 using KristofferStrube.ActivityStreams;
+using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
 
@@ -86,6 +87,71 @@ public sealed class EfPersistenceContractTests : IClassFixture<PostgresFixture>
 
         Assert.True(await p.Activities.TryGetActivityAsync(new Iri(create.Id), out var got));
         Assert.Equal("Create", got!.Type?.FirstOrDefault());
+    }
+
+    /// <summary>
+    /// 139.3 scenario 7 (duplicate/replay delivery idempotency) — the "no duplicate rows" evidence at
+    /// the physical (EF/PostgreSQL) level. The existing <see cref="ActivityStore_PutTryAddOutbox_RoundTrips"/>
+    /// asserts the <em>logical</em> no-op (<c>TryAddActivityAsync</c> returns <c>false</c> on the second
+    /// add) but not the <em>physical</em> row count, so a regression that inserted a second row while
+    /// still reporting <c>false</c> would slip through. This drives the inbox's add-if-absent twice (a
+    /// redelivery) and then counts the rows in the <c>Activities</c> and <c>BoxItems</c> tables directly
+    /// against the real Postgres, asserting each is exactly one.
+    /// <para>
+    /// The <c>Activities.Id</c> and <c>BoxItems(Direction, ActorId, ItemIri)</c> primary keys make a
+    /// second row impossible at the database level; this test pins that guarantee (and the add-if-absent
+    /// guard that keeps the insert a no-op) so a future schema or store change that would allow a
+    /// duplicate row is caught here, not in production.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task RedeliveredActivity_StoredOnce_SingleRowInDatabase()
+    {
+        var p = NewProvider();
+        var actorIri = new Iri($"https://test.local/ap/v1/u/redel-{Guid.NewGuid():N}");
+        await p.Actors.PutActorAsync(new Person { Id = actorIri.Value, PreferredUsername = "rd" });
+
+        var activityIri = $"https://test.local/ap/v1/activities/redel-{Guid.NewGuid():N}";
+        var note = new Note
+        {
+            Id = $"https://test.local/ap/v1/objects/redelnote-{Guid.NewGuid():N}",
+            Content = ["redelivered"],
+            AttributedTo = [Link(actorIri.Value)],
+        };
+        var create = new Create
+        {
+            Id = activityIri,
+            Actor = [Link(actorIri.Value)],
+            Object = [note],
+        };
+
+        // Simulate the inbox's add-if-absent: a first delivery stores the activity, a redelivery of the
+        // SAME IRI is a no-op. Then record it in the recipient's inbox twice (the same redelivery).
+        Assert.True(await p.Activities.TryAddActivityAsync(create), "the first delivery should store the activity.");
+        Assert.False(await p.Activities.TryAddActivityAsync(create), "a redelivery of the same IRI should be a no-op.");
+
+        await p.Activities.AddToInboxAsync(actorIri, create);
+        await p.Activities.AddToInboxAsync(actorIri, create); // redelivery — must not duplicate the inbox entry
+
+        // THE PHYSICAL ROW-COUNT EVIDENCE (139.3 s7): count the rows directly in the database.
+        await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
+        await conn.OpenAsync();
+
+        int Count(string sql, string iri)
+        {
+            using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@iri", iri);
+            // Postgres count(*) is a bigint (Int64).
+            return Convert.ToInt32(cmd.ExecuteScalar()!);
+        }
+
+        Assert.True(
+            Count("SELECT count(*) FROM \"Activities\" WHERE \"Id\" = @iri", activityIri) == 1,
+            $"the redelivered activity must occupy exactly one row in \"Activities\" (got the count above).");
+
+        Assert.True(
+            Count("SELECT count(*) FROM \"BoxItems\" WHERE \"ItemIri\" = @iri", activityIri) == 1,
+            "the redelivered activity must appear exactly once in the recipient's inbox (BoxItems).");
     }
 
     [Fact]
