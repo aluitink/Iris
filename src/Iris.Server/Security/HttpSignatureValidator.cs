@@ -426,6 +426,16 @@ public sealed class HttpSignatureValidator(
 
         if (key is null)
         {
+            // 140.1: the RFC 9421 header key could not be resolved (e.g. the actor is 410 Gone). Before
+            // rejecting, check for an embedded W3C RsaSignature2017 proof in the body — the same fallback
+            // the legacy path uses (Mastodon 4.5+ signs Deletes with an RFC 9421 header signature AND an
+            // embedded body proof, so the proof survives after the actor goes 410).
+            var embeddedResult = await TryVerifyEmbeddedProofAsync(metadata.Body, actor, activityType, context, ct).ConfigureAwait(false);
+            if (embeddedResult is not null)
+            {
+                return embeddedResult;
+            }
+
             _logger.LogWarning(
                 "Signature rejected: could not resolve public key for keyId {KeyId} (RFC 9421) on {Method} {Path} (activity type {ActivityType})",
                 keyId,
@@ -460,8 +470,17 @@ public sealed class HttpSignatureValidator(
 
         if (!isValid)
         {
+            // 140.1: the RFC 9421 header signature failed cryptographic verification. Before rejecting,
+            // check for an embedded W3C RsaSignature2017 proof in the body (the same fallback the legacy
+            // path uses) — a Delete's body proof can verify even when the header signature does not.
+            var embeddedResult = await TryVerifyEmbeddedProofAsync(metadata.Body, actor, activityType, context, ct).ConfigureAwait(false);
+            if (embeddedResult is not null)
+            {
+                return embeddedResult;
+            }
+
             _logger.LogWarning(
-                "Signature rejected: RFC 9421 cryptographic verification failed for keyId {KeyId} on {Method} {Path} (activity type {ActivityType})",
+                "Signature rejected: RFC 9421 cryptographic verification failed for keyId {KeyId} (RFC 9421) on {Method} {Path} (activity type {ActivityType})",
                 keyId,
                 context.Request.Method,
                 context.Request.Path,
