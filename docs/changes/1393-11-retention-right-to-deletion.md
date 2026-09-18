@@ -62,25 +62,35 @@ path-specific.** Phase 136.19 states the retained artifacts (activities, like/an
 bounded stale artifact, **not user-visible** — the object-document endpoint skips tombstones." This
 test confirms the object-document half of that claim: the outbox's embedded notes are the *original*
 notes, but the **object-document endpoint** is the path that serves the `Tombstone` (the embedded copy
-in the activity is not what a reader clicks through to). However, the feed/timeline/edge read paths
-(`FeedService.BuildFeedAsync`, `CommunityFeedService.GetFeedAsync`, and the `EdgeStore` follow/like/
-member queries) read purely from the surviving `BoxItems` / `Activities` / `Edges` rows (no join to
-`Actors`, no tombstone filter), so:
+in the activity is not what a reader clicks through to).
 
-- a deleted-but-followed actor's **original post content** can still render in a follower's home feed
-  (the feed shows the embedded `Note`, not the `Tombstone`);
+**Correction (139.3-F2 review): the feed paths DO consult the actor store.** The earlier note that the
+feed "reads purely from the surviving rows with no join to Actors" is inaccurate. Both
+`FeedService.BuildFeedAsync` and `CommunityFeedService.ReadOutboxAsync` route each follow/member
+through `ILocalActorResolver.IsLocalActorAsync`, which consults the actor store (and, when an instance
+base is configured, requires the IRI to be hosted locally). A **deleted local** follow or community
+member therefore resolves as *not local* → its outbox is read over the wire → the deleted actor 404s →
+it contributes nothing to the feed. So a deleted **local** actor's post content does **not** render in
+a follower's home feed or a community feed in any host that configures a local-actor resolver
+(production does). The feed gap is thus already mitigated; the only residual is the legacy
+no-resolver path (every contributor read from the local store), which has no instance base with which
+to distinguish a deleted local from a remote actor and so preserves the legacy render.
+
+The genuinely-visible remainder is the **edge-list and like-counter surfaces**, which read the
+`Edges` rows directly (no actor-store join):
+
 - the deleted actor can still appear in other actors' **followers/following lists** and in a
   community's **member list**;
 - the deleted actor's posts can still count toward **like counters** on surviving objects.
 
 None of this is a *broken link* in the failure sense — every IRI still resolves (the actor 404s
 gracefully, the objects serve `Tombstone`, the edges resolve to a known IRI). It is the model's
-documented, intentional "retain, don't sweep" behavior surfacing through the feed/edge paths. It is
+documented, intentional "retain, don't sweep" behavior surfacing through the edge/counter paths. It is
 logged here (rather than silently reconciled) because the "not user-visible" phrasing is accurate for
-the object-document path but not strictly for the feed/edge paths; a future slice that wants feeds to
-render a "deleted user" placeholder (Mastodon-style) instead of the original content would filter
-tombstoned-object activities in `FeedService`/`CommunityFeedService` and optionally sweep edges that
-reference a removed actor. That is a product decision, not a defect, so it is logged as a follow-up.
+the object-document and feed paths but not strictly for the edge-list / like-counter paths; a future
+slice that wants to hide a deleted actor from those lists would filter edges that reference a removed
+actor at read time (a read-path filter, not a DB sweep — consistent with the retention model). That is
+a product decision, not a defect, so it is logged as a follow-up.
 
 ## Decision recorded
 
@@ -88,7 +98,12 @@ Per the scenario's instruction ("any gap between the documented retention/lifecy
 behavior is logged as a finding, not silently reconciled by rewriting the model"), this review **does
 not change** the deletion behavior or the 136.19 retention model. It verifies the consistent half,
 demonstrates the tolerated surviving artifacts, and logs the one wording nuance (F2) for a future
-feed-rendering decision. No production source change this turn.
+edge-list / like-counter rendering decision. No production source change this turn.
+
+A follow-up review (139.3-F2) corrected the F2 premise: the feed paths **do** consult the actor store
+(via `ILocalActorResolver.IsLocalActorAsync`), so a deleted **local** follow/member is already excluded
+from the feed in any resolver-configured host. The genuine residual is the edge-list / like-counter
+surfaces only. No feed-side code change was warranted.
 
 ## Evidence
 
