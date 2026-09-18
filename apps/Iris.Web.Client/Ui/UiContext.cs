@@ -547,7 +547,7 @@ public sealed class UiContext
         return !string.Equals(actorUri.Host, homeBase.Host, StringComparison.OrdinalIgnoreCase);
     }
 
-    private bool IsRemoteObjectIri(Iri objectIri)
+    public bool IsRemoteObjectIri(Iri objectIri)
     {
         if (!Uri.TryCreate(objectIri.Value, UriKind.Absolute, out var objUri)
             || objUri.Scheme != Uri.UriSchemeHttp && objUri.Scheme != Uri.UriSchemeHttps)

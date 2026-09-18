@@ -421,6 +421,66 @@ public static class IrisDocumentExtensions
         => GetInt(document, namespaceIri + IrisExtensionTerms.RepliedCount);
 
     /// <summary>
+    /// Reads the <c>totalItems</c> from the <c>likes</c> collection on a content object, returning the
+    /// number of likes as reported by the object's source instance. This is used for remote objects
+    /// where the <c>iris:likedCount</c> extension is absent (the proxy returns the raw remote object,
+    /// which includes the <c>likes</c> collection with its <c>totalItems</c>). Returns
+    /// <see langword="null"/> when the property is absent or the collection is null.
+    /// </summary>
+    /// <param name="document">The content object. Must not be null.</param>
+    /// <returns>The like count from the <c>likes.totalItems</c> property, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetLikesTotalItems(this IObject document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        return GetCollectionTotalItems(document, "likes");
+    }
+
+    /// <summary>
+    /// Reads the <c>totalItems</c> from the <c>shares</c> collection on a content object, returning the
+    /// number of boosts/shares as reported by the object's source instance. This is used for remote
+    /// objects where the <c>iris:sharedCount</c> extension is absent. Returns <see langword="null"/>
+    /// when the property is absent or the collection is null.
+    /// </summary>
+    /// <param name="document">The content object. Must not be null.</param>
+    /// <returns>The share count from the <c>shares.totalItems</c> property, or <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetSharesTotalItems(this IObject document)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        return GetCollectionTotalItems(document, "shares");
+    }
+
+    private static int? GetCollectionTotalItems(IObject document, string key)
+    {
+        // First check ExtensionData (for objects where the property is not modeled as a typed property)
+        if (document.ExtensionData is { } ext && ext.TryGetValue(key, out var value))
+        {
+            if (value.ValueKind == JsonValueKind.Object
+                && value.TryGetProperty("totalItems", out var totalItems)
+                && totalItems.TryGetInt32(out var count))
+            {
+                return count;
+            }
+        }
+
+        // Then check if the concrete Object type has typed Likes/Shares properties
+        if (document is KristofferStrube.ActivityStreams.Object obj)
+        {
+            if (key == "likes" && obj.Likes?.TotalItems is { } likeCount)
+            {
+                return (int)likeCount;
+            }
+            if (key == "shares" && obj.Shares?.TotalItems is { } shareCount)
+            {
+                return (int)shareCount;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Reads the <c>iris:postsCount</c> extension property from an actor/community document, returning the
     /// number of content posts (Note/Article objects) in the actor's outbox. This is a cacheable,
     /// per-actor counter (not per-requester): the server renders it on the public document and on

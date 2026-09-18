@@ -160,7 +160,12 @@
 
         var me = Session.ActorId;
         var ns = Session.IrisNamespaceBase?.Value;
-        if (ns is not null
+        // For remote objects, the iris: extensions reflect LOCAL like/boost counts (which are 0 for
+        // remote objects). Skip the fast path and fall through to read the source instance's
+        // likes/shares collection totals (likes.totalItems / shares.totalItems) instead.
+        var isRemote = Ui.IsRemoteObjectIri(iri);
+        if (!isRemote
+            && ns is not null
             && Object is { } obj
             && obj.GetLikedCount(ns) is { } likedCount
             && obj.GetSharedCount(ns) is { } sharedCount)
@@ -211,7 +216,25 @@
             return;
         }
 
-        // Fallback: no server-rendered counters (non-Iris / un-enriched / unsigned). Walk both
+        // Fallback 1: no server-rendered counters, but the object carries the source instance's
+        // likes/shares collection totals (remote objects fetched via the proxy include these).
+        // Use them as the displayed count — the viewer's own like/boost state is unknown (the
+        // remote instance does not expose per-requester state through the proxy), so _liked and
+        // _boosted remain false (the user cannot like/boost remote objects from Iris anyway).
+        if (Object is { } srcObj)
+        {
+            int? srcLikes = srcObj.GetLikesTotalItems();
+            int? srcShares = srcObj.GetSharesTotalItems();
+            if (srcLikes is not null || srcShares is not null)
+            {
+                _likeCount = srcLikes ?? 0;
+                _boostCount = srcShares ?? 0;
+                _countsLoaded = true;
+                return;
+            }
+        }
+
+        // Fallback 2: no counters at all (non-Iris / un-enriched / unsigned). Walk both
         // collections to derive the counts AND the viewer's own like/boost state (and the minted ids),
         // via the shared per-object engagement cache (72.1) so a re-created bar reuses the walk.
         try
