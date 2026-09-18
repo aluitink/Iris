@@ -30,7 +30,7 @@ doc.
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [ ] 9  - [ ] 10 - [ ] 11
+- [x] 8  - [x] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
@@ -106,4 +106,6 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
 
 - [x] 8 — **PASS** (+ graceful-degradation fix). (a) Restart survival: 5,257 `Media` rows + 5,239 blobs on the durable `irisweb_iris-media-data` volume; a 287 KB blob served 200 after recreation. (b) Proxy rewrite: cross-origin → `/ap/v1/media/proxy?url=…` 200 jpeg; wire form keeps the original remote URL. (c) Dead source: proxy returns 502; **fixed** the client gap — `MediaGallery` `<img>`/lightbox now carry `@onerror` that re-renders a failed tile as a "media unavailable" link-out placeholder instead of a broken-image icon (verified live via Playwright). Separately logged a document-cache-coherence finding (the local-IRI proxy path serves a cached copy that doesn't re-validate against the store on restart). No new coded tests (web-test policy: verified live). [change doc](../changes/1393-8-media-lifecycle.md)
 
-**Resume checkpoint:** scenarios 1–8 done. Next: scenario 9 (migration safety — apply current EF Core migrations to a populated/older-schema DB; migration completes cleanly, no data loss, app boots).
+- [x] 9 — **PASS** (verified; no defects). Upgrading a populated, InitialCreate-only Postgres to the current schema via the startup `Migrate()` applies the full chain cleanly: no data loss, schema complete, both raw-SQL backfills processed the seeded rows (`Activities.ObjectIri` extracted from the `Create`'s jsonb `object.id`; `Actors.SearchVector` populated from the actor's searchable fields). Re-running `Migrate()` on an already-current DB is an idempotent no-op. +2 tests (`MigrationSafetyTests`, isolated `postgres:16-alpine` Testcontainers; old-schema data seeded via raw SQL since the current EF model can't INSERT into the older column set). [change doc](../changes/1393-9-migration-safety.md)
+
+**Resume checkpoint:** scenarios 1–9 done. Next: scenario 10 (data volume growth sanity — seed a larger-than-typical dataset and confirm query performance + pagination don't degrade catastrophically).
