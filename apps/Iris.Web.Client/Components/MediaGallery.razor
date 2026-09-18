@@ -20,9 +20,21 @@
         {
             var att = images[i];
             var idx = i;
-            <div class="media-gallery-item" @onclick="() => OpenLightbox(idx)">
-                <img src="@Rewrite(att.Url.Value)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" />
-            </div>
+            if (_failedImages.Contains(i))
+            {
+                <div class="media-gallery-item media-gallery-item--unavailable" title="@(att.Name ?? att.Url.Value)">
+                    <a href="@Rewrite(att.Url.Value)" target="_blank" rel="noopener" class="media-unavailable-link">
+                        <span class="media-unavailable-icon" aria-hidden="true">⚠️</span>
+                        <span class="media-unavailable-label">media unavailable</span>
+                    </a>
+                </div>
+            }
+            else
+            {
+                <div class="media-gallery-item" @onclick="() => OpenLightbox(idx)">
+                    <img src="@Rewrite(att.Url.Value)" alt="@(att.Name ?? att.Url.Value)" loading="lazy" @onerror="() => ImageFailed(idx)" />
+                </div>
+            }
         }
     </div>
 }
@@ -101,7 +113,19 @@
             {
                 <button class="lightbox-nav lightbox-nav--prev" @onclick="PrevImage" aria-label="Previous">&#8249;</button>
             }
-            <img class="lightbox-img" src="@Rewrite(_images[cur].Url.Value)" alt="@(_images[cur].Name ?? _images[cur].Url.Value)" />
+            @if (_failedImages.Contains(cur))
+            {
+                <div class="lightbox-img lightbox-img--unavailable">
+                    <a href="@Rewrite(_images[cur].Url.Value)" target="_blank" rel="noopener" class="media-unavailable-link">
+                        <span class="media-unavailable-icon" aria-hidden="true">⚠️</span>
+                        <span class="media-unavailable-label">media unavailable — open original</span>
+                    </a>
+                </div>
+            }
+            else
+            {
+                <img class="lightbox-img" src="@Rewrite(_images[cur].Url.Value)" alt="@(_images[cur].Name ?? _images[cur].Url.Value)" @onerror="() => ImageFailed(cur)" />
+            }
             @if (cur < _images.Count - 1)
             {
                 <button class="lightbox-nav lightbox-nav--next" @onclick="NextImage" aria-label="Next">&#8250;</button>
@@ -125,9 +149,33 @@
     private List<RichAttachment> _images = [];
     private int? _lightboxIndex;
 
+    /// <summary>
+    /// Image indices whose <c>&lt;img&gt;</c> failed to load (a 502 from the media proxy when the
+    /// source URL is dead and the blob was never fetched, or a missing local blob). A failed image is
+    /// re-rendered as a link-out placeholder (the original URL + an "unavailable" caption) instead of
+    /// the browser's broken-image icon — 139.3 scenario 8: "a dead source URL degrades to a 502, not a
+    /// broken image icon forever."
+    /// </summary>
+    private readonly HashSet<int> _failedImages = [];
+
     protected override void OnParametersSet()
     {
         _images = Attachments.Where(a => IsImage(a)).ToList();
+        // The set is keyed by index into _images; when the attachment list changes (e.g. a new post
+        // renders in the same component slot), stale indices are harmless (they simply don't match).
+        _failedImages.Clear();
+    }
+
+    /// <summary>
+    /// Marks image <paramref name="index"/> as failed to load (wired to the <c>&lt;img&gt;</c>
+    /// <c>@onerror</c>) so it re-renders as a link-out placeholder instead of a broken-image icon.
+    /// </summary>
+    /// <param name="index">The index of the failed image in <see cref="_images"/>.</param>
+    private void ImageFailed(int index)
+    {
+        // Setting state in an @onerror handler is enough: Blazor runs the handler inside the
+        // renderer's dispatch, so the resulting state change is picked up by the next render pass.
+        _failedImages.Add(index);
     }
 
     private string MediaGridClass(int count) => count switch

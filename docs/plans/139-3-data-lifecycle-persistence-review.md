@@ -30,7 +30,7 @@ doc.
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
+- [x] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
@@ -95,5 +95,6 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
     notifications page renders 12 distinct notifications, no duplicates, no console errors. 1306+12
     green. [change doc](../changes/1393-7-duplicate-replay-idempotency.md)
 
-**Resume checkpoint:** scenarios 1–7 done. Next: scenario 8 (media lifecycle — survives restart,
-proxy rewrite, dead-source-URL degrades to 502 not a broken icon).
+- [x] 8 — **PASS** (+ graceful-degradation fix). (a) Restart survival: 5,257 `Media` rows + 5,239 blobs on the durable `irisweb_iris-media-data` volume; a 287 KB blob served 200 after recreation. (b) Proxy rewrite: cross-origin → `/ap/v1/media/proxy?url=…` 200 jpeg; wire form keeps the original remote URL. (c) Dead source: proxy returns 502; **fixed** the client gap — `MediaGallery` `<img>`/lightbox now carry `@onerror` that re-renders a failed tile as a "media unavailable" link-out placeholder instead of a broken-image icon (verified live via Playwright). Separately logged a document-cache-coherence finding (the local-IRI proxy path serves a cached copy that doesn't re-validate against the store on restart). No new coded tests (web-test policy: verified live). [change doc](../changes/1393-8-media-lifecycle.md)
+
+**Resume checkpoint:** scenarios 1–8 done. Next: scenario 9 (migration safety — apply current EF Core migrations to a populated/older-schema DB; migration completes cleanly, no data loss, app boots).
