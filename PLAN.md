@@ -96,7 +96,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **Investigate sustained ~600-900% CPU in iris-web container** (not from Delete short-circuit — that path is cheap; CPU is present instantly after restart with zero requests; NOT from GC — BGC ticks negligible, disabling ServerGarbageCollection did not help; NOT from any specific user-space thread — per-thread tick counts sum to ~200 while process utime is 51000+; thread count stable ~27 (not a thread leak); NOT from logging — zero log lines; cgroup user_usec=719s over ~65s runtime = ~11x realtime). Needs `dotnet-trace` or `perf` CPU profile to identify the spinning code. Possible causes: frequent page faults, excessive syscalls, or a kernel-level activity attributed to the process. 1104 zombie dotnet processes on host (from prior test runs) — clean up separately.
+- **Actor/Object enrichment service** - The idea behind this is to enrich the objects we store in our system with Iris extension properties to make display in the website more efficent. For example, actors have some useful stats, we should be populating the Outbox count (posts count), followers, following, but it wouldn't make sense to do this one the first fetch of an actor, we should somehow queue up the enrichment so it happens in the background and only so often after the record is accessed again. Objects have Likes/Shares/Replies counts that should be synced to Iris extension properties in the stored document (Some properties are runtime populated like isShared, isLiked, isReplied, these are based on the accesssor context). When a user accesses an object in the UI, the object browser should be able to display the replies, likes, shares, at the time that we load the replies for display we should be recording the count of replies we found so when we view the top level object within the stream we can render the reply count. It seem to work for local posts but not the remote ones. Verify with mcp playwright that the site works and check docker logs to ensure we have traffic incoming before moving forward (some failed crypto is expected).
+
+- **Mastodon interop tests server (similar to our lemmy test server)** build a Mastodon interop test server to act as a control for fidelity and feature parity testing, the fqdn mastodon.luit.ink can be used and will map to port 8092 on this server (similar to how lemmy maps to port 8091). Create the docker-compose to host a Mastodon instance - review the repository, they may have a pre-build docker-compose we could use and a setup guide to help. Use mcp playwright to configure and manage the site, create a mock user and see evaluate following and interacting with Iris users, note any issues in this Up Next section and continue testing until you are satisfied. Complete this phase to move on to the next item.
+
+- **When out of things to do - general UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
 
 ## Inbox
 
@@ -106,13 +110,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 - *(empty)*
 
-## Known flake (non-blocking)
-
-- *(none — Phase 145 eliminated the known background-delivery flake by driving the two affected tests' delivery deterministically.)*
-
 ## Recently Completed
 
-- **Phase 157.2 — Embedded RsaSignature2017 proof verification** (done, build clean 0/0, full suite 1293 passed / 25 skipped / 0 failed): Mastodon delivers Delete/tombstone activities with a W3C `RsaSignature2017` proof embedded in the activity body. New `EmbeddedSignatureVerifier` (Iris.Core.Signing) verifies the embedded proof. `HttpSignatureValidator` wired the embedded-proof fallback for ALL activities on key-resolution/crypto failure. **The Delete short-circuit was reverted** (commit a363daa): it dropped legitimate cross-instance Deletes, breaking 5 integration tests. 8 new unit tests. See docs/changes/1572-phase157-embedded-rsa-proof-for-delete-tombstones.md.
 
   ## Keeping the docs lean
 
