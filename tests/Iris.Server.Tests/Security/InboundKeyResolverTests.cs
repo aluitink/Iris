@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
@@ -152,6 +153,48 @@ public class InboundKeyResolverTests
     }
 
     [Fact]
+    public async Task Resolve_PublicKeyWithReplaces_InvalidatesOldKeyCache()
+    {
+        // F-25: when the remote document's publicKey declares a `replaces` property, the old key's
+        // cache entry is invalidated so the next resolution of the old key triggers a refetch.
+        var oldKeyId = new Iri($"https://{AHost}/ap/v1/u/frank#key-1");
+        var newKeyId = new Iri($"https://{AHost}/ap/v1/u/frank#key-2");
+        var frankKey = KeyPairGenerator.GenerateEcP256(newKeyId);
+
+        // Build an actor document whose publicKey has a `replaces` field pointing at the old key.
+        var actor = ActorWithPublicKey(
+            id: newKeyId.Value,
+            owner: $"https://{AHost}/ap/v1/u/frank",
+            jwk: frankKey.GetPublicJwk());
+        var pk = actor.ExtensionData![ActivityPubExtensionNames.PublicKey];
+        var pkObj = pk.EnumerateObject().ToDictionary(
+            (JsonProperty p) => p.Name, p => p.Value, StringComparer.Ordinal);
+        pkObj["replaces"] = JsonSerializer.SerializeToElement(oldKeyId.Value);
+        actor.ExtensionData![ActivityPubExtensionNames.PublicKey] = JsonSerializer.SerializeToElement(
+            pkObj.ToDictionary(kv => kv.Key, kv => kv.Value.Clone(), StringComparer.Ordinal));
+
+        var cache = new RemoteKeyCache();
+        // Pre-populate the cache with the old key's JWK (simulating a prior resolution).
+        await cache.GetAsync(oldKeyId, bypassCache: false, async _ =>
+        {
+            await Task.Yield();
+            return new JwkKey(frankKey.GetPublicJwk(), Signatures.AlgorithmLabel(KeyAlgorithm.EcP256));
+        });
+        Assert.Equal(1, cache.Count);
+
+        var fetcher = new StubActorDocumentFetcher(actor);
+        var resolver = new RemoteInboundKeyResolver(fetcher, cache);
+
+        // Resolving the new key triggers the fetch, which discovers `replaces` and invalidates the old key.
+        var resolved = await resolver.ResolveAsync(newKeyId);
+        Assert.NotNull(resolved);
+        (resolved as IDisposable)?.Dispose();
+
+        // The cache holds exactly one entry: the new key (the old key was invalidated).
+        Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
     public async Task Resolve_SecondCall_IsCached()
     {
         var daveKey = KeyPairGenerator.GenerateEcP256(new Iri($"https://{AHost}/ap/v1/u/dave#key-1"));
@@ -175,6 +218,39 @@ public class InboundKeyResolverTests
 
         Assert.Equal(1, fetcher.FetchCount);
         Assert.Equal(1, cache.Count);
+    }
+
+    [Fact]
+    public async Task Resolve_LemmyGroupPkixPemPublicKey_ReturnsVerifyingKey()
+    {
+        // Phase 136.2 (real-wire shape): a Lemmy community (Group) document carries its public key as a
+        // PKIX PEM under the keyId fragment "#main-key" (e.g. https://lemmy.luit.ink/c/interop#main-key),
+        // not the "#key-1" Iris convention. This proves the inbound key resolver — the seam that
+        // validates an inbound Lemmy signature — resolves a genuine Lemmy-shaped community key
+        // (PKIX "-----BEGIN PUBLIC KEY-----", RSA), and that the resolved key verifies a signature made
+        // with the matching private key.
+        const string keyId = "https://lemmy.luit.ink/c/interop#main-key";
+        var lemmyKey = KeyPairGenerator.GenerateRsa(new Iri(keyId));
+        var fetcher = new StubActorDocumentFetcher(GroupWithPublicKeyPem(
+            id: keyId,
+            owner: "https://lemmy.luit.ink/c/interop",
+            pem: lemmyKey.ExportPublicKeyPem()));
+
+        var resolver = new RemoteInboundKeyResolver(fetcher, new RemoteKeyCache());
+        var resolved = await resolver.ResolveAsync(new Iri(keyId));
+
+        Assert.NotNull(resolved);
+        var disposable = resolved as IDisposable;
+        try
+        {
+            byte[] payload = [0xA, 0xB, 0xC, 0xD];
+            var signature = lemmyKey.Sign(payload);
+            Assert.True(resolved.Verify(payload, signature));
+        }
+        finally
+        {
+            disposable?.Dispose();
+        }
     }
 
     // --- Helpers -----------------------------------------------------------------
@@ -210,6 +286,24 @@ public class InboundKeyResolverTests
             publicKeyPem = pem,
         });
         return actor;
+    }
+
+    /// <summary>
+    /// Builds a Group (community) actor carrying a <c>publicKey</c> PEM extension — the Lemmy community
+    /// document shape (a Group, not a Person). The resolver keys off the <c>publicKey</c> extension, not
+    /// the actor type, so a Group is exercised identically to a Person.
+    /// </summary>
+    private static Group GroupWithPublicKeyPem(string id, string owner, string pem)
+    {
+        var group = new Group { Id = owner, PreferredUsername = owner.Split('/').Last() };
+        group.ExtensionData ??= new Dictionary<string, JsonElement>();
+        group.ExtensionData["publicKey"] = JsonSerializer.SerializeToElement(new
+        {
+            id,
+            owner,
+            publicKeyPem = pem,
+        });
+        return group;
     }
 
     /// <summary>

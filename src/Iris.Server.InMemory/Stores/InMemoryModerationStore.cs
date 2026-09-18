@@ -23,6 +23,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _blockers = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _flags = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _mutes = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<(Iri Flagger, Iri Flagged), DateTimeOffset> _flagTimestamps = new();
 
     /// <summary>
     /// Removes all moderation edges (blocks, flags, mutes) and reverse indices (test isolation / teardown).
@@ -33,6 +34,7 @@ public sealed class InMemoryModerationStore : IModerationStore
         _blockers.Clear();
         _flags.Clear();
         _mutes.Clear();
+        _flagTimestamps.Clear();
     }
 
     /// <inheritdoc/>
@@ -80,6 +82,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     {
         ct.ThrowIfCancellationRequested();
         Add(_flags, flaggerIri, flaggedIri);
+        _flagTimestamps.TryAdd((flaggerIri, flaggedIri), DateTimeOffset.UtcNow);
         return Task.CompletedTask;
     }
 
@@ -87,6 +90,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     public Task<bool> RemoveFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        _flagTimestamps.TryRemove((flaggerIri, flaggedIri), out _);
         return Task.FromResult(Remove(_flags, flaggerIri, flaggedIri));
     }
 
@@ -131,6 +135,26 @@ public sealed class InMemoryModerationStore : IModerationStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(Contains(_mutes, muterIri, mutedIri));
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<FlagEdge>> GetAllFlagEdgesAsync(CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var edges = new List<FlagEdge>();
+        foreach (var (flagger, flaggedSet) in _flags)
+        {
+            lock (flaggedSet)
+            {
+                foreach (var flagged in flaggedSet)
+                {
+                    var ts = _flagTimestamps.TryGetValue((flagger, flagged), out var t) ? t : DateTimeOffset.UtcNow;
+                    edges.Add(new FlagEdge(flagger, flagged, ts));
+                }
+            }
+        }
+
+        return Task.FromResult<IReadOnlyList<FlagEdge>>(edges.OrderByDescending(e => e.CreatedAt).ToList());
     }
 
     private static void Add(

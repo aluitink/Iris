@@ -110,10 +110,10 @@ public sealed class OutboxDialBaseIriNormalizationIntegrationTests : IDisposable
             await _persistence.Follows.IsFollowingAsync(_aliceActorIri, new Iri($"{DialBase}/ap/v1/u/{Bob}")),
             "the follow edge must not be recorded under the dial-base IRI (the object is rewritten)");
 
-        // bob's inbox (on this single instance) received nothing: the target is local, so no
-        // cross-instance delivery was attempted (the ThrowingHandler would have failed the write if one
-        // had been).
-        Assert.Empty(await _persistence.Activities.GetInboxAsync(_bobAdvertisedIri));
+        // bob's inbox (on this single instance) received the follow: the target is local, so the
+        // activity is added directly to bob's inbox (no cross-instance delivery).
+        var inboxItems = await _persistence.Activities.GetInboxAsync(_bobAdvertisedIri);
+        Assert.Single(inboxItems);
     }
 
     // --- A Follow whose target is already on the advertised base is left untouched (no rewrite) -----

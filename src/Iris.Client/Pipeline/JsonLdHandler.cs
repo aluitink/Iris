@@ -51,14 +51,17 @@ public sealed class JsonLdHandler : DelegatingHandler
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.Content is null)
-        {
-            // Bodyless request: advertise that we accept both media types.
-            request.Headers.Accept.Clear();
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ActivityJson.ActivityJsonContentType));
-            request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ActivityJson.JsonLdContentType));
-        }
-        else
+        // Advertise that we accept both media types on EVERY request (GETs and POSTs alike). A remote
+        // server's reverse proxy (e.g. the Lemmy single-port nginx front) routes ActivityPub traffic to
+        // the backend based on the Accept header — a delivery POST without Accept: application/activity+json
+        // is routed to the UI instead of the backend and returns 404. Setting Accept on body requests
+        // as well (not just bodyless reads) is what makes outbound inbox deliveries reach the remote's
+        // ActivityPub handler.
+        request.Headers.Accept.Clear();
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ActivityJson.ActivityJsonContentType));
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue(ActivityJson.JsonLdContentType));
+
+        if (request.Content is not null)
         {
             // Body request: ensure the content type is the Iris production default when unset.
             if (request.Content.Headers.ContentType?.MediaType is null)

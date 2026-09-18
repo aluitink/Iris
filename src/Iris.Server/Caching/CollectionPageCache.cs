@@ -1,5 +1,6 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server.Caching;
 
@@ -23,10 +24,11 @@ public sealed class CollectionPageCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.CollectionPage"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public CollectionPageCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public CollectionPageCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.CollectionPage;
-        _cache = new CachingReadThrough<CollectionPage>(new MemoryCache<CollectionPage>(resolved, capacity));
+        _cache = new CachingReadThrough<CollectionPage>(new MemoryCache<CollectionPage>(resolved, capacity), metrics);
     }
 
     /// <summary>
@@ -38,6 +40,11 @@ public sealed class CollectionPageCache
     /// The number of entries currently held (for observability/testing).
     /// </summary>
     public int Count => _cache.Count;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Removes the entry for <paramref name="key"/> (e.g. after posting to the collection).

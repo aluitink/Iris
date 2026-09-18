@@ -1,0 +1,495 @@
+@page "/actor"
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+
+<PageTitle>@PageHeading · Iris</PageTitle>
+
+@if (string.IsNullOrEmpty(IriParam))
+{
+    <div class="card"><p class="muted">No actor specified. Use the directory to find people.</p></div>
+}
+else if (LoadError is not null)
+{
+    <div class="card"><div class="error" role="alert">@LoadError</div></div>
+}
+else if (ActorDoc is null)
+{
+    <div class="card profile-loading">
+        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+        </svg>
+        <span class="muted">Loading actor…</span>
+    </div>
+}
+else
+{
+    <div class="actor-detail-header">
+        <ActorCard Actor="ActorDoc" ActorId="@(ActorDoc.Id)" ShowModeration="true" ShowStats="false" ShowSummary="true">
+            <FollowButton TargetActor="ActorDoc" />
+        </ActorCard>
+        @if (!IsSelf && !Session.IsSignedIn)
+        {
+            <p class="muted actor-detail-signin"><a href="/login">Sign in</a> to follow or moderate.</p>
+        }
+    </div>
+
+    <div class="tab-bar" role="tablist" aria-label="Actor sections">
+        <a href="#outbox" id="tab-outbox" role="tab" aria-selected="@(ActiveTab == "outbox")" aria-controls="panel-outbox" class="tab @(ActiveTab == "outbox" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("outbox")'>Posts@(PostCount is { } pc ? $" ({pc})" : string.Empty)</a>
+        <a href="#followers" id="tab-followers" role="tab" aria-selected="@(ActiveTab == "followers")" aria-controls="panel-followers" class="tab @(ActiveTab == "followers" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("followers")'>Followers@(FollowerCount is { } fc ? $" ({fc})" : string.Empty)</a>
+        <a href="#following" id="tab-following" role="tab" aria-selected="@(ActiveTab == "following")" aria-controls="panel-following" class="tab @(ActiveTab == "following" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("following")'>Following@(FollowingCount is { } fg ? $" ({fg})" : string.Empty)</a>
+        @if (ShowJoinRequestsTab)
+        {
+            <a href="#requests" id="tab-requests" role="tab" aria-selected="@(ActiveTab == "requests")" aria-controls="panel-requests" class="tab @(ActiveTab == "requests" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("requests")'>Requests</a>
+        }
+    </div>
+
+    @if (ActiveTab == "outbox")
+    {
+        <div role="tabpanel" id="panel-outbox" aria-labelledby="tab-outbox">
+        <PagedCollection
+            Client="Client"
+            AnonymousHttpClient="Http"
+            CollectionIri="OutboxIri"
+            PageSize="5"
+            ShowRefreshButton="@(Client is not null)"
+            ItemFilter="OutboxItemFilter"
+            ItemTemplate="OutboxItemTemplate"
+            EmptyMessage="No posts yet." />
+        </div>
+    }
+    else if (ActiveTab == "followers")
+    {
+        <div role="tabpanel" id="panel-followers" aria-labelledby="tab-followers">
+        <ActorListPanel
+            Client="Client"
+            AnonymousHttpClient="Http"
+            CollectionIri="FollowersIri"
+            Title="Followers"
+            EmptyMessage="No followers yet." />
+        </div>
+    }
+    else if (ActiveTab == "following")
+    {
+        <div role="tabpanel" id="panel-following" aria-labelledby="tab-following">
+        <ActorListPanel
+            Client="Client"
+            AnonymousHttpClient="Http"
+            CollectionIri="FollowingIri"
+            Title="Following"
+            EmptyMessage="Not following anyone yet." />
+        </div>
+    }
+    else if (ActiveTab == "requests" && ShowJoinRequestsTab)
+    {
+        <div class="card" role="tabpanel" id="panel-requests" aria-labelledby="tab-requests">
+            @if (JoinRequestsLoading)
+            {
+                <p class="muted">Loading requests…</p>
+            }
+            else if (JoinRequestError is not null)
+            {
+                <div class="error" role="alert">@JoinRequestError</div>
+            }
+            else if (JoinRequestActors is { Count: 0 })
+            {
+                <p class="muted">No pending join requests.</p>
+            }
+            else if (JoinRequestActors is { } actors)
+            {
+                @foreach (var requestIri in actors)
+                {
+                    <div class="member-row">
+                        <a href="@($"/actor?iri={Uri.EscapeDataString(requestIri)}")" class="object-actor-handle">@DisplayHandle(requestIri)</a>
+                        <button class="btn btn-small btn-primary" @onclick="() => AcceptJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Accepting…" : "Accept")
+                        </button>
+                        <button class="btn btn-small btn-danger" @onclick="() => RejectJoinRequestAsync(requestIri)" disabled="@IsDecidingJoinRequest">
+                            @(IsDecidingJoinRequest && DecidingActorIri == requestIri ? "Rejecting…" : "Reject")
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [Inject]
+    private IHttpClientFactory HttpFactory { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "iri")]
+    public string? IriParam { get; set; }
+
+    private IActivityPubClient? Client => Session.Client;
+
+    /// <summary>
+    /// The same-origin <c>iris</c> client used for anonymous (signed-out) public reads of the actor's
+    /// outbox/followers/following collections (88.4). Always available, unlike <see cref="Client"/>
+    /// which is null when signed out.
+    /// </summary>
+    private HttpClient? Http => HttpFactory?.CreateClient("iris");
+
+    private IObject? ActorDoc { get; set; }
+    private string? LoadError { get; set; }
+    private string ActiveTab { get; set; } = "outbox";
+
+    private bool IsSelf
+        => Session.ActorId is { } me && ActorDoc?.Id is { } id && me.Value == id;
+
+    private string PageHeading
+    {
+        get
+        {
+            if (ActorDoc is Actor { PreferredUsername: { Length: > 0 } px })
+            {
+                return px;
+            }
+
+            return "Actor";
+        }
+    }
+
+    private Iri? ActorIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(IriParam) || !Iri.TryParse(IriParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The actor's outbox IRI — read from the actor document's <c>outbox</c> property when present
+    /// (a remote instance like Mastodon may serve the outbox at a different path than the
+    /// <c>{actor-iri}/outbox</c> convention), falling back to deriving <c>{actor-doc-id}/outbox</c>
+    /// from the document's canonical <c>id</c>.
+    /// </summary>
+    private Iri? OutboxIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Outbox, iri => iri.OutboxOf());
+
+    /// <summary>
+    /// The actor's followers IRI — read from the actor document's <c>followers</c> property when
+    /// present, falling back to deriving <c>{actor-doc-id}/followers</c> from the document's
+    /// canonical <c>id</c>.
+    /// </summary>
+    private Iri? FollowersIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Followers, iri => iri.FollowersOf());
+
+    /// <summary>
+    /// The actor's following IRI — read from the actor document's <c>following</c> property when
+    /// present, falling back to deriving <c>{actor-doc-id}/following</c> from the document's
+    /// canonical <c>id</c>.
+    /// </summary>
+    private Iri? FollowingIri
+        => ResolveCollectionIri(ActorDoc as Actor, a => a.Following, iri => iri.FollowingOf());
+
+    /// <summary>
+    /// Resolves a collection IRI from an actor document: prefers the document's typed property
+    /// (an <see cref="IObjectOrLink"/> — a <c>Link</c> by its <c>href</c>, an <c>Object</c> by its
+    /// <c>id</c>), falling back to deriving the IRI from the document's canonical <c>id</c> via
+    /// <paramref name="derive"/>. Returns <see langword="null"/> when the actor is not loaded or
+    /// has no usable <c>id</c>.
+    /// </summary>
+    private static Iri? ResolveCollectionIri(
+        Actor? actor,
+        Func<Actor, ICollectionOrLink?>? property,
+        Func<Iri, Iri> derive)
+    {
+        if (actor is null)
+        {
+            return null;
+        }
+
+        if (property is { } getter)
+        {
+            var collectionRef = getter(actor);
+            if (collectionRef is { } ref2)
+            {
+                var iri = ref2.ResolveCollectionIri();
+                if (iri is not null)
+                {
+                    return iri;
+                }
+            }
+        }
+
+        if (actor.Id is { Length: > 0 } id && Iri.TryParse(id, out var actorIri))
+        {
+            return derive(actorIri);
+        }
+
+        return null;
+    }
+
+    private bool IsCommunity => ActorDoc is Actor actor && actor.Type?.FirstOrDefault() == "Group";
+
+    private bool ApprovesMembers
+    {
+        get
+        {
+            if (ActorDoc is not KristofferStrube.ActivityStreams.Object doc)
+            {
+                return false;
+            }
+
+            return doc.GetManuallyApprovesMembers() == true;
+        }
+    }
+
+    private bool ShowJoinRequestsTab => IsCommunity && ApprovesMembers;
+
+    private int? FollowerCount { get; set; }
+    private int? FollowingCount { get; set; }
+    private int? PostCount { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.EnsureReadyAsync();
+        if (ActorIri is not { } iri || LoadError is not null)
+        {
+            return;
+        }
+
+        if (ActorDoc is not null && ActorDoc.Id == iri.Value)
+        {
+            return;
+        }
+
+        try
+        {
+            var obj = await Ui.GetActorAsync(iri);
+            if (obj is null && Client is null)
+            {
+                // Signed-out visitor: the per-circuit actor cache is only reachable through a
+                // signed-in client, so fetch the public actor document directly over HTTP (88.4).
+                obj = await FetchActorAnonymousAsync(iri);
+            }
+
+            if (obj is not null)
+            {
+                ActorDoc = obj;
+                // The tab counts come from the cacheable per-actor counters the server renders on the
+                // document (iris:postsCount / iris:followersCount / iris:followingCount). A remote
+                // actor from a non-Iris instance has none, so its tabs show no count.
+                var ns = Session.IrisNamespaceBase?.Value ?? IrisDocumentExtensions.DefaultNamespaceIri;
+                PostCount = obj.GetPostsCount(ns);
+                FollowerCount = obj.GetFollowersCount(ns);
+                FollowingCount = obj.GetFollowingCount(ns);
+            }
+            else
+            {
+                LoadError = "Actor not found.";
+            }
+        }
+        catch (Exception)
+        {
+            LoadError = "Failed to load actor. It may not exist or the server is unreachable.";
+        }
+    }
+
+    /// <summary>
+    /// Fetches a public actor document over plain HTTP when signed out (88.4). The ActivityPub
+    /// actor IRI is publicly readable, so a same-origin GET returns the actor JSON, which is
+    /// deserialized with the shared ActivityStreams options. Returns null when the document cannot
+    /// be retrieved (404, unreachable, or non-actor payload).
+    /// </summary>
+    private async Task<IObject?> FetchActorAnonymousAsync(Iri actorIri)
+    {
+        if (Http is not { } http)
+        {
+            return null;
+        }
+
+        using var response = await http.GetAsync(actorIri.Value);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync();
+        return ActivityJson.Deserialize<IObject>(json);
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+
+        if (tab == "requests" && ShowJoinRequestsTab && JoinRequestActors is null)
+        {
+            _ = LoadJoinRequestsAsync();
+        }
+    }
+
+    // --- Community join-request queue (manuallyApprovesMembers) ----------------------------
+
+    private bool JoinRequestsLoading { get; set; }
+    private List<string>? JoinRequestActors { get; set; }
+    private string? JoinRequestError { get; set; }
+    private bool IsDecidingJoinRequest { get; set; }
+    private string? DecidingActorIri { get; set; }
+
+    private async Task LoadJoinRequestsAsync()
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } actorIri)
+        {
+            return;
+        }
+
+        JoinRequestsLoading = true;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.GetCommunityJoinRequestsAsync(actorIri);
+            if (result.IsSuccess)
+            {
+                JoinRequestActors = System.Text.Json.JsonSerializer.Deserialize<List<string>>(result.Body)
+                    ?? new List<string>();
+            }
+            else
+            {
+                JoinRequestError = $"Failed to load requests (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            JoinRequestError = "We couldn't load the join requests. Please try again.";
+        }
+        finally
+        {
+            JoinRequestsLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task AcceptJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.AcceptCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Accept failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            JoinRequestError = "The join request couldn't be approved. Please try again.";
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RejectJoinRequestAsync(string actorIri)
+    {
+        var localModeration = Session.LocalModeration;
+        if (localModeration is null || ActorIri is not { } communityIri)
+        {
+            return;
+        }
+
+        IsDecidingJoinRequest = true;
+        DecidingActorIri = actorIri;
+        JoinRequestError = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await localModeration.RejectCommunityJoinRequestAsync(communityIri, new Iri(actorIri));
+            if (result.IsSuccess)
+            {
+                await LoadJoinRequestsAsync();
+            }
+            else
+            {
+                JoinRequestError = $"Reject failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            JoinRequestError = "The join request couldn't be declined. Please try again.";
+        }
+        finally
+        {
+            IsDecidingJoinRequest = false;
+            DecidingActorIri = null;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// The actor-page "Posts" filter: a content item (<c>Create</c> of a Note/Article, or an
+    /// <c>Announce</c> boost) **authored by the actor whose page this is**. The server mirrors
+    /// followed remote content and inbound boosts into a local actor's outbox as items whose
+    /// <c>actor</c> is the remote author / booster, so an unscoped content filter
+    /// (<see cref="OutboxFilter.IsContentItem"/>) would render those foreign items in the Posts tab.
+    /// Scoping by the actor's own IRI (via <see cref="OutboxFilter.IsOwnContentItem"/>) keeps only the
+    /// actor's own content — the same treatment the signed-in user's profile "Your posts" tab gets
+    /// (Profile.razor). When the actor IRI is unavailable it falls back to the unscoped filter.
+    /// </summary>
+    private bool OutboxItemFilter(IObjectOrLink item)
+        => OutboxFilter.IsOwnContentItem(item, ActorIri);
+
+    /// <summary>
+    /// The actor-page "Posts" card template (155): the same common <c>ObjectView</c> card every feed
+    /// uses, but with <c>ShowModeration="false"</c>. The moderation actions (Block / Mute / Report)
+    /// are offered once, at the actor level, in the page header — rendering them again on every post
+    /// card in the outbox would be redundant, so the per-post buttons are suppressed here.
+    /// </summary>
+    private RenderFragment<IObjectOrLink> OutboxItemTemplate
+        => item => builder =>
+        {
+            builder.OpenComponent<ObjectView>(0);
+            builder.AddComponentParameter(1, nameof(ObjectView.Item), item);
+            builder.AddComponentParameter(2, nameof(ObjectView.ShowModeration), false);
+            builder.CloseComponent();
+        };
+
+    private static string DisplayHandle(string iri)
+    {
+        try
+        {
+            var segments = new Uri(iri).AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : "Unknown";
+        }
+        catch
+        {
+            return "Unknown";
+        }
+    }
+}

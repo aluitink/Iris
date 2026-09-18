@@ -1,0 +1,139 @@
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+@if (ObjectIri is { } iri)
+{
+    <div class="lemmy-vote-bar">
+        <button type="button"
+                class="lemmy-vote-btn lemmy-vote-btn--up @(_vote == LemmyVoteState.Up ? "lemmy-vote-btn--active-up" : "")"
+                title="Upvote"
+                aria-label="Upvote"
+                aria-pressed="@(_vote == LemmyVoteState.Up ? "true" : "false")"
+                disabled="@_busy"
+                @onclick="() => VoteAsync(LemmyVoteState.Up, iri)">
+            <svg viewBox="0 0 24 24" fill="@(_vote == LemmyVoteState.Up ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 4l-8 8h5v8h6v-8h5z" />
+            </svg>
+            <span class="lemmy-vote-count">@_upvotes</span>
+        </button>
+        <button type="button"
+                class="lemmy-vote-btn lemmy-vote-btn--down @(_vote == LemmyVoteState.Down ? "lemmy-vote-btn--active-down" : "")"
+                title="Downvote"
+                aria-label="Downvote"
+                aria-pressed="@(_vote == LemmyVoteState.Down ? "true" : "false")"
+                disabled="@_busy"
+                @onclick="() => VoteAsync(LemmyVoteState.Down, iri)">
+            <svg viewBox="0 0 24 24" fill="@(_vote == LemmyVoteState.Down ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M12 20l8-8h-5V4H9v8H4z" />
+            </svg>
+            <span class="lemmy-vote-count">@_downvotes</span>
+        </button>
+        <span class="lemmy-vote-score" title="Score">@_score</span>
+    </div>
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [Parameter]
+    public Iri? ObjectIri { get; set; }
+
+    [Parameter]
+    public LemmyPostScore? Score { get; set; }
+
+    private int _score;
+    private int _upvotes;
+    private int _downvotes;
+    private LemmyVoteState _vote = LemmyVoteState.None;
+    private bool _busy;
+
+    protected override void OnParametersSet()
+    {
+        if (Score is { } s)
+        {
+            _score = s.Score;
+            _upvotes = s.Upvotes;
+            _downvotes = s.Downvotes;
+            _vote = s.ViewerVote;
+        }
+    }
+
+    private async Task VoteAsync(LemmyVoteState target, Iri iri)
+    {
+        if (_busy || Session.ActorId is not { } me || Session.Client is not { } client)
+        {
+            return;
+        }
+
+        // Toggling off the current vote.
+        if (target == _vote)
+        {
+            target = LemmyVoteState.None;
+        }
+
+        _busy = true;
+        try
+        {
+            // Undo the current vote if there is one.
+            if (_vote == LemmyVoteState.Up)
+            {
+                await client.UnlikeAsync(me, iri);
+            }
+            else if (_vote == LemmyVoteState.Down)
+            {
+                await client.UndislikeAsync(me, iri);
+            }
+
+            // Cast the new vote.
+            if (target == LemmyVoteState.Up)
+            {
+                await client.LikeAsync(me, iri);
+            }
+            else if (target == LemmyVoteState.Down)
+            {
+                await client.DislikeAsync(me, iri);
+            }
+
+            // Update local state optimistically.
+            var oldVote = _vote;
+            _vote = target;
+
+            // Adjust counts.
+            if (oldVote == LemmyVoteState.Up && target != LemmyVoteState.Up)
+            {
+                _upvotes = Math.Max(0, _upvotes - 1);
+                _score--;
+            }
+            else if (oldVote == LemmyVoteState.Down && target != LemmyVoteState.Down)
+            {
+                _downvotes = Math.Max(0, _downvotes - 1);
+                _score++;
+            }
+            if (target == LemmyVoteState.Up && oldVote != LemmyVoteState.Up)
+            {
+                _upvotes++;
+                _score++;
+            }
+            else if (target == LemmyVoteState.Down && oldVote != LemmyVoteState.Down)
+            {
+                _downvotes++;
+                _score--;
+            }
+        }
+        catch
+        {
+            // Non-fatal: the vote simply won't register.
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

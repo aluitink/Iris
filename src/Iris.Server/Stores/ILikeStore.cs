@@ -61,4 +61,24 @@ public interface ILikeStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the liker IRIs (possibly empty).</returns>
     public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the likers for a set of objects in a single batch query (57.4 — avoids N+1).
+    /// </summary>
+    /// <param name="likedObjectIris">The IRIs of the objects whose likers are requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with a dictionary mapping each object IRI to its liker IRIs
+    /// (objects with no likers are absent from the dictionary).</returns>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetLikersBatchAsync(
+        IReadOnlyCollection<Iri> likedObjectIris, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns which of the given (liker, object) pairs represent existing likes (batch containment, 57.4).
+    /// </summary>
+    /// <param name="likerIri">The IRI of the actor whose likes are being checked.</param>
+    /// <param name="objectIris">The IRIs of the objects to check.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the set of object IRIs that the actor has liked.</returns>
+    public Task<IReadOnlySet<Iri>> HasLikedBatchAsync(
+        Iri likerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default);
 }

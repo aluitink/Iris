@@ -22,7 +22,8 @@ namespace Iris.Client;
 /// The <see cref="SigningHandler"/> signs as <see cref="ActivityPubClientOptions.ActorId"/>. The signer and
 /// key store are owned by the factory; the key store must outlive the returned clients (keys are
 /// borrowed, not cloned — see <see cref="IKeyStore"/>). The transport handler passed to
-/// <see cref="Create"/> is not owned by the returned client.
+/// <see cref="IActivityPubClientFactory.Create(ActivityPubClientOptions, System.Net.Http.HttpMessageHandler)"/>
+/// is not owned by the returned client.
 /// </remarks>
 public sealed class ActivityPubClientFactory : IActivityPubClientFactory
 {
@@ -45,6 +46,26 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
 
     /// <inheritdoc/>
     public IActivityPubClient Create(ActivityPubClientOptions options, HttpMessageHandler httpHandler)
+        => Create(options, httpHandler, outermost: null);
+
+    /// <summary>
+    /// Builds a signed <see cref="IActivityPubClient"/>, optionally wrapping the signed pipeline in an
+    /// outermost handler.
+    /// </summary>
+    /// <param name="options">The client options (actor to sign as, retry, proxy, caches).</param>
+    /// <param name="httpHandler">The caller-supplied transport handler (e.g. a browser
+    /// <see cref="HttpClientHandler"/> for cookie auth).</param>
+    /// <param name="outermost">
+    /// An optional handler to wrap the ENTIRE signed pipeline (outermost). Used by the browser
+    /// (WASM) session to rewrite FQDN-addressed requests to same-origin BEFORE they are signed — the
+    /// signature's <c>host</c> component must match the host the server receives on the wire, so the
+    /// rewrite must precede the <see cref="Pipeline.SigningHandler"/>. Null for the default (no
+    /// outermost wrapper) behavior.
+    /// </param>
+    public IActivityPubClient Create(
+        ActivityPubClientOptions options,
+        HttpMessageHandler httpHandler,
+        DelegatingHandler? outermost)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(httpHandler);
@@ -66,15 +87,34 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
             pipeline = new RetryHandler(options.MaxRetryAttempts, pipeline);
         }
 
+        // An outermost handler (e.g. the browser's SameOriginApHandler) rewrites the request URL to
+        // same-origin BEFORE the Signed request is built, so the signature's host component matches the
+        // wire host the server receives. It sits outside Retry so the rewrite is stable across retries.
+        if (outermost is not null)
+        {
+            outermost.InnerHandler = pipeline;
+            pipeline = outermost;
+        }
+
         // Proxy fallback (Phase 6): when the home instance's proxy is configured, wrap the whole
         // signed pipeline so a 401/403 from a remote instance is retried through the proxy (which
         // re-signs with the actor's key). The proxy POST is unsigned (the proxy signs the forwarded
         // request), so it must bypass the SigningHandler — hence ProxyFallbackHandler is outermost.
-        if (options.ProxyBaseUrl is { } proxyBase && options.ProxyCredentials is { } proxyCreds)
+        //
+        // Two configurations enable the handler:
+        //  - Basic-auth: ProxyBaseUrl + ProxyCredentials (a 401/403 fallback, or always-proxy writes).
+        //  - Cookie-auth cross-instance reads (WASM): ProxyBaseUrl + RouteCrossInstanceReadsViaProxy,
+        //    with ProxyCredentials null — the proxy request is same-origin and authenticates by the
+        //    site cookie (the browser has no Basic credentials).
+        var basicAuthProxy = options.ProxyBaseUrl is not null && options.ProxyCredentials is not null;
+        var cookieAuthCrossInstanceReads = options.ProxyBaseUrl is not null
+            && options.ProxyCredentials is null
+            && options.RouteCrossInstanceReadsViaProxy;
+        if (basicAuthProxy || cookieAuthCrossInstanceReads)
         {
             pipeline = new ProxyFallbackHandler(
-                proxyBase,
-                proxyCreds,
+                options.ProxyBaseUrl!.Value,
+                options.ProxyCredentials,
                 pipeline,
                 options.AlwaysProxy,
                 options.DialBaseUri,
@@ -106,12 +146,15 @@ public sealed class ActivityPubClientFactory : IActivityPubClientFactory
         // subscription is not a signed inbox delivery — it is a Basic-authenticated POST to the actor's
         // own instance). The local-auth handler is a separate, unsigned pipeline (it must not go through
         // the SigningHandler, which would throw for a request it cannot sign). With no LocalCredentials
-        // the client is built without a default handler — only the explicit-credential overloads work.
-        var localAuth = options.LocalCredentials is { } localCreds
-            ? new LocalAuthHandler(localCreds, httpHandler)
-            : null;
+        // the client falls back to cookie-auth passthrough (the Blazor WASM client): the transport
+        // handler carries the site cookie, and the server's local-moderation endpoints accept cookie
+        // auth as a fallback.
+        if (options.LocalCredentials is { } localCreds)
+        {
+            return new LocalModerationClient(new LocalAuthHandler(localCreds, httpHandler));
+        }
 
-        return new LocalModerationClient(localAuth);
+        return new LocalModerationClient(httpHandler);
     }
 
     /// <inheritdoc/>

@@ -88,6 +88,39 @@ public class KeyPemTests
         Assert.Throws<ArgumentException>(() => KeyPem.Load("not a pem", KeyAlgorithm.Rsa, KeyId));
     }
 
+    [Theory]
+    [InlineData(KeyAlgorithm.Rsa)]
+    [InlineData(KeyAlgorithm.EcP256)]
+    public void ExportPublicKeyPem_IsLfOnly(KeyAlgorithm algorithm)
+    {
+        // 138.11 / 157: a PEM with CRLF (RFC 4648) line endings breaks downstream PEM parsers
+        // (Lemmy's actor-doc deserializer, and peers that gate actor-doc GETs behind a resolvable
+        // key). The emitter must wrap at 64 chars with LF only (RFC 7468).
+        using var key = KeyPairGenerator.Generate(algorithm, KeyId);
+
+        var pem = key.ExportPublicKeyPem();
+
+        Assert.DoesNotContain('\r', pem);
+        Assert.DoesNotContain("\r\n", pem);
+        Assert.StartsWith("-----BEGIN PUBLIC KEY-----\n", pem);
+        Assert.EndsWith("-----END PUBLIC KEY-----\n", pem);
+    }
+
+    [Fact]
+    public void Ed25519_ExportPublicKeyPem_IsLfOnly()
+    {
+        // 157 regression: Ed25519Key.ToPem previously used Base64FormattingOptions.InsertLineBreaks
+        // (CRLF), unlike KeyPair.ToPem (LF-only) — a PEM with CRLF breaks peers' key resolution.
+        var key = Ed25519Key.Generate(KeyId);
+
+        var pem = key.ExportPublicKeyPem();
+
+        Assert.DoesNotContain('\r', pem);
+        Assert.DoesNotContain("\r\n", pem);
+        Assert.StartsWith("-----BEGIN PUBLIC KEY-----\n", pem);
+        Assert.EndsWith("-----END PUBLIC KEY-----\n", pem);
+    }
+
     [Fact]
     public void Save_NullKey_Throws()
     {

@@ -1,0 +1,84 @@
+@page "/login"
+@using Microsoft.AspNetCore.Components
+@using System.Net.Http
+@using System.Net.Http.Json
+@using Microsoft.Extensions.DependencyInjection
+@inject NavigationManager Navigation
+@inject IServiceProvider Services
+
+<PageTitle>Sign in — Iris</PageTitle>
+
+<div class="card auth-card">
+<h1>Sign in</h1>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <p class="error" role="alert">@_error</p>
+}
+
+<form method="post" action="/login">
+    <input type="hidden" name="__RequestVerificationToken" value="@(_antiforgeryToken ?? string.Empty)" />
+    <div class="field">
+        <label for="handle">Handle</label>
+        <div class="handle-row">
+            <span class="handle-prefix">@_handlePrefix</span>
+            <input id="handle" name="handle" type="text" class="input" autocomplete="username" />
+        </div>
+    </div>
+    <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" class="input" autocomplete="current-password" />
+    </div>
+    <button type="submit" class="btn">Sign in</button>
+</form>
+
+<p class="muted">New here? <a href="/register">Create an account</a>.</p>
+</div>
+
+@code {
+    private string? _error;
+    private string? _antiforgeryToken;
+    private string _handlePrefix = "@";
+
+    protected override async Task OnInitializedAsync()
+    {
+        _error = ParseQueryValue(Navigation.Uri, "error");
+        // Fetch a fresh antiforgery token from the server (it also sets the matching
+        // .AspNetCore.Antiforgery.* cookie). The hidden field above carries RequestToken; the
+        // cookie carries HandlerToken — the pair must match for the POST to pass UseAntiforgery.
+        try
+        {
+            // Use the named "iris" client (BaseAddress = the server origin) so the relative
+            // URL resolves. The default injected HttpClient has no base address and would
+            // throw on a relative URI.
+            var http = Services.GetRequiredService<IHttpClientFactory>().CreateClient("iris");
+            // The server serializes the token as "requestToken" (camelCase); GetFromJsonAsync's
+            // default options are case-sensitive, so deserialize explicitly with a case-insensitive
+            // property name matcher so the field binds regardless of the server's casing.
+            var json = await http.GetStringAsync("local/v1/antiforgery");
+            var body = System.Text.Json.JsonSerializer.Deserialize<AntiforgeryResponse>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            _antiforgeryToken = body?.RequestToken;
+        }
+        catch
+        {
+            // Leave the token empty; the server will reject the POST with 400 and the user
+            // can retry. Better than a blank form that silently fails.
+        }
+    }
+
+    private sealed record AntiforgeryResponse(string? RequestToken);
+
+    private static string? ParseQueryValue(string uri, string key)
+    {
+        var qIndex = uri.IndexOf('?');
+        if (qIndex < 0) return null;
+        foreach (var pair in uri[(qIndex + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var eq = pair.IndexOf('=');
+            if (eq > 0 && Uri.UnescapeDataString(pair[..eq]) == key)
+                return Uri.UnescapeDataString(pair[(eq + 1)..]);
+        }
+        return null;
+    }
+}

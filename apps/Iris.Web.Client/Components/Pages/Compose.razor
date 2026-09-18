@@ -1,0 +1,1872 @@
+@page "/compose"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Compose
+@using Iris.Core.Identity
+@using Iris.Core.Rendering
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Ui
+@using Microsoft.AspNetCore.Components.Web
+@using KristofferStrube.ActivityStreams
+@using System.Net
+
+<PageTitle>@PageTitle · Iris</PageTitle>
+
+<p class="muted">
+    Posting as <a href="/profile">@ActorHandle</a>
+</p>
+
+    <div class="card compose-card">
+    @if (ReplyToIri is not null)
+    {
+        <div class="compose-reply-context">
+            <p class="compose-reply-to">
+                Replying to <a href="@ReplyToHref">@ReplyToAuthor</a>
+            </p>
+            @if (ReplyToPreview is { Length: > 0 })
+            {
+                <blockquote class="compose-reply-preview">@ReplyToPreview</blockquote>
+            }
+            @if (ThreadRootAuthor is { Length: > 0 })
+            {
+                <div class="compose-thread-root">
+                    <span class="compose-thread-root-label">Thread started by</span>
+                    <span class="compose-thread-root-author">@ThreadRootAuthor</span>
+                    @if (ThreadRootPreview is { Length: > 0 })
+                    {
+                        <blockquote class="compose-reply-preview">@ThreadRootPreview</blockquote>
+                    }
+                </div>
+            }
+        </div>
+    }
+    @if (CommunityIri is { } cIri)
+    {
+        <div class="compose-community-context">
+            <p class="compose-community-to">
+                Posting to <a href="@($"/community?iri={Uri.EscapeDataString(cIri.Value)}")">@(CommunityName ?? "community")</a>
+            </p>
+        </div>
+    }
+    <label for="compose-content">Content</label>
+    <div class="compose-autocomplete-wrap">
+        <textarea id="compose-content" class="compose-content" rows="4"
+                  @oninput="OnContentInputEvent"
+                  placeholder="What's on your mind?"></textarea>
+        @if (Autocomplete is { Visible: true } ac)
+        {
+            <div class="compose-autocomplete" role="listbox" aria-label="Suggestions">
+                @foreach (var candidate in ac.Candidates)
+                {
+                    <button type="button" class="compose-autocomplete-item" role="option"
+                            @onclick="() => AcceptAutocomplete(candidate)">
+                        @if (ac.Mode == AutocompleteMode.Mention && candidate.Handle is { Length: > 0 } h)
+                        {
+                            <span class="compose-autocomplete-handle">@h</span>
+                            @if (candidate.Name is { Length: > 0 } name && name != h)
+                            {
+                                <span class="compose-autocomplete-name">@name</span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="compose-autocomplete-hashtag">@candidate.InsertText</span>
+                        }
+                    </button>
+                }
+            </div>
+        }
+    </div>
+    @if (ReplyToIri is null)
+    {
+        <label for="compose-attachment" class="compose-attach-label">Attachments (optional — images, video, audio, PDF)</label>
+        <div class="compose-attach">
+            <InputFile id="compose-attachment" multiple OnChange="OnAttachmentsChosen"
+                       accept="image/*,video/*,audio/*,.pdf" disabled="@Busy" />
+            @for (var i = 0; i < Attachments.Count; i++)
+            {
+                var index = i;
+                <div class="compose-attach-item">
+                    <span class="compose-attach-name">@Attachments[index].Name</span>
+                    <button type="button" class="compose-attach-remove" aria-label="Remove attachment" @onclick="() => RemoveAttachment(index)" disabled="@Busy">✕</button>
+                </div>
+            }
+        </div>
+    }
+    <div class="compose-meta">
+        <span class="compose-char-count @(Content.Length > MaxChars ? "compose-char-count--over" : "")">
+            @Content.Length/@MaxChars
+        </span>
+        @if (ReplyToIri is null)
+        {
+            <select class="compose-type-select" @bind="ContentType" disabled="@Busy">
+                <option value="Note">Note</option>
+                <option value="Article">Article (long-form)</option>
+                <option value="Poll">Poll</option>
+            </select>
+            @if (CommunityIri is null)
+            {
+                <select class="compose-visibility-select" @bind="Visibility" disabled="@Busy">
+                    <option value="public">Public</option>
+                    <option value="followers">Followers</option>
+                    <option value="direct">Direct</option>
+                </select>
+            }
+        }
+        @if (ReplyToIri is null)
+        {
+            <label class="compose-sensitive-toggle">
+                <input type="checkbox" @bind="IsSensitive" disabled="@Busy" />
+                Content warning
+            </label>
+            @if (IsSensitive)
+            {
+                <input class="compose-sensitive-summary" type="text" @bind="SensitiveSummary"
+                       placeholder="Warning summary (shown before revealing)" maxlength="200" disabled="@Busy" />
+            }
+        }
+    </div>
+    @if (ReplyToIri is null && ContentType == "Poll")
+    {
+        <div class="compose-poll">
+            <label for="compose-poll-question">Question</label>
+            <input id="compose-poll-question" class="compose-poll-question" type="text" @bind="PollQuestion"
+                   placeholder="Ask a question…" maxlength="500" disabled="@Busy" />
+            <div class="compose-poll-options">
+                @for (var i = 0; i < PollOptions.Count; i++)
+                {
+                    var index = i;
+                    <div class="compose-poll-option-row">
+                        <input class="compose-poll-option-input" type="text" @bind="PollOptions[index]"
+                               @bind:event="oninput" placeholder="@($"Option {index + 1}")" disabled="@Busy" />
+                        @if (PollOptions.Count > 2)
+                        {
+                            <button type="button" class="compose-poll-option-remove" aria-label="Remove option" @onclick="() => RemovePollOption(index)" disabled="@Busy">✕</button>
+                        }
+                    </div>
+                }
+            </div>
+            @if (PollOptions.Count < 4)
+            {
+                <button type="button" class="button button--secondary compose-poll-add" @onclick="AddPollOption" disabled="@Busy">+ Add option</button>
+            }
+            <div class="compose-poll-meta">
+                <label class="compose-poll-duration">
+                    Duration
+                    <select @bind="PollDurationMinutes" disabled="@Busy">
+                        <option value="30">30 minutes</option>
+                        <option value="60">1 hour</option>
+                        <option value="360">6 hours</option>
+                        <option value="1440">1 day</option>
+                        <option value="10080">1 week</option>
+                    </select>
+                </label>
+                <label class="compose-poll-multiple">
+                    <input type="checkbox" @bind="PollMultiple" disabled="@Busy" />
+                    Allow multiple choices
+                </label>
+            </div>
+            @if (PollError is { Length: > 0 } pErr)
+            {
+                <p class="error compose-poll-error" role="alert">@pErr</p>
+            }
+        </div>
+    }
+    <p class="muted compose-hint">
+        @(ReplyToIri is not null
+            ? "This reply is threaded under the parent note and visible in its replies."
+            : CommunityIri is not null
+                ? "This post is attributed to the community and visible to its members."
+                : ContentType == "Poll"
+                    ? "A poll addressed to the public — it lands in your outbox and appears in your followers' timelines."
+                    : "A note addressed to the public — it lands in your outbox and appears in your followers' timelines.")
+    </p>
+
+    <div class="compose-actions">
+        <button @onclick="PostAsync" disabled="@Busy">
+            @(Busy ? "Posting…" : (ReplyToIri is not null ? "Post reply" : CommunityIri is not null ? "Post to community" : "Post"))
+        </button>
+        @if (Posted)
+        {
+            @if (CommunityIri is { } postCommunity)
+            {
+                <a class="button button--secondary" href="@($"/community?iri={Uri.EscapeDataString(postCommunity.Value)}")">View community feed →</a>
+            }
+            else
+            {
+                <a class="button button--secondary" href="/profile">View your posts →</a>
+            }
+        }
+    </div>
+
+    @if (Result is not null)
+    {
+        <p class="muted compose-result" role="status">
+            @Result
+            @if (PostedIri is not null)
+            {
+                <code class="compose-result-iri">@PostedIri</code>
+            }
+        </p>
+    }
+    @if (Error is not null)
+    {
+        <div class="error" role="alert">@Error</div>
+    }
+</div>
+
+<div class="compose-tips card">
+    <h2>Formatting tips</h2>
+    <ul class="compose-tips-list">
+        <li>Use <strong>@@handle</strong> to mention someone (e.g. @@alice).</li>
+        <li>Use <strong>#hashtag</strong> to tag a topic.</li>
+        <li>Notes are short-form; Articles are for long-form content.</li>
+        <li>Content warning hides your post behind a "Show" button.</li>
+    </ul>
+</div>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [SupplyParameterFromQuery(Name = "replyTo")]
+    private string? ReplyToParam { get; set; }
+
+    [SupplyParameterFromQuery(Name = "community")]
+    private string? CommunityParam { get; set; }
+
+    /// <summary>
+    /// The community IRI the post targets (from the <c>community</c> query parameter), when set.
+    /// When present, the post is attributed to both the author and the community, and addressed
+    /// to the community's followers collection + the public.
+    /// </summary>
+    private Iri? CommunityIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(CommunityParam) || !Iri.TryParse(CommunityParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The community's display name (fetched asynchronously), shown in the compose header when
+    /// posting to a community.
+    /// </summary>
+    private string? CommunityName { get; set; }
+
+    /// <summary>
+    /// Whether the targeted community lives on a different host than the signed-in actor (i.e. a
+    /// remote community such as a Lemmy one). When true, <see cref="PostToCommunityAsync"/> posts a
+    /// Lemmy-compatible <c>Page</c> (rather than a <c>Note</c>) and delivers it directly to the
+    /// community's inbox, because a remote server only sees content it is addressed to — it will never
+    /// see an activity delivered to the author's own outbox.
+    /// </summary>
+    private bool IsRemoteCommunity
+    {
+        get
+        {
+            if (CommunityIri is not { } community || Session.ActorId is not { } actor)
+            {
+                return false;
+            }
+
+            try
+            {
+                var communityHost = new Uri(community.Value).Host;
+                var actorHost = new Uri(actor.Value).Host;
+                return !string.Equals(communityHost, actorHost, StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    private Iri? ReplyToIri
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(ReplyToParam) || !Iri.TryParse(ReplyToParam, out var parsed))
+            {
+                return null;
+            }
+
+            return parsed;
+        }
+    }
+
+    /// <summary>
+    /// The author handle of the parent note (fetched asynchronously), or "…" while loading.
+    /// </summary>
+    private string ReplyToAuthor { get; set; } = "…";
+
+    /// <summary>
+    /// A truncated preview of the parent note's content (for context while composing a reply).
+    /// </summary>
+    private string? ReplyToPreview { get; set; }
+
+    /// <summary>
+    /// The author handle of the thread root (the parent's parent), when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootAuthor { get; set; }
+
+    /// <summary>
+    /// A truncated preview of the thread root's content, when the parent is itself a reply.
+    /// </summary>
+    private string? ThreadRootPreview { get; set; }
+
+    private string? _fetchedIri;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Session.EnsureReadyAsync();
+        if (ReplyToIri is { } iri && _fetchedIri != iri.Value)
+        {
+            await LoadReplyContextAsync(iri);
+        }
+
+        if (CommunityIri is { } cIri && CommunityName is null)
+        {
+            await LoadCommunityNameAsync(cIri);
+        }
+    }
+
+    private async Task LoadCommunityNameAsync(Iri communityIri)
+    {
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var obj = await client.GetObjectAsync(communityIri);
+            if (obj is Group group)
+            {
+                CommunityName = group.Name?.FirstOrDefault() ?? group.PreferredUsername;
+            }
+            else if (obj is Actor actor)
+            {
+                CommunityName = actor.Name?.FirstOrDefault() ?? actor.PreferredUsername;
+            }
+        }
+        catch
+        {
+            // Non-fatal: no community name shown.
+        }
+    }
+
+    private async Task LoadReplyContextAsync(Iri iri)
+    {
+        _fetchedIri = iri.Value;
+        ReplyToAuthor = "…";
+        ReplyToPreview = null;
+        ThreadRootAuthor = null;
+        ThreadRootPreview = null;
+
+        try
+        {
+            if (Session.Client is not { } client)
+            {
+                return;
+            }
+
+            var note = await client.GetObjectAsync(iri);
+            if (note is KristofferStrube.ActivityStreams.Object obj)
+            {
+                if (obj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ReplyToPreview = Truncate(text, 200);
+                    }
+                }
+
+                if (obj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ReplyToAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+
+                if (obj.InReplyTo is { } replyTo)
+                {
+                    var parentIri = replyTo.FirstOrDefault()?.ResolveObjectIri();
+                    if (parentIri is { } grandparent)
+                    {
+                        await LoadThreadRootAsync(client, grandparent);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: show the default "…" author and no preview.
+        }
+    }
+
+    private async Task LoadThreadRootAsync(IActivityPubClient client, Iri iri)
+    {
+        try
+        {
+            var root = await client.GetObjectAsync(iri);
+            if (root is KristofferStrube.ActivityStreams.Object rootObj)
+            {
+                if (rootObj.Content is { } content)
+                {
+                    var text = string.Join(" ", content);
+                    if (text.Length > 0)
+                    {
+                        ThreadRootPreview = Truncate(text, 150);
+                    }
+                }
+
+                if (rootObj.AttributedTo is { } attributed)
+                {
+                    var authorIri = attributed.FirstOrDefault()?.ResolveObjectIri();
+                    if (authorIri is { } author)
+                    {
+                        var uri = new Uri(author.Value);
+                        var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+                        ThreadRootAuthor = segments.Length > 0 ? segments[^1] : author.Value;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: no thread root context shown.
+        }
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
+
+    /// <summary>
+    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text, returning each
+    /// mention's resolved actor IRI paired with its display token (the <c>@handle</c> /
+    /// <c>@user@domain</c> text exactly as typed). A mention is an <c>@</c> followed by a handle
+    /// (alphanumerics + underscores), optionally followed by <c>@domain</c> (a remote instance host), at
+    /// the start of the text or after whitespace. Same-instance mentions (<c>@handle</c>, no domain) are
+    /// resolved to the signed-in actor's origin. Cross-instance mentions (<c>@user@domain</c>) are
+    /// resolved via WebFinger (RFC 8410) through the home instance's proxy endpoint (the browser cannot
+    /// reach a remote instance directly — CORS). An unresolvable cross-instance mention (WebFinger 404,
+    /// network failure, or no <c>self</c> link) is silently dropped. De-duplicated by resolved IRI in
+    /// first-seen order. Returns an empty list when no mentions are found or the session is unavailable.
+    /// </summary>
+    private async Task<List<(Iri Iri, string Display)>> DetectMentionsWithDisplayAsync(string text, Iri actorId)
+    {
+        var mentions = new List<(Iri Iri, string Display)>();
+        // Matches @handle (same-instance) and @user@domain (cross-instance). The domain part is
+        // optional: @user@domain has the domain after the second @; @handle has no second @.
+        // The domain is alphanumerics + hyphens + dots (a valid host, possibly with a port).
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.\-]+(?::\d+)?))?");
+        if (matches.Count == 0)
+        {
+            return mentions;
+        }
+
+        var uri = new Uri(actorId.Value);
+        var baseOrigin = uri.GetLeftPart(System.UriPartial.Authority);
+
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var handle = match.Groups[1].Value;
+            var domain = match.Groups[2].Success ? match.Groups[2].Value : null;
+
+            Iri? resolved;
+            if (domain is null)
+            {
+                // Same-instance mention: resolve against the signed-in actor's origin.
+                resolved = new Iri($"{baseOrigin}/ap/v1/u/{handle}");
+            }
+            else
+            {
+                // Cross-instance mention: resolve via WebFinger through the proxy.
+                resolved = await ResolveRemoteMentionAsync(handle, domain);
+            }
+
+            if (resolved is { } iri
+                && !mentions.Any(m => m.Iri == iri))
+            {
+                // The display token is the full match as typed (the leading '@' plus the handle and,
+                // for a cross-instance mention, the '@domain'). This is the text the linkify pass looks
+                // for in the body, so it must be the raw typed form, not the resolved IRI.
+                mentions.Add((iri, match.Value));
+            }
+        }
+
+        return mentions;
+    }
+
+    /// <summary>
+    /// Detects <c>@handle</c> and <c>@user@domain</c> mentions in the composed text, returning only their
+    /// resolved actor IRIs (the audience / <c>tag</c> half of the mention convention). Delegates to
+    /// <see cref="DetectMentionsWithDisplayAsync"/> and discards the display tokens.
+    /// </summary>
+    private Task<List<Iri>> DetectMentionsAsync(string text, Iri actorId)
+        => DetectMentionsWithDisplayAsync(text, actorId)
+            .ContinueWith(t => t.Result.Select(m => m.Iri).ToList(), TaskScheduler.Default);
+
+    /// <summary>
+    /// Resolves a cross-instance mention (<c>@user@domain</c>) to an actor IRI via WebFinger
+    /// (RFC 8410), routing the request through the home instance's proxy endpoint (the browser
+    /// cannot reach a remote instance directly — CORS). Returns null when the WebFinger lookup
+    /// fails (404, network error, or no <c>self</c> link in the response).
+    /// </summary>
+    private async Task<Iri?> ResolveRemoteMentionAsync(string handle, string domain)
+    {
+        if (Session is null)
+        {
+            return null;
+        }
+
+        var resource = $"acct:{handle}@{domain}";
+        var webFingerUrl = $"https://{domain}/.well-known/webfinger?resource={Uri.EscapeDataString(resource)}";
+        var body = await Session.ProxyGetAsync(webFingerUrl, "application/jrd+json");
+        if (body is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var link in links.EnumerateArray())
+            {
+                if (link.TryGetProperty("rel", out var rel)
+                    && rel.ValueKind == System.Text.Json.JsonValueKind.String
+                    && string.Equals(rel.GetString(), "self", StringComparison.Ordinal)
+                    && link.TryGetProperty("type", out var type)
+                    && type.ValueKind == System.Text.Json.JsonValueKind.String
+                    && (string.Equals(type.GetString(), "application/activity+json", StringComparison.Ordinal)
+                        || string.Equals(type.GetString(), "application/ld+json", StringComparison.Ordinal)
+                        || string.Equals(type.GetString(), "application/json", StringComparison.Ordinal))
+                    && link.TryGetProperty("href", out var href)
+                    && href.ValueKind == System.Text.Json.JsonValueKind.String
+                    && Iri.TryParse(href.GetString()!, out var iri))
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Detects <c>#hashtag</c> tokens in the composed text. A hashtag is a <c>#</c> followed by word
+    /// characters (alphanumerics + underscores) at the start of the text or after whitespace (so
+    /// <c>100%#off</c> or a markdown anchor is not mistaken for one). Returns the <c>#tag</c> names
+    /// (including the leading <c>#</c>, the form the ActivityStreams <c>Hashtag</c> tag's <c>name</c>
+    /// carries), de-duplicated in first-seen order. Returns an empty list when no hashtags are found.
+    /// </summary>
+    private static List<string> DetectHashtags(string text)
+    {
+        var hashtags = new List<string>();
+        var matches = System.Text.RegularExpressions.Regex.Matches(text, @"(?<=^|\s)#([a-zA-Z0-9_]+)");
+        foreach (System.Text.RegularExpressions.Match match in matches)
+        {
+            var tag = "#" + match.Groups[1].Value;
+            if (!hashtags.Contains(tag, StringComparer.OrdinalIgnoreCase))
+            {
+                hashtags.Add(tag);
+            }
+        }
+
+        return hashtags;
+    }
+
+    /// <summary>
+    /// Builds the combined <c>tag</c> array (mentions first, then hashtags) for an authored note or
+    /// article — the single place the client assembles the ActivityStreams <c>mention</c>/<c>hashtag</c>
+    /// tags for the inline post paths (reply / community / article), mirroring what
+    /// <c>ComposeNote.Build</c> does for the Note path. A hashtag tag is an
+    /// ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the <c>#tag</c> text and whose
+    /// <c>href</c> is this instance's hashtag search URL (so a reader's tap on the hashtag lands on the
+    /// instance's hashtag search). Returns null when there are no mentions and no hashtags.
+    /// </summary>
+    private List<KristofferStrube.ActivityStreams.IObjectOrLink>? BuildTagList(List<Iri>? mentions, List<string> hashtags, Iri actorId)
+    {
+        var tags = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
+
+        if (mentions is { Count: > 0 })
+        {
+            tags.AddRange(mentions.Select(m => (KristofferStrube.ActivityStreams.IObjectOrLink)new KristofferStrube.ActivityStreams.Mention { Href = m.Uri }));
+        }
+
+        if (hashtags.Count > 0)
+        {
+            var baseOrigin = new Uri(actorId.Value).GetLeftPart(System.UriPartial.Authority);
+            foreach (var tag in hashtags)
+            {
+                // A Hashtag tag is a generic ActivityStreams object of type Hashtag (the library has no
+                // concrete Hashtag class). The optional href (this instance's hashtag search) goes in
+                // ExtensionData because the Object base does not model href as a property — only Link
+                // does — exactly the shape IriExtensions.GetHashtagTags reads back.
+                var hashtag = new KristofferStrube.ActivityStreams.Object
+                {
+                    Type = ["Hashtag"],
+                    Name = [tag]
+                };
+                var href = $"{baseOrigin}/search?q={Uri.EscapeDataString(tag)}";
+                hashtag.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                hashtag.ExtensionData["href"] = System.Text.Json.JsonSerializer.SerializeToElement(href);
+                tags.Add(hashtag);
+            }
+        }
+
+        return tags.Count > 0 ? tags : null;
+    }
+
+    // --- @mention / #hashtag autocomplete popover (54.14) ---
+    //
+    // A popover that triggers while typing `@` or `#` in the compose box: it queries matching actors
+    // (for `@`, via the instance's global search restricted to the Actor type) or offers the typed
+    // hashtag (for `#`, which has no directory), and lets the user confirm a choice before it is
+    // inserted — reducing mis-mentions and confirming the resolved actor IRI up front.
+
+    private enum AutocompleteMode
+    {
+        None,
+        Mention,
+        Hashtag
+    }
+
+    private sealed record AutocompleteCandidate(string InsertText, string? Handle, string? Name);
+
+    private sealed class AutocompleteState
+    {
+        public required bool Visible { get; init; }
+        public required AutocompleteMode Mode { get; init; }
+        public required IReadOnlyList<AutocompleteCandidate> Candidates { get; init; }
+        // The start offset (in the compose text) of the active token (the `@`/`#` and the characters
+        // typed after it) — used to replace the token with the confirmed choice on accept.
+        public required int TokenStart { get; init; }
+        // The text as it was when the popover was opened (the replacement is computed against this so a
+        // concurrent keystroke cannot desync the splice).
+        public required string SourceText { get; init; }
+    }
+
+    private AutocompleteState? Autocomplete { get; set; }
+    private CancellationTokenSource? _autocompleteSearchCts;
+    private Timer? _autocompleteDebounce;
+    private List<AutocompleteCandidate>? _knownActors;
+
+    // The signed-in actor's previously-used hashtags (118.3), surfaced as the compose `#`
+    // autocomplete's default list — the topics the user already tags, loaded lazily and cached for the
+    // page's lifetime (a compose session), mirroring `_knownActors`.
+    private HashSet<string>? _knownHashtags;
+
+    /// <summary>
+    /// The textarea's input event handler (118.3): reads the freshly-typed value into <see
+    /// cref="Content"/> (replacing the former two-way <c>@bind</c>, whose generated input handler
+    /// suppressed the explicit autocomplete trigger — the popover never opened) and then runs the
+    /// mention/hashtag token detection.
+    /// </summary>
+    private void OnContentInputEvent(ChangeEventArgs e)
+    {
+        Content = e.Value?.ToString() ?? string.Empty;
+        OnContentInput();
+    }
+
+    /// <summary>
+    /// The textarea's input handler: detects an in-progress <c>@handle</c> or <c>#hashtag</c> token at
+    /// the end of the text and (debounced) populates the popover with candidates. Hides the popover when
+    /// no token is active (the user typed something else, or deleted the token).
+    /// </summary>
+    private void OnContentInput()
+    {
+        _autocompleteDebounce?.Dispose();
+        var text = Content;
+        var (mode, tokenStart, _) = DetectActiveToken(text);
+
+        if (mode is AutocompleteMode.None)
+        {
+            // No active @/# token at the end (the user typed something else, or deleted the token) —
+            // hide the popover.
+            HideAutocomplete();
+            return;
+        }
+
+        // An active token (even an empty one — the user just typed the symbol) populates the popover,
+        // debounced so rapid typing fires one search, not one per keystroke.
+        _autocompleteDebounce = new Timer(
+            async _ => await RunAutocompleteAsync(mode, tokenStart, text),
+            null,
+            180,
+            Timeout.Infinite);
+    }
+
+    /// <summary>
+    /// Detects the active <c>@</c>/<c>#</c> token at the end of the compose text. Returns the mode
+    /// (Mention for <c>@</c>, Hashtag for <c>#</c>, None otherwise), the token's start offset (the
+    /// position of the <c>@</c>/<c>#</c>), and the token text typed after the symbol (possibly empty —
+    /// the user just typed the symbol). A token is "active" only when it is the last thing in the text
+    /// and is at the start or preceded by whitespace (so a trailing period, or an email-ish
+    /// <c>a@b</c> mid-word, is not mistaken for a mention).
+    /// </summary>
+    private static (AutocompleteMode Mode, int Start, string Token) DetectActiveToken(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return (AutocompleteMode.None, 0, string.Empty);
+        }
+
+        // The active token is a run of word characters (or empty) immediately before the end, preceded
+        // by an @ or # that is at the start of the text or after whitespace.
+        var match = System.Text.RegularExpressions.Regex.Match(
+            text, @"(?<=^|\s)([@#])([a-zA-Z0-9_]*)$");
+        if (match is { Success: false })
+        {
+            return (AutocompleteMode.None, 0, string.Empty);
+        }
+
+        var symbol = match.Groups[1].Value;
+        var token = match.Groups[2].Value;
+        var start = text.Length - symbol.Length - token.Length;
+        var mode = symbol == "@" ? AutocompleteMode.Mention : AutocompleteMode.Hashtag;
+        return (mode, start, token);
+    }
+
+    private async Task RunAutocompleteAsync(AutocompleteMode mode, int tokenStart, string sourceText)
+    {
+        _autocompleteSearchCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _autocompleteSearchCts = cts;
+
+        try
+        {
+            // The token text is everything from the @/# symbol to the end (symbol + the characters
+            // typed); the handle/tag portion is the token minus its leading symbol.
+            var fullToken = sourceText[tokenStart..];
+            var tokenText = fullToken.Length > 0 ? fullToken[1..] : string.Empty;
+
+            List<AutocompleteCandidate> candidates;
+            if (mode is AutocompleteMode.Mention)
+            {
+                candidates = await GetMentionCandidatesAsync(tokenText, cts.Token);
+            }
+            else
+            {
+                candidates = await GetHashtagCandidatesAsync(tokenText, cts.Token);
+            }
+
+            if (cts.IsCancellationRequested)
+            {
+                return;
+            }
+
+            Autocomplete = candidates.Count > 0
+                ? new AutocompleteState
+                {
+                    Visible = true,
+                    Mode = mode,
+                    Candidates = candidates,
+                    TokenStart = tokenStart,
+                    SourceText = sourceText
+                }
+                : null;
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke — ignore.
+        }
+        catch
+        {
+            // A search failure should not block composing — just no popover.
+        }
+    }
+
+    /// <summary>
+    /// Resolves mention candidates for the compose <c>@handle</c> autocomplete (71.5): the
+    /// signed-in actor's known actors (their follows) as the default list, merged with live
+    /// instance-search results as the user types. An empty query (the user just typed <c>@</c>)
+    /// returns the follows; a non-empty query filters the follows and supplements with search
+    /// results (de-duplicated by handle, known actors first).
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> GetMentionCandidatesAsync(string query, CancellationToken ct)
+    {
+        var list = new List<AutocompleteCandidate>();
+        if (Session.ActorId is not { } actorId || Session.Client is not { } client)
+        {
+            return list;
+        }
+
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            // Empty token: show the signed-in actor's known actors (their follows) as the
+            // default list — the accounts the user actually knows.
+            _knownActors ??= await LoadKnownActorsAsync(ct);
+            list.AddRange(_knownActors);
+            return list;
+        }
+
+        // Non-empty query: filter the known actors, then supplement with live search results.
+        if (_knownActors is null)
+        {
+            _knownActors = await LoadKnownActorsAsync(ct);
+        }
+
+        var lowerQuery = query.ToLowerInvariant();
+        var seenHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var candidate in _knownActors)
+        {
+            if (candidate.Handle is { } h && h.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(candidate);
+                seenHandles.Add(h);
+            }
+        }
+
+        // Supplement with live instance-search results not already in the known-actor list.
+        try
+        {
+            var baseUri = new Uri(actorId.Value);
+            var path = baseUri.AbsolutePath;
+            var uIndex = path.LastIndexOf("/u/", StringComparison.Ordinal);
+            var basePath = uIndex >= 0 ? path[..uIndex] : path;
+            if (string.IsNullOrEmpty(basePath))
+            {
+                return list;
+            }
+
+            var instanceBase = new Iri(new UriBuilder(baseUri) { Path = basePath }.Uri.GetLeftPart(UriPartial.Path));
+
+            await foreach (var item in client.SearchAsync(
+                instanceBase,
+                query,
+                new SearchOptions { Type = "Actor", Limit = 5 },
+                ct))
+            {
+                if (item is Actor actor && actor.Id is { Length: > 0 } id)
+                {
+                    var handle = actor.PreferredUsername
+                        ?? new Uri(id).AbsolutePath.Trim('/').Split('/').LastOrDefault();
+                    if (handle is { Length: > 0 } && seenHandles.Add(handle))
+                    {
+                        var name = actor.Name?.FirstOrDefault();
+                        list.Add(new AutocompleteCandidate("@" + handle, handle, name));
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Non-fatal: the known-actor list is still shown.
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Loads the signed-in actor's known actors (their follows) as autocomplete candidates,
+    /// fetching each followed actor's document (name + handle) via the UI context's coalesced
+    /// actor cache. Non-actor follows (communities, etc.) are skipped.
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> LoadKnownActorsAsync(CancellationToken ct)
+    {
+        var list = new List<AutocompleteCandidate>();
+        if (Session.ActorId is not { } actorId)
+        {
+            return list;
+        }
+
+        var followingIris = await Ui.GetFollowingActorIrisAsync();
+        foreach (var iri in followingIris)
+        {
+            if (ct.IsCancellationRequested)
+            {
+                break;
+            }
+
+            var doc = await Ui.GetActorAsync(iri);
+            if (doc is Actor actor && actor.Id is { Length: > 0 } id)
+            {
+                var handle = actor.PreferredUsername
+                    ?? new Uri(id).AbsolutePath.Trim('/').Split('/').LastOrDefault();
+                if (handle is { Length: > 0 })
+                {
+                    var name = actor.Name?.FirstOrDefault();
+                    list.Add(new AutocompleteCandidate("@" + handle, handle, name));
+                }
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Resolves hashtag candidates for the compose <c>#hashtag</c> autocomplete (118.3): the signed-in
+    /// actor's previously-used hashtags as the default list, filtered by the typed token. An empty token
+    /// (the user just typed <c>#</c>) returns the known hashtags; a non-empty token filters them. When
+    /// the typed token matches no known hashtag, the typed <c>#tag</c> itself is offered as the sole
+    /// candidate (so a brand-new tag can still be confirmed and inserted as a canonical token).
+    /// </summary>
+    private async Task<List<AutocompleteCandidate>> GetHashtagCandidatesAsync(string query, CancellationToken ct)
+    {
+        if (_knownHashtags is null)
+        {
+            _knownHashtags = await LoadKnownHashtagsAsync(ct);
+        }
+
+        var list = new List<AutocompleteCandidate>();
+        var lowerQuery = query.TrimStart('#').ToLowerInvariant();
+
+        foreach (var tag in _knownHashtags)
+        {
+            if (lowerQuery.Length is 0 || tag.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
+            {
+                list.Add(new AutocompleteCandidate("#" + tag, null, null));
+            }
+        }
+
+        // The typed token (canonical #tag) is always confirmable — even when it matches no known hashtag.
+        if (lowerQuery.Length > 0)
+        {
+            var typed = "#" + lowerQuery;
+            if (!list.Any(c => c.InsertText.Equals(typed, StringComparison.OrdinalIgnoreCase)))
+            {
+                list.Add(new AutocompleteCandidate(typed, null, null));
+            }
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Loads the signed-in actor's previously-used hashtags (118.3): the <c>tag</c> array of the most
+    /// recent of the actor's own outbox objects (a bounded read — the first outbox page, up to
+    /// <see cref="HashtagSourceLimit"/> items), de-duplicated by tag name. Non-fatal on failure — an
+    /// empty set simply means the <c>#</c> autocomplete falls back to offering the typed token only.
+    /// </summary>
+    private async Task<HashSet<string>> LoadKnownHashtagsAsync(CancellationToken ct)
+    {
+        var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (Session.ActorId is not { } actorId || Session.Client is not { } client)
+        {
+            return tags;
+        }
+
+        try
+        {
+            await foreach (var item in client.GetCollectionItemsAsync(
+                                   actorId.OutboxOf(),
+                                   new CollectionQuery(Limit: HashtagSourceLimit),
+                                   ct))
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // An outbox item is a Create/Update activity wrapping the authored object (or, less
+                // commonly, the object itself). Read hashtags from whichever is the authored object.
+                var authored = item is Activity { Object: { } objs }
+                    ? objs.FirstOrDefault()
+                    : item;
+                if (authored is IObject obj)
+                {
+                    foreach (var (name, _) in obj.GetHashtagTags())
+                    {
+                        // Normalize: strip any leading '#', drop whitespace, keep it non-empty.
+                        var clean = name.TrimStart('#').Trim();
+                        if (clean.Length > 0)
+                        {
+                            tags.Add(clean);
+                        }
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Superseded by a newer keystroke — ignore.
+        }
+        catch
+        {
+            // Non-fatal: no known hashtags simply means the typed token is the only candidate.
+        }
+
+        return tags;
+    }
+
+    /// <summary>
+    /// Accepts a popover candidate: splices the confirmed choice into the compose text in place of the
+    /// active token (the <c>@</c>/<c>#</c> + the characters typed), appending a trailing space for
+    /// mentions (so the next word is separate) and closing the popover.
+    /// </summary>
+    private void AcceptAutocomplete(AutocompleteCandidate candidate)
+    {
+        if (Autocomplete is not { } ac)
+        {
+            return;
+        }
+
+        var before = ac.SourceText[..ac.TokenStart];
+        var insert = candidate.InsertText + (ac.Mode is AutocompleteMode.Mention ? " " : string.Empty);
+        Content = before + insert;
+        HideAutocomplete();
+        StateHasChanged();
+    }
+
+    private void HideAutocomplete()
+    {
+        if (Autocomplete is not null)
+        {
+            Autocomplete = null;
+            StateHasChanged();
+        }
+    }
+
+    private string? ReplyToHref
+    {
+        get
+        {
+            if (ReplyToIri is not { } iri)
+            {
+                return null;
+            }
+
+            return $"/object?iri={Uri.EscapeDataString(iri.Value)}";
+        }
+    }
+
+    private string PageTitle
+    {
+        get
+        {
+            if (ReplyToIri is not null)
+            {
+                return "Reply";
+            }
+
+            if (CommunityIri is not null && CommunityName is { Length: > 0 } name)
+            {
+                return $"Post to {name}";
+            }
+
+            return "Compose";
+        }
+    }
+
+    /// <summary>
+    /// The note text the user is composing. Cleared on a successful post.
+    /// </summary>
+    private string Content { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The content type for new posts (Note or Article). Ignored for replies.
+    /// </summary>
+    private string ContentType { get; set; } = "Note";
+
+    /// <summary>
+    /// Whether the composed note is flagged content-sensitive (the ActivityStreams <c>sensitive</c> term).
+    /// The feed renders such notes behind a notice + reveal toggle. Applies to Note posts only (the
+    /// Article/reply/community paths don't set it).
+    /// </summary>
+    private bool IsSensitive { get; set; }
+
+    /// <summary>
+    /// The sensitivity summary (the ActivityStreams <c>summary</c> term) — the short warning text the feed
+    /// shows in place of the note's content until the viewer reveals it. Read only when
+    /// <see cref="IsSensitive"/> is set.
+    /// </summary>
+    private string SensitiveSummary { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The chosen audience / visibility for new posts (73.3) — <c>"public"</c> (the public timeline),
+    /// <c>"followers"</c> (the actor's followers only), or <c>"direct"</c> (the actor's followers + the
+    /// mentioned actors, a private message). Ignored for replies (which stay public) and community posts
+    /// (whose audience is the community's own, set by the community path).
+    /// </summary>
+    private string Visibility { get; set; } = "public";
+
+    private const int MaxChars = 500;
+
+    /// <summary>
+    /// The cap on the number of the actor's recent outbox objects scanned to build the <c>#</c>
+    /// autocomplete's known-hashtag list (118.3). A bounded read — the most recent posts carry the
+    /// hashtags a user is likely to re-use, and it keeps the first outbox-page fetch small.
+    /// </summary>
+    private const int HashtagSourceLimit = 40;
+
+    // --- Poll authoring (73.1) ---
+
+    /// <summary>
+    /// The poll's question text (the <c>Question</c> object's <c>content</c>). When empty at post time
+    /// the compose body is used as the question.
+    /// </summary>
+    private string PollQuestion { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The poll options (the choice texts). Always at least two (a poll requires two or more choices);
+    /// at most four (Mastodon's limit).
+    /// </summary>
+    private List<string> PollOptions { get; set; } = ["", ""];
+
+    /// <summary>
+    /// The poll's duration in minutes (the <c>endTime</c> is now + this). Defaults to one day.
+    /// </summary>
+    private int PollDurationMinutes { get; set; } = 1440;
+
+    /// <summary>
+    /// Whether the poll allows multiple choices (the <c>multiple</c> term).
+    /// </summary>
+    private bool PollMultiple { get; set; }
+
+    /// <summary>
+    /// A poll-specific validation message (e.g. "At least two options are required."), when present.
+    /// </summary>
+    private string? PollError { get; set; }
+
+    /// <summary>
+    /// Adds a poll option (up to four). A no-op when at the limit.
+    /// </summary>
+    private void AddPollOption()
+    {
+        if (PollOptions.Count < 4)
+        {
+            PollOptions.Add(string.Empty);
+        }
+    }
+
+    /// <summary>
+    /// Removes a poll option at <paramref name="index"/> (down to a minimum of two).
+    /// </summary>
+    private void RemovePollOption(int index)
+    {
+        if (index >= 0 && index < PollOptions.Count && PollOptions.Count > 2)
+        {
+            PollOptions.RemoveAt(index);
+        }
+    }
+
+    /// <summary>
+    /// Validates the poll inputs and returns the non-empty option texts (trimmed), or null when the
+    /// poll is invalid (in which case <see cref="PollError"/> is set). A poll requires at least two
+    /// non-empty, non-duplicate options.
+    /// </summary>
+    private List<string>? GetValidPollOptions()
+    {
+        PollError = null;
+        var options = PollOptions
+            .Where(o => !string.IsNullOrWhiteSpace(o))
+            .Select(o => o.Trim())
+            .ToList();
+        if (options.Count < 2)
+        {
+            PollError = "A poll requires at least two options.";
+            return null;
+        }
+
+        var distinct = options.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (distinct.Count < 2)
+        {
+            PollError = "Poll options must be distinct.";
+            return null;
+        }
+
+        return distinct;
+    }
+
+    /// <summary>
+    /// The chosen media attachments (browser <see cref="IBrowserFile"/>s, read lazily at post time), held
+    /// until the post uploads them. Empty when nothing is selected. Applies to Note and Article posts
+    /// only (replies carry no attachment). Multiple files of mixed types (image / video / audio /
+    /// PDF) are supported (73.2).
+    /// </summary>
+    private List<IBrowserFile> Attachments { get; set; } = [];
+
+    /// <summary>
+    /// The maximum attachment size accepted per file (10 MiB — matches the server's upload cap); an
+    /// oversized file is rejected by the server with <c>413</c>.
+    /// </summary>
+    private const long MaxAttachmentBytes = 10 * 1024 * 1024;
+
+    /// <summary>
+    /// The hard cap on the number of attachments per post (guards against an unbounded upload fan-out on
+    /// post). Files beyond the cap are ignored when chosen.
+    /// </summary>
+    private const int MaxAttachments = 4;
+
+    /// <summary>
+    /// Records the chosen attachments (a batch of browser <see cref="IBrowserFile"/>s from the
+    /// <c>multiple</c> file input, read lazily at post time), appending them to the existing selection up
+    /// to <see cref="MaxAttachments"/>. The full selection is read via the change event args'
+    /// <c>GetMultipleFiles</c> (the event also exposes a single <c>File</c> for the common one-file case).
+    /// A no-op when nothing is chosen.
+    /// </summary>
+    private void OnAttachmentsChosen(InputFileChangeEventArgs e)
+    {
+        if (e.FileCount == 0)
+        {
+            return;
+        }
+
+        IReadOnlyList<IBrowserFile> files;
+        try
+        {
+            files = e.GetMultipleFiles(e.FileCount);
+        }
+        catch
+        {
+            return;
+        }
+
+        foreach (var file in files)
+        {
+            if (file is null || Attachments.Count >= MaxAttachments)
+            {
+                continue;
+            }
+
+            if (Attachments.Any(a => a.Name == file.Name && a.Size == file.Size))
+            {
+                continue;
+            }
+
+            Attachments.Add(file);
+        }
+    }
+
+    /// <summary>
+    /// Removes the attachment at <paramref name="index"/> (the "✕" affordance next to the file name).
+    /// </summary>
+    private void RemoveAttachment(int index)
+    {
+        if (index >= 0 && index < Attachments.Count)
+        {
+            Attachments.RemoveAt(index);
+        }
+    }
+
+    /// <summary>
+    /// Whether a post is in flight — disables the button and shows the "Posting…" state.
+    /// </summary>
+    private bool Busy { get; set; }
+
+    /// <summary>
+    /// Whether the last post succeeded — when true the "View your posts" link is shown (a quick path
+    /// to the profile's outbox, where the just-posted note now lives).
+    /// </summary>
+    private bool Posted { get; set; }
+
+    /// <summary>
+    /// The IRI the server minted for the posted <c>Create</c> (from <see cref="DeliveryResult.MintedId"/>),
+    /// shown after a successful post so the user can see what was created.
+    /// </summary>
+    private string? PostedIri { get; set; }
+
+    /// <summary>
+    /// A human-readable status line for the last post (e.g. the HTTP status), when present.
+    /// </summary>
+    private string? Result { get; set; }
+
+    /// <summary>
+    /// The error message from the last post, when present.
+    /// </summary>
+    private string? Error { get; set; }
+
+    /// <summary>
+    /// The signed-in actor's handle (e.g. "pwtest2"), derived from the last segment of the actor IRI.
+    /// </summary>
+    private string ActorHandle
+    {
+        get
+        {
+            if (Session.ActorId is not { } actorId)
+            {
+                return "…";
+            }
+
+            var uri = new Uri(actorId.Value);
+            var segments = uri.AbsolutePath.TrimEnd('/').Split('/');
+            return segments.Length > 0 ? segments[^1] : actorId.Value;
+        }
+    }
+
+    /// <summary>
+    /// The ActivityStreams public collection address (the conventional <c>to</c> for public notes) —
+    /// a note addressed to the public is delivered to the actor's followers' timelines (F-14).
+    /// </summary>
+    private static readonly Iri AsPublic = new("https://www.w3.org/ns/activitystreams#Public");
+
+    /// <summary>
+    /// Posts the composed note (or reply, when <see cref="ReplyToIri"/> is set) as the signed-in actor.
+    /// The write goes through the session's <see cref="IActivityPubClient"/> — the one sanctioned path
+    /// from the UI into ActivityPub state.
+    /// </summary>
+    private async Task PostAsync()
+    {
+        if (Session.ActorId is not { } actorId
+            || Session.Client is not { } client
+            || string.IsNullOrWhiteSpace(Content)
+            || Busy)
+        {
+            return;
+        }
+
+        Busy = true;
+        Posted = false;
+        PostedIri = null;
+        Result = null;
+        Error = null;
+        try
+        {
+            // Upload the chosen attachments first (local, cookie-authenticated multipart POSTs — not
+            // signed inbox deliveries) to get the same-origin media IRIs, so the post can carry a media
+            // attachment per file whose url is that IRI (the browser loads each same-origin, never a
+            // cross-origin media host — Decision 056 (b)). Replies and community posts carry no
+            // attachment. An upload that fails (null result) is skipped — the remaining files still
+            // attach (a single flaky upload does not drop the whole post's media).
+            var media = new List<MediaAttachment>();
+            foreach (var file in Attachments.Where(f => f.Size > 0))
+            {
+                var uploaded = await UploadAttachmentAsync(actorId, file);
+                if (uploaded is not null)
+                {
+                    media.Add(new MediaAttachment(uploaded.MediaIri, uploaded.ContentType, uploaded.FileName));
+                }
+            }
+
+            var rawContent = Content.Trim();
+            var mentionPairs = await DetectMentionsWithDisplayAsync(rawContent, actorId);
+            var mentions = mentionPairs.Select(m => m.Iri).ToList();
+            var hashtags = DetectHashtags(rawContent);
+            var mentionArg = mentions.Count > 0 ? mentions : null;
+            var hashtagArg = hashtags.Count > 0 ? hashtags : null;
+            // A hashtag tag's href points at this instance's hashtag search (so a reader's tap on the
+            // hashtag lands on the instance's search results for that tag).
+            Func<string, string?> hashtagHref = name => $"{new Uri(actorId.Value).GetLeftPart(UriPartial.Authority)}/search?q={Uri.EscapeDataString(name)}";
+
+            // 73.3: the audience the chosen visibility maps to (public / followers / direct). Replies and
+            // community posts ignore this (a reply stays public; a community post's audience is the
+            // community's own, set by the community path below).
+            var audience = BuildAudience(actorId, mentionArg);
+
+            // 156: the note's body HTML with @mention / #hashtag tokens wrapped in links (the
+            // Mastodon/Pleroma convention — the content carries <a class="mention">/<a class="hashtag">
+            // alongside the structured `tag` array). The raw text is rendered through Markdown (so any
+            // Markdown the author typed is formatted) and then linkified; the result starts with a block
+            // tag, so the object view renders it verbatim (as live links) rather than re-escaping it.
+            // When there are no mentions/hashtags the text is left raw (the prior behavior — rendered as
+            // Markdown on display).
+            var linkifyMentions = mentionPairs
+                .Select(m => new MentionLinkify.Mention(m.Display, m.Iri))
+                .ToList();
+            var linkifyHashtags = hashtags
+                .Select(h => new MentionLinkify.Hashtag(h, hashtagHref(h) ?? string.Empty))
+                .Where(h => !string.IsNullOrEmpty(h.Href))
+                .ToList();
+            var bodyHtml = BuildLinkedBody(rawContent, linkifyMentions, linkifyHashtags);
+
+            DeliveryResult result;
+            if (ReplyToIri is { } parent)
+            {
+                result = await client.PostReplyAsync(actorId, parent, bodyHtml, mentions: mentionArg, to: [AsPublic], hashtags: hashtagArg);
+            }
+            else if (CommunityIri is { } community)
+            {
+                result = await PostToCommunityAsync(client, actorId, community, media, mentionArg, hashtagArg, IsSensitive, SensitiveSummary);
+            }
+            else if (ContentType == "Poll")
+            {
+                result = await PostPollAsync(client, actorId, mentionArg, hashtagArg, hashtagHref, audience);
+            }
+            else if (ContentType == "Article")
+            {
+                result = await PostArticleAsync(client, actorId, media, mentionArg, hashtagArg, audience);
+            }
+            else
+            {
+                var note = ComposeNote.Build(
+                    actorId,
+                    bodyHtml,
+                    sensitive: IsSensitive,
+                    summary: SensitiveSummary,
+                    to: audience.To,
+                    cc: audience.Cc,
+                    media: media.Count > 0 ? media : null,
+                    mentions: mentionArg,
+                    hashtags: hashtagArg,
+                    hashtagHrefFactory: hashtagHref);
+                result = await client.PostNoteAsync(actorId, note);
+            }
+
+            if (result.IsSuccess)
+            {
+                Posted = true;
+                Result = $"Posted (HTTP {result.StatusCode}).";
+                PostedIri = result.MintedId;
+                Content = string.Empty;
+                IsSensitive = false;
+                SensitiveSummary = string.Empty;
+                Attachments = [];
+                PollQuestion = string.Empty;
+                PollOptions = ["", ""];
+                PollDurationMinutes = 1440;
+                PollMultiple = false;
+                PollError = null;
+            }
+            else
+            {
+                Result = $"Post failed (HTTP {result.StatusCode}).";
+            }
+        }
+        catch (Exception)
+        {
+            Error = "Your post couldn't be sent right now. Please check your connection and try again.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    /// <summary>
+    /// Builds the authored note's body HTML with @mention / #hashtag tokens wrapped in links (156). The
+    /// raw text is first rendered through <see cref="Markdown.ToHtml"/> (so any Markdown the author typed
+    /// is formatted — headings, lists, bold, links), then the resolved mention and hashtag tokens are
+    /// wrapped in <c>&lt;a class="mention"&gt;</c> / <c>&lt;a class="hashtag"&gt;</c> links by
+    /// <see cref="MentionLinkify.Linkify"/>. When there are no mentions and no hashtags the raw text is
+    /// returned unchanged (the prior behavior — the object view renders it as Markdown on display), so a
+    /// plain post's stored content is untouched.
+    /// </summary>
+    private static string BuildLinkedBody(string rawContent, IReadOnlyList<MentionLinkify.Mention> mentions, IReadOnlyList<MentionLinkify.Hashtag> hashtags)
+    {
+        if (mentions.Count == 0 && hashtags.Count == 0)
+        {
+            return rawContent;
+        }
+
+        var html = Markdown.ToHtml(rawContent);
+        return MentionLinkify.Linkify(html, mentions, hashtags);
+    }
+
+    /// <summary>
+    /// The audience (73.3) a chosen visibility maps to: the note's <c>to</c> link(s) and its <c>cc</c>
+    /// link(s). The remote-visibility convention (ActivityPub §5.1.2, Mastodon's public-in-cc test):
+    /// public posts put the public address in <c>cc</c> (so they appear on the public timeline),
+    /// followers-only posts put only the author's followers in <c>cc</c> (no public), and direct posts
+    /// put the author's followers + the mentioned actors in <c>to</c> (a private message, no public).
+    /// </summary>
+    private sealed record PostAudience(IReadOnlyList<Iri> To, IReadOnlyList<Iri> Cc)
+    {
+        /// <summary>
+        /// The <c>to</c> links for the note (empty for public / followers posts; the mentioned actors for
+        /// direct posts).
+        /// </summary>
+        public IReadOnlyList<Link> ToLinks => To.Select(i => (Link)new Link { Href = i.Uri }).ToList();
+
+        /// <summary>
+        /// The <c>cc</c> links for the note (public → the public address; followers → the author's
+        /// followers; direct → the author's followers; empty is never produced).
+        /// </summary>
+        public IReadOnlyList<Link> CcLinks => Cc.Select(i => (Link)new Link { Href = i.Uri }).ToList();
+    }
+
+    /// <summary>
+    /// Maps the chosen <see cref="Visibility"/> (73.3) to its <see cref="PostAudience"/>. Public:
+    /// <c>to</c> = public, <c>cc</c> = the author's followers. Followers: <c>to</c> = the author's
+    /// followers, <c>cc</c> = the author's followers (the public is NOT cc'd, so the post is not public).
+    /// Direct: <c>to</c> = the author's followers + the mentioned actors, <c>cc</c> = the author's
+    /// followers. A blank/unknown visibility falls back to public (the historical behavior).
+    /// </summary>
+    private PostAudience BuildAudience(Iri actorId, List<Iri>? mentions)
+    {
+        var followers = actorId.FollowersOf();
+        return Visibility switch
+        {
+            "followers" => new PostAudience([followers], [followers]),
+            "direct" => new PostAudience(
+                new List<Iri> { followers }
+                    .Concat(mentions is null ? [] : mentions)
+                    .Distinct()
+                    .ToList(),
+                [followers]),
+            _ => new PostAudience([AsPublic], [followers]),
+        };
+    }
+
+    /// <summary>
+    /// Posts content to a community. For a <em>local</em> community (same host as the actor) the post is
+    /// a <c>Note</c> published to the author's own outbox (the standard path); the receiving server's
+    /// <c>Create</c> handler records it in the community's members' outboxes. For a <em>remote</em>
+    /// community (a different host — e.g. a Lemmy community) the post is a Lemmy-compatible
+    /// <c>Page</c> delivered directly to the community's inbox: a remote server only sees content it is
+    /// addressed to, so it would never observe an activity delivered to the author's own outbox. The
+    /// post's <c>attributedTo</c> carries both the author and the community in either case.
+    /// </summary>
+    private async Task<DeliveryResult> PostToCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, bool sensitive = false, string? summary = null)
+    {
+        return IsRemoteCommunity
+            ? await PostToRemoteCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary)
+            : await PostToLocalCommunityAsync(client, actorId, communityIri, media, mentions, hashtags, sensitive, summary);
+    }
+
+    /// <summary>
+    /// Posts to a <em>remote</em> (different-host) community as a Lemmy-compatible <c>Page</c>, published
+    /// to the <em>author's own outbox</em> (the standard post path — the server's outbox-publish handler
+    /// detects the remote community in the <c>to</c> audience and cross-posts it server-side, transforming
+    /// a Note to a Page for Lemmy per 138.11). The object is addressed <c>to</c> the community + the
+    /// public and <c>cc</c>'d to the community's followers collection (the Lemmy cross-check order),
+    /// carries <c>content</c> as Markdown-rendered HTML plus a <c>source</c> of the original Markdown,
+    /// and is <c>attributedTo</c> both the author and the community.
+    /// </summary>
+    /// <remarks>
+    /// 139.1 F-5 — this used to deliver <em>directly</em> to the remote community's inbox
+    /// (<c>communityIri.InboxOf()</c>), a cross-origin fetch the browser's CSP (<c>connect-src 'self'</c>)
+    /// blocks, so posting to a remote community from the Web UI failed. Publishing to the author's own
+    /// outbox instead keeps all posts on the same-origin path; the server (not bound by the browser's
+    /// CSP) performs the cross-instance cross-post delivery.
+    /// </remarks>
+    private async Task<DeliveryResult> PostToRemoteCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
+    {
+        var content = Content.Trim();
+        var html = Markdown.ToHtml(content);
+        var followersIri = communityIri.FollowersOf();
+
+        var page = new KristofferStrube.ActivityStreams.Page
+        {
+            AttributedTo =
+            [
+                new Link { Href = new Uri(actorId.Value) },
+                new Link { Href = new Uri(communityIri.Value) }
+            ],
+            To =
+            [
+                new Link { Href = new Uri(communityIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ],
+            Content = [string.IsNullOrEmpty(html) ? content : html],
+            Published = DateTime.UtcNow
+        };
+
+        // Lemmy reads the Markdown source from the object's `source` field (the library does not model
+        // it, so it is written into ExtensionData — Rule 6) so a remote client can re-render it.
+        page.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        page.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(new List<string> { followersIri.Value });
+        page.ExtensionData["source"] = System.Text.Json.JsonSerializer.SerializeToElement(new
+        {
+            content,
+            mediaType = "text/markdown"
+        });
+
+        if (sensitive)
+        {
+            page.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+            if (summary is { Length: > 0 } s)
+            {
+                page.Summary = [s];
+            }
+        }
+
+        if (media.Count > 0)
+        {
+            page.Attachment = BuildCommunityAttachments(media);
+        }
+
+        var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
+        if (tags is { Count: > 0 })
+        {
+            page.Tag = tags;
+        }
+
+        var create = new Create
+        {
+            Id = $"{actorId.Value.TrimEnd('/')}/creates/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = new Uri(actorId.Value) }],
+            Object = [page],
+            To =
+            [
+                new Link { Href = new Uri(communityIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ]
+        };
+
+        // 139.1 F-5 — publish to the author's own outbox (same-origin), not the remote community's
+        // inbox (a cross-origin fetch the browser's CSP blocks). The server's outbox-publish handler
+        // reads the remote community from the `to` audience and cross-posts it server-side (138.11).
+        return await client.DeliverAsync(actorId.OutboxOf(), create);
+    }
+
+    /// <summary>
+    /// Posts to a <em>local</em> (same-host) community as a <c>Note</c> published to the author's own
+    /// outbox (the standard community-post path; the server's <c>Create</c> handler routes it into the
+    /// community's members' outboxes).
+    /// </summary>
+    private async Task<DeliveryResult> PostToLocalCommunityAsync(IActivityPubClient client, Iri actorId, Iri communityIri, List<MediaAttachment> media, List<Iri>? mentions, List<string>? hashtags, bool sensitive, string? summary)
+    {
+        var followersIri = communityIri.FollowersOf();
+        var note = new KristofferStrube.ActivityStreams.Note
+        {
+            AttributedTo =
+            [
+                new Link { Href = new Uri(actorId.Value) },
+                new Link { Href = new Uri(communityIri.Value) }
+            ],
+            To =
+            [
+                new Link { Href = new Uri(followersIri.Value) },
+                new Link { Href = new Uri(AsPublic.Value) }
+            ],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        if (sensitive)
+        {
+            note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(true);
+            if (summary is { Length: > 0 } s)
+            {
+                note.Summary = [s];
+            }
+        }
+
+        if (media.Count > 0)
+        {
+            note.Attachment = BuildCommunityAttachments(media);
+        }
+
+        var tags = BuildCommunityTags(mentions, hashtags ?? [], actorId);
+        if (tags is { Count: > 0 })
+        {
+            note.Tag = tags;
+        }
+
+        return await client.PostNoteAsync(actorId, note);
+    }
+
+    /// <summary>
+    /// Builds the attachment list (Image for <c>image/*</c>, Document otherwise) shared by the local
+    /// (<c>Note</c>) and remote (<c>Page</c>) community-post paths.
+    /// </summary>
+    private static List<KristofferStrube.ActivityStreams.IObjectOrLink> BuildCommunityAttachments(List<MediaAttachment> media)
+    {
+        var attachments = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
+        foreach (var m in media)
+        {
+            var isImage = string.Equals(m.ContentType, "image", StringComparison.Ordinal)
+                || m.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+            if (isImage)
+            {
+                var image = new Image
+                {
+                    Url = [new Link { Href = m.MediaIri.Uri }],
+                    Id = m.MediaIri.Value,
+                    MediaType = m.ContentType,
+                };
+                if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                {
+                    image.Name = [m.FileName];
+                }
+                attachments.Add(image);
+            }
+            else
+            {
+                var document = new Document
+                {
+                    Url = [new Link { Href = m.MediaIri.Uri }],
+                    MediaType = m.ContentType,
+                };
+                if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                {
+                    document.Name = [m.FileName];
+                }
+                attachments.Add(document);
+            }
+        }
+
+        return attachments;
+    }
+
+    /// <summary>
+    /// Builds the mention/hashtag <c>tag</c> list shared by the local (<c>Note</c>) and remote
+    /// (<c>Page</c>) community-post paths (mirrors <see cref="BuildTagList"/>).
+    /// </summary>
+    private List<KristofferStrube.ActivityStreams.IObjectOrLink>? BuildCommunityTags(List<Iri>? mentions, List<string> hashtags, Iri actorId)
+        => BuildTagList(mentions, hashtags, actorId);
+
+    private async Task<DeliveryResult> PostArticleAsync(IActivityPubClient client, Iri actorId, List<MediaAttachment> media, List<Iri>? mentions = null, List<string>? hashtags = null, PostAudience? audience = null)
+    {
+        var article = new Article
+        {
+            AttributedTo = [new Link { Href = new Uri(actorId.Value) }],
+            To = audience?.ToLinks ?? [new Link { Href = new Uri(AsPublic.Value) }],
+            Content = [Content.Trim()],
+            Published = DateTime.UtcNow
+        };
+
+        if (audience is { CcLinks.Count: > 0 })
+        {
+            article.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            article.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(audience.CcLinks.Select(l => l.Href?.AbsoluteUri ?? string.Empty).ToList());
+        }
+
+        if (media.Count > 0)
+        {
+            // One attachment per uploaded file (73.2 — multiple, mixed media): the url is the
+            // same-origin media IRI (its id mirrors it for images, so a reader can resolve the media
+            // without the url); mediaType + name come from the upload. An image/* upload is an Image
+            // (media-gallery render); anything else is a Document (rich-attachment render).
+            var attachments = new List<KristofferStrube.ActivityStreams.IObjectOrLink>();
+            foreach (var m in media)
+            {
+                var isImage = string.Equals(m.ContentType, "image", StringComparison.Ordinal)
+                    || m.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase);
+
+                KristofferStrube.ActivityStreams.IObjectOrLink attachment;
+                if (isImage)
+                {
+                    var image = new Image
+                    {
+                        Url = [new Link { Href = m.MediaIri.Uri }],
+                        Id = m.MediaIri.Value,
+                        MediaType = m.ContentType,
+                    };
+                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                    {
+                        image.Name = [m.FileName];
+                    }
+                    attachment = image;
+                }
+                else
+                {
+                    var document = new Document
+                    {
+                        Url = [new Link { Href = m.MediaIri.Uri }],
+                        MediaType = m.ContentType,
+                    };
+                    if (m.FileName is { Length: > 0 } && !string.IsNullOrWhiteSpace(m.FileName))
+                    {
+                        document.Name = [m.FileName];
+                    }
+                    attachment = document;
+                }
+
+                attachments.Add(attachment);
+            }
+
+            article.Attachment = attachments;
+        }
+
+        var tags = BuildTagList(mentions, hashtags ?? [], actorId);
+        if (tags is { Count: > 0 })
+        {
+            article.Tag = tags;
+        }
+
+        var create = new Create
+        {
+            Actor = [new Link { Href = new Uri(actorId.Value) }],
+            Object = [article]
+        };
+
+        return await client.DeliverAsync(actorId.OutboxOf(), create);
+    }
+
+    /// <summary>
+    /// Posts a poll as the signed-in actor: the <c>Question</c>'s content is the poll question (or the
+    /// compose body when the question is left blank), and its options, end time (now + the chosen
+    /// duration), and multiple-answer flag come from the poll editor. Validation (at least two
+    /// non-empty, distinct options) happens here — when invalid, <see cref="PollError"/> is set and a
+    /// failed <see cref="DeliveryResult"/> is returned without hitting the network. Mentions and
+    /// hashtags are detected from the question text.
+    /// </summary>
+    private async Task<DeliveryResult> PostPollAsync(
+        IActivityPubClient client,
+        Iri actorId,
+        List<Iri>? mentions,
+        List<string>? hashtags,
+        Func<string, string?> hashtagHref,
+        PostAudience? audience = null)
+    {
+        var options = GetValidPollOptions();
+        if (options is null)
+        {
+            return new DeliveryResult((int)HttpStatusCode.BadRequest, false, string.Empty);
+        }
+
+        // The question is the poll question when set; otherwise fall back to the compose body (which
+        // the caller has already validated is non-empty).
+        var question = string.IsNullOrWhiteSpace(PollQuestion) ? Content.Trim() : PollQuestion.Trim();
+        var pollMentions = await DetectMentionsAsync(question, actorId);
+        var pollHashtags = DetectHashtags(question);
+        var endsAt = DateTime.UtcNow.AddMinutes(PollDurationMinutes);
+
+        return await client.PostQuestionAsync(
+            actorId,
+            question,
+            options,
+            endsAt: endsAt,
+            multiple: PollMultiple,
+            to: audience?.To,
+            cc: audience?.Cc,
+            mentions: pollMentions.Count > 0 ? pollMentions : null,
+            hashtags: pollHashtags.Count > 0 ? pollHashtags : null,
+            hashtagHrefFactory: hashtagHref);
+    }
+
+    /// <summary>
+    /// Uploads one chosen media attachment (a local, cookie-authenticated multipart POST to the actor's
+    /// own home instance — Phase 20.4 (a), not a signed inbox delivery) and returns the same-origin media
+    /// IRI + content-type + file name (set as the post's media attachment). Returns null when the upload
+    /// fails (the caller skips that file — one flaky upload does not drop the whole post's media).
+    /// </summary>
+    private async Task<MediaUploadResult?> UploadAttachmentAsync(Iri actorId, IBrowserFile file)
+    {
+        try
+        {
+            var bytes = await ReadBytesAsync(file);
+            return await Session.UploadMediaAsync(
+                actorId,
+                bytes,
+                file.ContentType ?? "application/octet-stream",
+                file.Name,
+                CancellationToken.None);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a browser file's bytes (capped at <see cref="MaxAttachmentBytes"/>).
+    /// </summary>
+    private static async Task<byte[]> ReadBytesAsync(IBrowserFile file)
+    {
+        await using var stream = file.OpenReadStream(MaxAttachmentBytes);
+        using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+        return ms.ToArray();
+    }
+}

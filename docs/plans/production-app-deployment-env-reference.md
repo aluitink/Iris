@@ -32,8 +32,21 @@ MEDIA_S3_SECRET_KEY=
 IRIS_ADMIN_USERNAME=
 IRIS_ADMIN_PASSWORD=
 
-# ---- CORS (only relevant for a non-UI API consumer; same-origin UI needs none) ----
+# ---- CORS (slice 33.5; only relevant for a non-UI API consumer; the same-origin UI needs none) ----
+# The app is same-origin-only by default: leave blank and no CORS middleware runs, so a cross-origin
+# request gets no Access-Control-Allow-Origin header (the browser blocks it). Set to a comma-separated
+# allow-list of origins (e.g. https://app.example.org,https://other.example.org) to grant a non-UI API
+# consumer cross-origin access to the instance's API. The allow-list is strict — only the listed origins
+# are allowed (never AllowAnyOrigin) — and credentials + the API's methods/headers are enabled. Maps to
+# Iris:Cors:Origins.
 IRIS_CORS_ORIGINS=
+
+# ---- Inbound request-body cap (slice 33.4) ----
+# Bounds the memory an unauthenticated inbound federation POST can force the app to buffer (a
+# denial-of-service vector for a public instance). Leave blank for the app's default (1 MiB — generous
+# for an ActivityPub activity JSON document). Set to a larger byte count only if a legitimate use case
+# requires it. Maps to Iris:MaxRequestBodySize (Kestrel Limits.MaxRequestBodySize).
+IRIS_MAX_REQUEST_BODY_SIZE=
 
 # ---- Ports published to the host ----
 # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this
@@ -73,9 +86,14 @@ services:
       Iris__InstanceName: ${IRIS_INSTANCE_NAME:-my-iris}
       # App:* is Iris.Web's own section (never bound by AddActivityPubServer's ActivityPubServerOptions) —
       # admin bootstrap is a host-app concern, not an Iris:* library option (see production-app-authentication.md §6).
-      App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
-      App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
-      Media__Backend: ${MEDIA_BACKEND:-Local}
+       App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
+       App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
+        # Inbound request-body cap (slice 33.4); blank -> the app's 1 MiB default.
+        Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
+        # CORS (slice 33.5); blank -> same-origin-only (no CORS middleware). Set to a comma-separated
+        # allow-list of origins to grant a non-UI API consumer cross-origin access (never AllowAnyOrigin).
+        Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
+        Media__Backend: ${MEDIA_BACKEND:-Local}
       Media__S3__Endpoint: ${MEDIA_S3_ENDPOINT:-}
       Media__S3__Bucket: ${MEDIA_S3_BUCKET:-}
       Media__S3__AccessKey: ${MEDIA_S3_ACCESS_KEY:-}
@@ -111,7 +129,15 @@ volumes:
 
 An optional `minio` service (only relevant when `MEDIA_BACKEND=S3`) can be added under a Compose `profiles: ["s3"]` tag so it doesn't start by default.
 
-## 3. Example reverse-proxy config (Caddy), for a real public deployment
+## 3. Example reverse-proxy config, for a real public deployment
+
+The app's Blazor Interactive Server circuit opens a long-lived **WebSocket** connection (SignalR)
+between the browser and the ASP.NET Core process. The reverse proxy **must** upgrade that connection
+(HTTP 101) or the circuit falls back to the slower SSE transport (or fails entirely, depending on the
+proxy). This is the one proxy requirement that is easy to miss and hard to debug (the browser
+console shows `Unexpected response code: 200` — a 200, not a 101, on the WebSocket handshake).
+
+### Caddy (recommended — upgrades WebSockets by default)
 
 ```caddyfile
 iris.example.com {
@@ -119,7 +145,74 @@ iris.example.com {
 }
 ```
 
-Caddy handles TLS (Let's Encrypt) automatically; this file is documentation/appendix only, not part of the MVP Compose stack.
+Caddy handles TLS (Let's Encrypt) automatically **and** upgrades WebSocket connections transparently
+(no extra directive needed). This file is documentation/appendix only, not part of the MVP Compose
+stack.
+
+### nginx
+
+nginx does **not** upgrade WebSockets by default. The following config adds the required
+`Upgrade`/`Connection` header pass-through:
+
+```nginx
+# /etc/nginx/conf.d/iris.example.com.conf
+
+# Map for the Connection header: "upgrade" when the client asks to upgrade,
+# "close" otherwise. This is the standard nginx WebSocket pattern.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ""      close;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name iris.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/iris.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/iris.example.com/privkey.pem;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8088;
+        proxy_http_version 1.1;
+
+        # WebSocket upgrade support (required for the Blazor Interactive Server circuit):
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection $connection_upgrade;
+
+        # Forwarded headers (the app's UseForwardedHeaders reads these):
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Long-lived connections: the WebSocket circuit is a single connection that stays open
+        # for the life of the browser tab. Raise the proxy read timeout so nginx does not
+        # close an idle circuit (the default 60 s is too short for a user who leaves the tab
+        # open without interacting).
+        proxy_read_timeout  3600s;
+        proxy_send_timeout  3600s;
+    }
+}
+```
+
+**Key directives:**
+
+| Directive | Why |
+|---|---|
+| `proxy_http_version 1.1` | WebSocket requires HTTP/1.1 (HTTP/1.0 cannot upgrade). |
+| `proxy_set_header Upgrade $http_upgrade` | Passes the client's `Upgrade: websocket` header to the backend. |
+| `proxy_set_header Connection $connection_upgrade` | Sets `Connection: upgrade` when upgrading, `Connection: close` otherwise (via the `map`). |
+| `proxy_read_timeout 3600s` | Prevents nginx from closing an idle WebSocket circuit after the default 60 s. |
+
+### Verification
+
+After deploying the proxy config, open the app in a browser and check the DevTools → Network tab:
+
+1. The initial page load should show a `ws://` or `wss://` request to `/_blazor` with status **101 Switching Protocols**.
+2. If the request shows **200 OK** instead, the proxy is not upgrading — the circuit falls back to
+   SSE (Server-Sent Events), which works but is slower and more verbose.
+3. The app still functions either way (SignalR auto-negotiates the transport), but a 200 on the
+   WebSocket handshake is a sign the proxy config is incomplete and should be fixed.
 
 ## 4. Smoke test outline
 

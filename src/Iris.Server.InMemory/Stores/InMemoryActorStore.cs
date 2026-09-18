@@ -54,4 +54,74 @@ public sealed class InMemoryActorStore : IActorStore
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<Actor>>(_actors.Values.ToList());
     }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        // localOnly restricts the search to this instance's own actors (the directory). The in-memory
+        // store only ever holds locally provisioned actors, so the filter is a no-op here — but the
+        // signature is kept consistent with the durable stores (a remote actor cached here would carry
+        // no PreferredUsername, so it would be excluded by the same predicate).
+        var matches = _actors.Values
+            .Where(a => IsLocal(a, localOnly))
+            .Where(a => !hasQuery || MatchesActor(a, normalized!))
+            .OrderBy(a => a.Id ?? string.Empty, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(limit)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<Actor>>(matches);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        var count = _actors.Values.Count(a => IsLocal(a, localOnly) && (!hasQuery || MatchesActor(a, normalized!)));
+        return Task.FromResult(count);
+    }
+
+    /// <summary>
+    /// True when the actor passes the <paramref name="localOnly"/> filter. A local actor carries a
+    /// <c>preferredUsername</c> (its handle); a cached remote actor does not.
+    /// </summary>
+    private static bool IsLocal(Actor actor, bool localOnly)
+        => !localOnly || actor.PreferredUsername is { Length: > 0 };
+
+    /// <summary>
+    /// Returns true when the actor's <c>name</c>, <c>preferredUsername</c>, or IRI contains
+    /// <paramref name="query"/> as a case-insensitive substring (the same matching the global search
+    /// service applies to the actor pass).
+    /// </summary>
+    private static bool MatchesActor(Actor actor, string query)
+    {
+        return ContainsInStrings(actor.Name, query)
+            || (actor.PreferredUsername is { Length: > 0 } username && username.Contains(query, StringComparison.OrdinalIgnoreCase))
+            || (actor.Id is { Length: > 0 } id && id.Contains(query, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null && value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 }

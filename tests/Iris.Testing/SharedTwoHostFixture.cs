@@ -73,7 +73,7 @@ public class SharedTwoHostFixture : IDisposable
     /// intact (the hosts' signing infrastructure depends on them). After calling this, re-seed via
     /// <see cref="IPersistenceProvider"/> to restore the test's baseline state.
     /// </summary>
-    public void Reset()
+    public virtual void Reset()
     {
         if (PersistenceA is InMemoryPersistenceProvider inMemoryA)
         {

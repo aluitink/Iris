@@ -28,7 +28,8 @@ public sealed class HttpSignatureSigner(IKeyStore keyStore) : ISignatureSigner
             identity.KeyId.Value,
             Signatures.AlgorithmLabel(key.Algorithm),
             Signatures.HeadersForProfile(profile),
-            Convert.ToBase64String(signature))
+            Convert.ToBase64String(signature),
+            Signatures.ToUnixSeconds(metadata.Date))
             .Format();
     }
 
@@ -62,7 +63,8 @@ public sealed class HttpSignatureSigner(IKeyStore keyStore) : ISignatureSigner
             identity.KeyId.Value,
             Signatures.AlgorithmLabel(key.Algorithm),
             Signatures.HeadersForProfile(profile),
-            Convert.ToBase64String(signature))
+            Convert.ToBase64String(signature),
+            Signatures.ToUnixSeconds(metadata.Date))
             .Format();
     }
 }

@@ -1,5 +1,6 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server.Security;
 
@@ -28,10 +29,11 @@ public class RemoteKeyCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to <see cref="CachePolicy.Key"/>.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public RemoteKeyCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public RemoteKeyCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.Key;
-        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity));
+        _cache = new CachingReadThrough<JwkKey>(new MemoryCache<JwkKey>(resolved, capacity), metrics);
     }
 
     /// <summary>
@@ -45,6 +47,11 @@ public class RemoteKeyCache
     public int Count => _cache.Count;
 
     /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
+
+    /// <summary>
     /// Removes the entry for <paramref name="key"/> (e.g. after key rotation).
     /// </summary>
     /// <param name="key">The key IRI (the <c>publicKey.id</c> of the remote actor).</param>
@@ -54,6 +61,13 @@ public class RemoteKeyCache
     /// (the F-21 key-rotation path) while reusing the default read-through behavior.
     /// </remarks>
     public virtual bool Invalidate(Iri key) => _cache.Invalidate(key);
+
+    /// <summary>
+    /// Removes all cached keys (e.g. after a host's persistence is reset, so a stale cached key does not
+    /// survive the reset and mislead signature validation). A no-op when the underlying cache is not a
+    /// <see cref="MemoryCache{TValue}"/>.
+    /// </summary>
+    public virtual void Clear() => _cache.Clear();
 
     /// <summary>
     /// Gets the cached key for <paramref name="key"/>, fetching with <paramref name="factory"/> on a miss

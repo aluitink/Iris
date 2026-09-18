@@ -55,4 +55,36 @@ public interface IObjectStore
     /// unspecified; callers that need a stable order sort the result (e.g. by IRI). Callers that search
     /// content should skip <see cref="Tombstone"/>s (a deleted object has no searchable content).</returns>
     public Task<IReadOnlyList<IObject>> ListObjectsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists every object attributed to the given actor (via the <c>attributedTo</c> field).
+    /// Used for account-deletion teardown (tombstoning the actor's content).
+    /// </summary>
+    /// <param name="actorIri">The IRI of the actor.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the objects attributed to the actor (possibly empty).</returns>
+    public Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns a page of content objects matching a case-insensitive substring query over the object's
+    /// <c>content</c> and <c>name</c> (57.4 — pushes the search into the store so a global search does
+    /// not load every object into memory). <see cref="Tombstone"/>s are excluded (a deleted object has no
+    /// searchable content). An empty/whitespace query matches every non-tombstone object.
+    /// </summary>
+    /// <param name="query">The substring to search for (case-insensitive). Empty/whitespace matches all.</param>
+    /// <param name="limit">The maximum number of items to return (the page size).</param>
+    /// <param name="offset">The number of matching items to skip before the page starts.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the page of matching objects, ordered by IRI (ordinal).</returns>
+    public Task<IReadOnlyList<IObject>> SearchObjectsAsync(string? query, int limit, int offset, CancellationToken ct = default);
+
+    /// <summary>
+    /// Counts the content objects that would match <see cref="SearchObjectsAsync"/>'s
+    /// <paramref name="query"/> (excluding <see cref="Tombstone"/>s) — the full match total, used for a
+    /// search page's <c>totalItems</c> (57.4).
+    /// </summary>
+    /// <param name="query">The substring to search for (case-insensitive). Empty/whitespace matches all.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the number of matching objects.</returns>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default);
 }

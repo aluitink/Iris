@@ -1,0 +1,36 @@
+# Development compose layer for Iris.Web.
+#
+# Usage:
+#   docker compose -f apps/Iris.Web/docker-compose.yml -f apps/Iris.Web/docker-compose.dev.yml up --build -d
+#
+# This layer keeps the production compose unchanged and adds a preconfigured pgAdmin service that
+# connects to the existing `db` service on the shared `iris-web-net` network.
+
+services:
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-iris-dev-pw}
+
+  iris-web:
+    environment:
+      ConnectionStrings__Iris: "Host=db;Port=5432;Database=${POSTGRES_DB:-iris};Username=${POSTGRES_USER:-iris};Password=${POSTGRES_PASSWORD:-iris-dev-pw}"
+
+  pgadmin:
+    image: dpage/pgadmin4:8
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-aluitink@gmail.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-dev-password}
+      PGADMIN_CONFIG_SERVER_MODE: "True"
+      PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - iris-pgadmin-data:/var/lib/pgadmin
+      - ./pgadmin/servers.json:/pgadmin4/servers.json:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+volumes:
+  iris-pgadmin-data:

@@ -223,9 +223,11 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
 
     /// <summary>
     /// Reads bob's followed feed over the wire and returns the IRIs of the content objects (the
-    /// <c>Note</c>s) it contains. The feed's items are the followed actors' <c>Create</c>s (objects);
-    /// each item's embedded note IRI is read from its <c>object</c> (a one-or-many array of one, or a
-    /// bare object).
+    /// <c>Note</c>s) it contains. The feed's items include the actor's own activities (54.17) as well
+    /// as the followed actors' <c>Create</c>s; each item's embedded note IRI is read from its
+    /// <c>object</c> (a one-or-many array of one, or a bare object). Items whose <c>object</c> is a
+    /// link (e.g. a <c>Block</c>/<c>Undo</c>/<c>Flag</c> whose object is an actor IRI) are skipped —
+    /// they have no content object.
     /// </summary>
     private async Task<IReadOnlyList<string>> FeedNoteIrisAsync(Iri actorIri)
     {
@@ -233,7 +235,10 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
         response.EnsureSuccessStatusCode();
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return JsonDoc.GetItems(doc.RootElement)
-            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("object", out var obj))
+            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("object", out var obj)
+                && (obj.ValueKind == JsonValueKind.Object
+                    || (obj.ValueKind == JsonValueKind.Array && obj.EnumerateArray().Any()
+                        && obj.EnumerateArray().First().ValueKind == JsonValueKind.Object)))
             .Select(e => e.GetProperty("object"))
             .Select(o => o.ValueKind == JsonValueKind.Array
                 ? o.EnumerateArray().First().GetProperty("id").GetString()!

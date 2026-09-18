@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server;
 
@@ -45,6 +46,18 @@ public sealed class ActivityPubServerOptions
     public Iri? InstanceActorId { get; set; }
 
     /// <summary>
+    /// The IRI of the local actor whose <em>public document</em> is served at the instance root
+    /// (<c>GET /</c>). Some peers (notably Lemmy) dereference the site actor from the instance's root
+    /// URL before resolving any object on the instance and require that document to be an
+    /// <c>Application</c>-type actor (the ActivityPub site-actor convention, as Mastodon/Pleroma/Friendica
+    /// follow it). When set, the root serves the actor at this IRI (typically a dedicated
+    /// <c>Application</c> whose IRI is the bare instance base) rather than the signing actor at
+    /// <see cref="InstanceActorId"/>. When null (the default), the root falls back to serving
+    /// <see cref="InstanceActorId"/> — the pre-138.11 behavior.
+    /// </summary>
+    public Iri? InstanceActorIri { get; set; }
+
+    /// <summary>
     /// The IRI of this instance's <em>shared inbox</em>: a single collection that accepts activity for
     /// every local actor and community (the ActivityPub <c>endpoints.sharedInbox</c> property). When set,
     /// it is advertised on the public actor and community documents so remote instances may deliver to
@@ -69,6 +82,60 @@ public sealed class ActivityPubServerOptions
     /// the media proxy serves them instantly).
     /// </summary>
     public MediaOptions? Media { get; set; }
+
+    /// <summary>
+    /// The path of the <strong>single-instance lock file</strong> (Phase 84.5): when set, the host acquires
+    /// a cross-process lock on startup and <em>fails fast</em> if a live different instance already holds
+    /// it. Only one Iris instance per persistence is supported (the in-memory + file-backed providers are
+    /// not safe for two processes, and even the shared EF provider leaves the actor→key binding map +
+    /// delivery queue divergent), so this guard converts a silent second-instance divergence into an
+    /// actionable startup error. When null (the default), the guard is inert (no lock, no check) — the
+    /// common single-process deployment and the multi-host test harnesses are unaffected.
+    /// </summary>
+    public string? InstanceLockPath { get; set; }
+
+    /// <summary>
+    /// How often the <strong>key-provider refresh</strong> hosted service (Phase 84.6) re-converges a
+    /// <see cref="Identity.DocumentDerivedKeyProvider"/> to the durable actor documents: a rotation performed
+    /// on another instance over the same persistence becomes visible to this instance's signer within one
+    /// interval, without a restart. Defaults to 30 s. A non-positive value disables the periodic refresh
+    /// (the startup convergence pass still runs). The service is inert when the instance's
+    /// <c>IKeyProvider</c> is not a <see cref="Identity.DocumentDerivedKeyProvider"/> (the single-instance
+    /// default), so this interval has no effect on the common single-process deployment.
+    /// </summary>
+    public TimeSpan KeyProviderRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// How often the <strong>cache-invalidation</strong> hosted service (Phase 84.6) polls the shared
+    /// <see cref="Caching.CacheInvalidationChannel"/> for new invalidation events: an actor-document change
+    /// (a key rotation re-stamping the document, a profile change) on another instance over the same origin
+    /// invalidates this instance's in-memory actor/edge caches within one interval, without a restart or a
+    /// cache TTL expiry. Defaults to 5 s. A non-positive value disables the periodic poll (the startup poll
+    /// pass still runs). The service is registered only when a <see cref="Caching.CacheInvalidationChannel"/>
+    /// is registered (via <c>UseCacheInvalidationChannel</c>), so this interval has no effect on the common
+    /// single-process deployment.
+    /// </summary>
+    public TimeSpan CacheInvalidationPollInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// How often the <strong>object-interaction-count refresh</strong> hosted service (Phase 151 —
+    /// background processing) re-computes the per-object interaction counters
+    /// (<c>iris:likedCount</c>/<c>sharedCount</c>/<c>repliedCount</c>/<c>dislikedCount</c>/<c>score</c>) and
+    /// persists them onto the stored object documents: a like/boost/reply/dislike recorded on this
+    /// instance becomes visible on the object document (and in collection pages) within one interval, so
+    /// reads can serve the pre-computed counters instead of walking the reverse indexes on every read.
+    /// Defaults to 30 s. A non-positive value disables the periodic refresh (the startup refresh pass
+    /// still runs). The service is a no-op when the instance stores no objects, so an empty store is
+    /// unaffected.
+    /// </summary>
+    public TimeSpan ObjectInteractionRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// The shared hit/miss counter for all server-side caches. When null (the default), each cache
+    /// uses a no-op <see cref="NullCacheMetrics"/>. Set a <see cref="CacheMetrics"/> instance to
+    /// collect per-cache counters, exposed via <c>GET /ap/v1/diagnostics/caches</c>.
+    /// </summary>
+    public ICacheMetrics? CacheMetrics { get; set; }
 }
 
 /// <summary>

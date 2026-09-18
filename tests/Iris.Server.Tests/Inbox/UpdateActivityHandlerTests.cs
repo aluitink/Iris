@@ -1,6 +1,8 @@
 using Iris.Core;
 using Iris.Server.InMemory;
+using Iris.Server.Media;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Tests.Inbox;
 
@@ -241,6 +243,123 @@ public sealed class UpdateActivityHandlerTests
         Assert.Equal("original body", (await GetAsync(persistence, NoteIri))!.Content?.FirstOrDefault());
     }
 
+    // --- Actor self-update (profile editing) -------------------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_UpdatesStoredActor()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // The actor sends an Update with their own (updated) Person document.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+            Summary = ["A test summary"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The stored actor now reflects the edit.
+        Assert.True(await persistence.Actors.TryGetActorAsync(LocalPerson, out var stored));
+        Assert.Equal(["Bobby"], stored!.Name);
+        Assert.Equal(["A test summary"], stored.Summary);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_PropagatesToRemoteFollower()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await persistence.Follows.RecordFollowAsync(RemotePerson, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+            Summary = ["New bio"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        // The Update is propagated to the remote follower's inbox.
+        var job = Assert.Single(delivery.Delivered);
+        Assert.Equal(RemotePerson.InboxOf(), job.InboxIri);
+        Assert.Same(update, job.Activity);
+        Assert.Equal(LocalPerson, job.ActorIri);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalActorUpdatesOwnProfile_OnlyLocalFollowers_NoPropagation()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        await SeedLocalActorAsync(persistence, LocalFollower);
+        await persistence.Follows.RecordFollowAsync(LocalFollower, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Bobby"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.Empty(delivery.Delivered);
+    }
+
+    [Fact]
+    public async Task HandleAsync_RemoteActorUpdatesLocalActorProfile_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // A remote actor purporting to update a local actor's profile → the object IRI
+        // (LocalPerson) does not match the updating actor's IRI (RemotePerson), so the
+        // actor-update branch does not fire; the object-store path also doesn't fire
+        // (no object stored at that IRI). No-op.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["Hijacked"],
+        };
+        var update = BuildUpdate(RemotePerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.True(await persistence.Actors.TryGetActorAsync(LocalPerson, out var stored));
+        Assert.NotEqual(["Hijacked"], stored!.Name);
+    }
+
+    [Fact]
+    public async Task HandleAsync_ActorNotStored_NoOp()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        var sut = BuildHandler(persistence);
+
+        // The update references an actor this instance does not store → no-op.
+        var updatedActor = new Person
+        {
+            Id = LocalPerson.Value,
+            PreferredUsername = "bob",
+            Name = ["New Name"],
+        };
+        var update = BuildUpdate(LocalPerson, updatedActor);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.False(await persistence.Actors.TryGetActorAsync(LocalPerson, out _));
+    }
+
     // --- Helpers --------------------------------------------------------------------------
 
     private static UpdateActivityHandler BuildHandler(
@@ -249,7 +368,9 @@ public sealed class UpdateActivityHandlerTests
         => new(
             persistence,
             new DefaultLocalActorResolver(persistence),
-            new DeletePropagationService(persistence, delivery ?? new NoopDeliveryService(), new DefaultLocalActorResolver(persistence)));
+            new DeletePropagationService(persistence, delivery ?? new NoopDeliveryService(), new DefaultLocalActorResolver(persistence)),
+            new NoOpMediaWarmer(),
+            Options.Create(new ActivityPubServerOptions()));
 
     /// <summary>
     /// An <see cref="IDeliveryService"/> that records every scheduled delivery (instead of enqueuing) so
@@ -319,7 +440,7 @@ public sealed class UpdateActivityHandlerTests
         AttributedTo = [new Link { Href = new Uri(LocalPerson.Value) }],
     };
 
-    private static Update BuildUpdate(Iri actorIri, Note objectToUpdate) => new()
+    private static Update BuildUpdate(Iri actorIri, IObject objectToUpdate) => new()
     {
         Id = $"{actorIri}/updates/{Guid.NewGuid():N}",
         Actor = [new Link { Href = new Uri(actorIri.Value) }],
@@ -334,5 +455,38 @@ public sealed class UpdateActivityHandlerTests
         }
 
         return null;
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerUpdatesNote_StampsUpdated()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var delivery = new RecordingDeliveryService();
+        var sut = BuildHandler(persistence, delivery);
+
+        var originalNote = BuildNote("original body");
+        originalNote.Published = DateTime.UtcNow.AddDays(-1);
+        await persistence.Objects.PutObjectAsync(originalNote);
+
+        var beforeEdit = DateTime.UtcNow;
+        var update = BuildUpdate(LocalPerson, BuildNote("edited body"));
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, update), update);
+
+        Assert.True(await persistence.Objects.TryGetObjectAsync(NoteIri, out var stored));
+        var note = Assert.IsType<Note>(stored);
+        Assert.Equal("edited body", note.Content?.FirstOrDefault());
+        Assert.NotNull(note.Updated);
+        Assert.True(note.Updated! >= beforeEdit, $"Updated ({note.Updated}) should be >= {beforeEdit}");
+        Assert.True(note.Updated! >= originalNote.Published!, $"Updated ({note.Updated}) should be >= published ({originalNote.Published})");
+    }
+
+    /// <summary>
+    /// A no-op <see cref="IMediaWarmer"/> for the unit tests (they do not exercise media warming).
+    /// </summary>
+    private sealed class NoOpMediaWarmer : IMediaWarmer
+    {
+        public Task WarmAsync(IObject? obj, Iri instanceBase, CancellationToken ct = default)
+            => Task.CompletedTask;
     }
 }

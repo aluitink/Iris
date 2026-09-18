@@ -17,22 +17,30 @@ namespace Iris.Testing;
 public static class JsonDoc
 {
     /// <summary>
-    /// Normalizes the <c>items</c> property of a collection document to a list of element values (the
-    /// one-or-many converter emits a single item as a scalar/object, not an array). Returns an empty
-    /// list when the document has no <c>items</c> property.
+    /// Normalizes the items property of a collection document to a list of element values (the
+    /// one-or-many converter emits a single item as a scalar/object, not an array). Prefers
+    /// <c>orderedItems</c> (the AS2.0 <c>OrderedCollectionPage</c> canonical form, 139.1 F-7) and
+    /// falls back to <c>items</c> (the non-ordered <c>CollectionPage</c> property, still served by
+    /// the Iris search endpoint). Returns an empty list when the document has neither.
     /// </summary>
     /// <param name="root">The collection document's root element.</param>
     /// <returns>The item elements (empty when there are none).</returns>
     public static List<JsonElement> GetItems(JsonElement root)
     {
-        if (!root.TryGetProperty("items", out var items))
+        // Prefer `orderedItems` (the canonical OrderedCollectionPage form); fall back to `items`
+        // (the search endpoint's shape and any peer that serves the non-ordered property).
+        var property = root.TryGetProperty("orderedItems", out var ordered)
+            ? ordered
+            : root.TryGetProperty("items", out var items) ? items : default;
+
+        if (property.ValueKind == JsonValueKind.Undefined)
         {
             return [];
         }
 
-        return items.ValueKind == JsonValueKind.Array
-            ? [.. items.EnumerateArray()]
-            : [items];
+        return property.ValueKind == JsonValueKind.Array
+            ? [.. property.EnumerateArray()]
+            : [property];
     }
 
     /// <summary>

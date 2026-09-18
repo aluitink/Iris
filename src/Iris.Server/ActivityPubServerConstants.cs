@@ -235,7 +235,7 @@ public static class ActivityPubServerConstants
     /// The default per-actor rate limit for the proxy endpoint (requests per minute) when
     /// <see cref="ActivityPubServerOptions.ProxySettings"/> does not override it.
     /// </summary>
-    public const int DefaultProxyMaxRequestsPerMinute = 60;
+    public const int DefaultProxyMaxRequestsPerMinute = 300;
 
     /// <summary>
     /// The route segment for the health-check endpoint (the <c>GET /ap/v1/health</c> observability
@@ -261,4 +261,34 @@ public static class ActivityPubServerConstants
     /// defaults to <c>{BaseUri}/ns#</c>, so the document is served at <c>{BaseUri}/ns</c>.
     /// </summary>
     public const string NamespaceRouteSegment = "ns";
+
+    /// <summary>
+    /// The route segment for the outbound-delivery dead-letter queue (the <c>GET /ap/v1/dead-letters</c>
+    /// endpoint, Phase 83.3). Mapped as <c>{RoutePrefix}/dead-letters</c> — under the versioned prefix,
+    /// like the health endpoint. It exposes the dead-lettered outbound deliveries (those that exhausted
+    /// their retry budget) so an operator can inspect them: the <c>count</c> + a bounded <c>peek</c> of
+    /// the most recent entries (inbox IRI, activity IRI, failure kind, failure detail, attempt count,
+    /// dead-lettered-at). Read-only (it does not re-drive deliveries; re-driving is an explicit operator
+    /// action). No authentication: an operator's monitoring scrape reaches it without a signature.
+    /// </summary>
+    public const string DeadLetterRouteSegment = "dead-letters";
+
+    /// <summary>
+    /// The route segment for the cache-metrics diagnostics endpoint (the <c>GET
+    /// /ap/v1/diagnostics/caches</c> endpoint, Phase 116.6). Mapped as <c>{RoutePrefix}/diagnostics/caches</c>
+    /// — under the versioned prefix, like the health endpoint. It reports per-cache hit/miss/stale
+    /// counters and entry counts so an operator can verify caching is effective. No authentication: an
+    /// operator's monitoring scrape reaches it without a signature, like the health endpoint.
+    /// </summary>
+    public const string DiagnosticsRouteSegment = "diagnostics";
+
+    /// <summary>
+    /// The route segment for the operator key-rotation endpoints (Phase 84.3): <c>POST
+    /// {RoutePrefix}/keys/rotate</c> (rotate the instance actor's signing key via the
+    /// <see cref="Identity.KeyRotationService"/>) and <c>POST {RoutePrefix}/keys/retire</c> (retire a
+    /// specific key IRI). Mapped under the versioned prefix, like every other endpoint. Admin-gated: the
+    /// caller's authenticated actor IRI must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>);
+    /// otherwise the request is refused (401 unauthenticated / 403 not the instance actor).
+    /// </summary>
+    public const string KeysRouteSegment = "keys";
 }

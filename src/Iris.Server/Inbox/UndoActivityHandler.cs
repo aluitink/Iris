@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -70,9 +71,11 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
     /// <param name="persistence">The persistence provider (provides the <see cref="IFollowStore"/>,
     /// <see cref="IActivityStore"/>, and <see cref="ICommunityStore"/>).</param>
     /// <param name="localActors">Resolves whether an actor IRI is a local person.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> or
     /// <paramref name="localActors"/> is null.</exception>
-    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    public UndoActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<UndoActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
@@ -117,6 +120,17 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         {
             await _persistence.Likes
                 .RemoveLikeAsync(likeEdge.Liker, likeEdge.LikedObject, ct)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        // An undislike: when the Undo's object is a Dislike, remove the recorded dislike edge (the
+        // inverse of the DislikeActivityHandler). Handled before the follow path like the like branch.
+        if (await ResolveDislikeEdgeAsync(activity.Object?.FirstOrDefault(), ct).ConfigureAwait(false) is
+            { } dislikeEdge)
+        {
+            await _persistence.Dislikes
+                .RemoveDislikeAsync(dislikeEdge.Disliker, dislikeEdge.DislikedObject, ct)
                 .ConfigureAwait(false);
             return;
         }
@@ -390,6 +404,37 @@ public sealed class UndoActivityHandler : ActivityHandlerBase<Undo>
         }
 
         return (likerIri.Value, likedObjectIri.Value);
+    }
+
+    /// <summary>
+    /// Resolves the original dislike's parties from the <see cref="Undo"/>'s object (a reference to the
+    /// original <see cref="Dislike"/>, by IRI) when the undone activity is a <see cref="Dislike"/>.
+    /// </summary>
+    private async Task<(Iri Disliker, Iri DislikedObject)?> ResolveDislikeEdgeAsync(
+        IObjectOrLink? responseObject,
+        CancellationToken ct)
+    {
+        var dislikeIri = responseObject.ResolveObjectIri();
+        if (!dislikeIri.HasValue)
+        {
+            return null;
+        }
+
+        if (!await _persistence.Activities.TryGetActivityAsync(dislikeIri.Value, out var stored, ct)
+                .ConfigureAwait(false) ||
+            stored is not Dislike dislike)
+        {
+            return null;
+        }
+
+        var dislikerIri = dislike.Actor?.FirstOrDefault().ResolveObjectIri();
+        var dislikedObjectIri = dislike.Object?.FirstOrDefault().ResolveObjectIri();
+        if (!dislikerIri.HasValue || !dislikedObjectIri.HasValue)
+        {
+            return null;
+        }
+
+        return (dislikerIri.Value, dislikedObjectIri.Value);
     }
 
     /// <summary>

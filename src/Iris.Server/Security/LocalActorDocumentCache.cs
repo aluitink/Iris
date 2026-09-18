@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Caching;
 
 namespace Iris.Server.Security;
 
@@ -36,10 +37,11 @@ public sealed class LocalActorDocumentCache
     /// </summary>
     /// <param name="policy">The policy to apply. Defaults to 60s fresh / 300s stale.</param>
     /// <param name="capacity">The maximum number of entries before LRU eviction. Defaults to 1024.</param>
-    public LocalActorDocumentCache(CachePolicy? policy = null, int capacity = 1024)
+    /// <param name="metrics">Optional hit/miss counters. Defaults to no-op.</param>
+    public LocalActorDocumentCache(CachePolicy? policy = null, int capacity = 1024, ICacheMetrics? metrics = null)
     {
         var resolved = policy ?? CachePolicy.Create(DefaultTtl, DefaultStaleFor);
-        _cache = new CachingReadThrough<string>(new MemoryCache<string>(resolved, capacity));
+        _cache = new CachingReadThrough<string>(new MemoryCache<string>(resolved, capacity), metrics);
     }
 
     /// <summary>
@@ -51,6 +53,11 @@ public sealed class LocalActorDocumentCache
     /// The number of entries currently held (for observability/testing).
     /// </summary>
     public int Count => _cache.Count;
+
+    /// <summary>
+    /// The hit/miss counters for this cache.
+    /// </summary>
+    public ICacheMetrics Metrics => _cache.Metrics;
 
     /// <summary>
     /// Removes the entry for <paramref name="key"/> (e.g. after the local actor's profile is updated).

@@ -56,6 +56,17 @@ public interface IActivityPubClient : IDisposable
     public Task<NodeInfo?> GetNodeInfoAsync(Iri instanceBase, CancellationToken ct = default);
 
     /// <summary>
+    /// Fetches a Lemmy post's score data (upvotes, downvotes, net score, comment count) from the
+    /// Lemmy REST API (<c>GET {instance}/api/v3/post?id={id}</c>). The ActivityPub document for a
+    /// Lemmy post does not carry vote information; it is only available via Lemmy's own REST API.
+    /// </summary>
+    /// <param name="postIri">The post's ActivityPub IRI (e.g. <c>https://lemmy.example/post/1</c>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The parsed <see cref="LemmyPostScore"/>, or null if the IRI is not a recognizable
+    /// Lemmy post IRI, the request failed, or the body was not valid Lemmy JSON.</returns>
+    public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Sends an ActivityPub activity to the given target IRI, signed with the
     /// <see cref="Iris.Core.Signing.SigningProfile.ServerToServer"/> profile (covers <c>digest</c> +
     /// <c>content-type</c>). The target is typically the author's own outbox (the write surface for the
@@ -177,6 +188,19 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
 
     /// <summary>
+    /// Leaves a community as <paramref name="actorId"/>: builds a <see cref="KristofferStrube.ActivityStreams.Leave"/>
+    /// whose <c>actor</c> is the leaving member and whose <c>object</c> references the member (the handler
+    /// reads <c>object</c> to determine who to remove), then delivers it to the community's inbox.
+    /// The server's <c>MembershipActivityHandler</c> removes the member from the community's member set.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor leaving (must match the client's signing identity so
+    /// the request is signed as that actor).</param>
+    /// <param name="communityIri">The IRI of the community to leave.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default);
+
+    /// <summary>
     /// Accepts a pending join request for a community as <paramref name="communityIri"/> (the community
     /// operator's decision): builds an <see cref="KristofferStrube.ActivityStreams.Accept"/> whose
     /// <c>object</c> references <paramref name="joinIri"/> (the original <see cref="KristofferStrube.ActivityStreams.Join"/>)
@@ -290,6 +314,30 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default);
 
     /// <summary>
+    /// Dislikes an object as <paramref name="actorId"/>: builds a
+    /// <see cref="KristofferStrube.ActivityStreams.Dislike"/> (actor = <paramref name="actorId"/>, object =
+    /// <paramref name="objectId"/>) and publishes it to the disliker's own outbox. The inverse of
+    /// <see cref="LikeAsync"/> — used for Lemmy-style downvotes.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor disliking the object.</param>
+    /// <param name="objectId">The IRI of the object being disliked.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a dislike as <paramref name="actorId"/> (the inverse of <see cref="DislikeAsync"/>): builds an
+    /// <c>Undo</c> referencing the original <see cref="KristofferStrube.ActivityStreams.Dislike"/> by its
+    /// learned id and publishes it to the actor's own outbox.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor removing the dislike.</param>
+    /// <param name="originalDislikeId">The id the server minted for the original dislike (from
+    /// <see cref="DeliveryResult.MintedId"/> when the dislike was made via <see cref="DislikeAsync"/>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default);
+
+    /// <summary>
     /// Boosts (re-shares) an object as <paramref name="actorId"/>: builds an
     /// <see cref="KristofferStrube.ActivityStreams.Announce"/> (actor = <paramref name="actorId"/>, object =
     /// <paramref name="objectId"/>) and publishes it through the signed pipeline to the announcer's own outbox.
@@ -358,6 +406,59 @@ public interface IActivityPubClient : IDisposable
     /// dedupes on the receiver.
     /// </remarks>
     public Task<DeliveryResult> DeleteAsync(Iri actorId, Iri objectId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates an actor's own profile (name, summary, and/or icon) as <paramref name="actorId"/>:
+    /// builds an <see cref="KristofferStrube.ActivityStreams.Update"/> whose embedded
+    /// <see cref="Actor"/> carries the updated fields and publishes it through the signed pipeline
+    /// to the actor's own outbox. The server's <c>UpdateActivityHandler</c> merges the mutable fields
+    /// into the stored actor (preserving the signing key) and propagates the update to remote
+    /// followers. This is the client's one-call "edit profile" (the caller supplies the updated
+    /// <see cref="Actor"/> — the <see cref="KristofferStrube.ActivityStreams.Update"/> and the
+    /// delivery target are derived here). Works for both <see cref="Person"/> and <see cref="Group"/>
+    /// actors.
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor whose profile is being updated (must match the
+    /// client's signing identity so the request is signed as that actor).</param>
+    /// <param name="updatedActor">The updated <see cref="Actor"/> carrying the new name, summary,
+    /// and/or icon. Only the fields present on this object are merged into the stored actor; fields
+    /// left null/empty are unchanged.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the
+    /// response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Update"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the actor's own outbox) and is signed by the pipeline. The embedded <see cref="Actor"/> must
+    /// carry the actor's IRI as its <c>id</c> so the server can match it to the stored actor. A
+    /// <c>202</c> means the outbox accepted the update.
+    /// </remarks>
+    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default);
+
+    /// <summary>
+    /// Updates a note the actor previously authored as <paramref name="actorId"/> (the "edit own post"
+    /// half of F-02): builds an <see cref="KristofferStrube.ActivityStreams.Update"/> whose embedded
+    /// <see cref="Note"/> carries the updated content and publishes it through the signed pipeline to the
+    /// actor's own outbox. The server's <c>UpdateActivityHandler</c> refreshes the stored object in place
+    /// (a later <c>GET</c> of the note's IRI serves the new content) and propagates the update to remote
+    /// followers. This is the client's one-call "edit post" (the caller supplies the updated
+    /// <see cref="Note"/> — the <see cref="KristofferStrube.ActivityStreams.Update"/> and the delivery
+    /// target are derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor editing the note (must be the note's author and match
+    /// the client's signing identity so the request is signed as that actor).</param>
+    /// <param name="updatedNote">The updated <see cref="Note"/> carrying the new content. Its <c>id</c>
+    /// must be the note's IRI (the id the server minted when the note was posted) so the server can match
+    /// it to the stored object; a mismatch is a no-op.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the
+    /// response body.</returns>
+    /// <remarks>
+    /// The <see cref="KristofferStrube.ActivityStreams.Update"/> is published to <c>actorId.OutboxOf()</c>
+    /// (the author's own outbox) and is signed by the pipeline. A <c>202</c> means the outbox accepted
+    /// the update. Only the author may edit their note: the server rejects an update from an actor that is
+    /// not the stored note's <c>attributedTo</c>.
+    /// </remarks>
+    public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default);
 
     /// <summary>
     /// Blocks <paramref name="targetId"/> as <paramref name="actorId"/> (F-07 moderation): builds a
@@ -539,6 +640,7 @@ public interface IActivityPubClient : IDisposable
     /// <param name="name">The community's handle (the final path segment of its IRI,
     /// <c>{base}/ap/v1/c/{name}</c>; also its <c>preferredUsername</c>).</param>
     /// <param name="displayName">The community's human-readable display name (its <c>name</c>).</param>
+    /// <param name="description">Optional description (the community's <c>summary</c>).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
@@ -555,6 +657,7 @@ public interface IActivityPubClient : IDisposable
         Iri actorId,
         string name,
         string displayName,
+        string? description = null,
         CancellationToken ct = default);
 
     /// <summary>
@@ -661,6 +764,72 @@ public interface IActivityPubClient : IDisposable
     public Task<DeliveryResult> PostNoteAsync(Iri actorId, KristofferStrube.ActivityStreams.Note note, CancellationToken ct = default);
 
     /// <summary>
+    /// Posts a **poll** (an AS2.0 <c>Question</c> object) as <paramref name="actorId"/>: builds a
+    /// <see cref="Create"/> carrying an embedded <c>Question</c> whose <c>ExtensionData</c> carries a
+    /// top-level <c>poll</c> object (the Mastodon extension shape) whose <c>options</c> are the
+    /// <paramref name="options"/> (each <c>{title, votesCount: 0}</c>), plus the poll's <c>endsAt</c>,
+    /// <c>multiple</c>, <c>expired</c> (false), and <c>totalVotes</c> (0), then publishes it through the
+    /// signed pipeline to the actor's own outbox (F-26 outbound — the mirror of
+    /// <see cref="IriExtensions.GetPollData"/>'s Mastodon read shape, so an Iris-created poll renders
+    /// back through the same parser). This is the client's one-call "create a poll" (the caller
+    /// supplies the options, the end time, the multiple-answer flag, the audience, and any
+    /// mentions/hashtags — the <see cref="Create"/>, the embedded <c>Question</c>, and the delivery
+    /// target are all derived here).
+    /// </summary>
+    /// <param name="actorId">The IRI of the actor authoring the poll (must match the client's signing
+    /// identity so the request is signed as that actor).</param>
+    /// <param name="content">The poll's content/question text (plain text or HTML) — the
+    /// <c>Question</c>'s <c>content</c>.</param>
+    /// <param name="options">The poll options (the choice texts; at least two are required for a
+    /// meaningful poll). Each becomes a <c>poll.options</c> entry whose <c>title</c> is the text and
+    /// whose <c>votesCount</c> is zero (a fresh poll has no votes yet).</param>
+    /// <param name="endsAt">The poll's end time (UTC). When null the poll carries no
+    /// <c>endsAt</c> (an open-ended poll).</param>
+    /// <param name="multiple"><c>true</c> when voters may select more than one option (the
+    /// <c>multiple</c> term).</param>
+    /// <param name="to">Optional audience link(s) for the question (e.g. the public <c>as:Public</c>
+    /// address). When null the question carries no explicit <c>to</c>.</param>
+    /// <param name="cc">Optional cc'd audience link(s) (e.g. the author's followers collection and/or
+    /// the public address). When null the question carries no explicit <c>cc</c>.</param>
+    /// <param name="mentions">Optional IRIs of actors to <c>@mention</c> (each becomes a
+    /// <see cref="Mention"/> <c>tag</c> whose <c>href</c> is the actor IRI). When null/empty the
+    /// question carries no mention tags.</param>
+    /// <param name="hashtags">Optional hashtag names (each including the leading <c>#</c>, e.g.
+    /// <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c> <c>tag</c> entry. When
+    /// null/empty the question carries no hashtag tags.</param>
+    /// <param name="hashtagHrefFactory">
+    /// An optional factory that maps a hashtag name (e.g. <c>"#hello"</c>) to its browse/search URL
+    /// (the <c>href</c> of the <c>Hashtag</c> tag). When null, the <c>Hashtag</c> tags carry no
+    /// <c>href</c>. See <c>PostReplyAsync</c> for the convention.
+    /// </param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// Mirrors <c>PostNoteAsync</c> but the embedded object is a <c>Question</c> (a generic
+    /// ActivityStreams object of type <c>Question</c> — the library has no concrete <c>Question</c>
+    /// class) carrying a top-level <c>poll</c> object (the Mastodon extension shape) in
+    /// <c>ExtensionData</c>. The <c>poll</c> object is the single reliable round-trip form: the
+    /// library's deserializer drops individual <c>endTime</c>/<c>closed</c> keys from <c>ExtensionData</c>
+    /// on <c>IObject</c>, but a nested <c>JsonElement</c> property survives intact. The receiving
+    /// server's <c>Create</c> handler stores the embedded object (any object type is accepted), so a
+    /// poll round-trips: the object is later served and <see cref="IriExtensions.GetPollData"/> parses
+    /// it back into <c>PollData</c> for rendering. The <see cref="Create"/> is published to
+    /// <c>actorId.OutboxOf()</c> (the author's own outbox).
+    /// </remarks>
+    public Task<DeliveryResult> PostQuestionAsync(
+        Iri actorId,
+        string content,
+        IEnumerable<string> options,
+        DateTime? endsAt = null,
+        bool multiple = false,
+        IEnumerable<Iri>? to = null,
+        IEnumerable<Iri>? cc = null,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<string>? hashtags = null,
+        Func<string, string?>? hashtagHrefFactory = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Posts a **reply** as <paramref name="actorId"/> to the note at <paramref name="parentIri"/>:
     /// builds a <see cref="Create"/> carrying an embedded <see cref="Note"/> whose <c>inReplyTo</c> is
     /// the parent note and whose <c>tag</c> carries an <see cref="Mention"/> per <c>@mention</c> in
@@ -680,11 +849,20 @@ public interface IActivityPubClient : IDisposable
     /// carries no mention tags.</param>
     /// <param name="to">Optional audience link(s) for the reply (e.g. the public <c>as:Public</c>
     /// address). When null the reply carries no explicit <c>to</c>.</param>
+    /// <param name="hashtags">Optional hashtag names (each including the leading <c>#</c>, e.g.
+    /// <c>"#hello"</c>). When non-empty, each becomes a <c>Hashtag</c> <c>tag</c> entry (an
+    /// ActivityStreams object of type <c>Hashtag</c> whose <c>name</c> is the
+    /// <c>#tag</c> text and whose <c>href</c> is the actor's origin <c>/search?q={#tag}</c> URL). Mention and hashtag tags are
+    /// combined into a single <c>tag</c> array. When null/empty the note carries no hashtag tags.</param>
+    /// <param name="conversationIri">Optional thread root IRI (the Pleroma/Misskey <c>conversationId</c>).
+    /// When set, it is written into the note's <c>conversationId</c> extension field. When null, the
+    /// server derives it (top-level → own IRI; reply → parent's conversationId or parent IRI).</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     /// <remarks>
     /// Mirrors <c>PostNoteAsync</c> but sets <c>inReplyTo</c> (the parent) and, when
-    /// <paramref name="mentions"/> is non-empty, a <c>tag</c> of <see cref="Mention"/> entries. The
+    /// <paramref name="mentions"/>/<paramref name="hashtags"/> are non-empty, a <c>tag</c> of
+    /// <see cref="Mention"/> and <c>Hashtag</c> entries. The
     /// receiving server's <c>Create</c> handler records the parent → child reply edge (via the note's
     /// <c>inReplyTo</c>), which is what surfaces the reply under the parent's replies collection. The
     /// <see cref="Create"/> is published to <c>actorId.OutboxOf()</c> (the author's own outbox).
@@ -695,6 +873,8 @@ public interface IActivityPubClient : IDisposable
         string content,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
+        IEnumerable<string>? hashtags = null,
+        Iri? conversationIri = null,
         CancellationToken ct = default);
 
     /// <summary>

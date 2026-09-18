@@ -10,7 +10,10 @@ namespace Iris.Core.Identity;
 /// </remarks>
 public sealed class InMemoryKeyStore : IKeyStore, IDisposable
 {
-    private readonly Dictionary<Iri, ISigningKey> _keys = new();
+    // Key IRIs are compared by their full Value (fragment-aware) so that {actor}#key-1 and {actor}#key-2
+    // (and the bare {actor}) are distinct entries — the default Iri equality is fragment-blind (Uri
+    // semantics) and would otherwise conflate them. See IriEqualityComparer.
+    private readonly Dictionary<Iri, ISigningKey> _keys = new(IriEqualityComparer.Instance);
 
     /// <inheritdoc/>
     public bool TryGetKey(Iri keyId, out ISigningKey? key)

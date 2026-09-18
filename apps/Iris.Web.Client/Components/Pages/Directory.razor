@@ -1,0 +1,415 @@
+@page "/directory"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using Iris.Web.Client.Components
+@using KristofferStrube.ActivityStreams
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+<PageTitle>Directory · Iris</PageTitle>
+
+<p class="muted">
+    Browse people and communities on this instance, or find someone on another server.
+</p>
+
+@if (Client is null)
+{
+    <div class="card"><p class="muted">Sign in to browse the directory.</p></div>
+}
+else
+{
+    <div class="card directory-external-lookup">
+        <p class="muted">Find someone on another server (e.g. <code>user@mastodon.social</code>):</p>
+        <div class="directory-external-form">
+            <input type="text" class="directory-external-input" placeholder="user@domain"
+                   value="@_externalQuery" @oninput="OnExternalInput" @onkeydown="OnExternalKeydown" />
+            @if (_externalBusy)
+            {
+                <span class="directory-external-spinner" aria-hidden="true">
+                    <svg class="loading-spinner" viewBox="25 25 50 50"><circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" /></svg>
+                </span>
+            }
+        </div>
+        @if (_externalError is not null)
+        {
+            <p class="directory-external-error" role="alert">@_externalError</p>
+        }
+        @if (_externalResult is { } found)
+        {
+            <div class="directory-external-result">
+                <a href="@ActorIdentityHelper.ActorHref(new Iri(found.Id ?? string.Empty))" class="directory-external-link">
+                    <ActorAvatar ActorIri="new Iri(found.Id ?? string.Empty)"
+                                 DisplayName="@found.Name?.FirstOrDefault()"
+                                 IconIriOverride="@ActorIdentityHelper.IconIri(found)"
+                                 CssClass="directory-external-avatar" />
+                    <span class="directory-external-name">
+                        @((found.PreferredUsername ?? found.Id ?? "?").ToString())
+                        @if (found.Name is { } names && names.Any())
+                        {
+                            <span class="muted"> — @names.FirstOrDefault()</span>
+                        }
+                    </span>
+                </a>
+            </div>
+        }
+    </div>
+
+    <div class="directory-toolbar">
+        <div class="tab-bar" role="tablist" aria-label="Directory sections">
+            <a href="#people" id="tab-people" role="tab" aria-selected="@(ActiveTab == "people")" aria-controls="panel-people" class="tab @(ActiveTab == "people" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("people")'>People</a>
+            <a href="#communities" id="tab-communities" role="tab" aria-selected="@(ActiveTab == "communities")" aria-controls="panel-communities" class="tab @(ActiveTab == "communities" ? "tab--active" : "")" @onclick:preventDefault @onclick='() => SwitchTab("communities")'>Communities</a>
+        </div>
+        <div class="directory-scope" role="group" aria-label="Directory scope">
+            <button type="button" class="directory-scope-btn @(_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOnly" aria-pressed="@_localOnly">This instance</button>
+            <button type="button" class="directory-scope-btn @(!_localOnly ? "directory-scope-btn--active" : "")" @onclick="ToggleLocalOff" aria-pressed="@(!_localOnly)">All known</button>
+        </div>
+    </div>
+
+    @if (Busy)
+    {
+        <div class="card card-loading">
+            <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+            </svg>
+            <span class="muted">Loading…</span>
+        </div>
+    }
+    else if (Error is not null)
+    {
+        <div class="card"><div class="error" role="alert">@Error</div></div>
+    }
+    else if (Actors is not null)
+    {
+        @if (ActiveTab == "people")
+        {
+            @if (People.Count == 0)
+            {
+                <div class="card">
+                    <p class="muted">No local accounts yet. Be the first — <a href="/register">create an account</a>.</p>
+                </div>
+            }
+            else
+            {
+                <div class="directory-cards">
+                    @foreach (var person in People)
+                    {
+                        <DirectoryCard Actor="person" />
+                    }
+                </div>
+            }
+        }
+        else
+        {
+            @if (Communities.Count == 0)
+            {
+                <div class="card">
+                    <p class="muted">No communities yet. <a href="/communities">Create one</a>.</p>
+                </div>
+            }
+            else
+            {
+                <div class="directory-cards">
+                    @foreach (var community in Communities)
+                    {
+                        <CommunityCard Community="community" />
+                    }
+                </div>
+            }
+        }
+    }
+}
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    private IActivityPubClient? Client => Session.Client;
+
+    private string ActiveTab { get; set; } = "people";
+    private bool Busy { get; set; }
+    private IReadOnlyList<Actor>? Actors { get; set; }
+    private string? Error { get; set; }
+
+    /// <summary>
+    /// The directory scope: when true the list shows only this instance's own actors (the directory);
+    /// when false it shows every actor the instance stores (local + cached remote — "all known actors").
+    /// </summary>
+    private bool _localOnly = true;
+
+    private List<Actor> People => Actors?.Where(a => a is not Group).Cast<Actor>().ToList() ?? [];
+    private List<Group> Communities => Actors?.OfType<Group>().ToList() ?? [];
+
+    private string _externalQuery = string.Empty;
+    private bool _externalBusy;
+    private string? _externalError;
+    private Actor? _externalResult;
+
+    private void OnExternalInput(ChangeEventArgs e)
+    {
+        _externalQuery = e.Value?.ToString() ?? string.Empty;
+        _externalResult = null;
+        _externalError = null;
+    }
+
+    private void OnExternalKeydown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _externalQuery.Length > 0 && !_externalBusy)
+        {
+            _ = LookupExternalAsync();
+        }
+    }
+
+    /// <summary>
+    /// Resolves a <c>user@domain</c> handle via WebFinger (through the home proxy) and fetches the
+    /// actor document. The result is displayed as a card linking to the actor detail page.
+    /// </summary>
+    private async Task LookupExternalAsync()
+    {
+        var query = _externalQuery.Trim().TrimStart('@');
+        if (query.Length == 0)
+        {
+            return;
+        }
+
+        var handle = ParseRemoteHandle(query);
+        if (handle is null)
+        {
+            _externalError = "Enter a handle like <code>user@domain</code> or <code>!community@domain</code> (e.g. <code>alice@mastodon.social</code>, <code>!rust@lemmy.ml</code>).";
+            _externalResult = null;
+            return;
+        }
+
+        _externalBusy = true;
+        _externalError = null;
+        _externalResult = null;
+        try
+        {
+            var user = handle.Value.user;
+            var host = handle.Value.host;
+            var preferGroup = handle.Value.preferGroup;
+
+            // 1. WebFinger: resolve the account to an actor IRI (through the home proxy).
+            var webfingerUrl = $"https://{host}/.well-known/webfinger?resource=acct:{user}@{host}";
+            var webfingerBody = await Session.ProxyGetAsync(
+                webfingerUrl,
+                "application/jrd+json, application/json; q=0.9",
+                CancellationToken.None);
+
+            if (webfingerBody is null)
+            {
+                _externalError = $"Could not reach {host}. Check the domain and try again.";
+                return;
+            }
+
+            var actorIri = ParseWebFingerActorIri(webfingerBody, preferGroup);
+            if (actorIri is null)
+            {
+                _externalError = $"No account found for {(preferGroup ? "!" : "@")}{user}@{host}.";
+                return;
+            }
+
+            var resolvedIri = new Iri(actorIri.ToString()!);
+
+            // 2. Fetch the actor document (through the client, which handles proxy fallback).
+            if (Client is { } client)
+            {
+                var obj = await client.GetObjectAsync(resolvedIri);
+                if (obj is not Actor fetchedActor)
+                {
+                    _externalError = "Found the account but could not load their profile.";
+                    return;
+                }
+                _externalResult = fetchedActor;
+            }
+            else
+            {
+                _externalError = "Not signed in.";
+            }
+        }
+        catch
+        {
+            _externalError = "Something went wrong. Please try again.";
+        }
+        finally
+        {
+            _externalBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Parses a remote handle (<c>user@host</c>, <c>@user@host</c>, or <c>!community@host</c>) into
+    /// its user, host, and preferGroup parts. The <c>preferGroup</c> flag is true when the input
+    /// had a <c>!</c> prefix (Lemmy community handle). Returns null when the input is not a
+    /// recognizable remote handle.
+    /// </summary>
+    private static (string user, string host, bool preferGroup)? ParseRemoteHandle(string query)
+    {
+        var q = query.Trim();
+        var preferGroup = false;
+        if (q.StartsWith('!'))
+        {
+            preferGroup = true;
+            q = q[1..];
+        }
+        q = q.TrimStart('@');
+        var atIndex = q.LastIndexOf('@');
+        if (atIndex <= 0 || atIndex >= q.Length - 1)
+        {
+            return null;
+        }
+
+        var user = q[..atIndex];
+        var host = q[(atIndex + 1)..];
+
+        if (host.Length == 0 || (!host.Contains('.') && host != "localhost"))
+        {
+            return null;
+        }
+
+        if (user.Length == 0 || user.Contains('/', StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return (user, host, preferGroup);
+    }
+
+    /// <summary>
+    /// Parses a WebFinger response and extracts the actor IRI from the <c>self</c> link. When
+    /// <paramref name="preferGroup"/> is true (Lemmy community handles), prefers a <c>Group</c>
+    /// type over a <c>Person</c> type when both are present.
+    /// </summary>
+    private static Iri? ParseWebFingerActorIri(string json, bool preferGroup = false)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("links", out var links) || links.ValueKind != System.Text.Json.JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            Iri? fallback = null;
+            foreach (var link in links.EnumerateArray())
+            {
+                var rel = link.TryGetProperty("rel", out var r) ? r.GetString() : null;
+                var type = link.TryGetProperty("type", out var t) ? t.GetString() : null;
+                if (rel is not "self")
+                {
+                    continue;
+                }
+
+                if (type is null || type.Contains("activity", StringComparison.OrdinalIgnoreCase) || type.Contains("ld+json", StringComparison.OrdinalIgnoreCase))
+                {
+                    var href = link.TryGetProperty("href", out var h) ? h.GetString() : null;
+                    if (href is not null && Iri.TryParse(href, out var iri))
+                    {
+                        var properties = link.TryGetProperty("properties", out var p) ? p : default;
+                        var apType = properties.ValueKind == System.Text.Json.JsonValueKind.Object
+                            && properties.TryGetProperty("https://www.w3.org/ns/activitystreams#type", out var at)
+                            ? at.GetString()
+                            : null;
+
+                        if (preferGroup && apType is not null)
+                        {
+                            if (apType.Equals("Group", StringComparison.OrdinalIgnoreCase))
+                            {
+                                return iri;
+                            }
+                        }
+
+                        fallback ??= iri;
+                    }
+                }
+            }
+
+            return fallback;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        await LoadActorsAsync();
+    }
+
+    private void SwitchTab(string tab)
+    {
+        ActiveTab = tab;
+    }
+
+    private async Task ToggleLocalOnly()
+    {
+        if (_localOnly)
+        {
+            return;
+        }
+
+        _localOnly = true;
+        await LoadActorsAsync();
+    }
+
+    private async Task ToggleLocalOff()
+    {
+        if (!_localOnly)
+        {
+            return;
+        }
+
+        _localOnly = false;
+        await LoadActorsAsync();
+    }
+
+    private async Task LoadActorsAsync()
+    {
+        if (Client is not { } client || Session.ActorId is not { } actor)
+        {
+            return;
+        }
+
+        Busy = true;
+        Error = null;
+        Actors = null;
+        try
+        {
+            const string marker = "/ap/v1";
+            var value = actor.Value;
+            var index = value.IndexOf(marker, StringComparison.Ordinal);
+            Iri? baseIri = index >= 0 ? new Iri(value[..(index + marker.Length)]) : null;
+
+            if (baseIri is null)
+            {
+                Error = "Could not determine the instance address.";
+                return;
+            }
+
+            var results = new List<IObjectOrLink>();
+            await foreach (var item in client.SearchAsync(
+                                baseIri.Value,
+                                string.Empty,
+                                new SearchOptions { Type = "Actor", LocalOnly = _localOnly }))
+            {
+                results.Add(item);
+            }
+
+            Actors = results
+                .OfType<Actor>()
+                .OrderBy(a => a.PreferredUsername ?? a.Id ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            Error = "We couldn't load the directory. Please check your connection and try again.";
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}

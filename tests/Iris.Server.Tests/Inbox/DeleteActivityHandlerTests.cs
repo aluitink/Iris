@@ -16,7 +16,9 @@ namespace Iris.Server.Tests.Inbox;
 /// deleting a stored object (Tombstone + propagation to the remote follower), deleting a reply (the
 /// reply edge is removed and the remote parent's owner is told), deleting an object this instance does
 /// not store (no-op, no propagation), a remote (non-local) deleting actor (no-op — the owner guard), a
-/// delete with no resolvable object, and the null-guard contract.
+/// delete with no resolvable object, the null-guard contract, and (136.9) deleting a parent collapses the
+/// thread under it (each child's reply edge is removed so the tombstoned parent's <c>replies</c> collection
+/// is empty, while the child objects remain stored) and deleting a leaf leaves its parent untouched.
 /// </summary>
 public sealed class DeleteActivityHandlerTests
 {
@@ -146,6 +148,67 @@ public sealed class DeleteActivityHandlerTests
         // ... and no cross-instance delivery (the local parent's edge is local state; no remote
         // followers).
         Assert.Empty(delivery.Delivered);
+    }
+
+    // --- Deleting a parent collapses the thread under it (136.9) ---------------------------------
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerDeletesParent_CollapsesChildrenReplyEdges()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // A parent note with two replies (the reply edges were recorded by the Create handler).
+        await persistence.Objects.PutObjectAsync(BuildNote("parent body", ParentNoteIri));
+        var child1 = new Iri($"{LocalPerson}/notes/c1");
+        var child2 = new Iri($"{LocalPerson}/notes/c2");
+        await persistence.Objects.PutObjectAsync(BuildNote("reply 1 body", child1, ParentNoteIri));
+        await persistence.Objects.PutObjectAsync(BuildNote("reply 2 body", child2, ParentNoteIri));
+        await persistence.Replies.RecordReplyAsync(ParentNoteIri, child1);
+        await persistence.Replies.RecordReplyAsync(ParentNoteIri, child2);
+
+        // The local owner deletes the parent.
+        var delete = BuildDelete(LocalPerson, ParentNoteIri);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, delete), delete);
+
+        // The parent is tombstoned ...
+        Assert.IsType<Tombstone>(await GetAsync(persistence, ParentNoteIri)!);
+
+        // ... and the thread under it is collapsed: both children's reply edges are removed, so the
+        // tombstoned parent's replies collection is empty (136.9 — no orphaned-but-still-served replies).
+        Assert.False(await persistence.Replies.HasReplyAsync(ParentNoteIri, child1));
+        Assert.False(await persistence.Replies.HasReplyAsync(ParentNoteIri, child2));
+        Assert.Empty(await persistence.Replies.GetRepliesAsync(ParentNoteIri));
+
+        // The child objects themselves remain stored (fetchable by direct IRI) — only the thread
+        // listing is collapsed, not the content.
+        Assert.IsType<Note>(await GetAsync(persistence, child1)!);
+        Assert.IsType<Note>(await GetAsync(persistence, child2)!);
+    }
+
+    [Fact]
+    public async Task HandleAsync_LocalOwnerDeletesLeaf_NoChildren_ReplyEdgesUntouched()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        await SeedLocalActorAsync(persistence, LocalPerson);
+        var sut = BuildHandler(persistence);
+
+        // A parent with one reply. The reply (a leaf, no children of its own) is what gets deleted.
+        await persistence.Objects.PutObjectAsync(BuildNote("parent body", ParentNoteIri));
+        await persistence.Objects.PutObjectAsync(BuildNote("reply body", ReplyIri, ParentNoteIri));
+        await persistence.Replies.RecordReplyAsync(ParentNoteIri, ReplyIri);
+
+        // The local owner deletes the reply (a leaf).
+        var delete = BuildDelete(LocalPerson, ReplyIri);
+        await sut.HandleAsync(new InboxDelivery(LocalPerson, delete), delete);
+
+        // The reply's own parent edge is removed (F-12) ...
+        Assert.False(await persistence.Replies.HasReplyAsync(ParentNoteIri, ReplyIri));
+
+        // ... and the parent is untouched (still a Note, not a tombstone) — deleting a leaf does not
+        // collapse or affect the parent.
+        Assert.IsType<Note>(await GetAsync(persistence, ParentNoteIri)!);
     }
 
     [Fact]

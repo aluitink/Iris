@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Server.Data.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Description>
+      Integration tests for the EF Core + PostgreSQL persistence provider (Iris.Server.Data), run
+      against a real PostgreSQL via Testcontainers. Proves the provider implements the full
+      IPersistenceProvider contract and that data survives a "restart" (the durability requirement of
+      Phase 32 step 2).
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server\Iris.Server.csproj" />
+    <ProjectReference Include="..\..\src\Iris.Server.Data\Iris.Server.Data.csproj" />
+    <!-- The 33.2 restart test boots the real Iris.Web composition root (WebAppFactory) in-process
+         against a Testcontainers Postgres, so it references the app project. -->
+    <ProjectReference Include="..\..\apps\Iris.Web\Iris.Web.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -71,6 +71,50 @@ public sealed class InMemoryLikeStore : ILikeStore
         return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_likedBy, likedObjectIri));
     }
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetLikersBatchAsync(
+        IReadOnlyCollection<Iri> likedObjectIris, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+        foreach (var iri in likedObjectIris)
+        {
+            if (_likedBy.TryGetValue(iri, out var set))
+            {
+                lock (set)
+                {
+                    if (set.Count > 0)
+                    {
+                        result[iri] = set.ToList();
+                    }
+                }
+            }
+        }
+        return Task.FromResult<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlySet<Iri>> HasLikedBatchAsync(
+        Iri likerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new HashSet<Iri>();
+        if (_liked.TryGetValue(likerIri, out var set))
+        {
+            lock (set)
+            {
+                foreach (var iri in objectIris)
+                {
+                    if (set.Contains(iri))
+                    {
+                        result.Add(iri);
+                    }
+                }
+            }
+        }
+        return Task.FromResult<IReadOnlySet<Iri>>(result);
+    }
+
     private static void AddEdge(
         System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri source, Iri target)
     {

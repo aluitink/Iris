@@ -1,0 +1,658 @@
+<div class="object-view">
+    @if (Item is Create create)
+    {
+        <div class="object-item @(CardLinkIri is { } ? "object-item--clickable" : string.Empty)" style="@CardHueStyle">
+            @if (CardLinkIri is { } cardIri)
+            {
+                // 153 — stretched link: the whole card navigates to the object detail. Interactive
+                // children (moderation, engagement bar, sensitive toggle, parent/recipient links) sit
+                // above it via z-index so they keep their own behavior.
+                <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open post"></a>
+            }
+            <div class="object-header">
+                <div class="object-header-actor">
+                    @if (ActivityActorIri is { } actor)
+                    {
+                        <ActorBar ActorIri="actor" />
+                    }
+                    @if (ShowModeration && CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
+                    {
+                        <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                            OnBlock="() => CardBlockAsync(modAuthor)"
+                            OnMute="() => CardMuteAsync(modAuthor)"
+                            OnReport="() => CardReportAsync(modAuthor)" />
+                    }
+                </div>
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+            @if (ActivityContentObject is { } contentObj)
+            {
+                @if (ActivityAudienceIris.Count > 0)
+                {
+                    <div class="object-recipient">
+                        <span class="object-recipient-label">To</span>
+                        @for (var a = 0; a < ActivityAudienceIris.Count; a++)
+                        {
+                            var audience = ActivityAudienceIris[a];
+                            @if (a > 0)
+                            {
+                                <span class="object-recipient-sep">,</span>
+                            }
+                            <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                        }
+                    </div>
+                }
+                @if (ActivityName is { Length: > 0 } title && !(contentObj is Actor) && !ActivityTitleDuplicatesContent)
+                {
+                    <div class="object-title">@title</div>
+                }
+                @if (contentObj is KristofferStrube.ActivityStreams.Object ao && JoinStrings(ao.Content) is { Length: > 0 } content)
+                {
+                    @if (ActivityIsSensitive)
+                    {
+                        <div class="object-sensitive">
+                            <div class="object-sensitive-notice">
+                                @if (ActivitySummary is { Length: > 0 } warning)
+                                {
+                                    <span class="object-sensitive-summary">@warning</span>
+                                }
+                                <span class="object-sensitive-label">This content may be sensitive.</span>
+                                <button type="button" class="object-sensitive-reveal" @onclick="() => ActivityRevealed = !ActivityRevealed">
+                                    @(ActivityRevealed ? "Hide" : "Show")
+                                </button>
+                            </div>
+                            <div class="object-content @(ActivityRevealed ? "" : "object-content--blurred")">@ActivityContent</div>
+                        </div>
+                    }
+                    else
+                    {
+                        // 153 — the content is no longer its own link; the whole card is (see the
+                        // object-card-link stretched overlay above). A plain div keeps the text from
+                        // looking like a link on hover.
+                        <div class="object-content">@ActivityContent</div>
+                    }
+                }
+                else if (CreatedObjectIri is { } linkIri)
+                {
+                    <a href="@ObjectHref(linkIri)" title="@linkIri" class="object-iri">@linkIri</a>
+                }
+                @if (ActivityParentIri is { } parent && !SuppressParentContext)
+                {
+                    @if (HasParentContext)
+                    {
+                        <div class="object-parent-context object-parent-context--below">
+                            <div class="object-parent-label">
+                                In reply to
+                                @if (ParentAuthorIri is { } pauthor)
+                                {
+                                    <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                                }
+                                else
+                                {
+                                    <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                                }
+                            </div>
+                            <div class="object-parent-content">@ParentContent</div>
+                            @if (ParentRichAttachments.Count > 0)
+                            {
+                                <MediaGallery Attachments="ParentRichAttachments" Blurred="false" />
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="object-parent object-parent--below">
+                            in reply to
+                            <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                        </div>
+                    }
+                }
+                @if (ActivityUpdated is { } updated)
+                {
+                    <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
+                }
+                @if (ArticleDuration is { } duration)
+                {
+                    <div class="object-article-meta">
+                        <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
+                    </div>
+                }
+                @if (ArticleInLanguage is { Length: > 0 } lang)
+                {
+                    <div class="object-article-meta">
+                        <span class="object-article-language">@lang</span>
+                    </div>
+                }
+                @if (EmojiTags.Count > 0)
+                {
+                    <div class="object-emojis">
+                        @foreach (var (emojiName, emojiShortCode, emojiUrl) in EmojiTags)
+                        {
+                            @if (emojiUrl is { } url)
+                            {
+                                <img src="@RewriteMediaToSameOrigin(url.Value)" alt="@emojiShortCode" title="@emojiShortCode" class="object-emoji" loading="lazy" />
+                            }
+                            else
+                            {
+                                <span class="object-emoji-text" title="@emojiShortCode">@emojiShortCode</span>
+                            }
+                        }
+                    </div>
+                }
+                <MediaGallery Attachments="ActivityRichAttachments" Blurred="@ActivityMediaBlurred" />
+                @if (Poll is { } poll)
+                {
+                    var canVote = !poll.Expired && !_pollVoted && Session.IsSignedIn;
+                    <div class="object-poll">
+                        @for (var i = 0; i < poll.Options.Count; i++)
+                        {
+                            var option = poll.Options[i];
+                            var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
+                            var isSelected = _pollVoted && i == _pollVotedOption;
+                            <div class="object-poll-option @(canVote ? "object-poll-option-votable" : "") @(isSelected ? "object-poll-option-selected" : "")"
+                                 @onclick="@(() => { if (canVote) { _ = VotePollAsync(i); } })">
+                                <div class="object-poll-option-bar" style="width:@pct%"></div>
+                                <div class="object-poll-option-content">
+                                    @if (isSelected)
+                                    {
+                                        <span class="object-poll-option-check">&#10003;</span>
+                                    }
+                                    <span class="object-poll-option-title">@option.Title</span>
+                                    <span class="object-poll-option-votes">@option.Votes</span>
+                                </div>
+                            </div>
+                        }
+                        <div class="object-poll-footer">
+                            @if (poll.Expired)
+                            {
+                                <span class="object-poll-ended">Poll ended</span>
+                            }
+                            else if (poll.EndsAt is { } ends)
+                            {
+                                <span class="object-poll-ends">Ends @RelativeTime(ends)</span>
+                            }
+                            @if (poll.Multiple)
+                            {
+                                <span class="object-poll-multiple">Multiple answers allowed</span>
+                            }
+                            @if (_pollVoted)
+                            {
+                                <span class="object-poll-voted">You voted</span>
+                            }
+                            <span class="object-poll-total">@poll.TotalVotes votes</span>
+                        </div>
+                    </div>
+                }
+            }
+            else if (CreateIri is { } cri)
+            {
+                <a href="@ObjectHref(new Iri(cri))" title="@cri" class="object-iri">@cri</a>
+            }
+            @if (IsContentCreate)
+            {
+                @if (IsLemmyPost)
+                {
+                    <LemmyVoteBar ObjectIri="@CreatedObjectIri" Score="LemmyScore" />
+                    @if (LemmyScore is { } ls)
+                    {
+                        <span class="lemmy-score-comments" title="Comments">@ls.Comments comments</span>
+                    }
+                }
+                else
+                {
+                    <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
+                }
+            }
+        </div>
+    }
+    else if (Item is Announce)
+    {
+        <div class="object-item object-item--boost">
+            @if (ActivityActorIri is { } booster)
+            {
+                <div class="object-boost-by">
+                    <span class="object-action">Boosted by</span>
+                    <ActorBar ActorIri="booster" />
+                    @if (ActivityPublished is { } boostTime)
+                    {
+                        <time class="object-time object-boost-time" title="@boostTime.ToString("o")">@RelativeTime(boostTime)</time>
+                    }
+                    @if (IsBoostOfReply)
+                    {
+                        // 152 — the boosted post was itself a reply; the card renders the ORIGINAL post it
+                        // answers to, so note that context under the "Boosted by" line.
+                        <span class="object-action object-boost-reply-hint">
+                            @("replying to " + (ReplyContextLabel(BoostedReplyParent) ?? "original post"))
+                        </span>
+                    }
+                </div>
+            }
+            @if (AnnounceTargetIri is { } targetIri)
+            {
+                @if (BoostedRenderTarget is { } boosted)
+                {
+                    <div class="object-item object-item--boosted">
+                        <div class="object-header">
+                            @if (BoostedAuthorIri is { } ba)
+                            {
+                                <ActorBar ActorIri="ba" />
+                            }
+                            @if (BoostedPublished is { } bt)
+                            {
+                                <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
+                            }
+                        </div>
+                        @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor) && !BoostedTitleDuplicatesContent)
+                        {
+                            <div class="object-title">@boostedTitle</div>
+                        }
+                        @if (boosted is Actor)
+                        {
+                            <div class="object-content">
+                                <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                            </div>
+                        }
+                        else
+                        {
+                            @if (boosted is KristofferStrube.ActivityStreams.Object bao2 && JoinStrings(bao2.Content) is { Length: > 0 } content2)
+                            {
+                                <a href="@ObjectHref(targetIri)" class="object-post-link">
+                                    <div class="object-content">@RenderBoostedContent(boosted)</div>
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="object-content">
+                                    <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                                </div>
+                            }
+                        }
+                        <MediaGallery Attachments="ResolveBoostedAttachments(boosted)" Blurred="false" />
+                        @if (IsLemmyPost)
+                        {
+                            <LemmyVoteBar ObjectIri="@(BoostedContentIri ?? targetIri)" Score="LemmyScore" />
+                            @if (LemmyScore is { } ls2)
+                            {
+                                <span class="lemmy-score-comments" title="Comments">@ls2.Comments comments</span>
+                            }
+                        }
+                        else
+                        {
+                            @if (BoostedContentIri is { } contentIri)
+                            {
+                                <EngagementBar ObjectIri="@contentIri" Object="boosted" />
+                            }
+                            else
+                            {
+                                <EngagementBar ObjectIri="@targetIri" Object="boosted" />
+                            }
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="object-content">
+                        <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                    </div>
+                    <EngagementBar ObjectIri="@targetIri" />
+                }
+            }
+        </div>
+    }
+    else if (Item is Like)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                <span class="object-action">Liked</span>
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+                @if (IsLikeOfReply)
+                {
+                    // 152 — the liked post was itself a reply; the card renders the ORIGINAL post it
+                    // answers to, so note that context under the "Liked" header.
+                    <span class="object-action object-like-reply-hint">
+                        @("replying to " + (ReplyContextLabel(LikedReplyParent) ?? "original post"))
+                    </span>
+                }
+            </div>
+            @if (LikedRenderTarget is { } liked)
+            {
+                // 119.1 — the liked object was resolved: render it as a full, nested object card
+                // (author, content, media, engagement) under the "Liked" header, so the Likes tab
+                // shows the actual liked post rather than a bare link. 152 — when the liked post is a
+                // reply this is the ORIGINAL post it answers to (the render target), not the reply.
+                <div class="object-like-resolved">
+                    <ObjectView Item="liked" />
+                </div>
+            }
+            else if (LikeTargetIri is { } likeTarget)
+            {
+                <div class="object-like-target">
+                    <a href="@ObjectHref(likeTarget)" title="@likeTarget" class="object-post-link">
+                        @if (LikedContent is { } lc && !string.IsNullOrEmpty(lc.Value))
+                        {
+                            <div class="object-content">@lc</div>
+                        }
+                        else
+                        {
+                            <span class="object-iri">@likeTarget.Value</span>
+                        }
+                    </a>
+                </div>
+            }
+        </div>
+    }
+    else if (Item is Follow)
+    {
+        <div class="object-item">
+            <div class="object-header">
+                <span class="object-action">Follows</span>
+                @if (ActivityActorIri is { } actor)
+                {
+                    <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
+                }
+                @if (ActivityPublished is { } pub)
+                {
+                    <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
+                }
+            </div>
+            @if (FollowTargetIri is { } target)
+            {
+                <div class="object-content">
+                    <a href="@ActorHref(target)" title="@target" class="object-actor-handle">@HandleOf(target)</a>
+                </div>
+            }
+        </div>
+    }
+    else if (Item is Actor actor)
+    {
+        <div class="object-item object-actor @(actor is Group ? "object-actor--community" : string.Empty)">
+            @if (actor.Id is { Length: > 0 } actorId)
+            {
+                <a href="@ActorHref(new Iri(actorId), actor)" title="@actorId" class="object-actor-handle">@actor.PreferredUsername</a>
+            }
+            @if (actor.Name?.FirstOrDefault() is { Length: > 0 } name && !NameIsRedundant)
+            {
+                <span class="object-name">@name</span>
+            }
+            @if (actor.Summary?.FirstOrDefault() is { Length: > 0 })
+            {
+                <span class="object-summary">@RenderedActorSummary</span>
+            }
+        </div>
+    }
+    else if (Item is Tombstone tombstone)
+    {
+        <div class="object-item object-tombstone">
+            <div class="object-tombstone-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                </svg>
+            </div>
+            <div class="object-tombstone-body">
+                <div class="object-tombstone-label">
+                    @if (TombstoneFormerType(tombstone) is { Length: > 0 } former)
+                    {
+                        <span>@former post</span>
+                    }
+                    else
+                    {
+                        <span>Post</span>
+                    }
+                    <span class="object-tombstone-state">deleted</span>
+                </div>
+                @if (tombstone.Deleted is { } deleted)
+                {
+                    <div class="object-tombstone-time" title="@deleted.ToString("o")">deleted @deleted.ToLocalTime().ToString("g")</div>
+                }
+            </div>
+        </div>
+    }
+    else if (Item is IObject { Id: { Length: > 0 } id } obj)
+    {
+        <div class="object-item @(CardLinkIri is { } ? "object-item--clickable" : string.Empty)" style="@CardHueStyle">
+            @if (CardLinkIri is { } cardIri)
+            {
+                // 153 — stretched link: the whole card navigates to the object detail.
+                <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open post"></a>
+            }
+            <div class="object-header">
+                <div class="object-header-actor">
+                    @if (AuthorIri is { } author)
+                    {
+                        <ActorBar ActorIri="author" />
+                    }
+                    @if (ShowModeration && CanModerateAuthor(AuthorIri) && AuthorIri is { } modAuthor)
+                    {
+                        <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                            OnBlock="() => CardBlockAsync(modAuthor)"
+                            OnMute="() => CardMuteAsync(modAuthor)"
+                            OnReport="() => CardReportAsync(modAuthor)" />
+                    }
+                </div>
+                @if (Published is { } published)
+                {
+                    <time class="object-time" title="@published.ToString("o")">@RelativeTime(published)</time>
+                }
+            </div>
+            @if (AudienceIris.Count > 0)
+            {
+                <div class="object-recipient">
+                    <span class="object-recipient-label">To</span>
+                    @for (var a = 0; a < AudienceIris.Count; a++)
+                    {
+                        var audience = AudienceIris[a];
+                        @if (a > 0)
+                        {
+                            <span class="object-recipient-sep">,</span>
+                        }
+                        <a href="@ActorHref(audience)" title="@audience" class="object-actor">@HandleOf(audience)</a>
+                    }
+                </div>
+            }
+            @if (Name is { Length: > 0 } title && !(obj is Actor))
+            {
+                <div class="object-title">@title</div>
+            }
+            @if (JoinStrings(obj.Content) is { Length: > 0 } content)
+            {
+                @if (IsSensitive)
+                {
+                    <div class="object-sensitive">
+                        <div class="object-sensitive-notice">
+                            @if (Summary is { Length: > 0 } warning)
+                            {
+                                <span class="object-sensitive-summary">@warning</span>
+                            }
+                            <span class="object-sensitive-label">This content may be sensitive.</span>
+                            <button type="button" class="object-sensitive-reveal" @onclick="() => Revealed = !Revealed">
+                                @(Revealed ? "Hide" : "Show")
+                            </button>
+                        </div>
+                        <div class="object-content @(Revealed ? "" : "object-content--blurred")">@RenderedContent</div>
+                    </div>
+                }
+                else
+                {
+                    // 153 — the whole card is the link (stretched overlay above); plain div for the text.
+                    <div class="object-content">@RenderedContent</div>
+                }
+            }
+            @if (ParentIri is { } parent && !SuppressParentContext)
+            {
+                @if (HasParentContext)
+                {
+                    <div class="object-parent-context object-parent-context--below">
+                        <div class="object-parent-label">
+                            In reply to
+                            @if (ParentAuthorIri is { } pauthor)
+                            {
+                                <a href="@ActorHref(pauthor)" title="@pauthor" class="object-actor">@HandleOf(pauthor)</a>
+                            }
+                            else
+                            {
+                                <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                            }
+                        </div>
+                        <div class="object-parent-content">@ParentContent</div>
+                        @if (ParentRichAttachments.Count > 0)
+                        {
+                            <MediaGallery Attachments="ParentRichAttachments" Blurred="false" />
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="object-parent object-parent--below">
+                        in reply to
+                        <a href="@ObjectHref(parent)" title="@parent">@(_parentPreview ?? parent.Value)</a>
+                    </div>
+                }
+            }
+            @if (Updated is { } updated)
+            {
+                <div class="object-updated" title="@updated.ToString("o")">updated @updated.ToLocalTime().ToString("g")</div>
+            }
+            @if (ArticlePublishedTime is { } pubTime)
+            {
+                <div class="object-article-meta">
+                    <time class="object-article-published" title="@pubTime.ToString("o")">published @pubTime.ToLocalTime().ToString("g")</time>
+                </div>
+            }
+            @if (ArticleDuration is { } duration)
+            {
+                <div class="object-article-meta">
+                    <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
+                </div>
+            }
+            @if (ArticleInLanguage is { Length: > 0 } lang)
+            {
+                <div class="object-article-meta">
+                    <span class="object-article-language">@lang</span>
+                </div>
+            }
+            @if (EmojiTags.Count > 0)
+            {
+                <div class="object-emojis">
+                    @foreach (var (emojiName, emojiShortCode, emojiUrl) in EmojiTags)
+                    {
+                        @if (emojiUrl is { } url)
+                        {
+                            <img src="@RewriteMediaToSameOrigin(url.Value)" alt="@emojiShortCode" title="@emojiShortCode" class="object-emoji" loading="lazy" />
+                        }
+                        else
+                        {
+                            <span class="object-emoji-text" title="@emojiShortCode">@emojiShortCode</span>
+                        }
+                    }
+                </div>
+            }
+            @if (SelfMediaSrc is { Length: > 0 } selfMedia)
+            {
+                <div class="media-player @(ObjectMediaBlurred ? "object-content--blurred" : "")">
+                    @if (IsAudioObject)
+                    {
+                        <audio controls preload="metadata" class="media-player-audio">
+                            <source src="@selfMedia" />
+                            Your browser does not support the audio tag.
+                        </audio>
+                    }
+                    else
+                    {
+                        <video controls preload="metadata" class="media-player-video">
+                            <source src="@selfMedia" />
+                            Your browser does not support the video tag.
+                        </video>
+                    }
+                    @if (Name is { Length: > 0 } selfMediaName)
+                    {
+                        <div class="media-player-label">@selfMediaName</div>
+                    }
+                </div>
+            }
+            <MediaGallery Attachments="RichAttachments" Blurred="@ObjectMediaBlurred" />
+            @if (Poll is { } poll)
+            {
+                var canVote2 = !poll.Expired && !_pollVoted && Session.IsSignedIn;
+                <div class="object-poll">
+                    @for (var i = 0; i < poll.Options.Count; i++)
+                    {
+                        var option = poll.Options[i];
+                        var pct = poll.TotalVotes > 0 ? (int)(option.Votes * 100.0 / poll.TotalVotes) : 0;
+                        var isSelected = _pollVoted && i == _pollVotedOption;
+                        <div class="object-poll-option @(canVote2 ? "object-poll-option-votable" : "") @(isSelected ? "object-poll-option-selected" : "")"
+                             @onclick="@(() => { if (canVote2) { _ = VotePollAsync(i); } })">
+                            <div class="object-poll-option-bar" style="width:@pct%"></div>
+                            <div class="object-poll-option-content">
+                                @if (isSelected)
+                                {
+                                    <span class="object-poll-option-check">&#10003;</span>
+                                }
+                                <span class="object-poll-option-title">@option.Title</span>
+                                <span class="object-poll-option-votes">@option.Votes</span>
+                            </div>
+                        </div>
+                    }
+                    <div class="object-poll-footer">
+                        @if (poll.Expired)
+                        {
+                            <span class="object-poll-ended">Poll ended</span>
+                        }
+                        else if (poll.EndsAt is { } ends)
+                        {
+                            <span class="object-poll-ends">Ends @RelativeTime(ends)</span>
+                        }
+                        @if (poll.Multiple)
+                        {
+                            <span class="object-poll-multiple">Multiple answers allowed</span>
+                        }
+                        @if (_pollVoted)
+                        {
+                            <span class="object-poll-voted">You voted</span>
+                        }
+                        <span class="object-poll-total">@poll.TotalVotes votes</span>
+                    </div>
+                </div>
+            }
+            @if (IsLemmyPost)
+            {
+                <LemmyVoteBar ObjectIri="@BareObjectIri" Score="LemmyScore" />
+                @if (LemmyScore is { } lsBare)
+                {
+                    <span class="lemmy-score-comments" title="Comments">@lsBare.Comments comments</span>
+                }
+            }
+            else if (obj is Note or Article)
+            {
+                <EngagementBar ObjectIri="@BareObjectIri" Object="obj" />
+            }
+        </div>
+    }
+    else if (Item is ILink { Href: { } linkHref })
+    {
+        <div class="object-item">
+            @if (IsActorLink(linkHref.OriginalString))
+            {
+                <a href="@ActorHref(new Iri(linkHref.OriginalString))" title="@linkHref.OriginalString" class="object-actor-handle">@HandleOf(new Iri(linkHref.OriginalString))</a>
+            }
+            else
+            {
+                <span class="object-type">Link</span>
+                <a href="@ObjectHref(new Iri(linkHref.OriginalString))" title="@linkHref.OriginalString" class="object-iri">@linkHref.OriginalString</a>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="object-item"><span class="object-type">Unknown</span></div>
+    }
+</div>

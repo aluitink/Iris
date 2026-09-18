@@ -1,5 +1,6 @@
 using System.Text.Json;
 using KristofferStrube.ActivityStreams;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Identity;
 
@@ -234,6 +235,49 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Reads an object's <c>conversationId</c> (the Pleroma/Misskey thread-root IRI, carried in
+    /// <see cref="IObject.ExtensionData"/> since the library does not model it as a property).
+    /// </summary>
+    /// <remarks>
+    /// Pleroma and Misskey set a stable thread-root IRI on every note in a conversation; clients use
+    /// it for thread grouping. The value is a bare (un-namespaced) IRI string. Returns
+    /// <see langword="null"/> when the term is absent, not a string, or not a valid IRI.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>conversationId</c> is read. May be null.</param>
+    /// <returns>The thread root <see cref="Iri"/>, or <see langword="null"/> when absent or invalid.</returns>
+    public static Iri? GetConversationId(this IObject? obj)
+    {
+        if (obj is not { ExtensionData: { } ext })
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("conversationId", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        if (value is null)
+        {
+            return null;
+        }
+        return Iri.TryParse(value, out var iri) ? iri : null;
+    }
+
+    /// <summary>
+    /// Sets (or overwrites) an object's <c>conversationId</c> (the Pleroma/Misskey thread-root IRI) in
+    /// <see cref="IObject.ExtensionData"/>.
+    /// </summary>
+    /// <param name="obj">The object to modify. Must not be null.</param>
+    /// <param name="conversationId">The thread root IRI to set.</param>
+    public static void SetConversationId(this IObject obj, Iri conversationId)
+    {
+        obj.ExtensionData ??= new Dictionary<string, JsonElement>();
+        obj.ExtensionData["conversationId"] = JsonSerializer.SerializeToElement(conversationId.Value);
+    }
+
+    /// <summary>
     /// Resolves the IRIs of an object's <c>tag</c> entries that are <see cref="Mention"/>s (F-12).
     /// </summary>
     /// <remarks>
@@ -255,13 +299,356 @@ public static class IriExtensions
         var mentions = new List<Iri>();
         foreach (var tag in tags)
         {
-            if (tag is Mention mention && mention.Href is { } href)
+            // A mention tag is a <c>tag</c> entry that is a link (the mentioned actor's IRI): either a
+            // full Mention object (the ActivityStreams Mention type) or a compact Link (a bare IRI string
+            // in the tag array — the form the server's ingestion normalization stores for Iris-authored
+            // and many remote mentions). Both carry the mentioned actor's IRI as the link's href. A
+            // hashtag tag, by contrast, is an Object (type Hashtag), not a link, so it is excluded here
+            // (and read by GetHashtagTags).
+            if (tag is ILink
+                && tag.ResolveObjectIri() is { } iri)
             {
-                mentions.Add(new Iri(href));
+                mentions.Add(iri);
             }
         }
 
         return mentions;
+    }
+
+    /// <summary>
+    /// Resolves the <c>name</c> (and, when present, <c>href</c>) of an object's <c>tag</c> entries that
+    /// are <c>Hashtag</c>s (the ActivityStreams <c>Hashtag</c> tag type, used for <c>#hashtags</c>).
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="Mention"/> (which the library models as a concrete type), a <c>Hashtag</c> tag
+    /// deserializes as a generic <see cref="IObject"/> whose <c>Type</c> list contains <c>"Hashtag"</c>,
+    /// whose <c>Name</c> is the <c>#tag</c> text (e.g. <c>"#hello"</c>), and whose <c>href</c> (the
+    /// hashtag's search/browse URL, when the authoring server provided one) is left in
+    /// <see cref="IObject.ExtensionData"/> (the <c>Object</c> base does not model <c>href</c> as a
+    /// property — only <see cref="Link"/> does). This is the single boundary read for that field, mirroring
+    /// <see cref="GetMentionIris"/>: it lets a renderer surface a note's hashtags (including ones that
+    /// arrived from other servers that carry them in <c>tag</c> rather than as inline <c>#text</c>) without
+    /// reaching into the 3rd-party ActivityStreams types. Returns an empty list when the object has no
+    /// hashtag tags.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>tag</c> is read. May be null.</param>
+    /// <returns>
+    /// The hashtag tags (the <c>#tag</c> name and its optional href, in <c>tag</c> order); possibly empty.
+    /// A hashtag with no <c>href</c> (a server that omitted it) carries a <see langword="null"/> href.
+    /// </returns>
+    public static IReadOnlyList<(string Name, Iri? Href)> GetHashtagTags(this IObject? obj)
+    {
+        var tags = obj?.Tag;
+        if (tags is null)
+        {
+            return [];
+        }
+
+        var hashtags = new List<(string Name, Iri? Href)>();
+        foreach (var tag in tags)
+        {
+            if (tag is not IObject { Type: { } types } hashtag)
+            {
+                continue;
+            }
+
+            // A Hashtag tag is an IObject whose type list includes "Hashtag" (ordinal, case-insensitive —
+            // the library normalizes the type term, but be lenient about casing from foreign servers).
+            if (!types.Any(t => string.Equals(t, "Hashtag", StringComparison.OrdinalIgnoreCase)))
+            {
+                continue;
+            }
+
+            var name = hashtag.Name?.FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            // The hashtag's href (its search/browse URL) is in ExtensionData (the Object base does not
+            // model href as a property). It may be absent (a server that omitted it) — in which case the
+            // tag is still surfaced, just without a clickable link.
+            Iri? href = null;
+            if (hashtag.ExtensionData is { } ext && ext.TryGetValue("href", out var hrefElement)
+                && hrefElement.ValueKind == JsonValueKind.String
+                && hrefElement.GetString() is { Length: > 0 } hrefString
+                && Iri.TryParse(hrefString, out var parsedHref))
+            {
+                href = parsedHref;
+            }
+
+            hashtags.Add((name, href));
+        }
+
+        return hashtags;
+    }
+
+    /// <summary>
+    /// Resolves the custom emojis declared on an object (F-27).
+    /// </summary>
+    /// <remarks>
+    /// Mastodon and Pleroma carry custom emoji definitions in a top-level <c>emoji</c> array on the
+    /// content object (e.g. a <c>Note</c>), not in the <c>tag</c> array. Each entry is an object with
+    /// <c>name</c> (the emoji name, e.g. <c>"smile"</c>), <c>shortCode</c> (e.g. <c>":smile:"</c>),
+    /// and <c>staticUrl</c> / <c>url</c> (the image URL). Because the ActivityStreams library does not
+    /// model an <c>emoji</c> property, the array is preserved in
+    /// <see cref="IObject.ExtensionData"/> and this method is the single boundary read that surfaces
+    /// it for rendering. Returns an empty list when the object declares no custom emojis.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>emoji</c> array is read. May be null.</param>
+    /// <returns>
+    /// The custom emojis (name, short code, and image URL, in declaration order); possibly empty.
+    /// An emoji with no image URL (a server that omitted it) carries a <see langword="null"/> URL.
+    /// </returns>
+    public static IReadOnlyList<(string Name, string ShortCode, Iri? Url)> GetCustomEmojis(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext || !ext.TryGetValue("emoji", out var emojiElement))
+        {
+            return [];
+        }
+
+        if (emojiElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var emojis = new List<(string Name, string ShortCode, Iri? Url)>();
+        foreach (var item in emojiElement.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var name = item.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                ? nameProp.GetString()
+                : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var shortCode = item.TryGetProperty("shortCode", out var scProp) && scProp.ValueKind == JsonValueKind.String
+                ? scProp.GetString()!
+                : $":{name}:";
+
+            Iri? url = null;
+            var urlString = item.TryGetProperty("staticUrl", out var suProp) && suProp.ValueKind == JsonValueKind.String
+                ? suProp.GetString()
+                : item.TryGetProperty("url", out var uProp) && uProp.ValueKind == JsonValueKind.String
+                    ? uProp.GetString()
+                    : null;
+            if (urlString is { Length: > 0 } && Iri.TryParse(urlString, out var parsedUrl))
+            {
+                url = parsedUrl;
+            }
+
+            emojis.Add((name!, shortCode, url));
+        }
+
+        return emojis;
+    }
+
+    /// <summary>
+    /// Reads the poll data from an object (F-26).
+    /// </summary>
+    /// <remarks>
+    /// Two wire shapes are supported:
+    /// <list type="bullet">
+    /// <item>Mastodon: a top-level <c>poll</c> object in <see cref="IObject.ExtensionData"/> with
+    /// <c>options</c> (array of <c>{title, votesCount}</c>), <c>endsAt</c>, <c>expired</c>,
+    /// <c>multiple</c>, <c>totalVotes</c>.</item>
+    /// <item>Pleroma / AS2.0: a <c>Question</c>-typed object (or a Note carrying <c>options</c> /
+    /// <c>endTime</c> / <c>closed</c> / <c>multiple</c> in <see cref="IObject.ExtensionData"/>),
+    /// where each option is <c>{name, votes}</c>.</item>
+    /// </list>
+    /// Returns <c>null</c> when the object carries no poll data.
+    /// </remarks>
+    /// <param name="obj">The object whose poll data is read. May be null.</param>
+    /// <returns>The parsed <see cref="PollData"/>, or <c>null</c> when no poll is present.</returns>
+    public static PollData? GetPollData(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        // Shape 1: Mastodon — top-level `poll` object in ExtensionData.
+        if (ext.TryGetValue("poll", out var pollElement) && pollElement.ValueKind == JsonValueKind.Object)
+        {
+            return ParsePollFromExtension(pollElement);
+        }
+
+        // Shape 2: Pleroma / AS2.0 — `options` array + `endTime` / `closed` / `multiple` directly on the object.
+        if (ext.TryGetValue("options", out var optionsElement) && optionsElement.ValueKind == JsonValueKind.Array)
+        {
+            return ParsePollFromAs2(obj, ext, optionsElement);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Parses poll data from a JSON string (the server's poll-vote response body). The expected
+    /// shape is <c>{"options": [{"title": "...", "votes": N}], "totalVotes": N, "endsAt": "...",
+    /// "expired": bool, "multiple": bool}</c>. Returns null when the JSON is malformed or does not
+    /// carry poll data.
+    /// </summary>
+    /// <param name="json">The JSON string to parse.</param>
+    /// <returns>The parsed <see cref="PollData"/>, or <c>null</c> when parsing fails.</returns>
+    public static PollData? GetPollDataFromJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("options", out var optionsEl) || optionsEl.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            var options = new List<PollOption>();
+            foreach (var opt in optionsEl.EnumerateArray())
+            {
+                var title = opt.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                var votes = opt.TryGetProperty("votes", out var v) && v.TryGetInt32(out var vi) ? vi : 0;
+                options.Add(new PollOption(title, votes));
+            }
+
+            if (options.Count == 0)
+            {
+                return null;
+            }
+
+            var totalVotes = root.TryGetProperty("totalVotes", out var tv) && tv.TryGetInt32(out var tvi) ? tvi : options.Sum(o => o.Votes);
+            DateTime? endsAt = null;
+            if (root.TryGetProperty("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+                && DateTime.TryParse(ea.GetString(), out var dt))
+            {
+                endsAt = dt;
+            }
+            var expired = root.TryGetProperty("expired", out var ex) && ex.ValueKind == JsonValueKind.True;
+            var multiple = root.TryGetProperty("multiple", out var mu) && mu.ValueKind == JsonValueKind.True;
+
+            return new PollData(options, totalVotes, endsAt, expired, multiple);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static PollData? ParsePollFromExtension(JsonElement poll)
+    {
+        if (!poll.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        var pollOptions = new List<PollOption>();
+        foreach (var opt in options.EnumerateArray())
+        {
+            if (opt.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var title = opt.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String
+                ? titleProp.GetString()!
+                : null;
+            if (string.IsNullOrWhiteSpace(title))
+            {
+                continue;
+            }
+
+            var votes = opt.TryGetProperty("votesCount", out var votesProp) && votesProp.ValueKind == JsonValueKind.Number
+                ? votesProp.GetInt32()
+                : 0;
+            pollOptions.Add(new PollOption(title, votes));
+        }
+
+        if (pollOptions.Count == 0)
+        {
+            return null;
+        }
+
+        var totalVotes = poll.TryGetProperty("totalVotes", out var tv) && tv.ValueKind == JsonValueKind.Number
+            ? tv.GetInt32()
+            : pollOptions.Sum(o => o.Votes);
+
+        DateTime? endsAt = null;
+        if (poll.TryGetProperty("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(ea.GetString(), out var parsed))
+        {
+            endsAt = parsed.ToUniversalTime();
+        }
+
+        var expired = poll.TryGetProperty("expired", out var exp) && exp.ValueKind == JsonValueKind.True;
+        var multiple = poll.TryGetProperty("multiple", out var mult) && mult.ValueKind == JsonValueKind.True;
+
+        return new PollData(pollOptions, totalVotes, endsAt, expired, multiple);
+    }
+
+    private static PollData? ParsePollFromAs2(IObject obj, Dictionary<string, JsonElement> ext, JsonElement options)
+    {
+        var pollOptions = new List<PollOption>();
+        foreach (var opt in options.EnumerateArray())
+        {
+            if (opt.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            // AS2.0 Question options use `name`; Mastodon uses `title`.
+            var name = opt.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                ? nameProp.GetString()!
+                : opt.TryGetProperty("title", out var titleProp) && titleProp.ValueKind == JsonValueKind.String
+                    ? titleProp.GetString()!
+                    : null;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                continue;
+            }
+
+            var votes = opt.TryGetProperty("votes", out var votesProp) && votesProp.ValueKind == JsonValueKind.Number
+                ? votesProp.GetInt32()
+                : opt.TryGetProperty("votesCount", out var vcProp) && vcProp.ValueKind == JsonValueKind.Number
+                    ? vcProp.GetInt32()
+                    : 0;
+            pollOptions.Add(new PollOption(name, votes));
+        }
+
+        if (pollOptions.Count == 0)
+        {
+            return null;
+        }
+
+        var totalVotes = ext.TryGetValue("totalVotes", out var tv) && tv.ValueKind == JsonValueKind.Number
+            ? tv.GetInt32()
+            : pollOptions.Sum(o => o.Votes);
+
+        DateTime? endsAt = null;
+        if (ext.TryGetValue("endTime", out var et) && et.ValueKind == JsonValueKind.String
+            && DateTime.TryParse(et.GetString(), out var parsed))
+        {
+            endsAt = parsed.ToUniversalTime();
+        }
+        else if (ext.TryGetValue("endsAt", out var ea) && ea.ValueKind == JsonValueKind.String
+                 && DateTime.TryParse(ea.GetString(), out var parsed2))
+        {
+            endsAt = parsed2.ToUniversalTime();
+        }
+
+        var expired = ext.TryGetValue("closed", out var cl) && cl.ValueKind == JsonValueKind.True
+            || ext.TryGetValue("expired", out var exp) && exp.ValueKind == JsonValueKind.True;
+        var multiple = ext.TryGetValue("multiple", out var mult) && mult.ValueKind == JsonValueKind.True;
+
+        return new PollData(pollOptions, totalVotes, endsAt, expired, multiple);
     }
 
     /// <summary>
@@ -340,6 +727,231 @@ public static class IriExtensions
         }
 
         return list;
+    }
+
+    /// <summary>
+    /// Reads the rich attachments of an object (F-11): all <c>attachment</c> entries with their
+    /// type, name, URL, and optional preview URL.
+    /// </summary>
+    /// <remarks>
+    /// Unlike <see cref="GetMediaAttachments"/> (which returns only <see cref="Image"/> attachments),
+    /// this returns every attachment entry — <c>Document</c>, <c>Audio</c>, <c>Video</c>, <c>Image</c>,
+    /// and plain <c>Link</c> — so a renderer can show type-appropriate icons and previews. The type is
+    /// the AS2.0 <c>type</c> of the attachment (e.g. <c>"Document"</c>, <c>"Audio"</c>, <c>"Video"</c>,
+    /// <c>"Image"</c>); a plain <c>Link</c> has type <c>null</c>. The preview URL is the attachment's
+    /// <c>preview</c> property (a <c>Link</c> or <c>Image</c> with an <c>href</c>), when present.
+    /// </remarks>
+    /// <param name="obj">The object whose <c>attachment</c> is read. May be null.</param>
+    /// <returns>The rich attachments (type, name, URL, preview URL, in <c>attachment</c> order); possibly empty.</returns>
+    public static IReadOnlyList<RichAttachment> GetRichAttachments(this IObject? obj)
+    {
+        var attachments = obj?.Attachment;
+        if (attachments is null)
+        {
+            return [];
+        }
+
+        var list = new List<RichAttachment>();
+        foreach (var attachment in attachments)
+        {
+            // Resolve the media URL: prefer `id` (for embedded objects), then `url` (for
+            // Document/Audio/Video/Image), then `href` (for plain Link).
+            Iri? iri = attachment.ResolveObjectIri();
+            if (iri is null && attachment is IObject { } aoForUrl)
+            {
+                iri = ResolveAttachmentUrlIri(aoForUrl);
+            }
+
+            if (iri is not { } resolvedIri)
+            {
+                continue;
+            }
+
+            string? type = null;
+            string? name = null;
+            Iri? preview = null;
+            string? mediaType = ResolveAttachmentMediaType(attachment);
+
+            if (attachment is IObject { } ao)
+            {
+                var typeNames = ao.Type?.ToList();
+                if (typeNames is { Count: > 0 })
+                {
+                    type = typeNames[^1];
+                    if (string.Equals(type, "Object", StringComparison.OrdinalIgnoreCase))
+                    {
+                        type = typeNames.Count > 1 ? typeNames[^2] : null;
+                    }
+                }
+
+                if (ao is { Name: { } names } && names.Any())
+                {
+                    name = names.First();
+                }
+
+                // Preview: a `preview` property (Link or Image with href/id).
+                if (ao is ActivityObject actObj && actObj.Preview is { } previews)
+                {
+                    var firstPreview = previews.FirstOrDefault();
+                    preview = firstPreview?.ResolveObjectIri()
+                        ?? (firstPreview is IObject prevObj ? ResolveAttachmentUrlIri(prevObj) : null);
+                }
+                else if (ao.ExtensionData is { } ext && ext.TryGetValue("preview", out var prevEl))
+                {
+                    preview = ResolvePreviewIri(prevEl);
+                }
+            }
+            else if (attachment is ILink { } link)
+            {
+                // A plain `Link` attachment (a `type:"Link"` entry, or a bare link) deserializes to the
+                // ActivityStreams `Link` class, which `GetRichAttachments` would otherwise skip for its
+                // type/name (those are read only off `IObject`). Surface the declared type ("Link") and
+                // name so a renderer can distinguish a genuine web link (rendered as a new-tab link card)
+                // from a bare media link (an image / video whose `type` is unset). Without this, a
+                // `type:"Link"` attachment and a bare image both surface `Type == null`, making them
+                // indistinguishable.
+                var linkTypes = link.Type?.ToList();
+                if (linkTypes is { Count: > 0 })
+                {
+                    type = linkTypes[^1];
+                }
+
+                var linkNames = link.Name?.ToList();
+                if (linkNames is { Count: > 0 })
+                {
+                    name = linkNames.First();
+                }
+            }
+
+            list.Add(new RichAttachment(type, name, resolvedIri, preview, mediaType));
+        }
+
+        return list;
+    }
+
+    /// <summary>
+    /// Reads the <c>mediaType</c> off an attachment — a plain <see cref="ILink"/> or an
+    /// <see cref="IObject"/> — so a renderer can pick the right player (video/audio/image) without
+    /// sniffing the URL. Both the AS <c>Link</c> and the <c>Object</c> family carry a
+    /// <c>mediaType</c> (it is not part of the shared <see cref="IObjectOrLink"/> contract, so this
+    /// pattern-matches the two concrete shapes). Returns null when the attachment carries none.
+    /// </summary>
+    /// <param name="attachment">The attachment to read. May be null.</param>
+    /// <returns>The MIME type, or null.</returns>
+    private static string? ResolveAttachmentMediaType(IObjectOrLink? attachment)
+    {
+        if (attachment is ILink { MediaType: { Length: > 0 } mt })
+        {
+            return mt;
+        }
+
+        if (attachment is IObject { } obj && obj is KristofferStrube.ActivityStreams.Object { MediaType: { Length: > 0 } om })
+        {
+            return om;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves the self-contained media IRI of an object whose body IS the media (F-11 / PeerTube
+    /// interop). A PeerTube post is a single <c>Video</c> (or <c>Audio</c>/<c>Image</c>) object whose
+    /// <c>url</c> points at the media file itself — unlike an Iris/Mastodon note that carries media as
+    /// <c>attachment</c> entries. This returns the object's own <c>url</c> IRI (via
+    /// <see cref="IObject.Url"/> or the <c>url</c> extension) so a renderer can emit a media player.
+    /// </summary>
+    /// <param name="obj">The object to inspect. May be null.</param>
+    /// <returns>
+    /// The object's own media IRI when the object is a media type (<c>Video</c>, <c>Audio</c>, or
+    /// <c>Image</c>) that carries a <c>url</c>; otherwise null (the object's media, if any, is in its
+    /// <c>attachment</c> entries and is handled by <see cref="GetRichAttachments"/>).
+    /// </returns>
+    public static Iri? GetSelfMediaIri(this IObject? obj)
+    {
+        if (obj is not ActivityObject { Url: { } urls })
+        {
+            // Fall back to the `url` extension (a bare string or array) when the typed property is unset.
+            if (obj?.ExtensionData is { } ext && ext.TryGetValue("url", out var urlEl))
+            {
+                var iri = ResolveBareUrlIri(urlEl);
+                if (iri is not null && IsSelfMediaType(obj))
+                {
+                    return iri;
+                }
+            }
+
+            return null;
+        }
+
+        if (!IsSelfMediaType(obj))
+        {
+            return null;
+        }
+
+        var first = urls.FirstOrDefault();
+        return first is ILink { Href: { } href } ? new Iri(href)
+            : first is IObject urlObj ? ResolveAttachmentUrlIri(urlObj)
+            : null;
+    }
+
+    private static bool IsSelfMediaType(IObject obj)
+    {
+        var types = obj.Type?.ToList();
+        if (types is null)
+        {
+            return false;
+        }
+
+        return types.Any(t => string.Equals(t, "Video", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "Audio", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(t, "Image", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static Iri? ResolveBareUrlIri(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String
+            && element.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+        {
+            return iri;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            var first = element.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind == JsonValueKind.String
+                && first.GetString() is { Length: > 0 } arrStr && Iri.TryParse(arrStr, out var arrIri))
+            {
+                return arrIri;
+            }
+        }
+
+        return null;
+    }
+
+    private static Iri? ResolvePreviewIri(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String
+            && element.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+        {
+            return iri;
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            if (element.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String
+                && href.GetString() is { Length: > 0 } hrefStr && Iri.TryParse(hrefStr, out var h))
+            {
+                return h;
+            }
+
+            if (element.TryGetProperty("url", out var url) && url.ValueKind == JsonValueKind.String
+                && url.GetString() is { Length: > 0 } urlStr && Iri.TryParse(urlStr, out var u))
+            {
+                return u;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -599,6 +1211,35 @@ public static class IriExtensions
     }
 
     /// <summary>
+    /// Extracts the <c>id</c> of the <c>publicKey</c> from an actor's <see cref="IObject.ExtensionData"/>.
+    /// Returns <c>null</c> when the actor has no <c>publicKey</c> object or the <c>id</c> is absent/invalid.
+    /// </summary>
+    /// <remarks>
+    /// The <c>publicKey</c> is an ecosystem-convention object (not a core-AP term) carried in
+    /// <see cref="IObject.ExtensionData"/> under the bare key <c>"publicKey"</c> (see
+    /// <see cref="ActivityPubExtensionNames.PublicKey"/>). Its <c>id</c> is the key IRI
+    /// (typically <c>actorIri#key-1</c>). This helper is the single boundary point for reading that IRI,
+    /// replacing the previous hard-coded <c>#key-1</c> fragment in the <c>Move</c> handler (F-25).
+    /// </remarks>
+    /// <param name="actor">The actor document. May be <see langword="null"/>.</param>
+    /// <returns>The key IRI, or <see langword="null"/> when unavailable.</returns>
+    public static Iri? GetPublicKeyIri(this IObject? actor)
+    {
+        if (actor?.ExtensionData is { } ext
+            && ext.TryGetValue(ActivityPubExtensionNames.PublicKey, out var pk)
+            && pk.ValueKind == JsonValueKind.Object
+            && pk.TryGetProperty("id", out var idEl)
+            && idEl.ValueKind == JsonValueKind.String
+            && idEl.GetString() is { Length: > 0 } idStr
+            && Iri.TryParse(idStr, out var keyIri))
+        {
+            return keyIri;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Fallback IRI resolution for an attachment that is an embedded <see cref="Image"/> without an
     /// <c>Id</c>: reads the <c>url</c> of the image (the media IRI). Returns null when unavailable.
     /// </summary>
@@ -611,6 +1252,100 @@ public static class IriExtensions
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Resolves the <c>url</c> of a non-Image attachment (Document/Audio/Video) or a generic object
+    /// carrying a <c>url</c> property. Reads the first <c>url</c> entry's <c>href</c>, falling back to
+    /// a bare-string <c>url</c> in <see cref="IObject.ExtensionData"/>. Returns null when unavailable.
+    /// </summary>
+    private static Iri? ResolveAttachmentUrlIri(IObject obj)
+    {
+        if (obj is ActivityObject actObj && actObj.Url is { } urls)
+        {
+            var first = urls.FirstOrDefault();
+            if (first is ILink { Href: { } href })
+            {
+                return new Iri(href);
+            }
+        }
+
+        if (obj.ExtensionData is { } ext && ext.TryGetValue("url", out var urlEl))
+        {
+            if (urlEl.ValueKind == JsonValueKind.String
+                && urlEl.GetString() is { Length: > 0 } str && Iri.TryParse(str, out var iri))
+            {
+                return iri;
+            }
+
+            if (urlEl.ValueKind == JsonValueKind.Array)
+            {
+                var first = urlEl.EnumerateArray().FirstOrDefault();
+                if (first.ValueKind == JsonValueKind.String
+                    && first.GetString() is { Length: > 0 } arrStr && Iri.TryParse(arrStr, out var arrIri))
+                {
+                    return arrIri;
+                }
+
+                if (first.ValueKind == JsonValueKind.Object
+                    && first.TryGetProperty("href", out var hrefEl)
+                    && hrefEl.ValueKind == JsonValueKind.String
+                    && hrefEl.GetString() is { Length: > 0 } hrefStr && Iri.TryParse(hrefStr, out var h))
+                {
+                    return h;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads the <c>publishedTime</c> property from an object's <see cref="IObject.ExtensionData"/>
+    /// (F-11, <c>Article</c>-specific). The ActivityStreams library models <c>published</c> (as
+    /// <see cref="ActivityObject.Published"/>) but not <c>publishedTime</c>; a remote <c>Article</c>
+    /// may carry both (the <c>published</c> timestamp is when the object was created in the
+    /// ActivityPub sense, while <c>publishedTime</c> is the article's publication date).
+    /// </summary>
+    /// <param name="obj">The object whose <c>publishedTime</c> is read. May be null.</param>
+    /// <returns>The parsed <c>publishedTime</c>, or <c>null</c> when absent or unparseable.</returns>
+    public static DateTime? GetPublishedTime(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("publishedTime", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        return DateTime.TryParse(value, out var dt) ? DateTime.SpecifyKind(dt, DateTimeKind.Utc) : null;
+    }
+
+    /// <summary>
+    /// Reads the <c>inLanguage</c> property from an object's <see cref="IObject.ExtensionData"/>
+    /// (F-11, <c>Article</c>-specific). The ActivityStreams library does not model <c>inLanguage</c>;
+    /// it lands in <c>ExtensionData</c>.
+    /// </summary>
+    /// <param name="obj">The object whose <c>inLanguage</c> is read. May be null.</param>
+    /// <returns>The language tag (e.g. <c>"en"</c>, <c>"fr-CA"</c>), or <c>null</c> when absent.</returns>
+    public static string? GetInLanguage(this IObject? obj)
+    {
+        if (obj is null || obj.ExtensionData is not { } ext)
+        {
+            return null;
+        }
+
+        if (!ext.TryGetValue("inLanguage", out var element) || element.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        var value = element.GetString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
     }
 
     private static Iri AppendSegment(Iri iri, string segment)
@@ -636,3 +1371,36 @@ public static class IriExtensions
         return new Iri(builder.Uri);
     }
 }
+
+/// <summary>
+/// A single poll option with its vote count.
+/// </summary>
+/// <param name="Title">The option text (e.g. <c>"Alice"</c>).</param>
+/// <param name="Votes">The number of votes for this option.</param>
+public sealed record PollOption(string Title, int Votes);
+
+/// <summary>
+/// Parsed poll data from an object's <c>poll</c> extension (Mastodon) or <c>Question</c> properties
+/// (AS2.0 / Pleroma).
+/// </summary>
+/// <param name="Options">The poll options with their vote counts (in declaration order).</param>
+/// <param name="TotalVotes">The total number of votes cast (sum of all options).</param>
+/// <param name="EndsAt">The poll end timestamp, when declared.</param>
+/// <param name="Expired"><c>true</c> when the poll has closed (ended or explicitly marked expired).</param>
+/// <param name="Multiple"><c>true</c> when voters may select more than one option.</param>
+public sealed record PollData(
+    IReadOnlyList<PollOption> Options,
+    int TotalVotes,
+    DateTime? EndsAt,
+    bool Expired,
+    bool Multiple);
+
+/// <summary>
+/// A rich attachment with its type, name, URL, media type, and optional preview URL (F-11).
+/// </summary>
+/// <param name="Type">The AS2.0 type (e.g. <c>"Document"</c>, <c>"Audio"</c>, <c>"Video"</c>, <c>"Image"</c>), or <c>null</c> for a plain <c>Link</c>.</param>
+/// <param name="Name">The attachment's display name, when present.</param>
+/// <param name="Url">The attachment's media URL.</param>
+/// <param name="Preview">The attachment's preview image URL, when present (for Audio/Video).</param>
+/// <param name="MediaType">The MIME type of the media (e.g. <c>"video/mp4"</c>, <c>"application/pdf"</c>), when the attachment carries one. Lets a renderer pick the right player without sniffing the URL.</param>
+public sealed record RichAttachment(string? Type, string? Name, Iri Url, Iri? Preview, string? MediaType = null);

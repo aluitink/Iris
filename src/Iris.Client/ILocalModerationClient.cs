@@ -118,4 +118,323 @@ public interface ILocalModerationClient
     /// <param name="ct">The cancellation token.</param>
     /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
     public Task<DeliveryResult> UnsubscribeRelayAsync(Iri actorId, Iri relayId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mutes a member within a community (community-scoped moderation): a local, Basic-authenticated
+    /// request to the community's home instance (<c>POST /local/v1/c/{name}/mutes/{targetId}</c>) that
+    /// hides the member's content from the community's feed without removing their membership.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to mute.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Mutes a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to mute.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> MuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes a member within a community: the inverse of <see cref="MuteCommunityMemberAsync(Iri,
+    /// Iri, CancellationToken)"/> — <c>POST /local/v1/c/{name}/mutes/{targetId}?unmute=true</c>.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-mute.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-mutes a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-mute.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnmuteCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Blocks a member within a community (community-scoped moderation): a local, Basic-authenticated
+    /// request to the community's home instance (<c>POST /local/v1/c/{name}/blocks/{targetId}</c>) that
+    /// hides the member's content from the community's feed and severs the relationship (stronger than
+    /// a mute).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to block.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Blocks a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to block.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> BlockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-blocks a member within a community: the inverse of <see cref="BlockCommunityMemberAsync(Iri,
+    /// Iri, CancellationToken)"/> — <c>POST /local/v1/c/{name}/blocks/{targetId}?unblock=true</c>.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-block.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Un-blocks a member within a community with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="targetId">The IRI of the member to un-block.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown community).</returns>
+    public Task<DeliveryResult> UnblockCommunityMemberAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/members/remove/{memberId}</c>) that removes the membership edge.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) from which the member is removed.</param>
+    /// <param name="memberId">The IRI of the member actor to remove.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    /// <remarks>
+    /// The request is authenticated by Basic auth (the community creator's credentials, supplied at
+    /// construction). The server verifies the authenticated person is the community's creator
+    /// (via the Group's <c>attributedTo</c>) before removing the membership edge.
+    /// </remarks>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator, with explicit
+    /// Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) from which the member is removed.</param>
+    /// <param name="memberId">The IRI of the member actor to remove.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RemoveCommunityMemberAsync(Iri communityId, Iri memberId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's pending join requests, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>GET /local/v1/c/{name}/requests</c>) that returns the actor IRIs with pending requests.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of actor IRIs).</returns>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's pending join requests with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> GetCommunityJoinRequestsAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending join request, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/requests/accept/{actorId}</c>) that adds the actor as a member
+    /// and removes the pending request.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is accepted.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending join request with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is accepted.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> AcceptCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending join request, on behalf of the community's creator: a local,
+    /// Basic-authenticated request to the community's home instance
+    /// (<c>POST /local/v1/c/{name}/requests/reject/{actorId}</c>) that removes the pending request
+    /// (no membership granted).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is rejected.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending join request with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>).</param>
+    /// <param name="actorId">The IRI of the actor whose join request is rejected.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body.</returns>
+    public Task<DeliveryResult> RejectCommunityJoinRequestAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's owners (GET /local/v1/c/{name}/owners). Owner-only.
+    /// Returns a JSON array of owner actor IRIs (the Group's AttributedTo).
+    /// </summary>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the community's owners with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> GetCommunityOwnersAsync(Iri communityId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the actor's pending inbound follow requests (the follow-approval queue, Phase 100): a local,
+    /// owner-only request to the actor's own instance (<c>GET /local/v1/u/{handle}/requests</c>) that
+    /// returns the IRIs of the remote actors who sent a <c>Follow</c> while the actor has
+    /// <c>manuallyApprovesFollowers</c> set (held, not auto-accepted). Newest-first.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor whose follow requests are listed.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of requester IRIs).</returns>
+    /// <remarks>
+    /// The queue is private to the actor (401 for any other caller). It drains when the operator
+    /// Accepts/Rejects a request: the follow-decision outbox write removes the pending request edge, so
+    /// a subsequent call no longer lists the decided requester.
+    /// </remarks>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Lists the actor's pending inbound follow requests with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor whose follow requests are listed.</param>
+    /// <param name="credentials">The acting actor's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (a JSON array of requester IRIs).</returns>
+    public Task<DeliveryResult> GetFollowRequestsAsync(Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Accepts a pending inbound follow request (Phase 100): a local, owner-only request to the actor's
+    /// own instance (<c>POST /local/v1/u/{handle}/requests/accept/{requesterId}</c>) that records the
+    /// requester→actor follow edge (confirming the held follow) and drains the pending request from the
+    /// queue.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor accepting the follow request.</param>
+    /// <param name="requesterId">The IRI of the requester (the actor who sent the held Follow).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle/request).</returns>
+    public Task<DeliveryResult> AcceptFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rejects a pending inbound follow request (Phase 100): a local, owner-only request to the actor's
+    /// own instance (<c>POST /local/v1/u/{handle}/requests/reject/{requesterId}</c>) that removes the
+    /// provisional requester→actor follow edge and drains the pending request from the queue (no follow
+    /// granted).
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor rejecting the follow request.</param>
+    /// <param name="requesterId">The IRI of the requester (the actor who sent the held Follow).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 404 unknown handle/request).</returns>
+    public Task<DeliveryResult> RejectFollowRequestAsync(Iri actorId, Iri requesterId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Promotes a member to owner (POST /local/v1/c/{name}/owners/promote/{**actorIri}). Owner-only.
+    /// Adds the actor's IRI to the Group's AttributedTo list.
+    /// </summary>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Promotes a member to owner with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> PromoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Demotes an owner (POST /local/v1/c/{name}/owners/demote/{**actorIri}). Owner-only.
+    /// Removes the actor's IRI from the Group's AttributedTo list. Rejects if it would leave zero owners.
+    /// </summary>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Demotes an owner with explicit Basic-auth credentials.
+    /// </summary>
+    public Task<DeliveryResult> DemoteCommunityOwnerAsync(Iri communityId, Iri actorId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Records a poll vote: a local, non-federated write that records the actor's choice on a stored
+    /// <c>Question</c> object (<c>POST /local/v1/u/{handle}/votes/{**pollIri}</c>). The body is
+    /// <c>{"option": &lt;index&gt;}</c>. Returns 200 with the updated poll data on success; 409 when
+    /// the poll is expired; 404 when the poll is not found; 400 for a bad option index.
+    /// </summary>
+    /// <param name="actorId">The IRI of the (local) actor voting.</param>
+    /// <param name="pollIri">The IRI of the stored <c>Question</c> object (the poll).</param>
+    /// <param name="optionIndex">The zero-based index of the selected option.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> carrying the HTTP status code, a success flag, and the response body (the updated poll data).</returns>
+    public Task<DeliveryResult> VoteAsync(Iri actorId, Iri pollIri, int optionIndex, CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows an actor as the community (community peering, 89): a local, creator-gated request to the
+    /// community's home instance (<c>POST /local/v1/c/{name}/follow/{targetIri}</c>) that records the
+    /// follow edge in the community's <c>following</c> set and has the server author + deliver the
+    /// community's <c>Follow</c> activity to the target. The community's unified feed then surfaces the
+    /// target's content (the Lemmy "replica" behavior).
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) performing the follow.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to follow.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 400 self-follow; 503 degraded).</returns>
+    /// <remarks>
+    /// The request is authenticated by the community creator's credentials (supplied at construction) or
+    /// the cookie-auth passthrough (the Blazor WASM client). The server verifies the authenticated person
+    /// is the community's creator (the Group's <c>attributedTo</c>) before recording the edge.
+    /// </remarks>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows an actor as the community (community peering, 89) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) performing the follow.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to follow.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 400 self-follow; 503 degraded).</returns>
+    public Task<DeliveryResult> FollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unfollows an actor as the community (community peering, 89): the inverse of
+    /// <see cref="FollowAsCommunityAsync(Iri, Iri, CancellationToken)"/> — a local, creator-gated request
+    /// to the community's home instance (<c>POST /local/v1/c/{name}/follow/{targetIri}?unfollow=true</c>)
+    /// that removes the follow edge from the community's <c>following</c> set and has the server author +
+    /// deliver the community's <c>Undo</c> of the <c>Follow</c> to the target.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) unfollowing.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to unfollow (previously followed).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not followed; 503 degraded).</returns>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Unfollows an actor as the community (community peering, 89) with explicit Basic-auth credentials.
+    /// </summary>
+    /// <param name="communityId">The IRI of the community (a <c>Group</c>) unfollowing.</param>
+    /// <param name="targetId">The IRI of the actor (a community or a person) to unfollow.</param>
+    /// <param name="credentials">The community creator's Basic-auth credentials.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A <see cref="DeliveryResult"/> (204 on success; 401 unauthenticated; 403 not the creator; 404 not followed; 503 degraded).</returns>
+    public Task<DeliveryResult> UnfollowAsCommunityAsync(Iri communityId, Iri targetId, ProxyCredentials credentials, CancellationToken ct = default);
 }

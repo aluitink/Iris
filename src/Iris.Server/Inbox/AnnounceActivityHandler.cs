@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -70,11 +71,14 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
     /// local follower's inbox).</param>
     /// <param name="localActors">Resolves whether the recipient (and each candidate follower) is a
     /// local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public AnnounceActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
-        ILocalActorResolver localActors)
+        ILocalActorResolver localActors,
+        ILogger<AnnounceActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
@@ -101,19 +105,37 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
 
         // The announced object is the activity's object (Rule 3: read multi-valued as IEnumerable,
         // null-safe).
-        var objectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
+        var firstObject = announce.Object?.FirstOrDefault();
+        var objectIri = firstObject?.ResolveObjectIri();
         if (!objectIri.HasValue)
         {
             // An announce with no resolvable object is malformed; nothing to record or propagate.
             return;
         }
 
-        // Interpret the announce only when the recipient is a local actor (the inbox the announce was
-        // delivered to belongs to this instance). An announce addressed to a remote actor is not this
-        // instance's concern.
-        if (!await _localActors.IsLocalActorAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
+        // Interpret the announce only when the recipient is a local actor OR a local community (the
+        // inbox the announce was delivered to belongs to this instance). An announce addressed to a
+        // remote actor is not this instance's concern. The person and community stores are disjoint
+        // (a community lives in the community store, not the actor store), so check both.
+        var isLocalActor = await _localActors.IsLocalActorAsync(delivery.RecipientIri, ct).ConfigureAwait(false);
+        var isLocalCommunity = await _persistence.Communities
+            .TryGetCommunityAsync(delivery.RecipientIri, out _, ct)
+            .ConfigureAwait(false);
+        if (!isLocalActor && !isLocalCommunity)
         {
             return;
+        }
+
+        // 138.12 (Lemmy community relay): when the Announce's object is an embedded Create activity
+        // (not a bare object IRI), it's a Lemmy-style community relay — the community is relaying a
+        // member's post. Unwrap the Create and handle it as if it were delivered directly to the
+        // community's inbox (so the embedded Page/Note is stored in the object store and recorded in
+        // the community's local members' outboxes). The Announce itself is still recorded in the
+        // community's outbox (the relay envelope), but the embedded Create is what surfaces the post
+        // in the community feed.
+        if (firstObject is Create embeddedCreate)
+        {
+            await HandleEmbeddedCreateAsync(delivery, embeddedCreate, ct).ConfigureAwait(false);
         }
 
         // Record the announce in the recipient's outbox (newest first). The recipient is the
@@ -182,6 +204,56 @@ public sealed class AnnounceActivityHandler : ActivityHandlerBase<Announce>
         // is never a local actor, and a relay that has blocked the announcer is suppressed by
         // IDeliveryService.DeliverToActorAsync (F-07) before it is enqueued.
         await DeliverToSubscribedRelaysAsync(delivery.RecipientIri, announce, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 138.12 (Lemmy community relay): handles an embedded <see cref="Create"/> activity that is the
+    /// object of an inbound <see cref="Announce"/> (Lemmy's community relay pattern: a community relays
+    /// a member's post by sending an <c>Announce</c> whose object is the member's <c>Create</c>). Stores
+    /// the embedded object in the object store and records the <see cref="Create"/> in the community's
+    /// local members' outboxes (via <see cref="CommunityContentRecorder"/>), so the post surfaces in the
+    /// community feed. The recipient is the community (the <c>Announce</c>'s actor, which is the
+    /// relaying community's IRI).
+    /// </summary>
+    /// <param name="delivery">The inbound delivery (the recipient is the community whose inbox received
+    /// the <c>Announce</c>).</param>
+    /// <param name="embeddedCreate">The embedded <see cref="Create"/> activity (the member's post).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task HandleEmbeddedCreateAsync(InboxDelivery delivery, Create embeddedCreate, CancellationToken ct)
+    {
+        var recipient = delivery.RecipientIri;
+
+        // Store the embedded object (the Page/Note) in the object store under its own IRI, so it can be
+        // served by IRI and later refreshed (an Update) or tombstoned (a Delete).
+        var embeddedObject = embeddedCreate.ExtractEmbeddedObject();
+        if (embeddedObject is not null)
+        {
+            // 136.19 (re-animation guard): if the object's IRI already holds a Tombstone, do not
+            // re-store the live content.
+            var objectIriCheck = embeddedObject.ResolveObjectIri();
+            if (objectIriCheck is { } oi
+                && await _persistence.Objects.TryGetObjectAsync(oi, out var existing, ct).ConfigureAwait(false)
+                && existing is Tombstone)
+            {
+                return;
+            }
+
+            if (embeddedObject.Published is null)
+            {
+                embeddedObject.Published = embeddedCreate.Published ?? DateTime.UtcNow;
+            }
+
+            await _persistence.Objects.PutObjectAsync(embeddedObject, ct).ConfigureAwait(false);
+        }
+
+        // Record the Create in the community's local members' outboxes (the "followed content" half of
+        // the community feed). The CommunityContentRecorder handles the fan-out to local members.
+        await CommunityContentRecorder.RecordToMembersAsync(
+            _persistence,
+            _localActors,
+            recipient,
+            embeddedCreate,
+            ct).ConfigureAwait(false);
     }
 
     /// <summary>

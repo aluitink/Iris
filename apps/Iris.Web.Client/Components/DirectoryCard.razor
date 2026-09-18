@@ -1,0 +1,18 @@
+@using Iris.Core.Identity
+@using Iris.Web.Client.Components
+@using KristofferStrube.ActivityStreams
+
+<div class="directory-card">
+    <ActorCard Actor="Actor" ActorId="@Actor.Id" ShowModeration="false" ShowStats="true">
+        <FollowButton TargetActor="Actor" />
+    </ActorCard>
+</div>
+
+@code {
+    /// <summary>
+    /// The actor to present (a person or community). Rendered as the unified actor card — the same
+    /// control the actor page's followers/following tabs use.
+    /// </summary>
+    [Parameter]
+    public Actor Actor { get; set; } = default!;
+}

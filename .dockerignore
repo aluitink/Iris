@@ -3,6 +3,8 @@
 # from this root context, so both sample projects' sources must be present.
 bin/
 obj/
+publish/
+apps/Iris.Web/wwwroot/_framework/
 out/
 artifacts/
 TestResults/

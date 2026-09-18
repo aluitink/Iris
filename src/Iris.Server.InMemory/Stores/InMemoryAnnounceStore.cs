@@ -72,6 +72,50 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
         return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_announcedBy, announcedObjectIri));
     }
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetAnnouncersBatchAsync(
+        IReadOnlyCollection<Iri> announcedObjectIris, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+        foreach (var iri in announcedObjectIris)
+        {
+            if (_announcedBy.TryGetValue(iri, out var set))
+            {
+                lock (set)
+                {
+                    if (set.Count > 0)
+                    {
+                        result[iri] = set.ToList();
+                    }
+                }
+            }
+        }
+        return Task.FromResult<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(result);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlySet<Iri>> HasAnnouncedBatchAsync(
+        Iri announcerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new HashSet<Iri>();
+        if (_announced.TryGetValue(announcerIri, out var set))
+        {
+            lock (set)
+            {
+                foreach (var iri in objectIris)
+                {
+                    if (set.Contains(iri))
+                    {
+                        result.Add(iri);
+                    }
+                }
+            }
+        }
+        return Task.FromResult<IReadOnlySet<Iri>>(result);
+    }
+
     private static void AddEdge(
         System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri source, Iri target)
     {

@@ -49,6 +49,9 @@ public class PagedCollectionTests
         public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<DeliveryResult> AcceptJoinAsync(Iri communityIri, Iri joinIri, CancellationToken ct = default)
             => throw new NotSupportedException();
 
@@ -65,6 +68,15 @@ public class PagedCollectionTests
             => throw new NotSupportedException();
 
         public Task<DeliveryResult> UnlikeAsync(Iri actorId, Iri originalLikeId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
@@ -97,7 +109,10 @@ public class PagedCollectionTests
         public Task<DeliveryResult> RemoveMemberAsync(Iri communityId, Iri memberId, CancellationToken ct = default)
             => throw new NotSupportedException();
 
-        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, CancellationToken ct = default)
+        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, string? description = null, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public IAsyncEnumerable<IObjectOrLink> GetFlagsAsync(Iri actorId, CollectionQuery? query = null, CancellationToken ct = default)
@@ -115,9 +130,20 @@ public class PagedCollectionTests
         public Task<DeliveryResult> PostNoteAsync(Iri actorId, Note note, CancellationToken ct = default)
             => throw new NotSupportedException();
 
+        public Task<DeliveryResult> PostQuestionAsync(
+            Iri actorId, string content, IEnumerable<string> options,
+            DateTime? endsAt = null, bool multiple = false, IEnumerable<Iri>? to = null,
+            IEnumerable<Iri>? cc = null, IEnumerable<Iri>? mentions = null, IEnumerable<string>? hashtags = null,
+            Func<string, string?>? hashtagHrefFactory = null, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId, Iri parentIri, string content,
-            IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null, CancellationToken ct = default)
+            IEnumerable<Iri>? mentions = null, IEnumerable<Iri>? to = null,
+            IEnumerable<string>? hashtags = null, Iri? conversationIri = null, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public IAsyncEnumerable<IObjectOrLink> GetRepliesAsync(Iri objectIri, CollectionQuery? query = null, CancellationToken ct = default)

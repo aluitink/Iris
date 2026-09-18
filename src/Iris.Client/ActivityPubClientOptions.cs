@@ -48,8 +48,11 @@ public sealed class ActivityPubClientOptions
 
     /// <summary>
     /// Gets or sets the Basic-auth credentials (username:password) used to authenticate to the
-    /// proxy endpoint. Required when <see cref="ProxyBaseUrl"/> is set. The proxy identifies the
-    /// actor from these credentials and signs the forwarded request with the actor's key.
+    /// proxy endpoint. Required for Basic-auth proxy use (a 401/403 fallback, or always-proxy
+    /// writes). When <see langword="null"/> the proxy request carries no <c>Authorization</c> header
+    /// and authenticates by the same-origin site cookie instead — the Blazor WebAssembly client's
+    /// cross-instance-read path (the browser has no credentials, so it uses the cookie the
+    /// <see cref="RouteCrossInstanceReadsViaProxy"/> proxy request is sent to its own origin with).
     /// </summary>
     public ProxyCredentials? ProxyCredentials { get; set; }
 

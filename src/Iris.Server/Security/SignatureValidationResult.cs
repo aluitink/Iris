@@ -8,8 +8,11 @@ namespace Iris.Server.Security;
 /// <param name="IsValid">Whether the cryptographic signature verified.</param>
 /// <param name="KeyId">The IRI of the key that signed the request (the <c>keyId</c> in the
 /// <c>Signature</c> header).</param>
-/// <param name="ActorIri">The actor IRI the signature is bound to, resolved from the request body's
-/// <c>actor</c> field when present and parseable; otherwise null.</param>
+/// <param name="ActorIri">The actor IRI the signature is bound to: the signing actor's key owner (the
+/// <c>keyId</c> with any <c>#fragment</c> removed, the ActivityPub <c>keyId = actorIri#key-N</c>
+/// convention) — the cryptographically-verified identity — or the request body's <c>actor</c> field when
+/// present and parseable (a POST carries the acting actor in its body; the two agree for a well-formed
+/// request). Null only when neither is available (an unsigned / <see cref="None"/> sentinel).</param>
 /// <remarks>
 /// A non-null result means the request carried a <c>Signature</c> header and it was evaluated. A
 /// null result (from <see cref="ISignatureValidator.ValidateAsync(Microsoft.AspNetCore.Http.HttpContext, CancellationToken)"/>)

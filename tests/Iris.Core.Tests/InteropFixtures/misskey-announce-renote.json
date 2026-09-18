@@ -1,0 +1,13 @@
+{
+  "id": "https://misskey.io/notes/9dfsz5829z/activity",
+  "actor": "https://misskey.io/users/9bdcydhst5",
+  "type": "Announce",
+  "published": "2023-04-11T12:28:28.850Z",
+  "to": [
+    "https://www.w3.org/ns/activitystreams#Public"
+  ],
+  "cc": [
+    "https://misskey.io/users/9bdcydhst5/followers"
+  ],
+  "object": "https://misskey.io/notes/9dfck93uyh"
+}

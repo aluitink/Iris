@@ -15,7 +15,8 @@ public sealed record SignatureHeader(
     string KeyId,
     string Algorithm,
     string Headers,
-    string Signature)
+    string Signature,
+    long Created = 0)
 {
     /// <summary>
     /// Parses a <c>Signature</c> header value into a <see cref="SignatureHeader"/>.
@@ -39,6 +40,11 @@ public sealed record SignatureHeader(
             ["signature"] = null!,
         };
 
+        // "created" is an optional parameter (draft-cavage-03). It is parsed when present but is not
+        // required: legacy peers (and this library's pre-Phase-82.1 headers) omit it, and a missing
+        // created must not make an otherwise-valid header unparseable.
+        long created = 0;
+
         foreach (var part in SplitTopLevel(header, ','))
         {
             var trimmed = part.Trim();
@@ -49,6 +55,20 @@ public sealed record SignatureHeader(
             }
 
             var name = trimmed[..eq].Trim();
+
+            // The numeric parameters (created, expires, ...) are unquoted integers, unlike the
+            // quoted string parameters. Handle them before the Unquote step, which would reject them.
+            if (name is "created" or "expires" or "expiresIn")
+            {
+                if (name is "created"
+                    && long.TryParse(trimmed[(eq + 1)..].Trim(), out var createdValue))
+                {
+                    created = createdValue;
+                }
+
+                continue;
+            }
+
             var value = Unquote(trimmed[(eq + 1)..].Trim());
             if (value is null)
             {
@@ -66,7 +86,12 @@ public sealed record SignatureHeader(
             }
         }
 
-        parsed = new SignatureHeader(fields["keyId"], fields["algorithm"], fields["headers"], fields["signature"]);
+        parsed = new SignatureHeader(
+            fields["keyId"],
+            fields["algorithm"],
+            fields["headers"],
+            fields["signature"],
+            created);
         return true;
     }
 
@@ -76,11 +101,24 @@ public sealed record SignatureHeader(
     /// <returns>The <c>Signature</c> header value.</returns>
     public string Format()
     {
+        // The parameters are comma-separated WITHOUT spaces, per draft-cavage-http-signatures-03.
+        // Some HTTP Signature verification libraries (notably the Rust http_signature_normalization
+        // crate used by Lemmy 0.19.x) split the header on ',' and do NOT trim the resulting key, so
+        // a space after a comma (e.g. "keyId=..., algorithm=...") makes every field after the first
+        // unparseable — the key becomes " algorithm" (with a leading space) instead of "algorithm",
+        // and the "signature" field is never found, producing a "Error when parsing signature from
+        // Http Signature" 400. Omitting the spaces is the wire-compatible form.
         var builder = new StringBuilder();
         builder.Append("keyId=\"").Append(KeyId).Append('"');
-        builder.Append(", algorithm=\"").Append(Algorithm).Append('"');
-        builder.Append(", headers=\"").Append(Headers).Append('"');
-        builder.Append(", signature=\"").Append(Signature).Append('"');
+        builder.Append(",algorithm=\"").Append(Algorithm).Append('"');
+        builder.Append(",headers=\"").Append(Headers).Append('"');
+        builder.Append(",signature=\"").Append(Signature).Append('"');
+        if (Created > 0)
+        {
+            // The created parameter is a Unix timestamp in seconds (unquoted), per draft-cavage-03.
+            builder.Append(",created=").Append(Created);
+        }
+
         return builder.ToString();
     }
 

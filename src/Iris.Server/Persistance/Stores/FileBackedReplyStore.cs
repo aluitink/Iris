@@ -60,6 +60,23 @@ public sealed class FileBackedReplyStore : IReplyStore, IDisposable
     public Task<bool> HasReplyAsync(Iri parentIri, Iri childIri, CancellationToken ct = default)
         => _file.SnapshotAsync(s => EdgeSet(s).TryGetValue(childIri, out var set) && set.Contains(parentIri), ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetRepliesBatchAsync(
+        IReadOnlyCollection<Iri> parentIris, CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(s =>
+        {
+            var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+            foreach (var parent in parentIris)
+            {
+                var replies = EdgeSet(s).Where(e => e.Value.Contains(parent)).Select(e => e.Key).ToList();
+                if (replies.Count > 0)
+                {
+                    result[parent] = replies;
+                }
+            }
+            return result;
+        }, ct);
+
     /// <summary>
     /// The edge index for the current state (child → set of parents), created on demand.
     /// </summary>

@@ -1,0 +1,53 @@
+@using Iris.Core.Identity
+
+@{
+    var node = Node;
+}
+
+<div class="reply-node @(Expanded ? "reply-node--expanded" : "")" data-reply-node="@node.Iri.Value">
+    <div class="reply-node-card">
+        <ObjectView Item="node.Object" />
+    </div>
+    @if (node.HasReplies)
+    {
+        <div class="reply-node-toggle-row">
+            <button type="button" class="reply-node-toggle" @onclick="Toggle" aria-expanded="@(Expanded)"
+                    aria-controls="@ToggleId">
+                @(Expanded ? "Hide" : "Show") @node.ChildCount reply@(node.ChildCount == 1 ? "" : "ies")
+            </button>
+        </div>
+        @if (Expanded)
+        {
+            <div class="reply-node-children" id="@ToggleId" role="group" aria-label="Replies">
+                @foreach (var child in node.Children)
+                {
+                    <ReplyNode Node="child" />
+                }
+            </div>
+        }
+    }
+</div>
+
+@code {
+    /// <summary>
+    /// The thread node to render (this reply + its nested replies).
+    /// </summary>
+    [Parameter]
+    public required ReplyThreadNode Node { get; set; } = default!;
+
+    /// <summary>
+    /// Whether this node's reply subtree is expanded (rendered). Collapsed by default (Phase 132.3:
+    /// "the thread stream should allow users to expand each reply to see the replies to that message").
+    /// </summary>
+    private bool Expanded { get; set; }
+
+    /// <summary>
+    /// A stable id for the child container (the toggle's <c>aria-controls</c> target).
+    /// </summary>
+    private string ToggleId => $"replies-{Node.Iri.Value.GetHashCode():x}";
+
+    private void Toggle()
+    {
+        Expanded = !Expanded;
+    }
+}

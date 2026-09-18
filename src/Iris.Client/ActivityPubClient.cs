@@ -176,6 +176,39 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public async Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri postIri, CancellationToken ct = default)
+    {
+        if (LemmyPostScore.TryParsePostIri(postIri) is not { } parsed)
+        {
+            return null;
+        }
+
+        var (instance, postId) = parsed;
+        var instanceStr = instance.ToString().TrimEnd('/');
+        var apiIri = new Iri($"{instanceStr}/api/v3/post?id={postId}");
+        using var request = new HttpRequestMessage(HttpMethod.Get, apiIri.Value);
+        request.Headers.Accept.ParseAdd("application/json");
+
+        try
+        {
+            using var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                return null;
+            }
+
+            var json = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return LemmyPostScore.FromJson(json);
+        }
+        catch
+        {
+            // Non-fatal: the score is a best-effort enrichment; a failure to fetch it
+            // should not break the card rendering.
+            return null;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<DeliveryResult> DeliverAsync(Iri targetId, IObject activity, CancellationToken ct = default)
     {
         if (activity is not Activity)
@@ -324,15 +357,37 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // MembershipActivityHandler interprets it: when manuallyApprovesMembers is set, the server
         // records a pending join request; otherwise the server auto-grants membership (19.5.2).
         //
-        // Decision 055: the client sends only the Join's shape (actor + object); the server mints the
-        // Join's id (an unguessable ULID) and returns it in the 2xx body.
+        // The Join's `object` is the **member** (the actor joining) — the handler reads `object` to
+        // determine who to add to the community's member set. The community itself is implied by the
+        // delivery target (the community's inbox), not by the `object` field.
+        //
+        // The inbox endpoint requires the activity to have an id (the server does not mint ids for
+        // inbox-received activities — that is the outbox-publish path). The client mints a unique id
+        // under the actor's own tree.
         var join = new Join
         {
+            Id = $"{actorId.Value.TrimEnd('/')}/joins/{Guid.NewGuid():N}",
             Actor = [new Link { Href = actorId.Uri }],
-            Object = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = actorId.Uri }],
         };
 
         return DeliverAsync(communityIri.InboxOf(), join, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+    {
+        // A Leave is delivered to the community's inbox (the membership's owner). The community's
+        // MembershipActivityHandler interprets it: the handler reads `object` to determine who to
+        // remove from the member set. The `object` is the leaving member (same as the actor).
+        var leave = new Leave
+        {
+            Id = $"{actorId.Value.TrimEnd('/')}/leaves/{Guid.NewGuid():N}",
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = actorId.Uri }],
+        };
+
+        return DeliverAsync(communityIri.InboxOf(), leave, ct);
     }
 
     /// <inheritdoc/>
@@ -483,6 +538,33 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> DislikeAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
+    {
+        // A Dislike is the inverse of a Like: published to the disliker's OWN outbox, federated to
+        // the object's owner. Mirrors LikeAsync but uses the Dislike activity type (AS2.0).
+        var dislike = new Dislike
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = objectId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), dislike, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UndislikeAsync(Iri actorId, Iri originalDislikeId, CancellationToken ct = default)
+    {
+        // An undislike is an Undo whose object references the original Dislike by id.
+        var undo = new Undo
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [new Link { Href = originalDislikeId.Uri }],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), undo, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<DeliveryResult> AnnounceAsync(Iri actorId, Iri objectId, CancellationToken ct = default)
     {
         // A boost (Announce) is published to the announcer's OWN outbox (the write surface for the
@@ -547,6 +629,48 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         };
 
         return DeliverAsync(actorId.OutboxOf(), delete, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
+    {
+        // An actor updating their own profile: the Update carries the actor's updated document
+        // (with the actor's IRI as the id) and is published to the actor's own outbox. The server's
+        // UpdateActivityHandler detects the actor self-update (embedded Actor whose IRI matches the
+        // updating actor), merges the mutable fields into the stored actor (preserving the signing
+        // key), and propagates the update to remote followers.
+        //
+        // Decision 055: the client sends only the Update's shape (actor + embedded object); the
+        // server mints the Update's id and returns it in the 2xx body.
+        var update = new KristofferStrube.ActivityStreams.Update
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [updatedActor],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), update, ct);
+    }
+
+    /// <inheritdoc/>
+    public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(updatedNote);
+
+        // A note edit: the Update carries the updated note (with the note's IRI as the id) and is
+        // published to the author's own outbox. The server's UpdateActivityHandler refreshes the stored
+        // object in place (so a later GET serves the new content) and propagates the update to remote
+        // followers (the federated half of F-02).
+        //
+        // Decision 055: the client sends only the Update's shape (actor + embedded object); the server
+        // mints the Update's id and returns it in the 2xx body. The embedded note's id is the note's IRI
+        // (learned when it was posted) — the server matches on it, and a mismatch is a no-op.
+        var update = new KristofferStrube.ActivityStreams.Update
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [updatedNote],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), update, ct);
     }
 
     /// <summary>
@@ -704,6 +828,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         Iri actorId,
         string name,
         string displayName,
+        string? description = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(name);
@@ -726,6 +851,8 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             Id = communityIri.Value,
             PreferredUsername = name,
             Name = [displayName],
+            Summary = description is { Length: > 0 } ? [description] : null,
+            AttributedTo = [new Link { Href = actorId.Uri }],
         };
 
         // Decision 055: the client sends only the Create's shape (actor + the embedded Group); the server
@@ -833,13 +960,15 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         string content,
         IEnumerable<Iri>? mentions = null,
         IEnumerable<Iri>? to = null,
+        IEnumerable<string>? hashtags = null,
+        Iri? conversationIri = null,
         CancellationToken ct = default)
     {
         // Decision 055 (server is the object-id authority): the client sends only the reply's *shape*
-        // (content, attributedTo, the parent's learned id as inReplyTo, mentions, audience) — no note id,
-        // no Create id. <paramref name="parentIri"/> is the id the server minted for the parent note
-        // (learned when the parent was posted). The server mints the Create's id and the embedded note's
-        // id (unguessable ULIDs) and returns the created Create in the 2xx body.
+        // (content, attributedTo, the parent's learned id as inReplyTo, mentions, hashtags, audience) —
+        // no note id, no Create id. <paramref name="parentIri"/> is the id the server minted for the
+        // parent note (learned when the parent was posted). The server mints the Create's id and the
+        // embedded note's id (unguessable ULIDs) and returns the created Create in the 2xx body.
         var note = new Note
         {
             Content = [content],
@@ -848,17 +977,57 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             InReplyTo = [new Link { Href = parentIri.Uri }],
         };
 
-        // F-12 mentions: each mentioned actor becomes a Mention tag whose href is the actor IRI (the
-        // ActivityPub @mention convention). Non-mention tags (e.g. hashtags) are not part of this API.
+        // 57.3: when the caller supplies an explicit conversationId (the thread root IRI), set it on
+        // the note. The server's EnsureConversationIdAsync preserves it (does not overwrite). When null,
+        // the server derives it from the parent.
+        if (conversationIri is { } conv)
+        {
+            note.SetConversationId(conv);
+        }
+
+        // F-12 tags: mentions (a Mention per @mentioned actor, href = the actor IRI) and hashtags (a
+        // Hashtag per #tag, name = the #tag text, href = this instance's hashtag search) are combined
+        // into a single `tag` array (the AP convention). Mentions come first, preserving order.
+        var tags = new List<IObjectOrLink>();
         if (mentions is not null)
         {
-            var mentionTags = mentions
-                .Select(mentionIri => new Mention { Href = mentionIri.Uri })
-                .ToList();
-            if (mentionTags.Count > 0)
+            foreach (var mentionIri in mentions)
             {
-                note.Tag = mentionTags;
+                tags.Add(new Mention { Href = mentionIri.Uri });
             }
+        }
+
+        if (hashtags is not null)
+        {
+            var baseOrigin = actorId.Uri.GetLeftPart(UriPartial.Authority);
+            foreach (var rawName in hashtags)
+            {
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                // A Hashtag tag is a generic ActivityStreams object of type Hashtag (the library has no
+                // concrete Hashtag class). The href (this instance's hashtag search) goes in ExtensionData
+                // because the Object base does not model href as a property — only Link does — exactly the
+                // shape IriExtensions.GetHashtagTags reads back.
+                var hashtag = new KristofferStrube.ActivityStreams.Object
+                {
+                    Type = ["Hashtag"],
+                    Name = [rawName],
+                    ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["href"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                            $"{baseOrigin}/search?q={Uri.EscapeDataString(rawName)}")
+                    }
+                };
+                tags.Add(hashtag);
+            }
+        }
+
+        if (tags.Count > 0)
+        {
+            note.Tag = tags;
         }
 
         if (to is not null)
@@ -887,6 +1056,150 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
     }
 
     /// <inheritdoc/>
+    public Task<DeliveryResult> PostQuestionAsync(
+        Iri actorId,
+        string content,
+        IEnumerable<string> options,
+        DateTime? endsAt = null,
+        bool multiple = false,
+        IEnumerable<Iri>? to = null,
+        IEnumerable<Iri>? cc = null,
+        IEnumerable<Iri>? mentions = null,
+        IEnumerable<string>? hashtags = null,
+        Func<string, string?>? hashtagHrefFactory = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var optionNames = options
+            .Where(o => !string.IsNullOrWhiteSpace(o))
+            .Select(o => o.Trim())
+            .ToList();
+
+        if (optionNames.Count < 2)
+        {
+            throw new ArgumentException("A poll requires at least two non-empty options.", nameof(options));
+        }
+
+        // F-26 outbound: the embedded object is an AS2.0 `Question` — a generic ActivityStreams object
+        // of type Question (the library has no concrete Question class) carrying the poll in a
+        // top-level `poll` object in ExtensionData (the Mastodon extension shape: `options` of
+        // `{title, votesCount}`, `endsAt`, `expired`, `multiple`, `totalVotes`). This is exactly the
+        // shape IriExtensions.GetPollData's Mastodon branch (ParsePollFromExtension) parses back, so
+        // an Iris-created poll round-trips through the same parser and renders via ObjectView's poll
+        // UI. The `poll` object is the single reliable round-trip form: the library's deserializer
+        // drops individual `endTime`/`closed` keys from ExtensionData on `IObject` (a JsonElement
+        // property survives intact, which is why the nested `poll` object is the safe carrier).
+        var question = new KristofferStrube.ActivityStreams.Object
+        {
+            Type = ["Question"],
+            Content = [content],
+            AttributedTo = [new Link { Href = actorId.Uri }],
+        };
+
+        // The poll is serialized as a RAW JSON string and parsed into a single element — NOT by
+        // serializing ActivityStreams objects directly (SerializeToElement of a runtime
+        // ActivityStreams type would inject a @context into each option, polluting the wire). This
+        // mirrors how ParsePollFromExtension reads the fields back (options: [{title, votesCount}],
+        // endsAt: an ISO-8601 string, expired/multiple: booleans, totalVotes: number).
+        var optionsJson = string.Join(
+            ",",
+            optionNames.Select(name => $"{{\"title\":{System.Text.Json.JsonSerializer.Serialize(name)},\"votesCount\":0}}"));
+
+        var endsAtJson = endsAt is { } end
+            ? $",\"endsAt\":{System.Text.Json.JsonSerializer.Serialize(end.ToUniversalTime().ToString("O"))}"
+            : string.Empty;
+
+        var pollJson =
+            $"{{\"options\":[{optionsJson}],\"expired\":false,\"multiple\":{(multiple ? "true" : "false")},\"totalVotes\":0{endsAtJson}}}";
+
+        question.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+        {
+            ["poll"] = System.Text.Json.JsonDocument.Parse(pollJson).RootElement.Clone(),
+        };
+
+        // Audience (mirrors PostReplyAsync / ComposeNote.Build).
+        if (to is not null)
+        {
+            var audience = to.Where(i => i != default).Select(i => new Link { Href = i.Uri }).ToList();
+            if (audience.Count > 0)
+            {
+                question.To = audience;
+            }
+        }
+
+        // cc (73.3): the secondary audience (the author's followers and/or the public). Written via
+        // ExtensionData (the library has no `cc` property); serialized verbatim on the wire.
+        if (cc is not null)
+        {
+            var ccIris = cc.Where(i => i != default).Select(i => i.Value).ToList();
+            if (ccIris.Count > 0)
+            {
+                question.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                question.ExtensionData["cc"] = System.Text.Json.JsonSerializer.SerializeToElement(ccIris);
+            }
+        }
+
+        // Mention + hashtag tags (the AP convention), combined into a single `tag` array.
+        var tags = new List<IObjectOrLink>();
+        if (mentions is not null)
+        {
+            foreach (var mentionIri in mentions.Where(i => i != default))
+            {
+                tags.Add(new Mention { Href = mentionIri.Uri });
+            }
+        }
+
+        if (hashtags is not null)
+        {
+            var baseOrigin = actorId.Uri.GetLeftPart(UriPartial.Authority);
+            foreach (var rawName in hashtags)
+            {
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    continue;
+                }
+
+                var hashtag = new KristofferStrube.ActivityStreams.Object
+                {
+                    Type = ["Hashtag"],
+                    Name = [rawName],
+                };
+                var href = hashtagHrefFactory is { } factory ? factory(rawName) : null;
+                if (href is { Length: > 0 } && Iri.TryParse(href, out _))
+                {
+                    hashtag.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    hashtag.ExtensionData["href"] = System.Text.Json.JsonSerializer.SerializeToElement(href);
+                }
+                else
+                {
+                    hashtag.ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>
+                    {
+                        ["href"] = System.Text.Json.JsonSerializer.SerializeToElement(
+                            $"{baseOrigin}/search?q={Uri.EscapeDataString(rawName)}")
+                    };
+                }
+                tags.Add(hashtag);
+            }
+        }
+
+        if (tags.Count > 0)
+        {
+            question.Tag = tags;
+        }
+
+        // Decision 055: the client sends only the Create's shape (actor + the embedded Question); the
+        // server mints the Create's id and the question's id (unguessable ULIDs) and returns the
+        // created Create in the 2xx body. Published to the author's OWN outbox.
+        var create = new Create
+        {
+            Actor = [new Link { Href = actorId.Uri }],
+            Object = [question],
+        };
+
+        return DeliverAsync(actorId.OutboxOf(), create, ct);
+    }
+
+    /// <inheritdoc/>
     public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -911,9 +1224,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             yield break;
         }
 
+        // Fast path: when the collection's `first` resolves back to the collection's own IRI (the
+        // common case — an OrderedCollection served as its own first page, carrying a self `first`
+        // link), the collection document we just fetched IS the first page. Reuse it instead of
+        // issuing a second identical GET for the same IRI (the "duplicate home-feed fetch").
+        CollectionPage? page = null;
+        if (pageIri.Equals(collectionId))
+        {
+            page = ConvertToCollectionPage(first);
+        }
+
         while (pageIri is { } current)
         {
-            var page = await FetchCollectionPageAsync(current, bypassCache, ct).ConfigureAwait(false);
+            page ??= await FetchCollectionPageAsync(current, bypassCache, ct).ConfigureAwait(false);
             if (page is null)
             {
                 yield break;
@@ -931,6 +1254,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             }
 
             pageIri = page.NextPage;
+            page = null;
         }
     }
 
@@ -1090,16 +1414,19 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             return null;
         }
 
-        // The inbox page is an OrderedCollectionPage (or, on a single page, an OrderedCollection). Both
-        // carry `items`; read them via the shared IObject/Collection pattern.
+        // The inbox page is an OrderedCollectionPage (or, on a single page, an OrderedCollection).
+        // Both carry their items under `orderedItems` (the ActivityPub canonical form, used by
+        // Mastodon and other major implementations) or, less commonly, `items`. Read via the shared
+        // ResolveCollectionItems so the inbox path is symmetric with the outbox/feed paths (which
+        // prefer orderedItems and fall back to items) — a server that serves its inbox with
+        // orderedItems would otherwise yield an empty page here.
         var obj = ActivityJson.Deserialize<IObjectOrLink>(json);
         if (obj is not IObject pageObj || pageObj is not Collection)
         {
             return null;
         }
 
-        var items = (pageObj as OrderedCollectionPage)?.Items ?? (pageObj as Collection)?.Items;
-        var itemList = items is { } i ? i.ToList() : [];
+        var itemList = CollectionPageFactory.ResolveCollectionItems((Collection)pageObj);
 
         // The `next` pointer lives on the page (ExtensionData for an OrderedCollection, typed on an
         // OrderedCollectionPage).
@@ -1147,7 +1474,10 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // directory page searches actors only (no content).
         var encodedQuery = Uri.EscapeDataString(query ?? string.Empty);
         var typeSegment = string.IsNullOrWhiteSpace(options?.Type) ? string.Empty : $"&type={Uri.EscapeDataString(options!.Type!)}";
-        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}");
+        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
+        // remote actor is excluded. Only appended when set so a default search is unchanged.
+        var localSegment = options?.LocalOnly == true ? "&local=true" : string.Empty;
+        var searchIri = new Iri($"{instanceBase.SearchOf()}?q={encodedQuery}&limit={limit}&offset={offset}{typeSegment}{localSegment}");
 
         using var request = new HttpRequestMessage(HttpMethod.Get, searchIri.Value);
         var page = await GetObjectAsync(request, ct).ConfigureAwait(false);
@@ -1189,6 +1519,15 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             return first.ResolveCollectionIri();
         }
 
+        // A collection that carries its items directly (an OrderedCollection with orderedItems, or a
+        // Collection with items) and has no `first` link: the collection's own IRI is the first page.
+        // Lemmy serves its outbox this way (an OrderedCollection with orderedItems, no first link).
+        if (collection is Collection col &&
+            (col.OrderedItems is { } oi && oi.Any() || col.Items is { } ci && ci.Any()))
+        {
+            return collectionId;
+        }
+
         return null;
     }
 
@@ -1209,13 +1548,22 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             obj = value;
         }
 
-        // A collection page is either an OrderedCollectionPage (page N>1) or the collection's first
-        // page served as an OrderedCollection (page 1 — the server serves the collection document
-        // itself, carrying its first page of items + a self `first`, with the `next` pointer living
-        // on the page). Both are valid first/current pages, so both are accepted.
-        if (obj is OrderedCollectionPage)
+        return ConvertToCollectionPage(obj);
+    }
+
+    /// <summary>
+    /// Converts a fetched collection-object document into a <see cref="CollectionPage"/>. A collection
+    /// page is either an <see cref="OrderedCollectionPage"/> (page N&gt;1) or the collection's first
+    /// page served as an <see cref="OrderedCollection"/> (page 1 — the server serves the collection
+    /// document itself, carrying its first page of items + a self <c>first</c>, with the <c>next</c>
+    /// pointer living on the page). Both are valid first/current pages, so both are accepted.
+    /// Returns <see langword="null"/> when the object is not a recognizable collection page.
+    /// </summary>
+    private static CollectionPage? ConvertToCollectionPage(IObject? obj)
+    {
+        if (obj is OrderedCollectionPage orderedPage)
         {
-            return CollectionPageFactory.FromOrderedCollectionPage(obj);
+            return CollectionPageFactory.FromOrderedCollectionPage(orderedPage);
         }
 
         if (obj is OrderedCollection collection)
@@ -1233,7 +1581,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
             // page N>1 at {collection}?page=N, so fetching the bare collection IRI again would
             // re-serve page 1 and loop forever. When there is no `next` (single-page collection) the
             // collection's own IRI is the first page and the walk terminates.
-            var items = collection.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            var items = CollectionPageFactory.ResolveCollectionItems(collection);
             var nextLink = ResolveCollectionNextLink(collection);
             var firstPageIri = nextLink
                 ?? (collection.Id is { Length: > 0 } collectionId ? new Iri(collectionId) : null);
@@ -1260,7 +1608,7 @@ public sealed class ActivityPubClient : IActivityPubClient, IDisposable
         // the walk terminates after page 1 — acceptable for a rarely-used, low-priority shape.
         if (obj is Collection { Id: not null } unordered)
         {
-            var items = unordered.Items is { } itemsEnumerable ? itemsEnumerable.ToList() : [];
+            var items = CollectionPageFactory.ResolveCollectionItems(unordered);
             return new CollectionPage
             {
                 Page = new OrderedCollectionPage

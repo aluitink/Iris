@@ -197,7 +197,7 @@ public class HttpSignatureTests
         // Flip one character of the base64 signature.
         var sig = header!.Signature.ToCharArray();
         sig[0] = sig[0] == 'a' ? 'b' : 'a';
-        var tampered = new SignatureHeader(header.KeyId, header.Algorithm, header.Headers, new string(sig)).Format();
+        var tampered = new SignatureHeader(header.KeyId, header.Algorithm, header.Headers, new string(sig), header.Created).Format();
 
         Assert.False(verifier.Verify(metadata, tampered));
     }

@@ -112,8 +112,16 @@ public sealed class KeyPair : ISigningKey, IDisposable
 
     private static string ToPem(byte[] der)
     {
-        var base64 = Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks);
-        return $"-----BEGIN PUBLIC KEY-----\n{base64}\n-----END PUBLIC KEY-----\n";
+        // Use InsertLineBreaks=false (which yields CRLF on some platforms) and instead wrap
+        // manually at 64 chars with LF only, per RFC 7468 (PEM) — CRLF line endings break
+        // downstream parsers (e.g. Lemmy's Person/Group deserializer rejects the actor doc).
+        var base64 = Convert.ToBase64String(der, Base64FormattingOptions.None);
+        var lines = new List<string>();
+        for (var i = 0; i < base64.Length; i += 64)
+        {
+            lines.Add(base64.Substring(i, Math.Min(64, base64.Length - i)));
+        }
+        return "-----BEGIN PUBLIC KEY-----\n" + string.Join("\n", lines) + "\n-----END PUBLIC KEY-----\n";
     }
 
     /// <summary>

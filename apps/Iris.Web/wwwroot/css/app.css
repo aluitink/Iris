@@ -1,0 +1,4013 @@
+:root {
+    --bg: #111318;
+    --panel: #191d24;
+    --surface: #1f242e;
+    --surface-inset: #12171f;
+    --text: #e6e8ec;
+    --fg: #e6e8ec;
+    --muted: #8b93a1;
+    --accent: #5b8cff;
+    --accent-warm: #7c9fff;
+    --border: #262b36;
+    --border-strong: #3a4658;
+    --hover: #262b36;
+    --card: #191d24;
+    --danger: #e05565;
+    --danger-fg: #e79c9c;
+    --danger-bg: #2a1a1a;
+    --danger-border: #5b2f2f;
+    --warning: #d4a030;
+    --success: #8fd3a7;
+    --btn-fg: #0f1115;
+}
+
+/* Spacing scale (Phase D design tokens): a 4px-base ramp (--space-1..7) plus the
+   off-ramp values actually in use (--space-25/35/45/55/60/65/90/125). All rem
+   spacing values in the stylesheet are migrated onto these tokens, so a spacing
+   change is a single value swap. */
+:root {
+    --space-1: 0.25rem;    /* 4px */
+    --space-2: 0.5rem;     /* 8px */
+    --space-3: 0.75rem;    /* 12px */
+    --space-4: 1rem;       /* 16px */
+    --space-5: 1.5rem;     /* 24px */
+    --space-6: 2rem;       /* 32px */
+    --space-7: 3rem;       /* 48px */
+    --space-25: 0.2rem;    /* 3.2px */
+    --space-35: 0.35rem;   /* 5.6px */
+    --space-45: 0.45rem;   /* 7.2px */
+    --space-55: 0.55rem;   /* 8.8px */
+    --space-60: 0.6rem;    /* 9.6px */
+    --space-65: 0.65rem;   /* 10.4px */
+    --space-90: 0.9rem;    /* 14.4px */
+    --space-125: 1.25rem;  /* 20px */
+}
+
+/* Type scale (Phase D design tokens): the font-size ramp actually in use.
+   Headings use --font-size-3xl/4xl; body variants xs..base; lg for emphasis. */
+:root {
+    --font-size-xs: 0.75rem;
+    --font-size-sm: 0.85rem;
+    --font-size-base: 0.95rem;
+    --font-size-lg: 1.1rem;
+    --font-size-xl: 1.35rem;
+    --font-size-2xl: 1.6rem;
+    --font-size-3xl: 2rem;
+    --font-size-4xl: 2.5rem;
+}
+
+/* Radius scale (Phase 114.2): a coherent 3-step corner ramp so card families
+   share one rhythm. sm = small controls/inputs, md = list-item cards,
+   lg = outer content cards, pill = full rounding (avatars, chips, tags). */
+:root {
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-pill: 999px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+}
+
+h1,
+h2,
+h3 {
+    font-weight: 700;
+    line-height: 1.3;
+    color: var(--text);
+}
+
+h1 {
+    font-size: var(--font-size-2xl);
+    margin: 0 0 var(--space-4);
+}
+
+h2 {
+    font-size: var(--font-size-xl);
+    margin: 0 0 var(--space-3);
+    letter-spacing: -0.01em;
+}
+
+h3 {
+    font-size: var(--font-size-lg);
+    margin: 0 0 var(--space-2);
+    font-weight: 600;
+}
+
+/* Visible keyboard focus indicator on all interactive elements. The browser default
+   outline is thin and low-contrast on the dark theme, so we reinforce it with a
+   high-contrast, offset outline that is clearly visible on every focusable element. */
+a:focus-visible,
+button:focus-visible,
+[role="button"]:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+    outline: 3px solid var(--accent-warm);
+    outline-offset: 2px;
+    border-radius: 2px;
+}
+
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.main-header {
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-3) var(--space-125);
+    position: relative;
+}
+
+.brand {
+    color: var(--accent-warm);
+    font-weight: 700;
+    font-size: 1.4rem;
+    text-decoration: none;
+    letter-spacing: -0.02em;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-45);
+}
+
+.brand-icon {
+    width: 1.4rem;
+    height: 1.4rem;
+    flex-shrink: 0;
+}
+
+.brand-text {
+    line-height: 1;
+}
+
+.main-content {
+    flex: 1;
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-125);
+}
+
+.main-footer {
+    border-top: 1px solid var(--border);
+    padding: var(--space-3) var(--space-125);
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.main-footer .content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.footer-links {
+    display: inline-flex;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+}
+
+.footer-links a {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    text-decoration: none;
+}
+
+.footer-links a:hover,
+.footer-links a:focus-visible {
+    color: var(--accent-warm);
+    text-decoration: underline;
+}
+
+.card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4);
+}
+
+.card h1 {
+    margin-top: 0;
+}
+
+.settings-subsection {
+    margin-top: var(--space-125);
+    border-top: 1px solid var(--border);
+    padding-top: var(--space-4);
+}
+
+.settings-subsection-summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    color: var(--text);
+    padding: var(--space-1) 0;
+    user-select: none;
+    list-style: none;
+}
+
+.settings-subsection-summary::-webkit-details-marker {
+    display: none;
+}
+
+.settings-subsection-summary::before {
+    content: "▸";
+    display: inline-block;
+    margin-right: var(--space-2);
+    transition: transform 0.15s ease;
+    color: var(--muted);
+}
+
+details[open] > .settings-subsection-summary::before {
+    transform: rotate(90deg);
+}
+
+.settings-subsection-body {
+    margin-top: var(--space-3);
+}
+
+.settings-key-info {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    max-width: 32rem;
+}
+
+.settings-key-info > div {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.key-iri,
+.key-thumbprint {
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-size-sm);
+    word-break: break-all;
+    background: var(--bg-subtle, #f0f0f5);
+    padding: var(--space-35) var(--space-2);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+}
+
+.error-boundary-card {
+    max-width: 30rem;
+    margin: var(--space-6) auto;
+    text-align: center;
+}
+
+.error-boundary-actions {
+    display: flex;
+    gap: var(--space-3);
+    justify-content: center;
+    margin-top: var(--space-125);
+}
+
+.muted {
+    color: var(--muted);
+}
+
+/* 114: small-text utility — replaces repeated inline style="font-size: …" so
+   secondary/caption text is sized from the type scale. */
+.text-sm {
+    font-size: var(--font-size-sm);
+}
+
+.text-xs {
+    font-size: var(--font-size-xs);
+}
+
+a {
+    color: var(--accent-warm);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color 0.15s ease;
+}
+
+a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+/* The signed-in app's top navigation (the brand + auth-aware links). */
+.main-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+}
+
+.main-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-90);
+}
+
+.nav-toggle {
+    display: none;
+    background: none;
+    border: none;
+    color: var(--text);
+    cursor: pointer;
+    padding: var(--space-25);
+    margin-left: auto;
+}
+
+.nav-toggle svg {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+.nav-toggle:hover {
+    color: var(--accent-warm);
+}
+
+@media (max-width: 768px) {
+    .nav-toggle {
+        display: block;
+    }
+
+    .main-nav {
+        display: none;
+    }
+
+    .main-nav.nav-open {
+        display: flex;
+        flex-direction: column;
+        flex-wrap: nowrap;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--panel);
+        border-bottom: 1px solid var(--border);
+        padding: var(--space-2) var(--space-4);
+        gap: 0;
+        z-index: 100;
+    }
+
+    .main-nav.nav-open a {
+        padding: var(--space-45) var(--space-1);
+        border-bottom: 1px solid var(--border);
+        white-space: nowrap;
+        font-size: var(--font-size-base);
+    }
+
+    .main-nav.nav-open a:last-child {
+        border-bottom: none;
+    }
+
+    .main-content {
+        padding: var(--space-4) var(--space-3);
+    }
+
+    h1 {
+        font-size: 1.4rem;
+    }
+
+    h2 {
+        font-size: 1.2rem;
+    }
+
+    .page-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-2);
+    }
+
+    /* 121.3 — Right-align the "Mark all as read" button in the stacked mobile header row. */
+    .page-header-row .btn {
+        align-self: flex-end;
+    }
+
+    .card {
+        padding: var(--space-3) var(--space-3);
+    }
+
+    .object-detail .object-content {
+        font-size: 1.05rem;
+    }
+
+    .actor-detail-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    /* Phase 102 — the card header avatar steps back down to 2rem on small screens so the handle +
+       time keep room on the header line. The .object-item prefix raises specificity above the
+       (later-declared) base .object-header .actor-avatar 2.5rem rule so the mobile size wins. */
+    .object-item .object-header .actor-avatar {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .object-item .object-header .actor-avatar img {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .object-item .object-header .actor-avatar-fallback {
+        font-size: var(--font-size-base);
+    }
+
+    /* The card-moderation group drops a touch of spacing on mobile (the header is tighter). */
+    .card-moderate {
+        gap: 0;
+        margin-left: var(--space-1);
+    }
+
+    /* 119.2 — Settings tab bar: allow wrapping on narrow viewports so all 3 tabs
+       remain reachable without horizontal scroll. */
+    .tab-bar {
+        flex-wrap: wrap;
+    }
+
+    .tab {
+        flex: 1 1 auto;
+        text-align: center;
+    }
+
+    /* Settings subsections: tighter spacing on mobile. */
+    .settings-subsection {
+        margin-top: var(--space-85);
+        padding-top: var(--space-3);
+    }
+
+    .settings-subsection-summary {
+        font-size: var(--font-size-base);
+    }
+
+    /* 121.2 — Compose meta: stack the char counter and CW toggle on mobile so they don't
+       wrap awkwardly alongside the type/visibility selects. */
+    .compose-meta {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    .compose-char-count {
+        order: -1;
+        flex-basis: 100%;
+    }
+
+    .compose-sensitive-toggle {
+        flex-basis: 100%;
+    }
+
+}
+
+.main-nav a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: var(--font-size-base);
+    padding: var(--space-1) 0;
+    border-bottom: 2px solid transparent;
+}
+
+.main-nav a:hover {
+    color: var(--accent-warm);
+    border-bottom-color: var(--accent-warm);
+}
+
+.main-nav .nav-identity {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+/* Buttons (the shared form/button style used by the auth pages, the feed, and the nav). */
+button,
+.button {
+    background: var(--accent);
+    color: var(--btn-fg);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: var(--space-45) var(--space-4);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+button:hover,
+.button:hover {
+    filter: brightness(1.1);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.button--secondary,
+button.secondary {
+    background: var(--panel);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.button--secondary:hover,
+button.secondary:hover {
+    background: var(--surface);
+    border-color: var(--border-strong);
+    filter: none;
+}
+
+.button--ghost,
+.btn.button--ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+}
+
+.button--ghost:hover,
+.btn.button--ghost:hover {
+    background: var(--panel);
+    color: var(--text);
+}
+
+.button--danger {
+    background: var(--danger);
+    color: var(--btn-fg);
+}
+
+.button--danger:hover {
+    filter: brightness(1.1);
+}
+
+.button--warning,
+.btn.button--warning {
+    background: var(--warning);
+    color: var(--btn-fg);
+}
+
+.delete-confirm {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+input.input,
+input[type="text"],
+input[type="password"],
+input[type="url"] {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: var(--space-45) var(--space-45);
+    font-size: var(--font-size-base);
+    width: 100%;
+}
+
+.row {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+    margin: var(--space-2) 0;
+}
+
+/* Form fields (the auth pages). */
+.field {
+    margin: var(--space-3) 0;
+}
+
+.field label {
+    display: block;
+    margin-bottom: var(--space-35);
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.btn {
+    background: var(--accent);
+    color: var(--btn-fg);
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: var(--space-55) var(--space-125);
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s ease, background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.btn:hover {
+    filter: brightness(1.1);
+}
+
+.handle-row {
+    display: flex;
+    align-items: center;
+}
+
+.handle-prefix {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    padding: var(--space-45) var(--space-2);
+    color: var(--muted);
+}
+
+.handle-row .input {
+    border-radius: 0 6px 6px 0;
+}
+
+.error {
+    color: var(--danger-fg);
+    background: var(--danger-bg);
+    border: 1px solid var(--danger-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-45);
+    margin-top: var(--space-3);
+}
+
+/* Paged collection (the feed pager). */
+.paged-collection-actions {
+    margin-top: var(--space-3);
+}
+
+.paged-collection-sentinel {
+    height: 1px;
+    width: 100%;
+    cursor: pointer;
+}
+
+.paged-collection-loadmore-fallback {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-sm);
+    opacity: 0.6;
+}
+
+ul.object-list {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-3) 0 0;
+}
+
+ul.object-list li {
+    padding: 0;
+    margin-bottom: var(--space-3);
+    min-width: 0;
+}
+
+/* Reply thread (Phase 132.3): the object-detail Replies tab renders replies as a nested thread.
+   Each .reply-node is one reply (its ObjectView card) + an optional "N replies" toggle + its nested
+   children (indented). Children are collapsed by default (the --expanded class reveals them). */
+.reply-thread {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-3);
+}
+
+.reply-node {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.reply-node-card {
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface-inset);
+}
+
+.reply-node-toggle-row {
+    padding-left: var(--space-4);
+}
+
+.reply-node-toggle {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.reply-node-toggle:hover {
+    text-decoration: underline;
+}
+
+/* Nested children: indented + a left rule to show the thread lineage. */
+.reply-node-children {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+    padding-left: var(--space-4);
+    border-left: 2px solid var(--border);
+}
+
+.object-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+    transition: border-color 0.15s;
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.object-item:hover {
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+}
+
+/* 153 — whole-card clickable. The card is position:relative so the stretched-link overlay (an
+   absolutely-positioned <a> covering the whole card) can fill it. The link cursor signals the card is
+   clickable; the overlay is the single link, so the body text no longer reads as a link. */
+.object-item--clickable {
+    position: relative;
+    cursor: pointer;
+}
+
+.object-card-link {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    border-radius: inherit;
+}
+
+/* Interactive children must sit above the stretched link so they keep their own click behavior. */
+.object-item--clickable .object-header,
+.object-item--clickable .object-recipient,
+.object-item--clickable .object-parent,
+.object-item--clickable .object-parent-context,
+.object-item--clickable .object-iri,
+.object-item--clickable .object-sensitive,
+.object-item--clickable .object-poll,
+.object-item--clickable .object-emojis,
+.object-item--clickable .engagement-bar,
+.object-item--clickable .lemmy-vote-bar,
+.object-item--clickable .object-media,
+.object-item--clickable .object-title {
+    position: relative;
+    z-index: 1;
+}
+
+/* Single-row header: avatar + handle (left), timestamp (right). */
+.object-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    margin-bottom: var(--space-1);
+}
+
+.object-header-actor {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    flex: 1;
+    /* 153 — thin banner strip behind the avatar + handle, tinted per author via --card-hue (set on the
+       card). The darker, low-saturation band gives the header "color and splash" while keeping the
+       handle legible. Only shows when the card sets --card-hue (content cards). */
+    background:
+        linear-gradient(
+            90deg,
+            hsl(var(--card-hue, 220) 45% 30% / 0.55),
+            hsl(var(--card-hue, 220) 45% 30% / 0.12)
+        );
+    border-radius: var(--radius-sm);
+    padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+}
+
+/* Phase 102 — the card header avatar is a touch larger than the generic 2rem actor avatar so the
+   post card's identity reads more strongly; on small screens it steps back down (see the mobile
+   media query) so the handle + time keep room on one line. The card header's ActorBar/ActorAvatar is
+   scoped under .object-header so this only enlarges the feed-card avatar, not avatars in the actor
+   detail header, profile, directory, or notification rows. */
+.object-header .actor-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.object-header .actor-avatar img {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.object-header .actor-avatar-fallback {
+    font-size: var(--font-size-base);
+}
+
+.actor-avatar {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.actor-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.actor-avatar-fallback {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.actor-bar {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.actor-bar-handle {
+    color: var(--text);
+    font-weight: 700;
+    font-size: var(--font-size-base);
+    text-decoration: none;
+}
+
+.actor-bar-handle:hover {
+    color: var(--accent);
+}
+
+.actor-card {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--panel);
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+
+.actor-card--clickable {
+    cursor: pointer;
+}
+
+.actor-card--clickable:hover {
+    border-color: var(--accent);
+}
+
+.actor-card-banner {
+    width: 100%;
+    height: 6.5rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: var(--surface-inset);
+}
+
+.actor-card-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.actor-card-main {
+    display: flex;
+    gap: var(--space-3);
+    align-items: flex-start;
+    padding: 0 var(--space-4) var(--space-3);
+}
+
+.actor-card-main .actor-card-avatar {
+    margin-top: calc(-1 * 3.25rem);
+    position: relative;
+    z-index: 1;
+    border: 3px solid var(--panel);
+}
+
+.actor-card-avatar {
+    width: 4.5rem;
+    height: 4.5rem;
+    flex-shrink: 0;
+}
+
+.actor-card-avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+.actor-card-avatar-fallback {
+    font-size: 2rem;
+}
+
+.actor-card-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    flex: 1 1 auto;
+    padding-top: var(--space-4);
+}
+
+.actor-card-identity {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.actor-card-handle {
+    color: var(--text);
+    font-weight: 700;
+    font-size: 1.05rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.actor-card-name {
+    color: var(--text);
+    font-weight: 500;
+    font-size: var(--font-size-base);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.actor-card-badge {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    padding: 0.1em 0.45em;
+    border-radius: var(--radius-sm);
+    line-height: 1.5;
+    flex-shrink: 0;
+}
+
+.actor-card-badge--community {
+    background: var(--accent-dim, rgba(var(--accent-rgb, 99, 102, 241), 0.15));
+    color: var(--accent);
+}
+
+.actor-card-badge--app {
+    background: var(--surface-inset);
+    color: var(--muted);
+}
+
+.actor-card-summary {
+    color: var(--muted);
+    font-size: var(--font-size-base);
+    line-height: 1.4;
+    margin-top: var(--space-1);
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* --- Actor card footer: stats (left) + actions (right), full card width --- */
+
+.actor-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+}
+
+.actor-card-stats {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+.actor-card-stat strong {
+    color: var(--text);
+    font-weight: 600;
+    margin-right: 0.15em;
+}
+
+.actor-card-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+    margin-left: auto;
+}
+
+/* --- Actor list panel (hydrated followers/following) --- */
+
+.actor-list-panel {
+    padding: var(--space-4) var(--space-125);
+}
+
+.actor-list-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+/* The list contexts (followers / following) render the unified actor card with no size overrides —
+   the base .actor-card sizing applies so they match the directory cards exactly. */
+
+/* --- Clickable profile avatar link --- */
+
+.actor-profile-avatar-link {
+    display: inline-flex;
+    border-radius: 50%;
+    text-decoration: none;
+}
+
+.actor-profile-avatar-link:hover .actor-profile-avatar {
+    box-shadow: 0 0 0 2px var(--accent);
+}
+
+.object-type {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--accent-warm);
+    opacity: 0.8;
+}
+
+.object-action {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+    font-style: italic;
+}
+
+/* Timestamp sits on the right side of the single-row header. */
+.object-time {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.object-name {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.object-summary {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    display: block;
+    margin-top: var(--space-1);
+}
+
+.object-iri {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    word-break: break-all;
+    overflow-wrap: break-word;
+    text-decoration: none;
+}
+
+.object-tombstone {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    opacity: 0.85;
+}
+
+.object-tombstone--detail {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--space-5);
+    gap: var(--space-3);
+}
+
+.object-tombstone-icon {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    color: var(--muted);
+}
+
+.object-tombstone--detail .object-tombstone-icon {
+    width: 36px;
+    height: 36px;
+}
+
+.object-tombstone-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+.object-tombstone-body {
+    min-width: 0;
+}
+
+.object-tombstone-label {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.object-tombstone-state {
+    color: var(--muted);
+    font-weight: 400;
+    font-style: italic;
+}
+
+.object-tombstone-time {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    margin-top: var(--space-1);
+}
+
+.object-tombstone-hint {
+    margin-top: var(--space-2);
+    font-size: var(--font-size-sm);
+}
+
+.object-like-resolved {
+    margin-top: var(--space-2);
+    padding-left: var(--space-3);
+    border-left: 2px solid var(--accent-warm);
+}
+
+/* 152 — a like of a reply: the card renders the ORIGINAL post the liked reply answers to, so a small
+   "replying to …" hint under the "Liked" header explains the context. */
+.object-like-reply-hint {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+    font-style: italic;
+}
+
+.object-actor-handle {
+    color: var(--text);
+    font-weight: 700;
+    font-size: var(--font-size-base);
+    text-decoration: none;
+}
+
+.object-actor-handle:hover {
+    color: var(--accent);
+}
+
+.object-actor {
+    color: var(--text);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-actor:hover {
+    color: var(--accent);
+}
+
+.object-actor--community .object-actor-handle::before {
+    content: "c/";
+    color: var(--muted);
+    font-weight: 400;
+}
+
+.object-post-link {
+    color: inherit;
+    text-decoration: none;
+    display: block;
+    min-width: 0;
+}
+
+.object-post-link:hover .object-content {
+    color: inherit;
+}
+
+.object-title {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    color: var(--text);
+    margin-bottom: var(--space-1);
+    overflow-wrap: break-word;
+}
+
+.object-content {
+    color: var(--text);
+    font-size: var(--font-size-base);
+    line-height: 1.6;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    min-width: 0;
+}
+
+.object-content h1,
+.object-content h2,
+.object-content h3,
+.object-content h4,
+.object-content h5,
+.object-content h6 {
+    margin: var(--space-45) 0 var(--space-25);
+    font-size: var(--font-size-base);
+    color: var(--text);
+}
+
+.object-content p {
+    margin: var(--space-25) 0;
+}
+
+.object-content a {
+    color: var(--success);
+    text-decoration: underline;
+    overflow-wrap: break-word;
+    word-break: break-all;
+}
+
+/* Phase 156: @mention and #hashtag tokens rendered as links in the note body
+   (the client composes them as <a class="mention"> / <a class="hashtag">).
+   Styled distinct from plain web links — mentions in the accent color, hashtags
+   in the accent color with the underline only on hover (Mastodon-faithful). */
+.object-content a.mention {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-content a.mention:hover {
+    text-decoration: underline;
+}
+
+.object-content a.hashtag {
+    color: var(--accent);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.object-content a.hashtag:hover {
+    text-decoration: underline;
+}
+
+.object-audience,
+.object-parent,
+.object-mention,
+.object-hashtag {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.object-audience a,
+.object-mention a {
+    text-decoration: none;
+    color: var(--text);
+    font-weight: 600;
+}
+
+.object-hashtag-link {
+    text-decoration: none;
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.object-hashtag-link:hover {
+    text-decoration: underline;
+}
+
+.object-emojis {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin-top: var(--space-1);
+}
+
+.object-emoji {
+    height: 1.5rem;
+    width: auto;
+    vertical-align: middle;
+}
+
+.object-emoji-text {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    font-family: monospace;
+}
+
+.doc-gallery {
+    display: grid;
+    gap: 4px;
+    margin: var(--space-2) 0;
+    border-radius: var(--space-2);
+    overflow: hidden;
+}
+
+.doc-gallery--single {
+    grid-template-columns: 1fr;
+}
+
+.doc-gallery--two {
+    grid-template-columns: 1fr 1fr;
+}
+
+.doc-gallery--three {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+}
+
+.doc-gallery--three .doc-gallery-item:first-child {
+    grid-row: 1 / 3;
+}
+
+.doc-gallery--four {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+}
+
+.doc-gallery-item {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 4 / 3;
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+.doc-gallery--single .doc-gallery-item {
+    aspect-ratio: 16 / 9;
+    max-height: 400px;
+}
+
+.doc-gallery-preview,
+.doc-gallery-pdf {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border: none;
+}
+
+.doc-gallery-pdf {
+    object-fit: contain;
+    background: #fff;
+}
+
+.doc-gallery-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--font-size-4xl);
+}
+
+.doc-gallery-label {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--space-45) var(--space-2);
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.doc-gallery-link {
+    font-weight: 500;
+    font-size: var(--font-size-sm);
+    color: #fff;
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.doc-gallery-link:hover {
+    text-decoration: underline;
+}
+
+.doc-gallery-type {
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+}
+
+.object-poll {
+    margin-top: var(--space-2);
+    border: 1px solid var(--border);
+    border-radius: 0.375rem;
+    padding: var(--space-2);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-35);
+}
+
+.object-poll-option {
+    position: relative;
+    border-radius: var(--space-1);
+    overflow: hidden;
+    height: 1.75rem;
+}
+
+.object-poll-option-bar {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: color-mix(in srgb, var(--accent) 25%, transparent);
+    border-radius: var(--space-1);
+    transition: width 0.3s ease;
+}
+
+.object-poll-option-content {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 var(--space-2);
+    height: 100%;
+    font-size: var(--font-size-sm);
+}
+
+.object-poll-option-title {
+    font-weight: 500;
+}
+
+.object-poll-option-votes {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.object-poll-option-votable {
+    cursor: pointer;
+}
+
+.object-poll-option-votable:hover .object-poll-option-bar {
+    background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.object-poll-option-selected .object-poll-option-bar {
+    background: color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.object-poll-option-check {
+    color: var(--accent);
+    font-weight: 700;
+    margin-right: var(--space-1);
+}
+
+.object-poll-voted {
+    color: var(--accent);
+}
+
+.object-poll-footer {
+    display: flex;
+    gap: var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+    margin-top: var(--space-1);
+}
+
+.object-poll-ended {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.object-poll-total {
+    margin-left: auto;
+}
+
+.object-published {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+}
+
+.object-updated {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    font-style: italic;
+}
+
+.object-media {
+    margin-top: var(--space-45);
+}
+
+.object-media img {
+    max-width: 100%;
+    max-height: 24rem;
+    border-radius: var(--radius-sm);
+}
+
+.engagement-bar {
+    display: flex;
+    gap: var(--space-4);
+    margin-top: var(--space-3);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+
+.engagement-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    transition: color 0.15s, background 0.15s;
+}
+
+.engagement-btn:hover {
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.engagement-btn svg {
+    width: 1.4rem;
+    height: 1.4rem;
+}
+
+.engagement-btn--active {
+    color: var(--accent);
+}
+
+.engagement-count {
+    font-size: var(--font-size-xs);
+    min-width: var(--space-2);
+}
+
+.engagement-count-link {
+    text-decoration: none;
+}
+
+.engagement-count-link:hover .engagement-count {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.object-lemmy-score {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-25);
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+}
+
+.lemmy-score-value {
+    font-weight: 600;
+}
+
+.lemmy-score-comments {
+    opacity: 0.8;
+}
+
+.lemmy-vote-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    margin-top: var(--space-25);
+}
+
+.lemmy-vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--muted);
+    transition: background 0.15s, color 0.15s;
+}
+
+.lemmy-vote-btn:hover {
+    background: var(--surface-hover);
+}
+
+.lemmy-vote-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.lemmy-vote-btn--active-up {
+    color: var(--accent);
+}
+
+.lemmy-vote-btn--active-down {
+    color: var(--danger);
+}
+
+.lemmy-vote-count {
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+}
+
+.lemmy-vote-score {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: var(--muted);
+    margin-left: var(--space-1);
+}
+
+/* Phase 102 — minimalistic moderation (block / mute / report) on the RIGHT of the card header.
+   A compact, low-key icon group that sits before the timestamp and only becomes prominent on hover,
+   so the card header stays clean but the actions are reachable without opening a menu. */
+.card-moderate {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-left: var(--space-1);
+    opacity: 0.55;
+    transition: opacity 0.15s;
+}
+
+/* The whole header (or the group itself) hovered reveals the actions fully. */
+.object-header:hover .card-moderate,
+.card-moderate:hover,
+.card-moderate:focus-within {
+    opacity: 1;
+}
+
+.card-moderate-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--muted);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+}
+
+.card-moderate-btn:hover:not(:disabled) {
+    color: var(--accent);
+    background: var(--hover);
+}
+
+.card-moderate-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.card-moderate-btn svg {
+    width: 0.9rem;
+    height: 0.9rem;
+}
+
+.object-sensitive {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-45);
+}
+
+.object-sensitive-notice {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-45) var(--space-45);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.3rem;
+    background: var(--surface-inset);
+    font-size: var(--font-size-sm);
+}
+
+.object-sensitive-summary {
+    color: var(--text);
+}
+
+.object-sensitive-label {
+    color: var(--muted);
+}
+
+.object-sensitive-reveal {
+    margin-left: auto;
+    padding: var(--space-1) var(--space-45);
+    border: 1px solid var(--border-strong);
+    border-radius: 0.3rem;
+    background: var(--surface);
+    color: var(--success);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.object-sensitive-reveal:hover {
+    background: var(--hover);
+}
+
+.object-content--blurred {
+    filter: blur(8px);
+    user-select: none;
+    pointer-events: none;
+}
+
+.media-gallery-wrap {
+    /* No visual effect by default; the blur class overrides when sensitive. */
+}
+
+/* Card loading state (a compact spinner + label so a fetching card never renders blank). */
+.card-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-45);
+    margin-top: var(--space-3);
+}
+
+.card-loading .loading-spinner {
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
+.card-loading-inline {
+    margin-top: var(--space-45);
+}
+
+.loading-spinner {
+    width: 50px;
+    height: 50px;
+}
+
+.loading-spinner-circle {
+    animation: 1.7s linear infinite loading-dash;
+    stroke-dasharray: 90, 150;
+    stroke-dashoffset: 0;
+    stroke: var(--success);
+    stroke-width: 5;
+    stroke-linecap: round;
+    transform-origin: center;
+}
+
+@keyframes loading-dash {
+    0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+    50% { stroke-dasharray: 89, 200; stroke-dashoffset: -35px; }
+    100% { stroke-dasharray: 89, 200; stroke-dashoffset: -124px; }
+}
+
+/* The signed-in nav's "New post" affordance — a slightly emphasized link (a + glyph) that jumps to
+   /compose, kept in the nav so compose is always one click away. */
+.main-nav a.nav-compose {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.main-nav a.nav-compose:hover {
+    color: var(--accent);
+}
+
+/* The compose page (32.4b): the content textarea (full-width, dark, sized by its rows attribute so it
+   reads as a note field, not a browser-default fixed box) and its action row. */
+.compose-card label {
+    display: block;
+    margin-bottom: var(--space-25);
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.compose-content {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    padding: var(--space-2) var(--space-45);
+    font-size: var(--font-size-base);
+    font-family: inherit;
+    line-height: 1.5;
+    width: 100%;
+    resize: vertical;
+    min-height: 5.5rem;
+}
+
+/* The @mention / #hashtag autocomplete popover (54.14): a positioned dropdown under the compose box
+   that lists matching actors (for @) or the typed hashtag (for #) while the user types a token. */
+.compose-autocomplete-wrap {
+    position: relative;
+}
+
+.compose-autocomplete {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    margin-top: 2px;
+    max-height: 11rem;
+    overflow-y: auto;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    min-width: 12rem;
+    width: 100%;
+}
+
+.compose-autocomplete-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    width: 100%;
+    padding: var(--space-45) var(--space-45);
+    background: none;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.compose-autocomplete-item:last-child {
+    border-bottom: none;
+}
+
+.compose-autocomplete-item:hover,
+.compose-autocomplete-item:focus {
+    background: var(--hover);
+    outline: none;
+}
+
+.compose-autocomplete-handle {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.compose-autocomplete-name {
+    color: var(--muted);
+}
+
+.compose-autocomplete-hashtag {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.compose-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-25);
+}
+
+.compose-char-count {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
+.compose-char-count--over {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.compose-type-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+/* The compose audience/visibility selector (73.3): Public / Followers / Direct. Styled to match the
+   post-type selector next to it. Shown for new posts (not replies, whose audience stays public) and
+   hidden for community posts (whose audience is the community's own). */
+.compose-visibility-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+/* The compose poll editor (73.1): the question input, the option rows (add/remove), and the
+   duration/multiple meta. Shown only when the post type is Poll. */
+.compose-poll {
+    margin-top: var(--space-45);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.compose-poll-question {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-base);
+    padding: var(--space-45) var(--space-2);
+}
+
+.compose-poll-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-45);
+}
+
+.compose-poll-option-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.compose-poll-option-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-base);
+    padding: var(--space-45) var(--space-2);
+}
+
+.compose-poll-option-remove {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: var(--font-size-sm);
+    line-height: 1;
+    padding: var(--space-35) var(--space-2);
+}
+
+.compose-poll-option-remove:hover {
+    color: var(--text);
+    border-color: var(--muted);
+}
+
+.compose-poll-add {
+    align-self: flex-start;
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+.compose-poll-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-125);
+    flex-wrap: wrap;
+}
+
+.compose-poll-duration,
+.compose-poll-multiple {
+    display: flex;
+    align-items: center;
+    gap: var(--space-45);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
+.compose-poll-duration select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    padding: var(--space-25) var(--space-45);
+}
+
+.compose-poll-error {
+    font-size: var(--font-size-sm);
+    margin: 0;
+}
+
+/* The compose attachment (image) picker (F-27): the file input + the selected file's name + a remove
+   affordance. The upload happens at post time (a local, Basic-authenticated multipart POST). */
+.compose-attach-label {
+    display: block;
+    margin-top: var(--space-45);
+    margin-bottom: var(--space-25);
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.compose-attach {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.compose-attach input[type="file"] {
+    max-width: 14rem;
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
+.compose-attach-name {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 12rem;
+}
+
+.compose-attach-remove {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+    line-height: 1;
+    padding: var(--space-25) var(--space-45);
+    cursor: pointer;
+}
+
+.compose-attach-remove:hover:not(:disabled) {
+    color: var(--text);
+    border-color: var(--muted);
+}
+
+.compose-hint {
+    margin-top: var(--space-45);
+    font-size: var(--font-size-sm);
+}
+
+.compose-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-90);
+}
+
+.compose-result {
+    margin-top: var(--space-3);
+    font-size: var(--font-size-sm);
+}
+
+.compose-result-iri {
+    display: block;
+    margin-top: var(--space-25);
+    word-break: break-all;
+    color: var(--muted);
+}
+
+.compose-tips {
+    margin-top: var(--space-4);
+    padding: var(--space-4) var(--space-125);
+}
+
+.compose-tips h3 {
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-base);
+    color: var(--muted);
+}
+
+.compose-tips-list {
+    margin: 0;
+    padding-left: var(--space-125);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    line-height: 1.6;
+}
+
+/* The profile page (32.4b): the loading state for the profile header (a card with the shared spinner,
+   matching the feed's loading style) — the outbox card below it loads independently. */
+.profile-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.profile-loading .loading-spinner {
+    width: 1.75rem;
+    height: 1.75rem;
+}
+
+/* The profile header (ported from the sample's ActorProfile): a flex card with the avatar on the left
+   and the handle / name / summary / IRI stacked on the right. When the actor has a banner (the AS
+   `image` property), the header becomes a column: a banner strip on top and the avatar/body row below,
+   with the avatar enlarged and pulled up to overlap the banner's bottom edge (Mastodon-style). */
+.actor-profile {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-125) var(--space-5);
+    margin-bottom: var(--space-125);
+    overflow: hidden;
+}
+
+/* Bannered layout: the card becomes a column; the top padding moves into the banner and the main row
+   (avatar + body) sits below it. */
+.actor-profile--bannered {
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+}
+
+.actor-profile-banner {
+    width: 100%;
+    height: 8rem;
+    overflow: hidden;
+    background: var(--bg);
+}
+
+.actor-profile-banner img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* The avatar + body row under the banner. */
+.actor-profile-main {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: 0 var(--space-5) var(--space-125);
+    width: 100%;
+}
+
+/* With a banner, the avatar sits below the banner and overlaps its bottom edge. */
+.actor-profile--bannered .actor-profile-avatar {
+    margin-top: -var(--space-7);
+    position: relative;
+    z-index: 1;
+    width: 6rem;
+    height: 6rem;
+    border: 3px solid var(--panel);
+}
+
+.actor-profile--bannered .actor-profile-avatar img,
+.actor-profile--bannered .actor-profile-avatar .actor-avatar-fallback {
+    width: 6rem;
+    height: 6rem;
+}
+
+.actor-profile-avatar {
+    flex: 0 0 auto;
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.actor-profile-avatar-img {
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* The avatar <img> fills its frame (the bannered layout scales the frame to 6rem). */
+.actor-profile-avatar > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* The fallback initial when the actor has no icon: a large, muted glyph centered in the frame. */
+.actor-profile-avatar-fallback {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+/* A larger fallback glyph for the enlarged bannered avatar. */
+.actor-profile--bannered .actor-avatar-fallback {
+    font-size: var(--font-size-4xl);
+}
+
+.actor-profile-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-25);
+    min-width: 0;
+}
+
+.actor-profile-handle {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.actor-profile-handle-link {
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    word-break: break-all;
+}
+
+.actor-profile-handle-link:hover {
+    color: var(--accent);
+}
+
+.actor-profile-name {
+    font-size: var(--font-size-base);
+    font-weight: 500;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.actor-profile-summary {
+    color: var(--muted);
+    font-size: var(--font-size-base);
+    margin-top: var(--space-1);
+    line-height: 1.4;
+}
+
+.actor-profile-iri {
+    margin-top: var(--space-1);
+}
+
+.actor-profile-iri code {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    word-break: break-all;
+}
+
+/* --- Search page --- */
+
+.search-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin-top: var(--space-1);
+}
+
+.search-controls input[type="text"] {
+    flex: 1 1 18rem;
+}
+
+.search-actors-only {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-25);
+    color: var(--muted);
+    font-size: var(--font-size-base);
+    white-space: nowrap;
+}
+
+/* --- Notifications page --- */
+
+.notification-row {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-35) 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.notification-row:last-child {
+    border-bottom: none;
+}
+
+.notification-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-45);
+    flex-wrap: wrap;
+}
+
+.notification-icon {
+    width: var(--space-4);
+    height: var(--space-4);
+    flex-shrink: 0;
+}
+
+.notification-verb {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.notification-time {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.notification-target {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    margin-top: var(--space-25);
+}
+
+.notification-target-link {
+    color: var(--muted);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-target-link:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-self-delete {
+    color: var(--muted);
+    font-style: italic;
+    display: block;
+}
+
+.notification-note-card {
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    padding: var(--space-2) var(--space-65);
+    margin-top: var(--space-1);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.notification-note-author {
+    color: var(--muted);
+    font-weight: 500;
+    text-decoration: none;
+    display: inline-block;
+    margin-bottom: var(--space-1);
+    font-size: var(--font-size-sm);
+}
+
+.notification-note-author:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-note-content {
+    color: var(--muted);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-note-content:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-body {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-45);
+}
+
+.notification-avatar {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.notification-avatar img {
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.notification-avatar-fallback {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.notification-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-name {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+}
+
+.notification-name:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+/* Directory: actor rows with a follow button on the right. */
+.directory-external-lookup {
+    margin-bottom: var(--space-4);
+}
+
+.directory-external-form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-1);
+}
+
+.directory-external-input {
+    flex: 1;
+    max-width: 24rem;
+    padding: var(--space-45) var(--space-45);
+    border: 1px solid var(--border);
+    border-radius: var(--radius, 6px);
+    background: var(--surface);
+    color: var(--text);
+    font-size: var(--font-size-base);
+}
+
+.directory-external-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.directory-external-spinner {
+    display: inline-flex;
+    align-items: center;
+}
+
+.directory-external-error {
+    color: var(--danger);
+    font-size: var(--font-size-sm);
+    margin: var(--space-45) 0 0;
+}
+
+.directory-external-result {
+    margin-top: var(--space-45);
+}
+
+.directory-external-link {
+    display: flex;
+    align-items: center;
+    gap: var(--space-45);
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius, 6px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 0.15s;
+}
+
+.directory-external-link:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
+.directory-external-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.directory-external-avatar img {
+    width: 100%;
+    height: 100%;
+}
+
+.directory-external-name {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+}
+
+/* Directory scope toggle (This instance / All known actors). */
+.directory-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.directory-scope {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--surface);
+}
+
+.directory-scope-btn {
+    appearance: none;
+    border: none;
+    background: none;
+    color: var(--muted);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    padding: var(--space-35) var(--space-35);
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.directory-scope-btn + .directory-scope-btn {
+    border-left: 1px solid var(--border);
+}
+
+.directory-scope-btn:hover {
+    color: var(--text);
+}
+
+.directory-scope-btn--active {
+    background: var(--accent);
+    color: var(--btn-fg);
+}
+
+.directory-scope-btn--active:hover {
+    color: var(--btn-fg);
+}
+
+.directory-cards {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+}
+
+/* The directory card is the unified actor card — the same control (and size/shape) the actor page's
+   followers/following tabs render. The base .actor-card supplies all framing and sizing; the wrapper
+   only holds the column layout. */
+.directory-card .actor-card-summary {
+    font-size: var(--font-size-sm);
+}
+
+/* The community card is the same unified actor card as the directory card — the base .actor-card
+   supplies all framing and sizing; the wrapper only holds the column layout. A community's card
+   looks identical whether you reach it from /communities or /directory. */
+.community-card .actor-card-summary {
+    font-size: var(--font-size-sm);
+}
+
+/* Phase 149.4 — the community card's avatar matches the feed-card avatar size (2.5rem, see the
+   .object-header .actor-avatar rule) rather than the larger profile-style 4.5rem .actor-card-avatar.
+   Scoped to .community-card so the actor/directory cards keep their current 4.5rem avatar. The banner
+   overlap margin is reduced to match the smaller avatar. */
+.community-card .actor-card-main .actor-card-avatar {
+    margin-top: calc(-1 * 1.25rem);
+    border-width: 2px;
+}
+
+.community-card .actor-card-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.community-card .actor-card-avatar img {
+    width: 2.5rem;
+    height: 2.5rem;
+}
+
+.community-card .actor-card-avatar-fallback {
+    font-size: var(--font-size-base);
+}
+
+.follow-button {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 6rem;
+    text-align: center;
+}
+
+.join-button {
+    flex-shrink: 0;
+    white-space: nowrap;
+    min-width: 5rem;
+    text-align: center;
+}
+
+.tab-bar {
+    display: flex;
+    gap: var(--space-1);
+    margin: var(--space-4) 0;
+    background: var(--surface);
+    border-radius: var(--radius-md);
+    padding: 3px;
+}
+
+.tab {
+    padding: var(--space-45) var(--space-90);
+    color: var(--muted);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    user-select: none;
+    font-size: var(--font-size-base);
+    transition: background 0.15s, color 0.15s;
+}
+
+.tab:hover {
+    color: var(--text);
+    background: var(--bg);
+}
+
+.tab--active {
+    color: var(--text);
+    background: var(--bg);
+    font-weight: 500;
+}
+
+.actor-detail-header {
+    margin-bottom: var(--space-4);
+}
+
+/* The actor page presents the actor as the unified directory-style card — the same control and the
+   same size/shape as the directory and the followers/following lists. No size overrides here. */
+
+.actor-detail-signin {
+    margin: var(--space-3) 0 0;
+}
+
+.object-detail .object-content {
+    font-size: 1.2rem;
+    line-height: 1.6;
+}
+
+.object-detail .object-header {
+    margin-bottom: var(--space-3);
+}
+
+.object-parent-context {
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-md);
+    margin-bottom: var(--space-3);
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.object-parent-separator {
+    height: 1px;
+    background: var(--border);
+    margin: var(--space-2) 0;
+}
+
+.object-parent-label {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    margin-bottom: var(--space-1);
+}
+
+.object-parent-content {
+    font-size: var(--font-size-base);
+    color: var(--text);
+    opacity: 0.8;
+    line-height: 1.4;
+}
+
+.object-parent-content img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+}
+
+.object-parent-content pre {
+    background: var(--surface);
+    padding: var(--space-2);
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+}
+
+.object-parent-content blockquote {
+    border-left: 3px solid var(--border);
+    margin-left: 0;
+    padding-left: var(--space-3);
+    color: var(--muted);
+}
+
+/* Phase 90 — email-style recipient line at the top of a post card. */
+.object-recipient {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-35);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-45);
+    font-size: 0.82rem;
+    color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.object-recipient-label {
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 0.72rem;
+    color: var(--muted);
+}
+
+.object-recipient-sep {
+    color: var(--muted);
+}
+
+/* Phase 90 — inline "in reply to" context card (used by feed + detail cards). */
+.object-item .object-parent-context {
+    padding: var(--space-2) var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--space-2);
+}
+
+/* Phase 101 — "in reply to" context below the post body. */
+.object-parent-context--below {
+    margin-top: var(--space-2);
+    margin-bottom: 0;
+}
+
+.object-parent--below {
+    margin-top: var(--space-2);
+    margin-bottom: 0;
+}
+
+/* Phase 117.6 — media gallery inside the parent context card. */
+.object-parent-context .media-gallery {
+    margin-top: var(--space-2);
+}
+
+/* Phase 90 — boosts render the boosted post inline; the "Boosted by" line is a small muted tag. */
+.object-item--boost {
+    position: relative;
+}
+
+.object-boost-by {
+    display: flex;
+    align-items: center;
+    gap: var(--space-45);
+    margin-bottom: var(--space-45);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    min-width: 0;
+    overflow-wrap: break-word;
+}
+
+.object-boost-time {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+    margin-left: auto;
+}
+
+/* 152 — a boost of a reply: the card renders the ORIGINAL post the boosted reply answers to, so a small
+   "replying to …" hint under the "Boosted by" line explains the context. */
+.object-boost-reply-hint {
+    font-size: var(--font-size-xs);
+    color: var(--muted);
+    font-style: italic;
+}
+
+.object-item--boosted {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+}
+
+.object-item--boosted .object-header {
+    margin-bottom: var(--space-2);
+}
+
+.object-detail-engagement {
+    margin-top: var(--space-3);
+    padding-top: var(--space-2);
+    border-top: 1px solid var(--border);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
+.object-detail-actions {
+    margin-top: var(--space-4);
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--border);
+}
+
+.replies-section {
+    margin-top: var(--space-4);
+}
+
+.replies-section h3 {
+    margin: 0 0 var(--space-3);
+    font-size: var(--font-size-lg);
+    font-weight: 600;
+    color: var(--muted);
+}
+
+.replies-section .object-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+.replies-section .object-item {
+    padding: var(--space-3) var(--space-4);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.replies-more {
+    text-align: center;
+    padding-top: var(--space-2);
+}
+
+.compose-reply-context {
+    margin-bottom: var(--space-3);
+}
+
+.compose-reply-to {
+    margin: 0 0 var(--space-1);
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px 4px 0 0;
+    font-size: var(--font-size-sm);
+}
+
+.compose-reply-to a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.compose-reply-preview {
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    font-style: italic;
+    line-height: 1.4;
+}
+
+.compose-thread-root {
+    margin-top: var(--space-2);
+    padding: var(--space-45) var(--space-3);
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+}
+
+.compose-thread-root-label {
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.compose-thread-root-author {
+    color: var(--text);
+    font-weight: 600;
+}
+
+.compose-thread-root .compose-reply-preview {
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+}
+
+/* 34.23: signed-out landing hero — replaces the old h1 + card with a clean centered block. */
+.landing-hero {
+    text-align: center;
+    padding: var(--space-7) var(--space-4);
+}
+
+.landing-title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--font-size-4xl);
+    font-weight: 700;
+    color: var(--accent);
+}
+
+.landing-tagline {
+    margin: 0 0 var(--space-5);
+    color: var(--muted);
+    font-size: var(--font-size-base);
+    max-width: 480px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.landing-actions {
+    margin: 0;
+}
+
+/* 34.25: empty states — centered icon + message + optional action link. */
+.empty-state {
+    text-align: center;
+    padding: var(--space-6) var(--space-4);
+    color: var(--muted);
+}
+
+.empty-state svg {
+    width: 48px;
+    height: 48px;
+    margin-bottom: var(--space-3);
+    opacity: 0.5;
+}
+
+.empty-state p {
+    margin: 0 0 var(--space-2);
+}
+
+.empty-state a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: var(--font-size-base);
+}
+
+.empty-state a:hover {
+    text-decoration: underline;
+}
+
+/* 114: compact variant for in-card / tab-panel empty states — smaller icon +
+   tighter vertical padding so it sits well inside a card rather than dominating
+   a full page. Same centered icon + message treatment as the full-size state. */
+.empty-state--compact {
+    padding: var(--space-4) var(--space-3);
+}
+
+.empty-state--compact svg {
+    width: 32px;
+    height: 32px;
+    margin-bottom: var(--space-2);
+}
+
+.empty-state--compact p {
+    margin-bottom: 0;
+    font-size: var(--font-size-sm);
+}
+
+.profile-actions {
+    margin-top: var(--space-3);
+}
+
+.edit-profile-form {
+    margin-top: var(--space-4);
+}
+
+.edit-profile-form h3 {
+    margin: 0 0 var(--space-4) 0;
+    font-size: var(--font-size-lg);
+}
+
+/* The avatar section in the edit-profile form: a circular preview + choose/remove buttons. */
+.edit-profile-avatar-group {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+}
+
+.edit-profile-avatar-preview {
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    border: 1px solid var(--border);
+}
+
+.edit-profile-avatar-img {
+    width: 5rem;
+    height: 5rem;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.edit-profile-avatar-fallback {
+    font-size: var(--font-size-3xl);
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.edit-profile-avatar-actions {
+    display: flex;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+/* The "Choose avatar" / "Change avatar" label styled as a button (wraps the hidden file input). */
+.edit-profile-avatar-actions label.btn {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.edit-profile-avatar-actions label.btn:has(input:disabled),
+.edit-profile-avatar-actions label.btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.form-group {
+    margin-bottom: var(--space-4);
+}
+
+.form-group label {
+    display: block;
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    margin-bottom: var(--space-35);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.form-group input,
+.form-group textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-45) var(--space-35);
+    font-size: var(--font-size-base);
+    color: var(--text);
+    font-family: inherit;
+}
+
+.form-group input:focus,
+.form-group textarea:focus {
+    border-color: var(--accent);
+}
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 80px;
+}
+
+/* The "follow requests" privacy control: a labeled fieldset, visually set apart from the text fields,
+   with the checkbox on its own row (checkbox left, title + hint stacked to the right). */
+.edit-profile-privacy {
+    margin: var(--space-4) 0 0;
+    padding: var(--space-90) var(--space-4);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg);
+    min-width: 0;
+}
+
+.edit-profile-privacy-legend {
+    font-weight: 600;
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 0 var(--space-35);
+}
+
+.edit-profile-privacy-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-65);
+    cursor: pointer;
+}
+
+.edit-profile-privacy-row input[type="checkbox"] {
+    flex: 0 0 auto;
+    width: 1.15rem;
+    height: 1.15rem;
+    margin-top: var(--space-3);
+    accent-color: var(--accent);
+}
+
+.edit-profile-privacy-label {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-25);
+    min-width: 0;
+}
+
+.edit-profile-privacy-title {
+    font-weight: 600;
+    font-size: var(--font-size-base);
+    color: var(--text);
+}
+
+.edit-profile-privacy-hint {
+    font-size: var(--font-size-sm);
+    line-height: 1.35;
+}
+
+.form-actions {
+    display: flex;
+    gap: var(--space-2);
+    margin-top: var(--space-125);
+}
+
+.peers-add-hint {
+    margin-top: var(--space-1);
+    font-size: 0.875em;
+}
+
+.peers-add-resolved {
+    margin-top: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    background: var(--surface-inset);
+    border-radius: var(--radius-sm);
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: var(--btn-fg);
+}
+
+.btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* The community page presents the community as the unified directory-style card — the same control
+   and the same size/shape as the directory and the followers/following lists. */
+.community-detail-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin-bottom: var(--space-4);
+}
+
+.community-card-header {
+    width: 100%;
+}
+
+/* Profile / actor / community page header: the card reads as a profile, so it gets a bigger
+   banner, avatar, and body. */
+.actor-detail-header .actor-card-banner,
+.community-card-header .actor-card-banner,
+.profile-card-header .actor-card-banner {
+    height: 8.5rem;
+}
+
+.actor-detail-header .actor-card-main .actor-card-avatar,
+.community-card-header .actor-card-main .actor-card-avatar,
+.profile-card-header .actor-card-main .actor-card-avatar {
+    width: 6.5rem;
+    height: 6.5rem;
+    margin-top: calc(-1 * 3.25rem);
+}
+
+.actor-detail-header .actor-card-avatar-fallback,
+.community-card-header .actor-card-avatar-fallback,
+.profile-card-header .actor-card-avatar-fallback {
+    font-size: 2.75rem;
+}
+
+.actor-detail-header .actor-card-body,
+.community-card-header .actor-card-body,
+.profile-card-header .actor-card-body {
+    min-height: 6rem;
+}
+
+.community-member-count {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+.community-loading {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-6);
+}
+
+.community-post-action {
+    margin-bottom: var(--space-4);
+}
+
+/* --- Community feed search (Phase 99) --- */
+
+.community-feed-search {
+    margin-bottom: var(--space-3);
+}
+
+.community-feed-search-form {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+}
+
+.community-feed-search-form input[type="text"] {
+    flex: 1 1 16rem;
+}
+
+.community-feed-search-caption {
+    margin: var(--space-45) 0 0;
+}
+
+.compose-community-context {
+    margin-bottom: var(--space-3);
+}
+
+.compose-community-to {
+    margin: 0;
+    font-size: var(--font-size-base);
+}
+
+.page-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.page-header-row h2 {
+    margin: 0;
+}
+
+.nav-badge {
+    display: inline-block;
+    min-width: 1.35rem;
+    padding: 0 var(--space-35);
+    margin-left: var(--space-25);
+    border-radius: var(--radius-pill);
+    background: var(--accent);
+    color: var(--btn-fg);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.35rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-size-base);
+}
+
+.admin-table th,
+.admin-table td {
+    padding: var(--space-2) var(--space-3);
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.admin-table th {
+    font-weight: 600;
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.badge {
+    display: inline-block;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--radius-pill);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+}
+
+.badge--admin {
+    background: var(--accent);
+    color: var(--btn-fg);
+}
+
+.badge--user {
+    background: var(--border);
+    color: var(--fg);
+}
+
+.engagement-more {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: var(--space-35);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--muted);
+}
+
+.engagement-more:hover {
+    background: var(--hover);
+    color: var(--fg);
+}
+
+.engagement-menu {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    margin-bottom: 4px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+    min-width: 100px;
+    z-index: 10;
+}
+
+.engagement-menu-item {
+    display: block;
+    width: 100%;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    background: none;
+    text-align: left;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    color: var(--fg);
+}
+
+.engagement-menu-item:hover {
+    background: var(--hover);
+}
+
+.engagement-menu-item:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.follow-request-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) 0;
+}
+
+.follow-request-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--font-size-base);
+}
+
+.follow-request-actor {
+    font-weight: 600;
+}
+
+.follow-request-actions {
+    display: flex;
+    gap: var(--space-45);
+}
+
+.moderation-actions {
+    display: inline-flex;
+    gap: var(--space-45);
+    margin-left: var(--space-2);
+}
+
+.compose-sensitive-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-35);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.compose-sensitive-toggle input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
+.compose-sensitive-summary {
+    width: 100%;
+    margin-top: var(--space-45);
+    padding: var(--space-45) var(--space-55);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated, #1a1d24);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+}
+
+.btn-sm {
+    padding: var(--space-1) var(--space-45);
+    font-size: var(--font-size-sm);
+}
+
+.object-edit {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-45);
+}
+
+.object-edit label {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+
+.object-edit .compose-content {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.object-edit-actions {
+    display: flex;
+    gap: var(--space-2);
+}
+
+/* Hide the Blazor WASM error boundary bar until an error actually occurs. */
+#blazor-error-ui {
+    display: none;
+}
+
+#blazor-error-ui.show {
+    display: flex;
+    align-items: center;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--danger-bg);
+    border-top: 1px solid var(--danger-border);
+    padding: var(--space-3) var(--space-125);
+    z-index: 200;
+    font-size: var(--font-size-base);
+    color: var(--danger-fg);
+}
+
+#blazor-error-ui a {
+    color: var(--danger-fg);
+    margin-left: var(--space-2);
+    text-decoration: none;
+}
+
+#blazor-error-ui a:hover {
+    text-decoration: underline;
+}
+
+#blazor-error-ui .dismiss {
+    margin-left: auto;
+    cursor: pointer;
+    color: var(--danger-fg);
+    background: none;
+    border: none;
+    font-size: var(--font-size-base);
+    padding: 0 var(--space-1);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: var(--space-4);
+}
+
+.stat-card {
+    text-align: center;
+    padding: var(--space-5) var(--space-4);
+}
+
+.stat-value {
+    font-size: var(--font-size-4xl);
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.1;
+}
+
+.stat-label {
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+    margin-top: var(--space-1);
+}
+
+/* ---- WASM boot splash (53.9) ----
+   Shown inside #app before Blazor initializes and replaces it. Centered,
+   branded loading screen using the app's design tokens. */
+#app:only-child,
+body > #app {
+    min-height: 100vh;
+}
+
+.splash {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-3);
+    text-align: center;
+    padding: var(--space-5);
+}
+
+.splash-logo svg {
+    width: 64px;
+    height: 64px;
+    display: block;
+    animation: splash-pulse 2.2s ease-in-out infinite;
+}
+
+.splash-spinner {
+    width: 28px;
+    height: 28px;
+    margin-top: var(--space-1);
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: splash-spin 0.8s linear infinite;
+}
+
+.splash-title {
+    font-size: 1.8rem;
+    margin: var(--space-2) 0 0;
+    letter-spacing: -0.02em;
+}
+
+.splash-sub {
+    margin: 0;
+    color: var(--muted);
+    font-size: var(--font-size-base);
+}
+
+.splash-status {
+    margin-top: var(--space-2);
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+}
+
+@keyframes splash-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes splash-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.75; transform: scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .splash-logo svg { animation: none; }
+    .splash-spinner { animation-duration: 1.6s; }
+    /* Respect reduced-motion: drop all transitions (WCAG 2.3.3). */
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+
+
+/* ── 61.3: Notification filter tabs ── */
+.notif-filter-tabs {
+    display: flex;
+    gap: var(--space-1);
+    margin-bottom: var(--space-4);
+    flex-wrap: wrap;
+}
+
+.filter-tab {
+    padding: var(--space-25) var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--space-4);
+    background: transparent;
+    color: var(--text);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.filter-tab:hover {
+    background: var(--surface-hover, rgba(128, 128, 128, 0.1));
+}
+
+.filter-tab[aria-pressed="true"],
+.filter-tab[aria-pressed=""] {
+    background: var(--accent);
+    color: var(--btn-fg);
+    border-color: var(--accent);
+}
+
+.notif-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.notif-item {
+    border-bottom: 1px solid var(--border);
+    padding: var(--space-3) 0;
+}
+
+.notif-item:last-child {
+    border-bottom: none;
+}
+
+.notif-pagination {
+    margin-top: var(--space-4);
+    text-align: center;
+}
+
+/* ── 117.2: Notification cards (feed-style layout) ── */
+.notif-cards {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.notif-card-wrapper {
+    /* Each notification is a card, matching the feed's ObjectView card style */
+}
+
+.notification-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--space-35);
+    transition: border-color 0.15s;
+}
+
+.notification-card:hover {
+    border-color: var(--border-hover, var(--border));
+}
+
+/* 154 — "new" notification: stands out from the rest of the list with a left accent bar + a tinted
+   surface, plus a small "New" badge in the header. Cleared when the user views it or marks all read. */
+.notification-card--new {
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    border-left: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+}
+
+.notification-card__new {
+    flex-shrink: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    border-radius: var(--radius-pill);
+    padding: 0 var(--space-2);
+    line-height: 1.5;
+    margin-bottom: var(--space-1);
+}
+
+/* 154 — wrapper for a full ObjectView card rendered inside a notification card. The ObjectView card
+   already carries its own surface/border, so we drop the notification card's padding here and let the
+   inner card own the spacing (avoids a double-bordered "card in a card"). */
+.notification-card__object {
+    margin-top: var(--space-1);
+}
+
+.notification-card__object > .object-item {
+    border: 1px solid var(--border);
+}
+
+.notification-card__header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-25);
+    margin-bottom: var(--space-2);
+}
+
+.notification-card__avatar {
+    flex-shrink: 0;
+}
+
+.notification-card__meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-card__actor-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex-wrap: wrap;
+}
+
+.notification-card__name {
+    font-weight: 600;
+    color: var(--text);
+    text-decoration: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.notification-card__name:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__verb {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.notification-card__time {
+    display: block;
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    margin-top: var(--space-1);
+}
+
+.notification-card__body {
+    min-height: 0;
+}
+
+.notification-card__note {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-25) var(--space-3);
+}
+
+.notification-card__note-author {
+    margin-bottom: var(--space-1);
+}
+
+.notification-card__note-author a {
+    color: var(--muted);
+    font-weight: 500;
+    text-decoration: none;
+    font-size: var(--font-size-sm);
+}
+
+.notification-card__note-author a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__note-content {
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    color: var(--text);
+    word-wrap: break-word;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.notification-card__note-content a {
+    color: var(--text);
+    text-decoration: none;
+}
+
+.notification-card__note-content a:hover {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.notification-card__target {
+    font-size: var(--font-size-sm);
+    color: var(--text);
+}
+
+.notification-card__target a {
+    color: var(--accent);
+    text-decoration: none;
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.notification-card__target a:hover {
+    text-decoration: underline;
+}
+
+.notification-card__actions {
+    margin-top: var(--space-2);
+    padding-top: var(--space-15);
+    border-top: 1px solid var(--border);
+}
+
+.notification-card__view-link {
+    font-size: var(--font-size-sm);
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.notification-card__view-link:hover {
+    text-decoration: underline;
+}
+
+.notification-card__self-delete {
+    color: var(--muted);
+    font-style: italic;
+    font-size: var(--font-size-sm);
+    padding: var(--space-1) 0;
+}
+
+.notification-icon {
+    width: var(--space-4);
+    height: var(--space-4);
+    flex-shrink: 0;
+}
+
+/* ── 61.4: Media gallery + lightbox + media players ── */
+.media-gallery {
+    display: grid;
+    gap: 4px;
+    margin: var(--space-3) 0 0;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.media-gallery--single {
+    grid-template-columns: 1fr;
+}
+
+.media-gallery--two {
+    grid-template-columns: 1fr 1fr;
+}
+
+.media-gallery--three {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+}
+
+.media-gallery--three .media-gallery-item:first-child {
+    grid-row: 1 / 3;
+}
+
+.media-gallery--four {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+}
+
+.media-gallery-item {
+    position: relative;
+    cursor: pointer;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+}
+
+.media-gallery--single .media-gallery-item {
+    aspect-ratio: 16 / 9;
+}
+
+.media-gallery-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+}
+
+.media-gallery-item:hover img {
+    transform: scale(1.02);
+}
+
+/* Lightbox */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.92);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: lightbox-fade-in 0.2s ease;
+}
+
+@keyframes lightbox-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.lightbox-content {
+    position: relative;
+    max-width: 90vw;
+    max-height: 90vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.lightbox-img {
+    max-width: 90vw;
+    max-height: 85vh;
+    object-fit: contain;
+    border-radius: var(--space-1);
+}
+
+.lightbox-close {
+    position: absolute;
+    top: -var(--space-6);
+    right: calc(-1 * var(--space-2));
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: var(--font-size-3xl);
+    cursor: pointer;
+    line-height: 1;
+    padding: var(--space-1);
+}
+
+.lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    color: #fff;
+    font-size: var(--font-size-4xl);
+    cursor: pointer;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--space-2);
+    line-height: 1;
+}
+
+.lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.lightbox-nav--prev {
+    left: -var(--space-7);
+}
+
+.lightbox-nav--next {
+    right: -var(--space-7);
+}
+
+.lightbox-counter {
+    position: absolute;
+    bottom: -var(--space-6);
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.7);
+    font-size: var(--font-size-sm);
+}
+
+/* Media players (video/audio) */
+.media-player {
+    margin: var(--space-2) 0;
+    border-radius: var(--space-2);
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.media-player-video {
+    width: 100%;
+    max-height: 500px;
+    display: block;
+    border-radius: var(--space-2);
+}
+
+.media-player-audio {
+    width: 100%;
+    display: block;
+    padding: var(--space-2);
+}
+
+.media-player-label {
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--font-size-sm);
+    color: var(--muted);
+}
+

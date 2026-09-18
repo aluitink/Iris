@@ -16,7 +16,7 @@
 ### 1. Confirm good state
 
 - Run `dotnet build` and `dotnet test` (a SubAgent may run and summarize the results; fixes happen in the main loop).
-- **If failures:** fix *only* the breakage, re-run until green (max 2 repair attempts), commit as `fix: repair broken state from previous turn`, then **end this turn**. No new work.
+- **If failures:** fix *only* the breakage, re-run until green (max 2 repair attempts), commit as `fix: repair broken state from previous turn`, then **end this turn**. No new work. *(During the WASM manual-test phases, "fix the breakage" in `tests/Iris.Web.Tests` follows the [web test policy](#web-test-policy-binding-while-planmdds-test-policy-is-active--phases-45): delete the broken test or skip the >15 s one — do not write new tests.)*
 - **If still failing after 2 attempts:** write a `BLOCKED` note in [PLAN.md](../../PLAN.md)'s Active Slice section describing the failure, commit, and end this turn.
 
 ### 2. Select the next work item
@@ -36,7 +36,7 @@
   - `Id` is `string?` in the library — convert to `Iri` at the Iris boundary.
 - **Definition of done** (all must hold before committing):
   - `dotnet build` clean — `TreatWarningsAsErrors` is on, so a warning is a failure.
-  - `dotnet test` green, **including new tests for this item** (integration-first per [TESTING.md](TESTING.md)).
+  - `dotnet test` green, **including new tests for this item** (integration-first per [TESTING.md](TESTING.md)). *Exception — WASM manual-test phases (Phase 45+, see PLAN.md's test policy): done = live Playwright-verified; existing web tests stay or are deleted per the [web test policy](#web-test-policy-binding-while-planmdds-test-policy-is-active--phases-45); no new coded tests.*
   - XML doc comments on all public API; `CancellationToken ct` is the last parameter; file-scoped namespaces.
   - No dependency-direction violations (`Iris.Core` never references `Iris.Client`/`Iris.Server`; no upward dependencies).
   - No new NuGet packages without a note in PLAN.md's Active Slice (or the change doc) and a justification.
@@ -48,7 +48,16 @@
 ### 4. Commit
 
 - Commit implementation + tests **together** (conventional commit message, e.g. `feat(core): add Iri value type with inbox/outbox derivation`).
-- A feature without its tests is a red flag for the next turn's step 1 — never split them.
+- A feature without its tests is a red flag for the next turn's step 1 — never split them. *Exception — the WASM manual-test phases (Phase 45+, see PLAN.md's "Test policy"): verification is manual via MCP Playwright, not coded tests.*
+
+### Web test policy (binding while PLAN.md's test policy is active — Phases 45+)
+
+The production app's web tests (`tests/Iris.Web.Tests`) are **expendable** during the WASM stabilization phases:
+
+- **No new coded tests** of any kind; verification is manual via MCP Playwright (live Docker app, real browser: screenshots, console errors, interactions).
+- A change that **breaks an existing web test**: **delete that test** (log the deletion in the change doc). Never fix the app to satisfy a test, never write a replacement.
+- **15-second rule:** any single test taking longer than 15 s is **skipped**. When the suite stalls on timing-out tests, use blame — per-test timings from `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` — to find the offenders and **comment them out** (or `[Fact(Skip = "slow >15s — <date>")]`).
+- Passing tests stay; a green (or pruned) suite is still required before commit.
 
 ### 5. Update PLAN.md and prune
 

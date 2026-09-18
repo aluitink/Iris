@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -30,8 +31,10 @@ public sealed class MuteActivityHandler : ActivityHandlerBase<MuteActivity>
     /// </summary>
     /// <param name="persistence">The persistence provider (provides the <see cref="IModerationStore"/>).</param>
     /// <param name="localActors">Resolves whether the muted actor is a local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
-    public MuteActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    public MuteActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<MuteActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

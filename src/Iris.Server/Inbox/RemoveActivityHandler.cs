@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -51,8 +52,10 @@ public sealed class RemoveActivityHandler : ActivityHandlerBase<Remove>
     /// Initializes a new <see cref="RemoveActivityHandler"/>.
     /// </summary>
     /// <param name="persistence">The persistence provider (provides the <see cref="ICommunityStore"/>).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When <paramref name="persistence"/> is null.</exception>
-    public RemoveActivityHandler(IPersistenceProvider persistence)
+    public RemoveActivityHandler(IPersistenceProvider persistence, ILogger<RemoveActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         _persistence = persistence;

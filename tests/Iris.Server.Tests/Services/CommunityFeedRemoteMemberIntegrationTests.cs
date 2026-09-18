@@ -64,9 +64,9 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
         _aPersistence.Communities.AddMemberAsync(_community, _bob).GetAwaiter().GetResult();
 
         // alice's outbox (on A): one post. bob's outbox (on B): two posts.
-        TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/a-1", "alice post 1");
-        TestSeeder.AddCreateActivity(_bPersistence, _bob, $"{_bob.Value}/activities/b-1", "bob post 1");
-        TestSeeder.AddCreateActivity(_bPersistence, _bob, $"{_bob.Value}/activities/b-2", "bob post 2");
+        TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/a-1", "alice post 1", new[] { _community });
+        TestSeeder.AddCreateActivity(_bPersistence, _bob, $"{_bob.Value}/activities/b-1", "bob post 1", new[] { _community });
+        TestSeeder.AddCreateActivity(_bPersistence, _bob, $"{_bob.Value}/activities/b-2", "bob post 2", new[] { _community });
 
         // B hosts bob; its outbox is a local collection endpoint (no outbound fetches needed).
         _b = ActivityPubHostFactory.Create(new ActivityPubHostOptions
@@ -167,6 +167,7 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
         // A second community with only alice as a member (bob is NOT a member).
         var community2 = TestSeeder.SeedCommunity(_aPersistence, AHost, "solo");
         await _aPersistence.Communities.AddMemberAsync(community2, _alice);
+        TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/solo-1", "solo post", new[] { community2 });
 
         var response = await _http.GetAsync($"https://{AHost}/ap/v1/c/solo/feed?limit=10");
         response.EnsureSuccessStatusCode();
@@ -175,9 +176,9 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
 
-        // Only alice's post (bob is not a member of "solo").
+        // Only alice's solo post (bob is not a member of "solo").
         Assert.Single(items);
-        Assert.Equal($"{_alice.Value}/activities/a-1", items[0]);
+        Assert.Equal($"{_alice.Value}/activities/solo-1", items[0]);
     }
 
     [Fact]
@@ -188,6 +189,7 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
         var community3 = TestSeeder.SeedCommunity(_aPersistence, AHost, "mixed");
         await _aPersistence.Communities.AddMemberAsync(community3, _alice);
         await _aPersistence.Communities.AddMemberAsync(community3, daveIri);
+        TestSeeder.AddCreateActivity(_aPersistence, _alice, $"{_alice.Value}/activities/mixed-1", "mixed post", new[] { community3 });
 
         var response = await _http.GetAsync($"https://{AHost}/ap/v1/c/mixed/feed?limit=10");
         // The feed must still return 200 (a broken remote must not fail the whole feed).
@@ -197,8 +199,8 @@ public sealed class CommunityFeedRemoteMemberIntegrationTests : IDisposable
 
         var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
 
-        // alice's post is present; dave's (unreachable) outbox contributes nothing.
+        // alice's mixed post is present; dave's (unreachable) outbox contributes nothing.
         Assert.Single(items);
-        Assert.Equal($"{_alice.Value}/activities/a-1", items[0]);
+        Assert.Equal($"{_alice.Value}/activities/mixed-1", items[0]);
     }
 }

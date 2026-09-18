@@ -1,0 +1,3 @@
+# NOTE: Lemmy 0.19.20 uses hjson config, not toml. The active config is config.hjson (this folder),
+# mounted into the container at /config/config.hjson by ../docker-compose.yml. This file is kept
+# only as a pointer to avoid confusion.

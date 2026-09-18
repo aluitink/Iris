@@ -1,0 +1,60 @@
+# Lemmy 0.19.20 server configuration for the Iris <-> Lemmy interop instance (Phase 135.1).
+#
+# hjson format (Lemmy 0.19 uses hjson, NOT toml). Mounted into the container at
+# /config/config.hjson by docker-compose.yml.
+#
+# This instance is deployed in its OWN folder (lemmy/), separate from the Iris app, and is
+# advertised under the public FQDN https://lemmy.luit.ink (the external reverse proxy
+# forwards lemmy.luit.ink:443 -> host:8091 -> this container's 8536). It runs on the shared
+# `irisweb_iris-web-net` Docker network so it can reach the Iris instances directly for federation.
+#
+# NOTE: lemmy.luit.ink is a dedicated FQDN for this interop instance.
+
+{
+  # The public hostname Lemmy advertises — the base of every Lemmy actor/object IRI
+  # (https://lemmy.luit.ink/c/<community>, https://lemmy.luit.ink/u/<user>).
+  hostname: "lemmy.luit.ink"
+
+  # Listen on 0.0.0.0:8536 (the container's port; only reachable on the shared Docker network —
+  # the nginx `proxy` service fronts it and maps host 8091 -> the proxy).
+  bind: "0.0.0.0"
+  port: 8536
+
+  # TLS is terminated by the external reverse proxy; Lemmy must be told it's behind TLS so it
+  # issues https IRIs (required for federation to work).
+  tls_enabled: true
+
+  # Postgres (the dedicated `lemmy-db` service in this compose file — named `lemmy-db` to avoid a
+  # DNS alias collision with Iris's `db` service on the shared `iris-web-net` network).
+  database: {
+    host: "lemmy-db"
+    port: 5432
+    user: "lemmy"
+    password: "lemmy-test-pw"
+    database: "lemmy"
+    pool_size: 10
+  }
+
+  # pictrs is not deployed for this interop instance (no image hosting needed). Point it at a
+  # non-routable address with image_mode None so Lemmy never tries to reach it; post content is
+  # text-only for interop.
+  pictrs: {
+    url: "http://127.0.0.1:1/"
+    image_mode: "None"
+  }
+
+  # First-run setup: creates the admin user + site when the DB is empty. Only used on the very
+  # first start. The site's registration_mode / federation settings are then set via the API.
+  setup: {
+    admin_username: "lemmyadmin"
+    # 10-60 chars required.
+    admin_password: "lemmy-interop-admin-pw"
+    site_name: "Iris Lemmy Interop"
+  }
+
+  # Federation worker: keep the default (1 concurrent send per instance) — more than enough for
+  # manual interop driving.
+  federation: {
+    concurrent_sends_per_instance: 1
+  }
+}

@@ -1,6 +1,8 @@
 using Iris.Core;
+using Iris.Server.Caching;
 using Iris.Server.Identity;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -44,6 +46,7 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     private readonly IDeliveryService _delivery;
     private readonly ILocalActorResolver _localActors;
     private readonly IdMinter _idMinter;
+    private readonly LocalCollectionPageCache? _collectionCache;
 
     /// <summary>
     /// Initializes a new <see cref="FollowActivityHandler"/>.
@@ -54,12 +57,18 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
     /// interpreted only when the recipient is local).</param>
     /// <param name="idMinter">The server-side id authority (mints the id of the <c>Accept</c> the handler
     /// authors in response to an inbound follow — decision 055).</param>
+    /// <param name="collectionCache">The local collection-page response cache (invalidated after an
+    /// inbound follow so the recipient's <c>followers</c> page re-renders). May be null in tests.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public FollowActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
         ILocalActorResolver localActors,
-        IdMinter idMinter)
+        IdMinter idMinter,
+        LocalCollectionPageCache? collectionCache = null,
+        ILogger<FollowActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
@@ -69,6 +78,7 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
         _delivery = delivery;
         _localActors = localActors;
         _idMinter = idMinter;
+        _collectionCache = collectionCache;
     }
 
     /// <inheritdoc/>
@@ -148,6 +158,10 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
                 .RecordFollowAsync(followerIri.Value, delivery.RecipientIri, ct)
                 .ConfigureAwait(false);
 
+            // Invalidate the recipient's followers collection page so the next non-?refresh read
+            // re-renders with the new follower (mirrors the outbox-page invalidation contract).
+            _collectionCache?.Invalidate(new Iri(delivery.RecipientIri + "/followers"));
+
             // Surface the inbound follow in the followed actor's own outbox (the activity store alone is
             // not enumerable by the UI). The sample's "Inbound follows" list reads the followed actor's
             // outbox for Follow activities so the operator can see — and Accept/Reject — the request.
@@ -159,6 +173,14 @@ public sealed class FollowActivityHandler : ActivityHandlerBase<Follow>
 
             if (await IsManuallyApprovingAsync(delivery.RecipientIri, ct).ConfigureAwait(false))
             {
+                // The follow is held for approval: record a pending follow-request edge (Phase 100) so
+                // the actor's follow-approval queue (GET /local/v1/u/{handle}/requests) lists it. The
+                // edge is independent of the provisional Follow edge (already recorded above) and is
+                // removed when the operator Accepts or Rejects (RecordFollowDecisionLocalAsync).
+                await _persistence.Follows
+                    .RecordFollowRequestAsync(followerIri.Value, delivery.RecipientIri, ct)
+                    .ConfigureAwait(false);
+
                 return;
             }
         }

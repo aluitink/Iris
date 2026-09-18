@@ -103,6 +103,24 @@ public interface IActivityStore
     public Task<IReadOnlyList<IObject>> GetAllActivitiesAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Returns the stored activities of the given <paramref name="activityType"/> that reference the
+    /// given <paramref name="objectIri"/> as their <c>object</c> (e.g. all <c>Like</c> activities
+    /// targeting a specific object, or all <c>Announce</c> activities for a specific object).
+    /// </summary>
+    /// <param name="objectIri">The IRI of the object the activities reference.</param>
+    /// <param name="activityType">The ActivityStreams type to filter by (e.g. <c>"Like"</c>,
+    /// <c>"Announce"</c>).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the matching activities (possibly empty).</returns>
+    /// <remarks>
+    /// Phase 141.2: an indexed per-object lookup that replaces the O(total activities) full-table sweep
+    /// (<see cref="GetAllActivitiesAsync"/>) previously used by the per-object <c>likes</c>/<c>shares</c>
+    /// collection handlers. The <c>(ActivityType, ObjectIri)</c> composite index makes this O(k) where k
+    /// is the number of matching activities, not O(n) where n is the total activity count.
+    /// </remarks>
+    public Task<IReadOnlyList<IObject>> GetActivitiesForObjectAsync(Iri objectIri, string activityType, CancellationToken ct = default);
+
+    /// <summary>
     /// Returns the activities delivered to an actor's inbox (what was received, as opposed to the outbox,
     /// which is what the actor authored), newest first, as an <see cref="OrderedCollectionPage"/>-ready
     /// sequence of <see cref="IObjectOrLink"/>.

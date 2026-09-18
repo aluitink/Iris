@@ -191,6 +191,10 @@ public sealed class IrisRemoteCollectionFetcherTests
         public Task<IObject?> GetObjectAsync(Iri objectId, CancellationToken ct = default)
             => Task.FromResult<IObject?>(null);
 
+        public Task<LemmyPostScore?> GetLemmyPostScoreAsync(Iri iri, CancellationToken ct = default) => Task.FromResult<LemmyPostScore?>(null);
+        public Task<DeliveryResult> DislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+        public Task<DeliveryResult> UndislikeAsync(Iri objectIri, Iri actorIri, CancellationToken ct = default) => Task.FromResult(new DeliveryResult(202, true, ""));
+
         /// <inheritdoc/>
         public Task<Actor?> GetActorAsync(Iri actorId, CancellationToken ct = default)
             => Task.FromResult<Actor?>(null);
@@ -221,6 +225,10 @@ public sealed class IrisRemoteCollectionFetcherTests
 
         /// <inheritdoc/>
         public Task<DeliveryResult> RequestJoinAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> RequestLeaveAsync(Iri actorId, Iri communityIri, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
@@ -264,7 +272,11 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
-        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, CancellationToken ct = default)
+        public Task<DeliveryResult> CreateCommunityAsync(Iri actorId, string name, string displayName, string? description = null, CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> UpdateActorAsync(Iri actorId, Actor updatedActor, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
@@ -280,13 +292,34 @@ public sealed class IrisRemoteCollectionFetcherTests
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>
+        public Task<DeliveryResult> PostQuestionAsync(
+            Iri actorId,
+            string content,
+            IEnumerable<string> options,
+            DateTime? endsAt = null,
+            bool multiple = false,
+            IEnumerable<Iri>? to = null,
+            IEnumerable<Iri>? cc = null,
+            IEnumerable<Iri>? mentions = null,
+            IEnumerable<string>? hashtags = null,
+            Func<string, string?>? hashtagHrefFactory = null,
+            CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
         public Task<DeliveryResult> PostReplyAsync(
             Iri actorId,
             Iri parentIri,
             string content,
             IEnumerable<Iri>? mentions = null,
             IEnumerable<Iri>? to = null,
+            IEnumerable<string>? hashtags = null,
+            Iri? conversationIri = null,
             CancellationToken ct = default)
+            => Task.FromResult(new DeliveryResult(202, true, ""));
+
+        /// <inheritdoc/>
+        public Task<DeliveryResult> UpdateNoteAsync(Iri actorId, Note updatedNote, CancellationToken ct = default)
             => Task.FromResult(new DeliveryResult(202, true, ""));
 
         /// <inheritdoc/>

@@ -1,0 +1,108 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.JSInterop
+@using Iris.Web.Client.Components
+@using Iris.Web.Client.Accounts
+
+<div class="page">
+    <header class="main-header">
+        <a class="brand" href="/">
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+            <span class="brand-text">Iris</span>
+        </a>
+        <button class="nav-toggle" @onclick="ToggleMenu" aria-label="Menu" aria-expanded="_menuOpen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <AuthorizeView>
+            <Authorized>
+                <nav class="main-nav @(_menuOpen ? "nav-open" : "")">
+                    <a href="/home">Home</a>
+                    <a href="/compose" class="nav-compose">New post</a>
+                    <a href="/notifications">Notifications<NotificationBadge /></a>
+                    <a href="/directory">Directory</a>
+                    <a href="/communities">Communities</a>
+                    <a href="/profile">Profile</a>
+                    <a href="/settings">Settings</a>
+                    <a href="/search">Search</a>
+                    <a href="/logout">Log out</a>
+                </nav>
+            </Authorized>
+            <NotAuthorized>
+                <nav class="main-nav @(_menuOpen ? "nav-open" : "")">
+                    <a href="/login">Log in</a>
+                    <a href="/register">Register</a>
+                </nav>
+            </NotAuthorized>
+        </AuthorizeView>
+    </header>
+
+    <main class="main-content">
+        <ErrorBoundary>
+            <ChildContent>
+                @Body
+            </ChildContent>
+            <ErrorContent Context="error">
+                <div class="card error-boundary-card" role="alert">
+                    <h1>Something went wrong</h1>
+                    <p>
+                        An unexpected error interrupted this page. Your account and data are safe —
+                        please try again.
+                    </p>
+                    <p class="error-boundary-actions">
+                        <button type="button" class="button" @onclick="ReloadAppAsync">Try again</button>
+                        <a class="button button--secondary" href="/home">Go home</a>
+                    </p>
+                    <!--
+                        The exception (Context) is deliberately NOT rendered: showing the raw message
+                        or stack trace would leak internal details to users. The full exception is
+                        already logged to the console for diagnosis.
+                    -->
+                </div>
+            </ErrorContent>
+        </ErrorBoundary>
+    </main>
+
+    <footer class="main-footer">
+        <div class="content">
+            <span>Iris — an ActivityPub social platform.</span>
+            <span class="footer-links">
+                <a href="/ap/v1/nodeinfo/2.0">NodeInfo</a>
+                <a href="/ap/v1/webfinger?resource=acct%3Aadmin%40iris.luit.ink">WebFinger</a>
+                <a href="/ap/v1/health">Status</a>
+                @if (IsAdmin)
+                {
+                    <a href="/admin/instance">Admin</a>
+                    <a href="/admin/moderation">Moderation</a>
+                    <a href="/admin/dashboard">Dashboard</a>
+                }
+            </span>
+        </div>
+    </footer>
+</div>
+
+@code {
+    [Inject]
+    private IJSRuntime Js { get; set; } = default!;
+
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    private bool _menuOpen;
+
+    // Only show the admin links to administrators; a regular user clicking them would
+    // just be bounced to sign-in (they're already signed in), which is confusing.
+    private bool IsAdmin => Session.IsSignedIn &&
+        string.Equals(Session.Role, AdminGuard.AdminRole, StringComparison.Ordinal);
+
+    private void ToggleMenu() => _menuOpen = !_menuOpen;
+
+    /// <summary>
+    /// Forces a full client reload (reboots the WASM host) to recover from an unhandled render
+    /// exception — the same recovery the default Blazor error UI's "Reload" button performs. A plain
+    /// in-circuit navigation would not clear the broken render, so a hard reload is used.
+    /// </summary>
+    private async Task ReloadAppAsync()
+    {
+        await Js.InvokeVoidAsync("eval", "window.location.reload()");
+    }
+}

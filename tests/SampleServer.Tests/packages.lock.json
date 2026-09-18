@@ -114,7 +114,7 @@
       "iris.core": {
         "type": "Project",
         "dependencies": {
-          "BouncyCastle.Cryptography": "[2.4.0, )",
+          "BouncyCastle.Cryptography": "[2.7.0, )",
           "KristofferStrube.ActivityStreams": "[0.2.4, )"
         }
       },
@@ -140,9 +140,9 @@
       },
       "BouncyCastle.Cryptography": {
         "type": "CentralTransitive",
-        "requested": "[2.4.0, )",
-        "resolved": "2.4.0",
-        "contentHash": "SwXsAV3sMvAU/Nn31pbjhWurYSjJ+/giI/0n6tCrYoupEK34iIHCuk3STAd9fx8yudM85KkLSVdn951vTng/vQ=="
+        "requested": "[2.7.0, )",
+        "resolved": "2.7.0",
+        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
       },
       "KristofferStrube.ActivityStreams": {
         "type": "CentralTransitive",

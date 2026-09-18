@@ -57,30 +57,47 @@ public sealed class DefaultMediaWarmer : IMediaWarmer
         }
 
         var instanceHost = SafeHost(instanceBase);
-        foreach (var (mediaIri, _) in obj.GetMediaAttachments())
-        {
-            // A same-origin attachment (the instance's own /ap/v1/media/{id}) is already served
-            // locally; no warm needed. Only cross-origin URLs are warmed.
-            if (mediaIri.IsAbsolute && SafeHost(mediaIri) == instanceHost)
-            {
-                continue;
-            }
 
-            try
+        // Warm all rich attachments (Document, Audio, Video, Image, Link) — not just Image.
+        // Each attachment's main URL and optional preview URL are warmed.
+        foreach (var att in obj.GetRichAttachments())
+        {
+            await WarmIriAsync(att.Url, instanceBase, instanceHost, ct).ConfigureAwait(false);
+            if (att.Preview is { } preview)
             {
-                var fetched = await _fetcher.FetchAsync(mediaIri, ct).ConfigureAwait(false);
-                if (fetched is not null)
-                {
-                    await _persistence.Media
-                        .PutBySourceUrlAsync(mediaIri, fetched.Content, fetched.ContentType, instanceBase, ct)
-                        .ConfigureAwait(false);
-                }
+                await WarmIriAsync(preview, instanceBase, instanceHost, ct).ConfigureAwait(false);
             }
-            catch (Exception)
+        }
+    }
+
+    /// <summary>
+    /// Warms a single media IRI (best-effort, non-fatal). Same-origin IRIs are skipped (already
+    /// served locally). A fetch/store failure is swallowed — the proxy fetches lazily on the
+    /// first hit if this warm is missed.
+    /// </summary>
+    private async Task WarmIriAsync(Iri mediaIri, Iri instanceBase, string instanceHost, CancellationToken ct)
+    {
+        // A same-origin attachment (the instance's own /ap/v1/media/{id}) is already served
+        // locally; no warm needed. Only cross-origin URLs are warmed.
+        if (mediaIri.IsAbsolute && SafeHost(mediaIri) == instanceHost)
+        {
+            return;
+        }
+
+        try
+        {
+            var fetched = await _fetcher.FetchAsync(mediaIri, ct).ConfigureAwait(false);
+            if (fetched is not null)
             {
-                // Best-effort: a warm failure for one attachment never aborts the warm or the store
-                // path. The proxy fetches lazily on the first hit if this warm is missed.
+                await _persistence.Media
+                    .PutBySourceUrlAsync(mediaIri, fetched.Content, fetched.ContentType, instanceBase, ct)
+                    .ConfigureAwait(false);
             }
+        }
+        catch (Exception)
+        {
+            // Best-effort: a warm failure for one attachment never aborts the warm or the store
+            // path. The proxy fetches lazily on the first hit if this warm is missed.
         }
     }
 

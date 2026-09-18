@@ -1,6 +1,8 @@
 using Iris.Core;
 using Iris.Server.Media;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Inbox;
@@ -70,6 +72,8 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     private readonly ILocalActorResolver _localActors;
     private readonly IMediaWarmer _mediaWarmer;
     private readonly IOptions<ActivityPubServerOptions> _options;
+    private readonly IActorDocumentFetcher? _actorDocuments;
+    private readonly IInboundTagNormalizer? _tagNormalizer;
 
     /// <summary>
     /// Initializes a new <see cref="CreateActivityHandler"/>.
@@ -84,13 +88,26 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
     /// attachments, Phase 20.4 (d); a no-op when eager-warm is disabled).</param>
     /// <param name="options">The server options (the instance base IRI, used to classify an attachment
     /// as same-origin when warming).</param>
+    /// <param name="actorDocuments">The actor document fetcher (fetches + persists the embedded object's
+    /// <c>attributedTo</c> actor — the posting community, for a community-attributed post — so the remote
+    /// instance can resolve its name/icon for display, Phase 136.6). May be <see langword="null"/> (no
+    /// community-identity warming).</param>
+    /// <param name="tagNormalizer">The inbound tag normalizer (adds <c>Mention</c>/<c>Hashtag</c> tags for
+    /// <c>@mention</c>/<c>#hashtag</c> tokens in the note's content that are not already declared in its
+    /// <c>tag</c> — Phase 156, Slice C). May be <see langword="null"/> (no inbound tag resolution — the
+    /// note is stored as the remote server sent it).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
     public CreateActivityHandler(
         IPersistenceProvider persistence,
         IDeliveryService delivery,
         ILocalActorResolver localActors,
         IMediaWarmer mediaWarmer,
-        IOptions<ActivityPubServerOptions> options)
+        IOptions<ActivityPubServerOptions> options,
+        IActorDocumentFetcher? actorDocuments = null,
+        IInboundTagNormalizer? tagNormalizer = null,
+        ILogger<CreateActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(delivery);
@@ -102,6 +119,8 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         _localActors = localActors;
         _mediaWarmer = mediaWarmer;
         _options = options;
+        _actorDocuments = actorDocuments;
+        _tagNormalizer = tagNormalizer;
     }
 
     /// <inheritdoc/>
@@ -210,6 +229,40 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
         var embedded = activity.ExtractEmbeddedObject();
         if (embedded is not null)
         {
+            // 136.19 (re-animation guard): if the object's IRI already holds a Tombstone (the object was
+            // deleted), do not re-store the live content — a Create for a tombstoned IRI (a re-delivered
+            // activity, a re-post, or a backfill re-fetch) would otherwise overwrite the tombstone and
+            // resurrect the deleted object. The Tombstone is the authoritative final state.
+            var objectIriCheck = embedded.ResolveObjectIri();
+            if (objectIriCheck is { } oi
+                && await _persistence.Objects.TryGetObjectAsync(oi, out var existing, ct).ConfigureAwait(false)
+                && existing is Tombstone)
+            {
+                return;
+            }
+
+            if (embedded.Published is null)
+            {
+                embedded.Published = activity.Published ?? DateTime.UtcNow;
+            }
+
+            // 57.3: ensure the embedded object carries a conversationId (the Pleroma/Misskey thread-root
+            // IRI) before it is stored. If the remote server already set one (Pleroma/Misskey), it is
+            // preserved. Otherwise the server derives it (top-level → own IRI; reply → parent's
+            // conversationId or parent IRI). Best-effort: a missing parent leaves it unset.
+            await EnsureConversationIdAsync(embedded, ct).ConfigureAwait(false);
+
+            // 156 (Slice C): resolve any @mention / #hashtag tokens in the note's content that are not
+            // already declared in its `tag` array, adding the structured tags so the note renders with
+            // tappable links (display-side linkify, Slice B) and carries mention/hashtag references.
+            // Best-effort + bounded + non-federating (see IInboundTagNormalizer); a no-op when the remote
+            // server already shipped a complete `tag` array (the common case) or when no normalizer is
+            // registered. Runs pre-store, mirroring EnsureConversationIdAsync.
+            if (_tagNormalizer is not null)
+            {
+                await _tagNormalizer.NormalizeAsync(embedded, ct).ConfigureAwait(false);
+            }
+
             await _persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
 
             // Phase 20.4 (d): eager-warm the stored object's cross-origin media attachments (best-effort;
@@ -243,6 +296,114 @@ public sealed class CreateActivityHandler : ActivityHandlerBase<Create>
                 await _persistence.Replies
                     .RecordReplyAsync(parent, child, ct)
                     .ConfigureAwait(false);
+            }
+
+            // Phase 136.6 (community provenance): when the stored object is attributed to a REMOTE
+            // actor — the posting community, for a community-attributed post (a member posting with the
+            // community in the Note's <c>attributedTo</c>) — fetch + persist that actor's document so the
+            // instance can resolve the community's name/icon for display. The signing member is already
+            // persisted by the signature-verification path; the attributedTo community is not (the
+            // persister only ever saw the signer), so without this the community is known only as an
+            // opaque IRI on the object. A LOCAL attributedTo (a local person or community) is skipped —
+            // its document is already local. Best-effort: a fetch failure (an unreachable peer) leaves
+            // the object stored and does not fail the post.
+            if (_actorDocuments is not null)
+            {
+                await PersistAttributedToActorAsync(embedded, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fetches + persists the stored object's <c>attributedTo</c> actor document when it is a remote
+    /// actor (the posting community for a community-attributed post, Phase 136.6). The fetch goes through
+    /// <see cref="IActorDocumentFetcher.GetActorAsync(Iri, CancellationToken)"/> (cached in the
+    /// <c>RemoteActorCache</c>, and persisted to the durable community/actor store for a Group/actor), so a
+    /// re-fetch within the cache TTL is cheap and the durable write is idempotent. A local attributedTo
+    /// (a local person or community) and a missing attributedTo are no-ops.
+    /// </summary>
+    /// <param name="embedded">The stored embedded object (a <see cref="IObject"/> — typically a
+    /// <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task PersistAttributedToActorAsync(IObject embedded, CancellationToken ct)
+    {
+        var attributedTo = embedded.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        if (attributedTo is not { } iri)
+        {
+            return;
+        }
+
+        // A local attributedTo (a local person or community) is already known locally — skip the fetch.
+        if (await _localActors.IsLocalActorAsync(iri, ct).ConfigureAwait(false)
+            || await _persistence.Communities.TryGetCommunityAsync(iri, out _, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // Best-effort: a fetch failure (an unreachable remote peer) is logged by the fetcher and does not
+        // fail the post — the object is already stored and servable.
+        await _actorDocuments!.GetActorAsync(iri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ensures an embedded object carries a <c>conversationId</c> (the Pleroma/Misskey thread-root IRI)
+    /// before it is stored. If the object already has one (e.g. set by a Pleroma/Misskey server), it is
+    /// preserved. Otherwise, for a reply (its <c>inReplyTo</c> is set), the parent's <c>conversationId</c>
+    /// is looked up; if the parent has one it is copied, otherwise the parent's own IRI is used. For a
+    /// top-level object, the object's own IRI is used.
+    /// </summary>
+    /// <remarks>
+    /// 57.3: Pleroma and Misskey set a stable thread-root IRI on every note in a conversation. This
+    /// method runs on the server (the object-id authority) so it has access to the stored parent's
+    /// <c>conversationId</c>. Best-effort: a failure to fetch the parent (a network error) leaves the
+    /// conversation ID unset rather than failing the post. When the parent is on a remote instance this
+    /// instance has not stored (an Iris reply to a Lemmy post — Phase 136.7), the parent's IRI is used as
+    /// the thread root, so the reply still anchors to its conversation.
+    /// </remarks>
+    /// <param name="embedded">The embedded object (a <see cref="IObject"/> — typically a <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private async Task EnsureConversationIdAsync(IObject embedded, CancellationToken ct)
+    {
+        if (embedded.GetConversationId() is not null)
+        {
+            return;
+        }
+
+        var selfIri = embedded.ResolveObjectIri();
+
+        var parentIri = embedded.GetParentIri();
+        if (parentIri is null)
+        {
+            if (selfIri is { } self)
+            {
+                embedded.SetConversationId(self);
+            }
+            return;
+        }
+
+        if (parentIri is { } parent)
+        {
+            if (await _persistence.Objects.TryGetObjectAsync(parent, out var parentObj, ct).ConfigureAwait(false))
+            {
+                var parentConv = parentObj.GetConversationId();
+                if (parentConv is { } conv)
+                {
+                    embedded.SetConversationId(conv);
+                }
+                else
+                {
+                    embedded.SetConversationId(parent);
+                }
+            }
+            else
+            {
+                // Phase 136.7 (cross-instance thread integrity): the reply's parent lives on a remote
+                // instance this instance has not stored (an Iris reply to a Lemmy post — the parent was
+                // only ever seen by IRI in the reply's inReplyTo). The parent's own conversationId is
+                // unknown, but the parent's IRI is the stable thread root: anchor the reply to it so
+                // parent-child reconstruction (and a client's thread walk) survives the cross-origin hop.
+                // This mirrors the local-parent / no-conversationId branch above (the parent IRI as root).
+                embedded.SetConversationId(parent);
             }
         }
     }

@@ -24,6 +24,22 @@ public interface IActivityPubClientFactory
     public IActivityPubClient Create(ActivityPubClientOptions options, HttpMessageHandler httpHandler);
 
     /// <summary>
+    /// Creates a new <see cref="IActivityPubClient"/> with an optional outermost handler that wraps the
+    /// entire signed pipeline. The browser (WASM) session uses this to rewrite FQDN-addressed requests to
+    /// same-origin BEFORE they are signed (so the signature's <c>host</c> component matches the wire host
+    /// the server receives).
+    /// </summary>
+    /// <param name="options">Client options (must include <see cref="ActivityPubClientOptions.ActorId"/>).</param>
+    /// <param name="httpHandler">The transport handler (e.g. <see cref="System.Net.Http.HttpClientHandler"/>).</param>
+    /// <param name="outermost">An optional outermost handler wrapping the signed pipeline, or null.</param>
+    /// <returns>A configured <see cref="IActivityPubClient"/> that owns its <see cref="System.Net.Http.HttpClient"/>.</returns>
+    public IActivityPubClient Create(
+        ActivityPubClientOptions options,
+        HttpMessageHandler httpHandler,
+        System.Net.Http.DelegatingHandler? outermost)
+        => Create(options, httpHandler);
+
+    /// <summary>
     /// Creates a new <see cref="ILocalModerationClient"/> — the client for local, non-federated
     /// moderation decisions (a mute, F-07, and a relay subscription, F-06).
     /// </summary>
@@ -35,6 +51,7 @@ public interface IActivityPubClientFactory
     /// Not owned by the returned client (a provided default handler is shared across calls).</param>
     /// <returns>A configured <see cref="ILocalModerationClient"/>.</returns>
     public ILocalModerationClient CreateLocalModerationClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler);
+
 
     /// <summary>
     /// Creates a new <see cref="IMediaClient"/> — the client for uploading a note's attachment (Phase
@@ -49,4 +66,5 @@ public interface IActivityPubClientFactory
     /// Not owned by the returned client (a provided default handler is shared across calls).</param>
     /// <returns>A configured <see cref="IMediaClient"/>.</returns>
     public IMediaClient CreateMediaClient(ActivityPubClientOptions options, HttpMessageHandler httpHandler);
+
 }

@@ -1,4 +1,5 @@
 using Iris.Core;
+using Iris.Core.Identity;
 using Iris.Server;
 using KristofferStrube.ActivityStreams;
 
@@ -53,5 +54,79 @@ public sealed class InMemoryObjectStore : IObjectStore
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult<IReadOnlyList<IObject>>(_objects.Values.ToList());
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> ListByActorAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var results = _objects.Values
+            .Where(o =>
+            {
+                var attributedTo = (o as KristofferStrube.ActivityStreams.Object)?.AttributedTo?.FirstOrDefault();
+                var iri = attributedTo?.ResolveObjectIri();
+                return iri is not null && iri == actorIri;
+            })
+            .ToList();
+        return Task.FromResult<IReadOnlyList<IObject>>(results);
+    }
+
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<IObject>> SearchObjectsAsync(string? query, int limit, int offset, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        var matches = _objects.Values
+            .Where(o => o is not Tombstone && o is not Actor)
+            .Where(o => !hasQuery || MatchesContentOrName(o, normalized!))
+            .OrderBy(o => o.Id ?? string.Empty, StringComparer.Ordinal)
+            .Skip(offset)
+            .Take(limit)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<IObject>>(matches);
+    }
+
+    /// <inheritdoc/>
+    public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var normalized = query?.Trim();
+        var hasQuery = !string.IsNullOrWhiteSpace(normalized);
+
+        var count = _objects.Values
+            .Count(o => o is not Tombstone && o is not Actor && (!hasQuery || MatchesContentOrName(o, normalized!)));
+
+        return Task.FromResult(count);
+    }
+
+    /// <summary>
+    /// Returns true when any value in the object's multi-valued <c>content</c>/<c>name</c> contains
+    /// <paramref name="query"/> as a case-insensitive substring (the same matching the global search
+    /// service applies to the content pass).
+    /// </summary>
+    private static bool MatchesContentOrName(IObject obj, string query)
+    {
+        return ContainsInStrings(obj.Content, query) || ContainsInStrings(obj.Name, query);
+    }
+
+    private static bool ContainsInStrings(IEnumerable<string>? values, string query)
+    {
+        if (values is null)
+        {
+            return false;
+        }
+
+        foreach (var value in values)
+        {
+            if (value is not null && value.Contains(query, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

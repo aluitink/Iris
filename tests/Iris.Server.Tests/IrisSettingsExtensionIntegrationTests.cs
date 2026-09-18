@@ -23,7 +23,7 @@ namespace Iris.Server.Tests;
 /// extension carries the IRI of the settings surface (the actor/community's outbox — where AP-native
 /// <c>Add</c>/<c>Remove</c> settings activities are published). The <c>iris:capabilities</c> list also
 /// includes <c>"settings"</c> when the gate is present. A client reading the document via
-/// <see cref="IrisDocumentExtensions.GetSettingsIri(Object, string)"/> can discover the settings surface
+/// <see cref="IrisDocumentExtensions.GetSettingsIri(IObject, string)"/> can discover the settings surface
 /// from the document alone (no hardcoded endpoint paths).
 /// </summary>
 public sealed class IrisSettingsExtensionIntegrationTests : IDisposable

@@ -33,8 +33,8 @@ public sealed class CommunityFeedServiceModerationTests
         _communityIri = TestSeeder.SeedCommunity(_persistence, AHost, Community);
         TestSeeder.AddMember(_persistence, _communityIri, _aliceIri);
         TestSeeder.AddMember(_persistence, _communityIri, _bobIri);
-        TestSeeder.AddCreateActivity(_persistence, _aliceIri, $"{_aliceIri.Value}/activities/create-1", "a GARDEN post");
-        TestSeeder.AddCreateActivity(_persistence, _bobIri, $"{_bobIri.Value}/activities/create-1", "about weather");
+        TestSeeder.AddCreateActivity(_persistence, _aliceIri, $"{_aliceIri.Value}/activities/create-1", "a GARDEN post", new[] { _communityIri });
+        TestSeeder.AddCreateActivity(_persistence, _bobIri, $"{_bobIri.Value}/activities/create-1", "about weather", new[] { _communityIri });
     }
 
     private CommunityFeedService ServiceWithModeration()
@@ -122,11 +122,14 @@ public sealed class CommunityFeedServiceModerationTests
         TestSeeder.AddMember(_persistence, deltaIri, _bobIri);
         await _persistence.Communities.AddBlockAsync(_communityIri, _bobIri);
 
+        // Seed a delta-tagged post for bob (the constructor-seeded post is iris-tagged only).
+        TestSeeder.AddCreateActivity(_persistence, _bobIri, $"{_bobIri.Value}/activities/create-delta", "delta post", new[] { deltaIri });
+
         var deltaFeed = await ServiceWithModeration().GetFeedAsync(deltaIri);
         var irisFeed = await ServiceWithModeration().GetFeedAsync(_communityIri);
 
-        Assert.Contains(deltaFeed, HasActivityId($"{_bobIri.Value}/activities/create-1"));
-        Assert.DoesNotContain(irisFeed, HasActivityId($"{_bobIri.Value}/activities/create-1"));
+        Assert.Contains(deltaFeed, HasActivityId($"{_bobIri.Value}/activities/create-delta"));
+        Assert.DoesNotContain(irisFeed, HasActivityId($"{_bobIri.Value}/activities/create-delta"));
     }
 
     // --- Helpers ----------------------------------------------------------------------

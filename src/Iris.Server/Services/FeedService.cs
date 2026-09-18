@@ -1,5 +1,6 @@
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Identity;
 using KristofferStrube.ActivityStreams;
 using Microsoft.Extensions.Options;
 using CollectionPage = Iris.Core.Collections.CollectionPage;
@@ -7,9 +8,10 @@ using CollectionPage = Iris.Core.Collections.CollectionPage;
 namespace Iris.Server.Services;
 
 /// <summary>
-/// The default <see cref="IFollowFeedService"/> (F-14): merges an actor's local follows' outboxes (read
-/// from the local activity store) with the remote follows' outboxes (fetched over the wire, walking each
-/// outbox's pages) into a single newest-first, de-duplicated, capped feed.
+/// The default <see cref="IFollowFeedService"/> (F-14): merges the actor's <em>own</em> outbox (read from
+/// the local activity store) with the local follows' outboxes (read from the local store) and the remote
+/// follows' outboxes (fetched over the wire, walking each outbox's pages) into a single newest-first,
+/// de-duplicated, capped feed.
 /// </summary>
 /// <remarks>
 /// For each followed actor the service reads (local) or walks (remote) the outbox's first
@@ -29,6 +31,16 @@ namespace Iris.Server.Services;
 /// follow is kept, only its content is hidden). When the service is constructed without a moderation
 /// store (moderation disabled) every follow is merged (no filtering). The check is by the follow's actor
 /// IRI (the edge is recorded on the actor IRI), so it applies uniformly to local and remote follows.
+/// </remarks>
+/// <remarks>
+/// <strong>Reply filtering (117.1, thread-aware feed).</strong> Replies from followed actors are excluded
+/// from the home feed (they appear under the parent post's replies section instead). A reply is detected
+/// deterministically via the content object's <c>inReplyTo</c> field (the primary signal); when
+/// <c>inReplyTo</c> is absent, the audience heuristic is used as a fallback (a non-public audience
+/// indicates a directed reply). The actor's <em>own</em> replies are always kept in the feed. The
+/// <c>threadDepth</c> parameter (117.1) enables inclusion of replies up to a given depth:
+/// when 1, first-level replies to followed actors' top-level posts are included; when 2, second-level
+/// replies are also included. Depth 0 (default) filters all replies.
 /// </remarks>
 public sealed class FeedService : IFollowFeedService
 {
@@ -75,32 +87,49 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, CancellationToken ct = default)
     {
-        var feed = await BuildFeedAsync(actorIri, ct).ConfigureAwait(false);
+        var feed = await BuildFeedAsync(actorIri, threadDepth, ct).ConfigureAwait(false);
 
         // A non-empty query filters the feed to the matching items (the same content/name match as the
         // community feed's ?q filter, F-23 / 21.4.2): an item matches when its content/name (or, for
         // activities, the content/name of each referenced object) contains the query, case-insensitively.
         if (!string.IsNullOrWhiteSpace(query))
         {
-            return FilterFeed(feed, query);
+            feed = FilterFeed(feed, query);
+        }
+
+        // A non-empty activityType filters the feed to only activities of that type (e.g. "Create" to
+        // show only posts, excluding Flag/Block/Like/Announce activities).
+        if (!string.IsNullOrWhiteSpace(activityType))
+        {
+            feed = FilterFeedByType(feed, activityType);
         }
 
         return feed;
     }
 
     /// <summary>
-    /// Builds the unfiltered followed feed for the given actor: the union of the actor's local and remote
-    /// follows' outbox items, newest-first, de-duplicated, capped by <see cref="FeedOptions"/>.
+    /// Builds the unfiltered followed feed for the given actor: the actor's <em>own</em> outbox items plus
+    /// the union of the actor's local and remote follows' outbox items, newest-first, de-duplicated, capped
+    /// by <see cref="FeedOptions"/>.
     /// </summary>
-    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, CancellationToken ct)
+    /// <remarks>
+    /// The actor's own outbox is always merged in (54.17): a home timeline shows the signed-in actor's own
+    /// posts alongside the posts of the actors they follow. The actor is always local here (the feed
+    /// endpoint only resolves local actors), so their outbox is read from the local store. The own-outbox
+    /// items are prepended before the followed actors' items; <see cref="TruncateDedup"/> de-duplicates by
+    /// IRI (a post the actor made cannot also appear in a follow's outbox, but the de-dup is a cheap
+    /// safeguard) and caps the result to <see cref="FeedOptions.MaxItems"/>.
+    /// </remarks>
+    /// <param name="actorIri">The local actor whose feed is being built.</param>
+    /// <param name="threadDepth">When non-null and > 0, replies (from both the actor's own outbox and
+    /// followed actors' outboxes) are included in the feed (117.1, 117.5). When null or 0, all replies
+    /// are filtered out — the home timeline shows only top-level content.</param>
+    /// <param name="ct">Cancellation token.</param>
+    private async Task<IReadOnlyList<IObjectOrLink>> BuildFeedAsync(Iri actorIri, int? threadDepth, CancellationToken ct)
     {
         var followed = await _persistence.Follows.GetFollowingAsync(actorIri, ct).ConfigureAwait(false);
-        if (followed.Count == 0)
-        {
-            return [];
-        }
 
         // Deterministic order across follows (IRI order), like the community feed.
         var ordered = followed.OrderBy(f => f.Value, StringComparer.Ordinal).ToList();
@@ -119,26 +148,93 @@ public sealed class FeedService : IFollowFeedService
             .ConfigureAwait(false);
 
         var feed = new List<IObjectOrLink>();
-        foreach (var followIri in ordered)
+
+        // The actor's own posts (54.17): included regardless of follows. The actor is local (the feed
+        // endpoint only resolves local actors), so read their outbox from the local store. Own replies
+        // to other actors' content are filtered out by default (117.5) — the home timeline shows
+        // top-level content; replies are visible on the parent post's page. The threadDepth parameter
+        // allows opting in to include own replies (consistent with the followed-actor reply filter).
+        foreach (var item in await _persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false))
         {
-            if (blocked.Contains(followIri) || muted.Contains(followIri))
+            if (threadDepth is not (> 0) && IsFollowReply(item))
             {
-                // The actor blocked or muted this follow: its content is excluded from the feed (F-07).
                 continue;
             }
 
-            IReadOnlyList<IObjectOrLink> items =
-                await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
-                    ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
-                    : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
+            feed.Add(item);
+        }
 
-            foreach (var item in items)
+        // 147.2: parallelize the per-follow fan-out. Previously each follow's outbox (local or
+        // remote) was awaited sequentially, so a feed with N remote follows took the SUM of all
+        // their fetch latencies (11 follows × 0.5–10 s = 7–10 s). With Task.WhenAll the total
+        // latency is bounded by the SLOWEST single follow (plus the local DB reads), not the sum.
+        // A failed or slow remote contributes an empty list (it must not fail the whole feed),
+        // preserving the existing "one broken remote must not fail the feed" guarantee.
+        var eligible = ordered
+            .Where(f => !blocked.Contains(f) && !muted.Contains(f))
+            .ToList();
+
+        var perFollow = await Task.WhenAll(
+            eligible.Select(async followIri =>
             {
-                feed.Add(item);
-            }
+                try
+                {
+                    IReadOnlyList<IObjectOrLink> items =
+                        await _localActors.IsLocalActorAsync(followIri, ct).ConfigureAwait(false)
+                            ? await _persistence.Activities.GetOutboxAsync(followIri, ct).ConfigureAwait(false)
+                            : await FetchRemoteOutboxAsync(followIri, ct).ConfigureAwait(false);
+
+                    return items
+                        .Where(item => threadDepth is (> 0) || !IsFollowReply(item))
+                        .ToList();
+                }
+                catch
+                {
+                    // A single broken follow must not fail the whole feed (147.2).
+                    return new List<IObjectOrLink>();
+                }
+            }));
+
+        // Merge in the deterministic IRI order of `eligible` (matches the previous sequential
+        // iteration order, so the feed is reproducible for a given set of follows).
+        for (var i = 0; i < eligible.Count; i++)
+        {
+            feed.AddRange(perFollow[i]);
         }
 
         return TruncateDedup(feed);
+    }
+
+    /// <summary>
+    /// Reports whether a feed item is a reply made by a followed actor (not a top-level post).
+    /// A reply is a <c>Create</c> activity whose content object has an <c>inReplyTo</c> field
+    /// (the deterministic primary signal). When <c>inReplyTo</c> is absent, the audience heuristic is
+    /// used as a fallback: a non-public audience (the <c>to</c>/<c>cc</c> field contains a specific
+    /// actor IRI, not just the public sentinel) indicates a directed reply. Top-level posts
+    /// (no <c>inReplyTo</c>, public-only audience) and non-<c>Create</c> activities (Announce, Like, etc.)
+    /// return <see langword="false"/>.
+    /// </summary>
+    private static bool IsFollowReply(IObjectOrLink item)
+    {
+        if (item is not Create create)
+        {
+            return false;
+        }
+
+        var contentObj = create.Object?.FirstOrDefault() as IObject;
+        if (contentObj is null)
+        {
+            return false;
+        }
+
+        // Primary signal: inReplyTo is set (deterministic, 117.1).
+        if (contentObj.GetParentIri() is not null)
+        {
+            return true;
+        }
+
+        // Fallback: non-public audience indicates a directed reply (Phase 101 heuristic).
+        return contentObj.GetAudienceIris().Count > 0;
     }
 
     /// <summary>
@@ -206,6 +302,30 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <summary>
+    /// Filters the feed items to those whose ActivityStreams <c>type</c> includes the given type
+    /// (case-sensitive, matching the standard ActivityStreams type names like <c>Create</c>, <c>Like</c>,
+    /// <c>Announce</c>, etc.). Non-activity items (plain objects) are excluded when a type filter is
+    /// active. The order is preserved.
+    /// </summary>
+    private static IReadOnlyList<IObjectOrLink> FilterFeedByType(IReadOnlyList<IObjectOrLink> feed, string activityType)
+    {
+        var matches = new List<IObjectOrLink>();
+        foreach (var item in feed)
+        {
+            if (item is Activity activity)
+            {
+                var type = activity.Type?.FirstOrDefault();
+                if (string.Equals(type, activityType, StringComparison.Ordinal))
+                {
+                    matches.Add(item);
+                }
+            }
+        }
+
+        return matches;
+    }
+
+    /// <summary>
     /// Walks a remote followed actor's outbox (up to <see cref="FeedOptions.PagesPerActor"/> pages) over
     /// the wire and returns the items. A remote that cannot be resolved or fetched contributes nothing.
     /// </summary>
@@ -265,9 +385,26 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <summary>
-    /// De-duplicates the merged items by IRI (keep the first occurrence) and truncates to
-    /// <see cref="FeedOptions.MaxItems"/>. Items without an IRI are kept (they cannot be de-duplicated).
+    /// De-duplicates the merged items and truncates to <see cref="FeedOptions.MaxItems"/>.
     /// </summary>
+    /// <remarks>
+    /// Two de-dup passes, applied in order, then the cap:
+    /// <list type="number">
+    /// <item><term>By item IRI</term> — keep the first occurrence of each activity IRI (a cross-post
+    /// scenario where the same activity IRI appears in two follows' outboxes).</item>
+    /// <item><term>By content object</term> — a single object can surface in the feed under more than one
+    /// activity type: an actor's own <c>Create</c> of a note, and a follower's <c>Announce</c> (boost) of
+    /// the same note, are two distinct activities with two distinct IRIs but one piece of content. Left
+    /// un-coalesced the home timeline renders the note twice (once as the author's post, once as the
+    /// boost). Items are grouped by the IRI of the object a <c>Create</c>/<c>Announce</c> references; per
+    /// group a single <em>representative</em> is kept — an item carrying the object <em>embedded</em>
+    /// (rich, renderable without an extra fetch) is preferred over a <em>link-only</em> reference, so the
+    /// author's content-bearing <c>Create</c> wins over a booster's bare <c>Announce</c>. Non-content
+    /// items (plain objects, and social activities such as <c>Like</c>/<c>Follow</c>) are never coalesced.</item>
+    /// </list>
+    /// The cap (<see cref="FeedOptions.MaxItems"/>) is applied last, so a duplicate consuming a slot does
+    /// not displace a legitimate item. Items without an IRI are kept (they cannot be de-duplicated).
+    /// </remarks>
     private IReadOnlyList<IObjectOrLink> TruncateDedup(IReadOnlyList<IObjectOrLink> items)
     {
         if (items.Count == 0)
@@ -275,26 +412,115 @@ public sealed class FeedService : IFollowFeedService
             return [];
         }
 
-        var seen = new HashSet<Iri>();
-        var result = new List<IObjectOrLink>(Math.Min(items.Count, _options.MaxItems));
+        // Pass 1: de-duplicate by item IRI (keep the first occurrence).
+        var seenIri = new HashSet<Iri>();
+        var iriDeduped = new List<IObjectOrLink>(items.Count);
         foreach (var item in items)
+        {
+            if (item is IObject { Id: { Length: > 0 } id })
+            {
+                if (!seenIri.Add(new Iri(id)))
+                {
+                    continue;
+                }
+            }
+
+            iriDeduped.Add(item);
+        }
+
+        // Pass 2: coalesce content items that reference the same object (a note surfaced as both a
+        // Create and an Announce renders once). The representative per object IRI is chosen below.
+        // repIndex[objIri] -> the index in `iriDeduped` of the item kept as the representative;
+        // repEmbedded[objIri] -> whether that representative carries the object embedded (a richer
+        // embedded item replaces an earlier link-only one, preserving the representative's position).
+        var repIndex = new Dictionary<Iri, int>();
+        var repEmbedded = new Dictionary<Iri, bool>();
+        var drop = new bool[iriDeduped.Count];
+        for (var i = 0; i < iriDeduped.Count; i++)
+        {
+            var (objIriOrNull, embedded) = ContentObjectIri(iriDeduped[i]);
+            if (objIriOrNull is not { } objIri)
+            {
+                continue; // not a content item referencing an object; never coalesced
+            }
+
+            // `objIri` is narrowed to a non-null Iri by the pattern above (the per-object key).
+
+            if (!repIndex.TryGetValue(objIri, out var existingIndex))
+            {
+                // First occurrence of this object: it is the representative.
+                repIndex[objIri] = i;
+                repEmbedded[objIri] = embedded;
+                continue;
+            }
+
+            // A later item references the same object. Keep the richer one as the representative.
+            if (embedded && !repEmbedded[objIri])
+            {
+                // The new item embeds the object and the current representative is link-only: promote the
+                // new item to the representative, but keep the representative's original position (the
+                // earlier slot) so the feed ordering is stable.
+                drop[existingIndex] = true;
+                repIndex[objIri] = i;
+                repEmbedded[objIri] = true;
+            }
+            else
+            {
+                // The new item is not strictly better (link-only, or the representative already embeds):
+                // it is a duplicate and is dropped.
+                drop[i] = true;
+            }
+        }
+
+        // Pass 3: emit the survivors (in order) capped to MaxItems.
+        var result = new List<IObjectOrLink>(Math.Min(iriDeduped.Count, _options.MaxItems));
+        for (var i = 0; i < iriDeduped.Count; i++)
         {
             if (result.Count >= _options.MaxItems)
             {
                 break;
             }
 
-            if (item is IObject { Id: { Length: > 0 } id })
+            if (drop[i])
             {
-                if (!seen.Add(new Iri(id)))
-                {
-                    continue;
-                }
+                continue;
             }
 
-            result.Add(item);
+            result.Add(iriDeduped[i]);
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Resolves the content object a <c>Create</c>/<c>Announce</c> references, for the by-object
+    /// coalescing pass. Returns the referenced object's IRI and whether it is <em>embedded</em> (the
+    /// activity carries the full object, renderable without an extra fetch) rather than a link-only
+    /// reference. Non-content activities and activities with no resolvable object IRI return
+    /// <c>(null, false)</c> — they are never coalesced by object.
+    /// </summary>
+    private static (Iri? ObjectIri, bool Embedded) ContentObjectIri(IObjectOrLink item)
+    {
+        if (item is not Activity activity)
+        {
+            return (null, false);
+        }
+
+        var type = activity.Type?.FirstOrDefault();
+        if (type is not ("Create" or "Announce"))
+        {
+            return (null, false);
+        }
+
+        var first = activity.Object?.FirstOrDefault();
+        var objIri = first?.ResolveObjectIri();
+        if (objIri is null)
+        {
+            return (null, false);
+        }
+
+        // Embedded when the activity carries the object as a full object (not a bare link) — that item
+        // is the one that renders the content (and the server-rendered engagement counters) in place.
+        return (objIri, first is IObject);
     }
 }

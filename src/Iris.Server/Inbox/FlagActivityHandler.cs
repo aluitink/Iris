@@ -1,5 +1,6 @@
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
 
 namespace Iris.Server.Inbox;
 
@@ -38,8 +39,10 @@ public sealed class FlagActivityHandler : ActivityHandlerBase<Flag>
     /// </summary>
     /// <param name="persistence">The persistence provider (provides the <see cref="IModerationStore"/>).</param>
     /// <param name="localActors">Resolves whether the flagger (or the flagged) is a local actor.</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
     /// <exception cref="ArgumentNullException">When any argument is null.</exception>
-    public FlagActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors)
+    public FlagActivityHandler(IPersistenceProvider persistence, ILocalActorResolver localActors, ILogger<FlagActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);

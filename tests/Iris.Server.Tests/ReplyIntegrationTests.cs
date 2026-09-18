@@ -206,6 +206,210 @@ public sealed class ReplyIntegrationTests : IAsyncLifetime
         Assert.Equal(Mentioned.Value, tags.Single().GetString());
     }
 
+    // --- E2E: a signed PostReplyAsync with a hashtag carries a Hashtag tag over the wire (54.14) ---
+
+    [Fact]
+    public async Task Client_PostReplyAsync_HashtagCarriesHashtagTag()
+    {
+        using var client = CreateClient();
+
+        var result = await client.PostReplyAsync(
+            ActorIri,
+            ParentIri,
+            "a fresh reply #hashtag-roundtrip",
+            hashtags: ["#hashtag-roundtrip"]);
+
+        // The signed Create reaches alice's inbox; the handler records the parent → child edge.
+        Assert.Equal(202, result.StatusCode);
+
+        // Locate the new reply (the one that is not r1/r2) and fetch its stored document.
+        using var reader = CreateClient();
+        var items = new List<string>();
+        await foreach (var item in reader.GetRepliesAsync(ParentIri, new CollectionQuery { Limit = 10 }))
+        {
+            items.Add(ResolveIri(item));
+        }
+
+        var known = new[] { Reply1.Value, Reply2.Value };
+        var newReplyIri = items.Single(i => !known.Contains(i));
+
+        var response = await _http.GetAsync(ObjectPath(new Iri(newReplyIri)));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // The posted reply's `tag` carries a Hashtag object (type + name + href) — unlike a Mention
+        // (which serializes as a bare href string), a Hashtag is a full object because the library has
+        // no dedicated Hashtag type (it is a generic Object of type Hashtag).
+        Assert.True(root.TryGetProperty("tag", out var tag));
+        var tags = SingleElement(tag);
+        var hashtag = tags.Single();
+        Assert.Equal("object", hashtag.ValueKind.ToString().ToLowerInvariant());
+        // The type list includes "Hashtag" (the base "Object" is appended by the library).
+        var typeList = hashtag.GetProperty("type").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Contains("Hashtag", typeList);
+        Assert.Equal("#hashtag-roundtrip", hashtag.GetProperty("name").GetString());
+        // The href points at this instance's hashtag search for that tag.
+        var expectedHref = $"https://{Host}/search?q=%23hashtag-roundtrip";
+        Assert.Equal(expectedHref, hashtag.GetProperty("href").GetString());
+    }
+
+    // --- 57.3: conversationId — the server sets the thread root IRI on replies -----------
+
+    [Fact]
+    public async Task Client_PostReplyAsync_ReplyCarriesConversationId()
+    {
+        using var client = CreateClient();
+
+        // Post a reply to n1 (the parent). The server's EnsureConversationIdAsync resolves the
+        // thread root: n1 has no conversationId (it was seeded directly, not through the
+        // outbox-publish path), so the parent's own IRI is used.
+        var result = await client.PostReplyAsync(
+            ActorIri,
+            ParentIri,
+            "a reply in a thread");
+
+        Assert.Equal(202, result.StatusCode);
+
+        // Locate the new reply (the one that is not r1/r2) and fetch its stored document.
+        using var reader = CreateClient();
+        var items = new List<string>();
+        await foreach (var item in reader.GetRepliesAsync(ParentIri, new CollectionQuery { Limit = 10 }))
+        {
+            items.Add(ResolveIri(item));
+        }
+
+        var known = new[] { Reply1.Value, Reply2.Value };
+        var newReplyIri = items.Single(i => !known.Contains(i));
+
+        var response = await _http.GetAsync(ObjectPath(new Iri(newReplyIri)));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // The reply's conversationId is the parent's IRI (the thread root).
+        Assert.True(root.TryGetProperty("conversationId", out var convId), "reply should carry a conversationId");
+        Assert.Equal(ParentIri.Value, convId.GetString());
+    }
+
+    // --- 57.3: conversationId — an explicit conversationId is preserved -------------------
+
+    [Fact]
+    public async Task Client_PostReplyAsync_ExplicitConversationId_Preserved()
+    {
+        using var client = CreateClient();
+
+        // Post a reply with an explicit conversationId (the thread root). The server's
+        // EnsureConversationIdAsync sees it is already set and preserves it.
+        var customConvId = new Iri($"https://{Host}/ap/v1/u/alice/notes/thread-root");
+        var result = await client.PostReplyAsync(
+            ActorIri,
+            ParentIri,
+            "a reply with explicit conversationId",
+            conversationIri: customConvId);
+
+        Assert.Equal(202, result.StatusCode);
+
+        using var reader = CreateClient();
+        var items = new List<string>();
+        await foreach (var item in reader.GetRepliesAsync(ParentIri, new CollectionQuery { Limit = 10 }))
+        {
+            items.Add(ResolveIri(item));
+        }
+
+        var known = new[] { Reply1.Value, Reply2.Value };
+        var newReplyIri = items.Single(i => !known.Contains(i));
+
+        var response = await _http.GetAsync(ObjectPath(new Iri(newReplyIri)));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // The reply's conversationId is the explicitly-supplied thread root, not the parent's IRI.
+        Assert.True(root.TryGetProperty("conversationId", out var convId), "reply should carry a conversationId");
+        Assert.Equal(customConvId.Value, convId.GetString());
+    }
+
+    // --- 57.3: conversationId — a second reply in the same thread inherits the root --------
+
+    [Fact]
+    public async Task Client_PostReplyAsync_SecondReply_InheritsConversationId()
+    {
+        using var client = CreateClient();
+
+        // First, post a reply to n1. The server sets its conversationId to n1's IRI.
+        var result1 = await client.PostReplyAsync(
+            ActorIri,
+            ParentIri,
+            "first reply in thread");
+        Assert.Equal(202, result1.StatusCode);
+
+        // Find the first reply's IRI.
+        using var reader = CreateClient();
+        var items1 = new List<string>();
+        await foreach (var item in reader.GetRepliesAsync(ParentIri, new CollectionQuery { Limit = 10 }))
+        {
+            items1.Add(ResolveIri(item));
+        }
+        var known = new[] { Reply1.Value, Reply2.Value };
+        var firstNewReply = items1.Single(i => !known.Contains(i));
+
+        // Now post a second reply to the FIRST reply (a nested reply). The server's
+        // EnsureConversationIdAsync looks up the first reply's conversationId (which is n1's IRI)
+        // and uses it — the thread root is preserved across nesting.
+        var result2 = await client.PostReplyAsync(
+            ActorIri,
+            new Iri(firstNewReply),
+            "nested reply in same thread");
+        Assert.Equal(202, result2.StatusCode);
+
+        // Find the nested reply (it's under firstNewReply's replies, not directly under ParentIri).
+        using var reader2 = CreateClient();
+        var nestedItems = new List<string>();
+        await foreach (var item in reader2.GetRepliesAsync(new Iri(firstNewReply), new CollectionQuery { Limit = 10 }))
+        {
+            nestedItems.Add(ResolveIri(item));
+        }
+        Assert.Single(nestedItems);
+        var nestedReplyIri = nestedItems[0];
+
+        var response = await _http.GetAsync(ObjectPath(new Iri(nestedReplyIri)));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        // The nested reply's conversationId is the thread root (n1's IRI), inherited from the
+        // first reply's conversationId.
+        Assert.True(root.TryGetProperty("conversationId", out var convId), "nested reply should carry a conversationId");
+        Assert.Equal(ParentIri.Value, convId.GetString());
+    }
+
+    // --- 57.3: conversationId — inbound Pleroma-style conversationId is preserved ---------
+
+    [Fact]
+    public async Task Inbound_Note_WithConversationId_Preserved()
+    {
+        // A Pleroma server sends a note with a pre-set conversationId. The server's
+        // EnsureConversationIdAsync sees it is already set and preserves it (does not overwrite).
+        var pleromaConvId = new Iri("https://pleroma.example/objects/thread-123");
+        var note = new Note
+        {
+            Id = $"{ActorIri}/notes/pleroma-1",
+            Content = ["a note from pleroma"],
+            AttributedTo = [new Link { Href = new Uri(ActorIri.Value) }],
+        };
+        note.SetConversationId(pleromaConvId);
+        await _persistence.Objects.PutObjectAsync(note);
+
+        var response = await _http.GetAsync(ObjectPath(new Iri($"{ActorIri}/notes/pleroma-1")));
+        response.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = doc.RootElement;
+
+        Assert.True(root.TryGetProperty("conversationId", out var convId), "note should carry a conversationId");
+        Assert.Equal(pleromaConvId.Value, convId.GetString());
+    }
+
     // --- Helpers --------------------------------------------------------------------
 
     /// <summary>

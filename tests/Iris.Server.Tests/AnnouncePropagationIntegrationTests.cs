@@ -146,10 +146,12 @@ public sealed class AnnouncePropagationIntegrationTests : IAsyncLifetime
                 .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
             timeout: TimeSpan.FromSeconds(30));
         // Let any (absent) amplification settle: poll until the outbound delivery counter is stable for
-        // 500ms (a healthy bounded system settles in well under the original fixed 3s), bounded by the
-        // original 3s budget so an unbounded re-announce still accumulates before the assertion below.
+        // 1200ms (a healthy bounded system settles in well under the original fixed 3s; the longer window
+        // absorbs a slow in-flight echo that could otherwise land after a shorter stable gap). Bounded by
+        // the original 3s budget so an unbounded re-announce — which increments continuously and never
+        // holds a stable window — still accumulates before the assertion below.
         await TestFederation.WaitForStableAsync(() => Task.FromResult(_toA.Total),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(3));
+            settleWindow: TimeSpan.FromMilliseconds(1200), timeout: TimeSpan.FromSeconds(3));
 
         // The boost reached carol (bob's local follower) — the propagation happened.
         var carolOutbox = await _bPersistence.Activities.GetOutboxAsync(_carolActorIri);
@@ -197,10 +199,12 @@ public sealed class AnnouncePropagationIntegrationTests : IAsyncLifetime
                 .Any(o => o is IObject { Id: { Length: > 0 } id } && id == mintedId.Value),
             timeout: TimeSpan.FromSeconds(30));
         // Let any (absent) re-announce settle: poll until the outbound delivery counter is stable for
-        // 500ms (a healthy bounded system settles in well under the original fixed 3s), bounded by the
-        // original 3s budget so an unbounded re-announce chain still accumulates before the assertion below.
+        // 1200ms (a healthy bounded system settles in well under the original fixed 3s; the longer window
+        // absorbs a slow in-flight echo that could otherwise land after a shorter stable gap). Bounded by
+        // the original 3s budget so an unbounded re-announce chain — which increments continuously and
+        // never holds a stable window — still accumulates before the assertion below.
         await TestFederation.WaitForStableAsync(() => Task.FromResult(_toA.Total),
-            settleWindow: TimeSpan.FromMilliseconds(500), timeout: TimeSpan.FromSeconds(3));
+            settleWindow: TimeSpan.FromMilliseconds(1200), timeout: TimeSpan.FromSeconds(3));
 
         // The stored boost references the REMOTE object (bob's note) by link — the correct object link,
         // not an embedded copy (which would double-attribute the boost to the wrong author).

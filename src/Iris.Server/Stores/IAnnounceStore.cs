@@ -67,4 +67,24 @@ public interface IAnnounceStore
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the announcer IRIs (possibly empty).</returns>
     public Task<IReadOnlyList<Iri>> GetAnnouncersAsync(Iri announcedObjectIri, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns the announcers for a set of objects in a single batch query (57.4 — avoids N+1).
+    /// </summary>
+    /// <param name="announcedObjectIris">The IRIs of the objects whose announcers are requested.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with a dictionary mapping each object IRI to its announcer IRIs
+    /// (objects with no announcers are absent from the dictionary).</returns>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetAnnouncersBatchAsync(
+        IReadOnlyCollection<Iri> announcedObjectIris, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns which of the given (announcer, object) pairs represent existing announces (batch containment, 57.4).
+    /// </summary>
+    /// <param name="announcerIri">The IRI of the actor whose announces are being checked.</param>
+    /// <param name="objectIris">The IRIs of the objects to check.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the set of object IRIs that the actor has announced.</returns>
+    public Task<IReadOnlySet<Iri>> HasAnnouncedBatchAsync(
+        Iri announcerIri, IReadOnlyCollection<Iri> objectIris, CancellationToken ct = default);
 }

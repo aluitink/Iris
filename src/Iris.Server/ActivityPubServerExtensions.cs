@@ -3,17 +3,23 @@ using System.Net;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Iris.Client;
+using Iris.Client.Pipeline;
 using Iris.Core;
 using Iris.Core.Identity;
 using Iris.Server.Identity;
+using Iris.Server.Http.Proxy;
 using Iris.Server.Media;
 using Iris.Server.Observability;
 using Iris.Server.Persistance;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using KristofferStrube.ActivityStreams.JsonLD;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,6 +71,14 @@ public static class ActivityPubServerExtensions
 
         services.Configure(configure);
 
+        // Fail fast at host start when a configured option is malformed (a relative or non-http(s)
+        // BaseUri / InstanceActorId / SharedInboxIri) instead of surfacing later as a runtime 500 or a
+        // silently-misrouted federation request (Phase 83.2). Null options are allowed (a host may
+        // configure a subset); the validator only rejects a present-but-malformed value.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<ActivityPubServerOptions>, ActivityPubServerOptionsValidator>());
+        services.AddOptions<ActivityPubServerOptions>().ValidateOnStart();
+
         // Mute is an Iris-specific activity (there is no ActivityStreams Mute type), so the ActivityStreams
         // library does not know it: its ObjectConverter would serialize a MuteActivity as a generic object
         // (dropping the @context and type) and deserialize an inbound "type": "Mute" to a plain Object.
@@ -90,6 +104,11 @@ public static class ActivityPubServerExtensions
         // The signing key provider for the local actor (Phase 4 delivery signs with the actor's key).
         services.TryAddSingleton<IKeyProvider, InMemoryKeyProvider>();
 
+        // The local key-rotation lifecycle (Phase 84.2): rotates a local actor's signing key (mints a new
+        // key at the next free fragment, re-registers the actor→key binding, re-stamps the actor document's
+        // publicKey with a replaces pointer, keeps the old key for the overlap window, then retires it).
+        services.TryAddSingleton<Identity.KeyRotationService>();
+
         // The server-side id authority (decision 055): mints the collision-resistant, unguessable id
         // for every object/activity this instance creates (the outbox write path and the inbound
         // response paths). The authoring client sends the activity shape without an id; the server mints
@@ -108,13 +127,15 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<RemoteActorCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new RemoteActorCache(policies?.RemoteActor);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new RemoteActorCache(policies?.RemoteActor, metrics: metrics);
         });
 
         services.TryAddSingleton<RemoteKeyCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new RemoteKeyCache(policies?.RemoteKey);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new RemoteKeyCache(policies?.RemoteKey, metrics: metrics);
         });
 
         // The WebFinger cache is also registered standalone so the outbound account-resolution path
@@ -123,7 +144,28 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<WebFingerCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new WebFingerCache(policies?.WebFinger);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new WebFingerCache(policies?.WebFinger, metrics: metrics);
+        });
+
+        // Client-side actor cache for the outbound IActivityPubClient (146.1, F-136.12.7): caches
+        // fetched remote object documents by IRI so repeated fetches (e.g. resolving a reply parent's
+        // author on successive publishes) are served from cache instead of hitting the wire.
+        services.TryAddSingleton<Iris.Client.Caching.ActorCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new Iris.Client.Caching.ActorCache(metrics: metrics);
+        });
+
+        // Client-side collection-page cache for the outbound IActivityPubClient (146.3, F-136.12.3/5):
+        // caches fetched remote outbox/collection pages by page IRI (30 s TTL) so a follow-feed refresh
+        // does not re-fetch the same pages over the wire. Consulted by GetCollectionAsync's
+        // FetchCollectionPageAsync path.
+        services.TryAddSingleton<Iris.Client.Collections.CollectionPageCache>(sp =>
+        {
+            var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new Iris.Client.Collections.CollectionPageCache(policies?.CollectionPage, metrics: metrics);
         });
 
         // The collection-page cache is also registered standalone so the outbound remote-collection
@@ -132,7 +174,8 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<CollectionPageCache>(sp =>
         {
             var policies = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CachePolicies;
-            return new CollectionPageCache(policies?.CollectionPage);
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new CollectionPageCache(policies?.CollectionPage, metrics: metrics);
         });
 
         services.TryAddSingleton<ServerCaches>(sp =>
@@ -149,11 +192,19 @@ public static class ActivityPubServerExtensions
         // The server → client response cache: rendered local actor documents, backing the actor
         // document endpoint's Cache-Control headers and ?refresh=true bypass (public docs only; the
         // authenticated owner-only document is never cached).
-        services.TryAddSingleton<LocalActorDocumentCache>(_ => new LocalActorDocumentCache());
+        services.TryAddSingleton<LocalActorDocumentCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new LocalActorDocumentCache(metrics: metrics);
+        });
 
         // The server → client response cache for paged local collections (outbox/followers/following),
         // backing those endpoints' Cache-Control headers and ?refresh=true bypass.
-        services.TryAddSingleton<LocalCollectionPageCache>(_ => new LocalCollectionPageCache());
+        services.TryAddSingleton<LocalCollectionPageCache>(sp =>
+        {
+            var metrics = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.CacheMetrics;
+            return new LocalCollectionPageCache(metrics: metrics);
+        });
 
         // Inbound signature validation (Phase 4). The server verifies the HTTP signature on inbound
         // requests by resolving the remote signing key (fetched from the remote actor's document) and
@@ -170,7 +221,9 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IInboundKeyResolver>(),
             sp.GetRequiredService<ISignatureVerifier>(),
             sp.GetService<RemoteKeyCache>(),
-            sp.GetService<RemoteActorCache>()));
+            sp.GetService<RemoteActorCache>(),
+            sp.GetRequiredService<ILogger<HttpSignatureValidator>>(),
+            sp.GetService<IPersistenceProvider>()));
         services.TryAddSingleton<IActorDocumentFetcher>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
@@ -197,7 +250,37 @@ public static class ActivityPubServerExtensions
             // The fetch reads through the remote-actor cache (Phase 3), so a remote actor's document
             // is fetched once and reused across key resolutions and deliveries.
             var actorCache = sp.GetRequiredService<RemoteActorCache>();
-            return new IrisActorDocumentFetcher(factory.Create(clientOptions, new HttpClientHandler()), actorCache);
+
+            // 117.3: persist newly fetched remote actors to the durable store so the directory's
+            // "All known" scope can list actors the instance has encountered during federation.
+            RemoteActorPersister? persister = null;
+            // 135.1: persist newly fetched remote communities (Group) to the durable community store
+            // so the communities the instance has interacted with (e.g. a Lemmy community it follows)
+            // are served as known content.
+            RemoteCommunityPersister? communityPersister = null;
+            var persistence = sp.GetService<IPersistenceProvider>();
+            if (persistence is not null)
+            {
+                persister = new RemoteActorPersister(
+                    persistence.Actors,
+                    instanceBase: options.BaseUri,
+                    logger: sp.GetService<ILogger<RemoteActorPersister>>());
+                communityPersister = new RemoteCommunityPersister(
+                    persistence.Communities,
+                    instanceBase: options.BaseUri,
+                    logger: sp.GetService<ILogger<RemoteCommunityPersister>>());
+            }
+
+            // TEMP(157): wrap the key-resolution pipeline in a logging handler to capture the exact
+            // outbound status + body for the bootstrap investigation. REMOVE after diagnosis.
+            var _logHandler = new ResponseLogHandler(
+                new HttpClientHandler(),
+                sp.GetService<ILogger<RemoteInboundKeyResolver>>());
+            return new IrisActorDocumentFetcher(
+                factory.Create(clientOptions, _logHandler),
+                actorCache,
+                persister,
+                communityPersister);
         });
 
         // Outbound object fetch (24.1): the server→server delivery target for a Like / Announce (and an
@@ -219,6 +302,9 @@ public static class ActivityPubServerExtensions
                     {
                         ActorId = configuredInstanceActor,
                         EnableRetry = false,
+                        Caches = new Iris.Client.Caching.ClientCaches(
+                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                            CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
                     },
                     new HttpClientHandler()));
         }
@@ -290,6 +376,7 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IActivityHandler, DeleteActivityHandler>();
         services.AddSingleton<IActivityHandler, UndoActivityHandler>();
         services.AddSingleton<IActivityHandler, LikeActivityHandler>();
+        services.AddSingleton<IActivityHandler, DislikeActivityHandler>();
         services.AddSingleton<IActivityHandler, BlockActivityHandler>();
         services.AddSingleton<IActivityHandler, FlagActivityHandler>();
         // Mute (24.2): Mute is not an ActivityStreams type (the library has no Mute class), so an inbound
@@ -343,9 +430,18 @@ public static class ActivityPubServerExtensions
                 .GetResult();
             var remoteKeys = sp.GetService<RemoteKeyCache>();
             var remoteActors = sp.GetService<RemoteActorCache>();
-            return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors);
+            var actorDocuments = sp.GetService<IActorDocumentFetcher>();
+            return new MoveActivityHandler(persistence, localCommunities, remoteKeys, remoteActors, actorDocuments);
         });
-        services.TryAddSingleton<IInboxProcessor, InboxProcessor>();
+        services.TryAddSingleton<IInboxProcessor>(sp => new InboxProcessor(
+            sp.GetRequiredService<IPersistenceProvider>(),
+            sp.GetRequiredService<IEnumerable<IActivityHandler>>(),
+            sp.GetRequiredService<ILogger<InboxProcessor>>()));
+
+        // Instance stats (55.1): NodeInfo's usage.users.total. The default in-memory implementation
+        // returns 0; the EF Core persistence layer (Iris.Server.Data) registers a real implementation
+        // that queries the user account store. TryAdd means a host can override with its own.
+        services.TryAddSingleton<IInstanceStatsProvider, InMemoryInstanceStatsProvider>();
 
         // Object Update/Delete propagation (the federated half of F-02/F-03): schedules an object's
         // Update/Delete to the remote actors that hold a copy (the author's remote followers, the
@@ -379,7 +475,18 @@ public static class ActivityPubServerExtensions
             {
                 var factory = sp.GetRequiredService<IActivityPubClientFactory>();
                 client = factory.Create(
-                    new ActivityPubClientOptions { ActorId = serverOptions.InstanceActorId.Value, EnableRetry = false },
+                    new ActivityPubClientOptions
+                    {
+                        ActorId = serverOptions.InstanceActorId.Value,
+                        EnableRetry = false,
+                        // 147.2: wire the client-side caches so remote outbox pages (and actor docs)
+                        // are fetched once per TTL window instead of on every community-feed request.
+                        Caches = new Iris.Client.Caching.ClientCaches(
+                            Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                            CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
+                        // Bound each remote fetch so a slow/unreachable member cannot stall the feed.
+                        HttpClientTimeout = TimeSpan.FromSeconds(5),
+                    },
                     new HttpClientHandler());
             }
 
@@ -388,8 +495,15 @@ public static class ActivityPubServerExtensions
 
         // Global search (F-13): searches the instance's local actors (the directory) and stored content
         // objects for the /ap/v1/search endpoint and the client's SearchAsync. A host may replace this to
-        // add ranking, full-text indexing, or cross-instance (relay/WebFinger) search.
-        services.TryAddSingleton<IGlobalSearchService, GlobalSearchService>();
+        // add ranking, full-text indexing, or cross-instance (relay/WebFinger) search. The instance base
+        // IRI enables IRI-prefix-based local/remote discrimination (more reliable than the store's
+        // preferredUsername heuristic for remote actors from other platforms).
+        services.TryAddSingleton<IGlobalSearchService>(sp =>
+        {
+            var persistence = sp.GetRequiredService<IPersistenceProvider>();
+            var options = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value;
+            return new GlobalSearchService(persistence, options.BaseUri);
+        });
 
         // Followed feed (F-14): computes an actor's home timeline (the union of the actor's local and
         // remote follows' outbox items, newest first) for the /u/{handle}/feed endpoint and the client's
@@ -418,6 +532,15 @@ public static class ActivityPubServerExtensions
                 ActorId = options.InstanceActorId.Value,
                 // Outbound outbox fetches do not need retries; keep the pipeline minimal.
                 EnableRetry = false,
+                // 147.2: wire the client-side caches so remote outbox pages (and actor docs) are
+                // fetched once per TTL window instead of on every feed request. Without these,
+                // every /feed call re-fetches all remote follows' outboxes over the wire (the
+                // 1000x latency regression vs Phase 116.1 baseline).
+                Caches = new Iris.Client.Caching.ClientCaches(
+                    Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
+                    CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
+                // Bound each remote fetch so a slow/unreachable follow cannot stall the whole feed.
+                HttpClientTimeout = TimeSpan.FromSeconds(5),
             };
 
             return new FeedService(
@@ -429,6 +552,12 @@ public static class ActivityPubServerExtensions
                 // F-07 (apply the block edge): a follow the actor has blocked is excluded from its feed.
                 sp.GetRequiredService<IPersistenceProvider>().Moderation);
         });
+
+        // Public feed (54.27): computes the instance's public timeline (the union of all local
+        // actors' outbox activities, newest first) for the /ap/v1/public/feed endpoint. Any visitor
+        // (signed in or out) can browse this feed — it surfaces all local posts so a logged-out
+        // visitor has something to see.
+        services.TryAddSingleton<IPublicFeedService, PublicFeedService>();
 
         // Outbound delivery (Phase 4): the delivery queue (in-memory Channel<T>), the delivery service
         // (handlers call it to schedule a delivery — it enqueues and returns), and the background
@@ -443,6 +572,13 @@ public static class ActivityPubServerExtensions
         // points they log. No OpenTelemetry dependency — a host that wants to export the metrics adds
         // the OTel SDK and AddMeter(IrisDeliveryMetrics.MeterName) (plus an exporter).
         services.TryAddSingleton<Iris.Server.Observability.IrisDeliveryMetrics>();
+        // Phase 136.1: federation trace capture. A single shared IFederationTraceCollector (the bounded
+        // in-memory default) is handed to the DeliveryWorker (outbound deliveries) and the inbox handler
+        // (inbound inbox POSTs), which record a FederationTraceEntry at the same points they log. The
+        // collector's Snapshot() is the single shared trace artifact per scenario (the Phase 136.1 exit
+        // criterion). A host that wants durable capture (file/log-backed) rebinds IFederationTraceCollector.
+        services.TryAddSingleton<Iris.Server.Observability.IFederationTraceCollector,
+            Iris.Server.Observability.InMemoryFederationTraceCollector>();
         services.TryAddSingleton<IDeliveryService>(sp =>
             new DeliveryService(
                 sp.GetRequiredService<IDeliveryQueue>(),
@@ -509,8 +645,9 @@ public static class ActivityPubServerExtensions
             sp.GetRequiredService<IDeliveryDeadLetterStore>(),
             sp.GetRequiredService<IOptions<DeliveryWorkerOptions>>().Value.MaxConcurrentDeliveries,
             CreateDeliveryRateLimiter(sp.GetRequiredService<IOptions<DeliveryRateLimitOptions>>().Value),
-            sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>(),
-            CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value)));
+            sp.GetRequiredService<IConfiguration>(),
+            CreateDeliveryCircuitBreaker(sp.GetRequiredService<IOptions<DeliveryCircuitBreakerOptions>>().Value),
+            sp.GetRequiredService<Iris.Server.Observability.IFederationTraceCollector>()));
 
         // Phase 17.1: observability. The instance's GET /ap/v1/health endpoint resolves every registered
         // IHealthCheck (IEnumerable<IHealthCheck>) and reports the aggregate status, so a host that wants
@@ -529,12 +666,26 @@ public static class ActivityPubServerExtensions
         // IEnumerable<IHealthCheck> at the GET /ap/v1/health endpoint.
         services.AddSingleton<IHealthCheck, PersistenceHealthCheck>();
         services.AddSingleton<IHealthCheck, DeliveryWorkerHealthCheck>();
+        // 83.2: federation observability — the resolvable-actor count (stored actors with a resolvable
+        // signing identity) + the delivery dead-letter count, surfaced on GET /ap/v1/health.
+        services.AddSingleton<IHealthCheck, InstanceObservabilityHealthCheck>();
 
         // 30.2: readiness gate. Ready once the instance actor's signing key is registered + resolvable
         // (a freshly-started instance is not ready until its key material is loaded). The GET /ap/v1/ready
         // probe reports IReadinessGate.IsReadyAsync; a host that loads keys asynchronously may bind its own
         // IReadinessGate (TryAdd — an extra/override registration wins).
         services.TryAddSingleton<IReadinessGate, DefaultReadinessGate>();
+
+        // 83.4: graceful degradation. The degraded-mode gate (stateful — flipped by the probe) + the
+        // persistence-degraded-mode probe (a hosted service that, on a failed persistence read, logs a
+        // structured degraded_mode_entered event + flips the gate so the write paths refuse mutations with
+        // 503 instead of throwing). A host that manages its own degraded-state detection may override the
+        // gate (TryAdd — an extra/override registration wins). The probe is registered as an IHostedService
+        // so it runs for the host's lifetime (startup probe + periodic re-probe for recovery).
+        services.TryAddSingleton<Observability.IDegradedModeGate, Observability.DefaultDegradedModeGate>();
+        services.TryAddSingleton<Observability.PersistenceDegradedModeProbe>();
+        services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
+            sp => sp.GetRequiredService<Observability.PersistenceDegradedModeProbe>());
 
         // Proxy fallback (Phase 6): the target policy for the POST /ap/v1/proxy/{target} endpoint —
         // the composition of the target allowlist (which hosts an actor may proxy to) and the per-actor
@@ -545,10 +696,41 @@ public static class ActivityPubServerExtensions
         {
             var settings = sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.ProxySettings;
             return new CompositeProxyTargetPolicy(
-                [
-                    new AllowlistProxyTargetPolicy(settings?.AllowedHosts),
-                    new RateLimitingProxyPolicy(settings?.MaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute),
-                ]);
+            [
+                new AllowlistProxyTargetPolicy(settings?.AllowedHosts),
+                new RateLimitingProxyPolicy(settings?.MaxRequestsPerMinute ?? ActivityPubServerConstants.DefaultProxyMaxRequestsPerMinute),
+            ]);
+        });
+        services.TryAddSingleton<ProxyGoneCache>();
+
+        // 117.3 / 135.1: the remote-actor / remote-community persisters, exposed as singletons so the
+        // proxy endpoint (which archives every remote object it relays — the directory's "All known"
+        // surface) can resolve them. They are cheap, idempotent, best-effort wrappers over the durable
+        // stores: a local IRI is skipped and a store failure is logged, never propagated. Null when no
+        // persistence provider is registered (a host that does not add persistence).
+        services.TryAddSingleton<RemoteActorPersister>(sp =>
+        {
+            var persistence = sp.GetService<IPersistenceProvider>();
+            if (persistence is null)
+            {
+                return null!;
+            }
+            return new RemoteActorPersister(
+                persistence.Actors,
+                instanceBase: sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri,
+                logger: sp.GetService<ILogger<RemoteActorPersister>>());
+        });
+        services.TryAddSingleton<RemoteCommunityPersister>(sp =>
+        {
+            var persistence = sp.GetService<IPersistenceProvider>();
+            if (persistence is null)
+            {
+                return null!;
+            }
+            return new RemoteCommunityPersister(
+                persistence.Communities,
+                instanceBase: sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri,
+                logger: sp.GetService<ILogger<RemoteCommunityPersister>>());
         });
 
         // Outbound account resolution (Phase 4): resolves a remote account (e.g. @bob@b.test) to its
@@ -568,6 +750,12 @@ public static class ActivityPubServerExtensions
         services.TryAddSingleton<IWebFingerResolver>(sp => sp.GetRequiredService<WebFingerClient>());
         services.TryAddSingleton<IAccountResolver, WebFingerAccountResolver>();
 
+        // 156 (Slice C): the inbound tag normalizer (resolves @mention/#hashtag tokens in an inbound
+        // note's content into tag entries when the remote server did not ship them). Consumed by the
+        // CreateActivityHandler (pre-store). A host may swap in a different normalizer (or none — the
+        // handler tolerates a null, leaving the note as the remote sent it).
+        services.TryAddSingleton<IInboundTagNormalizer, InboundTagNormalizer>();
+
         // IPersistenceProvider is a seam — a concrete provider is registered by the persistence package
         // (e.g. Iris.Server.InMemory's AddInMemoryPersistence) or by a host app. AddActivityPubServer does
         // NOT register a concrete provider, keeping Iris.Server free of a dependency on any specific
@@ -577,6 +765,26 @@ public static class ActivityPubServerExtensions
         // factory then returns that same instance. It exists so the 30.2 PersistenceHealthCheck can resolve
         // the provider from DI (it reads IPersistenceProvider.Actors, not a concrete IActorStore).
         services.TryAddSingleton<IPersistenceProvider>(sp => sp.GetRequiredService<IPersistenceProvider>());
+
+        // 151: object-interaction-count refresh (background processing). The service pre-computes the
+        // per-object interaction counters (iris:likedCount/sharedCount/repliedCount/dislikedCount/score)
+        // on a fixed interval and persists them onto the stored object documents, so the object-document
+        // and collection-page read paths can serve the pre-computed counters instead of walking the
+        // reverse indexes on every read. It is registered unconditionally in the main overload (the one a
+        // host such as Iris.Web uses) and is inert when no persistence provider is registered or the
+        // instance stores no objects — the common empty-store test harness is unaffected. A host that wants
+        // a different cadence (or to disable the periodic pass) sets Iris:ObjectInteractionRefreshInterval.
+        // It resolves the (possibly null) IPersistenceProvider via the factory above.
+        // Registered via AddHostedService (a TryAddEnumerable of IHostedService) so it coexists with the
+        // other hosted services (DeliveryWorker, PersistenceDegradedModeProbe, ...) — a plain
+        // TryAddSingleton<IHostedService> would only register the FIRST hosted service. The factory
+        // resolves the (possibly null) IPersistenceProvider so a host without persistence gets an inert
+        // service rather than a resolution failure.
+        services.AddHostedService(sp =>
+            new Stores.ObjectInteractionCountRefreshService(
+                sp.GetService<IPersistenceProvider>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Stores.ObjectInteractionCountRefreshService>>()));
 
         return services;
     }
@@ -602,9 +810,32 @@ public static class ActivityPubServerExtensions
         {
             if (irisSection["BaseUri"] is { } baseUri) o.BaseUri = new Iri(baseUri);
             if (irisSection["InstanceActorId"] is { } actorId) o.InstanceActorId = new Iri(actorId);
+            if (irisSection["InstanceActorIri"] is { } actorIri) o.InstanceActorIri = new Iri(actorIri);
             if (irisSection["SharedInboxIri"] is { } inbox) o.SharedInboxIri = new Iri(inbox);
             if (irisSection["InstanceName"] is { } name) o.InstanceName = name;
             if (irisSection["NamespaceIri"] is { } ns) o.NamespaceIri = new Iri(ns);
+            // 84.5: single-instance lock. When Iris:InstanceLockPath is set, the guard (a hosted service
+            // registered below) acquires the lock on startup + fails fast on a second live instance.
+            if (irisSection["InstanceLockPath"] is { } lockPath and not "") o.InstanceLockPath = lockPath;
+
+            // 84.6: key-provider refresh interval. When Iris:KeyProviderRefreshInterval is set (a .NET
+            // TimeSpan string, e.g. "00:00:10" or "30s"), the refresh hosted service re-converges a
+            // DocumentDerivedKeyProvider on that cadence (a non-positive value disables the periodic pass).
+            // Unset keeps the 30 s default.
+            if (irisSection["KeyProviderRefreshInterval"] is { } refreshInterval
+                && TimeSpan.TryParse(refreshInterval, out var parsedRefreshInterval))
+            {
+                o.KeyProviderRefreshInterval = parsedRefreshInterval;
+            }
+
+            // 151: object-interaction-count refresh interval. When Iris:ObjectInteractionRefreshInterval is
+            // set (a .NET TimeSpan string), the refresh hosted service re-computes the per-object counters
+            // on that cadence (a non-positive value disables the periodic pass). Unset keeps the 30 s default.
+            if (irisSection["ObjectInteractionRefreshInterval"] is { } objectRefreshInterval
+                && TimeSpan.TryParse(objectRefreshInterval, out var parsedObjectRefreshInterval))
+            {
+                o.ObjectInteractionRefreshInterval = parsedObjectRefreshInterval;
+            }
 
             var proxySection = irisSection.GetSection("ProxySettings");
             if (proxySection.Exists())
@@ -628,7 +859,50 @@ public static class ActivityPubServerExtensions
             services.Configure<DeliveryWorkerOptions>(deliverySection.GetSection("Worker"));
             services.Configure<DeliveryRateLimitOptions>(deliverySection.GetSection("RateLimit"));
             services.Configure<DeliveryCircuitBreakerOptions>(deliverySection.GetSection("CircuitBreaker"));
+
+            // 84.1: config-driven durable dead-letter store. When Iris:Delivery:DeadLetterJournalPath
+            // is set, rebind the IDeliveryDeadLetterStore to the file-backed implementation (journaling
+            // to that path) so dead letters survive a restart — independent of the delivery queue (the
+            // queue stays its in-memory default unless a host separately opts into UseFileBackedDelivery).
+            // A later UseFileBackedDelivery / explicit AddSingleton still wins (registration order).
+            if (deliverySection["DeadLetterJournalPath"] is { } deadLetterPath and not "")
+            {
+                services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterPath));
+            }
         }
+
+        // 84.5: single-instance guard. When Iris:InstanceLockPath is configured, register the guard as a
+        // hosted service (it acquires the cross-process lock on startup + fails fast on a second live
+        // instance; it releases the lock on shutdown). When not configured, the guard is not registered —
+        // the common single-process deployment + the multi-host test harnesses are unaffected.
+        if (irisSection["InstanceLockPath"] is { } guardLockPath and not "")
+        {
+            services.AddHostedService<Bootstrap.SingleInstanceGuardHostedService>();
+        }
+
+        // 84.6: key-provider convergence (the "when" of the refresh). The service re-runs
+        // DocumentDerivedKeyProvider.RefreshFromActorsAsync on a fixed interval so a rotation performed on
+        // another instance over the same persistence becomes visible to this instance's signer without a
+        // restart. It is registered unconditionally but is a no-op unless the instance's IKeyProvider is a
+        // DocumentDerivedKeyProvider — the single-instance default (InMemoryKeyProvider) and every existing
+        // test harness are unaffected. A host that wants multi-instance convergence registers the
+        // DocumentDerivedKeyProvider as its IKeyProvider and (optionally) sets Iris:KeyProviderRefreshInterval.
+        services.TryAddSingleton<Identity.KeyProviderRefreshService>();
+        services.TryAddSingleton<Microsoft.Extensions.Hosting.IHostedService>(
+            sp => sp.GetRequiredService<Identity.KeyProviderRefreshService>());
+
+        // NOTE: the 151 object-interaction-count refresh service is registered in the main overload
+        // (AddActivityPubServer(services, configure)) — which this config overload delegates to — so it is
+        // not re-registered here. It resolves the (possibly null) IPersistenceProvider and is inert when
+        // there is no persistence provider or no stored objects.
+
+        // 84.6: cache-invalidation channel (the scale-out half for the in-memory actor/edge caches). The
+        // publisher seam defaults to a no-op (the single-instance default: with one instance there is no
+        // other instance's cache to invalidate, and the in-process caches are invalidated directly by the
+        // update path). A host that wants multi-instance cache coherence calls UseCacheInvalidationChannel,
+        // which registers the file-backed CacheInvalidationChannel as ICacheInvalidationPublisher + the
+        // CacheInvalidationService hosted service (the poller that applies events to the local caches).
+        services.TryAddSingleton<Caching.ICacheInvalidationPublisher, Caching.NoopCacheInvalidationPublisher>();
 
         var inboundSection = configuration.GetSection("Iris:Inbound");
         if (inboundSection.Exists())
@@ -684,6 +958,17 @@ public static class ActivityPubServerExtensions
         // privateKey + keyAlgorithm extensions when the request is authenticated (Basic auth).
         group.MapGet("/u/{handle}", ActorDocumentHandler);
 
+        // Instance-actor document at the instance root: GET / (content-negotiated). A remote platform
+        // (notably Lemmy, 138.4) dereferences the *site actor* from the instance's root URL before it
+        // will resolve any object on the instance; when the root serves only the SPA shell (HTML) that
+        // dereference fails and every remote→local resolve is blocked. When the request is an
+        // ActivityPub client (its Accept header names an ActivityStreams/JSON-LD media type), serve the
+        // configured instance actor's public document here so the site-actor dereference succeeds; for
+        // any other request the SPA fallback (mapped later) still serves the shell. Mapped on the root
+        // endpoint (NOT the versioned group) because the instance root is the host root, not
+        // /ap/v1. The route is exact (GET "/") so it never shadows the SPA's non-root client routes.
+        endpoints.MapGet("/", InstanceActorDocumentHandler).WithName("instance-actor-document-endpoint");
+
         // WebFinger: GET /ap/v1/.well-known/webfinger?resource=acct:{handle}@{host}.
         group.MapGet("/.well-known/webfinger", WebFingerHandler);
 
@@ -693,6 +978,23 @@ public static class ActivityPubServerExtensions
         // This is the path the client's WebFingerClient queries; without it, an Iris instance could not
         // resolve another Iris instance's accounts. The versioned route above is retained for symmetry.
         endpoints.MapGet("/.well-known/webfinger", WebFingerHandler);
+
+        // NodeInfo at the RFC 8555 standard root path (/.well-known/nodeinfo). The NodeInfo discovery
+        // document (a list of links to versioned NodeInfo resources) MUST be served at the host root,
+        // not under a versioned prefix — federation software (Friendica, Lemmy, relays) probes this
+        // exact path. The versioned route above (/ap/v1/.well-known/nodeinfo) is retained for symmetry.
+        endpoints.MapGet("/.well-known/nodeinfo", NodeInfoWellKnownHandler);
+
+        // NodeInfo x-nodeinfo2 discovery path (/.well-known/x-nodeinfo2). Some federation software
+        // (notably newer Friendica and some relay implementations) probes this alternate discovery
+        // document, which links directly to the 2.0 NodeInfo resource without the intermediate
+        // discovery list. Served at the host root per the emerging convention.
+        endpoints.MapGet("/.well-known/x-nodeinfo2", NodeInfoXNodeInfo2Handler);
+
+        // host-meta (RFC 6415 Link header discovery): /.well-known/host-meta. Returns an XML document
+        // with a <Link> element pointing to the WebFinger endpoint. Some federation software (older
+        // Friendica, some Pleroma clients) still uses this as a discovery fallback.
+        endpoints.MapGet("/.well-known/host-meta", HostMetaHandler);
 
         // NodeInfo: GET /ap/v1/nodeinfo/2.0 (RFC 8555 instance metadata).
         group.MapGet("/nodeinfo/2.0", NodeInfoHandler);
@@ -724,6 +1026,36 @@ public static class ActivityPubServerExtensions
         // balancer / orchestrator readiness probe must reach it without an ActivityPub signature. Distinct
         // from GET /ap/v1/health (liveness): an instance can be up but not yet ready.
         group.MapGet($"/{ActivityPubServerConstants.ReadyRouteSegment}", ReadyHandler);
+
+        // Dead letters: GET /ap/v1/dead-letters — the outbound-delivery dead-letter queue (Phase 83.3).
+        // Exposes the deliveries that exhausted their retry budget (count + a bounded peek, newest-first)
+        // so an operator can inspect them. Read-only (does not re-drive); no authentication (an operator's
+        // monitoring scrape reaches it without a signature), like the health endpoint.
+        group.MapGet($"/{ActivityPubServerConstants.DeadLetterRouteSegment}", DeadLetterHandler)
+            .WithName("dead-letters-endpoint");
+
+        // Cache metrics: GET /ap/v1/diagnostics/caches — per-cache hit/miss/stale counters and entry
+        // counts (Phase 116.6). Exposes the ICacheMetrics from each registered server cache so an
+        // operator can verify caching is effective. No authentication: an operator's monitoring scrape
+        // reaches it without a signature, like the health endpoint.
+        group.MapGet($"/{ActivityPubServerConstants.DiagnosticsRouteSegment}/caches", CacheDiagnosticsHandler)
+            .WithName("cache-diagnostics-endpoint");
+
+        // Key rotation (Phase 84.3): POST /ap/v1/keys/rotate — rotates the instance actor's signing key
+        // (KeyRotationService.RotateAsync): mints a new key at the next free fragment, re-binds the
+        // actor→key, re-stamps the actor document's publicKey (with a replaces pointer), keeps the old
+        // key for the overlap window. Admin-gated (the caller's authenticated actor must be the instance
+        // actor). Returns the new + replaced key IRIs.
+        group.MapPost($"/{ActivityPubServerConstants.KeysRouteSegment}/rotate", KeyRotateHandler)
+            .WithName("keys-rotate-endpoint");
+
+        // Key retirement (Phase 84.3): POST /ap/v1/keys/retire — retires a specific key IRI
+        // (KeyRotationService.RetireKey): removes + disposes it from the store once the rotation is
+        // confirmed (the already-advertised public key still lets peers verify pre-retirement signatures).
+        // Admin-gated (the caller's authenticated actor must be the instance actor). 204 on success, 404
+        // if the key was not in the store.
+        group.MapPost($"/{ActivityPubServerConstants.KeysRouteSegment}/retire", KeyRetireHandler)
+            .WithName("keys-retire-endpoint");
 
         // Media serve (Phase 20.4 (a)): GET /ap/v1/media/{id} — serves a stored note attachment (an image
         // or document) by its same-origin media IRI. Public (the browser's <img>/<a> loads it), and
@@ -799,9 +1131,23 @@ public static class ActivityPubServerExtensions
                 "/u/{handle}/feed",
                 (string handle, HttpContext context,
                     IPersistenceProvider persistence, IFollowFeedService feedService,
-                    IOptions<ActivityPubServerOptions> optionsAccessor, CancellationToken ct)
-                    => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, ct))
-            .WithName("follow-feed-endpoint");
+                    IOptions<ActivityPubServerOptions> optionsAccessor,
+                    ISignatureValidator signatureValidator, CancellationToken ct)
+                    => FollowFeedHandler(handle, context, persistence, feedService, optionsAccessor, signatureValidator, ct))
+             .WithName("follow-feed-endpoint");
+
+        // Public feed: GET /ap/v1/public/feed — the instance's public timeline (54.27): the union of
+        // all local actors' outbox activities, newest first, de-duplicated, capped. Any visitor
+        // (signed in or out) can browse this feed. Served as a paged collection (page 1 is an
+        // OrderedCollection with `first`; page N>1 an OrderedCollectionPage), paged via ?page/?limit.
+        group.MapGet(
+                "/public/feed",
+                (HttpContext context,
+                    IPersistenceProvider persistence, IPublicFeedService feedService,
+                    IOptions<ActivityPubServerOptions> optionsAccessor,
+                    ISignatureValidator signatureValidator, CancellationToken ct)
+                    => PublicFeedHandler(context, persistence, feedService, optionsAccessor, signatureValidator, ct))
+            .WithName("public-feed-endpoint");
 
         // Community document: GET /ap/v1/c/{name} — the community (the library's Group actor) document.
         // A community is addressed by its handle (not an actor IRI), so the route uses {name}.
@@ -920,7 +1266,21 @@ public static class ActivityPubServerExtensions
         // pagination shape, Resolved Decision #6). Actors come first, then content objects, each sorted
         // by IRI (deterministic). Like the community search, this is computed fresh per request (not
         // served through the local collection-page cache).
-        group.MapGet("/search", GlobalSearchHandler);
+        group.MapGet("/search",
+            (HttpContext context, IGlobalSearchService searchService, IPersistenceProvider persistence,
+                IOptions<ActivityPubServerOptions> optionsAccessor, CancellationToken ct)
+                => GlobalSearchHandler(context, searchService, persistence, optionsAccessor, ct));
+
+        // Cached actor document by IRI: GET /ap/v1/actor?iri={absolute-actor-iri} — serves the actor
+        // document the instance has cached in its database (134.1 — directory "All known" / known
+        // actors). The ?iri value is the actor's absolute IRI (local or remote). When the instance has
+        // encountered the actor during federation (a remote actor's document was fetched and persisted
+        // by the RemoteActorPersister, or it is a local actor), the stored document is served as-is —
+        // no live cross-instance fetch. This lets the client render a known actor's profile even when
+        // the actor's home instance is unreachable or the account has been deactivated (a live fetch
+        // would 410). An actor the instance has never cached 404s (the client then falls back to a live
+        // fetch). The route is registered BEFORE the /{**path} object catch-all so it wins by specificity.
+        group.MapGet("/actor", ActorByIriHandler);
 
         // Object document: GET /ap/v1/{**path} — serves a content object by its IRI (F-02/F-03/F-10).
         // {**path} is the object IRI's path relative to the route prefix (e.g. the Note at
@@ -1011,6 +1371,52 @@ public static class ActivityPubServerExtensions
         // of the actor being muted.
         localGroup.MapPost("/c/{name}/mutes/{**target}", CommunityMuteHandler).WithName("community-mute-endpoint");
 
+        // Local block (community): POST /local/v1/c/{name}/blocks/{target} — a community's operator
+        // records a community-scoped block (the community hides a member's content from its unified
+        // feed and severs the relationship, stronger than a mute); the same route with ?unblock=true
+        // removes it. The community's IRI is the credential seam (IActorCredentialValidator).
+        // {target} is a catch-all of the absolute IRI of the actor being blocked.
+        localGroup.MapPost("/c/{name}/blocks/{**target}", CommunityBlockHandler).WithName("community-block-endpoint");
+
+        // Local member removal (community): POST /local/v1/c/{name}/members/remove/{**target} — the
+        // community's creator (a local person) removes a member from the community. The person's IRI is
+        // the credential seam (IActorCredentialValidator); the server verifies the person is the
+        // community's creator (via the Group's AttributedTo) before removing the membership edge.
+        localGroup.MapPost("/c/{name}/members/remove/{**target}", CommunityRemoveMemberHandler).WithName("community-remove-member-endpoint");
+
+        // Local join-request listing (community): GET /local/v1/c/{name}/requests — the community's
+        // creator lists pending join requests (actors who sent a Join while manuallyApprovesMembers
+        // is set). The person's IRI is the credential seam (IActorCredentialValidator); the server
+        // verifies the person is the community's creator (via the Group's AttributedTo).
+        localGroup.MapGet("/c/{name}/requests", CommunityListJoinRequestsHandler).WithName("community-list-join-requests-endpoint");
+
+        // Local join-request accept (community): POST /local/v1/c/{name}/requests/accept/{**actorIri} —
+        // the community's creator accepts a pending join request: the actor is added as a member and
+        // the pending request is removed. Creator-only (same seam as member removal).
+        localGroup.MapPost("/c/{name}/requests/accept/{**actorIri}", CommunityAcceptJoinRequestHandler).WithName("community-accept-join-request-endpoint");
+
+        // Local join-request reject (community): POST /local/v1/c/{name}/requests/reject/{**actorIri} —
+        // the community's creator rejects a pending join request: the pending request is removed
+        // (no membership granted). Creator-only (same seam as member removal).
+        localGroup.MapPost("/c/{name}/requests/reject/{**actorIri}", CommunityRejectJoinRequestHandler).WithName("community-reject-join-request-endpoint");
+
+        // Community owners (54.28): the Group's AttributedTo is the owner list. Owners can promote or
+        // demote members. Demoting the last owner is rejected (a community must always have ≥1 owner).
+        localGroup.MapGet("/c/{name}/owners", CommunityListOwnersHandler).WithName("community-list-owners-endpoint");
+        localGroup.MapPost("/c/{name}/owners/promote/{**actorIri}", CommunityPromoteOwnerHandler).WithName("community-promote-owner-endpoint");
+        localGroup.MapPost("/c/{name}/owners/demote/{**actorIri}", CommunityDemoteOwnerHandler).WithName("community-demote-owner-endpoint");
+
+        // Community peering (89): POST /local/v1/c/{name}/follow/{**targetIri} — a community's operator
+        // makes the community follow the target actor (a person or another community). The community
+        // (a Group actor) cannot sign its own outbox from the browser (it holds no client key), so the
+        // owner authenticates here via the same credential seam as the other local community endpoints
+        // (IActorCredentialValidator / cookie) and the server records the community-authored Follow in
+        // the community's follows set + outbox and delivers it to a remote target. The community's
+        // unified feed then surfaces the followed actor's content to its members. The same route with
+        // ?unfollow=true undoes the follow (Undo of the community-authored Follow). {targetIri} is a
+        // catch-all of the absolute IRI of the actor being followed.
+        localGroup.MapPost("/c/{name}/follow/{**targetIri}", CommunityFollowHandler).WithName("community-follow-endpoint");
+
         // Media upload (Phase 20.4 (a)): POST /local/v1/u/{handle}/media — an owner-only,
         // Basic-authenticated multipart POST of a note's attachment (an image or document). The server
         // stores the bytes and returns (201) the same-origin media IRI the uploader sets as the
@@ -1019,6 +1425,29 @@ public static class ActivityPubServerExtensions
         localGroup
             .MapPost($"/u/{{handle}}/{Iris.Client.MediaConstants.UploadSegment}", LocalMediaUploadHandler)
             .WithName("local-media-upload-endpoint");
+
+        // Local poll vote: POST /local/v1/u/{handle}/votes/{**pollIri} — a local actor records a vote
+        // on a poll (a stored Question object). The body is {"option": <index>}. Not an ActivityStreams
+        // activity (a local, non-federated write), so it is on the /local/v1 tree.
+        localGroup.MapPost("/u/{handle}/votes/{**pollIri}", LocalPollVoteHandler).WithName("local-poll-vote-endpoint");
+
+        // Local follow-request queue (person, Phase 100): GET /local/v1/u/{handle}/requests — the actor
+        // lists the pending inbound Follow requests held for approval (manuallyApprovesFollowers set).
+        // Owner-only (Basic or cookie auth, the actor's own IRI). Returns a JSON array of requester IRIs
+        // (newest-first). Not an ActivityStreams activity (a local, non-federated read), so it is on the
+        // /local/v1 tree. The queue drains when the operator Accepts/Rejects (the follow-decision outbox
+        // write removes the pending request edge — RecordFollowDecisionLocalAsync).
+        localGroup.MapGet("/u/{handle}/requests", LocalListFollowRequestsHandler).WithName("local-list-follow-requests-endpoint");
+
+        // Local follow-request accept (person, Phase 100): POST /local/v1/u/{handle}/requests/accept/{**actorIri}
+        // — the actor accepts a pending inbound follow request: the follower→actor follow edge is recorded
+        // (confirming the held follow) and the pending request is drained from the queue. Owner-only.
+        localGroup.MapPost("/u/{handle}/requests/accept/{**actorIri}", LocalAcceptFollowRequestHandler).WithName("local-accept-follow-request-endpoint");
+
+        // Local follow-request reject (person, Phase 100): POST /local/v1/u/{handle}/requests/reject/{**actorIri}
+        // — the actor rejects a pending inbound follow request: the provisional follow edge is removed and
+        // the pending request is drained from the queue (no follow granted). Owner-only.
+        localGroup.MapPost("/u/{handle}/requests/reject/{**actorIri}", LocalRejectFollowRequestHandler).WithName("local-reject-follow-request-endpoint");
 
         return endpoints;
     }
@@ -1040,10 +1469,22 @@ public static class ActivityPubServerExtensions
         var actorIri = BuildActorIri(baseUrl, handle);
 
         // Determine whether the request is authenticated for this actor (owner-only extension).
+        // Two paths: (1) Basic auth via the credential validator (federation clients), (2) cookie
+        // auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. Either path grants the owner-only privateKey extension.
         var authorization = context.Request.Headers.Authorization.ToString();
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
 
         // Owner-only (authenticated) document: private data. Never cached; always no-store.
         if (authenticatedHandle is not null)
@@ -1054,8 +1495,8 @@ public static class ActivityPubServerExtensions
                 return Results.NotFound();
             }
 
-            var ownerDoc = BuildActorDocument(ownerActor, actorIri, authenticatedHandle, persistence, options);
-            var noStore = Results.Text(ActivityJson.Serialize(ownerDoc), ActivityJson.ActivityJsonContentType);
+            var ownerDoc = await BuildActorDocumentAsync(ownerActor, actorIri, authenticatedHandle, persistence, options, ct).ConfigureAwait(false);
+            var noStore = Results.Text(ActivityJson.Serialize(ownerDoc), NegotiateContentType(context));
             context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
                 ActivityPubServerConstants.NoStoreCacheControl;
             return noStore;
@@ -1073,7 +1514,7 @@ public static class ActivityPubServerExtensions
                     if (await persistence.Actors.TryGetActorAsync(key, out var actor, ct).ConfigureAwait(false) &&
                         actor is not null)
                     {
-                        var doc = BuildActorDocument(actor, key, null, persistence, options);
+                        var doc = await BuildActorDocumentAsync(actor, key, null, persistence, options, ct).ConfigureAwait(false);
                         return ActivityJson.Serialize(doc);
                     }
 
@@ -1095,7 +1536,220 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.ActorCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(rendered, ActivityJson.ActivityJsonContentType);
+        return Results.Text(rendered, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// The instance-actor document at the instance root (<c>GET /</c>, 138.4). A remote platform
+    /// (notably Lemmy) dereferences the site actor from the instance's root URL before resolving any
+    /// object on the instance; when the root served only the SPA shell (HTML), that dereference failed
+    /// and every remote→local resolve was blocked. This handler content-negotiates: when the request is
+    /// an ActivityPub client (its <c>Accept</c> header names an ActivityStreams or JSON-LD media type),
+    /// it serves the configured instance actor's <em>public</em> document (the same document
+    /// <see cref="ActorDocumentHandler"/> serves at <c>/ap/v1/u/{handle}</c>), so the site-actor
+    /// dereference succeeds. For any other request — a browser navigating to the home page, a curl with
+    /// no Accept — it returns <see cref="Results.NotFound"/> so the host app's SPA fallback (mapped
+    /// after the ActivityPub endpoints) serves the shell.
+    /// <para>
+    /// Only the <em>public</em> form is ever served here (never the owner-only <c>privateKey</c>
+    /// extension): the instance root is a public discovery URL and the owner-only extension requires the
+    /// request to be authenticated <em>for the instance actor specifically</em>, which a bare root
+    /// GET is not. A host that wants the authenticated form still uses <c>/ap/v1/u/{handle}</c>.
+    /// </para>
+    /// </summary>
+    /// <param name="context">The HTTP context (negotiates the content type and cache control).</param>
+    /// <param name="persistence">The persistence provider (the actor store holding the instance actor).</param>
+    /// <param name="optionsAccessor">The ActivityPub options (the <see cref="ActivityPubServerOptions.InstanceActorId"/>
+    /// and base URI used to locate and render the instance actor's document).</param>
+    /// <param name="actorDocumentCache">The local actor document cache (the public document is served through
+    /// it, exactly as <see cref="ActorDocumentHandler"/> does, so the root and the versioned route share one
+    /// cached rendering).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The instance actor's public document (serialized) when the request is an ActivityPub client
+    /// and the instance actor exists; <see cref="Results.NotFound"/> when the request is not an ActivityPub
+    /// client (so the SPA fallback serves the shell) or the instance actor is unconfigured/absent.</returns>
+    private static async Task<IResult> InstanceActorDocumentHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalActorDocumentCache actorDocumentCache,
+        CancellationToken ct)
+    {
+        // Content negotiation: only an ActivityPub client (its Accept names an ActivityStreams or
+        // JSON-LD media type) gets the instance-actor document. Anything else (a browser, a curl with no
+        // Accept) falls through to 404 so the host's SPA fallback serves the shell.
+        if (!WantsActivityStreams(context))
+        {
+            return Results.NotFound();
+        }
+
+        var options = optionsAccessor.Value;
+        // 138.11: the root serves the dedicated site actor's document when InstanceActorIri is set
+        // (an Application-type actor, as Lemmy's objects::instance requires for a site), otherwise it
+        // falls back to the signing actor (InstanceActorId) — the pre-138.11 behavior. The two are
+        // distinct IRIs so the instance can sign outbound federation as one actor (InstanceActorId)
+        // while presenting a site-actor Application at the root (InstanceActorIri).
+        var rootActorIri = options.InstanceActorIri ?? options.InstanceActorId;
+        if (rootActorIri is not { } instanceActorIri)
+        {
+            return Results.NotFound();
+        }
+
+        // Serve the instance actor's PUBLIC document through the local actor document cache (the same
+        // rendering ActorDocumentHandler uses for the public path) so the root and the versioned route
+        // share one cached copy. The owner-only (privateKey) extension is never served here.
+        var (rendered, _, _) = await actorDocumentCache
+            .GetAsync(
+                instanceActorIri,
+                bypassCache: false,
+                async key =>
+                {
+                    if (await persistence.Actors.TryGetActorAsync(key, out var actor, ct).ConfigureAwait(false) &&
+                        actor is not null)
+                    {
+                        var doc = await BuildActorDocumentAsync(actor, key, null, persistence, options, ct).ConfigureAwait(false);
+                        return ActivityJson.Serialize(doc);
+                    }
+
+                    return null;
+                },
+                ct)
+            .ConfigureAwait(false);
+
+        if (rendered is null)
+        {
+            return Results.NotFound();
+        }
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(rendered, NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// Whether the request is an ActivityPub client: its <c>Accept</c> header names an ActivityStreams
+    /// or JSON-LD media type (<c>application/activity+json</c>, <c>application/ld+json</c>, or a
+    /// wildcard such as <c>application/*</c>). Used by <see cref="InstanceActorDocumentHandler"/> to
+    /// content-negotiate the instance-actor document at the root against the SPA shell.
+    /// </summary>
+    /// <param name="context">The HTTP context (reads the <c>Accept</c> header).</param>
+    /// <returns><c>true</c> when the Accept header signals an ActivityPub/JSON-LD client; otherwise <c>false</c>.</returns>
+    private static bool WantsActivityStreams(HttpContext context)
+    {
+        if (context.Request.Headers.Accept is not { Count: > 0 } accept)
+        {
+            return false;
+        }
+
+        foreach (var value in accept)
+        {
+            if (value is not { Length: > 0 } v)
+            {
+                continue;
+            }
+
+            if (v.Contains("activity+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("ld+json", StringComparison.OrdinalIgnoreCase) ||
+                v.Contains("application/*", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The cached-actor-by-IRI endpoint (<c>GET /ap/v1/actor?iri={absolute-actor-iri}</c>, 134.1).
+    /// Serves the actor document the instance has stored in its database — a local actor or a remote
+    /// actor the instance cached during federation (the <c>RemoteActorPersister</c> persists a remote
+    /// actor's document on first encounter). The document is served <em>as-is</em> (the stored
+    /// document, with its original IRI, name, summary, icon, image, and publicKey) — no live
+    /// cross-instance fetch, and no Iris-local collection extensions are added (those are only valid
+    /// for local actors, whose documents are built by <see cref="BuildActorDocumentAsync"/>).
+    /// <para>
+    /// This is the "serve known content" half of the directory's "All known" scope: the client
+    /// consults it first for a known actor's profile, so a cached actor renders even when its home
+    /// instance is unreachable or the account has been deactivated (a live fetch would 410). When the
+    /// instance has never cached the actor (an unknown IRI), the endpoint 404s and the client falls
+    /// back to a live fetch (the proxy).
+    /// </para>
+    /// <para>
+    /// The response is cacheable for a short window (<see cref="ActivityPubServerConstants.ActorCacheControl"/>):
+    /// the cached document is only refreshed when the instance re-fetches the actor (key resolution /
+    /// a federated Update), so a modest <c>max-age</c> avoids hammering the store while staying fresh
+    /// enough for a profile read.
+    /// </para>
+    /// </summary>
+    /// <param name="context">The HTTP context (reads the <c>?iri</c> query value; negotiates the content type).</param>
+    /// <param name="persistence">The persistence provider (the actor store and community store to look the
+    /// stored document up in).</param>
+    /// <param name="optionsAccessor">The server options (the instance base URI, used to reject a remote
+    /// IRI — this endpoint serves local actors / communities only).</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The cached actor or community document (the stored document, serialized) when the instance
+    /// has it; <see cref="Results.NotFound"/> when the actor is unknown to the instance or <c>?iri</c> is
+    /// missing/malformed.</returns>
+    private static async Task<IResult> ActorByIriHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var iriValue = context.Request.Query["iri"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(iriValue)
+            || !Iri.TryParse(iriValue, out var actorIri))
+        {
+            return Results.NotFound();
+        }
+
+        // Local-only (Phase 138): this endpoint serves LOCAL actor / community documents only. A remote
+        // IRI is not served here — the client routes every remote actor / object read through the
+        // proxy endpoint (POST /ap/v1/proxy/{target}), which is cache-first and refreshes the stored
+        // copy. Returning 404 for a remote IRI keeps this endpoint's contract simple ("does the
+        // instance know this LOCAL actor?") and forces remote reads onto the one cache-managed seam.
+        if (IsLocalIri(actorIri, optionsAccessor.Value.BaseUri) is false)
+        {
+            return Results.NotFound();
+        }
+
+        // Look the stored document up in the actor store first (a local person / organization actor),
+        // then the community store (a local community Group). The first hit wins; a community IRI is
+        // only ever in the community store, an actor IRI only in the actor store, so the order is a
+        // safety net rather than a discriminator.
+        IObject? doc = null;
+        if (await persistence.Actors.TryGetActorAsync(actorIri, out var actor, ct).ConfigureAwait(false)
+            && actor is not null)
+        {
+            doc = actor;
+        }
+        else if (await persistence.Communities.TryGetCommunityAsync(actorIri, out var community, ct).ConfigureAwait(false)
+            && community is not null)
+        {
+            doc = community;
+        }
+
+        if (doc is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Serve the stored document as-is (a remote actor's / community's document already carries its
+        // own inbox/outbox/followers/following IRIs on the remote instance; a local actor's / community's
+        // document is the same one the /u/{handle} or /c/{name} endpoint would build minus the Iris-local
+        // extensions, which a client fetching a *known* actor by IRI does not need — it reads the
+        // collections by their advertised IRIs). Deep-copy so we never mutate the stored document.
+        var copy = ActivityJson.Deserialize<IObjectOrLink>(ActivityJson.Serialize(doc)) as IObject;
+        if (copy is null)
+        {
+            return Results.NotFound();
+        }
+
+        var json = ActivityJson.Serialize(copy);
+
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+            ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(json, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -1124,6 +1778,11 @@ public static class ActivityPubServerExtensions
         IActivityPubClientFactory clientFactory,
         Func<HttpMessageHandler> transportFactory,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ProxyGoneCache goneCache,
+        IPersistenceProvider persistence,
+        IMediaWarmer mediaWarmer,
+        RemoteActorPersister? remoteActorPersister,
+        RemoteCommunityPersister? remoteCommunityPersister,
         CancellationToken ct)
     {
         // Buffer the request body so it is re-readable for the relay below (the SignatureValidation
@@ -1141,6 +1800,26 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(BuildActorIri(baseUrl, "proxy"), authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim. The WASM client cannot
+        // carry Basic auth (the browser has no credentials), so a cross-instance read routed through this
+        // same-origin proxy falls back to cookie auth — the same pattern as the local mute / media upload
+        // endpoints. The claim must be a local actor IRI on this instance's base ({base}/ap/v1/u/{handle});
+        // the handle is the final path segment.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            var actorPrefix = $"{baseUrl.TrimEnd('/')}{ActivityPubServerConstants.RoutePrefix}/u/";
+            if (cookieActorIri is not null && cookieActorIri.StartsWith(actorPrefix, StringComparison.Ordinal))
+            {
+                var handle = cookieActorIri[actorPrefix.Length..];
+                if (handle.Length > 0 && !handle.Contains('/', StringComparison.Ordinal))
+                {
+                    authenticatedHandle = handle;
+                }
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1157,6 +1836,16 @@ public static class ActivityPubServerExtensions
         {
             return Results.NotFound();
         }
+
+        // Decode the catch-all value. The {**target} route value is the RAW path segment — Kestrel
+        // does NOT decode %2F to / in the path (a / is a path separator), so a client that percent-
+        // encodes the target IRI (the Blazor WebAssembly ProxyFallbackHandler sends
+        // Uri.EscapeDataString(target), e.g. https%3A%2F%2Fremote.example%2F%40alice) leaves the value
+        // encoded. A client that sends the target with literal slashes (the integration tests) leaves
+        // it already decoded. Uri.UnescapeDataString handles both: it decodes the encoded form, and is
+        // a no-op on the already-decoded form (no % sequences). Without this, the encoded target
+        // parses as a *relative* IRI and the target policy rejects it (403 "must be absolute http(s)").
+        targetValue = Uri.UnescapeDataString(targetValue);
 
         // The catch-all route value {**target} captures only the PATH of the target IRI — the route
         // matches the path, and the target's query string (e.g. ?page=2 for a paginated collection) is
@@ -1182,6 +1871,59 @@ public static class ActivityPubServerExtensions
                 ? (HttpStatusCode)429
                 : HttpStatusCode.Forbidden;
             return Results.Json(new { error = reason }, statusCode: (int)status);
+        }
+
+        // 3b. Short-circuit known-gone targets: if the remote returned 410 Gone for this target
+        // recently, return 204 No Content without re-fetching. A 204 is a success status (no browser
+        // console error) and signals "no content" — the client's fallback avatar/icon logic handles
+        // it the same as a 404. This avoids ~28 console 4xx errors per page load for dead remote
+        // actors' avatars/icons.
+        if (goneCache.IsGone(target.Value))
+        {
+            return Results.NoContent();
+        }
+
+        // 3c. Cache-first read (the iris client UI's single remote-read endpoint): when the target is
+        // a REMOTE (cross-origin) IRI — the only kind the client ever posts here (local reads dial
+        // directly; a same-origin target is rejected by the target policy) — consult the local store
+        // BEFORE dialing the remote. A fresh cached copy (an actor/community within the freshness
+        // window, or a content object recorded as fresh) is served as-is with no live fetch: the
+        // remote instance never sees the read, so a deactivated/unreachable account still renders and
+        // the per-object /likes+/shares sync walk is skipped. A stale or unknown target falls through
+        // to the live fetch below, which refreshes the cached copy (step 5b). This is what makes the
+        // proxy the one seam for every remote object/actor read: cache hit = cheap local serve,
+        // cache miss/stale = fetch + cache update.
+        IResult? cachedServedResult = null;
+        Actor? staleCachedActor = null;
+        Group? staleCachedCommunity = null;
+        // The REAL method the client wants (the transport is always a POST to /ap/v1/proxy/{target});
+        // cache-first applies to GET reads only (a proxied write is never cached).
+        var realProxyMethod = HttpMethod.Parse(
+            context.Request.Headers["X-Iris-Proxy-Method"].FirstOrDefault() ?? "GET");
+        if (realProxyMethod == HttpMethod.Get
+            && !IsLocalIri(target, options.BaseUri))
+        {
+            var cachedLookup = await TryServeCachedTargetAsync(
+                target, persistence, remoteActorPersister, remoteCommunityPersister).ConfigureAwait(false);
+            if (cachedLookup is not null)
+            {
+                cachedServedResult = cachedLookup.Value.Result;
+                // null result = a stale (or absent) copy: thread the stale actor/community (when the
+                // cached document is the target's own) to step 5b so a successful fetch refreshes it
+                // in place; a stale content object is re-stored by the existing store path.
+                if (cachedLookup.Value.Doc is { Id: { Length: > 0 } id } && id == target.Value)
+                {
+                    staleCachedActor = cachedLookup.Value.IsActor ? cachedLookup.Value.Doc as Actor : null;
+                    staleCachedCommunity = cachedLookup.Value.Doc as Group;
+                }
+            }
+
+            if (cachedServedResult is not null)
+            {
+                context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
+                    ActivityPubServerConstants.ActorCacheControl;
+                return cachedServedResult;
+            }
         }
 
         // 4. Build the forwarded request. The proxy transport is always a POST to
@@ -1241,11 +1983,483 @@ public static class ActivityPubServerExtensions
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
         // Relay the remote response's status and body (content type defaults to ActivityPub JSON-LD).
+        // A 410 Gone from the remote is recorded in the ProxyGoneCache so subsequent requests for the
+        // same target short-circuit to a 404 without re-fetching (reduces console 410 noise for dead
+        // remote actors' avatars/icons on every page load).
         var statusCode = (int)response.StatusCode;
+        if (statusCode == (int)HttpStatusCode.Gone)
+        {
+            goneCache.RecordGone(target.Value);
+        }
+
+        // Sync the fetched object into the local store (75.3): when the proxy relays a successful GET
+        // of an ActivityPub JSON object (a Note, Article, Profile, etc. — not a write, not a collection
+        // page), parse it, store it in the IObjectStore, and warm its cross-origin media attachments.
+        // This closes the gap where a proxied read (the AP proxy-fallback for browsing remote outboxes)
+        // served the content verbatim without persisting it — a subsequent local fetch of the same
+        // IRI would re-hit the remote instead of serving from the local store, and the object's media
+        // would not be pre-fetched (the reactive media proxy would fetch lazily on first hit).
+        // Best-effort: a parse failure (the body is a collection, an activity, or malformed) or a store
+        // failure never breaks the relay — the object is simply not cached.
         var mediaType = response.Content.Headers.ContentType?.MediaType ?? ActivityJson.ActivityJsonContentType;
+        if (method == HttpMethod.Get
+            && statusCode >= 200 && statusCode < 300
+            && (mediaType == ActivityJson.ActivityJsonContentType || mediaType == ActivityJson.JsonLdContentType)
+            && !string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                var parsed = ActivityJson.Deserialize<IObjectOrLink>(body);
+                if (parsed is IObject obj && !string.IsNullOrWhiteSpace(obj.Id))
+                {
+                    // 117.3 / 135.1 — archive the remote actor (or community) document to the durable
+                    // store so the directory's "All known" scope can list every actor the instance has
+                    // fetched. This is the single choke point for client-originated outbound fetches:
+                    // the directory's external lookup (and any other cross-instance browse) resolves a
+                    // remote actor's document through this proxy, and the actor is rendered and then
+                    // discarded unless archived here. (The inbound signature-validation path already
+                    // archives remote actors via IrisActorDocumentFetcher, but an actor the user merely
+                    // browses never passes through that path — so the proxy is the general seam.)
+                    // Actors go to the actor store; a Group is a remote community and goes to the
+                    // community store. Both persisters are best-effort, idempotent, and skip local
+                    // IRIs. A failure never breaks the relay.
+                    // A Group is a remote community and goes to the community store. The check MUST come
+                    // before the Actor check: in the ActivityStreams model a Group IS an Actor (Group
+                    // derives from Actor), so testing `obj is Actor` first would swallow every Group and
+                    // the actor persister (which skips Groups) would drop it. A Group is not an Actor in
+                    // the IActorStore sense (it has no person/actor identity), so it must never reach the
+                    // actor store.
+                    // Refresh a stale cached actor/community in place (the cache-first read in step
+                    // 3c threaded the stale copy when the target is an actor/community IRI): a
+                    // successful fetch overwrites the stored document and stamps the freshness mark
+                    // so the next read within the window serves it without re-fetching. A plain
+                    // PersistIfNewAsync would NO-OP on an already-stored (stale) document.
+                    if (staleCachedActor is not null && obj is Actor staleActor
+                        && remoteActorPersister is not null)
+                    {
+                        await remoteActorPersister.RefreshAsync(staleActor, ct).ConfigureAwait(false);
+                    }
+                    else if (staleCachedCommunity is not null && obj is Group staleGroup
+                        && remoteCommunityPersister is not null)
+                    {
+                        await remoteCommunityPersister.RefreshAsync(staleGroup, ct).ConfigureAwait(false);
+                    }
+                    else if (remoteCommunityPersister is not null && obj is Group)
+                    {
+                        await remoteCommunityPersister.PersistIfNewAsync((Group)obj, ct).ConfigureAwait(false);
+                    }
+                    else if (remoteActorPersister is not null && obj is Actor)
+                    {
+                        await remoteActorPersister.PersistIfNewAsync(obj, ct).ConfigureAwait(false);
+                    }
+
+                    // 136.19 (re-animation guard): if the local copy is a Tombstone (the object was
+                    // deleted), a proxied re-fetch must not overwrite it with the remote's live content —
+                    // the remote may still serve the original (the Delete has not propagated there yet),
+                    // and re-storing it would resurrect the deleted object. The Tombstone is the
+                    // authoritative final state. (A re-fetch that returns a Tombstone is harmless — the
+                    // guard only skips non-Tombstone content.)
+                    var reanimationIri = new Iri(obj.Id);
+                    if (await persistence.Objects.TryGetObjectAsync(reanimationIri, out var reanimationExisting, ct).ConfigureAwait(false)
+                        && reanimationExisting is Tombstone)
+                    {
+                        // The local copy is tombstoned; skip the re-store (and the interaction sync,
+                        // which would re-walk the deleted object's collections).
+                    }
+                    else
+                    {
+                        // Stamp the server-internal iris:fetchedAt freshness mark on a REMOTE content
+                        // object before storing it, so the proxy's cache-first read (step 3c) can serve
+                        // it without a live fetch within the freshness window (and re-fetch + re-stamp
+                        // once stale). A locally-authored object is never stamped (it is not a cached
+                        // remote document — local reads dial directly). The mark rides in ExtensionData
+                        // and is stripped before any document is served (StripServerInternalFields).
+                        if (!IsLocallyAuthoredObject(obj, options.BaseUri))
+                        {
+                            obj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                            obj.ExtensionData[ActivityPubExtensionNames.FetchedAt] =
+                                System.Text.Json.JsonSerializer.SerializeToElement(
+                                    DateTimeOffset.UtcNow.ToString("O"));
+                        }
+
+                        await persistence.Objects.PutObjectAsync(obj, ct).ConfigureAwait(false);
+                        if (options.BaseUri is { } instanceBase)
+                        {
+                            await mediaWarmer.WarmAsync(obj, instanceBase, ct).ConfigureAwait(false);
+                        }
+
+                        // 132.1 — interaction count sync for a proxied (remote) object: after storing the
+                        // object, walk the remote object's /likes, /shares, and /replies collections and
+                        // record the discovered likers / announcers / replies as edges in the local stores,
+                        // so a subsequent local read of the object (the object-document endpoint's
+                        // iris:likedCount / iris:sharedCount / iris:repliedCount) reflects the object's real
+                        // interaction counts instead of 0 (a proxied read previously stored the object but
+                        // never its interactions, so the object-detail page showed "0 likes · 0 boosts").
+                        // Best-effort and bounded (a limited, capped walk): a remote that does not serve the
+                        // collections (or is slow / unreachable) simply yields nothing, and the object is
+                        // then served with the counts of the interactions this instance has already recorded
+                        // (the "known edges" fallback — there is nothing more to do). Never breaks the relay.
+                        if (!IsLocallyAuthoredObject(obj, options.BaseUri))
+                        {
+                            await SyncProxiedObjectInteractionsAsync(client, persistence, new Iri(obj.Id), ct)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Best-effort: a parse, store, or interaction-sync failure does not break the relay.
+            }
+        }
+
         context.Response.StatusCode = statusCode;
         context.Response.ContentType = mediaType;
         return Results.Content(body, mediaType);
+    }
+
+    /// <summary>
+    /// The cache-first freshness window for the proxy endpoint's cached reads (Phase 138): a cached
+    /// remote actor / community / object whose <c>iris:fetchedAt</c> mark is within this window is
+    /// served from the local store without a live cross-instance fetch; an older (or unmarked) copy
+    /// is re-fetched and refreshed. 10 minutes balances profile / object-read latency (no round-trip
+    /// to the remote for a just-read document) against staleness (a profile edit lands within the
+    /// window). Mirrors the client's <c>UiContext</c> actor TTL (5 minutes) at a coarser grain — the
+    /// client's in-memory cache already absorbs the sub-10-minute repeats.
+    /// </summary>
+    private static readonly TimeSpan ProxyCacheFreshnessTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Whether an IRI is a LOCAL document on this instance (its origin matches the instance's base
+    /// URI, ignoring trailing slashes and case). Used by the cache-first read (only remote targets are
+    /// cached — local reads dial directly) and by the local-only cached-actor endpoint (a remote IRI
+    /// 404s there). Returns <see langword="false"/> when the instance base is unset or the IRI has no
+    /// origin (a relative / malformed IRI is treated as remote so the caller's safe default applies).
+    /// </summary>
+    /// <param name="iri">The IRI to test.</param>
+    /// <param name="instanceBase">The instance's base URI (e.g. <c>https://a.domain.local</c>), or null.</param>
+    private static bool IsLocalIri(Iri iri, Iri? instanceBase)
+    {
+        if (instanceBase is not { } baseIri)
+        {
+            return false;
+        }
+
+        var iriStr = iri.Value;
+        if (!Uri.TryCreate(iriStr, UriKind.Absolute, out var iriUri))
+        {
+            return false;
+        }
+
+        var baseStr = baseIri.Value.TrimEnd('/');
+        var iriOrigin = $"{iriUri.Scheme}://{iriUri.Authority}";
+        return string.Equals(
+            iriOrigin,
+            new Uri(baseStr).GetLeftPart(System.UriPartial.Authority),
+            StringComparison.OrdinalIgnoreCase)
+            && iriStr.StartsWith(baseStr, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// The outcome of the proxy endpoint's cache-first read (Phase 138): the cached document (an
+    /// actor / community / content object) found for the target, whether it is an actor (as opposed to
+    /// a community or plain object), and the result to serve when the copy is FRESH (null when the
+    /// copy is stale / unmarked and the caller must fall through to a live fetch).
+    /// </summary>
+    private readonly record struct CachedTargetLookup(IObject Doc, bool IsActor, IResult? Result);
+
+    /// <summary>
+    /// The proxy endpoint's cache-first read (Phase 138): for a REMOTE (cross-origin) target, look the
+    /// target up in the local stores — the actor store (a cached remote person / organization), the
+    /// community store (a cached remote Group), and the object store (a cached content object) — and
+    /// decide whether a fresh cached copy can be served without a live fetch.
+    /// <para>
+    /// A FRESH copy (its server-internal <c>iris:fetchedAt</c> mark within
+    /// <see cref="ProxyCacheFreshnessTtl"/>; a Tombstone is always fresh — a deleted remote object is
+    /// final) is deep-copied (the <c>iris:fetchedAt</c> server-internal field stripped) and returned as
+    /// a result to serve. A STALE or UNMARKED copy (and an unknown target) yields a lookup whose
+    /// <see cref="CachedTargetLookup.Result"/> is null: the caller falls through to a live fetch and,
+    /// when the cached document is the target's own actor / community, threads it to the refresh path
+    /// so the fetch overwrites it and stamps it fresh.
+    /// </para>
+    /// <para>
+    /// Actor / community IRIs are checked before the object store (a Group is an Actor and a cached
+    /// community is also stored as an object in some flows — the actor / community stores are the
+    /// authoritative home for those documents). A target that is not an actor, community, or stored
+    /// object (an unknown IRI, or an activity IRI the object store does not hold) yields null — the
+    /// caller live-fetches it.
+    /// </para>
+    /// </summary>
+    /// <param name="target">The remote target IRI to look up.</param>
+    /// <param name="persistence">The persistence provider (actor, community, and object stores).</param>
+    /// <param name="remoteActorPersister">The remote-actor persister (unused by the lookup itself; kept
+    /// for symmetry with the refresh path — the lookup only reads).</param>
+    /// <param name="remoteCommunityPersister">The remote-community persister (unused by the lookup
+    /// itself; kept for symmetry with the refresh path).</param>
+    /// <returns>The lookup outcome, or <see langword="null"/> when the target is not a cached
+    /// actor / community / object (the caller live-fetches).</returns>
+    private static async Task<CachedTargetLookup?> TryServeCachedTargetAsync(
+        Iri target,
+        IPersistenceProvider persistence,
+        RemoteActorPersister? remoteActorPersister,
+        RemoteCommunityPersister? remoteCommunityPersister)
+    {
+        // The lookup is synchronous in effect (the stores' TryGet* are in-memory / single-row reads),
+        // but they are async; this method awaits them and returns the outcome.
+        // 1. Actor store: a cached remote person / organization actor.
+        if (await persistence.Actors.TryGetActorAsync(target, out var actor, CancellationToken.None).ConfigureAwait(false)
+            && actor is not null)
+        {
+            return MakeCachedLookup(actor, isActor: true);
+        }
+
+        // 2. Community store: a cached remote Group (a community IRI is only ever here).
+        if (await persistence.Communities.TryGetCommunityAsync(target, out var community, CancellationToken.None).ConfigureAwait(false)
+            && community is not null)
+        {
+            return MakeCachedLookup(community, isActor: false);
+        }
+
+        // 3. Object store: a cached content object (note, article, image, or Tombstone).
+        if (await persistence.Objects.TryGetObjectAsync(target, out var obj, CancellationToken.None).ConfigureAwait(false)
+            && obj is not null)
+        {
+            return MakeCachedLookup(obj, isActor: false);
+        }
+
+        // Unknown target (or an activity / other IRI the object store does not hold): live-fetch.
+        return null;
+    }
+
+    /// <summary>
+    /// Builds the cache-first lookup outcome for a cached document: a FRESH copy (the
+    /// <c>iris:fetchedAt</c> mark within the freshness window, or a Tombstone — always final) is
+    /// deep-copied with the server-internal <c>iris:fetchedAt</c> field stripped and wrapped in a
+    /// result to serve; a STALE / UNMARKED copy yields a null result (the caller live-fetches and
+    /// refreshes).
+    /// </summary>
+    private static CachedTargetLookup MakeCachedLookup(IObject doc, bool isActor)
+    {
+        if (doc is Tombstone)
+        {
+            // A deleted remote object is final — serve the Tombstone without a live fetch (a re-fetch
+            // would 410 or, worse, resurrect the deleted content past the re-animation guard).
+            var tombstoneCopy = StripServerInternalFields(doc);
+            return new CachedTargetLookup(doc, isActor, Results.Text(
+                ActivityJson.Serialize(tombstoneCopy), "application/activity+json"));
+        }
+
+        if (!IsFreshCachedDocument(doc))
+        {
+            // Stale or unmarked: the caller live-fetches and (for an actor / community) refreshes.
+            return new CachedTargetLookup(doc, isActor, null);
+        }
+
+        var copy = StripServerInternalFields(doc);
+        return new CachedTargetLookup(doc, isActor, Results.Text(
+            ActivityJson.Serialize(copy), "application/activity+json"));
+    }
+
+    /// <summary>
+    /// Whether a cached document's server-internal <c>iris:fetchedAt</c> mark (in
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/>) is within
+    /// <see cref="ProxyCacheFreshnessTtl"/> of now. A document with no mark (persisted before the
+    /// freshness field existed, or a local / inbound-persisted document) is treated as STALE so the
+    /// first proxy read refreshes it (and stamps it) — safe, at the cost of one live fetch.
+    /// </summary>
+    private static bool IsFreshCachedDocument(IObject doc)
+    {
+        if (doc.ExtensionData is not { } ext ||
+            !ext.TryGetValue(ActivityPubExtensionNames.FetchedAt, out var mark) ||
+            mark.ValueKind != System.Text.Json.JsonValueKind.String)
+        {
+            return false;
+        }
+
+        return DateTimeOffset.TryParse(mark.GetString(), out var fetched)
+            && (DateTimeOffset.UtcNow - fetched) < ProxyCacheFreshnessTtl;
+    }
+
+    /// <summary>
+    /// Deep-copies a stored document and strips the server-internal <c>iris:fetchedAt</c> field from
+    /// the copy's <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> before it is
+    /// served: the freshness mark is a server-internal cache field, not part of the canonical remote
+    /// document, so it must not leak to the client (the client would see a spurious
+    /// <c>iris:fetchedAt</c> term on the actor / object). The stored document itself is not mutated.
+    /// </summary>
+    private static IObject StripServerInternalFields(IObject doc)
+    {
+        var copy = ActivityJson.Deserialize<IObjectOrLink>(ActivityJson.Serialize(doc)) as IObject;
+        if (copy is null)
+        {
+            return doc;
+        }
+
+        if (copy.ExtensionData is { } ext)
+        {
+            ext.Remove(ActivityPubExtensionNames.FetchedAt);
+            if (ext.Count == 0)
+            {
+                copy.ExtensionData = null;
+            }
+        }
+
+        return copy;
+    }
+
+    /// <summary>
+    /// 132.1 — whether a proxied (fetched) object is locally authored (its <c>attributedTo</c> is a local
+    /// actor on this instance). A locally-authored object's interactions are already recorded by this
+    /// instance's own handlers (the <see cref="Iris.Server.Inbox.LikeActivityHandler"/> /
+    /// <see cref="Iris.Server.Inbox.AnnounceActivityHandler"/> /
+    /// <see cref="Iris.Server.Inbox.CreateActivityHandler"/>), so the proxy does not re-walk its remote
+    /// collections (the object is not really remote — it is a local object being read back through the
+    /// proxy, e.g. the client's outbox fallback). Returns <see langword="false"/> when the object has no
+    /// <c>attributedTo</c> or its author is not a local actor (a genuinely remote object, which is the
+    /// case the interaction sync targets).
+    /// </summary>
+    /// <param name="obj">The fetched object.</param>
+    /// <param name="instanceBase">The instance's base IRI (e.g. <c>https://a.domain.local</c>); when null
+    /// the object is treated as remote (the sync runs).</param>
+    private static bool IsLocallyAuthoredObject(IObject obj, Iri? instanceBase)
+    {
+        if (instanceBase is not { } baseIri)
+        {
+            return false;
+        }
+
+        // Rule 3: read the multi-valued attributedTo as IEnumerable, null-safe.
+        var author = obj is KristofferStrube.ActivityStreams.Object o ? o.AttributedTo : null;
+        var first = author?.FirstOrDefault();
+        var authorIri = first?.ResolveObjectIri();
+        if (authorIri is not { } aIri)
+        {
+            return false;
+        }
+
+        // A local actor's IRI is {instanceBase}/ap/v1/u/{handle} (or /c/{handle} for a community).
+        var localPrefix = baseIri.Value.TrimEnd('/') + ActivityPubServerConstants.RoutePrefix;
+        return aIri.Value.StartsWith(localPrefix + "/u/", StringComparison.Ordinal)
+            || aIri.Value.StartsWith(localPrefix + "/c/", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// 132.1 — syncs the interaction counts of a proxied (remote) object into the local stores. After the
+    /// proxy stores a remote object (75.3), this walks the remote object's <c>/likes</c>, <c>/shares</c>,
+    /// and <c>/replies</c> collections (via the proxy's signed <see cref="IActivityPubClient"/>, the same
+    /// transport the proxy used to fetch the object) and records each discovered liker / announcer /
+    /// reply as an edge in the local <see cref="ILikeStore"/> / <see cref="IAnnounceStore"/> /
+    /// <see cref="IReplyStore"/>. The object-document endpoint then derives the object's
+    /// <c>iris:likedCount</c> / <c>iris:sharedCount</c> / <c>iris:repliedCount</c> from those reverse
+    /// indexes, so a subsequent local read of the object shows the object's real interaction counts
+    /// instead of 0.
+    /// </summary>
+    /// <remarks>
+    /// <strong>Known-edges fallback.</strong> When a collection cannot be walked (the remote does not serve
+    /// it — a non-Iris / strict ActivityStreams instance that does not expose the bare <c>likes</c> /
+    /// <c>shares</c> extension collections — or is slow / unreachable), the walk yields nothing and the
+    /// object is simply served with the counts of the interactions this instance has <em>already</em>
+    /// recorded (from inbound Like / Announce / Reply activities, which the handlers record for stored
+    /// objects). There is no additional signal to mine; the fallback is "serve what we know."
+    /// <para>
+    /// <strong>Bounded and best-effort.</strong> Each collection walk is capped (the client's
+    /// <c>GetLikesAsync</c> / <c>GetSharesAsync</c> / <c>GetRepliesAsync</c> with a 100-item limit — a
+    /// like/boost/reply set is small and bounded), and any failure (a network error, a 404, a timeout) is
+    /// swallowed: the proxy relay and the object store are never broken by a failed interaction sync. The
+    /// walk is best-effort enrichment, not a correctness dependency.
+    /// </para>
+    /// </remarks>
+    /// <param name="client">The proxy's signed <see cref="IActivityPubClient"/> (the outbound federation
+    /// transport; the same client the proxy used to fetch the object).</param>
+    /// <param name="persistence">The local persistence provider (provides the like / announce / reply
+    /// stores the discovered edges are recorded in).</param>
+    /// <param name="objectIri">The IRI of the proxied object whose interactions are being synced.</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task SyncProxiedObjectInteractionsAsync(
+        IActivityPubClient client,
+        IPersistenceProvider persistence,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        const int limit = 100;
+
+        // /likes: each item is a liker's IRI (a Link, or a Like activity whose actor is the liker). Record
+        // each as a like edge (liker → object) in the local like store. The store is idempotent
+        // (add-if-absent), so a re-proxy of the same object is a no-op for already-known likers.
+        await ForEachCollectionItemAsync(
+            client, objectIri.LikesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Likes.RecordLikeAsync(itemIri, objectIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+
+        // /shares: each item is an announcer's (booster's) IRI. Record each as an announce edge
+        // (announcer → object) in the local announce store (idempotent, as above).
+        await ForEachCollectionItemAsync(
+            client, objectIri.SharesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Announces.RecordAnnounceAsync(itemIri, objectIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+
+        // /replies: each item is a reply object's IRI. Record each as a reply edge (parent=object,
+        // child=reply) in the local reply store (idempotent, as above). The reply object itself is not
+        // stored here (only its edge) — the object-document endpoint counts the reply edges, and the
+        // reply's full object is fetched on demand by the client's thread reader.
+        await ForEachCollectionItemAsync(
+            client, objectIri.RepliesOf(), limit,
+            async (itemIri, c) =>
+            {
+                await persistence.Replies.RecordReplyAsync(objectIri, itemIri, c).ConfigureAwait(false);
+            },
+            ct)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 132.1 — walks a remote collection (via the proxy's signed <see cref="IActivityPubClient"/>) up to a
+    /// bounded number of items, resolving each item's IRI and invoking <paramref name="onItem"/> with it.
+    /// Best-effort: any failure (a non-success status, a missing collection, a timeout, a non-IRI item) is
+    /// swallowed, and the walk simply yields nothing for that collection — the caller's known-edges
+    /// fallback (serve the counts of already-recorded interactions) then applies. A successful walk of an
+    /// empty collection yields nothing too (an object with no likes/boosts/replies has empty collections).
+    /// </summary>
+    /// <param name="client">The signed client that walks the collection.</param>
+    /// <param name="collectionIri">The collection IRI to walk (e.g. <c>{object}/likes</c>).</param>
+    /// <param name="limit">The maximum number of items to walk (bounds the remote load).</param>
+    /// <param name="onItem">The callback invoked with each item's resolved IRI (null items are skipped).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task ForEachCollectionItemAsync(
+        IActivityPubClient client,
+        Iri collectionIri,
+        int limit,
+        Func<Iri, CancellationToken, Task> onItem,
+        CancellationToken ct)
+    {
+        try
+        {
+            // GetCollectionItemsAsync respects the query's Limit (it walks pages until the limit is
+            // reached, reading through the CollectionPageCache) and yields each item as an
+            // IObjectOrLink, so the bounded walk is built in — no separate page-following here.
+            await foreach (var item in client.GetCollectionItemsAsync(collectionIri, new CollectionQuery { Limit = limit }, ct))
+            {
+                var itemIri = item.ResolveObjectIri();
+                if (itemIri is null)
+                {
+                    continue;
+                }
+
+                await onItem(itemIri.Value, ct).ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Best-effort: a failed / missing collection is a no-op (the known-edges fallback applies).
+        }
     }
 
     /// <summary>
@@ -1282,6 +2496,19 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the local
+        // mute falls back to cookie auth — the same pattern as the media upload endpoint.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1326,6 +2553,377 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Lists the actor's pending inbound follow requests (Phase 100) — the follow-approval queue: the
+    /// remote actors who sent a <c>Follow</c> while the actor has <c>manuallyApprovesFollowers</c> set
+    /// (so the follow is held, not auto-accepted). Owner-only (Basic auth or the Blazor WASM cookie, the
+    /// actor's own IRI). Returns 200 with a JSON array of requester IRIs (newest-first); 401 when the
+    /// caller is not the actor; 404 when the handle is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalListFollowRequestsHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the requesting actor (Basic auth or the Blazor WASM cookie — the same pattern
+        // as LocalMuteHandler). The queue is private: only the actor themselves may list it.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. The handle must resolve to a known local actor (a community has no person follow queue —
+        // community join requests live on the /local/v1/c/{name}/requests surface).
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 3. List the pending follow-request edges (requester → this actor), newest-first.
+        var requests = await persistence.Follows.GetFollowRequestsAsync(actorIri, ct).ConfigureAwait(false);
+        return Results.Json(requests.Select(r => r.Value).ToArray());
+    }
+
+    /// <summary>
+    /// Accepts a pending inbound follow request (Phase 100): the actor approves a held follow. The
+    /// follower→actor follow edge is recorded (confirming the held follow) and the pending request is
+    /// drained from the queue. Owner-only (Basic or cookie auth, the actor's own IRI). Returns 204 on
+    /// success; 401 unauthenticated; 404 when the handle or the request is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalAcceptFollowRequestHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+        => await LocalFollowRequestDecisionAsync(context, handle, credentialValidator, persistence, optionsAccessor, accept: true, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Rejects a pending inbound follow request (Phase 100): the actor refuses a held follow. The
+    /// provisional follower→actor follow edge is removed and the pending request is drained from the
+    /// queue (no follow granted). Owner-only (Basic or cookie auth, the actor's own IRI). Returns 204 on
+    /// success; 401 unauthenticated; 404 when the handle or the request is unknown.
+    /// </summary>
+    private static async Task<IResult> LocalRejectFollowRequestHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+        => await LocalFollowRequestDecisionAsync(context, handle, credentialValidator, persistence, optionsAccessor, accept: false, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Shared body for the local follow-request accept/reject endpoints (Phase 100): authenticates the
+    /// acting actor, verifies a pending follow request from the <c>{**actorIri}</c> requester exists, and
+    /// applies the follow-decision edge effect (record/confirm the follow edge + drain the request edge,
+    /// or remove the follow edge + drain the request edge).
+    /// </summary>
+    private static async Task<IResult> LocalFollowRequestDecisionAsync(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        bool accept,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate the acting actor (Basic auth or the Blazor WASM cookie — same as the list
+        // handler). The decision is private: only the actor themselves may accept/reject their requests.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. The handle must resolve to a known local actor.
+        if (!await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 3. The requester ({**actorIri}) must have a pending follow request for this actor.
+        var requesterIri = ParseCatchAllIri(context, "actorIri");
+        if (requesterIri is not { } requester)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Follows.HasFollowRequestAsync(requester, actorIri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 4. Apply the decision: record/confirm (accept) or remove (reject) the follow edge, and drain the
+        // pending request edge (the queue no longer lists the decided requester).
+        await ApplyFollowDecisionEdgeAsync(persistence, actorIri, requester, accept, ct).ConfigureAwait(false);
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Records a local poll vote. The requesting actor is identified by Basic auth or cookie auth;
+    /// the poll is the <c>{**pollIri}</c> catch-all route value (the stored Question object's IRI).
+    /// The body is <c>{"option": &lt;index&gt;}</c>. The handler fetches the stored object, verifies
+    /// it is a poll (has a <c>poll</c> extension or <c>options</c> array), checks it is not expired,
+    /// records the voter in the poll's <c>voters</c> array, increments the option's vote count, and
+    /// stores the updated object. Returns 200 with the updated poll data, or 404/400/409 on failure.
+    /// </summary>
+    private static async Task<IResult> LocalPollVoteHandler(
+        HttpContext context,
+        string handle,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var actorIri = BuildActorIri(baseUrl, handle);
+
+        // 1. Authenticate (Basic auth or cookie auth — same pattern as LocalMuteHandler).
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticatedHandle = await credentialValidator
+            .TryValidateAsync(actorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
+        if (authenticatedHandle is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the poll IRI from the catch-all route value.
+        const string pollRouteKey = "pollIri";
+        if (context.Request.RouteValues[pollRouteKey] is not string pollValue
+            || string.IsNullOrWhiteSpace(pollValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(pollValue, out var pollIri))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Read the option index from the JSON body.
+        var body = await JsonSerializer.DeserializeAsync<PollVoteRequest>(context.Request.Body).ConfigureAwait(false);
+        if (body is null || body.Option < 0)
+        {
+            return Results.BadRequest();
+        }
+
+        // 4. Fetch the stored object.
+        if (!await persistence.Objects.TryGetObjectAsync(pollIri, out var stored, ct).ConfigureAwait(false)
+            || stored is null)
+        {
+            return Results.NotFound();
+        }
+
+        // 5. Parse the poll data to verify it is a poll and check expiry.
+        var pollData = stored.GetPollData();
+        if (pollData is null)
+        {
+            return Results.BadRequest();
+        }
+
+        if (pollData.Expired)
+        {
+            return Results.Conflict();
+        }
+
+        if (body.Option >= pollData.Options.Count)
+        {
+            return Results.BadRequest();
+        }
+
+        // 6. Check if the voter has already voted (idempotency: re-voting is a no-op).
+        var extensionData = stored.ExtensionData ?? new Dictionary<string, JsonElement>();
+        var voters = new List<string>();
+        if (extensionData.TryGetValue("poll", out var pollExt)
+            && pollExt.ValueKind == JsonValueKind.Object
+            && pollExt.TryGetProperty("voters", out var votersEl)
+            && votersEl.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var v in votersEl.EnumerateArray())
+            {
+                voters.Add(v.GetString() ?? "");
+            }
+        }
+
+        if (voters.Contains(actorIri.Value))
+        {
+            // Already voted — return the current poll data (idempotent).
+            return Results.Json(SerializePollData(pollData));
+        }
+
+        // 7. Record the vote: add the voter to poll.voters and increment the option's vote count.
+        if (extensionData.TryGetValue("poll", out var pollObj)
+            && pollObj.ValueKind == JsonValueKind.Object
+            && pollObj.TryGetProperty("options", out var optionsEl)
+            && optionsEl.ValueKind == JsonValueKind.Array)
+        {
+            var optionArray = optionsEl.EnumerateArray().ToList();
+            if (body.Option < optionArray.Count)
+            {
+                var optEl = optionArray[body.Option];
+                if (optEl.ValueKind == JsonValueKind.Object)
+                {
+                    // Increment the vote count (Mastodon: votesCount; AS2: votes).
+                    if (optEl.TryGetProperty("votesCount", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votesCount", 1);
+                    }
+                    else if (optEl.TryGetProperty("votes", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votes", 1);
+                    }
+
+                    optionArray[body.Option] = optEl;
+                }
+            }
+
+            // Rebuild the poll extension with the updated options and voters.
+            var updatedVoters = new List<string>(voters) { actorIri.Value };
+            var pollJson = JsonSerializer.SerializeToElement(new
+            {
+                options = optionArray,
+                voters = updatedVoters,
+                expired = pollData.Expired,
+                multiple = pollData.Multiple,
+                totalVotes = pollData.TotalVotes + 1,
+                endsAt = pollData.EndsAt,
+            });
+            extensionData["poll"] = pollJson;
+        }
+        else if (extensionData.TryGetValue("options", out var as2Options)
+            && as2Options.ValueKind == JsonValueKind.Array)
+        {
+            // AS2/Pleroma shape: options directly in ExtensionData.
+            var optionArray = as2Options.EnumerateArray().ToList();
+            if (body.Option < optionArray.Count)
+            {
+                var optEl = optionArray[body.Option];
+                if (optEl.ValueKind == JsonValueKind.Object)
+                {
+                    if (optEl.TryGetProperty("votes", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votes", 1);
+                    }
+                    else if (optEl.TryGetProperty("votesCount", out _))
+                    {
+                        optEl = IncrementJsonNumber(optEl, "votesCount", 1);
+                    }
+
+                    optionArray[body.Option] = optEl;
+                }
+            }
+
+            extensionData["options"] = JsonSerializer.SerializeToElement(optionArray);
+            var as2Voters = new List<string>(voters) { actorIri.Value };
+            extensionData["voters"] = JsonSerializer.SerializeToElement(as2Voters);
+            extensionData["totalVotes"] = JsonSerializer.SerializeToElement(pollData.TotalVotes + 1);
+        }
+
+        stored.ExtensionData = extensionData;
+        await persistence.Objects.PutObjectAsync(stored, ct).ConfigureAwait(false);
+
+        // 8. Return the updated poll data.
+        var updatedPoll = stored.GetPollData();
+        return Results.Json(SerializePollData(updatedPoll ?? pollData));
+    }
+
+    /// <summary>
+    /// Increments a numeric property on a JSON object element by <paramref name="delta"/>.
+    /// </summary>
+    private static JsonElement IncrementJsonNumber(JsonElement obj, string property, int delta)
+    {
+        if (!obj.TryGetProperty(property, out var numEl))
+        {
+            return obj;
+        }
+
+        var current = numEl.TryGetInt32(out var v) ? v : 0;
+        var updated = current + delta;
+
+        var clone = obj.Clone();
+        var raw = JsonSerializer.SerializeToNode(obj);
+        if (raw is JsonNode node)
+        {
+            node[property] = updated;
+            return node.Deserialize<JsonElement>();
+        }
+
+        return obj;
+    }
+
+    /// <summary>
+    /// Serializes poll data to a JSON-serializable dictionary for the API response.
+    /// </summary>
+    private static Dictionary<string, object?> SerializePollData(PollData poll) => new()
+    {
+        ["options"] = poll.Options.Select(o => new { o.Title, o.Votes }).ToArray(),
+        ["totalVotes"] = poll.TotalVotes,
+        ["endsAt"] = poll.EndsAt,
+        ["expired"] = poll.Expired,
+        ["multiple"] = poll.Multiple,
+    };
+
+    /// <summary>
+    /// The JSON request body for a poll vote: the zero-based index of the selected option.
+    /// </summary>
+    private sealed record PollVoteRequest(int Option);
+
+    /// <summary>
     /// Records (or removes) a local relay subscription (F-06). The requesting actor is identified by
     /// Basic auth (IActorCredentialValidator); the relay is the {target} catch-all route value (an
     /// absolute IRI); <c>?unsubscribe=true</c> removes the subscription instead of recording it.
@@ -1357,6 +2955,19 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the local
+        // relay subscription falls back to cookie auth — the same pattern as the media upload endpoint.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1429,6 +3040,20 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. The WASM client cannot carry Basic auth (it has no credentials), so the media
+        // upload falls back to cookie auth — the same pattern as the inbox endpoint and the actor
+        // document's owner-only extension.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.Unauthorized();
@@ -1436,15 +3061,30 @@ public static class ActivityPubServerExtensions
 
         // 2. Read the uploaded file from the multipart form. The file is the single required part (named
         // "file"); its content-type + file name are carried by the part.
+        //
+        // The production host caps every inbound body at 1 MiB (DefaultMaxRequestBodySize, a DoS bound on
+        // the unauthenticated federation inbox). A media upload is an authenticated, owner-only write whose
+        // own cap is MaxMediaUploadBytes (10 MiB), so it must be exempted from the 1 MiB global ceiling —
+        // otherwise a legitimate 2–10 MiB image is rejected by Kestrel before the app's own cap is reached.
+        // Raise the per-request limit (IHttpMaxRequestBodySizeFeature) to the media cap; Kestrel enforces
+        // the per-request value over the connection default when the body is read.
+        if (context.Features.Get<IHttpMaxRequestBodySizeFeature>() is { } sizeFeature)
+        {
+            sizeFeature.MaxRequestBodySize = MaxMediaUploadBytes;
+        }
+
         IFormFile? file;
         try
         {
             var form = await context.Request.ReadFormAsync(ct).ConfigureAwait(false);
             file = form.Files.Count > 0 ? form.Files[0] : null;
         }
-        catch (BadHttpRequestException)
+        catch (BadHttpRequestException ex)
         {
-            return Results.BadRequest();
+            // A body exceeding the (now 10 MiB) cap surfaces here as a 413 BadHttpRequestException; a
+            // malformed/non-multipart body is a 400. Propagate the exception's own status (413 for
+            // oversized, 400 otherwise) rather than collapsing both to 400.
+            return Results.StatusCode(ex.StatusCode is > 0 ? (int)ex.StatusCode : StatusCodes.Status400BadRequest);
         }
 
         if (file is null || file.Length == 0)
@@ -1599,6 +3239,42 @@ public static class ActivityPubServerExtensions
     private static readonly TimeSpan MediaFetchTimeout = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// Resolves the acting actor from an inbound inbox POST's <c>Authorization: Bearer</c> header (the
+    /// OAuth2 bearer path, F-20). A real client that obtained a token at <c>POST /ap/v1/oauth2/token</c>
+    /// presents it here; the token is resolved to its actor IRI via the <see cref="IOAuthTokenStore"/>.
+    /// Returns null when there is no Bearer header, no token store is configured, or the token is
+    /// unknown/revoked — in which case the caller rejects the request (401).
+    /// </summary>
+    /// <param name="context">The HTTP context (the <c>Authorization</c> header is read from it).</param>
+    /// <param name="tokenStore">The token store, or null when the host did not register one.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The actor IRI the Bearer token was issued for, or null when the request is not Bearer-authorized.</returns>
+    private static async Task<Iri?> TryResolveBearerActorAsync(
+        HttpContext context,
+        IOAuthTokenStore? tokenStore,
+        CancellationToken ct)
+    {
+        if (tokenStore is null)
+        {
+            return null;
+        }
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        if (!authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var token = authorization["Bearer ".Length..].Trim();
+        if (token.Length == 0)
+        {
+            return null;
+        }
+
+        return await tokenStore.ResolveTokenAsync(token, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Shared core for the actor and community inbox POST endpoints: signature check, recipient
     /// existence check, inbound rate-limit check (Phase 17.4), body read + deserialize + cast, and
     /// inbox-processor dispatch.
@@ -1609,16 +3285,47 @@ public static class ActivityPubServerExtensions
         bool exists,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
-        CancellationToken ct)
+        IOAuthTokenStore? tokenStore = null,
+        CancellationToken ct = default)
     {
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger("Iris.Server.Inbox");
+        var trace = context.RequestServices.GetService<Observability.IFederationTraceCollector>();
+
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
-            return Results.Unauthorized();
+            // F-20: a request that carries no valid HTTP signature may still be authorized by a Bearer
+            // token (the OAuth2 flow: a real client obtains a token at /ap/v1/oauth2/token and presents
+            // it as Authorization: Bearer). When the token resolves to an actor IRI, the request is
+            // treated as authenticated and the Bearer actor IRI stands in for the signature's keyId
+            // (used for the per-peer rate-limit key + logging). A missing/unknown token is rejected
+            // with 401 (the same outcome as an invalid signature).
+            var bearerActorIri = await TryResolveBearerActorAsync(context, tokenStore, ct).ConfigureAwait(false);
+            if (bearerActorIri is { } bearer)
+            {
+                outcome = new SignatureValidationResult(IsValid: true, KeyId: bearer, ActorIri: bearer);
+                logger.LogInformation(
+                    "Inbox authorized: Bearer token. Recipient: {Recipient}, Actor: {Actor}",
+                    recipientIri, bearer);
+            }
+            else
+            {
+                var keyIdStr = outcome.KeyId.Uri is null ? "(none)" : outcome.KeyId.Value;
+                logger.LogInformation(
+                    "Inbox rejected: invalid signature. Recipient: {Recipient}, KeyId: {KeyId}",
+                    recipientIri, keyIdStr);
+                RecordInboundTrace(trace, context, recipientIri, 401, null, null);
+                return Results.Unauthorized();
+            }
         }
 
         if (!exists)
         {
+            logger.LogInformation(
+                "Inbox rejected: unknown recipient {Recipient}",
+                recipientIri);
+            RecordInboundTrace(trace, context, recipientIri, 404, null, null);
             return Results.NotFound();
         }
 
@@ -1645,14 +3352,25 @@ public static class ActivityPubServerExtensions
                 // Fallback: the window already expired (race) — send a 1-second delta.
                 context.Response.Headers.Append("Retry-After", "1");
             }
+            logger.LogWarning(
+                "Inbox rate-limited: peer {Peer} exceeded budget. Recipient: {Recipient}",
+                senderHost, recipientIri);
+            RecordInboundTrace(trace, context, recipientIri, 429, outcome.ActorIri?.Value, null);
             return Results.StatusCode(StatusCodes.Status429TooManyRequests);
         }
 
-        context.Request.Body.Position = 0;
-        using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-        var json = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        // The signed path has already buffered the body (HttpSignatureValidator → EnableBuffering);
+        // the Bearer path (F-20) has not (no Signature header, so the middleware skipped buffering).
+        // EnableBuffering is idempotent on an already-buffered stream, so call it unconditionally and
+        // read through the safe buffered-string helper (handles both seekable and non-seekable cases).
+        context.Request.EnableBuffering();
+        var json = await ReadAsBufferedStringAsync(context.Request.Body, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(json))
         {
+            logger.LogWarning(
+                "Inbox rejected: empty body. Recipient: {Recipient}, Peer: {Peer}",
+                recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 400, outcome.ActorIri?.Value, null);
             return Results.BadRequest();
         }
 
@@ -1671,6 +3389,10 @@ public static class ActivityPubServerExtensions
         {
             var persistence = context.RequestServices.GetRequiredService<IPersistenceProvider>();
             await TombstoneInbound.ApplyAsync(persistence, inboundTombstone, ct).ConfigureAwait(false);
+            logger.LogInformation(
+                "Inbox accepted: Tombstone. Recipient: {Recipient}, Object: {ObjectIri}, Peer: {Peer}",
+                recipientIri, inboundTombstone.Id, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 202, outcome.ActorIri?.Value, "Tombstone");
             return Results.Accepted();
         }
 
@@ -1686,8 +3408,18 @@ public static class ActivityPubServerExtensions
         }
         else
         {
+            logger.LogWarning(
+                "Inbox rejected: unrecognizable payload. Recipient: {Recipient}, Peer: {Peer}",
+                recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 400, outcome.ActorIri?.Value, null);
             return Results.BadRequest();
         }
+
+        var activityType = activity.Type is { } types
+            ? string.Join(",", types)
+            : "Unknown";
+        var actorIri = ExtractActorIriFromActivity(activity);
+        var targetIri = ExtractTargetIriFromActivity(activity);
 
         try
         {
@@ -1701,10 +3433,98 @@ public static class ActivityPubServerExtensions
         }
         catch (Exception)
         {
+            logger.LogError(
+                "Inbox processing failed: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
+                activityType, actorIri, targetIri, recipientIri, senderHost);
+            RecordInboundTrace(trace, context, recipientIri, 500, outcome.ActorIri?.Value, activityType);
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
 
+        logger.LogInformation(
+            "Inbox accepted: {ActivityType} from {Actor} targeting {Target}. Recipient: {Recipient}, Peer: {Peer}",
+            activityType, actorIri, targetIri, recipientIri, senderHost);
+        RecordInboundTrace(trace, context, recipientIri, 202, outcome.ActorIri?.Value, activityType);
+
         return Results.Accepted();
+    }
+
+    /// <summary>
+    /// Records an inbound inbox POST in the <see cref="Observability.IFederationTraceCollector"/>
+    /// (Phase 136.1) so the scenario's trace captures the local recipient, the verified remote actor,
+    /// the activity type, and the outcome status. A no-op when no collector is registered (e.g. in hosts
+    /// that do not opt into trace capture). The actor IRI is the verified signer's identity
+    /// (<c>SignatureValidationResult.ActorIri</c>), which is null for unsigned/rejected requests —
+    /// the trace then records the request without an attributed actor.
+    /// </summary>
+    private static void RecordInboundTrace(
+        Observability.IFederationTraceCollector? trace,
+        HttpContext context,
+        Iri recipientIri,
+        int status,
+        string? actorIri,
+        string? activityType)
+    {
+        if (trace is null)
+        {
+            return;
+        }
+
+        trace.Record(new Observability.FederationTraceEntry(
+            DateTimeOffset.UtcNow,
+            Observability.FederationDirection.Inbound,
+            context.Request.Method,
+            context.Request.Path,
+            status,
+            recipientIri.Value,
+            actorIri,
+            activityType));
+    }
+
+    /// <summary>
+    /// Extracts the <c>actor</c> IRI(s) from an activity for logging purposes.
+    /// <c>Activity.Actor</c> is <c>IEnumerable&lt;IObjectOrLink&gt;</c>; this returns the first
+    /// resolvable IRI (an <c>IObject</c> with an <c>Id</c>, or an <c>ILink</c>).
+    /// </summary>
+    private static string? ExtractActorIriFromActivity(Activity activity)
+    {
+        return FirstIriFromCollection(activity.Actor);
+    }
+
+    /// <summary>
+    /// Extracts the <c>object</c> (target) IRI(s) from an activity for logging purposes.
+    /// <c>Activity.Object</c> is <c>IEnumerable&lt;IObjectOrLink&gt;</c>; this returns the first
+    /// resolvable IRI (an <c>IObject</c> with an <c>Id</c>, or an <c>ILink</c>).
+    /// </summary>
+    private static string? ExtractTargetIriFromActivity(Activity activity)
+    {
+        return FirstIriFromCollection(activity.Object);
+    }
+
+    /// <summary>
+    /// Returns the IRI of the first resolvable entry in a collection of
+    /// <c>IObjectOrLink</c> values, or <c>null</c> if none is resolvable.
+    /// </summary>
+    private static string? FirstIriFromCollection(IEnumerable<IObjectOrLink>? collection)
+    {
+        if (collection is null)
+        {
+            return null;
+        }
+
+        foreach (var item in collection)
+        {
+            if (item is IObject { Id: { } id })
+            {
+                return id;
+            }
+
+            if (item is ILink { Href: { } href })
+            {
+                return href.AbsoluteUri;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -1781,16 +3601,35 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
+        IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
+        // Degraded (read-only) mode (Phase 83.4): when the durable store is unreachable the instance
+        // serves reads but refuses writes (inbound federation activities are a write). Refuse with 503
+        // before touching the store — a degraded store would throw on the write anyway, and 503 tells the
+        // peer to retry later (a transient outage), not 4xx (a permanent rejection).
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var actorIri = BuildActorIri(baseUrl, handle);
 
         var exists = await persistence.Actors.TryGetActorAsync(actorIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, actorIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1825,12 +3664,30 @@ public static class ActivityPubServerExtensions
         LocalCollectionPageCache collectionCache,
         LocalActorDocumentCache actorDocumentCache,
         IActivityPubClient? objectFetch,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
             return Results.Unauthorized();
+        }
+
+        // Degraded (read-only) mode (Phase 83.4): outbox publish is a write (it records + delivers the
+        // authored activity). Refuse with 503 (not 4xx) when the durable store is unreachable — the
+        // signature is still valid, but the write cannot be durably recorded, so the client should retry
+        // later rather than treat the activity as permanently rejected.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
         }
 
         var options = optionsAccessor.Value;
@@ -1902,7 +3759,7 @@ public static class ActivityPubServerExtensions
         // to enumerate the actual distribution list (the remote, non-blocked follower set — and, for a
         // reply, the reply target). This runs BEFORE the outbox/activity-store record so the stored form and
         // the federated (on-the-wire) form are the same canonical activity; no-op for other activity types.
-        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, ct).ConfigureAwait(false);
+        await RewriteOutboundAudienceAsync(activity, actorIri, persistence, localActors, objectFetch, ct).ConfigureAwait(false);
 
         try
         {
@@ -1935,9 +3792,52 @@ public static class ActivityPubServerExtensions
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
                 }
 
+                // Phase 136.7 (cross-instance reply integrity): when the Create is a reply (its embedded
+                // object's inReplyTo is set), the reply must ALSO reach the PARENT's home instance — the
+                // parent's author is not (in general) a follower of the replier, so the follower fan-out
+                // above does not carry the reply to the parent's home (the Lemmy author of a post that an
+                // Iris user replied to would otherwise never see the reply — the thread is broken on the
+                // parent's home). Resolve the parent's author (local lookup, or a remote fetch when the
+                // parent is on another instance) and deliver the reply to it, so the parent's home stores
+                // the reply and serves it under the parent's /replies collection. A local parent (the
+                // author is a local actor) is a no-op (the reply is already on the same instance); a
+                // resolvable remote parent is delivered. Best-effort: an unresolvable parent (a fetch
+                // failure) simply skips the extra delivery — the follower fan-out still ran.
+                if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor
+                    && !await localActors.IsLocalActorAsync(parentAuthor, ct).ConfigureAwait(false))
+                {
+                    await delivery.DeliverToActorAsync(parentAuthor, activity, actorIri, ct).ConfigureAwait(false);
+                }
+
                 // F-06 relay fan-out: deliver the Create to each of the actor's subscribed relays (the
                 // star-subscribed fan-out servers) so they can re-fan the content to the wider federation.
                 await DeliverToRelaysAsync(persistence, delivery, actorIri, activity, ct).ConfigureAwait(false);
+
+                // 138.10 / decision 058 (cross-post): when the author explicitly addresses a REMOTE
+                // community (or actor) in the Create's `to` audience — a deliberate cross-post to a peered
+                // non-Iris community, e.g. a Lemmy community — deliver the Create to that recipient's
+                // inbox, exactly as a Lemmy/Mastodon client cross-posts. The target is the client's
+                // composed `to` entry (the cross-post target community's Group IRI), preserved by
+                // RewriteOutboundAudienceAsync (which only appends to `cc`/the reply's `to`). The follower
+                // fan-out above already covers the author's followers; this leg adds the explicitly-
+                // addressed remote recipients. Local recipients are excluded (they are on this instance —
+                // no cross-instance hop); recipients already fanned out (followers) and relays are
+                // excluded (no duplicate delivery). A blocked recipient is excluded (the trust boundary).
+                // Best-effort: an unresolvable/unreachable target simply does not deliver — the follower
+                // fan-out and the local record already succeeded.
+                var crossPostTargets = await GetCrossPostTargetsAsync(persistence, localActors, baseUrl, actorIri, create, recipients, ct)
+                    .ConfigureAwait(false);
+                // 138.11 (Lemmy interop, Note-vs-Page): a top-level cross-post (no inReplyTo) to ANY
+                // remote community carries an Article, not a Note. Lemmy's Note struct REQUIRES inReplyTo
+                // (it is a comment); a top-level post has no parent, so it must be an Article/Page. An
+                // Iris target handles both (CreateActivityHandler uses IObject; CommunityContentRecorder
+                // tags both Note and Article). Replies (which have inReplyTo) keep their Note type.
+                var crossPostActivity = TransformCreateForCrossPost(create);
+                foreach (var target in crossPostTargets)
+                {
+                    await delivery.DeliverToActorAsync(target, crossPostActivity, actorIri, ct).ConfigureAwait(false);
+                }
             }
             else if (activity is Announce announce)
             {
@@ -1952,14 +3852,37 @@ public static class ActivityPubServerExtensions
                 // inbound-federation path records the same edge in AnnounceActivityHandler; the local
                 // outbox-write path (this branch) records it here so a local boost is counted exactly
                 // like a local like is (RecordLikeLocalAsync). Reversible via Undo(Announce)
-                // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync).
-                await RecordAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct).ConfigureAwait(false);
+                // (RecordUndoLocalAsync → RemoveAnnounceLocalAsync). RecordAnnounceLocalAsync also
+                // resolves the announced object's owner (24.1, ResolveObjectOwnerForDeliveryAsync) so the
+                // boost can be routed to the object's home (Phase 136.8, below).
+                var announcedOwner = await RecordAnnounceLocalAsync(persistence, actorIri, announce, objectFetch, ct)
+                    .ConfigureAwait(false);
+                var announcedObjectIri = announce.Object?.FirstOrDefault().ResolveObjectIri();
 
                 var recipients = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, actorIri, ct)
                     .ConfigureAwait(false);
                 foreach (var recipient in recipients)
                 {
                     await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                }
+
+                // Phase 136.8 (cross-instance boost integrity): when the Announce targets a REMOTE object
+                // (an Iris user boosting a Lemmy post — the object is on another instance, not stored
+                // locally), the boost must ALSO reach the object's home — the object's author is not (in
+                // general) a follower of the announcer, so the follower fan-out above does not carry the
+                // boost to the author's home (the Lemmy author of a post an Iris user boosted would
+                // otherwise never see the boost). RecordAnnounceLocalAsync resolved the owner (24.1, a
+                // remote fetch when the object is not stored locally); deliver the Announce to it when it
+                // is a resolvable REMOTE (non-local) author. A local owner is a no-op (the boost is already
+                // on the same instance); the object-IRI fallback (owner unresolvable — a fetch failure)
+                // is skipped (an object IRI is not an actor and has no inbox). Mirrors the 136.7
+                // reply-parent-author delivery. Best-effort: a delivery failure does not fail the publish.
+                if (announcedOwner is { } owner
+                    && announcedObjectIri is { } objIri
+                    && owner.Value != objIri.Value
+                    && !await localActors.IsLocalActorAsync(owner, ct).ConfigureAwait(false))
+                {
+                    await delivery.DeliverToActorAsync(owner, activity, actorIri, ct).ConfigureAwait(false);
                 }
 
                 // F-06 relay fan-out: deliver the Announce to each of the actor's subscribed relays.
@@ -2005,28 +3928,38 @@ public static class ActivityPubServerExtensions
                     // Drop the cached render so the next public read re-renders (mirrors the outbox-page
                     // invalidation above — without it the 60s-TTL document cache serves a stale copy).
                     actorDocumentCache.Invalidate(actorIri);
-                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                    return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
                 }
 
                 if (activity is Remove personRemove)
                 {
                     await RecordPersonRemoveAsync(persistence, actorIri, personRemove, ct).ConfigureAwait(false);
                     actorDocumentCache.Invalidate(actorIri);
-                    return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+                    return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
                 }
 
-                Iri? recipientIri = activity switch
+                bool isNewFollow = true;
+                Iri? recipientIri;
+                if (activity is Follow follow)
                 {
-                    Follow follow => await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false),
-                    Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
-                    Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
-                    MuteActivity mute => await RecordMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
-                    Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
-                    Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
-                    Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
-                    Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
-                    _ => null,
-                };
+                    (Iri? Target, bool IsNewFollow)? followResult = await RecordFollowLocalAsync(persistence, localActors, actorIri, follow, ct).ConfigureAwait(false);
+                    recipientIri = followResult?.Target;
+                    isNewFollow = followResult?.IsNewFollow ?? true;
+                }
+                else
+                {
+                    recipientIri = activity switch
+                    {
+                        Block block => await RecordBlockLocalAsync(persistence, localActors, actorIri, block, ct).ConfigureAwait(false),
+                        Flag flag => await RecordFlagLocalAsync(persistence, localActors, actorIri, flag, ct).ConfigureAwait(false),
+                        MuteActivity mute => await RecordMuteLocalAsync(persistence, actorIri, mute, ct).ConfigureAwait(false),
+                        Like like => await RecordLikeLocalAsync(persistence, actorIri, like, objectFetch, ct).ConfigureAwait(false),
+                        Undo undo => await RecordUndoLocalAsync(persistence, localActors, actorIri, undo, objectFetch, ct).ConfigureAwait(false),
+                        Accept accept => await RecordFollowDecisionLocalAsync(persistence, actorIri, accept, accept: true, ct).ConfigureAwait(false),
+                        Reject reject => await RecordFollowDecisionLocalAsync(persistence, actorIri, reject, accept: false, ct).ConfigureAwait(false),
+                        _ => null,
+                    };
+                }
 
                 // 19.6.2 moderation-collection enumeration correctness: the actor's moderation
                 // collections (blocks / flags / mutes) are served through the same local collection-page
@@ -2039,6 +3972,14 @@ public static class ActivityPubServerExtensions
                 // collection), so resolve the undone sub-activity and invalidate accordingly.
                 switch (activity)
                 {
+                    case Follow followAct:
+                        InvalidateLocalCollectionPage(collectionCache, actorIri, "following");
+                        var followTargetIri = followAct.Object?.FirstOrDefault().ResolveObjectIri();
+                        if (followTargetIri.HasValue)
+                        {
+                            InvalidateLocalCollectionPage(collectionCache, followTargetIri.Value, "followers");
+                        }
+                        break;
                     case Block:
                         InvalidateLocalCollectionPage(collectionCache, actorIri, "blocks");
                         break;
@@ -2065,18 +4006,48 @@ public static class ActivityPubServerExtensions
                             {
                                 InvalidateLocalCollectionPage(collectionCache, actorIri, "mutes");
                             }
+                            else if (undoneActivity is Follow undoneFollow)
+                            {
+                                InvalidateLocalCollectionPage(collectionCache, actorIri, "following");
+                                var undoneFollowTargetIri = undoneFollow.Object?.FirstOrDefault().ResolveObjectIri();
+                                if (undoneFollowTargetIri.HasValue)
+                                {
+                                    InvalidateLocalCollectionPage(collectionCache, undoneFollowTargetIri.Value, "followers");
+                                }
+                            }
                         }
 
                         break;
                 }
 
                 // 3. The server (not the client) delivers the activity to the recipient's inbox. A local
-                //    recipient needs no cross-instance hop (the local edge is already recorded); only a
-                //    remote recipient is delivered to, signed as the acting local actor.
-                if (recipientIri is { } recipient
-                    && !await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false))
+                //    recipient needs no cross-instance hop (the local edge is already recorded); the
+                //    activity is added directly to the recipient's inbox so it appears in their
+                //    notifications. A remote recipient is delivered to over the wire, signed as the
+                //    acting local actor.
+                //
+                // 123.1: For a Follow that is a re-follow (the edge already existed), skip the local
+                //    inbox write — the recipient already has a notification for the original follow.
+                //    Without this gate, every repeated follow click mints a new ULID IRI and lands a
+                //    duplicate row in the recipient's inbox (the IRI-based dedup in AddToInboxAsync
+                //    cannot collapse them because each Follow has a distinct server-minted id).
+                if (recipientIri is { } recipient)
                 {
-                    await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                    var isLocal = await localActors.IsLocalActorAsync(recipient, ct).ConfigureAwait(false)
+                        || await persistence.Communities.TryGetCommunityAsync(recipient, out _, ct).ConfigureAwait(false);
+                    if (isLocal)
+                    {
+                        if (!(activity is Follow) || isNewFollow)
+                        {
+                            await persistence.Activities
+                                .AddToInboxAsync(recipient, activity, ct)
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    else
+                    {
+                        await delivery.DeliverToActorAsync(recipient, activity, actorIri, ct).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -2097,7 +4068,7 @@ public static class ActivityPubServerExtensions
         // authoring client can learn the id and reference the object later (an Undo, a delete, an Accept
         // of this follow). The body is the activity serialized as ActivityStreams JSON (a raw text body —
         // NOT Results.Accepted(string), which would JSON-serialize the string into a quoted JSON string).
-        return Results.Text(ActivityJson.Serialize(activity), ActivityJson.ActivityJsonContentType, statusCode: 202);
+        return Results.Text(ActivityJson.Serialize(activity), NegotiateContentType(context), statusCode: 202);
     }
 
     /// <summary>
@@ -2130,6 +4101,8 @@ public static class ActivityPubServerExtensions
     /// <param name="optionsAccessor">The server options (the base URL, for the community IRI).</param>
     /// <param name="collectionCache">The local collection-page response cache (invalidated on the outbox
     /// write so the community's outbox card reflects the new activity immediately).</param>
+    /// <param name="degraded">The degraded-mode gate (Phase 83.4): when degraded (read-only), the write is
+    /// refused with <see cref="StatusCodes.Status503ServiceUnavailable"/> before touching the store.</param>
     /// <param name="ct">The cancellation token.</param>
     /// <returns>
     /// <see cref="StatusCodes.Status202Accepted"/> when the activity was recorded + (for a remote target)
@@ -2148,12 +4121,29 @@ public static class ActivityPubServerExtensions
         IdMinter idMinter,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         LocalCollectionPageCache collectionCache,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
         var outcome = SignatureValidationMiddleware.GetResult(context);
         if (!outcome.IsValid)
         {
             return Results.Unauthorized();
+        }
+
+        // Degraded (read-only) mode (Phase 83.4): a community outbox publish is a write (it records +
+        // delivers the community-authored activity). Refuse with 503 (not 4xx) when the durable store is
+        // unreachable — the signature is still valid, but the write cannot be durably recorded.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
         }
 
         var options = optionsAccessor.Value;
@@ -2207,14 +4197,24 @@ public static class ActivityPubServerExtensions
             if (payload is Add add)
             {
                 await RecordCommunityAddAsync(persistence, communityIri, add, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
             if (payload is Remove remove)
             {
                 await RecordCommunityRemoveAsync(persistence, communityIri, remove, ct).ConfigureAwait(false);
-                return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
+                    .ConfigureAwait(false);
+            }
+
+            // A community updating its own profile document (name, summary, icon): the embedded
+            // object is a Group whose IRI matches the community's IRI. This is a local-only
+            // operation (no delivery needed) — merge the mutable fields into the stored community.
+            if (payload is Update update)
+            {
+                await HandleCommunityUpdateAsync(persistence, communityIri, update, ct).ConfigureAwait(false);
+                return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, null, delivery, collectionCache, ct)
                     .ConfigureAwait(false);
             }
 
@@ -2235,15 +4235,19 @@ public static class ActivityPubServerExtensions
                 return Results.BadRequest();
             }
 
-            return await FinishCommunityOutboxPublishAsync(persistence, communityIri, payload, recipientIri, delivery, collectionCache, ct)
+            return await FinishCommunityOutboxPublishAsync(context, persistence, communityIri, payload, recipientIri, delivery, collectionCache, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            context.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("Iris.Server.CommunityOutboxPublishHandler")
+                .LogError(ex, "Community outbox publish for {Name} ({Type}) failed.", name, payload?.GetType().Name ?? "unknown");
             return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
@@ -2255,6 +4259,7 @@ public static class ActivityPubServerExtensions
     /// recipient (a local-only membership Add/Remove) records without delivering.
     /// </summary>
     private static async Task<IResult> FinishCommunityOutboxPublishAsync(
+        HttpContext context,
         IPersistenceProvider persistence,
         Iri communityIri,
         IObjectOrLink? payload,
@@ -2285,7 +4290,68 @@ public static class ActivityPubServerExtensions
 
         // Decision 055: return the created object (with its minted id) in the 2xx body so the client can
         // learn the id (for a future Undo of this activity, e.g. un-adding a member).
-        return Results.Text(ActivityJson.Serialize((Activity)payload), ActivityJson.ActivityJsonContentType, statusCode: 202);
+        return Results.Text(ActivityJson.Serialize((Activity)payload), NegotiateContentType(context), statusCode: 202);
+    }
+
+    /// <summary>
+    /// Handles a community updating its own profile document (a <see cref="Update"/> with an embedded
+    /// <see cref="Group"/> whose IRI matches the community's IRI). Merges the mutable fields (name,
+    /// summary, icon, endpoints) into the stored community, preserving the <c>publicKey</c> and any
+    /// <c>ExtensionData</c> entries the update does not carry.
+    /// </summary>
+    private static async Task HandleCommunityUpdateAsync(
+        IPersistenceProvider persistence,
+        Iri communityIri,
+        Update update,
+        CancellationToken ct)
+    {
+        var updated = update.Object?.FirstOrDefault();
+        if (updated is not IObject { Id: not null } obj || obj.Id.ToIri() is not { } objIri)
+        {
+            return;
+        }
+
+        if (objIri != communityIri || obj is not Group updatedGroup)
+        {
+            return;
+        }
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var stored, ct).ConfigureAwait(false)
+            || stored is null)
+        {
+            return;
+        }
+
+        if (updatedGroup.Name is { } name && name.Any())
+        {
+            stored.Name = name;
+        }
+
+        if (updatedGroup.Summary is { } summary && summary.Any())
+        {
+            stored.Summary = summary;
+        }
+
+        if (updatedGroup.Icon is { } icon && icon.Any())
+        {
+            stored.Icon = icon;
+        }
+
+        if (updatedGroup.Endpoints is not null)
+        {
+            stored.Endpoints = updatedGroup.Endpoints;
+        }
+
+        if (updatedGroup.ExtensionData is { Count: > 0 } extData)
+        {
+            stored.ExtensionData ??= [];
+            foreach (var (key, value) in extData)
+            {
+                stored.ExtensionData[key] = value;
+            }
+        }
+
+        await persistence.Communities.PutCommunityAsync(stored, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -2551,7 +4617,7 @@ public static class ActivityPubServerExtensions
     /// sets (the inverse of <see cref="FollowActivityHandler"/>'s community branch, F-24). Returns
     /// <see langword="null"/> when the target is not resolvable.
     /// </summary>
-    private static async Task<Iri?> RecordFollowLocalAsync(
+    private static async Task<(Iri? Target, bool IsNewFollow)?> RecordFollowLocalAsync(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
         Iri followerIri,
@@ -2563,6 +4629,13 @@ public static class ActivityPubServerExtensions
         {
             return null;
         }
+
+        // Detect whether the follow edge already exists BEFORE recording it, so the caller can
+        // suppress a duplicate inbox write (123.1: repeated follows from the same actor to the same
+        // target should produce only one notification, not one per repeated click).
+        var alreadyFollowing = await persistence.Follows
+            .IsFollowingAsync(followerIri, targetIri.Value, ct)
+            .ConfigureAwait(false);
 
         // The actor's home instance records the follow edge in its own follow store regardless of
         // whether the target is local — the actor's `following` collection lists even a remote target.
@@ -2579,8 +4652,20 @@ public static class ActivityPubServerExtensions
             await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
             await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri, ct).ConfigureAwait(false);
         }
+        else if (!alreadyFollowing && await IsManuallyApprovingPersonAsync(persistence, targetIri.Value, ct).ConfigureAwait(false))
+        {
+            // A local follow of a person who manually approves followers is held for approval (Phase 100):
+            // record a pending follow-request edge so the target's follow-approval queue
+            // (GET /local/v1/u/{handle}/requests) lists it. The provisional Follow edge (recorded above)
+            // is independent and is drained/confirmed when the target Accepts or Rejects (the follow-
+            // decision path). Mirrors the inbox-side FollowActivityHandler gate (the remote-follow path).
+            // Gated on !alreadyFollowing so a re-follow does not re-create a stale request edge.
+            await persistence.Follows
+                .RecordFollowRequestAsync(followerIri, targetIri.Value, ct)
+                .ConfigureAwait(false);
+        }
 
-        return targetIri.Value;
+        return (targetIri.Value, !alreadyFollowing);
     }
 
     /// <summary>
@@ -2711,19 +4796,50 @@ public static class ActivityPubServerExtensions
             return null;
         }
 
+        await ApplyFollowDecisionEdgeAsync(persistence, targetIri.Value, followerIri.Value, accept, ct).ConfigureAwait(false);
+
+        return followerIri.Value;
+    }
+
+    /// <summary>
+    /// Applies the local follow-decision edge effect (Phase 100): given the followed actor
+    /// (<paramref name="actorIri"/>), the follower (<paramref name="followerIri"/>), and the decision
+    /// (<paramref name="accept"/>), records (accept) or removes (reject) the follower→actor follow edge,
+    /// and — when the target is a local person — drains the pending follow-request edge (the
+    /// follow-approval queue). Shared by the outbox (AP-native) decision path
+    /// (<see cref="RecordFollowDecisionLocalAsync"/>) and the local follow-request accept/reject endpoints
+    /// (which key the decision by the requester IRI, not a signed Accept/Reject activity).
+    /// </summary>
+    private static async Task ApplyFollowDecisionEdgeAsync(
+        IPersistenceProvider persistence,
+        Iri actorIri,
+        Iri followerIri,
+        bool accept,
+        CancellationToken ct)
+    {
+        // When the target is a local person (not a community), the inbound follow — if it was held for
+        // approval — recorded a pending follow-request edge (Phase 100). Accepting or Rejecting drains
+        // it so the actor's follow-approval queue no longer lists the decided request. (A community
+        // target uses the separate CommunityJoinRequest edge, not this one.)
+        var isPersonTarget = !await persistence.Communities.TryGetCommunityAsync(actorIri, out _, ct).ConfigureAwait(false);
+        if (isPersonTarget)
+        {
+            await persistence.Follows.RemoveFollowRequestAsync(followerIri, actorIri, ct).ConfigureAwait(false);
+        }
+
         if (accept)
         {
             // Accept: ensure the follower → actor edge (idempotent). A local community target records the
             // community's follows/followers sets (the inverse of the inbound FollowActivityHandler's
             // community branch); a person target records the person follow edge.
-            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            if (!isPersonTarget)
             {
-                await persistence.Communities.AddFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
-                await persistence.Communities.AddFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.AddFollowAsync(actorIri, followerIri, ct).ConfigureAwait(false);
+                await persistence.Communities.AddFollowerAsync(actorIri, followerIri, ct).ConfigureAwait(false);
             }
             else
             {
-                await persistence.Follows.RecordFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
+                await persistence.Follows.RecordFollowAsync(followerIri, actorIri, ct).ConfigureAwait(false);
             }
         }
         else
@@ -2732,15 +4848,47 @@ public static class ActivityPubServerExtensions
             // edge is the inverse of a remote follow: the follower is the remote actor, the target (this
             // actor) is local, so the edge lives in this actor's follow store (or the community's
             // follows/followers sets when the target is a local community).
-            await persistence.Follows.RemoveFollowAsync(followerIri.Value, targetIri.Value, ct).ConfigureAwait(false);
-            if (await persistence.Communities.TryGetCommunityAsync(targetIri.Value, out _, ct).ConfigureAwait(false))
+            await persistence.Follows.RemoveFollowAsync(followerIri, actorIri, ct).ConfigureAwait(false);
+            if (!isPersonTarget)
             {
-                await persistence.Communities.RemoveFollowAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
-                await persistence.Communities.RemoveFollowerAsync(targetIri.Value, followerIri.Value, ct).ConfigureAwait(false);
+                await persistence.Communities.RemoveFollowAsync(actorIri, followerIri, ct).ConfigureAwait(false);
+                await persistence.Communities.RemoveFollowerAsync(actorIri, followerIri, ct).ConfigureAwait(false);
             }
         }
+    }
 
-        return followerIri.Value;
+    /// <summary>
+    /// Reports whether a local <em>person</em> (not a community) has <c>manuallyApprovesFollowers</c> set
+    /// — i.e. should hold an inbound follow for approval rather than auto-accepting it (Phase 100). The
+    /// flag lives in the stored actor's <c>ExtensionData</c> dictionary
+    /// (the ActivityStreams <c>Object</c> deserializer captures the unknown top-level property there). A
+    /// community target, an unknown actor, or a missing/false value means auto-accept (the default). This
+    /// is the outbox-side twin of <see cref="Inbox.FollowActivityHandler"/>’s gate check: local follows are
+    /// recorded via <see cref="RecordFollowLocalAsync"/> (the outbox-publish path), not the inbox handler,
+    /// so the pending follow-request edge must be recorded here too or a local follower of a gated actor
+    /// would never appear in the actor’s follow-approval queue.
+    /// </summary>
+    private static async Task<bool> IsManuallyApprovingPersonAsync(
+        IPersistenceProvider persistence,
+        Iri targetIri,
+        CancellationToken ct)
+    {
+        // A community target gates its inbound follows through the separate CommunityJoinRequest
+        // mechanism, not the person follow-request queue — exclude it here.
+        if (await persistence.Communities.TryGetCommunityAsync(targetIri, out _, ct).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        if (await persistence.Actors.TryGetActorAsync(targetIri, out var actor, ct).ConfigureAwait(false)
+            && actor is { } localActor)
+        {
+            return localActor.ExtensionData is { } ext
+                && ext.TryGetValue(ActivityPubServerConstants.ManuallyApprovesFollowersExtensionName, out var value)
+                && value.ValueKind == System.Text.Json.JsonValueKind.True;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -2888,6 +5036,71 @@ public static class ActivityPubServerExtensions
         }
 
         return objectIri;
+    }
+
+    /// <summary>
+    /// Resolves the <c>attributedTo</c> owner (author) of the object at <paramref name="objectIri"/> for
+    /// cross-instance delivery: a local object's owner is read from the object store; a remote object's
+    /// owner is resolved by fetching the object's document over the wire. Used by two outbound paths:
+    /// <list type="bullet">
+    /// <item>Phase 136.7 (cross-instance reply integrity): a reply must name its parent's author so the
+    /// reply both carries the parent author in its <c>to</c> audience and is delivered to the parent's home
+    /// instance.</item>
+    /// <item>Phase 136.8 (cross-instance boost integrity): a boost (Announce) of a remote object must be
+    /// delivered to the object's author (the object's home) so the boost is counted on the object's home,
+    /// and the object's author is named in the boost's <c>to</c> audience.</item>
+    /// </list>
+    /// Best-effort: a local miss with no remote fetcher, or a remote fetch that yields no owner, returns
+    /// <see langword="null"/> (the caller then degrades to the prior behavior — the object's author is
+    /// simply not added to the audience / not an explicit delivery recipient). The fetch is best-effort and
+    /// must never fail the publish.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (for the local object-store lookup).</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a remote object's owner
+    /// (Phase 136.7 / 136.8); <see langword="null"/> disables remote-owner resolution (local objects only).</param>
+    /// <param name="objectIri">The IRI of the object (a reply's parent, or an Announce's announced object).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The object's owner (author) IRI, or <see langword="null"/> when not resolvable.</returns>
+    private static async Task<Iri?> ResolveObjectAuthorForDeliveryAsync(
+        IPersistenceProvider persistence,
+        IActivityPubClient? objectFetch,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        // A local object is in the object store: read its attributedTo directly (no wire hop).
+        if (await persistence.Objects.TryGetObjectAsync(objectIri, out var storedObject, ct).ConfigureAwait(false)
+            && storedObject is { }
+            && storedObject.AttributedTo is { } localAttributed
+            && localAttributed.FirstOrDefault().ResolveObjectIri() is { } localOwner)
+        {
+            return localOwner;
+        }
+
+        // A remote object (the reply's parent is on another instance, not stored locally): fetch its
+        // document over the wire and read its attributedTo, so the reply's audience names the parent's
+        // author and the delivery reaches the parent's home. A fetch failure (network, not-found, or a
+        // document with no attributedTo) degrades to null — the remote fetch is best-effort: it must
+        // never fail the local publish.
+        if (objectFetch is { } fetch)
+        {
+            try
+            {
+                var remoteObject = await fetch.GetObjectAsync(objectIri, ct).ConfigureAwait(false);
+                if (remoteObject is { }
+                    && remoteObject.AttributedTo is { } remoteAttributed
+                    && remoteAttributed.FirstOrDefault().ResolveObjectIri() is { } remoteOwner)
+                {
+                    return remoteOwner;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && !ct.IsCancellationRequested)
+            {
+                // A remote fetch failure is an expected condition (the parent may be on an unreachable
+                // instance); degrade to null (the parent author is simply not resolved).
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -3131,6 +5344,12 @@ public static class ActivityPubServerExtensions
         var embedded = create.ExtractEmbeddedObject();
         if (embedded is not null)
         {
+            // 57.3: ensure the embedded object carries a conversationId (the Pleroma/Misskey thread-root
+            // IRI) before it is stored. Runs after the server has minted the object's id (the note's own
+            // IRI is available) but before PutObjectAsync (so the conversationId is part of the stored
+            // document). Best-effort: a failure to resolve the parent leaves the conversationId unset.
+            await EnsureConversationIdAsync(persistence, embedded, ct).ConfigureAwait(false);
+
             await persistence.Objects.PutObjectAsync(embedded, ct).ConfigureAwait(false);
             var parentIri = embedded.GetParentIri();
             var childIri = embedded.ResolveObjectIri();
@@ -3168,6 +5387,67 @@ public static class ActivityPubServerExtensions
         // the post in the author's outbox on this instance, so it needs no cross-instance delivery).
         // Mirrors CreateActivityHandler's fan-out loop (G-1 residual).
         return await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Ensures an embedded object carries a <c>conversationId</c> (the Pleroma/Misskey thread-root IRI)
+    /// before it is stored. If the object already has one, it is preserved. Otherwise, for a reply
+    /// (its <c>inReplyTo</c> is set), the parent's <c>conversationId</c> is looked up; if the parent has
+    /// one it is copied, otherwise the parent's own IRI is used (it is the thread root). For a top-level
+    /// object (no <c>inReplyTo</c>), the object's own IRI is used as the conversation ID.
+    /// </summary>
+    /// <remarks>
+    /// 57.3: Pleroma and Misskey set a stable thread-root IRI on every note in a conversation; clients
+    /// use it for thread grouping. The value is redundant with <c>inReplyTo</c> but is the convention
+    /// those platforms use. This method runs on the server (the object-id authority) so it has access
+    /// to the stored parent's <c>conversationId</c>. Best-effort: a failure to resolve the parent (e.g.
+    /// the parent is on a remote instance not yet fetched) leaves the conversation ID unset rather
+    /// than failing the post.
+    /// </remarks>
+    /// <param name="persistence">The persistence provider (for the parent lookup).</param>
+    /// <param name="embedded">The embedded object (a <see cref="IObject"/> — typically a <see cref="Note"/>).</param>
+    /// <param name="ct">A cancellation token.</param>
+    private static async Task EnsureConversationIdAsync(IPersistenceProvider persistence, IObject embedded, CancellationToken ct)
+    {
+        // Already set (e.g. by a remote Pleroma server) — preserve it.
+        if (embedded.GetConversationId() is not null)
+        {
+            return;
+        }
+
+        var selfIri = embedded.ResolveObjectIri();
+
+        var parentIri = embedded.GetParentIri();
+        if (parentIri is null)
+        {
+            // Top-level object: it is its own thread root.
+            if (selfIri is { } self)
+            {
+                embedded.SetConversationId(self);
+            }
+            return;
+        }
+
+        // Reply: look up the parent's conversationId. If the parent has one, use it; otherwise the
+        // parent's own IRI is the thread root (the parent is a top-level note on this instance).
+        if (parentIri is { } parent)
+        {
+            if (await persistence.Objects.TryGetObjectAsync(parent, out var parentObj, ct))
+            {
+                var parentConv = parentObj.GetConversationId();
+                if (parentConv is { } conv)
+                {
+                    embedded.SetConversationId(conv);
+                }
+                else
+                {
+                    // The parent has no conversationId (e.g. it was posted before 57.3, or is a top-level
+                    // note from a non-Pleroma server). The parent's own IRI is the thread root.
+                    embedded.SetConversationId(parent);
+                }
+            }
+        }
+        // If the parent is not found (remote, not yet fetched), leave conversationId unset.
     }
 
     /// <summary>
@@ -3316,6 +5596,217 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Transforms an outbound <see cref="Create"/> for cross-post delivery (138.11 / Lemmy interop,
+    /// Note-vs-Page): if the embedded object is a top-level <see cref="Note"/> (no <c>inReplyTo</c>), it
+    /// is replaced with an <see cref="Article"/> that carries the same content, audience, and
+    /// attribution. Replies (which have <c>inReplyTo</c>) are returned unchanged.
+    /// </summary>
+    /// <remarks>
+    /// Lemmy's <c>Note</c> struct REQUIRES <c>inReplyTo</c> (it is a comment); a top-level post has no
+    /// parent, so it must be an <c>Article</c>/<c>Page</c>. The ActivityStreams library has no
+    /// <c>Page</c> type, but <c>Article</c> is a valid top-level content object that Lemmy's
+    /// <c>PageType</c> enum accepts. An Iris target handles both <c>Note</c> and <c>Article</c>
+    /// (the <c>CreateActivityHandler</c> uses <c>IObject</c>; the <c>CommunityContentRecorder</c> tags
+    /// both). This transformation is applied only to the cross-post delivery (the activity delivered to
+    /// the remote community's inbox); the activity stored in the local outbox and the follower fan-out
+    /// retain the original <see cref="Note"/> type.
+    /// </remarks>
+    /// <param name="create">The outbound <see cref="Create"/> to transform.</param>
+    /// <returns>A new <see cref="Create"/> with the embedded object transformed (if applicable), or the
+    /// original <paramref name="create"/> (when the embedded object is not a top-level
+    /// <see cref="Note"/>).</returns>
+    private static Activity TransformCreateForCrossPost(Create create)
+    {
+        var embedded = create.ExtractEmbeddedObject();
+        if (embedded is not Note note || (note.InReplyTo is { } replyTo && replyTo.Any()))
+        {
+            return create;
+        }
+
+        var page = new Page
+        {
+            Id = note.Id,
+            Content = note.Content,
+            AttributedTo = note.AttributedTo,
+            To = note.To,
+            Cc = note.Cc,
+            Image = note.Image,
+            Attachment = note.Attachment,
+            Name = note.Name,
+            MediaType = note.MediaType,
+            Published = note.Published,
+            Updated = note.Updated,
+            Source = note.Source,
+        };
+
+        // Lemmy's CreateOrUpdatePage requires a `to` field on the Create activity itself (not just on
+        // the embedded object). Copy the embedded object's `to` (which includes the target community
+        // IRI) to the Create activity's `to` so Lemmy can validate the audience.
+        var to = create.To is { } createTo && createTo.Any()
+            ? create.To
+            : note.To;
+
+        // Lemmy's CreateOrUpdatePage requires both `to` and `cc` fields on the Create activity
+        // (neither has a serde default). Copy the embedded object's `to` and `cc` (which include
+        // the target community IRI and Public) to the Create activity so Lemmy can validate them.
+        var cc = create.Cc is { } createCc && createCc.Any()
+            ? create.Cc
+            : note.Cc;
+
+        return new Create
+        {
+            Id = create.Id,
+            Actor = create.Actor,
+            Object = [page],
+            To = to ?? [],
+            Cc = cc ?? [],
+        };
+    }
+
+    /// <summary>
+    /// Computes the cross-post targets of an outbound <see cref="Create"/> published to a local actor's
+    /// outbox (138.10 / decision 058): the REMOTE recipients the author explicitly addressed in the
+    /// activity's <c>to</c> audience, minus the recipients the follower fan-out already covers.
+    /// </summary>
+    /// <remarks>
+    /// A community *follow* is a pull (decision 036 / Phase 89.1): the follower subscribes to the
+    /// followed side's content; it does not push the follower's own posts into the followed community.
+    /// For an Iris-authored post to land *inside* a peered non-Iris community's post list (a Lemmy
+    /// community, e.g.), the author must cross-post: explicitly address the target community in the
+    /// <c>Create</c>'s <c>to</c> audience and deliver the <c>Create</c> to that community's inbox, exactly
+    /// as a Lemmy/Mastodon client cross-posts. This method reads the composed <c>to</c> audience (preserved
+    /// by <see cref="RewriteOutboundAudienceAsync"/>, which only appends to <c>cc</c> and to a reply's
+    /// <c>to</c>) and returns the subset that is (a) remote (hosted on a different instance — a
+    /// recipient on this instance's own host needs no cross-instance hop), (b) not the public-audience
+    /// sentinel, (c) not already fanned out to a follower (no duplicate delivery), and (d) not blocked
+    /// (the trust boundary). The result is delivered by the caller via <c>DeliverToActorAsync</c> (which
+    /// resolves the recipient's <c>sharedInbox</c>/<c>inbox</c> and signs as the acting local actor).
+    /// </remarks>
+    /// <remarks>
+    /// The "remote" test is <em>host-based</em>, not actor-store-membership-based: a remote community
+    /// that this instance has followed (and therefore cached in its own actor store — the peered-Lemmy
+    /// case) must still be a cross-post target, because it lives on the remote host. The store
+    /// membership check (<see cref="ILocalActorResolver.IsLocalActorAsync"/>) would misclassify such a
+    /// cached remote as local and drop the cross-post entirely; the host comparison against
+    /// <paramref name="instanceBaseUrl"/> is the authoritative "is this on my instance" signal.
+    /// </remarks>
+    /// <param name="persistence">The persistence provider (provides the moderation store for the block
+    /// check).</param>
+    /// <param name="localActors">Resolves whether a candidate recipient is a local actor (secondary
+    /// guard; the primary "remote" test is the host comparison).</param>
+    /// <param name="instanceBaseUrl">The instance's base IRI (its advertised host) as a URI string; the
+    /// authoritative "is this recipient on my instance" signal for the host comparison.</param>
+    /// <param name="authorIri">The acting local actor (the author; the block edge is checked
+    /// <c>recipient → author</c>, i.e. whether the recipient blocked the author).</param>
+    /// <param name="create">The outbound <see cref="Create"/> whose <c>to</c> audience is read.</param>
+    /// <param name="alreadyFannedOut">The recipients the follower fan-out already delivered to (excluded
+    /// to avoid a duplicate delivery).</param>
+    /// <param name="ct">A cancellation token.</param>
+    /// <returns>The remote, non-blocked, explicitly-addressed cross-post targets; possibly empty.</returns>
+    private static async Task<IReadOnlyList<Iri>> GetCrossPostTargetsAsync(
+        IPersistenceProvider persistence,
+        ILocalActorResolver localActors,
+        string? instanceBaseUrl,
+        Iri authorIri,
+        Create create,
+        IEnumerable<Iri> alreadyFannedOut,
+        CancellationToken ct)
+    {
+        var fannedOut = new HashSet<Iri>(AudienceIriComparer.Instance);
+        foreach (var recipient in alreadyFannedOut)
+        {
+            fannedOut.Add(recipient);
+        }
+
+        var targets = new List<Iri>();
+        var seen = new HashSet<Iri>(AudienceIriComparer.Instance);
+
+        // Collect the cross-post audience from BOTH the activity-level `to` AND the embedded object's
+        // `to`. Clients differ in where they compose the audience: a raw ActivityPub client (and the
+        // integration tests) put the community IRI on the Create's `to`, while the Iris
+        // <see cref="IActivityPubClient.PostNoteAsync"/> client composes it on the embedded Note's `to`
+        // (leaving the Create's `to` empty). Reading only the activity-level `to` would silently drop the
+        // cross-post for the latter (the stored Create would have an empty `to` and no target). Unioning
+        // both (deduped by the `seen` set) makes the leg robust to either client form.
+        var audiences = new List<IEnumerable<IObjectOrLink>?> { create.To };
+        if (create.ExtractEmbeddedObject()?.To is { } embeddedTo)
+        {
+            audiences.Add(embeddedTo);
+        }
+
+        foreach (var audience in audiences)
+        {
+            foreach (var entry in audience ?? [])
+            {
+                var target = entry.ResolveObjectIri();
+                if (target is not { } resolved || resolved.IsPublicAudience() || !seen.Add(resolved))
+                {
+                    continue;
+                }
+
+                if (fannedOut.Contains(resolved))
+                {
+                    continue;
+                }
+
+                // Skip recipients on THIS instance (no cross-instance hop). The check is host-based, NOT
+                // the actor-store membership: a remote community/actor that this instance has followed
+                // (and hence cached in its own actor store, e.g. a peered Lemmy community) must still be a
+                // cross-post target — it lives on the remote host, so the Create must be delivered there.
+                // The store check (IsLocalActorAsync) would misclassify such a cached remote as local and
+                // drop the cross-post entirely (the common "peered community" case). A host match is the
+                // authoritative "is this on my instance" signal.
+                if (IsOnInstance(resolved, instanceBaseUrl))
+                {
+                    continue;
+                }
+
+                // Belt-and-suspenders: a recipient that is a genuinely local actor (present in the local
+                // store AND on this instance's host) is also skipped. In practice the host check above
+                // already covers this; the store check remains as a secondary guard for edge cases (e.g.
+                // an actor IRI that is on this host but was seeded under a non-canonical form).
+                if (await localActors.IsLocalActorAsync(resolved, ct).ConfigureAwait(false)
+                    && IsOnInstance(resolved, instanceBaseUrl))
+                {
+                    continue;
+                }
+
+                if (await persistence.Moderation.IsBlockedAsync(resolved, authorIri, ct).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                targets.Add(resolved);
+            }
+        }
+
+        return targets;
+    }
+
+    /// <summary>
+    /// Returns whether <paramref name="iri"/> is hosted on the same host as <paramref name="instanceBaseUrl"/>
+    /// (i.e., the instance itself). Returns <see langword="false"/> when either IRI is null or not an
+    /// absolute http(s) URI with a comparable host.
+    /// </summary>
+    /// <param name="iri">The recipient IRI to test.</param>
+    /// <param name="instanceBaseUrl">The instance's base IRI (its advertised host) as a URI string.</param>
+    /// <returns><see langword="true"/> when both are absolute and their hosts match (case-insensitive).</returns>
+    private static bool IsOnInstance(Iri iri, string? instanceBaseUrl)
+    {
+        if (instanceBaseUrl is null
+            || !Uri.TryCreate(instanceBaseUrl, UriKind.Absolute, out var instanceUri))
+        {
+            return false;
+        }
+
+        var instanceHost = instanceUri.Host;
+        var targetHost = iri.Uri.IsAbsoluteUri ? iri.Uri.Host : null;
+        return instanceHost.Length > 0
+            && targetHost is not null
+            && string.Equals(instanceHost, targetHost, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// Rewrites the on-the-wire audience (<c>to</c>/<c>cc</c>) of an outbound <see cref="Create"/> or
     /// <see cref="Announce"/> published to a local actor's outbox so the federation document enumerates
     /// the actual audience, not just the author's composed address (19.6.5 audience metadata — the
@@ -3347,12 +5838,16 @@ public static class ActivityPubServerExtensions
     /// <param name="persistence">The persistence provider (provides the followers, moderation, and object
     /// stores used to compute the audience and resolve a reply's parent author).</param>
     /// <param name="localActors">Resolves whether a candidate follower is a local actor.</param>
+    /// <param name="objectFetch">The outbound object fetcher used to resolve a reply's REMOTE parent author
+    /// (Phase 136.7 — a cross-instance reply's parent is not stored locally, so its author is fetched over
+    /// the wire); <see langword="null"/> restricts parent-author resolution to local parents.</param>
     /// <param name="ct">A cancellation token.</param>
     private static async Task RewriteOutboundAudienceAsync(
         Activity activity,
         Iri authorIri,
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
+        IActivityPubClient? objectFetch,
         CancellationToken ct)
     {
         var followers = await GetRemoteNonBlockedFollowersAsync(persistence, localActors, authorIri, ct)
@@ -3366,6 +5861,18 @@ public static class ActivityPubServerExtensions
                 // for the whole follower set (the local outbox path delivers one object to all).
                 announce.Cc = [new Link { Href = new Uri(authorIri.Value) }];
                 announce.To = MergeAudience(announce.To, followers);
+
+                // Phase 136.8 (cross-instance boost integrity): the announced object's author is a direct
+                // recipient of the boost — the object's author must be told their object was boosted. The
+                // announced object may be LOCAL (in the object store) or REMOTE (on another instance, not
+                // stored locally); ResolveObjectAuthorForDeliveryAsync resolves the author in either case (a
+                // remote object's author is fetched over the wire), so a cross-instance boost names the
+                // object's author in the `to` audience — mirroring the 136.7 reply's parent-author audience.
+                if (announce.Object?.FirstOrDefault().ResolveObjectIri() is { } announcedIri
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, announcedIri, ct).ConfigureAwait(false) is { } announcedAuthor)
+                {
+                    announce.To = MergeAudience(announce.To, [announcedAuthor]);
+                }
                 break;
 
             case Create create:
@@ -3373,12 +5880,14 @@ public static class ActivityPubServerExtensions
                 // recipients (as:Public for a public post) and, for a reply, gains the reply target.
                 create.Cc = MergeAudience(create.Cc, followers);
 
+                // Phase 136.7 (cross-instance reply integrity): the reply target — the parent note's
+                // author — is a direct recipient of the reply. The parent may be LOCAL (in the object
+                // store) or REMOTE (on another instance, not stored locally); ResolveObjectAuthorForDeliveryAsync
+                // resolves the author in either case (a remote parent's author is fetched over the wire),
+                // so a cross-instance reply names its parent's author in the `to` audience.
                 if (create.ExtractEmbeddedObject()?.GetParentIri() is { } parentIri
-                    && await persistence.Objects.TryGetObjectAsync(parentIri, out var parent, ct).ConfigureAwait(false)
-                    && parent is { }
-                    && parent.AttributedTo?.FirstOrDefault().ResolveObjectIri() is { } parentAuthor)
+                    && await ResolveObjectAuthorForDeliveryAsync(persistence, objectFetch, parentIri, ct).ConfigureAwait(false) is { } parentAuthor)
                 {
-                    // The reply target (the parent note's author) is a direct recipient of the reply.
                     create.To = MergeAudience(create.To, [parentAuthor]);
                 }
                 break;
@@ -3526,6 +6035,29 @@ public static class ActivityPubServerExtensions
                 [IrisExtensionTerms.Capabilities] = "@id",
                 [IrisExtensionTerms.Settings] = "@id",
                 [IrisExtensionTerms.SearchQuery] = "string",
+                [IrisExtensionTerms.IsLiked] = "boolean",
+                [IrisExtensionTerms.IsShared] = "boolean",
+                [IrisExtensionTerms.Refresh] = "boolean",
+                [IrisExtensionTerms.Query] = "boolean",
+                [IrisExtensionTerms.Type] = "boolean",
+                [IrisExtensionTerms.LikedCount] = "integer",
+                [IrisExtensionTerms.SharedCount] = "integer",
+                [IrisExtensionTerms.RepliedCount] = "integer",
+                [IrisExtensionTerms.LikeActivityIri] = "@id",
+                [IrisExtensionTerms.AnnounceActivityIri] = "@id",
+                [IrisExtensionTerms.IsDisliked] = "boolean",
+                [IrisExtensionTerms.DislikedCount] = "integer",
+                [IrisExtensionTerms.Score] = "integer",
+                [IrisExtensionTerms.DislikeActivityIri] = "@id",
+                [IrisExtensionTerms.RemovedBy] = "@id",
+                [IrisExtensionTerms.CommunityNsfw] = "boolean",
+                [IrisExtensionTerms.Locked] = "boolean",
+                [IrisExtensionTerms.Featured] = "boolean",
+                [IrisExtensionTerms.Language] = "string",
+                [IrisExtensionTerms.PostingRestrictedToMods] = "boolean",
+                [IrisExtensionTerms.PostsCount] = "integer",
+                [IrisExtensionTerms.FollowersCount] = "integer",
+                [IrisExtensionTerms.FollowingCount] = "integer",
             },
         };
 
@@ -3577,7 +6109,148 @@ public static class ActivityPubServerExtensions
         ext[fullKey] = System.Text.Json.JsonSerializer.SerializeToElement(iri);
     }
 
-    private static Actor BuildActorDocument(
+    /// <summary>
+    /// Adds an integer-valued extension property under the given full <c>iris:</c> key to a document's
+    /// <see cref="KristofferStrube.ActivityStreams.Object.ExtensionData"/> (overwriting any existing value),
+    /// used to advertise the cacheable per-actor counters (posts/followers/following).
+    /// </summary>
+    private static void AddExtensionInt(
+        Dictionary<string, System.Text.Json.JsonElement> ext,
+        string fullKey,
+        int value)
+    {
+        ext[fullKey] = System.Text.Json.JsonSerializer.SerializeToElement(value);
+    }
+
+    /// <summary>
+    /// Counts the content posts (the outbox items a client would render in a "posts" view — a
+    /// <c>Create</c> whose object is a <c>Note</c>/<c>Article</c>, or an <c>Announce</c>) in an actor's
+    /// outbox. This is the value advertised as <c>iris:postsCount</c> on the actor document and on
+    /// directory (search) results, so a client displays the post count off the document alone. The
+    /// classification mirrors the client's <c>OutboxFilter.IsContentItem</c> (the profile "Your posts"
+    /// tab): social and moderation activities (<c>Follow</c>, <c>Accept</c>, <c>Like</c>, <c>Flag</c>, …)
+    /// are excluded, so the counter matches what a visitor actually sees as posts.
+    /// </summary>
+    private static async Task<int> CountPostsAsync(IPersistenceProvider persistence, Iri actorIri, CancellationToken ct)
+    {
+        var items = await persistence.Activities.GetOutboxAsync(actorIri, ct).ConfigureAwait(false);
+        var count = 0;
+        foreach (var item in items)
+        {
+            if (item is Announce)
+            {
+                count++;
+                continue;
+            }
+
+            if (item is not Create create)
+            {
+                continue;
+            }
+
+            if (create.Object is { } objects)
+            {
+                foreach (var obj in objects)
+                {
+                    if (obj is Note || obj is Article)
+                    {
+                        count++;
+                        break;
+                    }
+                }
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Adds the cacheable per-actor counters (<c>iris:postsCount</c>, <c>iris:followersCount</c>,
+    /// <c>iris:followingCount</c>) to an already-built actor/community document, computing them from the
+    /// actor's outbox and the follow store. Used by the community document handler (a community is a
+    /// <see cref="Group"/>, not an <see cref="Actor"/>, so it does not go through
+    /// <see cref="BuildActorDocumentAsync"/>).
+    /// </summary>
+    private static async Task AddActorCountersAsync(
+        IObject doc,
+        Iri actorIri,
+        IPersistenceProvider persistence,
+        ActivityPubServerOptions options,
+        CancellationToken ct)
+    {
+        var postsTask = CountPostsAsync(persistence, actorIri, ct);
+        var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+        var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+        var posts = await postsTask.ConfigureAwait(false);
+        var followers = await followersTask.ConfigureAwait(false);
+        var following = await followingTask.ConfigureAwait(false);
+
+        var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        var ns = IrisExtensionNamespace(options);
+        AddExtensionInt(ext, ns + IrisExtensionTerms.PostsCount, posts);
+        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers.Count);
+        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following.Count);
+    }
+
+    /// <summary>
+    /// Builds a local actor's public document, enriching it with the cacheable, per-actor counters
+    /// (<c>iris:postsCount</c>, <c>iris:followersCount</c>, <c>iris:followingCount</c>) computed from the
+    /// actor's outbox and the follow store, so a client can display "N posts / N followers / N following"
+    /// off the document alone (the Mastodon-style directory card) without first reading the
+    /// outbox/followers/following collections. The counters are read from the live stores (never stored
+    /// on the actor document) and cached by the caller's <see cref="LocalActorDocumentCache"/> (60 s), so
+    /// they are fresh within the cache TTL.
+    /// </summary>
+    /// <remarks>
+    /// A content post is an outbox item the client would render in a "posts" view: a <c>Create</c> whose
+    /// object is a Note or Article, or an <c>Announce</c> (boost) — the same classification
+    /// the client's <c>OutboxFilter</c> uses for the profile's "Your posts" tab. Social and moderation
+    /// activities (<c>Follow</c>, <c>Accept</c>, <c>Like</c>, <c>Flag</c>, …) are excluded, so the counter
+    /// matches what a visitor actually sees as posts.
+    /// </remarks>
+    /// <param name="actor">The stored actor (deep-copied internally; never mutated).</param>
+    /// <param name="actorIri">The actor's absolute IRI.</param>
+    /// <param name="authenticatedHandle">The authenticated owner's handle, or <see langword="null"/> for a
+    /// public (unauthenticated) read.</param>
+    /// <param name="persistence">The persistence provider (outbox + follow store).</param>
+    /// <param name="options">The deployment options (the <c>iris:</c> namespace base).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The rendered actor document, with the count extensions present.</returns>
+    private static async Task<Actor> BuildActorDocumentAsync(
+        Actor actor,
+        Iri actorIri,
+        string? authenticatedHandle,
+        IPersistenceProvider persistence,
+        ActivityPubServerOptions options,
+        CancellationToken ct)
+    {
+        // Counters are independent; fetch in parallel.
+        // The three reads are independent; start them concurrently, then await.
+        var postsTask = CountPostsAsync(persistence, actorIri, ct);
+        var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+        var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+        var posts = await postsTask.ConfigureAwait(false);
+        var followers = await followersTask.ConfigureAwait(false);
+        var following = await followingTask.ConfigureAwait(false);
+
+        var doc = BuildActorDocumentCore(actor, actorIri, authenticatedHandle, persistence, options);
+        var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        var ns = IrisExtensionNamespace(options);
+        ext[ns + IrisExtensionTerms.PostsCount] =
+            System.Text.Json.JsonSerializer.SerializeToElement(posts);
+        ext[ns + IrisExtensionTerms.FollowersCount] =
+            System.Text.Json.JsonSerializer.SerializeToElement(followers.Count);
+        ext[ns + IrisExtensionTerms.FollowingCount] =
+            System.Text.Json.JsonSerializer.SerializeToElement(following.Count);
+        return doc;
+    }
+
+    /// <summary>
+    /// The synchronous core of <see cref="BuildActorDocumentAsync"/>: renders the actor document with all
+    /// of its advertised endpoints, capabilities, and extensions, but WITHOUT the async-derived count
+    /// counters. Kept private so the public surface is the async form (which adds the counts).
+    /// </summary>
+    private static Actor BuildActorDocumentCore(
         Actor actor,
         Iri actorIri,
         string? authenticatedHandle,
@@ -3676,6 +6349,24 @@ public static class ActivityPubServerExtensions
             if (doc.Endpoints is Endpoints typedEndpoints)
             {
                 typedEndpoints.SharedInbox ??= sharedInbox.Uri;
+            }
+        }
+
+        // Advertise the OAuth2 endpoints (F-20): the authorization endpoint (the browser-redirect half of
+        // the authorization-code flow) and the token endpoint (the code→Bearer exchange). Both are served
+        // under the instance's /ap/v1 route prefix. A real client (Mastodon, Pleroma, a third-party app)
+        // discovers them from the actor document's `endpoints` object and walks the OAuth2 flow to obtain
+        // a Bearer token for authenticating as the actor, rather than using the Basic-auth privateKey.
+        {
+            var baseUri = options.BaseUri?.Value
+                ?? actorIri.Value[..actorIri.Value.LastIndexOf(ActivityPubServerConstants.RoutePrefix, StringComparison.Ordinal)];
+            var normalized = baseUri.TrimEnd('/');
+            doc.Endpoints ??= new Endpoints();
+            if (doc.Endpoints is Endpoints typedEndpoints)
+            {
+                var oauthPrefix = $"{normalized}{ActivityPubServerConstants.RoutePrefix}/oauth2";
+                typedEndpoints.OauthAuthorizationEndpoint ??= new Uri($"{oauthPrefix}/authorize");
+                typedEndpoints.OauthTokenEndpoint ??= new Uri($"{oauthPrefix}/token");
             }
         }
 
@@ -3891,6 +6582,13 @@ public static class ActivityPubServerExtensions
         // The activity's own id (the client no longer sends it).
         activity.Id = idMinter.Mint(actorIri, activity).Value;
 
+        // The activity's published timestamp: the client does not send it, so the server assigns the
+        // current UTC time. This makes timestamps visible on timeline cards + notifications.
+        if (activity.Published is null)
+        {
+            activity.Published = DateTime.UtcNow;
+        }
+
         // A Create (or other activity) may embed a full object (a Note, a Group) whose id the client no
         // longer sends either. Mint it under the object's own namespace. A reference-carrying activity
         // (Follow/Undo/Accept/…) has only a link as its object, so there is nothing to mint here.
@@ -3911,6 +6609,22 @@ public static class ActivityPubServerExtensions
                 {
                     var mintedId = idMinter.Mint(actorIri, embedded).Value;
                     embedded.Id = mintedId;
+
+                    // Set the embedded object's published timestamp when absent (the note's own
+                    // publication time, visible on the object detail + timeline cards).
+                    if (embedded.Published is null)
+                    {
+                        embedded.Published = DateTime.UtcNow;
+                    }
+
+                    // Mastodon wire-format compatibility (Phase 74): enrich the minted Note with
+                    // properties Mastodon always emits, so remote Mastodon clients render the object
+                    // correctly (status URL, explicit sensitivity flag, replies collection pointer).
+                    if (embedded is KristofferStrube.ActivityStreams.Object noteObj)
+                    {
+                        EnrichNoteForMastodon(noteObj);
+                    }
+
                     mintedItems.Add(embedded);
                 }
                 else
@@ -3919,6 +6633,119 @@ public static class ActivityPubServerExtensions
                 }
             }
             create.Object = mintedItems;
+        }
+    }
+
+    /// <summary>
+    /// Enriches a minted <see cref="KristofferStrube.ActivityStreams.Object"/> with the properties
+    /// Mastodon always emits on a Note (Phase 74 — Mastodon wire-format compatibility): the object's
+    /// <c>url</c> (the note's own IRI, which Mastodon clients use to link to the status page), an
+    /// explicit <c>sensitive</c> flag (always present, defaulting to <c>false</c>, so remote
+    /// visibility logic is unambiguous), an empty <c>replies</c> <see cref="OrderedCollection"/>
+    /// (the replies-collection IRI, so Mastodon clients can poll for thread replies), <c>atomUri</c>
+    /// (the AP IRI, same as <c>url</c> for Iris), <c>context</c> (the conversation/thread context IRI —
+    /// the parent's IRI for replies, the note's own IRI for top-level posts), and <c>contentMap</c>
+    /// (a locale-keyed content map with a single <c>"en"</c> entry matching the note's content).
+    /// These are additive: they do not alter the existing Iris extension terms
+    /// (<c>iris:likedCount</c>, etc.) or the note's content/audience/tags.
+    /// </summary>
+    /// <param name="note">The minted note (its <c>id</c> must already be set).</param>
+    private static void EnrichNoteForMastodon(KristofferStrube.ActivityStreams.Object note)
+    {
+        if (string.IsNullOrWhiteSpace(note.Id))
+        {
+            return;
+        }
+
+        // `url`: the note's own IRI. Mastodon sets this to the HTML page URL; for AP interop the
+        // object IRI is the canonical, resolvable address (the /notes/{ulid} endpoint).
+        note.Url ??= [new Link { Href = new Uri(note.Id) }];
+
+        // `sensitive`: always emit (Mastodon convention — the field is present even when false, so
+        // remote clients need not treat a missing field as ambiguous). Written via ExtensionData
+        // (Rule 6) since the library does not model it as a typed property.
+        note.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+        note.ExtensionData["sensitive"] = System.Text.Json.JsonSerializer.SerializeToElement(
+            note.ExtensionData.ContainsKey("sensitive")
+                && note.ExtensionData["sensitive"].ValueKind == System.Text.Json.JsonValueKind.True);
+
+        // `replies`: an empty OrderedCollection pointing at the replies-collection IRI
+        // ({noteId}/replies), matching Mastodon's shape. The server already serves this collection
+        // (the interaction-collection endpoint), so this is a pure pointer.
+        note.Replies = new OrderedCollection
+        {
+            Id = note.Id + "/replies",
+        };
+
+        // `atomUri`: the ActivityPub IRI of the object (Mastodon/Pleroma convention). For Iris the
+        // AP IRI is the same as the object's own IRI (the /notes/{ulid} endpoint), so it mirrors
+        // `url`. Written via ExtensionData (Rule 6) since the library does not model it.
+        note.ExtensionData["atomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(note.Id);
+
+        // `context`: the conversation/thread context IRI. For replies, Mastodon uses the thread's
+        // root context; the closest Iris equivalent is the parent note's IRI (the thread the reply
+        // belongs to). For top-level posts, the context is the note's own IRI (a degenerate
+        // single-item context). Mastodon also emits `conversation` with the same value; both are
+        // written via ExtensionData (Rule 6) since the library models `Context` as
+        // IEnumerable<IObjectOrLink> (a multi-valued property, not a single IRI link).
+        var contextIri = note.Id;
+        if (note.InReplyTo is { } inReplyTo)
+        {
+            var first = inReplyTo.FirstOrDefault();
+            if (first is ILink link && link.Href is { } href)
+            {
+                contextIri = href.ToString();
+            }
+            else if (first is IObject parentObj && !string.IsNullOrWhiteSpace(parentObj.Id))
+            {
+                contextIri = parentObj.Id;
+            }
+        }
+        note.ExtensionData["context"] = System.Text.Json.JsonSerializer.SerializeToElement(contextIri);
+        note.ExtensionData["conversation"] = System.Text.Json.JsonSerializer.SerializeToElement(contextIri);
+
+        // `contentMap`: a locale-keyed content map (Mastodon convention). Iris content is not
+        // localized, so emit a single "en" entry with the note's content (the same HTML/plain-text
+        // string). Written as a typed property (the library models ContentMap as
+        // IEnumerable<IDictionary<string, string>>).
+        if (note.Content is { } content)
+        {
+            var firstContent = content.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(firstContent))
+            {
+                note.ContentMap = [new Dictionary<string, string> { ["en"] = firstContent }];
+            }
+        }
+
+        // `likes` / `shares`: empty Collection pointers to the interaction-collection IRIs
+        // ({noteId}/likes, {noteId}/shares), matching Mastodon's shape. The server already serves
+        // these collections (the interaction-collection endpoints), so these are pure pointers.
+        // A newly-minted note has 0 likes and 0 shares.
+        note.Likes = new Collection
+        {
+            Id = note.Id + "/likes",
+            TotalItems = 0,
+        };
+        note.Shares = new Collection
+        {
+            Id = note.Id + "/shares",
+            TotalItems = 0,
+        };
+
+        // `inReplyToAtomUri`: the AP IRI of the parent note (Mastodon/Pleroma convention). For
+        // replies, this is the same as `inReplyTo` (the parent's IRI). For top-level posts, it is
+        // absent (null). Written via ExtensionData (Rule 6) since the library does not model it.
+        if (note.InReplyTo is { } inReplyTo2)
+        {
+            var first = inReplyTo2.FirstOrDefault();
+            if (first is ILink link2 && link2.Href is { } href2)
+            {
+                note.ExtensionData["inReplyToAtomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(href2.ToString());
+            }
+            else if (first is IObject parentObj2 && !string.IsNullOrWhiteSpace(parentObj2.Id))
+            {
+                note.ExtensionData["inReplyToAtomUri"] = System.Text.Json.JsonSerializer.SerializeToElement(parentObj2.Id);
+            }
         }
     }
 
@@ -3967,6 +6794,9 @@ public static class ActivityPubServerExtensions
     /// <param name="path">The object IRI's path relative to the route prefix (the <c>{**path}</c> catch-all).</param>
     /// <param name="persistence">The persistence provider (provides the <see cref="IObjectStore"/>).</param>
     /// <param name="optionsAccessor">The server options (provides the advertised base URL).</param>
+    /// <param name="signatureValidator">Validates the request's HTTP signature inline (for the per-requester
+    /// <c>isLiked</c> extension); a signed object read's authenticated actor is resolved here rather than via
+    /// the middleware, so the validation never re-enters on a key-resolution fetch.</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The object (or its tombstone) as <c>application/activity+json</c>, or <c>404</c>.</returns>
     private static async Task<IResult> ObjectDocumentHandler(
@@ -3974,6 +6804,7 @@ public static class ActivityPubServerExtensions
         string path,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -3996,7 +6827,7 @@ public static class ActivityPubServerExtensions
         if (isReplies)
         {
             var parentPath = path.Substring(0, path.Length - (repliesSegment.Length + 1));
-            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
+            return await ObjectRepliesAsync(context, parentPath, persistence, normalized, IrisExtensionNamespace(optionsAccessor.Value), ct).ConfigureAwait(false);
         }
 
         // Per-object interaction collections (decision 056 (d)): when the catch-all path ends in a
@@ -4050,11 +6881,207 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The iris:isLiked / iris:isShared extensions: when the request carries a valid HTTP signature
+        // (the Iris client signs all its ActivityPub interactions, reads included, to establish identity),
+        // render a `true` on the object when the authenticated requester currently has a (net) like /
+        // boost on it. Each net state is the edge in its store: a Like (Announce) followed by an Undo
+        // (an unlike / un-boost) has removed it, so it reads false; a Like → Undo → Like (Announce → Undo
+        // → Announce) re-added it, so it reads true. An unsigned / anonymous request gets neither (a client
+        // that has no signed identity cannot light a heart or boost marker). Only a real content object
+        // carries them (a tombstone / a minted activity such as a Like or Announce itself has no like /
+        // boost state to surface).
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        bool? isLikedValue = null;
+        bool? isSharedValue = null;
+        bool? isDislikedValue = null;
+        int? likedCountValue = null;
+        int? sharedCountValue = null;
+        int? repliedCountValue = null;
+        int? dislikedCountValue = null;
+        Iri? likeActivityIriValue = null;
+        Iri? announceActivityIriValue = null;
+        Iri? dislikeActivityIriValue = null;
+        if (obj is not KristofferStrube.ActivityStreams.Tombstone)
+        {
+            isLikedValue = requesterIri is { } r
+                ? await persistence.Likes.HasLikedAsync(r, objectIri, ct).ConfigureAwait(false)
+                : null;
+            isSharedValue = requesterIri is { } s
+                ? await persistence.Announces.HasAnnouncedAsync(s, objectIri, ct).ConfigureAwait(false)
+                : null;
+            isDislikedValue = requesterIri is { } d
+                ? await persistence.Dislikes.HasDislikedAsync(d, objectIri, ct).ConfigureAwait(false)
+                : null;
+
+            // The per-object interaction counters (iris:likedCount / iris:sharedCount / iris:repliedCount /
+            // iris:dislikedCount): cacheable, not per-requester (the same value for every requester). A
+            // client (e.g. the object-detail page and the EngagementBar) reads them off the document it
+            // already fetched instead of re-walking the /likes, /shares, and /replies collections (54.8).
+            //
+            // Phase 151 — background processing: the ObjectInteractionCountRefreshService pre-computes
+            // these counters and persists them onto the stored object's ExtensionData under the iris:
+            // namespace. When present, they are served directly (no per-read reverse-index sweep); when
+            // absent (the refresh has not yet run, or the object is remote and not in the local store),
+            // the per-read sweep is the fallback. The reply count is derived from the IReplyStore reverse
+            // index (the parent → [child] reply edges recorded by the CreateActivityHandler when an
+            // inbound reply is stored), so it reflects the replies this instance knows about for the
+            // object — local or remote (a proxied remote object's replies are synced into the local reply
+            // store, 132.1).
+            var ns = IrisExtensionNamespace(options);
+            if (!TryReadStoredCounts(obj, ns, out var preLiked, out var preShared, out var preReplied, out var preDisliked))
+            {
+                likedCountValue = (await persistence.Likes.GetLikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                sharedCountValue = (await persistence.Announces.GetAnnouncersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                repliedCountValue = (await persistence.Replies.GetRepliesAsync(objectIri, ct).ConfigureAwait(false)).Count;
+                dislikedCountValue = (await persistence.Dislikes.GetDislikersAsync(objectIri, ct).ConfigureAwait(false)).Count;
+            }
+            else
+            {
+                likedCountValue = preLiked;
+                sharedCountValue = preShared;
+                repliedCountValue = preReplied;
+                dislikedCountValue = preDisliked;
+            }
+
+            // The requester's minted Like / Announce / Dislike activity IRIs (72.2, per-requester read-time
+            // state, like isLiked / isShared / isDisliked): when the requester has (net) liked / boosted /
+            // disliked this object, resolve the id an unlike / un-boost / un-dislike (Undo) references so
+            // the object-detail page can read it off the document instead of walking the /likes, /shares,
+            // or /dislikes collection to recover it.
+            var (likeIris, announceIris) = await GetRequesterActivityIrisAsync(
+                persistence, requesterIri, [objectIri], ct).ConfigureAwait(false);
+            if (isLikedValue is true &&
+                likeIris.TryGetValue(objectIri, out var likeIri))
+            {
+                likeActivityIriValue = likeIri;
+            }
+            if (isSharedValue is true &&
+                announceIris.TryGetValue(objectIri, out var announceIri))
+            {
+                announceActivityIriValue = announceIri;
+            }
+            // The dislike activity IRI: resolve via the activity store (a single sweep for the requester's
+            // Dislike activity on this object).
+            if (isDislikedValue is true &&
+                requesterIri is { } dislikeRequester)
+            {
+                dislikeActivityIriValue = await GetDislikeActivityIriAsync(
+                    persistence, dislikeRequester, objectIri, ct).ConfigureAwait(false);
+            }
+        }
+
         // Cache-Control: an object (or its tombstone) is a stable, addressable document; cache it like
-        // the actor document (max-age=60, stale-while-revalidate=300).
+        // the actor document (max-age=60, stale-while-revalidate=300). The document is per-requester
+        // (isLiked / isShared depend on the requester), so the 60s TTL is a soft bound — a requester who
+        // just liked / boosted an object sees it light on a re-fetch that bypasses the cache (the client
+        // passes ?refresh=true).
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.ActorCacheControl;
-        return Results.Text(ServeObjectDocument(obj, objectIri), ActivityJson.ActivityJsonContentType);
+        return Results.Text(
+            ServeObjectDocument(
+                obj, objectIri, isLikedValue, isSharedValue, isDislikedValue,
+                likedCountValue, sharedCountValue, repliedCountValue, dislikedCountValue,
+                likeActivityIriValue, announceActivityIriValue, dislikeActivityIriValue,
+                IrisExtensionNamespace(options)),
+            NegotiateContentType(context));
+    }
+
+    /// <summary>
+    /// Resolves the authenticated requesting actor for a signed object read (the identity behind the
+    /// <c>iris:isLiked</c> / <c>iris:isShared</c> extensions): the actor bound to a valid HTTP signature on
+    /// the request (the Iris client signs all its ActivityPub interactions, reads included, to establish
+    /// identity); <see langword="null"/> when the request is unsigned / anonymous or its signature is
+    /// invalid (the extensions are then omitted from the served document).
+    /// </summary>
+    private static async Task<Iri?> ResolveAuthenticatedRequesterAsync(
+        HttpContext context,
+        ISignatureValidator signatureValidator,
+        CancellationToken ct)
+    {
+        // The authenticated actor is the one established by a valid HTTP signature (the Iris client signs
+        // every AP interaction it sends, including object reads, to validate identity). Validate the
+        // signature INLINE (not via the middleware): this handler is only reached for NON-actor-document
+        // object paths (actor documents are dispatched by their own /u/{handle} route first), so an inline
+        // validation here never re-enters on the inbound key resolver's key-resolution fetch — which would
+        // otherwise cascade across instances in a federating loop. An unsigned request (no Signature
+        // header) has no identity (no isLiked / isShared); a signed-but-invalid request is treated as
+        // anonymous (reading an object must not 401 just because the requester's signature is stale).
+        var outcome = await signatureValidator.ValidateAsync(context, ct).ConfigureAwait(false);
+        if (outcome is null || !outcome.IsValid)
+        {
+            return null;
+        }
+
+        return outcome.ActorIri;
+    }
+
+    /// <summary>
+    /// Reads the pre-computed per-object interaction counters that
+    /// <see cref="Stores.ObjectInteractionCountRefreshService"/> persists onto the stored object's
+    /// <see cref="IObject.ExtensionData"/> (Phase 151). Returns <see langword="true"/> when all four
+    /// counters (<c>iris:likedCount</c>/<c>sharedCount</c>/<c>repliedCount</c>/<c>dislikedCount</c>) are
+    /// present and are integers (so the caller serves them directly, skipping the per-read reverse-index
+    /// sweep); <see langword="false"/> when any is absent or malformed (the caller falls back to the
+    /// per-read sweep). The <c>iris:</c> namespace base is required: without it the keys are unknown and
+    /// the counters cannot be located.
+    /// </summary>
+    private static bool TryReadStoredCounts(
+        IObject obj,
+        string? irisNamespace,
+        out int likedCount,
+        out int sharedCount,
+        out int repliedCount,
+        out int dislikedCount)
+    {
+        likedCount = 0;
+        sharedCount = 0;
+        repliedCount = 0;
+        dislikedCount = 0;
+
+        if (string.IsNullOrEmpty(irisNamespace))
+        {
+            return false;
+        }
+
+        var ext = obj.ExtensionData;
+        if (ext is null)
+        {
+            return false;
+        }
+
+        var ns = irisNamespace!;
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.LikedCount, out likedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.SharedCount, out sharedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.RepliedCount, out repliedCount))
+        {
+            return false;
+        }
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.DislikedCount, out dislikedCount))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Reads an integer extension property from a dictionary, returning <see langword="false"/> when the
+    /// key is absent or the value is not an integer.
+    /// </summary>
+    private static bool TryGetInt(
+        System.Collections.Generic.Dictionary<string, System.Text.Json.JsonElement> ext,
+        string key,
+        out int value)
+    {
+        value = 0;
+        return ext.TryGetValue(key, out var el)
+            && el.ValueKind == System.Text.Json.JsonValueKind.Number
+            && el.TryGetInt32(out value);
     }
 
     /// <summary>
@@ -4072,8 +7099,47 @@ public static class ActivityPubServerExtensions
     /// </remarks>
     /// <param name="obj">The stored object to serve.</param>
     /// <param name="objectIri">The object's canonical IRI (the addressable form this endpoint serves it at).</param>
+    /// <param name="isLiked">The requesting user's net like state on the object (the <c>iris:isLiked</c>
+    /// extension); when <c>true</c> a <c>true</c> is rendered, when <c>null</c>/<c>false</c> the extension
+    /// is omitted.</param>
+    /// <param name="isShared">The requesting user's net boost state on the object (the
+    /// <c>iris:isShared</c> extension); when <c>true</c> a <c>true</c> is rendered, when
+    /// <c>null</c>/<c>false</c> the extension is omitted.</param>
+    /// <param name="isDisliked">The requesting user's net dislike state on the object (the
+    /// <c>iris:isDisliked</c> extension); when <c>true</c> a <c>true</c> is rendered, when
+    /// <c>null</c>/<c>false</c> the extension is omitted.</param>
+    /// <param name="likedCount">The number of distinct likers (the <c>iris:likedCount</c> extension;
+    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
+    /// <param name="sharedCount">The number of distinct announcers (the <c>iris:sharedCount</c>
+    /// extension; cacheable, not per-requester); when non-null it is rendered, when null the extension is
+    /// omitted.</param>
+    /// <param name="repliedCount">The number of replies (the <c>iris:repliedCount</c> extension;
+    /// cacheable, not per-requester); when non-null it is rendered, when null the extension is omitted.</param>
+    /// <param name="dislikedCount">The number of distinct dislikers (the <c>iris:dislikedCount</c>
+    /// extension; cacheable, not per-requester); when non-null it is rendered, when null the extension is
+    /// omitted.</param>
+    /// <param name="likeActivityIri">The requesting user's minted <c>Like</c> activity IRI for this object
+    /// (the <c>iris:likeActivityIri</c> extension; per-requester, read-time state); when non-null (and the
+    /// requester has liked the object) it is rendered, when null the extension is omitted.</param>
+    /// <param name="announceActivityIri">The requesting user's minted <c>Announce</c> activity IRI for this
+    /// object (the <c>iris:announceActivityIri</c> extension; per-requester, read-time state); when
+    /// non-null (and the requester has boosted the object) it is rendered, when null the extension is
+    /// omitted.</param>
+    /// <param name="dislikeActivityIri">The requesting user's minted <c>Dislike</c> activity IRI for this
+    /// object (the <c>iris:dislikeActivityIri</c> extension; per-requester, read-time state); when
+    /// non-null (and the requester has disliked the object) it is rendered, when null the extension is
+    /// omitted.</param>
+    /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (the <c>@vocab</c> the
+    /// document declares); the <c>isLiked</c> / <c>isShared</c> / <c>isDisliked</c> / <c>likedCount</c> /
+    /// <c>sharedCount</c> / <c>repliedCount</c> / <c>dislikedCount</c> / <c>score</c> /
+    /// <c>likeActivityIri</c> / <c>announceActivityIri</c> / <c>dislikeActivityIri</c> terms are written as
+    /// <c>{irisNamespace}&lt;term&gt;</c>.</param>
     /// <returns>The object as <c>application/activity+json</c>, with a canonical <c>url</c> when absent.</returns>
-    private static string ServeObjectDocument(IObject obj, Iri objectIri)
+    private static string ServeObjectDocument(
+        IObject obj, Iri objectIri, bool? isLiked, bool? isShared, bool? isDisliked,
+        int? likedCount, int? sharedCount, int? repliedCount, int? dislikedCount,
+        Iri? likeActivityIri, Iri? announceActivityIri, Iri? dislikeActivityIri,
+        string? irisNamespace)
     {
         if (obj is KristofferStrube.ActivityStreams.Tombstone)
         {
@@ -4089,7 +7155,495 @@ public static class ActivityPubServerExtensions
             document.Url = [new Link { Href = new Uri(objectIri.Value) }];
         }
 
+        // The iris:isLiked / iris:isShared extensions (per-object like / boost state): when the requesting
+        // user is authenticated and has (net) liked / boosted this object, render a `true` so a client can
+        // light the heart / boost marker without reading the requester's /liked (or /announces) collection.
+        // Absent when the request is anonymous or the requester has not liked / boosted the object (a false
+        // value is omitted — the default is "not liked" / "not boosted"). This is per-requester, read-time
+        // state (never stored on the object), so it is only ever added to the deep copy.
+        if (irisNamespace is { } ns)
+        {
+            if (isLiked is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (likeActivityIri is { } likeIri)
+                {
+                    document.ExtensionData[ns + IrisExtensionTerms.LikeActivityIri] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(likeIri.ToString());
+                }
+            }
+
+            if (isShared is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsShared] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (announceActivityIri is { } announceIri)
+                {
+                    document.ExtensionData[ns + IrisExtensionTerms.AnnounceActivityIri] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(announceIri.ToString());
+                }
+            }
+
+            if (isDisliked is true)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.IsDisliked] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(true);
+                if (dislikeActivityIri is { } dislikeIri)
+                {
+                    document.ExtensionData[ns + IrisExtensionTerms.DislikeActivityIri] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(dislikeIri.ToString());
+                }
+            }
+
+            // The per-object interaction counters (cacheable, not per-requester): rendered whenever a
+            // count is supplied, so a client reads them off the object document instead of re-walking the
+            // /likes and /shares collections (54.8).
+            if (likedCount is { } likes)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(likes);
+            }
+
+            if (sharedCount is { } shares)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(shares);
+            }
+
+            if (repliedCount is { } replies)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(replies);
+            }
+
+            if (dislikedCount is { } dislikes)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(dislikes);
+            }
+
+            // The net score (138.18): likedCount - dislikedCount, the Lemmy-equivalent net score.
+            // Rendered whenever both counts are available (i.e. for non-tombstone objects).
+            if (likedCount is { } l && dislikedCount is { } dl)
+            {
+                document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                document.ExtensionData[ns + IrisExtensionTerms.Score] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(l - dl);
+            }
+
+            // 138.25: Lemmy-specific metadata terms — re-render the bare Lemmy fields from the stored
+            // object's ExtensionData under the iris: namespace. The stored object carries the raw Lemmy
+            // keys (locked, language, sensitive) in its ExtensionData; the deep-copy preserves them, but
+            // clients read the iris:-namespaced keys. Only render when the bare key is present (absent
+            // for locally-created objects that don't have these fields).
+            if (obj.ExtensionData is { } srcExt)
+            {
+                if (srcExt.TryGetValue("locked", out var lockedEl) &&
+                    lockedEl.ValueKind == System.Text.Json.JsonValueKind.True)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Locked] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+
+                if (srcExt.TryGetValue("featured", out var featEl) &&
+                    featEl.ValueKind == System.Text.Json.JsonValueKind.True)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Featured] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+                }
+
+                if (srcExt.TryGetValue("language", out var langEl) &&
+                    langEl.ValueKind == System.Text.Json.JsonValueKind.String &&
+                    langEl.GetString() is { Length: > 0 } lang)
+                {
+                    document.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                    document.ExtensionData[ns + IrisExtensionTerms.Language] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(lang);
+                }
+            }
+        }
+
         return ActivityJson.Serialize(document);
+    }
+
+    /// <summary>
+    /// Enriches collection-page items with per-object interaction state: for each item that is an
+    /// <c>Activity</c> with an embedded <see cref="IObject"/> in its <c>object</c> property, a deep copy is
+    /// made and the embedded object is annotated with:
+    /// <list type="bullet">
+    /// <item><c>iris:likedCount</c> — the number of distinct likers (from <see cref="ILikeStore.GetLikersAsync"/>).</item>
+    /// <item><c>iris:sharedCount</c> — the number of distinct announcers (from <see cref="IAnnounceStore.GetAnnouncersAsync"/>).</item>
+    /// <item><c>iris:repliedCount</c> — the number of replies (from <see cref="IReplyStore.GetRepliesAsync"/>).</item>
+    /// <item><c>iris:dislikedCount</c> — the number of distinct dislikers (from <see cref="IDislikeStore.GetDislikersAsync"/>).</item>
+    /// <item><c>iris:score</c> — the net score (<c>likedCount - dislikedCount</c>), the Lemmy-equivalent net score (138.18).</item>
+    /// <item><c>iris:isLiked</c> / <c>iris:isShared</c> — when a requester IRI is supplied, the requester's
+    /// net like/boost state on the embedded object (per-requester, read-time state).</item>
+    /// <item><c>iris:likeActivityIri</c> / <c>iris:announceActivityIri</c> (72.2) — when a requester IRI is
+    /// supplied and the requester has (net) liked / boosted the embedded object, the IRI of the requester's
+    /// minted <c>Like</c> / <c>Announce</c> activity (the id an unlike / un-boost <c>Undo</c> references).
+    /// Per-requester, read-time state; a client reads it off the item instead of walking the object's
+    /// <c>/likes</c> / <c>/shares</c> collection to recover the id.</item>
+    /// </list>
+    /// Items that are not activities with embedded objects (links, plain objects, activities with IRI-only
+    /// references) are passed through unchanged. The original items are never mutated.
+    /// </summary>
+    /// <param name="items">The collection-page items to enrich.</param>
+    /// <param name="persistence">The persistence provider (provides <see cref="ILikeStore"/>,
+    /// <see cref="IAnnounceStore"/>, and <see cref="IReplyStore"/>).</param>
+    /// <param name="requesterIri">The authenticated requester's IRI (for <c>isLiked</c>/<c>isShared</c>);
+    /// null when the request is anonymous (only counts are added).</param>
+    /// <param name="irisNamespace">The deployment's <c>iris:</c> namespace base (null omits all extensions).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A task that completes with the enriched items (deep copies with extensions added).</returns>
+    private static async Task<IReadOnlyList<IObjectOrLink>> EnrichCollectionItemsAsync(
+        IReadOnlyList<IObjectOrLink> items,
+        IPersistenceProvider persistence,
+        Iri? requesterIri,
+        string? irisNamespace,
+        CancellationToken ct)
+    {
+        if (items.Count == 0 || string.IsNullOrEmpty(irisNamespace))
+        {
+            return items;
+        }
+
+        var ns = irisNamespace!;
+
+        // Phase 1: identify all embedded objects and their IRIs.
+        var entries = new List<(int Index, Activity Activity, IObject Obj, Iri? ObjectIri)>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            var item = items[i];
+            if (item is not Activity activity)
+            {
+                continue;
+            }
+
+            IObject? embeddedObj = null;
+            if (activity.Object is { } objRef)
+            {
+                var firstRef = objRef.FirstOrDefault();
+                if (firstRef is IObject o)
+                {
+                    embeddedObj = o;
+                }
+            }
+
+            if (embeddedObj is null || embeddedObj is KristofferStrube.ActivityStreams.Tombstone)
+            {
+                continue;
+            }
+
+            Iri? objectIri = null;
+            if (embeddedObj.Id is { Length: > 0 } id)
+            {
+                objectIri = new Iri(id);
+            }
+
+            entries.Add((i, activity, embeddedObj, objectIri));
+        }
+
+        if (entries.Count == 0)
+        {
+            return items;
+        }
+
+        // Phase 2: batch-fetch interaction counts and per-requester state.
+        //
+        // Phase 151 — background processing: the ObjectInteractionCountRefreshService pre-computes the
+        // per-object counters and persists them onto each stored object's ExtensionData under the iris:
+        // namespace. An object that already carries all four counters is served from its stored values
+        // (no reverse-index sweep for it); only objects that lack them (the refresh has not yet run, or
+        // the object is remote and not in the local store) are batch-fetched here as the fallback. The
+        // per-requester state (isLiked / isShared) is always computed — it is never stored.
+        var objectIris = new List<Iri>();
+        var needsCountFallback = new List<Iri>();
+        foreach (var e in entries)
+        {
+            if (e.ObjectIri is { } oi)
+            {
+                objectIris.Add(oi);
+                if (!TryReadStoredCounts(e.Obj, ns, out _, out _, out _, out _))
+                {
+                    needsCountFallback.Add(oi);
+                }
+            }
+        }
+
+        var likersByObject = needsCountFallback.Count > 0
+            ? await persistence.Likes.GetLikersBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var announcersByObject = needsCountFallback.Count > 0
+            ? await persistence.Announces.GetAnnouncersBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var repliesByObject = needsCountFallback.Count > 0
+            ? await persistence.Replies.GetRepliesBatchAsync(needsCountFallback, ct).ConfigureAwait(false)
+            : new Dictionary<Iri, IReadOnlyList<Iri>>();
+
+        var likedByRequester = (requesterIri is { } req && objectIris.Count > 0)
+            ? await persistence.Likes.HasLikedBatchAsync(req, objectIris, ct).ConfigureAwait(false)
+            : new HashSet<Iri>();
+
+        var sharedByRequester = (requesterIri is { } req2 && objectIris.Count > 0)
+            ? await persistence.Announces.HasAnnouncedBatchAsync(req2, objectIris, ct).ConfigureAwait(false)
+            : new HashSet<Iri>();
+
+        // 72.2: the requester's minted Like / Announce activity IRIs for the objects they have (net)
+        // liked / boosted — a single activity-store sweep (GetAllActivitiesAsync) filtered to the
+        // requester's activities on this page's objects, so a client reads the id an unlike / un-boost
+        // (Undo) references off the item instead of walking the object's /likes or /shares collection.
+        // Only computed when a requester is present (the outbox path passes null → empty, no sweep).
+        var (likeIrisByObject, announceIrisByObject) =
+            await GetRequesterActivityIrisAsync(persistence, requesterIri, objectIris, ct).ConfigureAwait(false);
+
+        // Phase 3: deep-copy and annotate each entry using the pre-fetched data.
+        var result = new List<IObjectOrLink>(items.Count);
+
+        // Build a map from index to enriched item; non-activity items pass through unchanged.
+        var enrichedByIndex = new Dictionary<int, IObjectOrLink>();
+        foreach (var (index, activity, embeddedObj, objectIri) in entries)
+        {
+            var activityCopy = ActivityJson.Deserialize<Activity>(ActivityJson.Serialize(activity))!;
+            IObject? copyObj = null;
+            if (activityCopy.Object is { } copyObjRef)
+            {
+                var firstCopyRef = copyObjRef.FirstOrDefault();
+                if (firstCopyRef is IObject o)
+                {
+                    copyObj = o;
+                }
+            }
+
+            if (copyObj is null)
+            {
+                enrichedByIndex[index] = activity;
+                continue;
+            }
+
+            if (objectIri is { } oid)
+            {
+                copyObj.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+
+                // Phase 151: serve the pre-computed counters when the embedded object already carries
+                // them (the ObjectInteractionCountRefreshService persisted them); otherwise fall back to
+                // the batch sweep (and the per-object dislike read) for this object only.
+                int likedCount, sharedCount, repliedCount, dislikedCount;
+                if (TryReadStoredCounts(embeddedObj, ns, out likedCount, out sharedCount, out repliedCount, out dislikedCount))
+                {
+                    // The deep copy preserves the stored counters; nothing to re-annotate.
+                }
+                else
+                {
+                    likedCount = likersByObject.TryGetValue(oid, out var lk) ? lk.Count : 0;
+                    sharedCount = announcersByObject.TryGetValue(oid, out var an) ? an.Count : 0;
+                    repliedCount = repliesByObject.TryGetValue(oid, out var rp) ? rp.Count : 0;
+                    dislikedCount = (await persistence.Dislikes.GetDislikersAsync(oid, ct).ConfigureAwait(false)).Count;
+
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.LikedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(likedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.SharedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(sharedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.RepliedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(repliedCount);
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.DislikedCount] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(dislikedCount);
+                }
+
+                copyObj.ExtensionData[ns + IrisExtensionTerms.Score] =
+                    System.Text.Json.JsonSerializer.SerializeToElement(likedCount - dislikedCount);
+
+                if (likedByRequester.Contains(oid))
+                {
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.IsLiked] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+
+                    if (likeIrisByObject.TryGetValue(oid, out var likeIri))
+                    {
+                        copyObj.ExtensionData[ns + IrisExtensionTerms.LikeActivityIri] =
+                            System.Text.Json.JsonSerializer.SerializeToElement(likeIri.ToString());
+                    }
+                }
+
+                if (sharedByRequester.Contains(oid))
+                {
+                    copyObj.ExtensionData[ns + IrisExtensionTerms.IsShared] =
+                        System.Text.Json.JsonSerializer.SerializeToElement(true);
+
+                    if (announceIrisByObject.TryGetValue(oid, out var announceIri))
+                    {
+                        copyObj.ExtensionData[ns + IrisExtensionTerms.AnnounceActivityIri] =
+                            System.Text.Json.JsonSerializer.SerializeToElement(announceIri.ToString());
+                    }
+                }
+            }
+
+            // Stabilize the embedded object: the ActivityStreams library's OneOrMultipleConverter
+            // re-materializes (clones) the embedded object on every enumeration of Activity.Object, so
+            // the ExtensionData written above onto copyObj would be lost when the collection page is
+            // serialized (the serializer fetches a fresh clone, not the instance we enriched). Replacing
+            // Activity.Object with a single-element array containing copyObj makes enumeration return the
+            // SAME stable instance every time, so the interaction counters (and, for an authenticated
+            // requester, isLiked / isShared) survive to the wire.
+            activityCopy.Object = new IObjectOrLink[] { copyObj };
+
+            enrichedByIndex[index] = activityCopy;
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            result.Add(enrichedByIndex.TryGetValue(i, out var e) ? e : items[i]);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Resolves the <em>requesting</em> user's minted <c>Like</c> / <c>Announce</c> activity IRIs for the
+    /// supplied objects (72.2) — the id an unlike / un-boost <c>Undo</c> references. A single
+    /// <see cref="IActivityStore.GetAllActivitiesAsync"/> sweep is filtered to the requester's
+    /// <c>Like</c>/<c>Announce</c> activities whose <c>object</c> is one of <paramref name="objectIris"/>.
+    /// This avoids walking each object's <c>/likes</c> / <c>/shares</c> collection (the id-recovery walk a
+    /// client used to do before it could un-like / un-boost).
+    /// </summary>
+    /// <param name="persistence">The persistence provider (for the activity store).</param>
+    /// <param name="requesterIri">The requesting user's IRI, or <see langword="null"/> (anonymous) —
+    /// returns empty maps.</param>
+    /// <param name="objectIris">The object IRIs to resolve against.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>A tuple of (objectIri → the requester's Like activity IRI, objectIri → the requester's
+    /// Announce activity IRI). Both maps are empty when <paramref name="requesterIri"/> is null, when
+    /// <paramref name="objectIris"/> is empty, or when the requester has no matching activities.</returns>
+    private static async Task<(Dictionary<Iri, Iri> Likes, Dictionary<Iri, Iri> Announces)>
+        GetRequesterActivityIrisAsync(
+            IPersistenceProvider persistence,
+            Iri? requesterIri,
+            List<Iri> objectIris,
+            CancellationToken ct)
+    {
+        var likes = new Dictionary<Iri, Iri>();
+        var announces = new Dictionary<Iri, Iri>();
+        if (requesterIri is null || objectIris.Count == 0)
+        {
+            return (likes, announces);
+        }
+
+        var objectIriSet = new HashSet<Iri>(objectIris, AudienceIriComparer.Instance);
+        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        foreach (var stored in all)
+        {
+            if (stored is not Activity activity)
+            {
+                continue;
+            }
+
+            if (activity is not (Like or Announce))
+            {
+                continue;
+            }
+
+            // The actor (who issued the Like / Announce): the requester themselves. ResolveObjectIri
+            // handles both an ILink reference (a bare actor IRI) and an embedded IObject (an actor
+            // document), so the match is robust to how the activity stored its actor/object refs.
+            if (activity.Actor is not { } actorRef ||
+                actorRef.FirstOrDefault()?.ResolveObjectIri() is not { } actorIri ||
+                !string.Equals(actorIri.ToString(), requesterIri.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            // The object the activity targets: one of this page's objects.
+            if (activity.Object is not { } objRef ||
+                objRef.FirstOrDefault()?.ResolveObjectIri() is not { } targetIri ||
+                !objectIriSet.Contains(targetIri))
+            {
+                continue;
+            }
+
+            if (activity.Id is not { Length: > 0 } activityIri)
+            {
+                continue;
+            }
+
+            var mintedIri = new Iri(activityIri);
+            if (activity is Like)
+            {
+                // A later (net) like wins; keep the most recently minted id per object.
+                likes[targetIri] = mintedIri;
+            }
+            else
+            {
+                announces[targetIri] = mintedIri;
+            }
+        }
+
+        return (likes, announces);
+    }
+
+    /// <summary>
+    /// Resolves the IRI of the requesting user's minted <c>Dislike</c> activity against the supplied
+    /// object (72.2, mirroring <see cref="GetRequesterActivityIrisAsync"/> for the Dislike case) — the id
+    /// an un-dislike <c>Undo</c> references. A single <see cref="IActivityStore.GetAllActivitiesAsync"/>
+    /// sweep is filtered to the requester's <c>Dislike</c> activities targeting <paramref name="objectIri"/>.
+    /// </summary>
+    /// <param name="persistence">The persistence provider (for the activity store).</param>
+    /// <param name="requesterIri">The requesting user's IRI.</param>
+    /// <param name="objectIri">The object IRI to resolve against.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The IRI of the requester's most recent Dislike activity against the object, or
+    /// <see langword="null"/> when no such activity exists.</returns>
+    private static async Task<Iri?> GetDislikeActivityIriAsync(
+        IPersistenceProvider persistence,
+        Iri requesterIri,
+        Iri objectIri,
+        CancellationToken ct)
+    {
+        var all = await persistence.Activities.GetAllActivitiesAsync(ct).ConfigureAwait(false);
+        Iri? latestIri = null;
+        foreach (var stored in all)
+        {
+            if (stored is not Activity activity)
+            {
+                continue;
+            }
+
+            if (activity is not Dislike)
+            {
+                continue;
+            }
+
+            if (activity.Actor is not { } actorRef ||
+                actorRef.FirstOrDefault()?.ResolveObjectIri() is not { } actorIri ||
+                !string.Equals(actorIri.ToString(), requesterIri.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (activity.Object is not { } objRef ||
+                objRef.FirstOrDefault()?.ResolveObjectIri() is not { } targetIri ||
+                !string.Equals(targetIri.ToString(), objectIri.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (activity.Id is { Length: > 0 } activityIri)
+            {
+                latestIri = new Iri(activityIri);
+            }
+        }
+
+        return latestIri;
     }
 
     /// <summary>
@@ -4126,6 +7680,7 @@ public static class ActivityPubServerExtensions
         string parentPath,
         IPersistenceProvider persistence,
         string normalizedBase,
+        string namespaceIri,
         CancellationToken ct)
     {
         // The object IRI IS the endpoint IRI (no serving prefix), so the parent IRI is base + route
@@ -4133,50 +7688,67 @@ public static class ActivityPubServerExtensions
         var parentIri = new Iri($"{normalizedBase}{ActivityPubServerConstants.RoutePrefix}/{parentPath}");
 
         // An object this instance does not store has no replies to serve (404, mirroring the object
-        // document). The replies of a stored object are listed even when there are none (empty
-        // collection).
-        if (!await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false))
+        // document) — UNLESS the instance knows reply edges for it. Phase 136.7 (cross-instance thread
+        // integrity): a reply to a REMOTE parent (an Iris reply to a Lemmy post) is recorded in the reply
+        // store (the parent → child edge from the inbound Create) even though the parent object itself
+        // was never stored locally (it was only ever seen by IRI in the reply's inReplyTo). Such a parent
+        // still has a meaningful replies collection (the instance knows which replies point at it), so it
+        // is served ("serve what we know", the proxy's 132.1 fallback philosophy) rather than 404'd — the
+        // thread stays coherent on the Iris side. A genuinely unknown parent (no stored object AND no
+        // reply edges) still 404s, and a stored object always serves (empty collection when it has no
+        // replies).
+        var hasStoredObject = await persistence.Objects.TryGetObjectAsync(parentIri, out _, ct).ConfigureAwait(false);
+
+        var replyIris = await persistence.Replies.GetRepliesAsync(parentIri, ct).ConfigureAwait(false);
+        if (!hasStoredObject && replyIris.Count == 0)
         {
             return Results.NotFound();
         }
-
-        var replyIris = await persistence.Replies.GetRepliesAsync(parentIri, ct).ConfigureAwait(false);
         var items = ActorIrisToLinks(replyIris);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = parentIri.RepliesOf();
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, items,
+            supportsRefresh: true, namespaceIri: namespaceIri);
 
         var refresh = HasRefreshBypass(context);
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
-    /// Serves the actors that like a content object (the like reverse index) as the per-object
-    /// <c>likes</c> collection for <c>GET /ap/v1/{**path}/likes</c> (decision 056 (d), the per-object
-    /// like counter). The items are the IRIs of the actors that liked the object, read from
-    /// <see cref="ILikeStore.GetLikersAsync"/> and embedded as <see cref="Link"/>s (the same shape as the
-    /// followers/following/liked/replies collections — a client resolves a liker's full actor via the
-    /// actor endpoint). Unlike the paged collections, this is a <em>full, non-paged</em>
-    /// <c>OrderedCollection</c>: a like/boost set is small and bounded (unlike an outbox), so the whole
-    /// set is served at once and a client can read the exact count from <c>totalItems</c>.
+    /// Serves the <see cref="KristofferStrube.ActivityStreams.Like"/> activities issued against a content
+    /// object as the per-object <c>likes</c> collection for <c>GET /ap/v1/{**path}/likes</c> (the
+    /// per-object like counter — decision 056 (d)). The items are the actual <c>Like</c> activities (each
+    /// with its minted <c>id</c>, its <c>actor</c> — the liker — and its <c>object</c> — the liked object)
+    /// — the spec-compliant, federation-friendly shape — so a client reads a like's actor off
+    /// <c>item.actor</c> and can undo it by referencing <c>item.id</c>, exactly as ActivityPub's
+    /// <c>Liked</c> relationship prescribes. Unlike the paged collections, this is a <em>full, non-paged</em>
+    /// <c>OrderedCollection</c>: a like set is small and bounded (unlike an outbox), so the whole set is
+    /// served at once and a client can read the exact count from <c>totalItems</c>.
     /// </summary>
     /// <remarks>
+    /// <strong>Net-state squashing.</strong> The set of <c>Like</c> activities is derived from the object's
+    /// likers reverse index (<see cref="ILikeStore.GetLikersAsync"/>) — the <em>net</em> like state — not a
+    /// raw activity log. A <c>Like</c> followed by an <c>Undo</c> (an unlike) removes the edge, so the
+    /// undone <c>Like</c> is not served; a <c>Like</c> → <c>Undo</c> → <c>Like</c> re-adds it, so the
+    /// <c>Like</c> is served exactly once. The collection therefore reflects only the likes that currently
+    /// stand (one per liker), which is what the like count and the <c>isLiked</c> extension read.
+    /// <para>
     /// <c>likes</c> is an <em>extension collection</em>, not a core ActivityStreams <c>Object</c>
-    /// property (the only core object collection is <c>replies</c> — likes/shares are only core-AS
-    /// <c>Like</c>/<c>Announce</c> activities). It is exposed under the <em>bare, non-namespaced</em>
-    /// term <c>likes</c> — the same convention the wider ActivityPub ecosystem uses for object-side
-    /// interaction collections — so an ecosystem client that knows the term can read the count off the
-    /// object's <c>likes</c> collection uniformly for local and external objects. Per the ActivityStreams
-    /// extensibility rule a strict consumer that does not know the term MUST ignore it (not error), so the
-    /// bare term is safe. An object this instance does not store 404s (mirroring the object document).
-    /// The wire is verbatim — the object document itself is not rewritten; the count is derived from the
-    /// reverse index at read time (decision 057).
+    /// property (the only core object collection is <c>replies</c>). It is exposed under the
+    /// <em>bare, non-namespaced</em> term <c>likes</c> — the ecosystem convention for an object-side
+    /// interaction collection — so an ecosystem client that knows the term can read it uniformly for local
+    /// and external objects. Per the ActivityStreams extensibility rule a strict consumer that does not know
+    /// the term MUST ignore it (not error), so the bare term is safe. An object this instance does not store
+    /// 404s (mirroring the object document). A liker whose <c>Like</c> activity was never durably stored
+    /// (e.g. recorded only as an edge by an older build) degrades to a <see cref="Link"/> to the liker
+    /// rather than being dropped, so the count stays exact.
+    /// </para>
     /// </remarks>
     private static async Task<IResult> ObjectLikesAsync(
         HttpContext context,
@@ -4191,16 +7763,54 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The likers reverse index is the NET like state: each liker appears at most once, and an
+        // undone like (an Undo of the Like) has already removed the edge, so it is absent here. A
+        // Like → Undo → Like re-adds the edge, so the like stands exactly once. Deriving the collection
+        // from this index (rather than scanning the raw activity log) is what makes the collection — and
+        // the count and the isLiked extension it backs — squash Like/Undo correctly.
         var likers = await persistence.Likes.GetLikersAsync(parentIri, ct).ConfigureAwait(false);
-        return BuildInteractionCollection(context, parentIri.LikesOf(), ActorIrisToLinks(likers));
+        if (likers.Count == 0)
+        {
+            // No current likers — serve an empty collection (skip the activity-store sweep entirely).
+            return BuildInteractionCollection(context, parentIri.LikesOf(), []);
+        }
+
+        // Resolve each liker's full Like activity (id + actor + object) from the activity store so the
+        // collection serves spec-compliant Like documents, not bare actor links. The activity store is the
+        // single source of truth for minted activities (the outbox-publish write path persisted the Like
+        // via PutActivityAsync, the same record the Undo path looks up). A liker whose Like was never
+        // durably stored degrades to a Link to the liker (the count stays exact; the item simply lacks the
+        // minted id / object reference).
+        //
+        // 141.2: an indexed per-object lookup (O(k) via the (ActivityType, ObjectIri) index) instead of
+        // the previous O(total_activities) GetAllActivitiesAsync sweep.
+        var likes = await persistence.Activities.GetActivitiesForObjectAsync(parentIri, "Like", ct).ConfigureAwait(false);
+        var likerToActivity = new Dictionary<Iri, IObjectOrLink>(likers.Count, AudienceIriComparer.Instance);
+        foreach (var activity in likes)
+        {
+            if (activity is KristofferStrube.ActivityStreams.Like like
+                && like.Actor is { } actors
+                && actors.FirstOrDefault().ResolveObjectIri() is { } actorIri)
+            {
+                likerToActivity[actorIri] = like;
+            }
+        }
+
+        var items = new List<IObjectOrLink>(likers.Count);
+        foreach (var liker in likers)
+        {
+            items.Add(likerToActivity.TryGetValue(liker, out var activity) ? activity : new Link { Href = liker.Uri });
+        }
+
+        return BuildInteractionCollection(context, parentIri.LikesOf(), items);
     }
 
     /// <summary>
     /// Serves the actors that announced (boosted) a content object (the announce reverse index) as the
     /// per-object <c>shares</c> collection for <c>GET /ap/v1/{**path}/shares</c> (decision 056 (d), the
-    /// per-object boost counter). Same shape and full/non-paged semantics as the <c>likes</c> surface;
-    /// the items are the IRIs of the actors that announced the object, read from
-    /// <see cref="IAnnounceStore.GetAnnouncersAsync"/>. An object this instance does not store 404s.
+    /// per-object boost counter). Same shape and full/non-paged semantics as the <c>likes</c> surface —
+    /// each item is the full <c>Announce</c> activity (id + actor + object), not a bare actor link. An
+    /// object this instance does not store 404s.
     /// </summary>
     /// <remarks>
     /// <c>shares</c> is an extension collection exposed under the <em>bare, non-namespaced</em> term
@@ -4220,8 +7830,46 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // The announcers reverse index is the NET boost state: each announcer appears at most once, and an
+        // undone boost (an Undo of the Announce) has already removed the edge, so it is absent here. An
+        // Announce → Undo → Announce re-adds the edge, so the boost stands exactly once. Deriving the
+        // collection from this index (rather than scanning the raw activity log) is what makes the
+        // collection — and the count and the isShared extension it backs — squash Announce/Undo correctly.
         var announcers = await persistence.Announces.GetAnnouncersAsync(parentIri, ct).ConfigureAwait(false);
-        return BuildInteractionCollection(context, parentIri.SharesOf(), ActorIrisToLinks(announcers));
+        if (announcers.Count == 0)
+        {
+            // No current announcers — serve an empty collection (skip the activity-store sweep entirely).
+            return BuildInteractionCollection(context, parentIri.SharesOf(), []);
+        }
+
+        // Resolve each announcer's full Announce activity (id + actor + object) from the activity store so
+        // the collection serves spec-compliant Announce documents, not bare actor links. The activity store
+        // is the single source of truth for minted activities (the outbox-publish write path persisted the
+        // Announce via PutActivityAsync, the same record the Undo path looks up). An announcer whose
+        // Announce was never durably stored degrades to a Link to the announcer (the count stays exact; the
+        // item simply lacks the minted id / object reference).
+        //
+        // 141.2: an indexed per-object lookup (O(k) via the (ActivityType, ObjectIri) index) instead of
+        // the previous O(total_activities) GetAllActivitiesAsync sweep.
+        var announces = await persistence.Activities.GetActivitiesForObjectAsync(parentIri, "Announce", ct).ConfigureAwait(false);
+        var announcerToActivity = new Dictionary<Iri, IObjectOrLink>(announcers.Count, AudienceIriComparer.Instance);
+        foreach (var activity in announces)
+        {
+            if (activity is KristofferStrube.ActivityStreams.Announce announce
+                && announce.Actor is { } actors
+                && actors.FirstOrDefault().ResolveObjectIri() is { } actorIri)
+            {
+                announcerToActivity[actorIri] = announce;
+            }
+        }
+
+        var items = new List<IObjectOrLink>(announcers.Count);
+        foreach (var announcer in announcers)
+        {
+            items.Add(announcerToActivity.TryGetValue(announcer, out var activity) ? activity : new Link { Href = announcer.Uri });
+        }
+
+        return BuildInteractionCollection(context, parentIri.SharesOf(), items);
     }
 
     /// <summary>
@@ -4252,7 +7900,7 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(ActivityJson.Serialize(collection), ActivityJson.ActivityJsonContentType);
+        return Results.Text(ActivityJson.Serialize(collection), NegotiateContentType(context));
     }
 
     /// <summary>
@@ -4332,6 +7980,22 @@ public static class ActivityPubServerExtensions
             return Results.NotFound();
         }
 
+        // 157: the instance handle (e.g. @iris@iris.luit.ink) resolves to the SITE ACTOR — the
+        // Application at the bare instance base (options.InstanceActorIri), which is what the instance
+        // signs outbound federation as (InstanceActorId). A peer validating a signature from
+        // keyId {base}#key-1 does WebFinger for the instance handle; without this branch, the handler
+        // only checked {base}/ap/v1/u/{handle} and {base}/ap/v1/c/{handle} (neither of which the site
+        // actor lives at), returned 404, and the peer rejected the signature with
+        // "Webfinger error when resolving {handle}@{host}". Resolving the instance handle to the site
+        // actor closes that loop: the peer fetches {base}, reads the publicKey, and validates.
+        if (options.InstanceActorIri is Iri instanceActorIri
+            && await persistence.Actors.TryGetActorAsync(instanceActorIri, out var instanceActor, ct).ConfigureAwait(false)
+            && instanceActor is not null
+            && string.Equals(instanceActor.PreferredUsername, handle, StringComparison.OrdinalIgnoreCase))
+        {
+            return WebFingerResult(instanceActorIri, handle, instanceHost);
+        }
+
         var actorIri = BuildActorIri(baseUrl, handle);
 
         Iri? resolvedIri = null;
@@ -4351,12 +8015,21 @@ public static class ActivityPubServerExtensions
             }
         }
 
-        if (resolvedIri is null)
+        if (resolvedIri is not Iri resolved)
         {
             return Results.NotFound();
         }
 
-        // WebFinger response: { subject, links: [{ rel: self, type: activity+json, href: resolvedIri }] }.
+        return WebFingerResult(resolved, handle, instanceHost);
+    }
+
+    /// <summary>
+    /// Builds the RFC 8410 WebFinger JRD response for a resolved actor IRI:
+    /// <c>{ subject, links: [{ rel: self, type: activity+json, href }] }</c>, served as
+    /// <c>application/jrd+json</c>.
+    /// </summary>
+    private static IResult WebFingerResult(Iri resolvedIri, string handle, string instanceHost)
+    {
         // The href must be a plain string (the Iri struct serializes as an object with Uri/Value/etc.).
         var href = resolvedIri.ToString();
         var webFinger = new
@@ -4381,15 +8054,19 @@ public static class ActivityPubServerExtensions
             "application/jrd+json");
     }
 
-    private static IResult NodeInfoHandler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    private static async Task<IResult> NodeInfoHandler(
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        IInstanceStatsProvider stats,
+        CancellationToken ct)
     {
         var options = optionsAccessor.Value;
+        var userCount = await stats.GetLocalUserCountAsync(ct).ConfigureAwait(false);
         var nodeInfo = new
         {
             version = "2.0",
             software = new { name = "iris", version = ActivityPubServerConstants.ApiVersion },
             protocols = new[] { "activitypub" },
-            usage = new { users = new { total = 0 } },
+            usage = new { users = new { total = userCount } },
             openRegistrations = false,
             metadata = new
             {
@@ -4411,6 +8088,10 @@ public static class ActivityPubServerExtensions
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the NodeInfo discovery link.");
+        // BaseUri.Value is the absolute wire form and ends in a slash for a bare host (e.g.
+        // "https://host/"); trim it so appending the route prefix yields a single-slash link rather
+        // than "https://host//ap/v1/nodeinfo/2.0".
+        var trimmedBase = baseUrl.TrimEnd('/');
         var link = new
         {
             links = new[]
@@ -4419,7 +8100,7 @@ public static class ActivityPubServerExtensions
                 {
                     rel = "http://nodeinfo.dpl.dev/ns/1.0/nodeinfo",
                     version = "2.0",
-                    href = $"{baseUrl}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
+                    href = $"{trimmedBase}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
                 },
             },
         };
@@ -4427,6 +8108,61 @@ public static class ActivityPubServerExtensions
         return Results.Text(
             System.Text.Json.JsonSerializer.Serialize(link),
             "application/json");
+    }
+
+    /// <summary>
+    /// The <c>GET /.well-known/x-nodeinfo2</c> handler. Returns a discovery document that links
+    /// directly to the 2.0 NodeInfo resource, used by federation software that probes this alternate
+    /// path (newer Friendica, some relays).
+    /// </summary>
+    /// <param name="optionsAccessor">The server options (for the <see cref="ActivityPubServerOptions.BaseUri"/>).</param>
+    /// <returns>A JSON discovery document linking to the NodeInfo 2.0 resource.</returns>
+    private static IResult NodeInfoXNodeInfo2Handler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the NodeInfo link.");
+        var trimmedBase = baseUrl.TrimEnd('/');
+        var doc = new
+        {
+            links = new[]
+            {
+                new
+                {
+                    rel = "http://nodeinfo.dpl.dev/ns/1.0/nodeinfo",
+                    version = "2.0",
+                    href = $"{trimmedBase}{ActivityPubServerConstants.RoutePrefix}/nodeinfo/2.0",
+                },
+            },
+        };
+
+        return Results.Text(
+            System.Text.Json.JsonSerializer.Serialize(doc),
+            "application/json");
+    }
+
+    /// <summary>
+    /// The <c>GET /.well-known/host-meta</c> handler (RFC 6415). Returns an XML document with a
+    /// <c>&lt;Link&gt;</c> element pointing to the WebFinger endpoint. Some federation software uses
+    /// this as a discovery fallback when WebFinger is not directly reachable.
+    /// </summary>
+    /// <param name="optionsAccessor">The server options (for the <see cref="ActivityPubServerOptions.BaseUri"/>).</param>
+    /// <returns>An XML host-meta document linking to the WebFinger endpoint.</returns>
+    private static IResult HostMetaHandler(IOptions<ActivityPubServerOptions> optionsAccessor)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? throw new InvalidOperationException("BaseUri is not configured; cannot build the host-meta link.");
+        var trimmedBase = baseUrl.TrimEnd('/');
+        var xml =
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" +
+            "<XRD xmlns='http://docs.oasis-open.org/ns/xrd-1.0'\n" +
+            "     xmlns:dweb='http://docs.oasis-open.org/ns/dweb-1.0'\n" +
+            "     xmlns:lrdd='http://docs.oasis-open.org/ns/ldn-1.0'>\n" +
+            $"  <Link rel='lrdd:srv' targetType='application/json' template='{trimmedBase}/.well-known/webfinger?resource={{uri}}'/>\n" +
+            "</XRD>";
+
+        return Results.Text(xml, "application/xrd+xml");
     }
 
     /// <summary>
@@ -4503,6 +8239,64 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// The <c>GET /ap/v1/diagnostics/caches</c> handler (Phase 116.6). Reports per-cache hit/miss/stale
+    /// counters and entry counts for all registered server caches. No authentication (an operator's
+    /// monitoring scrape reaches it without a signature), like the health endpoint.
+    /// </summary>
+    /// <param name="serverCaches">The registered server caches.</param>
+    /// <param name="localActorDocs">The local actor document cache.</param>
+    /// <param name="localCollectionPages">The local collection page cache.</param>
+    private static Task<IResult> CacheDiagnosticsHandler(
+        ServerCaches serverCaches,
+        LocalActorDocumentCache localActorDocs,
+        LocalCollectionPageCache localCollectionPages)
+    {
+        var caches = new Dictionary<string, Dictionary<string, object>>(StringComparer.Ordinal);
+
+        void AddCache(string name, ICacheMetrics metrics, int count)
+        {
+            caches[name] = new(StringComparer.Ordinal)
+            {
+                ["hits"] = metrics.Hits,
+                ["misses"] = metrics.Misses,
+                ["staleHits"] = metrics.StaleHits,
+                ["hitRate"] = Math.Round(metrics.HitRate, 4),
+                ["entries"] = count,
+            };
+        }
+
+        if (serverCaches.RemoteActors is { } remoteActors)
+        {
+            AddCache("remoteActors", remoteActors.Metrics, remoteActors.Count);
+        }
+
+        if (serverCaches.RemoteKeys is { } remoteKeys)
+        {
+            AddCache("remoteKeys", remoteKeys.Metrics, remoteKeys.Count);
+        }
+
+        if (serverCaches.CollectionPages is { } collectionPages)
+        {
+            AddCache("remoteCollectionPages", collectionPages.Metrics, collectionPages.Count);
+        }
+
+        if (serverCaches.WebFinger is { } webFinger)
+        {
+            AddCache("webFinger", webFinger.Metrics, webFinger.Count);
+        }
+
+        AddCache("localActorDocuments", localActorDocs.Metrics, localActorDocs.Count);
+        AddCache("localCollectionPages", localCollectionPages.Metrics, localCollectionPages.Count);
+
+        var payload = new { caches };
+        return Task.FromResult<IResult>(Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            StatusCodes.Status200OK));
+    }
+
+    /// <summary>
     /// Handles GET /ap/v1/ready — the readiness probe (Phase 30.2). Reports whether the instance is ready
     /// to receive traffic (<see cref="Observability.IReadinessGate.IsReadyAsync"/>). Returns
     /// <c>200 { "ready": true }</c> when ready and <c>503 { "ready": false }</c> otherwise. No
@@ -4520,6 +8314,307 @@ public static class ActivityPubServerExtensions
             System.Text.Encoding.UTF8,
             status);
     }
+
+    /// <summary>
+    /// The default number of most-recent dead-lettered deliveries the <c>GET /ap/v1/dead-letters</c>
+    /// endpoint peeks (the <c>limit</c> query parameter's default). Bounded so a monitoring scrape does
+    /// not load the store's entire (bounded) backlog into the response; an operator that wants more can
+    /// raise <c>limit</c> (capped at <see cref="MaxDeadLetterPeekLimit"/>).
+    /// </summary>
+    public const int DefaultDeadLetterPeekLimit = 25;
+
+    /// <summary>
+    /// The maximum <c>limit</c> the <c>GET /ap/v1/dead-letters</c> endpoint honors (a scrape that asks for
+    /// more than this is clamped, so the response is bounded).
+    /// </summary>
+    public const int MaxDeadLetterPeekLimit = 500;
+
+    /// <summary>
+    /// Handles GET /ap/v1/dead-letters — the outbound-delivery dead-letter queue (Phase 83.3). Exposes
+    /// the deliveries that exhausted their retry budget so an operator can inspect them: the
+    /// <c>count</c> (how many are currently held) + a bounded <c>peek</c> of the most recent entries,
+    /// newest-first (each with the recipient inbox IRI, the activity IRI, the failure kind, the failure
+    /// detail, the attempt count, and the dead-lettered-at timestamp). The <c>limit</c> query parameter
+    /// bounds the peek (<see cref="DefaultDeadLetterPeekLimit"/> default, capped at
+    /// <see cref="MaxDeadLetterPeekLimit"/>).
+    /// <para>
+    /// Read-only: it does NOT re-drive deliveries (re-driving is an explicit operator action — call
+    /// <see cref="Iris.Server.Delivery.DeadLetterEntry.ToJob"/> and enqueue the result). No authentication
+    /// (an operator's monitoring scrape reaches it without an ActivityPub signature), like the health
+    /// endpoint. Returns <c>200 { "count": N, "deadLetters": [ ... ] }</c>.
+    /// </para>
+    /// </summary>
+    private static async Task<IResult> DeadLetterHandler(
+        Delivery.IDeliveryDeadLetterStore deadLetters,
+        HttpContext httpContext,
+        CancellationToken ct)
+    {
+        var entries = await deadLetters.ListAsync(ct).ConfigureAwait(false);
+        var limit = ResolveDeadLetterPeekLimit(httpContext);
+        var peek = entries.Take(limit)
+            .Select(e => new
+            {
+                inbox = e.InboxIri.Value,
+                activityId = e.Activity.Id,
+                actor = e.ActorIri?.Value,
+                failureKind = e.FailureKind.ToString().ToLowerInvariant(),
+                failureDetail = e.FailureDetail,
+                attempts = e.Attempts,
+                deadLetteredAt = e.DeadLetteredAtUtc,
+            });
+
+        var payload = new { count = deadLetters.Count, limit, deadLetters = peek.ToList() };
+        return Results.Content(
+            System.Text.Json.JsonSerializer.Serialize(payload),
+            "application/json",
+            System.Text.Encoding.UTF8,
+            StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// Resolves the dead-letter peek <c>limit</c> from the request's query string: the
+    /// <c>limit</c> parameter, defaulting to <see cref="DefaultDeadLetterPeekLimit"/> and clamped to
+    /// [<c>1</c>, <see cref="MaxDeadLetterPeekLimit"/>]. A missing, empty, or non-positive value uses the
+    /// default.
+    /// </summary>
+    private static int ResolveDeadLetterPeekLimit(HttpContext httpContext)
+    {
+        if (httpContext is not null &&
+            int.TryParse(httpContext.Request.Query["limit"], out var requested) && requested > 0)
+        {
+            return Math.Min(requested, MaxDeadLetterPeekLimit);
+        }
+
+        return DefaultDeadLetterPeekLimit;
+    }
+
+    // --- Operator key-rotation endpoints (Phase 84.3) --------------------------
+
+    /// <summary>
+    /// <c>POST /ap/v1/keys/rotate</c> (Phase 84.3; extended in 84.4): rotates a local actor's signing key
+    /// via <see cref="Identity.KeyRotationService.RotateAsync"/>. By default (no <c>?actor=</c>) it rotates
+    /// the <strong>instance actor's</strong> key; with <c>?actor=</c> it rotates that specific local actor's
+    /// key (an unknown / non-local actor → <c>404</c>). Admin-gated — the caller's authenticated actor
+    /// (Basic auth via <see cref="IActorCredentialValidator"/> or the Blazor cookie's <c>actor_iri</c> claim)
+    /// must be the instance actor (<see cref="ActivityPubServerOptions.InstanceActorId"/>); otherwise the
+    /// request is refused (401 unauthenticated, 403 not the instance actor). In degraded (read-only) mode
+    /// (Phase 83.4) the write is refused with 503. On success returns <c>200</c> with a JSON body carrying
+    /// the rotated actor IRI + the new key IRI.
+    /// </summary>
+    private static async Task<IResult> KeyRotateHandler(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Identity.KeyRotationService rotation,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var denied = await AuthorizeInstanceActorAsync(context, credentialValidator, optionsAccessor, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        if (degraded.IsDegraded)
+        {
+            return DegradedModeProblem();
+        }
+
+        // The admin gate (AuthorizeInstanceActorAsync) already refused the request when no instance actor
+        // is configured, so InstanceActorId is guaranteed non-null here (.Value extracts the Iri).
+        var instanceActorIri = optionsAccessor.Value.InstanceActorId!.Value;
+
+        // 84.4: an optional ?actor= names a specific local actor to rotate; the default is the instance actor.
+        var actorQuery = context.Request.Query["actor"].FirstOrDefault();
+        Iri targetActorIri = instanceActorIri;
+        if (!string.IsNullOrWhiteSpace(actorQuery))
+        {
+            if (!Iri.TryParse(actorQuery, out var parsedActor))
+            {
+                return Problem(
+                    StatusCodes.Status400BadRequest,
+                    "Bad Request",
+                    $"The 'actor' query parameter is not a valid IRI: '{actorQuery}'.");
+            }
+
+            targetActorIri = parsedActor;
+        }
+
+        try
+        {
+            var newKeyIri = await rotation.RotateAsync(targetActorIri, ct).ConfigureAwait(false);
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    actor = targetActorIri.Value,
+                    newKeyIri = newKeyIri.Value,
+                }),
+                "application/json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status200OK);
+        }
+        catch (KeyNotFoundException)
+        {
+            return Problem(
+                StatusCodes.Status404NotFound,
+                "Not Found",
+                targetActorIri == instanceActorIri
+                    ? "No instance actor is stored; there is no key to rotate."
+                    : "No local actor with that IRI is stored; there is no key to rotate.");
+        }
+    }
+
+    /// <summary>
+    /// <c>POST /ap/v1/keys/retire</c> (Phase 84.3): retires a specific key IRI via
+    /// <see cref="Identity.KeyRotationService.RetireKey"/> (removes + disposes it from the store once its
+    /// rotation is confirmed). Admin-gated like <see cref="KeyRotateHandler"/>. The key IRI is read from
+    /// the request body (a JSON object <c>{ "keyIri": "..." }</c>). In degraded mode (Phase 83.4) the
+    /// write is refused with 503. <c>204</c> on success, <c>400</c> on a missing/blank <c>keyIri</c>,
+    /// <c>404</c> when the key was not in the store.
+    /// </summary>
+    private static async Task<IResult> KeyRetireHandler(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Identity.KeyRotationService rotation,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var denied = await AuthorizeInstanceActorAsync(context, credentialValidator, optionsAccessor, ct);
+        if (denied is not null)
+        {
+            return denied;
+        }
+
+        if (degraded.IsDegraded)
+        {
+            return DegradedModeProblem();
+        }
+
+        // The key IRI may arrive as a JSON body ({"keyIri": "...", case-insensitive}) or as ?keyIri=.
+        // Read it case-insensitively (JsonDocument) so the operator's casing doesn't matter.
+        string? keyIriString = null;
+        using var reader = new System.IO.StreamReader(context.Request.Body);
+        var body = await reader.ReadToEndAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                if (doc.RootElement.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    foreach (var prop in doc.RootElement.EnumerateObject())
+                    {
+                        if (string.Equals(prop.Name, "keyIri", StringComparison.OrdinalIgnoreCase)
+                            && prop.Value.ValueKind == System.Text.Json.JsonValueKind.String)
+                        {
+                            keyIriString = prop.Value.GetString();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Not valid JSON → fall through to the query-string form.
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(keyIriString))
+        {
+            keyIriString = context.Request.Query["keyIri"].FirstOrDefault();
+        }
+
+        if (string.IsNullOrWhiteSpace(keyIriString))
+        {
+            return Problem(
+                StatusCodes.Status400BadRequest,
+                "Bad Request",
+                "A non-empty 'keyIri' is required (JSON body { \"keyIri\": \"...\" } or ?keyIri=...).");
+        }
+
+        var retired = rotation.RetireKey(new Iri(keyIriString));
+        return retired
+            ? Results.NoContent()
+            : Problem(
+                StatusCodes.Status404NotFound,
+                "Not Found",
+                "No key with that IRI was in the store (it may already have been retired).");
+    }
+
+    /// <summary>
+    /// The admin gate for the operator key-rotation endpoints (Phase 84.3): verifies the caller's
+    /// authenticated actor is the instance actor. Returns <c>null</c> when authorized, else the 401/403
+    /// result to return. Basic auth is validated for the instance actor's IRI via
+    /// <see cref="IActorCredentialValidator"/>; the Blazor WASM cookie (which cannot carry Basic auth) is
+    /// honored via its <c>actor_iri</c> claim when it matches the instance actor's IRI. When no instance
+    /// actor is configured, no one can be authorized (403). An authenticated caller that is not the
+    /// instance actor gets 403; an unauthenticated caller gets 401.
+    /// </summary>
+    private static async Task<IResult?> AuthorizeInstanceActorAsync(
+        HttpContext context,
+        IActorCredentialValidator credentialValidator,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var configuredInstanceActor = optionsAccessor.Value.InstanceActorId;
+        if (configuredInstanceActor is null)
+        {
+            return Problem(
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "No instance actor is configured on this instance; key rotation is unavailable.");
+        }
+        var instanceActorIri = configuredInstanceActor.Value;
+
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var handle = await credentialValidator
+            .TryValidateAsync(instanceActorIri, authorization, ct)
+            .ConfigureAwait(false);
+
+        var cookieActorIri = context.User.Identity is { IsAuthenticated: true }
+            ? context.User.FindFirst("actor_iri")?.Value
+            : null;
+        if (handle is null && cookieActorIri is not null && cookieActorIri == instanceActorIri.Value)
+        {
+            handle = "instance";
+        }
+
+        if (handle is not null)
+        {
+            return null;
+        }
+
+        // The caller presented some credential (a Basic header or a cookie actor_iri) but it is not the
+        // instance actor → 403 (authenticated, not authorized). No credential at all → 401.
+        return (!string.IsNullOrEmpty(authorization) || cookieActorIri is not null)
+            ? Problem(
+                StatusCodes.Status403Forbidden,
+                "Forbidden",
+                "Key rotation is reserved for the instance actor.")
+            : Results.Unauthorized();
+    }
+
+    /// <summary>
+    /// The 503 <c>application/problem+json</c> body returned by the operator key-rotation endpoints when
+    /// the instance is in degraded (read-only) mode (Phase 83.4): the write cannot be durably recorded,
+    /// so the operator should retry later rather than treat the rotation as permanently rejected.
+    /// </summary>
+    private static IResult DegradedModeProblem() => Problem(
+        StatusCodes.Status503ServiceUnavailable,
+        "Service Unavailable",
+        "The instance is in degraded (read-only) mode: its durable store is unreachable. Key-rotation writes are temporarily refused; retry later.");
+
+    /// <summary>
+    /// Builds an <c>application/problem+json</c> <see cref="IResult"/> (the inline idiom the federation
+    /// write surfaces use — there is no shared problem helper). The body is <c>{ "error": title,
+    /// "description": description }</c>.
+    /// </summary>
+    private static IResult Problem(int statusCode, string error, string description) => Results.Content(
+        System.Text.Json.JsonSerializer.Serialize(new { error, description }),
+        "application/problem+json",
+        System.Text.Encoding.UTF8,
+        statusCode);
 
     // --- OAuth2 token endpoints ------------------------------------------------
 
@@ -4733,6 +8828,20 @@ public static class ActivityPubServerExtensions
         var authenticatedHandle = await credentialValidator
             .TryValidateAsync(actorIri, authorization, ct)
             .ConfigureAwait(false);
+
+        // Cookie auth (the Blazor WASM UI): the cookie carries an actor_iri claim that must match the
+        // requested actor. Same seam as the actor document's privateKey extension (ActorDocumentHandler)
+        // — without it the signed WASM client (which sends no Basic auth header) is 403'd on its own
+        // inbox, so the Notifications page never loads.
+        if (authenticatedHandle is null && context.User.Identity is { IsAuthenticated: true })
+        {
+            var cookieActorIri = context.User.FindFirst("actor_iri")?.Value;
+            if (cookieActorIri is not null && cookieActorIri == actorIri.Value)
+            {
+                authenticatedHandle = handle;
+            }
+        }
+
         if (authenticatedHandle is null)
         {
             return Results.StatusCode(StatusCodes.Status403Forbidden);
@@ -4748,7 +8857,7 @@ public static class ActivityPubServerExtensions
 
         // Private, owner-scoped data: never cached (the same no-store treatment as the owner-only actor
         // document). Intermediates and the browser must not serve a stale copy of someone's inbox.
-        var result = Results.Text(document, ActivityJson.ActivityJsonContentType);
+        var result = Results.Text(document, NegotiateContentType(context));
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.NoStoreCacheControl;
         return result;
@@ -4802,21 +8911,34 @@ public static class ActivityPubServerExtensions
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
-        var refresh = context.Request.Query["refresh"].ToString()
-            .Equals("true", StringComparison.OrdinalIgnoreCase);
+        var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{actorIri}/{collectionName}");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
 
-        // Read (or render on a miss) through the local collection-page response cache.
+        // Read (or render on a miss) through the local collection-page response cache. For the outbox,
+        // enrich nested objects with likedCount/sharedCount (cacheable, not per-requester) before
+        // rendering so the cached document includes the interaction counts.
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(
-                collectionIri,
-                page,
-                limit,
-                items)),
+            async _ =>
+            {
+                var itemsToRender = items;
+                if (collectionName == "outbox")
+                {
+                    itemsToRender = await EnrichCollectionItemsAsync(
+                        items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                }
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender,
+                    supportsRefresh: true,
+                    namespaceIri: ns);
+            },
             ct).ConfigureAwait(false);
 
         // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
@@ -4826,7 +8948,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -4895,6 +9017,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IFollowFeedService feedService,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -4912,13 +9035,38 @@ public static class ActivityPubServerExtensions
         // (21.4.2 — the followed feed's content filter, mirroring the community feed's F-23 ?q). An
         // empty/absent ?q returns the feed unfiltered.
         var query = context.Request.Query["q"].ToString();
-        var items = await feedService.GetFeedAsync(actorIri, query.Length > 0 ? query : null, ct).ConfigureAwait(false);
+
+        // A ?type query filters the feed to only activities of that type (e.g. ?type=Create to show
+        // only posts, excluding Flag/Block/Like/Announce activities).
+        var activityType = context.Request.Query["type"].ToString();
+
+        // A ?depth query (117.1) includes replies up to the given depth from followed actors.
+        // e.g. ?depth=1 includes first-level replies (the thread's top replies appear in the feed).
+        // When absent, all replies from followed actors are filtered out (default behavior).
+        int? threadDepth = int.TryParse(context.Request.Query["depth"].ToString(), out var d) && d > 0 ? (int?)d : null;
+
+        var items = await feedService.GetFeedAsync(
+            actorIri,
+            query.Length > 0 ? query : null,
+            activityType.Length > 0 ? activityType : null,
+            threadDepth,
+            ct).ConfigureAwait(false);
+
+        // Enrich nested objects with likedCount/sharedCount (+ isLiked/isShared for authenticated
+        // requesters). The feed is not served through the local collection-page response cache (it
+        // merges remote follows' outboxes over the wire on every request), so per-requester state is
+        // safe to add.
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        var ns = IrisExtensionNamespace(options);
+        var enrichedItems = await EnrichCollectionItemsAsync(items, persistence, requesterIri, ns, ct).ConfigureAwait(false);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
         var collectionIri = new Iri($"{actorIri.Value}/feed");
-        var document = BuildCollectionPageDocument(collectionIri, page, limit, items);
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
+            supportsRefresh: true, supportsQuery: true, supportsType: true, supportsDepth: true,
+            namespaceIri: ns);
 
         // The feed is not served through the local collection-page response cache (it merges remote
         // follows' outboxes over the wire on every request), but it still carries the collection
@@ -4927,7 +9075,56 @@ public static class ActivityPubServerExtensions
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+         return Results.Text(document, NegotiateContentType(context));
+     }
+
+    /// <summary>
+    /// Serves the instance's public feed (the union of all local actors' outbox activities, newest
+    /// first, de-duplicated, capped) as a paged collection for <c>GET /ap/v1/public/feed</c>. Any
+    /// visitor (signed in or out) can browse this feed. Page 1 is an <c>OrderedCollection</c> (with
+    /// <c>first</c>); page N &gt; 1 is an <c>OrderedCollectionPage</c> (with <c>partOf</c>/<c>prev</c>
+    /// /<c>next</c>), paged via <c>?page</c>/<c>?limit</c>. The feed is not served through the local
+    /// collection-page response cache (it re-reads all outboxes on every request), but it still
+    /// carries the collection <c>Cache-Control</c> so intermediates may cache briefly.
+    /// </summary>
+    private static async Task<IResult> PublicFeedHandler(
+        HttpContext context,
+        IPersistenceProvider persistence,
+        IPublicFeedService feedService,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+
+        var query = context.Request.Query["q"].ToString();
+        var activityType = context.Request.Query["type"].ToString();
+
+        var limit = ParsePageSize(context.Request.Query["limit"].ToString());
+        var page = ParsePageNumber(context.Request.Query["page"].ToString());
+
+        var items = await feedService.GetPublicFeedAsync(
+            200,
+            query.Length > 0 ? query : null,
+            activityType.Length > 0 ? activityType : null,
+            ct).ConfigureAwait(false);
+
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+        var ns = IrisExtensionNamespace(options);
+        var enrichedItems = await EnrichCollectionItemsAsync(items, persistence, requesterIri, ns, ct).ConfigureAwait(false);
+
+        var collectionIri = new Iri($"{baseUrl.TrimEnd('/')}/ap/v1/public/feed");
+        var document = BuildCollectionPageDocument(collectionIri, page, limit, enrichedItems,
+            supportsRefresh: true, supportsQuery: true, supportsType: true,
+            namespaceIri: ns);
+
+        var refresh = HasRefreshBypass(context);
+        context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = refresh
+            ? ActivityPubServerConstants.NoCacheCacheControl
+            : ActivityPubServerConstants.CollectionCacheControl;
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5086,14 +9283,52 @@ public static class ActivityPubServerExtensions
             }
         }
 
+        // 138.25: Lemmy community-level metadata — re-render the bare Lemmy fields from the stored
+        // community's ExtensionData under the iris: namespace. A stored Lemmy community carries
+        // `sensitive` (the NSFW flag) and `postingRestrictedToMods` in its ExtensionData; the deep-copy
+        // preserves them, but clients read the iris:-namespaced keys. Only render when the bare key is
+        // present and true (absent for locally-created communities).
+        var lemmyNs = IrisExtensionNamespace(options);
+        if (ext.TryGetValue("sensitive", out var sensEl) &&
+            sensEl.ValueKind == System.Text.Json.JsonValueKind.True &&
+            !ext.ContainsKey(lemmyNs + IrisExtensionTerms.CommunityNsfw))
+        {
+            ext[lemmyNs + IrisExtensionTerms.CommunityNsfw] =
+                System.Text.Json.JsonSerializer.SerializeToElement(true);
+            changed = true;
+        }
+
+        if (ext.TryGetValue("postingRestrictedToMods", out var prtmEl) &&
+            prtmEl.ValueKind == System.Text.Json.JsonValueKind.True &&
+            !ext.ContainsKey(lemmyNs + IrisExtensionTerms.PostingRestrictedToMods))
+        {
+            ext[lemmyNs + IrisExtensionTerms.PostingRestrictedToMods] =
+                System.Text.Json.JsonSerializer.SerializeToElement(true);
+            changed = true;
+        }
+
+        // Cacheable per-actor counters (posts/followers/following): a community (Group) is followed and
+        // follows the same way a person is, and a visitor's directory card (the Mastodon-style community
+        // row) reads these off the document alone. The counters are computed from the community's outbox
+        // and the follow store (a community's followers are recorded in the follow store via AddFollower).
+        await AddActorCountersAsync(doc, communityIri, persistence, options, ct).ConfigureAwait(false);
+        doc.ExtensionData = ext;
+
         if (changed)
         {
             doc.ExtensionData = ext;
         }
 
+        // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
+        // re-read from the store; intermediates must not serve a stale copy). Otherwise the standard
+        // actor cache-control (max-age=60, stale-while-revalidate=300). Mirrors the actor document
+        // handler (F-142.1).
+        var bypassCache = HasRefreshBypass(context);
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
-            ActivityPubServerConstants.ActorCacheControl;
-        return Results.Text(ActivityJson.Serialize(doc), ActivityJson.ActivityJsonContentType);
+            bypassCache
+                ? ActivityPubServerConstants.NoCacheCacheControl
+                : ActivityPubServerConstants.ActorCacheControl;
+        return Results.Text(ActivityJson.Serialize(doc), NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5137,27 +9372,47 @@ public static class ActivityPubServerExtensions
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
-        var refresh = context.Request.Query["refresh"].ToString()
-            .Equals("true", StringComparison.OrdinalIgnoreCase);
+        var refresh = HasRefreshBypass(context);
 
         var collectionIri = new Iri($"{communityIri.Value}/{collectionPath}");
 
-        // The cache key is the page IRI, extended with the content filter (?q, the feed's F-23 filter)
-        // when present: a filtered read and an unfiltered read of the same collection+page are distinct
-        // entries (they render different items), so the filter must be part of the key or a ?q= read
-        // would return a stale unfiltered page (or vice versa).
-        var query = context.Request.Query["q"].ToString();
-        var keySuffix = query.Length > 0 ? $"?q={Uri.EscapeDataString(query)}" : string.Empty;
+        // The cache key is the page IRI, extended with the content filter (?q) when the collection
+        // supports it (feed only): a filtered read and an unfiltered read of the same collection+page
+        // are distinct entries (they render different items), so the filter must be part of the key
+        // or a ?q= read would return a stale unfiltered page (or vice versa). For non-feed collections
+        // (?q is silently ignored), the filter is excluded from the key to avoid cache pollution
+        // (F-142.6: unbounded distinct entries per query string for identical content).
+        var supportsQuery = collectionPath == "feed";
+        var query = supportsQuery ? context.Request.Query["q"].ToString() : string.Empty;
+        var qSuffix = query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty;
         var pageIri = page == 1
-            ? (query.Length > 0 ? new Iri($"{collectionIri}{keySuffix}") : collectionIri)
-            : new Iri($"{collectionIri}/?page={page}{(query.Length > 0 ? $"&q={Uri.EscapeDataString(query)}" : string.Empty)}");
+            ? (query.Length > 0 ? new Iri($"{collectionIri}?{qSuffix.TrimStart('&')}") : collectionIri)
+            : new Iri($"{collectionIri}/?page={page}{qSuffix}");
 
         // Read (or render on a miss) through the local collection-page response cache. A ?refresh=true
-        // read bypasses the cache (re-rendering now) and still writes back a fresh entry.
+        // read bypasses the cache (re-rendering now) and still writes back a fresh entry. The feed
+        // (content items) is enriched with engagement counters, mirroring the actor outbox/feed enrichment.
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            async _ =>
+            {
+                var itemsToRender = items;
+                if (collectionPath == "feed")
+                {
+                    itemsToRender = await EnrichCollectionItemsAsync(
+                        items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                }
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender,
+                    supportsRefresh: true,
+                    supportsQuery: supportsQuery,
+                    namespaceIri: ns);
+            },
             ct).ConfigureAwait(false);
 
         // Cache-Control: only an explicit ?refresh=true bypass emits no-cache (the value was just
@@ -5167,7 +9422,7 @@ public static class ActivityPubServerExtensions
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document!, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document!, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5272,17 +9527,31 @@ public static class ActivityPubServerExtensions
         var collectionIri = new Iri($"{communityIri.Value}/outbox");
         var pageIri = page == 1 ? collectionIri : new Iri($"{collectionIri}/?page={page}");
 
+        // 141.4: enrich the community outbox items with engagement counters, mirroring the actor
+        // outbox enrichment (CollectionEndpointHandler).
+        var ns = IrisExtensionNamespace(options);
         var (document, _, _) = await collectionCache.GetAsync(
             pageIri,
             refresh,
-            _ => Task.FromResult<string?>(BuildCollectionPageDocument(collectionIri, page, limit, items)),
+            async _ =>
+            {
+                var itemsToRender = await EnrichCollectionItemsAsync(
+                    items, persistence, requesterIri: null, ns, ct).ConfigureAwait(false);
+                return BuildCollectionPageDocument(
+                    collectionIri,
+                    page,
+                    limit,
+                    itemsToRender,
+                    supportsRefresh: true,
+                    namespaceIri: ns);
+            },
             ct).ConfigureAwait(false);
 
         var cacheControl = refresh
             ? ActivityPubServerConstants.NoCacheCacheControl
             : ActivityPubServerConstants.CollectionCacheControl;
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] = cacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5464,6 +9733,701 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Records (or removes) a community-scoped block, on behalf of the community's creator, for
+    /// <c>POST /local/v1/c/{name}/blocks/{**target}</c>.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <see cref="CommunityMuteHandler"/> but records a <c>CommunityBlock</c> edge (stronger
+    /// than a mute: the blocked member's content is hidden from the community feed and the
+    /// relationship is severed). The requesting community (Basic auth) must exist; the target IRI is
+    /// the catch-all <c>{target}</c> segment. <c>?unblock=true</c> removes the block. Idempotent:
+    /// re-blocking or unblocking a non-existent block is a no-op (204).
+    /// </remarks>
+    private static async Task<IResult> CommunityBlockHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The community must exist (an unknown community 404s, mirroring the other community endpoints).
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // 1. Authenticate the requesting community (Basic auth) for this community's IRI.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var authenticated = await credentialValidator
+            .TryValidateAsync(communityIri, authorization, ct)
+            .ConfigureAwait(false);
+        if (authenticated is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        // 2. Resolve the target IRI from the catch-all route value ({target} = the absolute target IRI).
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var target))
+        {
+            return Results.BadRequest();
+        }
+
+        // 3. Record or remove the block edge (?unblock=true removes). Idempotent, like the mute.
+        var remove = context.Request.Query.TryGetValue("unblock", out var unblockValues)
+            && unblockValues.Count > 0
+            && string.Equals(unblockValues[0], "true", StringComparison.OrdinalIgnoreCase);
+        if (remove)
+        {
+            await persistence.Communities.RemoveBlockAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await persistence.Communities.AddBlockAsync(communityIri, target, ct).ConfigureAwait(false);
+        }
+
+        // Invalidate the blocks collection page-1 cache so the next read reflects the change (19.6.2).
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "blocks");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Removes a member from a community, on behalf of the community's creator, for
+    /// <c>POST /local/v1/c/{name}/members/{**target}/remove</c>.
+    /// </summary>
+    /// <remarks>
+    /// The requesting person (Basic auth) must be the community's creator (the Group's
+    /// <c>attributedTo</c> includes the person's IRI). The member's IRI is the catch-all
+    /// <c>{target}</c> segment. The membership edge is removed and the members collection
+    /// page cache is invalidated so the next read reflects the removal.
+    /// </remarks>
+    private static async Task<IResult> CommunityRemoveMemberHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        // The community must exist.
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        // Resolve the member IRI from the catch-all route value.
+        const string targetRouteKey = "target";
+        if (context.Request.RouteValues[targetRouteKey] is not string targetValue
+            || string.IsNullOrWhiteSpace(targetValue))
+        {
+            return Results.NotFound();
+        }
+
+        if (!Iri.TryParse(targetValue, out var memberIri))
+        {
+            return Results.BadRequest();
+        }
+
+        // The member must actually be a member (a no-op removal of a non-member is 404).
+        if (!await persistence.Communities.IsMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // Authenticate the requesting person (Basic auth) and verify they are the community's
+        // creator. The Group's AttributedTo identifies the creator; the credential validator
+        // validates the Basic-auth credentials against a specific actor IRI. We try each
+        // AttributedTo IRI until one validates.
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var attributedTo = community.AttributedTo;
+        if (attributedTo is null || !attributedTo.Any())
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var creatorValidated = false;
+        foreach (var attr in attributedTo)
+        {
+            var attrIri = attr.ResolveObjectIri();
+            if (attrIri is not { } iri)
+            {
+                continue;
+            }
+
+            var handle = ExtractHandleFromIri(iri);
+            if (handle is null)
+            {
+                continue;
+            }
+
+            var personIri = BuildActorIri(baseUrl, handle);
+            if (await credentialValidator.TryValidateAsync(personIri, authorization, ct).ConfigureAwait(false) is not null)
+            {
+                creatorValidated = true;
+                break;
+            }
+        }
+
+        if (!creatorValidated)
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        // Remove the membership edge.
+        await persistence.Communities.RemoveMemberAsync(communityIri, memberIri, ct).ConfigureAwait(false);
+
+        // Invalidate the members collection page cache so the next read reflects the removal.
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Lists the community's pending join requests (GET /local/v1/c/{name}/requests). Creator-only:
+    /// the community's creator (via the Group's AttributedTo + IActorCredentialValidator) may list
+    /// the actors who have a pending join request. Returns a JSON array of actor IRIs.
+    /// </summary>
+    private static async Task<IResult> CommunityListJoinRequestsHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var requests = await persistence.Communities.GetJoinRequestsAsync(communityIri, ct).ConfigureAwait(false);
+        return Results.Json(requests.Select(r => r.Value).ToArray());
+    }
+
+    /// <summary>
+    /// Accepts a pending join request (POST /local/v1/c/{name}/requests/{**actorIri}/accept).
+    /// Creator-only: the actor is added as a member and the pending request is removed.
+    /// Returns 204 No Content on success; 404 when the community or request is unknown.
+    /// </summary>
+    private static async Task<IResult> CommunityAcceptJoinRequestHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Communities.HasJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        await persistence.Communities.AddMemberAsync(communityIri, iri, ct).ConfigureAwait(false);
+        await persistence.Communities.RemoveJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Rejects a pending join request (POST /local/v1/c/{name}/requests/{**actorIri}/reject).
+    /// Creator-only: the pending request is removed (no membership granted).
+    /// Returns 204 No Content on success; 404 when the community or request is unknown.
+    /// </summary>
+    private static async Task<IResult> CommunityRejectJoinRequestHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await persistence.Communities.HasJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        await persistence.Communities.RemoveJoinRequestAsync(communityIri, iri, ct).ConfigureAwait(false);
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Lists the community's owners (GET /local/v1/c/{name}/owners). Owner-only. Returns a JSON array
+    /// of owner actor IRIs (the Group's AttributedTo).
+    /// </summary>
+    private static async Task<IResult> CommunityListOwnersHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var owners = new List<string>();
+        if (community.AttributedTo is { } attr)
+        {
+            foreach (var a in attr)
+            {
+                if (a.ResolveObjectIri() is { } iri)
+                {
+                    owners.Add(iri.Value);
+                }
+            }
+        }
+
+        return Results.Json(owners);
+    }
+
+    /// <summary>
+    /// Promotes a member to owner (POST /local/v1/c/{name}/owners/promote/{**actorIri}). Owner-only.
+    /// Adds the actor's IRI to the Group's AttributedTo list (if not already present).
+    /// </summary>
+    private static async Task<IResult> CommunityPromoteOwnerHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        // The actor must be a member before they can be promoted.
+        if (!await persistence.Communities.IsMemberAsync(communityIri, iri, ct).ConfigureAwait(false))
+        {
+            return Results.NotFound();
+        }
+
+        // Check if already an owner.
+        var alreadyOwner = community.AttributedTo is { } attr && attr.Any(a =>
+            a.ResolveObjectIri() is { } aIri && aIri.Value == iri.Value);
+
+        if (alreadyOwner)
+        {
+            return Results.StatusCode(StatusCodes.Status409Conflict);
+        }
+
+        // Build a new AttributedTo list with the promoted owner appended.
+        var newAttributedTo = new List<IObjectOrLink>(community.AttributedTo ?? []);
+        newAttributedTo.Add(new Link { Href = iri.Uri });
+        community.AttributedTo = newAttributedTo;
+
+        await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Demotes an owner (POST /local/v1/c/{name}/owners/demote/{**actorIri}). Owner-only.
+    /// Removes the actor's IRI from the Group's AttributedTo list. Rejects if it would leave zero owners.
+    /// </summary>
+    private static async Task<IResult> CommunityDemoteOwnerHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        LocalCollectionPageCache collectionCache,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        var actorIri = ParseCatchAllIri(context, "actorIri");
+        if (actorIri is not { } iri)
+        {
+            return Results.NotFound();
+        }
+
+        var attr = community.AttributedTo?.ToList();
+        if (attr is null || attr.Count == 0)
+        {
+            return Results.NotFound();
+        }
+
+        // The actor must currently be an owner.
+        var isOwner = false;
+        foreach (var a in attr)
+        {
+            if (a.ResolveObjectIri() is { } aIri && aIri.Value == iri.Value)
+            {
+                isOwner = true;
+                break;
+            }
+        }
+
+        if (!isOwner)
+        {
+            return Results.NotFound();
+        }
+
+        // Cannot demote the last owner.
+        if (attr.Count <= 1)
+        {
+            return Results.StatusCode(StatusCodes.Status400BadRequest);
+        }
+
+        // Build a new AttributedTo list without the demoted owner.
+        var newAttributedTo = attr.Where(a =>
+            a.ResolveObjectIri() is not { } aIri || aIri.Value != iri.Value
+        ).ToList();
+
+        community.AttributedTo = newAttributedTo;
+        await persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        InvalidateLocalCollectionPage(collectionCache, communityIri, "members");
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Verifies that the authenticated requester is the community's creator (the Group's AttributedTo).
+    /// Tries each AttributedTo IRI against the credential validator until one validates.
+    /// </summary>
+    private static async Task<bool> VerifyCommunityCreatorAsync(
+        HttpContext context,
+        Group community,
+        IActorCredentialValidator credentialValidator,
+        string baseUrl,
+        CancellationToken ct)
+    {
+        var authorization = context.Request.Headers.Authorization.ToString();
+        var attributedTo = community.AttributedTo;
+        if (attributedTo is null || !attributedTo.Any())
+        {
+            return false;
+        }
+
+        // Cookie-auth fallback (the Blazor WASM UI): the cookie carries an actor_iri claim.
+        var cookieActorIri = context.User.Identity is { IsAuthenticated: true }
+            ? context.User.FindFirst("actor_iri")?.Value
+            : null;
+
+        foreach (var attr in attributedTo)
+        {
+            var attrIri = attr.ResolveObjectIri();
+            if (attrIri is not { } iri)
+            {
+                continue;
+            }
+
+            // Cookie auth: the signed-in user's actor IRI must match an owner IRI.
+            if (cookieActorIri is not null && cookieActorIri == iri.Value)
+            {
+                return true;
+            }
+
+            var handle = ExtractHandleFromIri(iri);
+            if (handle is null)
+            {
+                continue;
+            }
+
+            var personIri = BuildActorIri(baseUrl, handle);
+            if (await credentialValidator.TryValidateAsync(personIri, authorization, ct).ConfigureAwait(false) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Makes the community follow (or, with <c>?unfollow=true</c>, unfollow) the target actor
+    /// (POST /local/v1/c/{name}/follow/{**targetIri}). Owner-only (the same credential seam as the other
+    /// local community endpoints). The community is a Group actor that holds no client key, so it cannot
+    /// sign its own outbox from the browser; the owner authenticates here and the server authors the
+    /// community's <see cref="Follow"/> (or <see cref="Undo"/>), records it in the community's follows set
+    /// + outbox, and delivers it to a remote target. Following makes the community's unified feed surface
+    /// the followed actor's content to its members (the peering behavior).
+    /// </summary>
+    private static async Task<IResult> CommunityFollowHandler(
+        HttpContext context,
+        string name,
+        IActorCredentialValidator credentialValidator,
+        IPersistenceProvider persistence,
+        IDeliveryService delivery,
+        IdMinter idMinter,
+        LocalCollectionPageCache collectionCache,
+        IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
+        CancellationToken ct)
+    {
+        var options = optionsAccessor.Value;
+        var baseUrl = options.BaseUri?.Value
+            ?? $"{context.Request.Scheme}://{context.Request.Host}";
+        var communityIri = BuildCommunityIri(baseUrl, name);
+
+        if (!await persistence.Communities.TryGetCommunityAsync(communityIri, out var community, ct).ConfigureAwait(false)
+            || community is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!await VerifyCommunityCreatorAsync(context, community, credentialValidator, baseUrl, ct).ConfigureAwait(false))
+        {
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+        }
+
+        // A follow is a write; refuse it in degraded (read-only) mode (mirrors the outbox publish handler).
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var targetIri = ParseCatchAllIri(context, "targetIri");
+        if (targetIri is not { } target)
+        {
+            return Results.BadRequest();
+        }
+
+        // A community cannot follow itself.
+        if (target == communityIri)
+        {
+            return Results.BadRequest();
+        }
+
+        var unfollow = context.Request.Query.ContainsKey("unfollow");
+
+        if (unfollow)
+        {
+            // Find the community-authored Follow to this target (the most recent in the community's
+            // outbox). The Undo references it by IRI (decision 055 — the server-minted follow id).
+            Iri? followIri = null;
+            foreach (var activity in await persistence.Activities.GetOutboxAsync(communityIri, ct).ConfigureAwait(false))
+            {
+                if (activity is Follow f
+                    && f.Actor?.FirstOrDefault().ResolveObjectIri() == communityIri
+                    && f.Object?.FirstOrDefault().ResolveObjectIri() == target
+                    && f.Id is { Length: > 0 } id)
+                {
+                    followIri = new Iri(id);
+                    break;
+                }
+            }
+
+            if (followIri is not { } foundFollowIri)
+            {
+                // The community does not (or no longer) follows the target: nothing to undo.
+                return Results.NotFound();
+            }
+
+            var undo = new Undo
+            {
+                Actor = [new Link { Href = communityIri.Uri }],
+                Object = [new Link { Href = foundFollowIri.Uri }],
+            };
+            undo.Id = idMinter.Mint(communityIri, undo).Value;
+
+            await persistence.Communities.RemoveFollowAsync(communityIri, target, ct).ConfigureAwait(false);
+            await persistence.Activities.AddToOutboxAsync(communityIri, undo, ct).ConfigureAwait(false);
+            await persistence.Activities.PutActivityAsync(undo, ct).ConfigureAwait(false);
+            InvalidateLocalOutboxPage(collectionCache, communityIri);
+
+            // A remote target removes the edge it recorded (the inverse of its inbound follow handling);
+            // a local target needs no cross-instance hop (the local edge is already removed above).
+            if (!await IsLocalCommunityAsync(persistence, target, ct).ConfigureAwait(false)
+                && !await IsLocalActorAsync(persistence, target, ct).ConfigureAwait(false))
+            {
+                await delivery.DeliverToActorAsync(target, undo, communityIri, ct).ConfigureAwait(false);
+            }
+
+            return Results.NoContent();
+        }
+
+        // Follow: author the community's Follow to the target.
+        var follow = new Follow
+        {
+            Actor = [new Link { Href = communityIri.Uri }],
+            Object = [new Link { Href = target.Uri }],
+        };
+        follow.Id = idMinter.Mint(communityIri, follow).Value;
+
+        await persistence.Communities.AddFollowAsync(communityIri, target, ct).ConfigureAwait(false);
+        await persistence.Activities.AddToOutboxAsync(communityIri, follow, ct).ConfigureAwait(false);
+        await persistence.Activities.PutActivityAsync(follow, ct).ConfigureAwait(false);
+        InvalidateLocalOutboxPage(collectionCache, communityIri);
+
+        // A remote target receives the Follow (it records the edge + may accept); a local target needs no
+        // cross-instance hop (the local edge is already recorded above).
+        if (!await IsLocalCommunityAsync(persistence, target, ct).ConfigureAwait(false)
+            && !await IsLocalActorAsync(persistence, target, ct).ConfigureAwait(false))
+        {
+            await delivery.DeliverToActorAsync(target, follow, communityIri, ct).ConfigureAwait(false);
+        }
+
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Parses a catch-all route value into an <see cref="Iri"/>. Returns null when the value is
+    /// missing, empty, or not a valid IRI.
+    /// </summary>
+    private static Iri? ParseCatchAllIri(HttpContext context, string routeKey)
+    {
+        if (context.Request.RouteValues[routeKey] is not string value
+            || string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return Iri.TryParse(value, out var iri) ? iri : null;
+    }
+
+    /// <summary>
+    /// Extracts the handle (the final path segment) from a person or community IRI.
+    /// </summary>
+    private static string? ExtractHandleFromIri(Iri iri)
+    {
+        var value = iri.Value;
+        var lastSlash = value.LastIndexOf('/');
+        if (lastSlash < 0 || lastSlash == value.Length - 1)
+        {
+            return null;
+        }
+
+        var handle = value[(lastSlash + 1)..];
+        return string.IsNullOrEmpty(handle) ? null : handle;
+    }
+
+    /// <summary>
     /// Serves the community's content search as a specialized collection for
     /// <c>GET /ap/v1/c/{name}/search</c>. The search matches the community's content (the feed surface —
     /// the union of the local members' outbox activities) case-insensitively via the <c>?q</c> query,
@@ -5509,7 +10473,7 @@ public static class ActivityPubServerExtensions
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5521,19 +10485,121 @@ public static class ActivityPubServerExtensions
     /// collection-page cache), and the response carries the collection <c>Cache-Control</c> so
     /// intermediates may cache briefly.
     /// </summary>
+    /// <summary>
+    /// Enriches actor (person/community) items in a search result with the cacheable per-actor counters
+    /// (<c>iris:postsCount</c>, <c>iris:followersCount</c>, <c>iris:followingCount</c>) computed from the
+    /// actor's outbox and the follow store, so a client's directory card can display the stats off the
+    /// search result alone (the Mastodon-style directory). Non-actor items (a <c>Note</c>/<c>Article</c>
+    /// content result) pass through unchanged. Each actor is deep-copied (never mutating the stored actor)
+    /// and enriched in parallel.
+    /// </summary>
+    /// <param name="items">The raw search results (actors + content objects).</param>
+    /// <param name="persistence">The persistence provider (outbox + follow store).</param>
+    /// <param name="options">The deployment options (the <c>iris:</c> namespace base).</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The enriched item list (actor items deep-copied + count extensions added).</returns>
+    private static async Task<IReadOnlyList<IObjectOrLink>> EnrichActorSearchResultsAsync(
+        IReadOnlyList<IObjectOrLink> items,
+        IPersistenceProvider persistence,
+        ActivityPubServerOptions options,
+        CancellationToken ct)
+    {
+        if (items.Count == 0)
+        {
+            return items;
+        }
+
+        // Identify the actor items (the directory surface) that need count enrichment.
+        var actorIndexes = new List<int>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (items[i] is KristofferStrube.ActivityStreams.Actor)
+            {
+                actorIndexes.Add(i);
+            }
+        }
+
+        if (actorIndexes.Count == 0)
+        {
+            return items;
+        }
+
+        var ns = IrisExtensionNamespace(options);
+        var result = new List<IObjectOrLink>(items.Count);
+        var pending = new List<Task<IObjectOrLink>>(actorIndexes.Count);
+
+        foreach (var idx in actorIndexes)
+        {
+            var original = items[idx];
+            pending.Add(Task.Run(async () =>
+            {
+                if (string.IsNullOrWhiteSpace(original.Id) ||
+                    !Iri.TryParse(original.Id, out var actorIri))
+                {
+                    return (IObjectOrLink)original;
+                }
+
+                var copy = ActivityJson.Deserialize<KristofferStrube.ActivityStreams.Actor>(
+                    ActivityJson.Serialize(original))!;
+                var postsTask = CountPostsAsync(persistence, actorIri, ct);
+                var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+                var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+                var posts = await postsTask.ConfigureAwait(false);
+                var followers = await followersTask.ConfigureAwait(false);
+                var following = await followingTask.ConfigureAwait(false);
+
+                var ext = copy.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+                AddExtensionInt(ext, ns + IrisExtensionTerms.PostsCount, posts);
+                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers.Count);
+                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following.Count);
+                return (IObjectOrLink)copy;
+            }, ct));
+        }
+
+        var enriched = await Task.WhenAll(pending).ConfigureAwait(false);
+        var enrichedByIndex = new Dictionary<int, IObjectOrLink>();
+        for (var i = 0; i < actorIndexes.Count; i++)
+        {
+            enrichedByIndex[actorIndexes[i]] = enriched[i];
+        }
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            result.Add(enrichedByIndex.TryGetValue(i, out var e) ? e : items[i]);
+        }
+
+        return result;
+    }
+
     private static async Task<IResult> GlobalSearchHandler(
         HttpContext context,
         IGlobalSearchService searchService,
+        IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
         var query = context.Request.Query["q"].ToString();
         var type = context.Request.Query["type"].ToString();
-        var items = await searchService.SearchAsync(query, ct, type).ConfigureAwait(false);
+        // ?local=true restricts the actor pass to this instance's own actors (the directory); a cached
+        // remote actor is excluded. The directory page's "local only" / "all known actors" toggle sets it.
+        var localOnly = context.Request.Query["local"].ToString()
+            .Equals("true", StringComparison.OrdinalIgnoreCase);
 
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
+
+        // 57.4: search the full surface and let BuildSearchPageDocument slice the page. The paged store
+        // methods (SearchPagedAsync) push the slice into the store for large result sets, but the page
+        // document builder derives totalItems from the full match count, so the handler fetches the full
+        // list and slices here. For the local surface (a single instance's directory + content) the full
+        // list is small and the slice is O(page size).
+        var items = await searchService.SearchAsync(query, ct, type, localOnly).ConfigureAwait(false);
+
+        // Enrich actor (person/community) results with the cacheable per-actor counters (posts/followers/
+        // following) so a client's directory card can display the stats off the search result alone
+        // (the Mastodon-style directory). Non-actor content items (Note/Article) pass through unchanged.
+        items = await EnrichActorSearchResultsAsync(items, persistence, options, ct).ConfigureAwait(false);
 
         // The collection IRI is the endpoint IRI (the /ap/v1 prefix is the route prefix), so the page
         // links (?offset/?limit) are relative to it and resolve back to this route. Trim any trailing
@@ -5545,7 +10611,7 @@ public static class ActivityPubServerExtensions
 
         context.Response.Headers[ActivityPubServerConstants.CacheControlHeaderName] =
             ActivityPubServerConstants.CollectionCacheControl;
-        return Results.Text(document, ActivityJson.ActivityJsonContentType);
+        return Results.Text(document, NegotiateContentType(context));
     }
 
     /// <summary>
@@ -5559,16 +10625,34 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IInboxProcessor inboxProcessor,
         IInboundRateLimiter rateLimiter,
+        IOAuthTokenStore tokenStore,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        Observability.IDegradedModeGate degraded,
         CancellationToken ct)
     {
+        // Degraded (read-only) mode (Phase 83.4): a community inbox write is refused with 503 (not 4xx)
+        // when the durable store is unreachable — the peer should retry later, not treat it as a permanent
+        // rejection.
+        if (degraded.IsDegraded)
+        {
+            return Results.Content(
+                System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    error = "Service Unavailable",
+                    description = "The instance is in degraded (read-only) mode: its durable store is unreachable. Writes are temporarily refused; retry later.",
+                }),
+                "application/problem+json",
+                System.Text.Encoding.UTF8,
+                StatusCodes.Status503ServiceUnavailable);
+        }
+
         var options = optionsAccessor.Value;
         var baseUrl = options.BaseUri?.Value
             ?? $"{context.Request.Scheme}://{context.Request.Host}";
         var communityIri = BuildCommunityIri(baseUrl, name);
 
         var exists = await persistence.Communities.TryGetCommunityAsync(communityIri, out _, ct).ConfigureAwait(false);
-        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, ct).ConfigureAwait(false);
+        return await HandleInboxPostAsync(context, communityIri, exists, inboxProcessor, rateLimiter, tokenStore, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -5581,12 +10665,22 @@ public static class ActivityPubServerExtensions
     /// <param name="page">The 1-based page number to render.</param>
     /// <param name="limit">The page size (items per page).</param>
     /// <param name="items">All of the collection's items (newest-first for the outbox), unslliced.</param>
+    /// <param name="supportsRefresh">When true, advertises the <c>iris:refresh</c> capability on page 1.</param>
+    /// <param name="supportsQuery">When true, advertises the <c>iris:query</c> capability on page 1.</param>
+    /// <param name="supportsType">When true, advertises the <c>iris:type</c> capability on page 1.</param>
+    /// <param name="supportsDepth">When true, advertises the <c>iris:depth</c> capability on page 1.</param>
+    /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (null omits all capabilities).</param>
     /// <returns>The serialized JSON-LD document for the requested page.</returns>
     private static string BuildCollectionPageDocument(
         Iri collectionIri,
         int page,
         int limit,
-        IReadOnlyList<IObjectOrLink> items)
+        IReadOnlyList<IObjectOrLink> items,
+        bool supportsRefresh = false,
+        bool supportsQuery = false,
+        bool supportsType = false,
+        bool supportsDepth = false,
+        string? namespaceIri = null)
     {
         var total = items.Count;
         var pageCount = total == 0 ? 1 : (int)Math.Ceiling(total / (double)limit);
@@ -5603,6 +10697,12 @@ public static class ActivityPubServerExtensions
             slice.Add(items[i - 1]);
         }
 
+        // The final page of the collection. A multi-page collection's last page is `?page={pageCount}`;
+        // a single-page collection's only page is the collection document itself, so `last` points at
+        // the collection IRI. `last` is emitted on every page so a client on any page can jump to the
+        // end (AS2.0 `OrderedCollection.last`).
+        var lastIri = pageCount > 1 ? $"{collectionIri.Value}/?page={pageCount}" : collectionIri.Value;
+
         if (page == 1)
         {
             // Page 1 is the collection document itself: it carries its own first page of items and a
@@ -5617,10 +10717,16 @@ public static class ActivityPubServerExtensions
                 slice: slice,
                 total: total,
                 first: collectionIri.Value,
+                last: lastIri,
                 partOf: null,
                 startIndex: null,
                 next: pageCount > 1 ? $"{collectionIri.Value}/?page=2" : null,
-                prev: null);
+                prev: null,
+                supportsRefresh: supportsRefresh,
+                supportsQuery: supportsQuery,
+                supportsType: supportsType,
+                supportsDepth: supportsDepth,
+                namespaceIri: namespaceIri);
         }
 
         return SerializeCollectionPage(
@@ -5629,10 +10735,16 @@ public static class ActivityPubServerExtensions
             slice: slice,
             total: total,
             first: null,
+            last: lastIri,
             partOf: collectionIri.Value,
             startIndex: start,
             next: page < pageCount ? $"{collectionIri.Value}/?page={page + 1}" : null,
-            prev: $"{collectionIri.Value}/?page={page - 1}");
+            prev: $"{collectionIri.Value}/?page={page - 1}",
+            supportsRefresh: false,
+            supportsQuery: false,
+            supportsType: false,
+            supportsDepth: false,
+            namespaceIri: null);
     }
 
     /// <summary>
@@ -5651,10 +10763,23 @@ public static class ActivityPubServerExtensions
     /// <param name="slice">This page's items, in order.</param>
     /// <param name="total">The full collection size (for <c>totalItems</c>).</param>
     /// <param name="first">The <c>first</c> IRI (page 1 only; null otherwise).</param>
+    /// <param name="last">The <c>last</c> page IRI (the final page of the collection). Emitted on every
+    /// page so a client on any page can jump to the end; null when there is no collection (should not
+    /// occur).</param>
     /// <param name="partOf">The <c>partOf</c> IRI (page N&gt;1 only; null otherwise).</param>
     /// <param name="startIndex">The 1-based <c>startIndex</c> (page N&gt;1 only; null otherwise).</param>
     /// <param name="next">The <c>next</c> page IRI, or null when this is the last page.</param>
     /// <param name="prev">The <c>prev</c> page IRI, or null when this is page 1.</param>
+    /// <param name="supportsRefresh">When true, advertises <c>iris:refresh: true</c> (the collection
+    /// supports <c>?refresh=true</c> cache-bypass).</param>
+    /// <param name="supportsQuery">When true, advertises <c>iris:query: true</c> (the collection
+    /// supports <c>?q=...</c> content filtering).</param>
+    /// <param name="supportsType">When true, advertises <c>iris:type: true</c> (the collection
+    /// supports <c>?type=...</c> activity-type filtering).</param>
+    /// <param name="supportsDepth">When true, advertises <c>iris:depth: true</c> (the collection
+    /// supports <c>?depth=...</c> reply-depth filtering, 117.1).</param>
+    /// <param name="namespaceIri">The deployment's <c>iris:</c> namespace base (used to prefix the
+    /// capability extension keys). Null or empty omits all capability extensions.</param>
     /// <returns>The serialized JSON-LD document for the page.</returns>
     private static string SerializeCollectionPage(
         string id,
@@ -5662,25 +10787,39 @@ public static class ActivityPubServerExtensions
         IReadOnlyList<IObjectOrLink> slice,
         int total,
         string? first,
+        string? last,
         string? partOf,
         int? startIndex,
         string? next,
-        string? prev)
+        string? prev,
+        bool supportsRefresh = false,
+        bool supportsQuery = false,
+        bool supportsType = false,
+        bool supportsDepth = false,
+        string? namespaceIri = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
 
-            // `items` is always a JSON array — including the single-item and empty cases.
-            writer.WritePropertyName("items");
+            // `orderedItems` is the AS2.0 `OrderedCollectionPage` property (the canonical form, used
+            // by Mastodon/Pleroma and the Iris client's preferred read path,
+            // `CollectionPageFactory.ResolveCollectionItems`). It is always a JSON array — including
+            // the single-item and empty cases. (139.1 F-7: previously emitted under `items`, the
+            // non-ordered `CollectionPage` property, which a standard AP client reading an
+            // `OrderedCollectionPage` would not find — breaking Iris↔standard-peer collection
+            // reading.)
+            writer.WritePropertyName("orderedItems");
             writer.WriteStartArray();
             foreach (var item in slice)
             {
                 // Serialize through the polymorphic IObjectOrLink type (not the concrete runtime
                 // type) so a Link item renders as a bare IRI string and an object item renders as a
                 // full JSON object — the same wire shape the library's one-or-multiple items
-                // converter produces, just always inside an array.
+                // converter produces, just always inside an array. An enriched item's embedded object
+                // is a stable instance (see EnrichCollectionItemsAsync), so its ExtensionData (the
+                // interaction counters) survives this serialization.
                 System.Text.Json.JsonSerializer.Serialize(writer, item, typeof(IObjectOrLink), ActivityJson.Options);
             }
             writer.WriteEndArray();
@@ -5691,6 +10830,11 @@ public static class ActivityPubServerExtensions
             if (first is not null)
             {
                 writer.WriteString("first", first);
+            }
+
+            if (last is not null)
+            {
+                writer.WriteString("last", last);
             }
 
             if (partOf is not null)
@@ -5712,6 +10856,36 @@ public static class ActivityPubServerExtensions
             if (prev is not null)
             {
                 writer.WriteString("prev", prev);
+            }
+
+            // Capability extensions (iris:-namespaced booleans) advertise the query parameters this
+            // collection supports. Only emitted on page 1 (the OrderedCollection document), never on
+            // page N>1 (OrderedCollectionPage).
+            if (!string.IsNullOrEmpty(namespaceIri))
+            {
+                if (supportsRefresh)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Refresh);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsQuery)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Query);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsType)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Type);
+                    writer.WriteBooleanValue(true);
+                }
+
+                if (supportsDepth)
+                {
+                    writer.WritePropertyName(namespaceIri + IrisExtensionTerms.Depth);
+                    writer.WriteBooleanValue(true);
+                }
             }
 
             writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
@@ -5801,7 +10975,8 @@ public static class ActivityPubServerExtensions
     /// <param name="collectionIri">The search collection's IRI (<c>{community}/search</c>).</param>
     /// <param name="offset">The 0-based offset of the first item on this page.</param>
     /// <param name="limit">The page size (items per page).</param>
-    /// <param name="items">All matching items (in feed order), unsliced.</param>
+    /// <param name="items">The full match list (actors + content, IRI-sorted); this page's slice is
+    /// derived from it using <paramref name="offset"/> and <paramref name="limit"/>.</param>
     /// <param name="query">The search query (an empty/whitespace query records no extension).</param>
     /// <param name="namespaceBase">The <c>iris:</c> namespace base IRI (the configurable
     /// <see cref="ActivityPubServerOptions.NamespaceIri"/>, or the canonical default when unset) used to
@@ -5830,79 +11005,88 @@ public static class ActivityPubServerExtensions
         var nextOffset = start + limit;
         var prevOffset = Math.Max(0, start - limit);
 
-        if (start == 0)
-        {
-            // The first page (offset 0) is the collection document itself: it carries its own items and a
-            // self-referencing `first` link. An `OrderedCollection` has no `next` property, so a
-            // next-page link is recorded as the standard AS `next` extension (matching the page-2+
-            // `next` so a reader can walk from page 1 onward).
-            var collection = new OrderedCollection
-            {
-                Id = collectionIri.Value,
-                Items = [.. slice],
-                First = new Link { Href = new Uri(collectionIri.Value) },
-                TotalItems = (uint)total,
-            };
+        // When a query is present, the collection's page links (`first`/`partOf`/`id`/`prev`/`next`)
+        // must carry the query string so a client that walks `next` (the ActivityPub client's
+        // GetCollectionAsync, as driven by the PagedCollection component) keeps the filter on
+        // every page — otherwise page 2+ would follow a `next` IRI that has lost `?q=` and return
+        // unfiltered results. The query is percent-escaped so the links are valid IRIs; the server
+        // un-escapes it again when a page-2+ request arrives.
+        var trimmedQuery = hasQuery ? query!.Trim() : string.Empty;
+        var queryPart = hasQuery ? $"?q={Uri.EscapeDataString(trimmedQuery)}" : string.Empty;
+        // A page link at a given offset: the collection base + the query part + the offset/limit.
+        static string PageLink(string baseIri, string queryPart, int offset, int limit)
+            => string.IsNullOrEmpty(queryPart)
+                ? $"{baseIri}/?offset={offset}&limit={limit}"
+                : $"{baseIri}{queryPart}&offset={offset}&limit={limit}";
+        var nextIri = nextOffset < total ? PageLink(collectionIri.Value, queryPart, nextOffset, limit) : null;
 
-            if (nextOffset < total)
+        // Hand-write the page document (instead of letting the library's OrderedCollection/
+        // OrderedCollectionPage + ActivityJson.Serialize render it) so `items` is ALWAYS a JSON array —
+        // including the single-item and empty cases. The library's one-or-multiple items converter
+        // would otherwise collapse a one-item result set to a bare object, which a client that reads
+        // `items` as an array (e.g. the ActivityPub client's SearchAsync) cannot iterate. This mirrors
+        // the always-array items serialization SerializeCollectionPage already uses for the stable
+        // local collections (outbox/feed/followers/following).
+        using var stream = new MemoryStream();
+        using (var writer = new System.Text.Json.Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+
+            // `items` is always a JSON array — including the single-item and empty cases.
+            writer.WritePropertyName("items");
+            writer.WriteStartArray();
+            foreach (var item in slice)
             {
-                AddExtension(collection, "next", $"{collectionIri.Value}/?offset={nextOffset}&limit={limit}");
+                // Serialize through the polymorphic IObjectOrLink type (not the concrete runtime type)
+                // so a Link item renders as a bare IRI string and an object item renders as a full JSON
+                // object — the same wire shape the library's one-or-multiple items converter produces,
+                // just always inside an array.
+                System.Text.Json.JsonSerializer.Serialize(writer, item, typeof(IObjectOrLink), ActivityJson.Options);
+            }
+
+            writer.WriteEndArray();
+
+            writer.WritePropertyName("totalItems");
+            writer.WriteNumberValue(total);
+
+            // The collection base IRI as a page link (the `first`/`partOf` target and the page-1 `id`):
+            // the bare collection IRI, or the collection IRI + query part when a query filters the page.
+            var collectionLink = collectionIri.Value + queryPart;
+
+            if (start == 0)
+            {
+                // The first page (offset 0) is the collection document itself: it carries its own items
+                // and a self-referencing `first` link. An `OrderedCollection` has no `next` property, so
+                // a next-page link is recorded as the standard AS `next` (matching the page-2+ `next` so
+                // a reader can walk from page 1 onward).
+                writer.WriteString("first", collectionLink);
+            }
+            else
+            {
+                writer.WriteString("partOf", collectionLink);
+                writer.WritePropertyName("startIndex");
+                writer.WriteNumberValue(start);
+                writer.WriteString("prev", PageLink(collectionIri.Value, queryPart, prevOffset, limit));
+            }
+
+            if (nextIri is not null)
+            {
+                writer.WriteString("next", nextIri);
             }
 
             if (hasQuery)
             {
-                AddSearchQueryExtension(collection, searchQueryTerm, query!);
+                writer.WriteString(searchQueryTerm, trimmedQuery);
             }
 
-            return ActivityJson.Serialize(collection);
+            writer.WriteString("@context", "https://www.w3.org/ns/activitystreams");
+            writer.WriteString("id", start == 0 ? collectionLink : PageLink(collectionIri.Value, queryPart, offset, limit));
+            writer.WriteString("type", start == 0 ? "OrderedCollection" : "OrderedCollectionPage");
+
+            writer.WriteEndObject();
         }
 
-        var pageDoc = new OrderedCollectionPage
-        {
-            Id = $"{collectionIri.Value}/?offset={offset}&limit={limit}",
-            PartOf = new Link { Href = new Uri(collectionIri.Value) },
-            Items = [.. slice],
-            StartIndex = (uint)start,
-            TotalItems = (uint)total,
-        };
-
-        pageDoc.Prev = new Link { Href = new Uri($"{collectionIri.Value}/?offset={prevOffset}&limit={limit}") };
-        if (nextOffset < total)
-        {
-            pageDoc.Next = new Link { Href = new Uri($"{collectionIri.Value}/?offset={nextOffset}&limit={limit}") };
-        }
-
-        if (hasQuery)
-        {
-            AddSearchQueryExtension(pageDoc, searchQueryTerm, query!);
-        }
-
-        return ActivityJson.Serialize(pageDoc);
-    }
-
-    /// <summary>
-    /// Records the <c>iris:searchQuery</c> extension (the search query) on a collection page document.
-    /// </summary>
-    private static void AddSearchQueryExtension(
-        KristofferStrube.ActivityStreams.Object document,
-        string searchQueryTerm,
-        string query)
-    {
-        AddExtension(document, searchQueryTerm, query.Trim());
-    }
-
-    /// <summary>
-    /// Records a scalar or link value under a term in a document's extension data (creating the
-    /// dictionary when absent).
-    /// </summary>
-    private static void AddExtension(
-        KristofferStrube.ActivityStreams.Object document,
-        string term,
-        object? value)
-    {
-        var ext = document.ExtensionData ?? new Dictionary<string, System.Text.Json.JsonElement>();
-        ext[term] = System.Text.Json.JsonSerializer.SerializeToElement(value);
-        document.ExtensionData = ext;
+        return System.Text.Encoding.UTF8.GetString(stream.ToArray());
     }
 
     /// <summary>
@@ -5990,6 +11174,147 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Registers the <strong>shared</strong> <see cref="IDeliveryQueue"/> (Phase 84.6, shared-state
+    /// scale-out): a single durable journal that two (or more) instances over the same origin enqueue
+    /// into and consume from, so a delivery scheduled on instance A is delivered by A-or-B — not dropped.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="deliveryJournalPath">
+    /// The path of the shared delivery-queue journal file. All instances that share this queue must be
+    /// configured with the same path. The directory must already exist; the file is created if it does
+    /// not exist. A <c>.lock</c> file is created alongside it (the cross-process lock).
+    /// </param>
+    /// <param name="deadLetterJournalPath">The path of the shared dead-letter journal file. The directory
+    /// must already exist; the file is created if it does not exist.</param>
+    /// <param name="visibilityTimeout">
+    /// How long a claim is exclusive before the job is reclaimable by another instance. Defaults to
+    /// <see cref="SharedDeliveryQueue.DefaultVisibilityTimeout"/> (10 min).
+    /// </param>
+    /// <param name="dropHorizon">
+    /// How long a <c>Claimed</c> record is retained before it is purged from the journal. Defaults to
+    /// <see cref="SharedDeliveryQueue.DefaultDropHorizon"/> (24 h).
+    /// </param>
+    /// <param name="deadLetterCapacity">The dead-letter store's bounded view capacity (newest-first).
+    /// Defaults to <see cref="FileBackedDeliveryDeadLetterStore.DefaultCapacity"/>.</param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to override the in-memory
+    /// default. This is the scale-out counterpart to <see cref="UseFileBackedDelivery"/>: the
+    /// file-backed queue is <em>per-instance</em> (each instance replays its own channel), whereas the
+    /// shared queue is a single journal with a visibility-timeout claim protocol (a job claimed by a live
+    /// instance is not re-claimed within the visibility window; a crashed claimer's job is reclaimable).
+    /// The delivery guarantee is at-least-once (a successfully-delivered job may be re-delivered when its
+    /// visibility window lapses; the receiver dedupes by its <c>Id</c>, C-07). Use this when running two
+    /// or more instances over the same origin (see the 84.5 single-instance guard, which this scale-out
+    /// path is the convergence half of).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or a path is null or empty.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">When a capacity is less than or equal to 0 or a
+    /// horizon is invalid.</exception>
+    public static IServiceCollection UseSharedDelivery(
+        this IServiceCollection services,
+        string deliveryJournalPath,
+        string deadLetterJournalPath,
+        TimeSpan? visibilityTimeout = null,
+        TimeSpan? dropHorizon = null,
+        int deadLetterCapacity = FileBackedDeliveryDeadLetterStore.DefaultCapacity)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (string.IsNullOrWhiteSpace(deliveryJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deliveryJournalPath));
+        }
+
+        if (string.IsNullOrWhiteSpace(deadLetterJournalPath))
+        {
+            throw new ArgumentNullException(nameof(deadLetterJournalPath));
+        }
+
+        if (deadLetterCapacity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(deadLetterCapacity), deadLetterCapacity, "Capacity must be greater than zero.");
+        }
+
+        // Validate the horizons (the SharedDeliveryQueue constructor does this; surface it here for a
+        // clearer message at the call site).
+        var visibility = visibilityTimeout ?? SharedDeliveryQueue.DefaultVisibilityTimeout;
+        var drop = dropHorizon ?? SharedDeliveryQueue.DefaultDropHorizon;
+        if (visibility <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(visibilityTimeout), visibility, "The visibility timeout must be greater than zero.");
+        }
+
+        if (drop < visibility)
+        {
+            throw new ArgumentOutOfRangeException(nameof(dropHorizon), drop, "The drop horizon must be greater than or equal to the visibility timeout.");
+        }
+
+        // Replace the in-memory defaults with the shared implementations (a single journal + a shared
+        // dead-letter store, so an exhausted delivery on A is visible to an operator inspecting B).
+        services.AddSingleton<IDeliveryQueue>(_ => new SharedDeliveryQueue(deliveryJournalPath, visibilityTimeout, dropHorizon));
+        services.AddSingleton<IDeliveryDeadLetterStore>(_ => new FileBackedDeliveryDeadLetterStore(deadLetterJournalPath, deadLetterCapacity));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the file-backed <see cref="Caching.CacheInvalidationChannel"/> (Phase 84.6, shared-state
+    /// scale-out): a shared, cross-process invalidation journal two (or more) Iris instances over the same
+    /// origin publish to and poll from, so an actor-document change (a key rotation re-stamping the
+    /// document's <c>publicKey</c>, a profile change) on instance A invalidates the in-memory actor/edge
+    /// caches on instance B within one poll interval — without a restart or a cache TTL expiry.
+    /// </summary>
+    /// <param name="services">The service collection. Must not be null.</param>
+    /// <param name="journalPath">
+    /// The path of the invalidation journal file. All instances that share this channel must be configured
+    /// with the same path. The directory must already exist; the file is created if it does not exist.
+    /// </param>
+    /// <param name="retention">
+    /// How long an event is retained in the journal before it is purged. Defaults to
+    /// <see cref="Caching.CacheInvalidationChannel.DefaultRetention"/> (1 hour).
+    /// </param>
+    /// <returns>The service collection, for chaining.</returns>
+    /// <remarks>
+    /// Call this AFTER <see cref="AddActivityPubServer(IServiceCollection)"/> to replace the no-op
+    /// <see cref="Caching.NoopCacheInvalidationPublisher"/> default with the file-backed channel. This is
+    /// the scale-out counterpart to the in-process cache invalidation (a local actor update invalidates the
+    /// in-process caches directly; the channel extends that to the other instances over the same origin).
+    /// The channel registers the <see cref="Caching.CacheInvalidationService"/> hosted service (the poller
+    /// that applies events to the local <c>RemoteActorCache</c> + <c>LocalActorDocumentCache</c>); the poll
+    /// interval is <see cref="ActivityPubServerOptions.CacheInvalidationPollInterval"/> (default 5 s). Use
+    /// this when running two or more instances over the same origin (see the 84.5 single-instance guard,
+    /// which this scale-out path is the convergence half of, alongside the shared delivery queue + the
+    /// document-derived key provider).
+    /// </remarks>
+    /// <exception cref="ArgumentNullException">When <paramref name="services"/> or <paramref name="journalPath"/>
+    /// is null or empty.</exception>
+    public static IServiceCollection UseCacheInvalidationChannel(
+        this IServiceCollection services,
+        string journalPath,
+        TimeSpan? retention = null)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        if (string.IsNullOrWhiteSpace(journalPath))
+        {
+            throw new ArgumentNullException(nameof(journalPath));
+        }
+
+        var channel = new Caching.CacheInvalidationChannel(journalPath, retention);
+
+        // Replace the no-op ICacheInvalidationPublisher default with the file-backed channel (the publisher
+        // seam the actor-update paths call), and register the channel itself (the poller resolves it by type).
+        services.AddSingleton<Caching.ICacheInvalidationPublisher>(channel);
+        services.AddSingleton(channel);
+        services.AddSingleton<Microsoft.Extensions.Hosting.IHostedService>(sp =>
+            new Caching.CacheInvalidationService(
+                channel,
+                sp.GetRequiredService<Security.RemoteActorCache>(),
+                sp.GetRequiredService<Security.LocalActorDocumentCache>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>(),
+                sp.GetRequiredService<ILogger<Caching.CacheInvalidationService>>()));
+        return services;
+    }
+
+    /// <summary>
     /// Registers the file-backed <see cref="IPersistenceProvider"/> (Phase 16.4, production persistence):
     /// every store (actors, activities, follows, likes, replies, moderation, relays, objects, communities)
     /// and the local instance's signing keys are persisted to one JSON file per store under
@@ -6028,6 +11353,26 @@ public static class ActivityPubServerExtensions
         services.AddSingleton<IKeyStore>(_ => new FileBackedKeyStore(Path.Combine(directory, "keys.json")));
         return services;
     }
+
+    /// <summary>
+    /// Negotiates the response content type. Always returns
+    /// <c>application/activity+json</c> (F-31, spec-valid, unconditionally accepted).
+    /// </summary>
+    /// <remarks>
+    /// Historically this returned <c>application/ld+json</c> when the client's <c>Accept</c> named it.
+    /// That broke key resolution on some Mastodon instances (v4.6.x): their
+    /// <c>ActivityPub::FetchRemoteKeyService</c> → <c>fetch_resource</c> only treats a response as a
+    /// valid ActivityPub document when the content type is <c>application/activity+json</c> OR
+    /// <c>application/ld+json</c> <em>with</em> the <c>profile="https://www.w3.org/ns/activitystreams"</c>
+    /// parameter. A bare <c>application/ld+json</c> (no profile) fails that check, so the key fetch
+    /// returns nil and the inbound request is rejected with 401
+    /// ("Unable to fetch key JSON at …#key-1"). Mastodon's own outbound <c>build_request</c> sends
+    /// <c>Accept: application/activity+json, application/ld+json</c>, so this path was reachable. We
+    /// therefore always emit the unambiguous <c>application/activity+json</c> (we still ACCEPT
+    /// <c>application/ld+json</c> inbound for leniency — we just never emit bare <c>ld+json</c>).
+    /// </remarks>
+    private static string NegotiateContentType(HttpContext context)
+        => ActivityJson.ActivityJsonContentType;
 }
 
 /// <summary>

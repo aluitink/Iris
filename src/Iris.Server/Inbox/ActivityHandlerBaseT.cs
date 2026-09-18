@@ -1,4 +1,7 @@
+using Iris.Core;
 using KristofferStrube.ActivityStreams;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Iris.Server.Inbox;
 
@@ -18,6 +21,18 @@ namespace Iris.Server.Inbox;
 public abstract class ActivityHandlerBase<TActivity> : IActivityHandler, IActivityHandler<TActivity>
     where TActivity : Activity
 {
+    private readonly ILogger _logger;
+
+    /// <summary>
+    /// Initializes the base with the logger that records the per-handler outcome for this handler's
+    /// activity type. Derived classes must call this from their constructor.
+    /// </summary>
+    /// <param name="logger">The logger (may be null; a no-op logger is used).</param>
+    protected ActivityHandlerBase(ILogger? logger = null)
+    {
+        _logger = logger ?? NullLogger.Instance;
+    }
+
     /// <inheritdoc/>
     public Type HandledActivityType => typeof(TActivity);
 
@@ -32,7 +47,7 @@ public abstract class ActivityHandlerBase<TActivity> : IActivityHandler, IActivi
     public abstract Task HandleAsync(InboxDelivery delivery, TActivity activity, CancellationToken ct = default);
 
     /// <inheritdoc/>
-    public Task DispatchAsync(InboxDelivery delivery, Activity activity, CancellationToken ct = default)
+    public async Task DispatchAsync(InboxDelivery delivery, Activity activity, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(delivery);
         ArgumentNullException.ThrowIfNull(activity);
@@ -45,6 +60,33 @@ public abstract class ActivityHandlerBase<TActivity> : IActivityHandler, IActivi
                 $"Activity of type {activity.GetType().Name} is not assignable to {typeof(TActivity).Name}.");
         }
 
-        return HandleAsync(delivery, typed, ct);
+        var activityId = activity.Id;
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        var recipient = delivery.RecipientIri;
+
+        try
+        {
+            await HandleAsync(delivery, typed, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Handler {Handler} failed for {ActivityType} {ActivityId} (actor {Actor}, recipient {Recipient})",
+                GetType().Name,
+                typeof(TActivity).Name,
+                activityId,
+                actorIri,
+                recipient);
+            throw;
+        }
+
+        _logger.LogInformation(
+            "Handler {Handler} processed {ActivityType} {ActivityId} (actor {Actor}, recipient {Recipient}) — ok",
+            GetType().Name,
+            typeof(TActivity).Name,
+            activityId,
+            actorIri,
+            recipient);
     }
 }

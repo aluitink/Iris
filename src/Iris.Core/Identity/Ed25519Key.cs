@@ -290,8 +290,17 @@ public sealed class Ed25519Key : ISigningKey
 
     private static string ToPem(byte[] der, string label = "PUBLIC KEY")
     {
-        var base64 = Convert.ToBase64String(der, Base64FormattingOptions.InsertLineBreaks);
-        return $"-----BEGIN {label}-----\n{base64}\n-----END {label}-----\n";
+        // Wrap manually at 64 chars with LF only, per RFC 7468 (PEM) — matching KeyPair.ToPem.
+        // Convert.ToBase64String(InsertLineBreaks) emits CRLF (RFC 4648), which breaks downstream
+        // PEM parsers (e.g. Lemmy's actor-doc deserializer, and other ActivityPub servers' key
+        // resolution) — the same defect 138.11 fixed in KeyPair.ToPem.
+        var base64 = Convert.ToBase64String(der, Base64FormattingOptions.None);
+        var lines = new List<string>();
+        for (var i = 0; i < base64.Length; i += 64)
+        {
+            lines.Add(base64.Substring(i, Math.Min(64, base64.Length - i)));
+        }
+        return $"-----BEGIN {label}-----\n{string.Join("\n", lines)}\n-----END {label}-----\n";
     }
 
     /// <summary>

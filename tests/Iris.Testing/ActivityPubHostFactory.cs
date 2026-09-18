@@ -3,6 +3,7 @@ using Iris.Client;
 using Iris.Core;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Server.Services;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
@@ -71,6 +72,21 @@ public sealed class ActivityPubHostOptions
     public Action<IServiceCollection>? ExtraServices { get; init; }
 
     /// <summary>
+    /// Service registrations applied <em>before</em> <c>AddActivityPubServer</c> (so they win over
+    /// <c>TryAddSingleton</c> defaults). Use this to override services that <c>AddActivityPubServer</c>
+    /// registers with <c>TryAddSingleton</c> (e.g. <c>IActivityPubClient</c>) —
+    /// <see cref="ExtraServices"/> runs after <c>AddActivityPubServer</c> and cannot displace them.
+    /// </summary>
+    public Action<IServiceCollection>? PreServices { get; init; }
+
+    /// <summary>
+    /// Feed options to configure on the host (e.g. <c>PagesPerActor</c> for the community feed's
+    /// remote-outbox walk). When set, the factory calls <c>services.Configure&lt;FeedOptions&gt;</c>
+    /// before <c>AddActivityPubServer</c> so the options are in effect when the feed service is built.
+    /// </summary>
+    public FeedOptions? FeedOptions { get; init; }
+
+    /// <summary>
     /// Whether the host pins the canonical out-of-the-box <c>iris:</c> extension namespace
     /// (<see cref="Iris.Server.ActivityPubServerConstants.DefaultCapabilitiesNamespaceIri"/>) so the many
     /// integration tests that assert against a known namespace stay stable (Phase 31.8). Defaults to
@@ -133,6 +149,11 @@ public static class ActivityPubHostFactory
             {
                 s.AddLogging(l => l.SetMinimumLevel(LogLevel.None));
                 s.AddRouting();
+                if (options.FeedOptions is { } feedOpts)
+                {
+                    s.AddSingleton(feedOpts);
+                }
+                options.PreServices?.Invoke(s);
                 s.AddActivityPubServer(opts =>
                 {
                     opts.BaseUri = new Iri($"https://{options.Host}");

@@ -1,0 +1,318 @@
+@page "/notifications"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@using Iris.Client
+@using Iris.Core.Identity
+@using Iris.Web.Client.Accounts
+@using KristofferStrube.ActivityStreams
+@using System.Text.Json
+
+<PageTitle>Notifications · Iris</PageTitle>
+
+<div class="page-header-row">
+    <div class="tab-bar" role="tablist" aria-label="Notification filters">
+        @foreach (var (value, label) in FilterOptions)
+        {
+            var key = value ?? "all";
+            <a href="#@(key)" id="tab-notif-@(key)" role="tab"
+               aria-selected="@(_selectedFilter == value ? "true" : "false")"
+               aria-controls="panel-notifications"
+               class="tab @(_selectedFilter == value ? "tab--active" : "")"
+               @onclick:preventDefault @onclick="() => OnSelectFilter(value)">@label</a>
+        }
+    </div>
+    <button class="btn btn--secondary" @onclick="OnMarkAllReadAsync" disabled="@_markingRead">
+        @(_markingRead ? "Marking…" : "Mark all as read")
+    </button>
+</div>
+
+<div role="tabpanel" id="panel-notifications" aria-labelledby="tab-notif-@(_selectedFilter is null ? "all" : _selectedFilter!.ToLowerInvariant())">
+    @if (_loading)
+    {
+        <p class="muted">Loading notifications…</p>
+    }
+    else if (_items is null || _items.Count == 0)
+    {
+        <div class="empty-state">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            <p>No notifications yet.</p>
+            <p>When someone follows you, replies, or mentions you, it shows up here.</p>
+        </div>
+    }
+    else
+    {
+        <div class="notif-cards">
+            @for (var i = 0; i < _items.Count; i++)
+            {
+                var item = _items[i];
+                <div class="notif-card-wrapper">
+                    <NotificationRow Item="@DeserializeItem(item)" SelfId="@SelfIri"
+                        IsNew="@IsNewNotification(item)" OnViewed="@(() => MarkViewed(item))" />
+                </div>
+            }
+        </div>
+
+        @if (_nextPage is not null)
+        {
+            <div class="notif-pagination">
+                <button class="btn btn--secondary" @onclick="OnLoadMoreAsync" disabled="@_loading">
+                    @(_loading ? "Loading…" : "Load more")
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Inject]
+    private IActorSessionAccessor Session { get; set; } = default!;
+
+    [Inject]
+    private NotificationService NotificationService { get; set; } = default!;
+
+    private bool _markingRead;
+    private bool _loading;
+    private List<JsonElement>? _items;
+    private int _offset;
+    private string? _nextPage;
+    private string? _selectedFilter;
+
+    // 154 — the "mark all as read" cursor from the server (null = never marked read). A notification
+    // whose published time is after this is "new" (highlighted). Updated on load and after a mark-all.
+    private DateTimeOffset? _readAt;
+
+    // 154 — IRIs of notifications the user has viewed this page-session (clicked through). Viewed
+    // items stop being highlighted even if they are still newer than _readAt, so "clicking them …
+    // changes" the highlight immediately without a round-trip.
+    private readonly HashSet<string> _seen = [];
+
+    private static readonly (string? Value, string Label)[] FilterOptions =
+    [
+        (null, "All"),
+        ("Follow", "Follows"),
+        ("Like", "Likes"),
+        ("Announce", "Boosts"),
+        ("Create", "Replies"),
+        ("Mention", "Mentions"),
+    ];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Session.EnsureReadyAsync();
+        await LoadNotificationsAsync();
+    }
+
+    private async Task LoadNotificationsAsync()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _loading = true;
+        _offset = 0;
+        _items = [];
+        _nextPage = null;
+        StateHasChanged();
+
+        var page = await NotificationService.GetNotificationsAsync(
+            _selectedFilter, limit: 20, offset: 0);
+        _items = page.Items.Where(KeepNotification).ToList();
+        _offset = _items.Count;
+        _nextPage = page.NextPage;
+        _readAt = page.ReadAt;
+        _seen.Clear();
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnLoadMoreAsync()
+    {
+        if (Session.UserId is not { } uid || _loading)
+        {
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        var page = await NotificationService.GetNotificationsAsync(
+            _selectedFilter, limit: 20, offset: _offset);
+        if (_items is null)
+        {
+            _items = [];
+        }
+        var more = page.Items.Where(KeepNotification).ToList();
+        _items.AddRange(more);
+        _offset += more.Count;
+        _nextPage = page.NextPage;
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task OnSelectFilter(string? value)
+    {
+        _selectedFilter = value;
+        await LoadNotificationsAsync();
+    }
+
+    private async Task OnMarkAllReadAsync()
+    {
+        if (Session.UserId is not { } uid)
+        {
+            return;
+        }
+
+        _markingRead = true;
+        await NotificationService.MarkAllReadAsync(uid);
+        NotificationService.RaiseUnreadCountChanged();
+        // 154 — all notifications are now read, so clear every highlight. Bumping the local cursor to
+        // "now" makes IsNewNotification false for the whole visible list (no re-fetch needed).
+        _readAt = DateTimeOffset.UtcNow;
+        _markingRead = false;
+        StateHasChanged();
+    }
+
+    private Iri? SelfIri => Session.ActorId;
+
+    /// <summary>
+    /// Whether the notification is "new": its published time is after the read cursor (154) and the
+    /// user has not yet viewed it this session. Items without a published time are not highlighted.
+    /// </summary>
+    private bool IsNewNotification(JsonElement item)
+    {
+        if (_readAt is not { } cursor)
+        {
+            // Never marked read → every published item is new.
+            return item.TryGetProperty("published", out var p) && p.ValueKind == JsonValueKind.String
+                && DateTimeOffset.TryParse(p.GetString(), out _);
+        }
+
+        if (!item.TryGetProperty("published", out var pub) || pub.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        if (!DateTimeOffset.TryParse(pub.GetString(), out var published))
+        {
+            return false;
+        }
+
+        if (published <= cursor)
+        {
+            return false;
+        }
+
+        // New by timestamp, but already viewed this session → no longer highlighted.
+        return item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String
+            ? !_seen.Contains(id.GetString()!)
+            : true;
+    }
+
+    /// <summary>
+    /// Marks a notification as viewed (154) when the user clicks through to it, clearing its highlight
+    /// immediately.
+    /// </summary>
+    private void MarkViewed(JsonElement item)
+    {
+        if (item.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+        {
+            _seen.Add(id.GetString()!);
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Belt-and-suspenders filter (Phase 91): the server already drops server-only noise (Update/
+    /// Undo/Flag/Block/Mute + remote post deletions) from the notification list, but the client
+    /// guards the <em>list</em> against a <c>Delete</c> that is not an account deletion — a remote
+    /// post deletion is a server-only message the user does not need to see. Account deletions
+    /// (<c>object == actor</c>) are kept so they can render "deleted their account". This makes the
+    /// exclusion independent of the server filter (a stale client build or a server that does not yet
+    /// filter still renders a clean list).
+    /// </summary>
+    private static bool KeepNotification(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return true;
+        }
+
+        var type = element.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.String
+            ? t.GetString()
+            : null;
+        if (type is not "Delete")
+        {
+            return true;
+        }
+
+        var objectText = element.TryGetProperty("object", out var o) ? o.GetRawText() : null;
+        var actorText = element.TryGetProperty("actor", out var a) ? a.GetRawText() : null;
+        if (string.IsNullOrEmpty(objectText) || string.IsNullOrEmpty(actorText))
+        {
+            // A Delete without a resolvable object is not a recognizable account deletion — drop it.
+            return false;
+        }
+
+        // Account deletion: the object is the actor's own IRI (the remote instance sends object ==
+        // actor). Normalize both to their absolute form and compare.
+        var objectIri = NormalizeIri(objectText);
+        var actorIri = NormalizeIri(actorText);
+        return objectIri is { } oi && actorIri is { } ai && oi == ai;
+    }
+
+    /// <summary>
+    /// Resolves a raw IRI fragment (a bare IRI string, an <c>{"id": "..."}</c> object, or an
+    /// <c>{"href": "..."}</c> link) to a normalized absolute string (trailing slash trimmed), or null
+    /// when it has no IRI. Mirrors <c>ResolveObjectIri</c> for the raw <see cref="JsonElement"/> form
+    /// the notification list carries before deserialization.
+    /// </summary>
+    private static string? NormalizeIri(string raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        var text = raw.Trim();
+        string? candidate = null;
+        if (text.StartsWith('{'))
+        {
+            using var doc = JsonDocument.Parse(text);
+            var root = doc.RootElement;
+            if (root.TryGetProperty("id", out var id) && id.ValueKind == JsonValueKind.String)
+            {
+                candidate = id.GetString();
+            }
+            else if (root.TryGetProperty("href", out var href) && href.ValueKind == JsonValueKind.String)
+            {
+                candidate = href.GetString();
+            }
+        }
+        else
+        {
+            candidate = text;
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate) || !Uri.TryCreate(candidate, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        return uri.AbsoluteUri.TrimEnd('/');
+    }
+
+    private static IObjectOrLink? DeserializeItem(JsonElement element)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var json = element.GetRawText();
+        return ActivityJson.Deserialize<IObjectOrLink>(json);
+    }
+}

@@ -40,4 +40,257 @@ public static class IrisExtensionTerms
     /// the instance-wide search page. The full wire key is <c>{NamespaceIri}searchQuery</c>.
     /// </summary>
     public const string SearchQuery = "searchQuery";
+
+    /// <summary>
+    /// The <c>isLiked</c> extension (per-object like state): a <c>bool</c> rendered on a content object's
+    /// document that is <c>true</c> when the <em>requesting</em> user currently has a like on the object
+    /// (the like edge is present — i.e. the object is in the requester's net <c>liked</c> state, after any
+    /// intervening Like/Undo squashing to the present). Absent (omitted) when the request is unauthenticated
+    /// or the requester has not liked the object. This is a per-requester, read-time convenience: the object
+    /// document is served to each requester with their own <c>isLiked</c>, so the client can render a lit
+    /// heart without first reading the requester's <c>/liked</c> collection. The full wire key is
+    /// <c>{NamespaceIri}isLiked</c>.
+    /// </summary>
+    public const string IsLiked = "isLiked";
+
+    /// <summary>
+    /// The <c>isShared</c> extension (per-object boost state): a <c>bool</c> rendered on a content
+    /// object's document that is <c>true</c> when the <em>requesting</em> user currently has a boost on
+    /// the object (the announce edge is present — i.e. the object is in the requester's net
+    /// <c>shared</c> state, after any intervening Announce/Undo squashing to the present). Absent
+    /// (omitted) when the request is unauthenticated or the requester has not boosted the object. This is
+    /// a per-requester, read-time convenience: the object document is served to each requester with their
+    /// own <c>isShared</c>, so the client can render a lit boost marker without first reading the
+    /// requester's <c>/announces</c> collection. The full wire key is <c>{NamespaceIri}isShared</c>.
+    /// </summary>
+    public const string IsShared = "isShared";
+
+    /// <summary>
+    /// The <c>refresh</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?refresh=true</c> query parameter (cache-bypass). Clients that read this flag can
+    /// issue a <c>?refresh=true</c> request to force a re-render rather than relying on the
+    /// <c>Cache-Control</c> TTL. The full wire key is <c>{NamespaceIri}refresh</c>.
+    /// </summary>
+    public const string Refresh = "refresh";
+
+    /// <summary>
+    /// The <c>query</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?q=...</c> content-filter query parameter. Clients that read this flag can issue
+    /// a <c>?q=...</c> request to filter the collection's items by content/name. The full wire key is
+    /// <c>{NamespaceIri}query</c>.
+    /// </summary>
+    public const string Query = "query";
+
+    /// <summary>
+    /// The <c>type</c> collection capability extension: a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?type=...</c> activity-type-filter query parameter. Clients that read this flag
+    /// can issue a <c>?type=Create</c> request to filter the collection to only activities of that type.
+    /// The full wire key is <c>{NamespaceIri}type</c>.
+    /// </summary>
+    public const string Type = "type";
+
+    /// <summary>
+    /// The <c>depth</c> collection capability extension (117.1): a <c>bool</c> advertised on a paged
+    /// collection's page-1 <c>OrderedCollection</c> document that is <c>true</c> when the collection
+    /// supports the <c>?depth=...</c> reply-depth query parameter. When present, clients can issue
+    /// <c>?depth=1</c> to include first-level replies from followed actors in the feed (the thread's
+    /// top replies appear inline). The full wire key is <c>{NamespaceIri}depth</c>.
+    /// </summary>
+    public const string Depth = "depth";
+
+    /// <summary>
+    /// The <c>likedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of distinct actors that have liked the
+    /// object (the like reverse-index count). This is a cacheable, per-object interaction counter: it is
+    /// not per-requester, so it is safe to serve from the local collection-page response cache. The full
+    /// wire key is <c>{NamespaceIri}likedCount</c>.
+    /// </summary>
+    public const string LikedCount = "likedCount";
+
+    /// <summary>
+    /// The <c>sharedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of distinct actors that have boosted
+    /// (announced) the object (the announce reverse-index count). This is a cacheable, per-object
+    /// interaction counter: it is not per-requester, so it is safe to serve from the local
+    /// collection-page response cache. The full wire key is <c>{NamespaceIri}sharedCount</c>.
+    /// </summary>
+    public const string SharedCount = "sharedCount";
+
+    /// <summary>
+    /// The <c>repliedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of objects that reply to the object
+    /// (the reply reverse-index count). This is a cacheable, per-object interaction counter: it is not
+    /// per-requester, so it is safe to serve from the local collection-page response cache. The full wire
+    /// key is <c>{NamespaceIri}repliedCount</c>.
+    /// </summary>
+    public const string RepliedCount = "repliedCount";
+
+    /// <summary>
+    /// The <c>likeActivityIri</c> extension (72.2): the IRI of the <see cref="KristofferStrube.ActivityStreams.Like"/>
+    /// activity the <em>requesting</em> user issued against the object, rendered on the object's document
+    /// (including nested objects in collection items) <em>only when</em> the requester currently has a (net)
+    /// like on it (the <c>isLiked</c> edge stands). This is the minted activity id an unlike (an
+    /// <c>Undo</c>) references: with it, a client can un-like by referencing the IRI directly instead of
+    /// walking the object's <c>/likes</c> collection to recover it. Per-requester, read-time state (like
+    /// <c>isLiked</c> / <c>isShared</c>) — the object document is served to each requester with their own
+    /// value, so it is only ever added to a serving-time deep copy, never stored. Absent (omitted) when the
+    /// request is unauthenticated or the requester has not liked the object. The full wire key is
+    /// <c>{NamespaceIri}likeActivityIri</c>.
+    /// </summary>
+    public const string LikeActivityIri = "likeActivityIri";
+
+    /// <summary>
+    /// The <c>announceActivityIri</c> extension (72.2): the IRI of the <see cref="KristofferStrube.ActivityStreams.Announce"/>
+    /// activity the <em>requesting</em> user issued against the object, rendered on the object's document
+    /// (including nested objects in collection items) <em>only when</em> the requester currently has a (net)
+    /// boost on it (the <c>isShared</c> edge stands). This is the minted activity id an un-boost (an
+    /// <c>Undo</c>) references: with it, a client can un-boost by referencing the IRI directly instead of
+    /// walking the object's <c>/shares</c> collection to recover it. Per-requester, read-time state (like
+    /// <c>isLiked</c> / <c>isShared</c>) — the object document is served to each requester with their own
+    /// value, so it is only ever added to a serving-time deep copy, never stored. Absent (omitted) when the
+    /// request is unauthenticated or the requester has not boosted the object. The full wire key is
+    /// <c>{NamespaceIri}announceActivityIri</c>.
+    /// </summary>
+    public const string AnnounceActivityIri = "announceActivityIri";
+
+    /// <summary>
+    /// The <c>isDisliked</c> extension (per-object dislike state): a <c>bool</c> rendered on a content
+    /// object's document that is <c>true</c> when the <em>requesting</em> user currently has a dislike
+    /// (downvote) on the object (the dislike edge is present — i.e. the object is in the requester's net
+    /// <c>disliked</c> state, after any intervening Dislike/Undo squashing to the present). Absent
+    /// (omitted) when the request is unauthenticated or the requester has not disliked the object. This is
+    /// a per-requester, read-time convenience: the object document is served to each requester with their
+    /// own <c>isDisliked</c>, so the client can render a lit downvote marker without first reading the
+    /// requester's <c>/disliked</c> collection. The full wire key is <c>{NamespaceIri}isDisliked</c>.
+    /// </summary>
+    public const string IsDisliked = "isDisliked";
+
+    /// <summary>
+    /// The <c>dislikedCount</c> extension: an <c>int</c> rendered on a content object's document (including
+    /// nested objects in collection items) indicating the number of distinct actors that have disliked
+    /// (downvoted) the object (the dislike reverse-index count). This is a cacheable, per-object
+    /// interaction counter: it is not per-requester, so it is safe to serve from the local collection-page
+    /// response cache. The full wire key is <c>{NamespaceIri}dislikedCount</c>.
+    /// </summary>
+    public const string DislikedCount = "dislikedCount";
+
+    /// <summary>
+    /// The <c>score</c> extension (138.18): an <c>int</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating the net score, computed as
+    /// <c>likedCount - dislikedCount</c>. This is the Lemmy-equivalent net score (Lemmy's
+    /// <c>score = upvotes - downvotes</c>). Cacheable, per-object, not per-requester. The full wire key
+    /// is <c>{NamespaceIri}score</c>.
+    /// </summary>
+    public const string Score = "score";
+
+    /// <summary>
+    /// The <c>dislikeActivityIri</c> extension (72.2, mirroring <see cref="LikeActivityIri"/>): the IRI
+    /// of the <see cref="KristofferStrube.ActivityStreams.Dislike"/> activity the <em>requesting</em> user
+    /// issued against the object, rendered on the object's document (including nested objects in
+    /// collection items) <em>only when</em> the requester currently has a (net) dislike on it (the
+    /// <c>isDisliked</c> edge stands). This is the minted activity id an un-dislike (an <c>Undo</c>)
+    /// references. Per-requester, read-time state. Absent (omitted) when the request is unauthenticated
+    /// or the requester has not disliked the object. The full wire key is
+    /// <c>{NamespaceIri}dislikeActivityIri</c>.
+    /// </summary>
+    public const string DislikeActivityIri = "dislikeActivityIri";
+
+    /// <summary>
+    /// The <c>removedBy</c> extension (138.23): the IRI of the actor who deleted/removed the object,
+    /// rendered on a <c>Tombstone</c> document <em>only when</em> the deleter is not the object's
+    /// <c>attributedTo</c> owner (i.e. a moderator removal, not an author delete). This allows the UI to
+    /// distinguish "deleted by author" (no <c>removedBy</c> — the tombstone's <c>formerType</c> is
+    /// sufficient) from "removed by moderator" (<c>removedBy</c> present — the content is hidden by a
+    /// moderation action and may be restorable). Cacheable, per-object (tombstones are permanent). The
+    /// full wire key is <c>{NamespaceIri}removedBy</c>.
+    /// </summary>
+    public const string RemovedBy = "removedBy";
+
+    /// <summary>
+    /// The <c>communityNsfw</c> extension (138.24): a <c>bool</c> rendered on a community (Group)
+    /// document indicating that the source community is flagged as NSFW/sensitive. When present and
+    /// <c>true</c>, clients should render a content warning or age gate on all content from that
+    /// community, mirroring Lemmy's community-level <c>sensitive</c> flag (which applies to every
+    /// post in the community, not just individual posts). This is a cacheable, per-community flag: it
+    /// changes only when the source community's moderation settings change. Absent (omitted) when the
+    /// source community is not NSFW or the community is locally-created (no source flag to mirror).
+    /// The full wire key is <c>{NamespaceIri}communityNsfw</c>.
+    /// </summary>
+    public const string CommunityNsfw = "communityNsfw";
+
+    /// <summary>
+    /// The <c>locked</c> extension (138.24): a <c>bool</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating that the source post/comment is
+    /// locked — no new replies are accepted. When present and <c>true</c>, clients should disable
+    /// the reply composer for that object. This mirrors Lemmy's per-post <c>locked</c> flag (set by
+    /// a moderator to close a thread). Cacheable, per-object, not per-requester. Absent (omitted)
+    /// when the object is not locked. The full wire key is <c>{NamespaceIri}locked</c>.
+    /// </summary>
+    public const string Locked = "locked";
+
+    /// <summary>
+    /// The <c>featured</c> extension (138.24): a <c>bool</c> rendered on a content object's document
+    /// (including nested objects in collection items) indicating that the object is featured (pinned)
+    /// in its source community. When present and <c>true</c>, clients should render a pinned/featured
+    /// indicator on the object. This mirrors Lemmy's per-community <c>featured</c> collection
+    /// (posts added to the community's featured collection are pinned). Cacheable, per-object, not
+    /// per-requester. Absent (omitted) when the object is not featured. The full wire key is
+    /// <c>{NamespaceIri}featured</c>.
+    /// </summary>
+    public const string Featured = "featured";
+
+    /// <summary>
+    /// The <c>language</c> extension (138.24): an ISO-639-1/2 language code (e.g. <c>"en"</c>,
+    /// <c>"de"</c>) rendered on a content object's document (including nested objects in collection
+    /// items) indicating the primary language of the content. This mirrors Lemmy's per-post
+    /// <c>language</c> field (an ISO-639 language code or array). Cacheable, per-object, not
+    /// per-requester. Absent (omitted) when the source content has no language set. The full wire
+    /// key is <c>{NamespaceIri}language</c>.
+    /// </summary>
+    public const string Language = "language";
+
+    /// <summary>
+    /// The <c>postingRestrictedToMods</c> extension (138.24): a <c>bool</c> rendered on a community
+    /// (Group) document indicating that the source community restricts posting to moderators only.
+    /// When present and <c>true</c>, clients should disable the post composer for non-moderator users
+    /// in that community. This mirrors Lemmy's community-level <c>postingRestrictedToMods</c> flag.
+    /// Cacheable, per-community, not per-requester. Absent (omitted) when the community does not
+    /// restrict posting (the common case) or the community is locally-created. The full wire key is
+    /// <c>{NamespaceIri}postingRestrictedToMods</c>.
+    /// </summary>
+    public const string PostingRestrictedToMods = "postingRestrictedToMods";
+
+    /// <summary>
+    /// The <c>postsCount</c> extension: an <c>int</c> rendered on an actor/community document indicating
+    /// the number of content posts (Note/Article objects) in the actor's outbox. This is a cacheable,
+    /// per-actor counter (not per-requester): the server computes it from the actor's outbox and renders
+    /// it on the public document and on directory (search) results, so a client can display a "N posts"
+    /// stat without first reading the outbox collection. Absent (omitted) when the count is not known
+    /// (e.g. a remote actor cached from a non-Iris instance whose outbox the server has not indexed).
+    /// The full wire key is <c>{NamespaceIri}postsCount</c>.
+    /// </summary>
+    public const string PostsCount = "postsCount";
+
+    /// <summary>
+    /// The <c>followersCount</c> extension: an <c>int</c> rendered on an actor/community document
+    /// indicating the number of actors following the actor (the followers-collection count). This is a
+    /// cacheable, per-actor counter (not per-requester): the server computes it from the follow store and
+    /// renders it on the public document and on directory (search) results, so a client can display a
+    /// "N followers" stat without first reading the followers collection. Absent (omitted) when the count
+    /// is not known. The full wire key is <c>{NamespaceIri}followersCount</c>.
+    /// </summary>
+    public const string FollowersCount = "followersCount";
+
+    /// <summary>
+    /// The <c>followingCount</c> extension: an <c>int</c> rendered on an actor/community document
+    /// indicating the number of actors the actor follows (the following-collection count). This is a
+    /// cacheable, per-actor counter (not per-requester): the server computes it from the follow store and
+    /// renders it on the public document and on directory (search) results, so a client can display a
+    /// "N following" stat without first reading the following collection. Absent (omitted) when the count
+    /// is not known. The full wire key is <c>{NamespaceIri}followingCount</c>.
+    /// </summary>
+    public const string FollowingCount = "followingCount";
 }

@@ -121,6 +121,7 @@ public sealed class RecreationStabilityIntegrationTests : IDisposable
     // --- Recreation: an already-delivered Create replayed from the journal is a no-op --------
 
     [Fact]
+    [Trait(TestCategories.Category, TestCategories.Slow)]
     public async Task Recreation_DeliveredCreateReplayed_StoredOnce_NoReFanOut_OutboxUnchanged()
     {
         // The note IRI is the key B stores the embedded object under (the CreateActivityHandler stores

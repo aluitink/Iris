@@ -1,0 +1,768 @@
+@using Iris.Core
+@using Iris.Core.Identity
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+@using Microsoft.AspNetCore.Components.Web
+@using MouseEvent = Microsoft.AspNetCore.Components.Web.MouseEventArgs
+@using ActivityObject = KristofferStrube.ActivityStreams.Object
+
+@inject UiContext Ui
+
+<div class="notification-card @(IsNew ? "notification-card--new" : "")" data-type="@(Activity?.Type?.FirstOrDefault())">
+    <div class="notification-card__header">
+        @if (IsNew)
+        {
+            <span class="notification-card__new" aria-label="New">New</span>
+        }
+        <div class="notification-card__avatar">
+            @if (_actorLoaded)
+            {
+                <ActorAvatar
+                    ActorIri="@(Item is Activity a && a.Actor is { } act ? act.FirstOrDefault()?.ResolveObjectIri() : null)"
+                    DisplayName="@(Item is Activity a2 ? GetDisplayName(a2) : null)"
+                    IconIriOverride="@(Item is Activity a3 ? GetIconIri(a3) : null)"
+                    SkipFetch="@IsSelfDeleteActivity" />
+            }
+        </div>
+        <div class="notification-card__meta">
+            <div class="notification-card__actor-row">
+                @if (Item is Activity a4 && a4.Actor is { } a4actors)
+                {
+                    var actorIri = a4actors.FirstOrDefault()?.ResolveObjectIri();
+                    @if (actorIri is { } performer)
+                    {
+                        <a href="@ActorHref(performer)" title="@performer" class="notification-card__name">
+                            @(GetDisplayName(a4) ?? DisplayNameFallback(performer))
+                        </a>
+                    }
+                }
+                @if (Activity is { } notfAct)
+                {
+                    @NotificationIcon(notfAct)
+                    <span class="notification-card__verb">@VerbFor(notfAct)</span>
+                }
+            </div>
+            @if (Published is { } published)
+            {
+                <span class="notification-card__time" title="@published.ToString("o")">@RelativeTime(published)</span>
+            }
+        </div>
+    </div>
+
+    <div class="notification-card__body">
+        @RenderCardBody()
+    </div>
+</div>
+
+@code {
+    /// <summary>
+    /// The inbox activity (or link) to classify. Pattern-matched into <see cref="IObject"/> per the
+    /// 3rd-Party ActivityStreams rules — never a concrete type.
+    /// </summary>
+    [Parameter]
+    public IObjectOrLink? Item { get; set; }
+
+    /// <summary>
+    /// The signed-in actor's own IRI (to recognize self-referential items such as one's own follow
+    /// confirmations), or null.
+    /// </summary>
+    [Parameter]
+    public Iri? SelfId { get; set; }
+
+    /// <summary>
+    /// Whether this notification is "new" (154): published after the user's last "mark all as read"
+    /// and not yet viewed. When true the card is highlighted (a left accent border + a "New" badge)
+    /// so unread items stand out from the rest of the list.
+    /// </summary>
+    [Parameter]
+    public bool IsNew { get; set; }
+
+    /// <summary>
+    /// Optional callback invoked when the user clicks through to the notification's target (154), so
+    /// the page can mark it viewed and clear its highlight immediately. Null when the page does not
+    /// track viewed state.
+    /// </summary>
+    [Parameter]
+    public EventCallback OnViewed { get; set; }
+
+    private Activity? Activity => Item as Activity;
+
+    /// <summary>
+    /// The activity's <c>published</c> timestamp, when present.
+    /// </summary>
+    private DateTime? Published => Activity?.Published;
+
+    /// <summary>
+    /// Per-row cache of the actor document (keyed by actor IRI value), populated on init. The row
+    /// fetches the actor's document once so it can render the avatar + display name; the
+    /// <see cref="UiContext"/> already caches actor documents per-circuit (5-minute TTL), so repeated
+    /// rows for the same actor do not re-fetch.
+    /// </summary>
+    private readonly Dictionary<string, IObject?> _actorDocs = new();
+
+    /// <summary>
+    /// Whether the actor document has been fetched (or the fetch is not needed). The avatar is
+    /// only rendered once this is true, so the avatar's own <c>GetActorAsync</c> call is skipped
+    /// (its <c>DisplayName</c>/<c>IconIriOverride</c> params are already populated by the row's
+    /// fetch, triggering the avatar's skip-optimization). Prevents a duplicate proxy fetch for
+    /// the same remote actor (147.1).
+    /// </summary>
+    private bool _actorLoaded;
+
+    /// <summary>
+    /// Fetches the actor's document (via the <see cref="UiContext"/>'s per-circuit cache) so the row
+    /// can render the avatar + display name. Runs after the <c>Item</c> parameter is set.
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        if (Item is not Activity { Actor: { } actors } activity)
+        {
+            _actorLoaded = true;
+            return;
+        }
+
+        var actorIri = actors.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            _actorLoaded = true;
+            return;
+        }
+
+        // An account-deletion notification references the actor's own IRI as its object (the remote
+        // instance sends object == actor — the account itself is the deleted object). That actor no
+        // longer exists, so fetching its document 410-Gones (a doomed proxy fetch, pure network noise
+        // + a console error) — 620 tracker topic #7. Skip the fetch: the row renders the initial-letter
+        // avatar fallback and the "deleted their account" caption, no document needed.
+        if (IsSelfDelete(activity))
+        {
+            _actorLoaded = true;
+            return;
+        }
+
+        var doc = await Ui.GetActorAsync(iri);
+        _actorDocs[iri.Value] = doc;
+        _actorLoaded = true;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Whether the activity is an account deletion — a <c>Delete</c> whose <c>object</c> is the
+    /// actor's own IRI (the remote instance sends <c>object == actor</c>: the account itself is the
+    /// deleted object, not a separate object IRI). Such a row renders the "deleted their account"
+    /// caption (B-010) and — because the account is gone — must not fetch the actor's document (which
+    /// 410s; 620 tracker topic #7).
+    /// </summary>
+    private static bool IsSelfDelete(Activity activity)
+    {
+        if (activity.Type?.FirstOrDefault() != "Delete")
+        {
+            return false;
+        }
+
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        var objectIri = activity.Object?.FirstOrDefault()?.ResolveObjectIri();
+        return actorIri is { } ai && objectIri is { } o && o == ai;
+    }
+
+    private bool IsSelfDeleteActivity => Item is Activity a && IsSelfDelete(a);
+
+    /// <summary>
+    /// Marks the notification viewed when the user clicks through to its target (154). The page
+    /// clears the card's "new" highlight from this signal without a round-trip.
+    /// </summary>
+    private Task OnViewedClick() => OnViewed.InvokeAsync();
+
+    private string? GetDisplayName(Activity activity)
+    {
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            return null;
+        }
+
+        if (IsSelfDelete(activity))
+        {
+            return DisplayNameFallback(iri);
+        }
+
+        if (_actorDocs.TryGetValue(iri.Value, out var doc) && doc is { } d)
+        {
+            if (d is Actor actorObj && actorObj.Name is { } names)
+            {
+                return names.FirstOrDefault();
+            }
+        }
+
+        return null;
+    }
+
+    private string? GetIconIri(Activity activity)
+    {
+        var actorIri = activity.Actor?.FirstOrDefault()?.ResolveObjectIri();
+        if (actorIri is not { } iri)
+        {
+            return null;
+        }
+
+        if (_actorDocs.TryGetValue(iri.Value, out var doc) && doc is { } d)
+        {
+            return ActorIconIri(d);
+        }
+
+        return null;
+    }
+
+    private RenderFragment RenderCardBody()
+    {
+        if (Item is not Activity activity)
+        {
+            return builder => { };
+        }
+
+        var isSelfDelete = IsSelfDelete(activity);
+        var objectFirst = activity.Object?.FirstOrDefault();
+        var objectIri = objectFirst?.ResolveObjectIri();
+        var targetIri = activity.Target?.FirstOrDefault()?.ResolveObjectIri();
+
+        return builder =>
+        {
+            if (isSelfDelete && activity.Actor?.FirstOrDefault()?.ResolveObjectIri() is { } deleted)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__self-delete");
+                builder.AddContent(2, "deleted their account");
+                builder.CloseElement();
+            }
+            else if (objectFirst is IObject noteObj && noteObj.GetType() != typeof(Activity) && IsContentNote(noteObj))
+            {
+                // 154 — render the notification's target as a normal object card (the same control the
+                // feeds use) instead of a compact preview box, so notifications look like the rest of
+                // the app. The "New" badge + accent bar on the card (above) still mark it unread.
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__object");
+                builder.OpenComponent(2, typeof(ObjectView));
+                builder.AddComponentParameter(3, nameof(ObjectView.Item), noteObj);
+                builder.CloseComponent();
+                builder.CloseElement();
+            }
+            else if (objectFirst is IObject otherObj && otherObj.GetType() != typeof(Activity))
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__note");
+
+                // Note author
+                if (otherObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
+                {
+                    builder.OpenElement(2, "div");
+                    builder.AddAttribute(3, "class", "notification-card__note-author");
+                    builder.OpenElement(4, "a");
+                    builder.AddAttribute(5, "href", ActorHref(noteAuthor));
+                    builder.AddAttribute(6, "title", noteAuthor.ToString());
+                    builder.AddContent(7, HandleOf(noteAuthor));
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                // Note content preview
+                var preview = TargetPreview(objectFirst);
+                if (preview is { })
+                {
+                    builder.OpenElement(8, "div");
+                    builder.AddAttribute(9, "class", "notification-card__note-content");
+                    if (objectIri is { } ti)
+                    {
+                        builder.OpenElement(10, "a");
+                        builder.AddAttribute(11, "href", ObjectHref(ti));
+                        builder.AddAttribute(12, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
+                        builder.AddContent(13, preview);
+                        builder.CloseElement();
+                    }
+                    else
+                    {
+                        builder.AddContent(10, preview);
+                    }
+                    builder.CloseElement();
+                }
+                else if (objectIri is { } ti)
+                {
+                    builder.OpenElement(8, "div");
+                    builder.AddAttribute(9, "class", "notification-card__note-content");
+                    builder.OpenElement(10, "a");
+                    builder.AddAttribute(11, "href", ObjectHref(ti));
+                    builder.AddContent(12, ShortLabel(ti));
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                // "View" link (154: clicking through marks the notification viewed → clears the highlight)
+                if (objectIri is { } vi)
+                {
+                    builder.OpenElement(13, "div");
+                    builder.AddAttribute(14, "class", "notification-card__actions");
+                    builder.OpenElement(15, "a");
+                    builder.AddAttribute(16, "href", ObjectHref(vi));
+                    builder.AddAttribute(17, "class", "notification-card__view-link");
+                    builder.AddAttribute(18, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
+                    builder.AddContent(19, "View →");
+                    builder.CloseElement();
+                    builder.CloseElement();
+                }
+
+                builder.CloseElement();
+            }
+            else if (objectIri is { } target)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__target");
+                builder.OpenElement(2, "a");
+                builder.AddAttribute(3, "href", ObjectHref(target));
+                builder.AddAttribute(4, "title", target.ToString());
+                var preview = TargetPreview(objectFirst);
+                builder.AddContent(5, preview ?? FriendlyLabel(activity, target));
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            else if (targetIri is { } t)
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "class", "notification-card__target");
+                builder.OpenElement(2, "a");
+                builder.AddAttribute(3, "href", ActorHref(t));
+                builder.AddAttribute(4, "title", t.ToString());
+                builder.AddContent(5, HandleOf(t));
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+        };
+    }
+
+    /// <summary>
+    /// The actor document's first <c>icon</c> as a same-origin IRI (an <see cref="IObject"/> icon by
+    /// its <c>id</c>, an <see cref="ILink"/> icon by its <c>href</c>), or null when the actor has no
+    /// icon. Mirrors <c>Profile.razor</c>'s <c>GetIconIri</c>.
+    /// </summary>
+    private static string? ActorIconIri(IObject? actorDoc)
+    {
+        if (actorDoc is not { Icon: { } icons })
+        {
+            return null;
+        }
+
+        foreach (var icon in icons)
+        {
+            var iri = icon is IObject { Id: { Length: > 0 } id } ? id
+                : icon is ILink { Href: { } href } ? href.ToString()
+                : null;
+            if (iri is { Length: > 0 })
+            {
+                return iri;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Rewrites a media IRI to its browser-loadable same-origin form (local media → relative path,
+    /// cross-origin → media proxy), mirroring <c>ObjectView.RewriteMediaToSameOrigin</c>.
+    /// </summary>
+    private static string RewriteMediaToSameOrigin(string mediaIri)
+    {
+        if (!Uri.TryCreate(mediaIri, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return mediaIri;
+        }
+
+        if (uri.AbsolutePath.StartsWith("/ap/v1/media/", StringComparison.Ordinal))
+        {
+            return uri.AbsolutePath + uri.Query;
+        }
+
+        return $"/ap/v1/media/proxy?url={Uri.EscapeDataString(mediaIri)}";
+    }
+
+    /// <summary>
+    /// A short display initial for the avatar fallback: the first character of the display name or
+    /// handle, uppercased. Mirrors <c>ObjectView.AvatarInitial</c>.
+    /// </summary>
+    private static string AvatarInitial(Iri? actorIri, string? displayName)
+    {
+        var source = !string.IsNullOrWhiteSpace(displayName) ? displayName
+            : actorIri is { } a ? HandleOf(a)
+            : "?";
+        var first = source.Trim().FirstOrDefault(c => char.IsLetterOrDigit(c));
+        return first != default ? char.ToUpperInvariant(first).ToString() : "?";
+    }
+
+    /// <summary>
+    /// Whether the notification's target object is a content note (a <c>Note</c> or <c>Article</c>) that
+    /// should render as a full object card (154). Activity objects (Follow/Accept/Reject), actor
+    /// objects, and other non-content types fall through to the compact preview row.
+    /// </summary>
+    private static bool IsContentNote(IObject obj)
+    {
+        var type = obj.Type?.FirstOrDefault();
+        return type is "Note" or "Article";
+    }
+
+    /// <summary>
+    /// The human-readable, <em>user-centric</em> verb for the activity (Phase 91): every notification
+    /// is phrased around what the signed-in user should care about — was I mentioned, did someone
+    /// reply to one of my posts, did a followed actor post, did someone like/boost <em>my</em> post?
+    /// The classification is a client-side projection over the inbox read (the MVP model — see
+    /// docs/plans/production-app-feature-set.md §Notifications). Server-only noise (Update/Undo/Flag/
+    /// Block/Mute + remote post deletions) is already filtered out server-side (Phase 91), so the
+    /// verbs below only ever see user-facing activity types.
+    /// </summary>
+    private string VerbFor(Activity activity)
+    {
+        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
+        switch (type)
+        {
+            case "Follow":
+                // A Follow in the inbox is a follow request from the actor.
+                return "sent you a follow request";
+            case "Accept":
+                // An Accept whose object is a Follow is the confirmation of a follow request.
+                return IsFollowConfirmation(activity) ? "accepted your follow request" : "accepted";
+            case "Like":
+                // A Like in the inbox is on a note. If the note is the user's own post (by IRI prefix
+                // or attributedTo), "liked your post" is accurate. Otherwise it's a like on a note
+                // the user was CC'd on (follower fan-out) — "liked a post" is safer.
+                if (activity.Object?.FirstOrDefault() is IObject likedNote
+                    && IsSelfNoteObject(likedNote))
+                {
+                    return "liked your post";
+                }
+
+                return "liked a post";
+            case "Announce":
+                // An Announce is a boost. It is a mention of the user only if the user is tagged in the
+                // boosted note; if the boosted note is the user's own post, "boosted your post";
+                // otherwise "boosted a post" (the boost was delivered via CC/fan-out).
+                if (activity.Object?.FirstOrDefault() is IObject boostedNote)
+                {
+                    if (NoteMentionsSelf(boostedNote))
+                    {
+                        return "boosted a post mentioning you";
+                    }
+
+                    if (IsSelfNoteObject(boostedNote))
+                    {
+                        return "boosted your post";
+                    }
+
+                    return "boosted a post";
+                }
+
+                return "boosted a post";
+            case "Mention":
+                return "mentioned you";
+            case "Create":
+                // A Create in the inbox is either a reply (the note has an inReplyTo) or a new note.
+                // User-centric phrasing (Phase 104): a reply is "replied to your post" when it answers
+                // one of the user's own notes (by IRI prefix or attributedTo); a reply to someone
+                // else's note is "replied to {author}'s post" when the parent's author is known, or
+                // "replied" otherwise. A non-reply note that tags the user is a mention; any other new
+                // note (from a followed actor) is just a post.
+                if (activity.Object?.FirstOrDefault() is IObject replyNote
+                    && replyNote.InReplyTo?.FirstOrDefault()?.ResolveObjectIri() is { } inReplyTo)
+                {
+                    if (IsSelfNote(inReplyTo) || IsSelfNoteFromInReplyTo(replyNote))
+                    {
+                        return "replied to your post";
+                    }
+
+                    return ParentNoteAuthorLabel(replyNote) is { } parentAuthor
+                        ? $"replied to {parentAuthor}'s post"
+                        : "replied";
+                }
+
+                if (activity.Object?.FirstOrDefault() is IObject newNote
+                    && NoteMentionsSelf(newNote))
+                {
+                    return "mentioned you";
+                }
+
+                return "posted";
+            case "Reject":
+                return IsFollowConfirmation(activity) ? "declined your follow request" : "declined";
+            case "Add":
+                return "added you";
+            case "Remove":
+                return "removed you";
+            default:
+                // A final, capitalised, plain verb for any other activity type — avoids misspellings
+                // from naïve "ed" suffixing (e.g. "Flag" → "flaged") and keeps the copy readable.
+                return type.Length > 0 ? char.ToUpperInvariant(type[0]) + type[1..] : "notified";
+        }
+    }
+
+    /// <summary>
+    /// Whether a note's <c>tag</c> set contains a <c>Mention</c> whose href is the signed-in user's
+    /// actor IRI (i.e. the user was @-mentioned in the note). Used to phrase a boost/mention
+    /// user-centrically (Phase 91: "was I @mentioned?"). A <c>Mention</c> is a <see cref="ILink"/>
+    /// (AS), so the href is a <c>Uri?</c> — compared as its absolute string.
+    /// </summary>
+    private bool NoteMentionsSelf(IObject note)
+    {
+        if (SelfId is not { } self || note.Tag is not { } tags)
+        {
+            return false;
+        }
+
+        var selfValue = self.Value;
+        foreach (var tag in tags)
+        {
+            if (tag is Mention { Href: { } href } &&
+                href.IsAbsoluteUri &&
+                string.Equals(href.AbsoluteUri.TrimEnd('/'), selfValue.TrimEnd('/'), StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether an <c>Accept</c> is confirming a <c>Follow</c> (its <c>object</c> is a Follow activity),
+    /// as opposed to a plain accept of some other object.
+    /// </summary>
+    private static bool IsFollowConfirmation(Activity activity)
+    {
+        var nested = activity.Object?.FirstOrDefault() as Activity;
+        return nested?.Type?.FirstOrDefault() == "Follow";
+    }
+
+    /// <summary>
+    /// Whether a note IRI is one of the signed-in user's own notes. Local notes are minted as a path
+    /// under the author's actor IRI (<c>{actorIri}/notes/{ulid}</c>), so a note IRI that starts with
+    /// the user's actor IRI is the user's own note. (85)
+    /// </summary>
+    private bool IsSelfNote(Iri noteIri)
+    {
+        return SelfId is { } self && noteIri.Value.StartsWith(self.Value, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Whether a note object is one of the signed-in user's own posts, checked by both IRI prefix
+    /// (local notes) and <c>attributedTo</c> (remote notes where the author IRI is embedded).
+    /// (Phase 104: fixes the "liked/boosted your post" verb for remote notes.)
+    /// </summary>
+    private bool IsSelfNoteObject(IObject note)
+    {
+        if (SelfId is not { } self)
+        {
+            return false;
+        }
+
+        if (note.Id is { Length: > 0 } id && id.StartsWith(self.Value, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        foreach (var attributed in note.AttributedTo ?? [])
+        {
+            if (attributed.ResolveObjectIri() is { } attrIri &&
+                string.Equals(attrIri.Value.TrimEnd('/'), self.Value.TrimEnd('/'), StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the reply note's <c>inReplyTo</c> target is one of the signed-in user's own posts,
+    /// checked via the parent note's <c>attributedTo</c> when the parent is an embedded object
+    /// (Phase 104: the inbox sometimes embeds the full parent note, not just its IRI).
+    /// </summary>
+    private bool IsSelfNoteFromInReplyTo(IObject replyNote)
+    {
+        if (SelfId is not { } self)
+        {
+            return false;
+        }
+
+        if (replyNote.InReplyTo?.FirstOrDefault() is IObject parentNote)
+        {
+            foreach (var attributed in parentNote.AttributedTo ?? [])
+            {
+                if (attributed.ResolveObjectIri() is { } attrIri &&
+                    string.Equals(attrIri.Value.TrimEnd('/'), self.Value.TrimEnd('/'), StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            if (parentNote.Id is { Length: > 0 } id && id.StartsWith(self.Value, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A short display label for the parent note's author (the note the reply is answering), resolved
+    /// from the <c>inReplyTo</c>'s <c>attributedTo</c> when the parent is an embedded object.
+    /// Returns null when the author cannot be determined. (Phase 104: "replied to {author}'s post".)
+    /// </summary>
+    private string? ParentNoteAuthorLabel(IObject replyNote)
+    {
+        if (replyNote.InReplyTo?.FirstOrDefault() is not IObject parentNote)
+        {
+            return null;
+        }
+
+        var authorIri = parentNote.AttributedTo?.FirstOrDefault()?.ResolveObjectIri();
+        return authorIri is { } a ? HandleOf(a) : null;
+    }
+
+    /// <summary>
+    /// A short human-readable preview of the activity's target object (the note that was liked,
+    /// boosted, or replied to). Strips HTML and truncates to 120 characters. Returns null when the
+    /// target is not a content object or has no text content (e.g. a Follow activity whose object is
+    /// another activity, not a note).
+    /// </summary>
+    private static string? TargetPreview(IObjectOrLink? item)
+    {
+        if (item is not ActivityObject obj || obj.Content is not { } content)
+        {
+            return null;
+        }
+
+        var text = string.Join(" ", content);
+        text = new System.Text.RegularExpressions.Regex("<[^>]+>").Replace(text, " ").Trim();
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        return text.Length > 120 ? text[..120] + "…" : text;
+    }
+
+    /// <summary>
+    /// A short label for a target IRI when no content preview is available: the last two path
+    /// segments (e.g. "notes/06G7ZE…") truncated for display, so the user sees something meaningful
+    /// rather than the full raw IRI.
+    /// </summary>
+    private static string ShortLabel(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var segments = path.Split('/');
+        var label = segments.Length >= 2 ? string.Join(" ", segments[^2..]) : iri.Value;
+        return label.Length > 40 ? label[..37] + "…" : label;
+    }
+
+    /// <summary>
+    /// A human-readable label for a notification target when no content preview is available.
+    /// For actor IRIs (e.g. follow requests where the object is the actor's own IRI) shows
+    /// "View {handle}'s profile"; for note IRIs shows "View note"; otherwise falls back to
+    /// <see cref="ShortLabel"/>.
+    /// </summary>
+    private static string FriendlyLabel(Activity activity, Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var segments = path.Split('/');
+        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
+
+        // Actor IRI: /ap/v1/u/{user} — show "View {user}'s profile"
+        if (segments.Length >= 2 && segments[^2] == "u" && segments[^1].Length > 0)
+        {
+            return $"View {segments[^1]}'s profile";
+        }
+
+        // Note IRI: /ap/v1/u/{user}/notes/{id} — show "View note"
+        if (segments.Contains("notes") && segments[^1].Length > 0)
+        {
+            return "View note";
+        }
+
+        // Community IRI: /ap/v1/c/{name} — show "View community"
+        if (segments.Length >= 2 && segments[^2] == "c" && segments[^1].Length > 0)
+        {
+            return $"View {segments[^1]}";
+        }
+
+        // Remote status/note IRI (e.g. /users/{user}/statuses/{id} on another instance) — show "View post"
+        if (segments.Contains("statuses") || segments.Contains("notes"))
+        {
+            return "View post";
+        }
+
+        return ShortLabel(iri);
+    }
+
+    private static string ObjectHref(Iri iri) => $"/object?iri={Uri.EscapeDataString(iri.Value)}";
+
+    private static string ActorHref(Iri iri) => ActorIdentityHelper.ActorHref(iri);
+
+    /// <summary>
+    /// A short display for an actor IRI: the path's last segment (the username) when it looks like a
+    /// user IRI (<c>/ap/v1/u/{user}</c>), else the full IRI. Mirrors <c>ObjectView.HandleOf</c>.
+    /// </summary>
+    private static string HandleOf(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var last = path.Split('/').LastOrDefault();
+        return string.IsNullOrWhiteSpace(last) ? iri.Value : last;
+    }
+
+    /// <summary>
+    /// A human-readable fallback for an actor's display name when the document could not be resolved
+    /// (e.g. the proxy 410s for a deleted remote account). The raw IRI last segment is used only when it
+    /// is a plausible handle — i.e. not a bare numeric ID (remote accounts whose handle is a numeric
+    /// snowflake/ID would otherwise surface as a wall of digits, B-011). When the segment is numeric or
+    /// empty, the IRI's host is shown instead (the instance the account belongs to).
+    /// </summary>
+    private static string DisplayNameFallback(Iri iri)
+    {
+        var path = Uri.UnescapeDataString(new Uri(iri.Value).AbsolutePath).TrimEnd('/');
+        var last = path.Split('/').LastOrDefault();
+        if (!string.IsNullOrWhiteSpace(last) && last.Any(c => !char.IsDigit(c)))
+        {
+            return last;
+        }
+
+        return Uri.TryCreate(iri.Value, UriKind.Absolute, out var uri) ? uri.Host : iri.Value;
+    }
+
+    private static string RelativeTime(DateTime utc) => TimeFormatting.Relative(utc);
+
+    /// <summary>
+    /// Renders a small inline SVG icon for the notification type, displayed before the verb.
+    /// </summary>
+    private MarkupString NotificationIcon(Activity activity)
+    {
+        var type = activity.Type?.FirstOrDefault() ?? string.Empty;
+        return type switch
+        {
+            "Like" => SvgIcon("M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z", "var(--accent)"),
+            "Announce" => SvgIcon("M17 8l4 4-4 4M3 12l4-4 4 4M7 8h10v8H7z", "var(--accent-warm)"),
+            "Follow" => SvgIcon("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM19 8v6M22 11h-6", "var(--accent)"),
+            "Accept" => SvgIcon("M20 6L9 17l-5-5", "var(--success, #4caf50)"),
+            "Reject" => SvgIcon("M18 6L6 18M6 6l12 12", "var(--danger, #f44336)"),
+            "Create" => SvgIcon("M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", "var(--text-muted, #888)"),
+            "Undo" => SvgIcon("M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10", "var(--text-muted, #888)"),
+            _ => SvgIcon("M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0", "var(--muted)"),
+        };
+    }
+
+    private static MarkupString SvgIcon(string path, string color)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg class=\"notification-icon\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"")
+          .Append(color)
+          .Append("\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">")
+          .Append("<path d=\"")
+          .Append(path)
+          .Append("\"/>")
+          .Append("</svg>");
+        return new MarkupString(sb.ToString());
+    }
+}

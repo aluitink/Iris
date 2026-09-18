@@ -528,17 +528,18 @@ public static partial class SampleServer
         // alice's note (the like exercises the Like activity type and the remote-host actor). Each
         // seeded outbox item is appended only when its IRI is not already in the outbox (idempotent by
         // IRI — see the remarks), so a recreation of a file-backed instance never duplicates them.
+        var communityLink = new Link { Href = communityIri.Uri };
         var aliceNote = new Note
         {
             Id = $"{aliceIri.Value}/notes/1",
-            AttributedTo = [alice],
+            AttributedTo = [alice, communityLink],
             To = [PublicAudience],
             Content = ["<p>Welcome to the Iris sample server!</p>"],
         };
         var bobNote = new Note
         {
             Id = $"{bobIri.Value}/notes/1",
-            AttributedTo = [bob],
+            AttributedTo = [bob, communityLink],
             To = [PublicAudience],
             Content = ["<p>Bob says hello from the community.</p>"],
         };

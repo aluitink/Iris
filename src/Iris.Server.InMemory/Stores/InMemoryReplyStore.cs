@@ -57,6 +57,28 @@ public sealed class InMemoryReplyStore : IReplyStore
         return Task.FromResult(_replies.TryGetValue(parentIri, out var set) && IsIn(set, childIri));
     }
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetRepliesBatchAsync(
+        IReadOnlyCollection<Iri> parentIris, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        var result = new Dictionary<Iri, IReadOnlyList<Iri>>();
+        foreach (var iri in parentIris)
+        {
+            if (_replies.TryGetValue(iri, out var set))
+            {
+                lock (set)
+                {
+                    if (set.Count > 0)
+                    {
+                        result[iri] = set.ToList();
+                    }
+                }
+            }
+        }
+        return Task.FromResult<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>>(result);
+    }
+
     private static HashSet<Iri> NewSet(Iri iri)
     {
         var set = new HashSet<Iri>();

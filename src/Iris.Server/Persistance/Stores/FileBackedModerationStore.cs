@@ -114,6 +114,17 @@ public sealed class FileBackedModerationStore : IModerationStore, IDisposable
     public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)
         => _file.SnapshotAsync(s => EdgeSet(s, Mutes).TryGetValue(muterIri, out var set) && set.Contains(mutedIri), ct);
 
+    /// <inheritdoc/>
+    public Task<IReadOnlyList<FlagEdge>> GetAllFlagEdgesAsync(CancellationToken ct = default)
+        => _file.SnapshotAsync<IReadOnlyList<FlagEdge>>(s =>
+        {
+            var edges = EdgeSet(s, Flags);
+            return edges
+                .SelectMany(kv => kv.Value.Select(t => new FlagEdge(kv.Key, t, DateTimeOffset.UtcNow)))
+                .OrderByDescending(e => e.Flagged.Value, StringComparer.Ordinal)
+                .ToList();
+        }, ct);
+
     /// <summary>
     /// The named edge index for the current state, created on demand.
     /// </summary>

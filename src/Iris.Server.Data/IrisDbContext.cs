@@ -1,0 +1,209 @@
+using Iris.Server.Data.Entities;
+using Microsoft.EntityFrameworkCore;
+
+namespace Iris.Server.Data;
+
+/// <summary>
+/// The EF Core <see cref="DbContext"/> for the Iris production persistence provider. Owns the
+/// relational index (identity, edges, timestamps) while the full ActivityStreams documents live in
+/// <c>jsonb</c> payload columns (the hybrid schema that keeps migrations rare).
+/// </summary>
+/// <remarks>
+/// The relational shape is driven by the stable <c>Iris.Server.Stores</c> interfaces — not by
+/// ActivityStreams vocabulary — so adding a new AP field or <c>iris:</c> extension lands inside an
+/// existing <c>jsonb</c> column and needs no migration. Only a new store interface / indexed query
+/// changes this model.
+/// </remarks>
+public sealed class IrisDbContext : DbContext
+{
+    /// <summary>
+    /// Initializes a new context over the given options.
+    /// </summary>
+    /// <param name="options">The EF Core options (the Npgsql provider is configured by the caller).</param>
+    public IrisDbContext(DbContextOptions<IrisDbContext> options)
+        : base(options)
+    {
+    }
+
+    /// <inheritdoc/>
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        ConfigureActor(modelBuilder);
+        ConfigureObject(modelBuilder);
+        ConfigureActivity(modelBuilder);
+        ConfigureBoxItem(modelBuilder);
+        ConfigureKey(modelBuilder);
+        ConfigureEdge(modelBuilder);
+        ConfigureCreateIndex(modelBuilder);
+        ConfigureMedia(modelBuilder);
+        ConfigureUserAccount(modelBuilder);
+        ConfigureInstanceMetadata(modelBuilder);
+    }
+
+    /// <summary>
+    /// Configures the actor entity.
+    /// </summary>
+    private static void ConfigureActor(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ActorEntity>(entity =>
+        {
+            entity.ToTable("Actors");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(1024);
+            entity.Property(e => e.Handle).HasMaxLength(255);
+            entity.Property(e => e.Type).HasMaxLength(128);
+            entity.Property(e => e.Document).HasColumnType("jsonb");
+            entity.HasIndex(e => e.Handle);
+        });
+    }
+
+    /// <summary>
+    /// Configures the object entity.
+    /// </summary>
+    private static void ConfigureObject(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ObjectEntity>(entity =>
+        {
+            entity.ToTable("Objects");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(1024);
+            entity.Property(e => e.AttributedTo).HasMaxLength(1024);
+            entity.Property(e => e.ObjectType).HasMaxLength(128);
+            entity.Property(e => e.Document).HasColumnType("jsonb");
+            entity.HasIndex(e => e.AttributedTo);
+        });
+    }
+
+    /// <summary>
+    /// Configures the activity entity.
+    /// </summary>
+    private static void ConfigureActivity(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<ActivityEntity>(entity =>
+        {
+            entity.ToTable("Activities");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(1024);
+            entity.Property(e => e.ActivityType).HasMaxLength(128);
+            entity.Property(e => e.ObjectIri).HasMaxLength(1024);
+            entity.Property(e => e.Document).HasColumnType("jsonb");
+            entity.HasIndex(e => e.ActivityType);
+            entity.HasIndex(e => new { e.ActivityType, e.ObjectIri });
+        });
+    }
+
+    /// <summary>
+    /// Configures the outbox/inbox item entity. The item references its activity by IRI (<see cref="BoxItemEntity.ItemIri"/>,
+    /// the activity's primary key) — a plain data column, not a mapped foreign-key relationship — so a
+    /// collection can hold an item whose activity has been removed without a delete constraint.
+    /// </summary>
+    private static void ConfigureBoxItem(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<BoxItemEntity>(entity =>
+        {
+            entity.ToTable("BoxItems");
+            entity.HasKey(e => new { e.Direction, e.ActorId, e.ItemIri });
+            entity.Property(e => e.ActorId).HasMaxLength(1024);
+            entity.Property(e => e.ItemIri).HasMaxLength(1024);
+            // Idempotent add: a re-recorded item (same collection + actor + IRI) is a no-op (unique key).
+            // Collection read: GetBoxAsync filters on (Direction, ActorId) and orders by Position.
+            entity.HasIndex(e => new { e.Direction, e.ActorId, e.Position });
+        });
+    }
+
+    /// <summary>
+    /// Configures the key entity.
+    /// </summary>
+    private static void ConfigureKey(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<KeyEntity>(entity =>
+        {
+            entity.ToTable("Keys");
+            entity.HasKey(e => e.KeyId);
+            entity.Property(e => e.KeyId).HasMaxLength(1024);
+            entity.Property(e => e.Algorithm).HasMaxLength(32);
+        });
+    }
+
+    /// <summary>
+    /// Configures the generic directed edge entity (one table backs every relationship store).
+    /// </summary>
+    private static void ConfigureEdge(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<EdgeEntity>(entity =>
+        {
+            entity.ToTable("Edges");
+            entity.HasKey(e => new { e.Kind, e.Source, e.Target });
+            entity.Property(e => e.Source).HasMaxLength(1024);
+            entity.Property(e => e.Target).HasMaxLength(1024);
+            // Reverse-direction queries (InSourcesAsync) filter on (kind, target).
+            entity.HasIndex(e => new { e.Kind, e.Target });
+        });
+    }
+
+    /// <summary>
+    /// Configures the object → Create index entity.
+    /// </summary>
+    private static void ConfigureCreateIndex(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<CreateIndexEntity>(entity =>
+        {
+            entity.ToTable("CreateIndex");
+            entity.HasKey(e => e.ObjectId);
+            entity.Property(e => e.ObjectId).HasMaxLength(1024);
+            entity.Property(e => e.CreateActivityId).HasMaxLength(1024);
+        });
+    }
+
+    /// <summary>
+    /// Configures the local account entity. The username has a unique index (compared case-insensitively
+    /// at the store layer, not by the index — the index is on the raw value); the linked actor IRI is
+    /// indexed so an account can be found by the actor it is bound to.
+    /// </summary>
+    private static void ConfigureUserAccount(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<UserAccountEntity>(entity =>
+        {
+            entity.ToTable("UserAccounts");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Username).HasMaxLength(255);
+            entity.Property(e => e.PasswordHash).HasMaxLength(512);
+            entity.Property(e => e.Role).HasMaxLength(16);
+            entity.Property(e => e.ActorIri).HasMaxLength(1024);
+            entity.HasIndex(e => e.Username).IsUnique();
+            entity.HasIndex(e => e.ActorIri);
+        });
+    }
+
+    /// <summary>
+    /// Configures the media asset entity.
+    /// </summary>
+    private static void ConfigureMedia(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<MediaEntity>(entity =>
+        {
+            entity.ToTable("Media");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Id).HasMaxLength(128);
+            entity.Property(e => e.ContentType).HasMaxLength(255);
+            entity.Property(e => e.FileName).HasMaxLength(512);
+            entity.Property(e => e.StorageKey).HasMaxLength(1024);
+        });
+    }
+
+    /// <summary>
+    /// Configures the instance metadata entity (a single row, key = 0).
+    /// </summary>
+    private static void ConfigureInstanceMetadata(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<InstanceMetadataEntity>(entity =>
+        {
+            entity.ToTable("InstanceMetadata");
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).HasMaxLength(255);
+            entity.Property(e => e.Description).HasMaxLength(1024);
+        });
+    }
+}

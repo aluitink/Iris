@@ -1,0 +1,139 @@
+# Production Iris.Web stack — the deployable social platform (docs/plans/production-app-deployment.md).
+#
+# One app container (API + UI in one process) + a Postgres database + a media volume. The app is
+# published on host port 8088 (WEB_PORT) so it takes over the existing https://iris.luit.ink
+# reverse-proxy target with no reconfiguration (docs/plans/production-app-overview.md §2).
+#
+# This is a SEPARATE stack from the sample federation harness (samples/docker-compose.yml) — the two
+# serve different purposes and do not share a network namespace by default.
+#
+# Configuration is .env-driven (a committed .env.example documents every variable; the real .env is
+# git-ignored). Bring up / down:
+#   docker compose -f apps/Iris.Web/docker-compose.yml up --build -d
+#   docker compose -f apps/Iris.Web/docker-compose.yml down        # preserves data (named volumes)
+#   docker compose -f apps/Iris.Web/docker-compose.yml down -v     # full reset (wipes data)
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-iris}
+      POSTGRES_USER: ${POSTGRES_USER:-iris}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in apps/Iris.Web/.env}
+    volumes:
+      # The single most important volume: losing it loses every account, actor, post, and relationship.
+      - iris-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iris} -d ${POSTGRES_DB:-iris}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [iris-web-net]
+    # No host port is published for Postgres — it is only reachable from iris-web on the internal
+    # network. (Publishing 5432 to the host would expose the DB to the network.)
+
+  iris-web:
+    build:
+      context: ../..
+      dockerfile: apps/Iris.Web/Dockerfile
+    environment:
+      # The app binds in-container port 8080 (the Dockerfile's ASPNETCORE_URLS); the advertised public
+      # base URI is what the app tells the fediverse / browsers it is reachable at. Default is the real
+      # public FQDN (https://iris.luit.ink); the reverse proxy forwards to host 8088.
+      Iris__AdvertiseBase: ${IRIS_ADVERTISE_BASE:-https://iris.luit.ink}
+      # Shared inbox IRI (federation): advertised in the actor document's endpoints.sharedInbox so remote
+      # instances can deliver activity. REQUIRED for Lemmy interop (Lemmy's Endpoints struct mandates
+      # sharedInbox — without it, Lemmy rejects the actor doc). Maps to Iris:SharedInboxIri.
+      Iris__SharedInboxIri: ${IRIS_SHAREDINBOXIRI:-}
+      # A connection string is present -> EF Core (PostgreSQL) persistence; absent -> in-memory.
+      # Assembled from the POSTGRES_* vars (Host=db is the compose service name on the internal network).
+      ConnectionStrings__Iris: "Host=db;Port=5432;Database=${POSTGRES_DB:-iris};Username=${POSTGRES_USER:-iris};Password=${POSTGRES_PASSWORD}"
+      # Admin bootstrap (docs/plans/production-app-authentication.md, section 6): if set, the first admin account
+      # is provisioned idempotently at boot. Unset -> no admin is created. App:* is Iris.Web's own section
+      # (never bound by AddActivityPubServer's ActivityPubServerOptions, which owns Iris:*).
+      App__Admin__Username: ${IRIS_ADMIN_USERNAME:-}
+      App__Admin__Password: ${IRIS_ADMIN_PASSWORD:-}
+      # Inbound request-body cap (slice 33.4): bounds the memory an unauthenticated inbox POST can force
+      # the app to buffer (a DoS vector for a public instance). Unset -> the app's 1 MiB default
+      # (WebAppFactory.DefaultMaxRequestBodySize); set to raise it for a legitimate large-payload case.
+      # Maps to Iris:MaxRequestBodySize (bytes).
+      Iris__MaxRequestBodySize: ${IRIS_MAX_REQUEST_BODY_SIZE:-}
+      # CORS (slice 33.5): the app is same-origin-only by default (no cross-origin access). Set to a
+      # comma-separated allow-list of origins (e.g. https://app.example.org) to grant a non-UI API
+      # consumer cross-origin access to the instance's API. Never AllowAnyOrigin. Blank -> same-origin-only.
+      # Maps to Iris:Cors:Origins.
+      Iris__Cors__Origins: ${IRIS_CORS_ORIGINS:-}
+      # Antiforgery toggle (Phase 94, disabled by default since Phase 131.5): the ASP.NET Core
+      # antiforgery middleware defaults to OFF in the development compose stack because stale tokens
+      # (signed with a previous Data Protection key ring, e.g. after a container rebuild) make the
+      # login/register forms 400 until the token is re-fetched — a recurring source of greif while we
+      # iterate on the implementation and redeploy. Set IRIS_SECURITY_ENABLEANTIFORGERY=true to re-enable
+      # it (the C# production default in WebAppFactory remains ON; this only overrides the dev stack).
+      # NEVER run a public production instance with antiforgery off. Maps to Iris:Security:EnableAntiforgery.
+      Iris__Security__EnableAntiforgery: ${IRIS_SECURITY_ENABLEANTIFORGERY:-false}
+      # Development cache-bypass (Phase 131.6): ON by default in the dev stack so the browser never
+      # serves a stale build after a container redeploy — the SPA shell (index.html) is served
+      # no-store and CSS/JS are revalidated (no-cache), while the fingerprinted _framework/ WASM assets
+      # stay long-term immutable (safe: content-hashed URLs change per build). Set
+      # IRIS_DEV_CACHEBYPASS=false to restore normal caching (24h CSS/JS). The C# production default in
+      # WebAppFactory remains OFF; this only overrides the dev stack. Maps to Iris:Dev:CacheBypass.
+      Iris__Dev__CacheBypass: ${IRIS_DEV_CACHEBYPASS:-true}
+      # Graceful-shutdown drain timeout (slice 33.6): bounds the time the DeliveryWorker waits for
+      # in-flight outbound deliveries to settle on a SIGTERM. A delivery that does not finish in time
+      # is dropped (journaled / dead-lettered per the F-22 at-least-once policy). Accepts a TimeSpan
+      # (e.g. 00:00:15) or a bare integer (seconds). Blank -> the app's 15 s default (fits under the
+      # host's 30 s ShutdownTimeout). Maps to Iris:Delivery:ShutdownDrainTimeout.
+      Iris__Delivery__ShutdownDrainTimeout: ${IRIS_SHUTDOWN_DRAIN_TIMEOUT:-}
+      # Media blob directory (54.16): the EF media store (EfMediaStore) persists uploaded image blobs as one
+      # file per media id under this directory, referenced by each Media row's StorageKey. Without this set
+      # it defaults to <AppContext.BaseDirectory>/media-blobs = /app/media-blobs in the container — an
+      # EPHEMERAL path, NOT the mounted volume. So every container recreation (docker compose up
+      # --force-recreate / a deploy) wiped every uploaded blob while its DB row (in the durable Postgres
+      # volume) survived, and every note/avatar image 404'd afterwards ("images don't render for notes").
+      # Pointing it at the mounted named volume (/data/media) makes blobs survive restarts. Maps to
+      # Iris:MediaBlobDir (read by EntityFrameworkPersistenceExtensions.AddEntityFrameworkPersistence).
+      Iris__MediaBlobDir: ${IRIS_MEDIA_BLOB_DIR:-/data/media}
+      # ASP.NET Core Data Protection uses the HOME env var to locate its key ring
+      # (~/.aspnet/DataProtection-Keys). setpriv (used by the entrypoint to drop
+      # root) does not set HOME, so the app falls back to the WORKDIR (/app) and
+      # stores keys in an ephemeral path. Pinning HOME to the iris user's actual
+      # home dir makes the keys land on the iris-dp-keys volume (line 88) and
+      # survive container recreation — no more session/antiforgery invalidation
+      # on every deploy.
+      HOME: /home/iris
+      ASPNETCORE_ENVIRONMENT: Production
+    ports:
+      # 8088 is not arbitrary: the public https://iris.luit.ink reverse proxy already forwards to this
+      # host's port 8088. Publishing iris-web on 8088 means no reverse-proxy change is needed.
+      - "${WEB_PORT:-8088}:8080"
+    volumes:
+      - iris-media-data:/data/media
+      # Data Protection keys (48.2): persist the ASP.NET Core key ring so auth cookies +
+      # antiforgery tokens survive container recreation (docker compose down + up). Without
+      # this volume, every restart invalidates all user sessions. Path matches the non-root
+      # iris user's home in the Dockerfile (50.1 security hardening).
+      - iris-dp-keys:/home/iris/.aspnet/DataProtection-Keys
+    healthcheck:
+      # The base aspnet image has no curl, so this is a pure TCP-connect probe on the bind port (the
+      # same pattern the sample stack uses for its servers). A successful connect means Kestrel is
+      # listening. NOTE: it must NOT read from the socket after connecting — an HTTP server sends nothing
+      # until it receives a request, so `head -c1 <&3` would block forever and the probe would always time
+      # out. Opening the /dev/tcp fd and letting it close on subshell exit is enough (connect rc 0 = up).
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 25s
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [iris-web-net]
+
+networks:
+  iris-web-net:
+    driver: bridge
+
+volumes:
+  iris-db-data:
+  iris-media-data:
+  iris-dp-keys:

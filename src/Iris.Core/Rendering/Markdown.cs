@@ -1,20 +1,23 @@
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace Iris.Samples.SampleBlazorClient;
+namespace Iris.Core.Rendering;
 
 /// <summary>
-/// A small, dependency-free Markdown-to-HTML renderer for the object view (Phase 20.4c). It renders
-/// the subset of Markdown the object view needs — headings, inline/fenced code, links, unordered and
-/// ordered lists, and paragraphs — so a note's <c>content</c> that is Markdown (rather than HTML)
-/// displays properly. It is deliberately not a general-purpose Markdown engine.
+/// A small, dependency-free Markdown-to-HTML renderer shared by the object views (moved here from the
+/// sample client in Phase 54.15 so the production WASM app and the sample render Markdown content
+/// identically). It renders the subset of Markdown an object view needs — headings, inline/fenced code,
+/// links, unordered and ordered lists, and paragraphs — so a note's <c>content</c> that is Markdown
+/// (rather than pre-rendered HTML) displays properly. It is deliberately not a general-purpose Markdown
+/// engine.
 /// </summary>
 /// <remarks>
 /// <strong>Security:</strong> the input is HTML-escaped first (so any raw HTML in the content is
 /// neutralized and rendered as text), and only then are the Markdown transforms applied. Link targets
 /// are sanitized to the <c>http</c>/<c>https</c>/<c>mailto</c> schemes — a <c>javascript:</c> (or any
-/// other) scheme is rendered as plain text, never as a live link. This makes the output safe to emit
-/// as a <c>MarkupString</c> in a Blazor component.
+/// other) scheme is rendered as plain text, never as a live link. This makes the output safe to emit as
+/// a Blazor <c>MarkupString</c> (or an HTML fragment) from any consuming project.
 /// </remarks>
 public static class Markdown
 {
@@ -54,7 +57,7 @@ public static class Markdown
         // Safety net: restore any fenced-code placeholder that was not emitted as a lone block (e.g.
         // one that ended up inline). A lone-block placeholder is already restored by RenderBlock.
         return CodePlaceholderPattern().Replace(html, m =>
-            codeBlocks[int.Parse(m.Groups["index"].Value, System.Globalization.CultureInfo.InvariantCulture)]);
+            codeBlocks[int.Parse(m.Groups["index"].Value, CultureInfo.InvariantCulture)]);
     }
 
     /// <summary>
@@ -68,7 +71,7 @@ public static class Markdown
         var loneCode = CodePlaceholderPattern().Match(block);
         if (loneCode.Success && loneCode.Value == block)
         {
-            return codeBlocks[int.Parse(loneCode.Groups["index"].Value, System.Globalization.CultureInfo.InvariantCulture)];
+            return codeBlocks[int.Parse(loneCode.Groups["index"].Value, CultureInfo.InvariantCulture)];
         }
 
         // A block is a list when every non-empty line is a list item.
@@ -185,7 +188,7 @@ public static class Markdown
         text = ItalicPattern().Replace(text, "<em>$1</em>");
 
         // Restore the code-span placeholders.
-        text = CodePlaceholderPattern().Replace(text, m => codeSpans[int.Parse(m.Groups["index"].Value, System.Globalization.CultureInfo.InvariantCulture)]);
+        text = CodePlaceholderPattern().Replace(text, m => codeSpans[int.Parse(m.Groups["index"].Value, CultureInfo.InvariantCulture)]);
         return text;
     }
 

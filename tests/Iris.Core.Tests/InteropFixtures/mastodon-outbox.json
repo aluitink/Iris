@@ -1,0 +1,1 @@
+{"@context":"https://www.w3.org/ns/activitystreams","id":"https://mastodon.online/users/Gargron/outbox","type":"OrderedCollection","totalItems":425,"first":"https://mastodon.online/users/Gargron/outbox?page=true","last":"https://mastodon.online/users/Gargron/outbox?min_id=0&page=true"}

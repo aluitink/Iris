@@ -1,0 +1,138 @@
+@using System.Threading
+@using Microsoft.AspNetCore.Components.Authorization
+@using Iris.Web.Client.Accounts
+@implements IDisposable
+
+@if (_unread > 0)
+{
+    <span class="nav-badge" title="@_unread unread">@_display</span>
+}
+
+@code {
+    [Inject]
+    private AuthenticationStateProvider _auth { get; set; } = default!;
+
+    [Inject]
+    private IActorSessionAccessor _session { get; set; } = default!;
+
+    [Inject]
+    private NotificationService _notifications { get; set; } = default!;
+
+    private int _unread;
+    private CancellationTokenSource? _cts;
+    private Timer? _timer;
+
+    private string _display => _unread > 99 ? "99+" : _unread.ToString();
+
+    /// <summary>
+    /// The badge is rendered inside an <c>AuthorizeView</c> in the layout's signed-in nav, so it only
+    /// mounts once the provider reports the user as authenticated. Awaiting
+    /// <c>GetAuthenticationStateAsync</c> here (the same async source <c>AuthorizeView</c> uses)
+    /// guarantees the state is loaded before we read the signed-in user and start the unread poll —
+    /// robust to the layout/page render ordering (the layout does not itself await
+    /// <c>Session.EnsureReadyAsync</c>).
+    /// </summary>
+    protected override async Task OnInitializedAsync()
+    {
+        _cts = new CancellationTokenSource();
+
+        // Await the auth state (async — WASM-safe; never blocks). By the time this resolves, the
+        // provider has the user's identity, so we can start polling the unread count.
+        var state = await _auth.GetAuthenticationStateAsync();
+        if (!state.User.Identity?.IsAuthenticated ?? false)
+        {
+            return;
+        }
+
+        // Prime the accessor's cached state so the synchronous IsSignedIn/UserId are correct.
+        try
+        {
+            await _session.EnsureReadyAsync();
+        }
+        catch
+        {
+            // A transient key-load error should not keep the badge hidden; a later render or the
+            // polling timer retries.
+            return;
+        }
+
+        if (_session.IsSignedIn && _session.UserId is { } uid)
+        {
+            StartPolling(uid);
+        }
+    }
+
+    private void StartPolling(Guid accountId)
+    {
+        if (_timer is not null)
+        {
+            return; // Already polling.
+        }
+
+        _ = LoadAsync(accountId);
+        _timer = new Timer(async _ =>
+        {
+            try
+            {
+                if (_session.UserId is { } id)
+                {
+                    await LoadAsync(id);
+                }
+            }
+            catch
+            {
+                // Swallow polling errors; the next tick retries.
+            }
+        }, null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+    }
+
+    private async Task LoadAsync(Guid accountId)
+    {
+        if (_cts is null || _cts.IsCancellationRequested)
+        {
+            return;
+        }
+
+        int count;
+        try
+        {
+            count = await _notifications.GetUnreadCountAsync(accountId, _cts.Token);
+        }
+        catch
+        {
+            // The HTTP call can throw (a 401 after logout, a transient network error); this is a
+            // fire-and-forget task, so an unobserved exception would trip the global Blazor error UI.
+            return;
+        }
+        _unread = Math.Max(0, count);
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (InvalidOperationException)
+        {
+            // Component disposed between the await and the UI update.
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        _notifications.UnreadCountChanged += OnUnreadCountChanged;
+    }
+
+    private void OnUnreadCountChanged()
+    {
+        if (_session.UserId is { } id)
+        {
+            _ = LoadAsync(id);
+        }
+    }
+
+    public void Dispose()
+    {
+        _notifications.UnreadCountChanged -= OnUnreadCountChanged;
+        _cts?.Cancel();
+        _timer?.Dispose();
+        _cts?.Dispose();
+    }
+}

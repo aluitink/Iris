@@ -2,6 +2,7 @@ using System.Text.Json;
 using Iris.Core;
 using KristofferStrube.ActivityStreams;
 using Xunit;
+using ActivityObject = KristofferStrube.ActivityStreams.Object;
 
 namespace Iris.Core.Tests.Identity;
 
@@ -281,17 +282,41 @@ public class IriExtensionsTests
     [Fact]
     public void GetMentionIris_IgnoresNonMentionTags()
     {
+        // A hashtag tag is an Object (type Hashtag), not a link — it is excluded from the mention set
+        // (read by GetHashtagTags). A compact mention, by contrast, is a bare link (a bare IRI string in
+        // the tag array) and IS a mention.
+        var hashtag = new ActivityObject { Type = ["Hashtag"], Name = ["#example"] };
         IObject note = new Note
         {
             Id = "https://a.domain.local/ap/v1/u/bob/notes/r1",
             Tag =
             [
-                new Link { Href = new Uri("https://example.com/tags/hashtag") },
+                hashtag,
                 new Mention { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
             ],
         };
 
         Assert.Equal([new Iri("https://b.domain.local/ap/v1/u/carol")], note.GetMentionIris());
+    }
+
+    [Fact]
+    public void GetMentionIris_IncludesCompactLinkMentions()
+    {
+        // A compact mention (a bare IRI string in the tag array, the form the server's ingestion
+        // normalization stores) deserializes as a Link and is a mention.
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/bob/notes/r2",
+            Tag =
+            [
+                new Link { Href = new Uri("https://b.domain.local/ap/v1/u/carol") },
+                new Mention { Href = new Uri("https://c.domain.local/ap/v1/u/dave") },
+            ],
+        };
+
+        Assert.Equal(
+            [new Iri("https://b.domain.local/ap/v1/u/carol"), new Iri("https://c.domain.local/ap/v1/u/dave")],
+            note.GetMentionIris());
     }
 
     [Fact]
@@ -308,6 +333,178 @@ public class IriExtensionsTests
         IObject? none = null;
 
         Assert.Empty(none.GetMentionIris());
+    }
+
+    // --- GetHashtagTags (54.14) ---
+
+    [Fact]
+    public void GetHashtagTags_NullObject_ReturnsEmpty()
+    {
+        IObject? obj = null;
+
+        var result = obj.GetHashtagTags();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHashtagTags_NoTag_ReturnsEmpty()
+    {
+        var note = new ActivityObject();
+
+        var result = note.GetHashtagTags();
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
+    public void GetHashtagTags_HashtagWithHref_ReturnsNameAndHref()
+    {
+        // A Hashtag tag as a foreign server emits it: a generic object of type Hashtag with name +
+        // href (the href lands in ExtensionData because the Object base does not model href).
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Id = "https://other.example/notes/1#tag=0",
+                    Type = ["Hashtag"],
+                    Name = ["#hello"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("https://other.example/tags/hello"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#hello", name);
+        Assert.NotNull(href);
+        Assert.Equal(new Iri("https://other.example/tags/hello"), href!.Value);
+    }
+
+    [Fact]
+    public void GetHashtagTags_HashtagWithoutHref_ReturnsNameWithNullHref()
+    {
+        // A server that emits a Hashtag with only a name (no href) — still surfaced, just unlinked.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#justname"]
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#justname", name);
+        Assert.Null(href);
+    }
+
+    [Fact]
+    public void GetHashtagTags_MixedMentionAndHashtag_ReturnsOnlyHashtags()
+    {
+        // The mention reader and hashtag reader are independent boundaries over the same `tag` array:
+        // GetHashtagTags returns only the Hashtag entries, not the Mention entries.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new Mention { Href = new Uri("https://a.domain.local/u/bob") },
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#greetings"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("https://a.domain.local/search?q=%23greetings"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#greetings", name);
+        Assert.NotNull(href);
+        Assert.Equal(new Iri("https://a.domain.local/search?q=%23greetings"), href!.Value);
+    }
+
+    [Fact]
+    public void GetHashtagTags_CaseInsensitiveType_Matches()
+    {
+        // A foreign server that capitalizes the type term differently is still matched (lenient).
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["HASHTAG"],
+                    Name = ["#loud"]
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, _) = Assert.Single(result);
+        Assert.Equal("#loud", name);
+    }
+
+    [Fact]
+    public void GetHashtagTags_UnparseableHref_IsTreatedAsAbsent()
+    {
+        // An href that fails Iri.TryParse (e.g. an unescaped space in the authority — the one class of
+        // input Uri.TryCreate rejects beyond blank/empty) is ignored: the tag is surfaced without a link.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject
+                {
+                    Type = ["Hashtag"],
+                    Name = ["#badhref"],
+                    ExtensionData = new Dictionary<string, JsonElement>
+                    {
+                        ["href"] = JsonSerializer.SerializeToElement("http://x y/z"),
+                    }
+                }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        var (name, href) = Assert.Single(result);
+        Assert.Equal("#badhref", name);
+        Assert.Null(href);
+    }
+
+    [Fact]
+    public void GetHashtagTags_SkipsHashtagWithoutName()
+    {
+        // A Hashtag-type tag with no name (malformed) is skipped.
+        var note = new ActivityObject
+        {
+            Tag = new IObjectOrLink[]
+            {
+                new ActivityObject { Type = ["Hashtag"] }
+            }
+        };
+
+        var result = note.GetHashtagTags();
+
+        Assert.Empty(result);
     }
 
     [Fact]
@@ -645,5 +842,895 @@ public class IriExtensionsTests
         IObject note = new Note { Id = "https://a.domain.local/n/1", Content = ["", "<p>real content</p>"] };
 
         Assert.True(note.IsPreRenderedHtmlContent());
+    }
+
+    // --- GetCustomEmojis (58.1) ---
+
+    [Fact]
+    public void GetCustomEmojis_NullObject_ReturnsEmpty()
+    {
+        IObject? obj = null;
+
+        Assert.Empty(obj.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoEmojiProperty_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_EmptyEmojiArray_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("[]").RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SingleEmoji_ReturnsNameShortCodeAndUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"smile","shortCode":":smile:","staticUrl":"https://cdn.example.com/emoji/smile.png","url":"https://cdn.example.com/emoji/smile.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("smile", result[0].Name);
+        Assert.Equal(":smile:", result[0].ShortCode);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/smile.png"), result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_MultipleEmojis_ReturnsAllInOrder()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [
+                    {"name":"cat","shortCode":":cat:","staticUrl":"https://cdn.example.com/emoji/cat.png"},
+                    {"name":"dog","shortCode":":dog:","staticUrl":"https://cdn.example.com/emoji/dog.png"}
+                ]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Equal(2, result.Count);
+        Assert.Equal("cat", result[0].Name);
+        Assert.Equal(":cat:", result[0].ShortCode);
+        Assert.Equal("dog", result[1].Name);
+        Assert.Equal(":dog:", result[1].ShortCode);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoShortCode_DerivesFromName()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"party","staticUrl":"https://cdn.example.com/emoji/party.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal(":party:", result[0].ShortCode);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoStaticUrl_FallsBackToUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"wave","shortCode":":wave:","url":"https://cdn.example.com/emoji/wave.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/wave.png"), result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NoUrls_ReturnsNullUrl()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"mystery","shortCode":":mystery:"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Null(result[0].Url);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SkipsEmojiWithoutName()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"shortCode":":unnamed:","staticUrl":"https://cdn.example.com/emoji/x.png"}]
+                """).RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_NonArrayEmojiProperty_ReturnsEmpty()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("\"not-an-array\"").RootElement.Clone(),
+        };
+
+        Assert.Empty(note.GetCustomEmojis());
+    }
+
+    [Fact]
+    public void GetCustomEmojis_SkipsNonObjectEntries()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                ["not-an-object", {"name":"valid","shortCode":":valid:","staticUrl":"https://cdn.example.com/v.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var result = note.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("valid", result[0].Name);
+    }
+
+    [Fact]
+    public void GetCustomEmojis_RoundTripsThroughJsonSerialization()
+    {
+        var note = new Note
+        {
+            Id = "https://a.domain.local/n/1",
+            Content = ["Hello :smile: world"],
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["emoji"] = JsonDocument.Parse("""
+                [{"name":"smile","shortCode":":smile:","staticUrl":"https://cdn.example.com/emoji/smile.png"}]
+                """).RootElement.Clone(),
+        };
+
+        var json = ActivityJson.Serialize(note);
+        var roundTripped = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var roundTrippedNote = Assert.IsAssignableFrom<IObject>(roundTripped);
+
+        var result = roundTrippedNote.GetCustomEmojis();
+
+        Assert.Single(result);
+        Assert.Equal("smile", result[0].Name);
+        Assert.Equal(":smile:", result[0].ShortCode);
+        Assert.Equal(new Iri("https://cdn.example.com/emoji/smile.png"), result[0].Url);
+    }
+
+    // --- GetPollData (58.2) ---
+
+    [Fact]
+    public void GetPollData_NullObject_ReturnsNull()
+    {
+        IObject? obj = null;
+
+        Assert.Null(obj.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_NoPoll_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_ParsesOptionsVotesEndsAt()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "id": "poll-1",
+                    "options": [
+                        {"title": "Alice", "votesCount": 3},
+                        {"title": "Bob", "votesCount": 4},
+                        {"title": "Charlie", "votesCount": 5}
+                    ],
+                    "endsAt": "2026-12-01T00:00:00Z",
+                    "expired": false,
+                    "multiple": false,
+                    "totalVotes": 12
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(3, poll!.Options.Count);
+        Assert.Equal("Alice", poll.Options[0].Title);
+        Assert.Equal(3, poll.Options[0].Votes);
+        Assert.Equal("Charlie", poll.Options[2].Title);
+        Assert.Equal(5, poll.Options[2].Votes);
+        Assert.Equal(12, poll.TotalVotes);
+        Assert.False(poll.Expired);
+        Assert.False(poll.Multiple);
+        Assert.Equal(new DateTime(2026, 12, 1, 0, 0, 0, DateTimeKind.Utc), poll.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_ExpiredAndMultiple()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"title": "Yes", "votesCount": 7},
+                        {"title": "No", "votesCount": 3}
+                    ],
+                    "endsAt": "2026-01-01T00:00:00Z",
+                    "expired": true,
+                    "multiple": true,
+                    "totalVotes": 10
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.True(poll!.Expired);
+        Assert.True(poll.Multiple);
+        Assert.Equal(10, poll.TotalVotes);
+        Assert.Equal(2, poll.Options.Count);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_NoTotalVotes_SumsOptions()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"title": "A", "votesCount": 2},
+                        {"title": "B", "votesCount": 3}
+                    ],
+                    "expired": false,
+                    "multiple": false
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(5, poll!.TotalVotes);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_ParsesOptionsWithNamesAndVotes()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "Option A", "votes": 5},
+                    {"name": "Option B", "votes": 3}
+                ]
+                """).RootElement.Clone(),
+            ["endTime"] = JsonDocument.Parse("\"2026-11-15T12:00:00Z\"").RootElement.Clone(),
+            ["closed"] = JsonDocument.Parse("false").RootElement.Clone(),
+            ["multiple"] = JsonDocument.Parse("false").RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(2, poll!.Options.Count);
+        Assert.Equal("Option A", poll.Options[0].Title);
+        Assert.Equal(5, poll.Options[0].Votes);
+        Assert.Equal("Option B", poll.Options[1].Title);
+        Assert.Equal(3, poll.Options[1].Votes);
+        Assert.Equal(8, poll.TotalVotes);
+        Assert.False(poll.Expired);
+        Assert.Equal(new DateTime(2026, 11, 15, 12, 0, 0, DateTimeKind.Utc), poll.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_Closed_ParsesExpired()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "X", "votes": 1},
+                    {"name": "Y", "votes": 2}
+                ]
+                """).RootElement.Clone(),
+            ["closed"] = JsonDocument.Parse("true").RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.True(poll!.Expired);
+    }
+
+    [Fact]
+    public void GetPollData_As2Question_NoEndTime_EndsAtIsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["options"] = JsonDocument.Parse("""
+                [
+                    {"name": "A", "votes": 1}
+                ]
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Null(poll!.EndsAt);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_SkipsOptionWithoutTitle()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "options": [
+                        {"votesCount": 1},
+                        {"title": "Valid", "votesCount": 2}
+                    ],
+                    "expired": false,
+                    "multiple": false
+                }
+                """).RootElement.Clone(),
+        };
+
+        var poll = note.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Single(poll!.Options);
+        Assert.Equal("Valid", poll.Options[0].Title);
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_EmptyOptions_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {"options": [], "expired": false, "multiple": false}
+                """).RootElement.Clone(),
+        };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_MastodonPoll_NonObjectPoll_ReturnsNull()
+    {
+        var note = new Note { Id = "https://a.domain.local/n/1" };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("\"not-an-object\"").RootElement.Clone(),
+        };
+
+        Assert.Null(note.GetPollData());
+    }
+
+    [Fact]
+    public void GetPollData_RoundTripsThroughJsonSerialization()
+    {
+        var note = new Note
+        {
+            Id = "https://a.domain.local/n/1",
+            Content = ["Who wins?"],
+        };
+        note.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["poll"] = JsonDocument.Parse("""
+                {
+                    "id": "poll-1",
+                    "options": [
+                        {"title": "Alice", "votesCount": 3},
+                        {"title": "Bob", "votesCount": 7}
+                    ],
+                    "endsAt": "2026-12-01T00:00:00Z",
+                    "expired": false,
+                    "multiple": false,
+                    "totalVotes": 10
+                }
+                """).RootElement.Clone(),
+        };
+
+        var json = ActivityJson.Serialize(note);
+        var roundTripped = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var roundTrippedNote = Assert.IsAssignableFrom<IObject>(roundTripped);
+
+        var poll = roundTrippedNote.GetPollData();
+
+        Assert.NotNull(poll);
+        Assert.Equal(2, poll!.Options.Count);
+        Assert.Equal("Alice", poll.Options[0].Title);
+        Assert.Equal(3, poll.Options[0].Votes);
+        Assert.Equal(10, poll.TotalVotes);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromImage_ReturnsImageType()
+    {
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Image { Id = "https://cdn.example.com/media/1.jpg", Name = ["photo.jpg"] }],
+        };
+
+        var attachments = note.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Image", attachments[0].Type);
+        Assert.Equal("photo.jpg", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/media/1.jpg"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromDocument_ReturnsDocumentType()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Document",
+                    "name": "report.pdf",
+                    "url": "https://cdn.example.com/files/report.pdf"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Document", attachments[0].Type);
+        Assert.Equal("report.pdf", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/files/report.pdf"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromAudioWithPreview_ReturnsPreview()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Audio",
+                    "name": "podcast.mp3",
+                    "url": "https://cdn.example.com/audio/podcast.mp3",
+                    "preview": {
+                        "type": "Image",
+                        "url": "https://cdn.example.com/preview/podcast.jpg"
+                    }
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Audio", attachments[0].Type);
+        Assert.Equal("podcast.mp3", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/audio/podcast.mp3"), attachments[0].Url);
+        Assert.NotNull(attachments[0].Preview);
+        Assert.Equal(new Iri("https://cdn.example.com/preview/podcast.jpg"), attachments[0].Preview!);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromVideo_ReturnsVideoType()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                {
+                    "type": "Video",
+                    "name": "clip.mp4",
+                    "url": "https://cdn.example.com/video/clip.mp4",
+                    "preview": "https://cdn.example.com/preview/clip.jpg"
+                }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Video", attachments[0].Type);
+        Assert.Equal("clip.mp4", attachments[0].Name);
+        Assert.Equal(new Iri("https://cdn.example.com/video/clip.mp4"), attachments[0].Url);
+        Assert.NotNull(attachments[0].Preview);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromLink_ReturnsLinkType()
+    {
+        // A Link attachment (whether built directly or deserialized from `type:"Link"`) surfaces
+        // Type == "Link" — the ActivityStreams Link class always reports its type as "Link". This is
+        // what lets a renderer distinguish a genuine web link (a new-tab link card) from media
+        // attachments (Image/Video/Audio/Document).
+        IObject note = new Note
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            Attachment = [new Link { Href = new Uri("https://example.com/page") }],
+        };
+
+        var attachments = note.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Link", attachments[0].Type);
+        Assert.Equal(new Iri("https://example.com/page"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_FromLinkTypedAttachment_ReturnsLinkTypeAndName()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                { "href": "https://example.com/iris", "type": "Link", "name": "Iris project" }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Single(attachments);
+        Assert.Equal("Link", attachments[0].Type);
+        Assert.Equal("Iris project", attachments[0].Name);
+        Assert.Equal(new Iri("https://example.com/iris"), attachments[0].Url);
+    }
+
+    [Fact]
+    public void GetRichAttachments_MultipleMixedTypes_ReturnsAll()
+    {
+        var json = """
+        {
+            "id": "https://a.domain.local/ap/v1/u/alice/notes/n1",
+            "type": "Note",
+            "attachment": [
+                { "type": "Image", "id": "https://cdn.example.com/1.jpg", "name": ["a.jpg"] },
+                { "type": "Document", "name": "doc.pdf", "url": "https://cdn.example.com/doc.pdf" },
+                { "type": "Audio", "name": "song.mp3", "url": "https://cdn.example.com/song.mp3" }
+            ]
+        }
+        """;
+
+        var note = ActivityJson.Deserialize<IObjectOrLink>(json);
+        var noteObj = Assert.IsAssignableFrom<IObject>(note);
+
+        var attachments = noteObj.GetRichAttachments();
+        Assert.Equal(3, attachments.Count);
+        Assert.Equal("Image", attachments[0].Type);
+        Assert.Equal("Document", attachments[1].Type);
+        Assert.Equal("Audio", attachments[2].Type);
+    }
+
+    [Fact]
+    public void GetRichAttachments_NoAttachments_ReturnsEmpty()
+    {
+        IObject note = new Note { Id = "https://a.domain.local/ap/v1/u/alice/notes/n1" };
+        Assert.Empty(note.GetRichAttachments());
+    }
+
+    [Fact]
+    public void GetRichAttachments_Null_ReturnsEmpty()
+    {
+        IObject? none = null;
+        Assert.Empty(none.GetRichAttachments());
+    }
+
+    // --- GetPublicKeyIri (F-25) -------------------------------------------------------------
+
+    [Fact]
+    public void GetPublicKeyIri_WithPublicKeyId_ReturnsKeyId()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "https://a.domain.local/ap/v1/u/alice#key-1",
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                publicKeyPem = "-----BEGIN PUBLIC KEY-----",
+            }),
+        };
+
+        var keyIri = actor.GetPublicKeyIri();
+
+        Assert.NotNull(keyIri);
+        string expected = "https://a.domain.local/ap/v1/u/alice#key-1";
+        Assert.Equal(expected, keyIri!.ToString());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_WithJwkPublicKey_ReturnsKeyId()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "https://a.domain.local/ap/v1/u/alice#main-key",
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                kty = "RSA",
+                n = "abc123",
+                e = "AQAB",
+            }),
+        };
+
+        var keyIri = actor.GetPublicKeyIri();
+
+        Assert.NotNull(keyIri);
+        string expected = "https://a.domain.local/ap/v1/u/alice#main-key";
+        Assert.Equal(expected, keyIri!.ToString());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_NoPublicKey_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_PublicKeyWithoutId_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                owner = "https://a.domain.local/ap/v1/u/alice",
+                publicKeyPem = "-----BEGIN PUBLIC KEY-----",
+            }),
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_PublicKeyWithEmptyId_ReturnsNull()
+    {
+        var actor = new Person
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice",
+            PreferredUsername = "alice",
+        };
+        actor.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publicKey"] = JsonSerializer.SerializeToElement(new
+            {
+                id = "",
+            }),
+        };
+
+        Assert.Null(actor.GetPublicKeyIri());
+    }
+
+    [Fact]
+    public void GetPublicKeyIri_NullActor_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetPublicKeyIri());
+    }
+
+    // --- GetPublishedTime (F-11, Article-specific) ---------------------------------------------
+
+    [Fact]
+    public void GetPublishedTime_WithPublishedTime_ReturnsParsedDate()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement("2026-01-15T10:30:00Z"),
+        };
+
+        var result = article.GetPublishedTime();
+
+        Assert.NotNull(result);
+        Assert.Equal(new DateTime(2026, 1, 15, 10, 30, 0, DateTimeKind.Utc), result!.Value);
+    }
+
+    [Fact]
+    public void GetPublishedTime_NoPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_InvalidPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement("not-a-date"),
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_NullObject_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetPublishedTime());
+    }
+
+    [Fact]
+    public void GetPublishedTime_NonStringPublishedTime_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["publishedTime"] = JsonSerializer.SerializeToElement(42),
+        };
+
+        Assert.Null(article.GetPublishedTime());
+    }
+
+    // --- GetInLanguage (F-11, Article-specific) -------------------------------------------------
+
+    [Fact]
+    public void GetInLanguage_WithInLanguage_ReturnsTag()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement("fr-CA"),
+        };
+
+        Assert.Equal("fr-CA", article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NoInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+
+        Assert.Null(article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_EmptyInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement("   "),
+        };
+
+        Assert.Null(article.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NullObject_ReturnsNull()
+    {
+        IObject? none = null;
+        Assert.Null(none.GetInLanguage());
+    }
+
+    [Fact]
+    public void GetInLanguage_NonStringInLanguage_ReturnsNull()
+    {
+        var article = new Article
+        {
+            Id = "https://a.domain.local/ap/v1/u/alice/articles/1",
+        };
+        article.ExtensionData = new Dictionary<string, JsonElement>
+        {
+            ["inLanguage"] = JsonSerializer.SerializeToElement(42),
+        };
+
+        Assert.Null(article.GetInLanguage());
     }
 }

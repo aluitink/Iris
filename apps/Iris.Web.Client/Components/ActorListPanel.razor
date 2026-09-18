@@ -1,0 +1,321 @@
+@using Iris.Client
+@using Iris.Client.Collections
+@using Iris.Core
+@using Iris.Web.Client.Ui
+@using KristofferStrube.ActivityStreams
+
+@if (CollectionIri is not null)
+{
+    <div class="card actor-list-panel">
+        @if (!string.IsNullOrEmpty(Title))
+        {
+            <h2>@Title</h2>
+        }
+        @if (LoadError is not null)
+        {
+            <div class="error" role="alert">@LoadError</div>
+        }
+        @if (Items is null)
+        {
+            @if (LoadError is null)
+            {
+                <div class="card-loading">
+                    <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                        <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                    </svg>
+                    <span class="muted">Loading…</span>
+                </div>
+            }
+        }
+        else
+        {
+            @if (Items.Count == 0)
+            {
+                <div class="empty-state empty-state--compact">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                        <circle cx="9" cy="7" r="4" />
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                    </svg>
+                    <p>@(string.IsNullOrEmpty(EmptyMessage) ? "No actors." : EmptyMessage)</p>
+                </div>
+            }
+            else
+            {
+                <div class="actor-list-grid">
+                    @foreach (var entry in Items)
+                    {
+                        <ActorCard Actor="@entry.Doc" ActorId="@entry.IriValue" ShowModeration="false">
+                            <FollowButton TargetActor="@entry.Doc" />
+                        </ActorCard>
+                    }
+                </div>
+            }
+            @if (HasMore)
+            {
+                <div class="paged-collection-sentinel" @onclick="LoadMoreAsync" role="button" aria-label="Load more actors" tabindex="0"></div>
+                @if (LoadingMore)
+                {
+                    <div class="card-loading card-loading-inline">
+                        <svg class="loading-spinner" viewBox="25 25 50 50" aria-hidden="true">
+                            <circle class="loading-spinner-circle" cx="50" cy="50" r="20" fill="none" />
+                        </svg>
+                        <span class="muted">Loading…</span>
+                    </div>
+                }
+                else
+                {
+                    <button class="button button--ghost paged-collection-loadmore-fallback" @onclick="LoadMoreAsync" disabled="@LoadingMore">Load more</button>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    private sealed record ActorEntry(string IriValue, IObject? Doc);
+
+    [Inject]
+    private UiContext Ui { get; set; } = default!;
+
+    [Parameter]
+    public Iri? CollectionIri { get; set; }
+
+    [Parameter]
+    public string? Title { get; set; }
+
+    [Parameter]
+    public string? EmptyMessage { get; set; }
+
+    [Parameter]
+    public IActivityPubClient? Client { get; set; }
+
+    [Parameter]
+    public HttpClient? AnonymousHttpClient { get; set; }
+
+    private List<ActorEntry>? Items { get; set; }
+    private bool HasMore { get; set; }
+    private bool LoadingMore { get; set; }
+    private string? LoadError { get; set; }
+    private Iri? _resumeFrom;
+    private Iri? _loadedFor;
+
+    private bool HasAnyClient => Client is not null || AnonymousHttpClient is not null;
+
+    protected override void OnParametersSet()
+    {
+        if (!HasAnyClient)
+        {
+            _loadedFor = null;
+            return;
+        }
+
+        if (CollectionIri is { } iri && !iri.Equals(_loadedFor))
+        {
+            _loadedFor = iri;
+            _ = LoadInitialAsync();
+        }
+    }
+
+    private async Task LoadInitialAsync()
+    {
+        Items = null;
+        HasMore = false;
+        LoadError = null;
+        _resumeFrom = null;
+        try
+        {
+            await LoadPageAsync();
+            await HydrateAsync();
+        }
+        catch (Exception)
+        {
+            LoadError = "Failed to load. Please try again.";
+        }
+
+        if (Items is null && LoadError is null)
+        {
+            Items = [];
+        }
+
+        try
+        {
+            StateHasChanged();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (LoadingMore || !HasMore)
+        {
+            return;
+        }
+
+        LoadingMore = true;
+        LoadError = null;
+        try
+        {
+            await LoadPageAsync();
+            await HydrateAsync();
+        }
+        catch (Exception)
+        {
+            LoadError = "Failed to load more actors. Please try again.";
+        }
+        finally
+        {
+            LoadingMore = false;
+        }
+    }
+
+    private async Task LoadPageAsync()
+    {
+        if (_resumeFrom is { } resume)
+        {
+            await LoadPageInnerAsync(resume);
+            return;
+        }
+
+        if (CollectionIri is { } first)
+        {
+            await LoadPageInnerAsync(first);
+        }
+    }
+
+    private async Task LoadPageInnerAsync(Iri pageIri)
+    {
+
+        var irIs = new List<Iri>();
+
+        if (Client is { } client)
+        {
+            var query = new CollectionQuery(Limit: 10, BypassCache: false);
+            await foreach (var page in client.GetCollectionAsync(pageIri, query, CancellationToken.None))
+            {
+                foreach (var item in page.Items)
+                {
+                    if (item.ResolveObjectIri() is { } iri && IriNotYetListed(iri))
+                    {
+                        irIs.Add(iri);
+                    }
+                }
+
+                HasMore = !page.IsLastPage;
+                _resumeFrom = page.NextPage;
+                break;
+            }
+        }
+        else if (AnonymousHttpClient is { } http)
+        {
+            var url = pageIri.Value + (pageIri.Value.Contains('?') ? '&' : '?') + "limit=10";
+            using var response = await http.GetAsync(url);
+            if (!response.IsSuccessStatusCode)
+            {
+                LoadError = "Failed to load. Please try again.";
+                return;
+            }
+
+            var json = await response.Content.ReadAsStringAsync();
+            var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("items", out var itemsElement) && itemsElement.ValueKind == System.Text.Json.JsonValueKind.Array)
+            {
+                foreach (var itemElement in itemsElement.EnumerateArray())
+                {
+                    var itemJson = itemElement.GetRawText();
+                    try
+                    {
+                        var item = ActivityJson.Deserialize<IObjectOrLink>(itemJson);
+                        if (item?.ResolveObjectIri() is { } iri && IriNotYetListed(iri))
+                        {
+                            irIs.Add(iri);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            var hasMore = false;
+            Iri? nextIri = null;
+            if (doc.RootElement.TryGetProperty("next", out var nextElement))
+            {
+                var nextValue = nextElement.ValueKind == System.Text.Json.JsonValueKind.String
+                    ? nextElement.GetString()
+                    : nextElement.TryGetProperty("id", out var nextId) ? nextId.GetString() : null;
+                if (nextValue is { Length: > 0 } && Iri.TryParse(nextValue, out var parsed))
+                {
+                    hasMore = true;
+                    nextIri = parsed;
+                }
+            }
+            HasMore = hasMore;
+            _resumeFrom = nextIri;
+        }
+
+        if (irIs.Count > 0)
+        {
+            Items ??= [];
+            foreach (var iri in irIs)
+            {
+                Items.Add(new ActorEntry(iri.Value, null));
+            }
+        }
+        else if (Items is null)
+        {
+            Items = [];
+        }
+    }
+
+    private bool IriNotYetListed(Iri iri)
+    {
+        if (Items is null)
+        {
+            return true;
+        }
+
+        return Items.All(e => !string.Equals(e.IriValue, iri.Value, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task HydrateAsync()
+    {
+        if (Items is not { Count: > 0 } items)
+        {
+            return;
+        }
+
+        var pending = new List<(ActorEntry Entry, Task<IObject?> Task)>();
+        foreach (var entry in items)
+        {
+            if (entry.Doc is null)
+            {
+                pending.Add((entry, Ui.GetActorAsync(new Iri(entry.IriValue))));
+            }
+        }
+
+        if (pending.Count > 0)
+        {
+            await Task.WhenAll(pending.Select(p => p.Task));
+
+            var updated = new List<ActorEntry>(items.Count);
+            var pendingIndex = 0;
+            foreach (var entry in items)
+            {
+                if (entry.Doc is null)
+                {
+                    updated.Add(new ActorEntry(entry.IriValue, await pending[pendingIndex++].Task));
+                }
+                else
+                {
+                    updated.Add(entry);
+                }
+            }
+
+            Items = updated;
+        }
+    }
+}

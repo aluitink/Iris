@@ -184,7 +184,8 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
 
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
-        var items = doc.RootElement.GetProperty("items");
+        // 139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).
+        var items = doc.RootElement.GetProperty("orderedItems");
         Assert.Equal(JsonValueKind.Array, items.ValueKind);
         Assert.Equal(0, items.GetArrayLength());
     }
@@ -225,8 +226,9 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
         Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
 
-        // An empty feed renders an empty `items` array (and a self-referencing `first`).
-        var items = doc.RootElement.GetProperty("items");
+        // An empty feed renders an empty `orderedItems` array (and a self-referencing `first`).
+        // (139.1 F-7: the items property is `orderedItems` (the canonical AS2.0 form).)
+        var items = doc.RootElement.GetProperty("orderedItems");
         Assert.Equal(JsonValueKind.Array, items.ValueKind);
         Assert.Equal(0, items.GetArrayLength());
         Assert.True(doc.RootElement.TryGetProperty("first", out _));
@@ -250,13 +252,13 @@ public sealed class CommunityFeedIntegrationTests : IDisposable
         // first (create-3, create-2, create-1).
         for (var i = 1; i <= 3; i++)
         {
-            TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-{i}", $"alice note {i}");
+            TestSeeder.AddCreateActivity(persistence, aliceIri, $"{aliceIri.Value}/activities/create-{i}", $"alice note {i}", new[] { communityIri });
         }
 
         // bob: 2 posts, added oldest→newest so the outbox is newest first (create-2, create-1).
         for (var i = 1; i <= 2; i++)
         {
-            TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-{i}", $"bob note {i}");
+            TestSeeder.AddCreateActivity(persistence, bobIri, $"{bobIri.Value}/activities/create-{i}", $"bob note {i}", new[] { communityIri });
         }
 
         // carol: a member with no posts (empty outbox) — must contribute nothing to the feed.

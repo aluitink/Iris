@@ -1,6 +1,10 @@
 using Iris.Core;
+using Iris.Server.Media;
+using Iris.Server.Security;
 using KristofferStrube.ActivityStreams;
 using ActivityObject = KristofferStrube.ActivityStreams.Object;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Iris.Server.Inbox;
 
@@ -43,6 +47,9 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     private readonly IPersistenceProvider _persistence;
     private readonly ILocalActorResolver _localActors;
     private readonly IDeletePropagationService _propagation;
+    private readonly IMediaWarmer _mediaWarmer;
+    private readonly IOptions<ActivityPubServerOptions> _options;
+    private readonly LocalActorDocumentCache? _actorDocumentCache;
 
     /// <summary>
     /// Initializes a new <see cref="UpdateActivityHandler"/>.
@@ -51,18 +58,37 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
     /// <param name="localActors">Resolves whether the updating actor is a local actor.</param>
     /// <param name="propagation">The propagation service (schedules the <see cref="Update"/> to the
     /// author's remote followers, the federated half of F-02).</param>
-    /// <exception cref="ArgumentNullException">When any argument is null.</exception>
+    /// <param name="mediaWarmer">The media warmer (eager-warms the updated object's cross-origin media
+    /// attachments so the media proxy serves them instantly; a no-op when eager-warm is disabled).</param>
+    /// <param name="options">The server options (the instance base IRI, used to classify an attachment
+    /// as same-origin when warming).</param>
+    /// <param name="actorDocumentCache">The local actor document cache, invalidated after the stored
+    /// actor (or community) is refreshed so the public <c>GET /ap/v1/u/{handle}</c> serves the updated
+    /// document (not a stale cached copy). May be null in unit-test seams that do not exercise the
+    /// document-serving path (the invalidation is then skipped).</param>
+    /// <param name="logger">The logger (records the handler outcome). May be null.</param>
+    /// <exception cref="ArgumentNullException">When a required argument is null.</exception>
     public UpdateActivityHandler(
         IPersistenceProvider persistence,
         ILocalActorResolver localActors,
-        IDeletePropagationService propagation)
+        IDeletePropagationService propagation,
+        IMediaWarmer mediaWarmer,
+        IOptions<ActivityPubServerOptions> options,
+        LocalActorDocumentCache? actorDocumentCache = null,
+        ILogger<UpdateActivityHandler>? logger = null)
+        : base(logger)
     {
         ArgumentNullException.ThrowIfNull(persistence);
         ArgumentNullException.ThrowIfNull(localActors);
         ArgumentNullException.ThrowIfNull(propagation);
+        ArgumentNullException.ThrowIfNull(mediaWarmer);
+        ArgumentNullException.ThrowIfNull(options);
         _persistence = persistence;
         _localActors = localActors;
         _propagation = propagation;
+        _mediaWarmer = mediaWarmer;
+        _options = options;
+        _actorDocumentCache = actorDocumentCache;
     }
 
     /// <inheritdoc/>
@@ -92,9 +118,27 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
+        // An actor updating their own profile document: the embedded object is an Actor and the
+        // object IRI matches the updating actor's IRI. Refresh the stored actor (preserving publicKey
+        // and other ExtensionData the update does not carry), then propagate to remote followers.
+        if (updated is Actor updatedActor && actorIri is { } actorRef && objectIri is { } objRef && actorRef.Value == objRef.Value)
+        {
+            await HandleActorUpdateAsync(updatedActor, actorRef, activity, ct).ConfigureAwait(false);
+            return;
+        }
+
         // Refresh only an object this instance actually stores (one created by a Create, or previously
         // stored). An object with no local record is not this instance's to update.
         if (!await _persistence.Objects.TryGetObjectAsync(objectIri.Value, out var stored, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        // 136.19 (re-animation guard): if the stored object is a Tombstone (the object was deleted), an
+        // Update must not re-store the live content — a late-arriving Update for a tombstoned IRI (an edit
+        // delivered after the Delete, or a re-delivery) would otherwise overwrite the tombstone and
+        // resurrect the deleted object. The Tombstone is the authoritative final state.
+        if (stored is Tombstone)
         {
             return;
         }
@@ -113,7 +157,26 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             return;
         }
 
+        // Stamp `updated` on content objects (non-actor) so remote clients can detect edits.
+        // Actor profile updates go through HandleActorUpdateAsync which uses field-merge semantics
+        // and does not set `updated`. The `updated` timestamp is meaningful for content objects
+        // (Notes, Articles) that carry a `published` timestamp.
+        if (updated is ActivityObject contentObj && contentObj is not Actor)
+        {
+            var now = DateTime.UtcNow;
+            var published = contentObj.Published;
+            contentObj.Updated = published is { } pub && now < pub ? pub : now;
+        }
+
         await _persistence.Objects.PutObjectAsync(updated, ct).ConfigureAwait(false);
+
+        // Eager-warm the updated object's cross-origin media attachments (best-effort; a no-op when
+        // eager-warm is disabled, the object has none, or the instance base is unset). An Update that
+        // adds new attachments must re-warm them so the media proxy serves them instantly.
+        if (_options.Value.BaseUri is { } instanceBase)
+        {
+            await _mediaWarmer.WarmAsync(updated, instanceBase, ct).ConfigureAwait(false);
+        }
 
         // F-02 (federated half): propagate the Update to the author's remote followers so their copies
         // of the object are refreshed (a local refresh alone leaves remote instances serving stale
@@ -126,6 +189,121 @@ public sealed class UpdateActivityHandler : ActivityHandlerBase<Update>
             await _propagation
                 .PropagateUpdateAsync(actorIri.Value, objectIri.Value, activity, ct)
                 .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Handles an actor updating their own profile document. Refreshes the stored actor's mutable
+    /// fields (name, summary, icon, endpoints) from the embedded update, preserving the
+    /// <c>publicKey</c> and any other <c>ExtensionData</c> the update does not carry. Propagates to
+    /// remote followers when the actor is local.
+    /// </summary>
+    private async Task HandleActorUpdateAsync(Actor updated, Iri actorIri, Update activity, CancellationToken ct)
+    {
+        // Check the Actors store first (Person actors). If not found, fall back to the Communities
+        // store (Group actors / communities), which are stored separately.
+        if (await _persistence.Actors.TryGetActorAsync(actorIri, out var stored, ct).ConfigureAwait(false)
+            && stored is not null)
+        {
+            MergeActorFields(stored, updated);
+            await _persistence.Actors.PutActorAsync(stored, ct).ConfigureAwait(false);
+        }
+        else if (updated is Group updatedGroup
+                 && await _persistence.Communities.TryGetCommunityAsync(actorIri, out var community, ct).ConfigureAwait(false)
+                 && community is not null)
+        {
+            // Merge the mutable fields from the update into the stored community, preserving the
+            // publicKey and any ExtensionData entries the update does not override.
+            if (updatedGroup.Name is { } name && name.Any())
+            {
+                community.Name = name;
+            }
+
+            if (updatedGroup.Summary is { } summary && summary.Any())
+            {
+                community.Summary = summary;
+            }
+
+            // Same icon-merge semantics as <see cref="MergeActorFields"/>: non-empty sets, empty clears,
+            // missing leaves unchanged.
+            if (updatedGroup.Icon is { } icon)
+            {
+                community.Icon = icon.Any() ? icon : null;
+            }
+
+            if (updatedGroup.Endpoints is not null)
+            {
+                community.Endpoints = updatedGroup.Endpoints;
+            }
+
+            if (updatedGroup.ExtensionData is { Count: > 0 } extData)
+            {
+                community.ExtensionData ??= [];
+                foreach (var (key, value) in extData)
+                {
+                    community.ExtensionData[key] = value;
+                }
+            }
+
+            await _persistence.Communities.PutCommunityAsync(community, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            return;
+        }
+
+        // Invalidate the local actor document cache so the public GET /ap/v1/u/{handle} serves the
+        // updated document (name, summary, icon, …) rather than a stale cached copy. Without this, a
+        // profile edit (e.g. setting the actor's icon) persists to the store but the served document
+        // keeps showing the pre-edit value until the cache entry expires (60s fresh / 300s stale).
+        _actorDocumentCache?.Invalidate(actorIri);
+
+        var actorIsLocal = await _localActors.IsLocalActorAsync(actorIri, ct).ConfigureAwait(false);
+        if (actorIsLocal)
+        {
+            await _propagation
+                .PropagateUpdateAsync(actorIri, actorIri, activity, ct)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Merges the mutable fields from <paramref name="updated"/> into <paramref name="stored"/>,
+    /// preserving the <c>publicKey</c> and any <c>ExtensionData</c> entries the update does not carry.
+    /// </summary>
+    private static void MergeActorFields(Actor stored, Actor updated)
+    {
+        if (updated.Name is { } name && name.Any())
+        {
+            stored.Name = name;
+        }
+
+        if (updated.Summary is { } summary && summary.Any())
+        {
+            stored.Summary = summary;
+        }
+
+        // Icon merge semantics: a non-empty icon array sets the icon; an **empty** icon array clears it
+        // (an explicit "remove avatar"); a missing icon field (null) leaves the stored icon unchanged
+        // (a partial update that does not touch the icon). This lets the edit-profile form both set and
+        // clear the avatar via the same Update path.
+        if (updated.Icon is { } icon)
+        {
+            stored.Icon = icon.Any() ? icon : null;
+        }
+
+        if (updated.Endpoints is not null)
+        {
+            stored.Endpoints = updated.Endpoints;
+        }
+
+        if (updated.ExtensionData is { Count: > 0 } extData)
+        {
+            stored.ExtensionData ??= [];
+            foreach (var (key, value) in extData)
+            {
+                stored.ExtensionData[key] = value;
+            }
         }
     }
 

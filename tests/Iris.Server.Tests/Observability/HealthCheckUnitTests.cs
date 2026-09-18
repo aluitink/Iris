@@ -375,6 +375,7 @@ public sealed class HealthCheckUnitTests
         public Iris.Server.Stores.ICommunityStore Communities => throw new NotSupportedException();
         public IKeyStore Keys => throw new NotSupportedException();
         public Iris.Server.Stores.IMediaStore Media => throw new NotSupportedException();
+        public Iris.Server.Stores.IDislikeStore Dislikes => null!;
     }
 
     /// <summary>
@@ -394,6 +395,12 @@ public sealed class HealthCheckUnitTests
 
         public Task<IReadOnlyList<Actor>> ListActorsAsync(CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<Actor>>([]);
+
+        public Task<IReadOnlyList<Actor>> SearchActorsAsync(string? query, int limit, int offset, CancellationToken ct = default, bool localOnly = false)
+            => Task.FromResult<IReadOnlyList<Actor>>([]);
+
+        public Task<int> CountSearchMatchesAsync(string? query, CancellationToken ct = default, bool localOnly = false)
+            => Task.FromResult(0);
     }
 
     /// <summary>
