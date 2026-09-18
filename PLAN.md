@@ -102,7 +102,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **General UI/UX review** (recurring) — Use MCP Playwright to test the Iris user interface as andrew:Password1. Identify any inconsistencies or improvements to be made. Once we have a list of improvements, work on them. Once the improvements are complete this item will come up again for further refinement.
+1. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. The only console errors are the known cosmetic 401/404/418 proxy fetch errors for remote objects (documented in Phase 144). Once improvements are made, this item will come up again for further refinement.
 2. **Complete like/boost count fix (with remote fetching)** (S2, deferred) — Extend the `ObjectInteractionCountRefreshService` to fetch remote `likes`/`shares` counts for stored objects that are missing the collections. Requires adding an `IActivityPubClient` dependency + remote object fetch per object. Significant feature addition; do after the UI/UX review stabilizes.
 
 ## Inbox
