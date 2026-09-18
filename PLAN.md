@@ -98,7 +98,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **Actor/Object enrichment service** - The idea behind this is to enrich the objects we store in our system with Iris extension properties to make display in the website more efficent. For example, actors have some useful stats, we should be populating the Outbox count (posts count), followers, following, but it wouldn't make sense to do this one the first fetch of an actor, we should somehow queue up the enrichment so it happens in the background and only so often after the record is accessed again. Objects have Likes/Shares/Replies counts that should be synced to Iris extension properties in the stored document (Some properties are runtime populated like isShared, isLiked, isReplied, these are based on the accesssor context). When a user accesses an object in the UI, the object browser should be able to display the replies, likes, shares, at the time that we load the replies for display we should be recording the count of replies we found so when we view the top level object within the stream we can render the reply count. It seem to work for local posts but not the remote ones. Verify with mcp playwright that the site works and check docker logs to ensure we have traffic incoming before moving forward (some failed crypto is expected).
+- **Actor/Object enrichment service (remaining)** - Object counters (likedCount/sharedCount/repliedCount) are already enriched by Phase 151's ObjectInteractionCountRefreshService. Actor counters (postsCount/followersCount/followingCount) are now enriched by the new ActorCountRefreshService (this turn). Remaining: (1) wire the read path to prefer stored actor counters over the per-read sweep (BuildActorDocumentAsync / AddActorCountersAsync), (2) verify remote object reply counts work via MCP Playwright, (3) docker log verification of incoming federation traffic. See [change doc](docs/changes/992-actor-count-refresh-service.md).
 
 - **Mastodon interop tests server (similar to our lemmy test server)** build a Mastodon interop test server to act as a control for fidelity and feature parity testing, the fqdn mastodon.luit.ink can be used and will map to port 8092 on this server (similar to how lemmy maps to port 8091). Create the docker-compose to host a Mastodon instance - review the repository, they may have a pre-build docker-compose we could use and a setup guide to help. Use mcp playwright to configure and manage the site, create a mock user and see evaluate following and interacting with Iris users, note any issues in this Up Next section and continue testing until you are satisfied. Complete this phase to move on to the next item.
 
@@ -113,6 +113,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 - *(empty)*
 
 ## Recently Completed
+
+- Actor count background enrichment: ActorCountRefreshService pre-computes postsCount/followersCount/followingCount onto stored actors (12 tests). [change doc](docs/changes/992-actor-count-refresh-service.md)
 
 
   ## Keeping the docs lean
