@@ -168,6 +168,16 @@ comprehensive clock-skew testing, not as part of the Phase 139 review.
 **CONFIRMED — current behavior matches Phase 136.18's documented gaps. Decision: defer (S1 privacy
 issue, tracked as a high-priority follow-up).**
 
+**UPDATE (2026-09-18): the read-path gap is closed for the two highest-impact surfaces.** A
+`VisibilityFilter` (audience/visibility predicate: public = `as:Public` sentinel or no audience;
+non-public = visible only to a named recipient) was added and wired into **`GET /ap/v1/public/feed`**
+and **`GET /ap/v1/search`** — an anonymous / unsigned request now sees public content only, and a
+signed request additionally sees the non-public items addressed to it. The search total reflects only
+visible content. +16 tests. **Still deferred:** the follow feed (owner-scoped by construction), the
+object-document endpoint (a larger design decision that interacts with federation), and the
+federation visibility policy (suppress vs. store-with-marker on receipt). See
+[changes/1392-5-audience-visibility-filter.md](../changes/1392-5-audience-visibility-filter.md).
+
 **Current behavior (confirmed):**
 - `CrossInstanceVisibilityIntegrationTests` (4 tests) all pass, confirming:
   - `DirectPost_StoredInOutbox_VisibleInPublicFeed_CurrentGap`: a DM post (`to=[bob]`, no
