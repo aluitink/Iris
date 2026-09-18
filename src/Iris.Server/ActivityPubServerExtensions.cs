@@ -6951,7 +6951,25 @@ public static class ActivityPubServerExtensions
             return await ObjectSharesAsync(context, parentPath, persistence, normalized, ct).ConfigureAwait(false);
         }
 
-        var objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
+        // 139.3-s6 F2: an explicit ?iri= query parameter overrides the path-based reconstruction. The
+        // catch-all otherwise reconstructs the lookup IRI as base + route prefix + path (a LOCAL IRI), so
+        // a stored FOREIGN object (e.g. https://lemmy.luit.ink/post/1) is unreachable by path — its IRI's
+        // host is not this instance's, so the local-IRI lookup misses. A peer (or the raw inspector) that
+        // wants a stored foreign object by its exact IRI passes it via ?iri= (the UI's /object?iri= page
+        // already uses this for the user-facing case); the lookup then uses the full foreign IRI directly.
+        // When ?iri= is absent the existing path-based behavior is preserved.
+        Iri objectIri;
+        var iriParam = context.Request.Query["iri"].ToString();
+        if (!string.IsNullOrWhiteSpace(iriParam)
+            && Iri.TryParse(iriParam, out var explicitIri)
+            && explicitIri.IsAbsolute)
+        {
+            objectIri = explicitIri;
+        }
+        else
+        {
+            objectIri = new Iri($"{normalized}{ActivityPubServerConstants.RoutePrefix}/{path}");
+        }
 
         // A content object (a Note, a Link, an embedded object) is in the Objects store. A minted
         // ACTIVITY id (a Follow/Block/Flag/Like/Create the outbox publish minted, e.g.
