@@ -274,7 +274,7 @@ public static class ActivityPubServerExtensions
             // TEMP(157): wrap the key-resolution pipeline in a logging handler to capture the exact
             // outbound status + body for the bootstrap investigation. REMOVE after diagnosis.
             var _logHandler = new ResponseLogHandler(
-                new HttpClientHandler(),
+                ServerOutboundTransport.Create(),
                 sp.GetService<ILogger<RemoteInboundKeyResolver>>());
             return new IrisActorDocumentFetcher(
                 factory.Create(clientOptions, _logHandler),
@@ -306,7 +306,7 @@ public static class ActivityPubServerExtensions
                             Actors: sp.GetRequiredService<Iris.Client.Caching.ActorCache>(),
                             CollectionPages: sp.GetRequiredService<Iris.Client.Collections.CollectionPageCache>()),
                     },
-                    new HttpClientHandler()));
+                    ServerOutboundTransport.Create()));
         }
 
         // Outbound remote-collection fetch (Phase 4): fetches a single page of a remote actor's
@@ -336,7 +336,7 @@ public static class ActivityPubServerExtensions
             };
 
             var collectionPages = sp.GetRequiredService<CollectionPageCache>();
-            return new IrisRemoteCollectionFetcher(factory.Create(clientOptions, new HttpClientHandler()), collectionPages);
+            return new IrisRemoteCollectionFetcher(factory.Create(clientOptions, ServerOutboundTransport.Create()), collectionPages);
         });
 
         // Media proxy (Phase 20.4 (d)): the unsigned outbound media fetch (DefaultMediaFetcher wraps a
@@ -490,7 +490,9 @@ public static class ActivityPubServerExtensions
                         // Bound each remote fetch so a slow/unreachable member cannot stall the feed.
                         HttpClientTimeout = TimeSpan.FromSeconds(5),
                     },
-                    new HttpClientHandler());
+                    // 139.3-s6 F1: bound the connection phase (SocketsHttpHandler.ConnectTimeout) so an
+                    // unreachable peer (TCP accepted, TLS stalls) cannot hang the dial for ~60–70 s.
+                    ServerOutboundTransport.Create());
             }
 
             return new CommunityFeedService(persistence, persistence.Communities, localActors, actorDocs, client, options, serverOptions.BaseUri);
@@ -550,7 +552,7 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IPersistenceProvider>(),
                 sp.GetRequiredService<ILocalActorResolver>(),
                 sp.GetRequiredService<IActorDocumentFetcher>(),
-                factory.Create(clientOptions, new HttpClientHandler()),
+                factory.Create(clientOptions, ServerOutboundTransport.Create()),
                 sp.GetRequiredService<IOptions<FeedOptions>>(),
                 // F-07 (apply the block edge): a follow the actor has blocked is excluded from its feed.
                 sp.GetRequiredService<IPersistenceProvider>().Moderation);
@@ -596,7 +598,9 @@ public static class ActivityPubServerExtensions
                 sp.GetRequiredService<IPersistenceProvider>().Moderation,
                 sp.GetRequiredService<ILogger<DeliveryService>>(),
                 sp.GetRequiredService<Iris.Server.Observability.IrisDeliveryMetrics>()));
-        services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => new HttpClientHandler());
+        // 139.3-s6 F1: bound the connection phase of outbound delivery dials (an unreachable recipient
+        // must not stall the delivery worker's 35 s default ConnectTimeout).
+        services.TryAddSingleton<Func<HttpMessageHandler>>(_ => () => ServerOutboundTransport.Create());
 
         // F-22 delivery retry / dead-letter: the retry policy (MaxAttempts=5, BaseDelay=1s, MaxDelay=60s;
         // a host may rebind DeliveryRetryOptions to tune the retry budget) and the dead-letter store
