@@ -102,9 +102,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **139.3 Data lifecycle & persistence review: Scenario 1 — Cold-start durability** — Restart the Postgres-backed stack; confirm all content, follows, and settings survive. Evidence: before/after row counts.
-2. **139.3 Data lifecycle & persistence review: Scenario 2 — Cache-vs-store consistency** — For every cached read path (feed, collection pages, actor documents), confirm `?refresh=true`/cache-bypass returns store-fresh data. Evidence: before/after diff.
-3. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
+1. **139.3 Data lifecycle & persistence review: Scenario 2 — Cache-vs-store consistency** — For every cached read path (feed, collection pages, actor documents), confirm `?refresh=true`/cache-bypass returns store-fresh data. Evidence: before/after diff.
+2. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
 
@@ -116,6 +115,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- 139.3 Data lifecycle & persistence review: Cold-start durability (scenario 1) — Restarted Postgres + app containers; all 9 tables delta=0 (Actors 2087, Objects 8504, Edges 11176, etc.). Media volume (5202 blobs) + DP keys volume survived; andrew session + home feed render intact. No data loss. [change doc](docs/changes/1393-1-cold-start-durability.md)
 - 139.5 Performance review: Circuit breaker / retry cost under a flapping peer (scenario 10) — Verified circuit breaker (Phase 17.3) correctly isolates flapping peers: 17 tests passing (5 integration, 12 unit). Unrelated peers unaffected. No action needed. [change doc](docs/changes/1395-10-circuit-breaker-flapping-peer.md)
 - 139.5 Performance review: Media proxy overhead (scenario 8) — Measured media proxy latency: 0-1 ms (cached), 7 ms (uncached, 72 KB transfer). Overhead is minimal and acceptable. No action needed. [change doc](docs/changes/1395-8-media-proxy-overhead.md)
 - 139.5 Performance review: Search performance (scenario 9) — Measured search latency: 124-328 ms (4 searches, 10-78 results). Consistent with Phase 61.2 baseline (tsvector + GIN index). No action needed. [change doc](docs/changes/1395-9-search-performance.md)

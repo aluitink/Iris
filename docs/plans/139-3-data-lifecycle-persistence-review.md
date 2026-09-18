@@ -29,11 +29,11 @@ doc.
 
 ## Progress tracking
 
-- [ ] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [ ] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** none started yet — begin at scenario 1.
+**Resume checkpoint:** scenario 1 (cold-start durability) done — all 9 tables delta=0 after Postgres + app restart. Next: scenario 2 (cache-vs-store consistency).
