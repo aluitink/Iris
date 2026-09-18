@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+
 namespace Iris.Core.Caching;
 
 /// <summary>
@@ -21,15 +23,30 @@ public sealed class CachingReadThrough<TValue>
     private readonly ICache<TValue> _cache;
     private readonly ICacheMetrics _metrics;
 
+    // Negative cache: keys whose factory most recently returned null (absent — e.g. a remote actor
+    // document that 404s), mapped to the UTC time the absence was observed. While the entry is within
+    // <see cref="_negativeTtl"/>, a lookup returns null WITHOUT invoking the factory. This bounds the
+    // cost of an unresolvable key to ONE fetch per TTL window instead of one per lookup, which is what
+    // turned a peer delivering from an unresolvable actor into an unbounded outbound-fetch storm
+    // (each rejection -> peer retry -> another fetch -> another rejection; the HttpClient connection
+    // pool + thread pool saturated at ~300% CPU). A key that later becomes resolvable still resolves:
+    // the negative entry expires after <see cref="_negativeTtl"/> and <see cref="Invalidate"/> clears it.
+    private readonly ConcurrentDictionary<Iri, DateTime> _negative = new();
+    private readonly TimeSpan _negativeTtl;
+
     /// <summary>
     /// Initializes a new <see cref="CachingReadThrough{TValue}"/>.
     /// </summary>
     /// <param name="cache">The underlying store (its <see cref="ICache{TValue}.Policy"/> governs TTL / staleness).</param>
     /// <param name="metrics">Optional hit/miss counters. Defaults to <see cref="NullCacheMetrics"/> (no-op).</param>
-    public CachingReadThrough(ICache<TValue> cache, ICacheMetrics? metrics = null)
+    /// <param name="negativeTtl">How long an "absent" (null factory) result is remembered before the
+    /// factory is retried. Defaults to 60s. Set to <see cref="TimeSpan.Zero"/> to disable negative
+    /// caching (the prior always-retry behavior).</param>
+    public CachingReadThrough(ICache<TValue> cache, ICacheMetrics? metrics = null, TimeSpan? negativeTtl = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _metrics = metrics ?? NullCacheMetrics.Instance;
+        _negativeTtl = negativeTtl ?? TimeSpan.FromSeconds(60);
     }
 
     /// <summary>
@@ -52,7 +69,11 @@ public sealed class CachingReadThrough<TValue>
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <returns><see langword="true"/> when an entry was removed.</returns>
-    public bool Invalidate(Iri key) => _cache.Invalidate(key);
+    public bool Invalidate(Iri key)
+    {
+        _negative.TryRemove(key, out _);
+        return _cache.Invalidate(key);
+    }
 
     /// <summary>
     /// Removes all entries from the underlying cache (test isolation / teardown).
@@ -64,6 +85,8 @@ public sealed class CachingReadThrough<TValue>
         {
             memoryCache.Clear();
         }
+
+        _negative.Clear();
     }
 
     /// <summary>
@@ -89,6 +112,17 @@ public sealed class CachingReadThrough<TValue>
         if (!bypassCache)
         {
             var nowUtc = DateTime.UtcNow;
+
+            // A recently-observed absence short-circuits to null without invoking the factory, so an
+            // unresolvable key costs one fetch per _negativeTtl window rather than one per lookup.
+            if (_negativeTtl > TimeSpan.Zero
+                && _negative.TryGetValue(key, out var absentAt)
+                && nowUtc - absentAt < _negativeTtl)
+            {
+                _metrics.RecordHit();
+                return (null, false, true);
+            }
+
             if (_cache.TryGetEntry(key, nowUtc) is { } existing)
             {
                 var value = existing.Entry.Value;
@@ -104,6 +138,11 @@ public sealed class CachingReadThrough<TValue>
                 if (refreshed is not null)
                 {
                     _cache.Put(key, refreshed, DateTime.UtcNow);
+                    _negative.TryRemove(key, out _);
+                }
+                else
+                {
+                    RecordAbsent(key, DateTime.UtcNow);
                 }
 
                 return (value, true, true);
@@ -115,8 +154,21 @@ public sealed class CachingReadThrough<TValue>
         if (fetched is not null)
         {
             _cache.Put(key, fetched, DateTime.UtcNow);
+            _negative.TryRemove(key, out _);
+        }
+        else
+        {
+            RecordAbsent(key, DateTime.UtcNow);
         }
 
         return (fetched, false, false);
+    }
+
+    private void RecordAbsent(Iri key, DateTime nowUtc)
+    {
+        if (_negativeTtl > TimeSpan.Zero)
+        {
+            _negative[key] = nowUtc;
+        }
     }
 }
