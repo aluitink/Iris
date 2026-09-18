@@ -102,7 +102,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
+1. **139.3 Data lifecycle & persistence review: Scenario 3 — Backup/restore round-trip** — Run `scripts/backup-iris.sh` then `scripts/restore-iris.sh` against a populated instance. Confirm restored instance matches pre-backup state. Evidence: script output + row-count diff.
+2. **139.3 Data lifecycle & persistence review: Scenario 4 — Tombstone permanence vs. mod-removal reversibility** — Delete a post (author) and separately remove one (moderator, where the concept exists); confirm the author-delete is permanent and a reversible removal isn't over-tombstoned. Evidence: DB state dump.
+3. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
 
