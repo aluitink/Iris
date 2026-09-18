@@ -144,7 +144,8 @@ public sealed class GracefulShutdownDrainTests
     /// <see cref="DeliveryWorker.DeliveryWorker(IDeliveryQueue, IActivityPubClientFactory,
     /// Func{HttpMessageHandler}, IOptions{ActivityPubServerOptions}, ILogger{DeliveryWorker},
     /// DeliveryRetryOptions, IDeliveryDeadLetterStore, int, IDeliveryRateLimiter, IConfiguration,
-    /// IDeliveryCircuitBreaker, Iris.Server.Observability.IFederationTraceCollector)"/> constructor
+    /// IDeliveryCircuitBreaker, Iris.Server.Observability.IrisDeliveryMetrics,
+    /// Iris.Server.Observability.IFederationTraceCollector)"/> constructor
     /// that takes <c>IConfiguration</c>).
     /// <paramref name="drainTimeoutMs"/> of <c>null</c> leaves the config key unset (the default
     /// budget applies). The worker is started/stopped directly by the test (its
@@ -186,8 +187,9 @@ public sealed class GracefulShutdownDrainTests
             deadLetter,
             maxConcurrentDeliveries: 1,
             rateLimiter: null,
-            config,
+            configuration: config,
             circuitBreaker: null,
+            metrics: null,
             trace: null);
 
         return (worker, queue, deadLetter);
