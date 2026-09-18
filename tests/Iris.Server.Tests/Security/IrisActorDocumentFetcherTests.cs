@@ -56,7 +56,7 @@ public class IrisActorDocumentFetcherTests
     }
 
     [Fact]
-    public async Task GetActor_Absent_IsNotCached()
+    public async Task GetActor_Absent_NegativelyCached()
     {
         var client = new StubActivityPubClient(null); // the remote actor does not exist
         var cache = new RemoteActorCache();
@@ -66,10 +66,10 @@ public class IrisActorDocumentFetcherTests
         var first = await sut.GetActorAsync(actorIri);
         var second = await sut.GetActorAsync(actorIri);
 
-        // Absent results are never cached, so the second call retries the fetch.
+        // Absent results are negatively cached: the second call does NOT re-fetch.
         Assert.Null(first);
         Assert.Null(second);
-        Assert.Equal(2, client.GetObjectCalls);
+        Assert.Equal(1, client.GetObjectCalls);
         Assert.Equal(0, cache.Count);
     }
 

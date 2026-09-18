@@ -49,7 +49,7 @@ public class WebFingerAccountResolverTests
     }
 
     [Fact]
-    public async Task Resolve_Absent_IsNotCached()
+    public async Task Resolve_Absent_NegativelyCached()
     {
         var webFinger = new StubWebFingerResolver(null); // the account does not resolve (404 / no self link)
         var cache = new WebFingerCache();
@@ -58,10 +58,10 @@ public class WebFingerAccountResolverTests
         var first = await sut.ResolveAsync($"nobody@{BHost}");
         var second = await sut.ResolveAsync($"nobody@{BHost}");
 
-        // Absent results are never cached, so the second call retries the resolution.
+        // Absent results are negatively cached: the second call does NOT re-resolve.
         Assert.Null(first);
         Assert.Null(second);
-        Assert.Equal(2, webFinger.ResolveCalls);
+        Assert.Equal(1, webFinger.ResolveCalls);
         Assert.Equal(0, cache.Count);
     }
 

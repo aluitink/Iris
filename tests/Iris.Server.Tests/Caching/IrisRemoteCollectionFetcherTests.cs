@@ -57,7 +57,7 @@ public sealed class IrisRemoteCollectionFetcherTests
     }
 
     [Fact]
-    public async Task GetPage_Absent_IsNotCached()
+    public async Task GetPage_Absent_NegativelyCached()
     {
         var client = new StubCollectionClient(null); // the remote page does not exist (404)
         var cache = new CollectionPageCache();
@@ -67,17 +67,17 @@ public sealed class IrisRemoteCollectionFetcherTests
         var first = await sut.GetCollectionPageAsync(pageIri);
         var second = await sut.GetCollectionPageAsync(pageIri);
 
-        // Absent results are never cached, so the second call retries the fetch.
+        // Absent results are negatively cached: the second call does NOT re-fetch.
         Assert.Null(first);
         Assert.Null(second);
-        Assert.Equal(2, client.SendCalls);
+        Assert.Equal(1, client.SendCalls);
         Assert.Equal(0, cache.Count);
     }
 
     [Fact]
-    public async Task GetPage_NotAPage_IsNotCached()
+    public async Task GetPage_NotAPage_NegativelyCached()
     {
-        // A plain collection IRI returns an OrderedCollection (not a page) → null, not cached.
+        // A plain collection IRI returns an OrderedCollection (not a page) → null, negatively cached.
         var client = new StubCollectionClient(CollectionDoc());
         var cache = new CollectionPageCache();
         var sut = new IrisRemoteCollectionFetcher(client, cache);
@@ -88,7 +88,7 @@ public sealed class IrisRemoteCollectionFetcherTests
 
         Assert.Null(first);
         Assert.Null(second);
-        Assert.Equal(2, client.SendCalls);
+        Assert.Equal(1, client.SendCalls);
         Assert.Equal(0, cache.Count);
     }
 

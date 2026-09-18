@@ -100,7 +100,7 @@ public class ClientCacheTests
     }
 
     [Fact]
-    public async Task WebFingerCache_Unresolvable_NotCached()
+    public async Task WebFingerCache_Unresolvable_NegativelyCached()
     {
         var cache = new WebFingerCache();
         var account = new Iri("acct:nobody@b.domain.local");
@@ -117,10 +117,10 @@ public class ClientCacheTests
         Assert.Null(value);
         Assert.Equal(1, calls);
 
-        // Retry (not memoized).
+        // Negatively cached: second lookup does NOT invoke the factory.
         var (value2, _) = await cache.GetAsync(account, bypassCache: false, Factory);
         Assert.Null(value2);
-        Assert.Equal(2, calls);
+        Assert.Equal(1, calls);
     }
 
     [Fact]

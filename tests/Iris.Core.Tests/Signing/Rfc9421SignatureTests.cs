@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Iris.Core;
 using Iris.Core.Identity;
 

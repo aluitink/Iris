@@ -125,7 +125,7 @@ public class CacheMetricsTests
     }
 
     [Fact]
-    public async Task CachingReadThrough_NullFactoryResult_RecordsMissAndDoesNotCache()
+    public async Task CachingReadThrough_NullFactoryResult_NegativelyCached()
     {
         var metrics = new CacheMetrics();
         var sut = new CachingReadThrough<string>(new MemoryCache<string>(CachePolicy.Actor), metrics);
@@ -133,8 +133,9 @@ public class CacheMetricsTests
         await sut.GetAsync(Key("a"), bypassCache: false, _ => Task.FromResult<string?>(null));
         await sut.GetAsync(Key("a"), bypassCache: false, _ => Task.FromResult<string?>(null));
 
-        Assert.Equal(0, metrics.Hits);
-        Assert.Equal(2, metrics.Misses);
+        // First: miss (factory called). Second: negative-cache hit (factory NOT called).
+        Assert.Equal(1, metrics.Hits);
+        Assert.Equal(1, metrics.Misses);
         Assert.Equal(0, sut.Count);
     }
 
