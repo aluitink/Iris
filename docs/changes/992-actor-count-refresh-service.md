@@ -63,6 +63,11 @@ Added `src/Iris.Server/AssemblyInfo.cs` with `[assembly: InternalsVisibleTo("Iri
 
 4. **`EnableActorCountRefresh` option (default `true`):** Added to `ActivityPubServerOptions`. When `false`, the `ActorCountRefreshService` is inert (its `ExecuteAsync` returns immediately). Test fixtures set this to `false` via `ActivityPubHostOptions.EnableActorCountRefresh` (default `false` in the test harness) so the startup pass does not write stale zero counts to actors seeded before the host starts.
 
+## Live verification (2026-09-18)
+
+- **Remote object reply counts (Playwright):** Navigated to a remote object detail page (`/object?iri=...xoxo.zone...`). The interaction counts (Like 0 / Boost 1 / Reply 0) render correctly; the Replies tab shows "No replies yet" (correct — no Iris user has replied); the Shares tab shows the boost count (1). No console errors.
+- **Docker log federation traffic:** `docker compose logs iris-web` shows incoming federation: `RemoteActorPersister` refreshing cached remote actors, `RemoteInboundKeyResolver` resolving keys, `HttpSignatureValidator` validating incoming signatures, and `Inbox` processing/rejecting activities (rejections are expected when the remote actor document is unreachable).
+
 ## Files changed
 
 - `src/Iris.Server/Stores/ActorCountRefreshService.cs` (new, 250 lines)
