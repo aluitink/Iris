@@ -98,9 +98,10 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **Mastodon interop tests server (in progress)** Docker scaffold committed. Instance API + WebFinger + ActivityPub actor all respond. Test user `mstest` (pw: `Password1`) created via direct SQL. **VERIFIED END-TO-END:** Iris user `mastodtest` followed `mstest@mastodon.luit.ink` → Follow delivered to Mastodon's inbox → Mastodon followers collection shows `totalItems: 1` → Mastodon sent Accept back → Iris processed the Accept. **Bug found + fixed:** (1) `DefaultLocalActorResolver` classified cached remote actors as local, (2) delivery metrics `delivered` counter not wired into the production `DeliveryWorker` constructor — both fixed in [change doc](docs/changes/993-local-actor-resolver-fix.md). **Networking fix:** added HTTPS (self-signed cert) to the Mastodon proxy on port 443; added hosts entry + CA trust in the Iris container. **Metrics verified:** `iris_delivery_delivered_total` now increments correctly (3/3 delivered: Follow, Undo, Create). **Reverse follow VERIFIED:** Used `rails runner` + `FollowService` to make `mstest` follow `mastodtest` (had to generate keys + set AP URIs on the SQL-created account). Follow delivered to Iris inbox → `FollowActivityHandler` processed → `mastodtest`'s followers on Iris shows `totalItems: 1`. **Post test VERIFIED:** `mastodtest` posted "Reverse follow verified..." → Create delivered → post appeared in Mastodon's `statuses` table (account_id=117290217141115163). **Full interop verified:** Iris→Mastodon (follow + post) and Mastodon→Iris (follow). **Next:** commit interop test results.
-
-- **When out of things to do - general UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
+1. **UI/UX: Fix like/boost count display** (S2) — All posts in the home timeline show "0" for likes and boosts. The counts are likely not being fetched from the remote objects or the stored values are not being read. Investigate whether the enrichment service is populating like/boost counts for remote objects, and ensure the UI displays the correct values.
+2. **UI/UX: Improve failed-proxy post fallback** (S3) — When a remote post's content cannot be fetched (404/418), the UI shows "View boosted post →". Change the fallback text to be more descriptive, e.g. "Content unavailable — view original post" so users understand why the content is missing.
+3. **UI/UX: Add pagination to notifications page** (S3) — The notifications page loads all notifications in a single scrollable list. Add pagination or infinite scroll to prevent performance issues for users with many notifications.
+4. **General UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
 
 ## Inbox
 
@@ -112,6 +113,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- Mastodon interop: full Iris↔Mastodon federation verified (follow + post both directions). Fixed 2 bugs: local-actor-resolver misclassification + delivery metrics not wired into production worker. [change doc](docs/changes/993-local-actor-resolver-fix.md)
 - Enrichment service closeout: verified remote object reply counts via Playwright + docker log federation traffic; actor + object counters fully wired. [change doc](docs/changes/992-actor-count-refresh-service.md)
 - Actor count read-path wiring: BuildActorDocumentAsync / AddActorCountersAsync / EnrichActorSearchResultsAsync prefer stored actor counters over the live outbox/follow sweep (1330 tests green). [change doc](docs/changes/992-actor-count-refresh-service.md)
 
