@@ -48,8 +48,21 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
   deleted a note as andrew; object → `Tombstone`/`formerType=Note`/no `iris:removedBy`; IRI still
   resolves to the marker; UI renders "Note post deleted"; re-animation guard covered by passing 136.19
   integration tests). **Mod-removal FINDING:** a mod-removal is **over-tombstoned** (same `Tombstone`
-  as an author delete, differing only by the `iris:removedBy` display marker) — there is **no**
-  restoration path, contrary to the 138.23 "may be restorable" note. Logged as a doc-vs-behavior gap;
-  no code change (review slice). [change doc](../changes/1393-4-tombstone-permanence-vs-mod-removal.md)
+   as an author delete, differing only by the `iris:removedBy` display marker) — there is **no**
+   restoration path, contrary to the 138.23 "may be restorable" note. Logged as a doc-vs-behavior gap;
+   no code change (review slice). [change doc](../changes/1393-4-tombstone-permanence-vs-mod-removal.md)
+ - Scenario 5 (federated content archival completeness): **BUG FOUND → FIXED.** A followed REMOTE
+   community (Lemmy) persisted to the durable store by the remote community persister (135.1) was
+   misrouted to its (empty) local outbox, so first-peer backfill (138.20) captured nothing. The
+   outbound client was ruled out (a focused test confirms the real Lemmy outbox shape —
+   `OrderedCollection` + inline `orderedItems`, no `first` — yields correctly). Root cause:
+   `CommunityFeedService.ReadOutboxAsync` + the `isRemote` flag treated **any** community in the
+   community store as local. Fixed (commit `d1847bc`): a host-locality gate (`IsLocalCommunity`, new
+   optional `instanceBase` ctor param wired from `ActivityPubServerOptions.BaseUri` in DI) in both
+   sites; a remote community is now fetched over the wire + backfilled. Verified live: `c/technology`
+   (follows `lemmy.world/c/technology`) 0→20 backfilled items (totalItems 50, within the 1-page
+   window); `c/owner-test-5428` (follows `lemmy.luit.ink`) 0→3; 14 lemmy.world objects persisted to
+   the local store. +regression test +Lemmy-shape client test (1306 green).
+   [change doc](../changes/1393-5-federated-content-archival-completeness.md)
 
-**Resume checkpoint:** scenarios 1–4 done. Next: scenario 5 (federated content archival completeness).
+**Resume checkpoint:** scenarios 1–5 done. Next: scenario 6 (offline rebuild).
