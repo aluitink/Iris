@@ -102,7 +102,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
+1. **139.3 Data lifecycle & persistence review: Scenario 1 — Cold-start durability** — Restart the Postgres-backed stack; confirm all content, follows, and settings survive. Evidence: before/after row counts.
+2. **139.3 Data lifecycle & persistence review: Scenario 2 — Cache-vs-store consistency** — For every cached read path (feed, collection pages, actor documents), confirm `?refresh=true`/cache-bypass returns store-fresh data. Evidence: before/after diff.
+3. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
 
