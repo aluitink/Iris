@@ -98,7 +98,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- **Actor/Object enrichment service (remaining)** - Object counters (likedCount/sharedCount/repliedCount) are already enriched by Phase 151's ObjectInteractionCountRefreshService. Actor counters (postsCount/followersCount/followingCount) are now enriched by the new ActorCountRefreshService (this turn). Remaining: (1) wire the read path to prefer stored actor counters over the per-read sweep (BuildActorDocumentAsync / AddActorCountersAsync), (2) verify remote object reply counts work via MCP Playwright, (3) docker log verification of incoming federation traffic. See [change doc](docs/changes/992-actor-count-refresh-service.md).
+- **Actor/Object enrichment service (remaining)** - Object counters (likedCount/sharedCount/repliedCount) are enriched by Phase 151's ObjectInteractionCountRefreshService. Actor counters (postsCount/followersCount/followingCount) are enriched by ActorCountRefreshService and the read path now prefers stored counters over the live sweep (BuildActorDocumentAsync / AddActorCountersAsync / EnrichActorSearchResultsAsync). Remaining: (1) verify remote object reply counts work via MCP Playwright, (2) docker log verification of incoming federation traffic. See [change doc](docs/changes/992-actor-count-refresh-service.md).
 
 - **Mastodon interop tests server (similar to our lemmy test server)** build a Mastodon interop test server to act as a control for fidelity and feature parity testing, the fqdn mastodon.luit.ink can be used and will map to port 8092 on this server (similar to how lemmy maps to port 8091). Create the docker-compose to host a Mastodon instance - review the repository, they may have a pre-build docker-compose we could use and a setup guide to help. Use mcp playwright to configure and manage the site, create a mock user and see evaluate following and interacting with Iris users, note any issues in this Up Next section and continue testing until you are satisfied. Complete this phase to move on to the next item.
 
@@ -114,6 +114,7 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- Actor count read-path wiring: BuildActorDocumentAsync / AddActorCountersAsync / EnrichActorSearchResultsAsync prefer stored actor counters over the live outbox/follow sweep (1330 tests green). [change doc](docs/changes/992-actor-count-refresh-service.md)
 - Actor count background enrichment: ActorCountRefreshService pre-computes postsCount/followersCount/followingCount onto stored actors (12 tests). [change doc](docs/changes/992-actor-count-refresh-service.md)
 
 

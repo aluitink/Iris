@@ -59,12 +59,15 @@ Added `src/Iris.Server/AssemblyInfo.cs` with `[assembly: InternalsVisibleTo("Iri
 
 2. **Separate service vs extending ObjectInteractionCountRefreshService:** A separate service keeps the responsibilities clean (object interaction counters vs actor counters) and allows independent interval tuning. The two services run concurrently on the same host.
 
-3. **Not yet wired into the read path:** The read path (`BuildActorDocumentAsync`, `AddActorCountersAsync`) still computes counts live from the stores. The stored counters are written and available for a future optimization that prefers the stored value when present (falling back to the live computation when absent). This follow-up is tracked in PLAN.md's Up Next.
+3. **Read path now prefers stored counters:** The read path (`BuildActorDocumentAsync`, `AddActorCountersAsync`, `EnrichActorSearchResultsAsync`) reads the three counters from the stored actor's `ExtensionData` when all three are present integers (written by this service). When any is absent (a fresh actor not yet refreshed, or a host that disabled the service), it falls back to the live outbox/follow-store sweep. The helper `TryReadStoredActorCounts` (and its `IObject` variant `TryReadStoredActorCountsOnDoc` for community documents) encapsulates the check.
+
+4. **`EnableActorCountRefresh` option (default `true`):** Added to `ActivityPubServerOptions`. When `false`, the `ActorCountRefreshService` is inert (its `ExecuteAsync` returns immediately). Test fixtures set this to `false` via `ActivityPubHostOptions.EnableActorCountRefresh` (default `false` in the test harness) so the startup pass does not write stale zero counts to actors seeded before the host starts.
 
 ## Files changed
 
 - `src/Iris.Server/Stores/ActorCountRefreshService.cs` (new, 250 lines)
-- `src/Iris.Server/ActivityPubServerOptions.cs` (added `ActorCountRefreshInterval`)
-- `src/Iris.Server/ActivityPubServerExtensions.cs` (DI registration)
+- `src/Iris.Server/ActivityPubServerOptions.cs` (added `ActorCountRefreshInterval`, `EnableActorCountRefresh`)
+- `src/Iris.Server/ActivityPubServerExtensions.cs` (DI registration; read-path wiring in `BuildActorDocumentAsync`, `AddActorCountersAsync`, `EnrichActorSearchResultsAsync`; helpers `TryReadStoredActorCounts`, `TryReadStoredActorCountsOnDoc`)
 - `src/Iris.Server/AssemblyInfo.cs` (new, `InternalsVisibleTo`)
+- `tests/Iris.Testing/ActivityPubHostFactory.cs` (added `EnableActorCountRefresh` option, default `false`)
 - `tests/Iris.Server.Tests/Stores/ActorCountRefreshServiceTests.cs` (new, 12 tests)
