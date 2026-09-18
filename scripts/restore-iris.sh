@@ -156,11 +156,37 @@ if $RESTORE_MEDIA; then
   MEDIA_SOURCE=$(dirname "$BACKUP_FILE")/$(basename "$BACKUP_FILE" .tar.gz)-media.tar.gz
   if [[ -f "$MEDIA_SOURCE" ]]; then
     # Extract into the named volume via a helper container.
-    docker run --rm \
-      -v iris-media-data:/media \
-      -v "$(dirname "$MEDIA_SOURCE"):/src" \
-      alpine tar -xzf "/src/$(basename "$MEDIA_SOURCE")" -C /media
-    echo "    Media restored."
+    #
+    # The compose volume is declared as `iris-media-data`, but Docker names compose
+    # volumes `<project>_<declared-name>` (e.g. irisweb_iris-media-data). Hardcoding
+    # the unprefixed name (the old behavior) extracted into a DIFFERENT (empty) volume
+    # and silently lost every media blob on restore (139.3 scenario 3 finding). Derive
+    # the real volume name from the compose project so the extract lands on the volume
+    # the app actually mounts. (The app is stopped during restore, so we cannot `docker
+    # compose exec` into it here — we resolve the volume name instead.)
+    COMPOSE_PROJECT="$(docker compose -f "$COMPOSE_FILE" config --format json 2>/dev/null \
+      | python3 -c 'import sys,json; print(json.load(sys.stdin).get("name",""))' 2>/dev/null)"
+    MEDIA_VOLUME="${COMPOSE_PROJECT}_iris-media-data"
+    if [[ -z "$COMPOSE_PROJECT" ]]; then
+      # Fallback: find the volume by its declared suffix (handles unusual project naming).
+      MEDIA_VOLUME="$(docker volume ls --format '{{.Name}}' | grep -E '(^|_)iris-media-data$' | head -1)"
+    fi
+    if [[ -z "$MEDIA_VOLUME" ]]; then
+      echo "    WARNING: could not resolve the media volume name — media NOT restored."
+    else
+      # Stream the media tarball into the helper container over stdin and extract it
+      # into the volume. The backup stores it as gzip(tar), so we gunzip the outer
+      # layer and pipe the raw tar stream in. This avoids a host bind mount of the
+      # backup directory: a `-v <host-tmp-path>:/src` bind can resolve to an EMPTY
+      # mount when the Docker daemon cannot see that host path (e.g. a sandboxed
+      # /tmp), which silently restored 0 media blobs (139.3 scenario 3 finding).
+      # Streaming over stdin works regardless of the daemon's view of the host fs.
+      gunzip -c "$MEDIA_SOURCE" | \
+        docker run --rm -i \
+          -v "${MEDIA_VOLUME}:/media" \
+          alpine tar -xf - -C /media
+      echo "    Media restored into volume '${MEDIA_VOLUME}'."
+    fi
   else
     echo "    No media tarball found — skipping."
   fi

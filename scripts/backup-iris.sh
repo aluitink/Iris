@@ -86,16 +86,28 @@ echo "    Data Protection keys: ${KEY_COUNT} key file(s)"
 
 # ---- 3. Media volume ----
 echo "[3/3] Backing up media volume..."
-# The media volume is named iris-media-data. We use docker run with a volume mount
-# to copy its contents (works whether or not the app container is running).
-MEDIA_DIR="${BACKUP_PATH}/media"
-mkdir -p "$MEDIA_DIR"
-
-# List the volume's contents (skip if empty).
-MEDIA_COUNT=$(docker run --rm -v iris-media-data:/media alpine find /media -type f 2>/dev/null | wc -l)
+# The media blobs live on the iris-media-data named volume, mounted in the app
+# container at /data/media (Iris__MediaBlobDir). We copy them OUT of the running
+# app container via `docker compose exec` + tar rather than a raw `docker run -v
+# iris-media-data:...`: the latter hardcodes the UNPREFIXED volume name, but Docker
+# names compose volumes `<project>_<name>` (e.g. irisweb_iris-media-data), so the raw
+# mount silently attaches a DIFFERENT (empty) volume and the backup captured 0 files
+# (139.3 scenario 3 finding). `docker compose exec iris-web` resolves the correct
+# container — and therefore the correct volume — regardless of the project prefix.
+# (This mirrors how the DB + Data Protection keys steps above already use
+# `docker compose exec`, not raw volume mounts.)
+# The volume root is mounted at /data/media (Iris__MediaBlobDir), and blobs live at
+# the volume ROOT as bare content-hash filenames (e.g. /data/media/<hash>). We must
+# capture the volume ROOT (tar -C /data/media .) so the restore re-creates blobs at
+# the same root. (Capturing `media` as a directory instead — tar -C /data media —
+# would prefix every path with `media/`, and a restore would drop them into a nested
+# /media/media/ that the app never reads; 139.3 scenario 3 finding.)
+MEDIA_COUNT=$(docker compose -f "$COMPOSE_FILE" exec -T iris-web \
+  sh -c 'find /data/media -type f 2>/dev/null | wc -l' 2>/dev/null || echo 0)
 if [[ "$MEDIA_COUNT" -gt 0 ]]; then
-  docker run --rm -v iris-media-data:/media -v "${BACKUP_DIR}:/backup" alpine \
-    tar -czf "/backup/${BACKUP_NAME}-media.tar.gz" -C /media .
+  docker compose -f "$COMPOSE_FILE" exec -T iris-web \
+    tar -czf - -C /data/media . \
+    > "${BACKUP_DIR}/${BACKUP_NAME}-media.tar.gz"
   echo "    Media files: ${MEDIA_COUNT} ($(du -h "${BACKUP_DIR}/${BACKUP_NAME}-media.tar.gz" | cut -f1))"
 else
   echo "    Media volume is empty — skipping."
