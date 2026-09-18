@@ -56,7 +56,7 @@ End state for this phase:
 |---|---|---|---|
 | 139.1 | Federation & interop conformance | [139-1-federation-interop-review.md](139-1-federation-interop-review.md) | done (all 12 scenarios; F-3 + F-5 + F-7 fixed; F-4/F-6/F-8 documented) |
 | 139.2 | Security & trust boundary | [139-2-security-trust-boundary-review.md](139-2-security-trust-boundary-review.md) | done (all 14 scenarios; F-9 reclassified as spec-conformant; scenarios 4/5 deferred with tracked follow-ups) |
-| 139.3 | Data lifecycle & persistence | [139-3-data-lifecycle-persistence-review.md](139-3-data-lifecycle-persistence-review.md) | skipped (superseded by Phase 140+) |
+| 139.3 | Data lifecycle & persistence | [139-3-data-lifecycle-persistence-review.md](139-3-data-lifecycle-persistence-review.md) | done (all 11 scenarios executed with evidence; several found + fixed real bugs; see the per-scenario change docs — note: this area was initially marked "skipped/superseded" but was still worked through the PLAN.md queue and is now complete) |
 | 139.4 | UI/UX & accessibility | [139-4-ui-ux-accessibility-review.md](139-4-ui-ux-accessibility-review.md) | skipped (superseded by Phase 144) |
 | 139.5 | Performance & scalability | [139-5-performance-scalability-review.md](139-5-performance-scalability-review.md) | skipped (superseded by Phase 140+) |
 | 139.6 | Moderation & governance | [139-6-moderation-governance-review.md](139-6-moderation-governance-review.md) | skipped (superseded by Phase 140+) |

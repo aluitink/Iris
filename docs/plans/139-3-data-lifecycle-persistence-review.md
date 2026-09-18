@@ -30,7 +30,7 @@ doc.
 ## Progress tracking
 
 - [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
-- [x] 8  - [x] 9  - [x] 10 - [ ] 11
+- [x] 8  - [x] 9  - [x] 10 - [x] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
@@ -110,4 +110,6 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
 
 - [x] 10 — **PASS** (verified; no defects). Seeded a larger-than-typical dataset (500-post outbox + 1,500-object search corpus) via bulk `UNNEST` inserts + the migration's `SearchVector` backfill; exercised the real EF read paths. The outbox/feed read returned all 500 items in correct newest-first order; the GIN-indexed FTS search returned the exact known hit count (100) with correct, non-overlapping pagination. Timings (the evidence note): outbox read of 500 = 137.7 ms; object search (limit 20) over 1,500 = 37.4 ms — well within the generous 30 s ceiling (bar is correctness, not raw speed). +1 test (`DataVolumeGrowthTests`). Note for 139.5: the outbox/feed read is a full load (no SQL `LIMIT`) — the path to revisit at far larger volumes. [change doc](../changes/1393-10-data-volume-growth-sanity.md)
 
-**Resume checkpoint:** scenarios 1–10 done. Next: scenario 11 (retention / right-to-deletion — delete an account and confirm the content is handled per the Phase 136.19 retention model, no orphaned references).
+- [x] 11 — **PASS** (verified; no defects in the consistent half; one wording nuance logged). Deleting a local account produces a coherent post-deletion state that matches the Phase 136.19 retention model on every path that must hold: the actor 404s, the content IRIs serve `Tombstone` documents (not 404s / not live content), object + actor search exclude the deleted account, the account row is gone (by id and username), and other actors are untouched. The model's tolerated "bounded stale artifacts" are confirmed to survive (by design): the actor's `Create` activities + outbox box items (append-only, no pruning) still embed the original notes, and the Follow / CommunityMember / Like edges that reference the actor still resolve. +1 test (`AccountDeletionRetentionTests`, shared `postgres:16-alpine` `PostgresFixture`; the deletion mirrors `AccountDeletionService.DeleteAsync` exactly). **Logged nuance (F2, no code change):** the model's "not user-visible" wording is path-specific — accurate for the object-document endpoint (which serves the Tombstone) but not strictly for the feed/edge paths (`FeedService` / `CommunityFeedService` / `EdgeStore` read the surviving rows with no tombstone filter / no actor join), so a deleted-but-followed actor's original post content can still render in a follower's home feed and the actor can still appear in follower/following + community-member lists. Logged as a future feed-rendering product decision, not a defect. [change doc](../changes/1393-11-retention-right-to-deletion.md)
+
+**Resume checkpoint:** all 11 scenarios done (139.3 complete). See the note on the phase-139 status below.
