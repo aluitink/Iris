@@ -80,9 +80,14 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
     [changes/1393-6f1-bound-outbound-connection-phase.md](../changes/1393-6f1-bound-outbound-connection-phase.md). **Finding 2:** a **foreign-IRI** remote
     object page **404s** via the object catch-all (the endpoint reconstructs the lookup IRI as
     `baseUrl + RoutePrefix + path` → a *local* IRI, so a stored `lemmy.luit.ink/post/1` is
-    unreachable by path); the UI's `/object?iri=` path already covers the user-facing case, so this is
-    a REST-addressability gap, not a UI gap. Follow-up: serve stored foreign objects by `?iri=` lookup
-    or document full-IRI addressing. [change doc](../changes/1393-6-offline-rebuild.md)
+     unreachable by path); the UI's `/object?iri=` path already covers the user-facing case, so this is
+     a REST-addressability gap, not a UI gap. **Follow-up (RESOLVED 2026-09-18):** serve stored foreign
+     objects by `?iri=` lookup — `ObjectDocumentHandler` now accepts an absolute `?iri=` query parameter
+     that overrides the path-based reconstruction (a relative/blank `?iri=` is ignored → falls back to
+     path). A stored foreign object is now served by its exact IRI via `GET /ap/v1/object?iri={iri}`;
+     local-object path lookup is unchanged. +6 integration tests. See
+     [changes/1393-6f2-foreign-iri-object-pages.md](../changes/1393-6f2-foreign-iri-object-pages.md).
+     [original change doc](../changes/1393-6-offline-rebuild.md)
 
   - Scenario 7 (duplicate/replay delivery idempotency): **PASS** (verified; +1 DB-row-count test). The
     Phase 136.17 / C-07 guard is `InboxProcessor.ProcessAsync` → `Activities.TryAddActivityAsync`
