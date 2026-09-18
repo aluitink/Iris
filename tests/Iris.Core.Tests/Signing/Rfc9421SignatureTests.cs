@@ -1,5 +1,4 @@
 using System.Security.Cryptography;
-using System.Text;
 using Iris.Core;
 using Iris.Core.Identity;
 
@@ -132,6 +131,34 @@ public class Rfc9421SignatureTests
 
         Assert.Equal("k2", parsed!.GetMember("sig2")?.KeyId);
         Assert.Null(parsed.GetMember("missing"));
+    }
+
+    [Fact]
+    public void SignatureInput_TryParse_KeyIdNotFirstParameter_Parses()
+    {
+        // Regression: FindParameter used to advance the scan only TO the terminating ';' (not past
+        // it), so IndexOf(';', ...) re-found the same ';' every iteration and the loop spun forever
+        // whenever the target parameter was not the first segment. Peers commonly emit
+        // "created=...;keyid=..." — keyid SECOND — which wedged a thread-pool thread at 100% CPU.
+        // The scan must now advance past the ';' and return the keyid.
+        var header = "sig1=(\"@method\");created=1618884473;keyid=\"https://example.com/keys/abcdefghijklmnopqrstuvwxyz0123456789\"";
+
+        var parsed = SignatureInputHeader.TryParse(header, out var result);
+
+        Assert.True(parsed);
+        Assert.Equal("https://example.com/keys/abcdefghijklmnopqrstuvwxyz0123456789", result!.Members[0].KeyId);
+    }
+
+    [Fact]
+    public void SignatureInput_TryParse_KeyIdAbsent_ReturnsNullKeyId()
+    {
+        // The loop must also terminate (not spin) when the target parameter is absent entirely.
+        var header = "sig1=(\"@method\");created=1618884473;nonce=\"abc123\"";
+
+        var parsed = SignatureInputHeader.TryParse(header, out var result);
+
+        Assert.True(parsed);
+        Assert.Null(result!.Members[0].KeyId);
     }
 
     // ====================================================================

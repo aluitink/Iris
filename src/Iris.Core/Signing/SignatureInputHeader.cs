@@ -303,6 +303,12 @@ public sealed record SignatureInputHeader(IReadOnlyList<SignatureInputMember> Me
     {
         // The parameter string starts with a leading ';' (e.g. ";created=...;keyid=\"...\"").
         // Each parameter is delimited by ';'. Walk each segment and match the name.
+        //
+        // IMPORTANT: after examining a segment, the scan MUST advance PAST the terminating ';'
+        // (to nextSemi + 1). Advancing only to nextSemi (the ';' itself) makes IndexOf(';', ...)
+        // re-find the same ';' on the next iteration and the loop never advances — an infinite
+        // spin that wedges a thread-pool thread at 100% CPU for any header where the target
+        // parameter is not the first segment (e.g. the common "created=...;keyid=..." ordering).
         var searchStart = 0;
         while (searchStart < parameters.Length)
         {
@@ -331,7 +337,7 @@ public sealed record SignatureInputHeader(IReadOnlyList<SignatureInputMember> Me
                 break;
             }
 
-            searchStart = nextSemi; // continue from the ';'
+            searchStart = nextSemi + 1; // advance PAST the ';' so the next iteration makes progress
         }
 
         return null;
