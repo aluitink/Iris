@@ -29,11 +29,20 @@ doc.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [ ] 3  - [ ] 4  - [ ] 5  - [ ] 6
+- [x] 1  - [x] 2  - [x] 3  - [ ] 4  - [ ] 5  - [ ] 6
 - [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
 `in progress` on the first checked box, `done` when all are checked (or explicitly skipped).
 
-**Resume checkpoint:** scenarios 1 (cold-start durability) + 2 (cache-vs-store consistency) done. Next: scenario 3 (backup/restore round-trip).
+**Findings:**
+- Scenario 3 (backup/restore): **FAIL → FIXED.** The media step in `scripts/backup-iris.sh` /
+  `restore-iris.sh` used a raw `docker run -v iris-media-data:...` with the **unprefixed** volume
+  name; the real compose volume is `irisweb_iris-media-data`, so the backup captured **0 of 5,204**
+  media blobs (a DR restore would have deleted all media while reporting success). Fixed (commit
+  `95d6150`): backup copies via `docker compose exec` + tar of the volume root; restore resolves the
+  real volume name from `docker compose config` and streams over stdin. Full round-trip re-verified
+  clean (DB row counts identical, 5,204 blobs restored, app healthy). [change doc](../changes/1393-3-backup-restore-roundtrip.md)
+
+**Resume checkpoint:** scenarios 1–3 done. Next: scenario 4 (tombstone permanence vs. mod-removal reversibility).

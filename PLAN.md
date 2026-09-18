@@ -102,8 +102,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **139.3 Data lifecycle & persistence review: Scenario 3 — Backup/restore round-trip** — Run `scripts/backup-iris.sh` then `scripts/restore-iris.sh` against a populated instance. Confirm restored instance matches pre-backup state. Evidence: script output + row-count diff.
-2. **139.3 Data lifecycle & persistence review: Scenario 4 — Tombstone permanence vs. mod-removal reversibility** — Delete a post (author) and separately remove one (moderator, where the concept exists); confirm the author-delete is permanent and a reversible removal isn't over-tombstoned. Evidence: DB state dump.
+1. **139.3 Data lifecycle & persistence review: Scenario 4 — Tombstone permanence vs. mod-removal reversibility** — Delete a post (author) and separately remove one (moderator, where the concept exists); confirm the author-delete is permanent and a reversible removal isn't over-tombstoned. Evidence: DB state dump.
+2. **139.3 Data lifecycle & persistence review: Scenario 5 — Federated content archival completeness** — For a peer with pre-existing history (Lemmy/Mastodon), confirm first-peer backfill captures the full available history within the configured window. Evidence: count comparison (backfilled items vs. configured window).
 3. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
@@ -116,11 +116,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Recently Completed
 
+- 139.3 Data lifecycle & persistence review: Backup/restore round-trip (scenario 3) — Found + FIXED a silent media backup/restore bug: the scripts used the unprefixed volume name (`iris-media-data` vs. the real `irisweb_iris-media-data`), so the backup captured 0 of 5,204 media blobs (a DR restore would lose all media). Fixed both scripts (backup via `compose exec`+tar of volume root; restore resolves real volume name + streams over stdin). Full round-trip re-verified: DB row counts identical, 5,204 blobs restored, app healthy. [change doc](docs/changes/1393-3-backup-restore-roundtrip.md)
 - 139.3 Data lifecycle & persistence review: Cache-vs-store consistency (scenario 2) — Verified `?refresh=true` returns store-fresh data on all cached read paths. Definitive staleness proof: actor doc plain read stale (postsCount 488) → `?refresh=true` store-fresh (489) → plain read fresh (489, written back). Outbox/community feed/members all honor the contract. 4 documented findings (feed not page-cached, outbox inline refresh check, actor?iri ignores refresh). [change doc](docs/changes/1393-2-cache-vs-store-consistency.md)
 - 139.3 Data lifecycle & persistence review: Cold-start durability (scenario 1) — Restarted Postgres + app containers; all 9 tables delta=0 (Actors 2087, Objects 8504, Edges 11176, etc.). Media volume (5202 blobs) + DP keys volume survived; andrew session + home feed render intact. No data loss. [change doc](docs/changes/1393-1-cold-start-durability.md)
 - 139.5 Performance review: Circuit breaker / retry cost under a flapping peer (scenario 10) — Verified circuit breaker (Phase 17.3) correctly isolates flapping peers: 17 tests passing (5 integration, 12 unit). Unrelated peers unaffected. No action needed. [change doc](docs/changes/1395-10-circuit-breaker-flapping-peer.md)
 - 139.5 Performance review: Media proxy overhead (scenario 8) — Measured media proxy latency: 0-1 ms (cached), 7 ms (uncached, 72 KB transfer). Overhead is minimal and acceptable. No action needed. [change doc](docs/changes/1395-8-media-proxy-overhead.md)
-- 139.5 Performance review: Search performance (scenario 9) — Measured search latency: 124-328 ms (4 searches, 10-78 results). Consistent with Phase 61.2 baseline (tsvector + GIN index). No action needed. [change doc](docs/changes/1395-9-search-performance.md)
 
 
   ## Keeping the docs lean
