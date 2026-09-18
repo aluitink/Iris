@@ -72,8 +72,12 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
     feed following an *unreachable* peer (`iris-dev2.luit.ink`, a downed dev instance — TCP accepted,
     TLS handshake stalls) is **blocked ~60–70s** before returning; `HttpClient.Timeout` (5s) bounds the
     send phase but not the connection phase (falls back to the transport's 35s `ConnectTimeout`).
-    Follow-up: bound the connection phase (`SocketsHttpHandler.ConnectTimeout`) and/or parallelize the
-    feed's per-contributor fetches with a per-fetch timeout. **Finding 2:** a **foreign-IRI** remote
+    **Follow-up (RESOLVED 2026-09-18):** bound the connection phase — added
+    `internal static ServerOutboundTransport.Create()` (a `SocketsHttpHandler` with an explicit 5 s
+    `ConnectTimeout`) and swapped all six server-side outbound registrations to it; an unreachable
+    peer now fails the dial at ~5 s instead of ~60–70 s. (Parallelizing the feed's per-contributor
+    fetches is a separate, deferred optimization.) See
+    [changes/1393-6f1-bound-outbound-connection-phase.md](../changes/1393-6f1-bound-outbound-connection-phase.md). **Finding 2:** a **foreign-IRI** remote
     object page **404s** via the object catch-all (the endpoint reconstructs the lookup IRI as
     `baseUrl + RoutePrefix + path` → a *local* IRI, so a stored `lemmy.luit.ink/post/1` is
     unreachable by path); the UI's `/object?iri=` path already covers the user-facing case, so this is
