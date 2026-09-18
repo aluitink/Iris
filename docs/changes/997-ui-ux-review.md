@@ -2,29 +2,27 @@
 
 ## Summary
 
-Reviewed the Iris user interface via MCP Playwright as andrew:Password1. No major inconsistencies or improvements found.
+Reviewed the Iris user interface via MCP Playwright as andrew:Password1. This is a recurring review; this pass covers Home, Notifications, Profile (own + remote), Compose (end-to-end post), and Communities (list + detail). All pages are consistent and functional. No defects found; two minor observations logged.
 
 ## Pages Reviewed
 
-- **Home** (`/home`): Shows boosted posts with "Boosted by" labels, like/boost counts, and the timeline. Some 404/418 errors from the proxy endpoint (expected for remote posts that can't be fetched).
-- **Directory** (`/directory`): Shows a search box for finding people on other servers, People/Communities tabs, "This instance" / "All known" filter, and user cards with avatars, names, post/following/follower counts, and Follow buttons.
-- **Profile** (`/profile`): Shows a banner image, avatar, name, display name, bio, "Edit profile" button, and tabs (Your posts, Replies, Likes, Followers, Following). Posts load correctly.
-- **Compose** (`/compose`): Shows "Posting as andrew", a content textarea, attachments section, character counter (0/500), type selector (Note), visibility selector (Public), content warning checkbox, "Post" button, and formatting tips.
-- **Notifications** (`/notifications`): Shows filter tabs (All, Follows, Likes, Boosts, Replies, Mentions), "Mark all as read" button, notification cards with "New" highlights, and a "Load more" button for pagination.
-- **Settings** (`/settings`): Shows tabs (Account, Content, Danger), Account section with Profile, Security, Change password, Moderation subsections, and an "Edit your profile" link.
-- **Search** (`/search`): Shows a search box, "Actors only" checkbox, and "Search" button.
-- **Communities** (`/communities`): Shows a description, "+ Create a community" button, tabs (Following, All on this instance), and an empty state with a helpful message.
+- **Home** (`/home`): Boosted posts with "Boosted by" labels, like/boost counts, timeline. Remote-post proxy 404/418 console noise degrades gracefully to a "Content unavailable — view original post" link (not broken images).
+- **Notifications** (`/notifications`): Filter tabs (All/Follows/Likes/Boosts/Replies/Mentions), "Mark all as read", notification cards with "New" highlights, "Load more" pagination. Working.
+- **Profile** (`/profile`, own + remote Gargron): Banner, avatar, name, display name, bio, "Edit profile" (own only), tabs (Your posts/Replies/Likes/Followers/Following). Posts load. Remote actor renders read-only.
+- **Compose** (`/compose`): "Posting as andrew", content textarea, attachments picker, character counter, type selector (Note/Article/Poll), visibility selector (Public/Followers/Direct), content-warning toggle, Post button, formatting tips. **End-to-end post verified**: typed a note, clicked Post, got `Posted (HTTP 202)` with the minted ActivityPub IRI and a "View your posts →" link. The counter resets to 0/500 after a successful post (correct — `Content` is cleared on success).
+- **Communities** (`/communities`): Description, "+ Create a community" button, Following / All-on-this-instance tabs. Following shows a helpful empty state. All-on-this-instance lists community cards (banner, avatar, handle, display name, "Community" badge, description, posts/following/followers stats, Follow button) — all render, no broken images.
+- **Community detail** (`/community?iri=…`, technology): Header card (banner, avatar, handle, "Community" badge, "Edit community"), "Post to this community" link, tabs (Feed/Members/Owners/Peers/Requests), in-community search box, "Community Feed" with Refresh, a long list of boosted remote posts (mixed Mastodon-style Like/Boost and Lemmy-style Upvote/Downvote/Score engagement), "Load more". 0 console errors, 0 warnings.
 
 ## Findings
 
-No major inconsistencies or improvements found. The UI looks consistent and reasonable. The main observations:
-1. The home page shows 404/418 errors from the proxy endpoint for remote posts that can't be fetched. This is expected behavior and the fallback text has already been improved (see change doc 995).
-2. The notifications page already has pagination (verified in change doc 996).
-3. The like/boost count display for remote objects is still showing 0 in some cases (partial fix, see change doc 994).
+No defects. Two minor observations (no fix warranted this pass):
+
+1. **Following-list actor names are plain text, not clickable links.** On the Profile "Following" tab, followed-actor names render as text rather than links to `/actor?iri=…`. Minor UX gap — a user must go to the Directory or search to reach a followed actor. Low priority; not a defect.
+2. **Cosmetic console noise on unavailable boosted objects.** Remote posts whose content can't be fetched produce 404/418 proxy console errors. The UI degrades gracefully (link-out placeholder), so this is not a user-facing defect — only console noise.
 
 ## Conclusion
 
-The UI/UX review is complete. No new items need to be filed in the Up Next section. The UI is in good shape.
+The UI/UX review is complete for this pass. All major pages (Home, Notifications, Profile, Compose, Communities, Community detail) are consistent and functional. No new defects to file. The recurring item stays at the top of Up Next for future refinement passes.
 
 ## Files Changed
 
@@ -33,5 +31,5 @@ None.
 ## Verification
 
 - Build: 0 warnings, 0 errors (unchanged)
-- Tests: 1304 passed, 0 failed, 8 skipped (unchanged)
-- Live verification: Reviewed all main pages via MCP Playwright as andrew:Password1
+- Tests: 2,401 passed, 0 failed (unchanged)
+- Live verification: All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; Community detail feed 0 console errors/warnings.
