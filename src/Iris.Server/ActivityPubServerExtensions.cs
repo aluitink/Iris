@@ -361,7 +361,10 @@ public static class ActivityPubServerExtensions
         // and propagates it to the recipient's local followers' inboxes, so a boost is visible to a
         // local follower's client). A host may add more IActivityHandler registrations
         // to extend the pipeline.
-        services.TryAddSingleton<ILocalActorResolver, DefaultLocalActorResolver>();
+        services.TryAddSingleton<ILocalActorResolver>(sp =>
+            new DefaultLocalActorResolver(
+                sp.GetRequiredService<IPersistenceProvider>(),
+                sp.GetRequiredService<IOptions<ActivityPubServerOptions>>().Value.BaseUri));
         // The activity handlers are an OPEN list: each is a distinct implementation registered under
         // the same service type (IActivityHandler), so AddSingleton (not TryAddSingleton) is required —
         // TryAddSingleton would treat the second and later registrations as duplicates of the first
