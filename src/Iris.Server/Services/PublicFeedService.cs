@@ -37,6 +37,7 @@ public sealed class PublicFeedService : IPublicFeedService
         int maxItems,
         string? query = null,
         string? activityType = null,
+        Iri? requesterIri = null,
         CancellationToken ct = default)
     {
         var actors = await _persistence.Actors.ListActorsAsync(ct).ConfigureAwait(false);
@@ -73,6 +74,14 @@ public sealed class PublicFeedService : IPublicFeedService
         {
             feed = FilterByType(feed, activityType).ToList();
         }
+
+        // Audience/visibility filter: drop non-public items (followers-only or direct) that are not
+        // addressed to the requesting actor. An anonymous / unsigned request (requesterIri null)
+        // therefore sees only public content; a signed request additionally sees the non-public
+        // items addressed to it. Filtering before the truncate means the maxItems cap applies to the
+        // visible items, so a viewer is not returned a full page dominated by content they cannot
+        // legitimately see. (Closes the Phase 136.18 / 139.2-s5 read-path gap for this surface.)
+        feed = feed.Where(item => VisibilityFilter.IsFeedItemVisibleTo(item, requesterIri)).ToList();
 
         // The public timeline is a global, date-ordered feed: it must be sorted newest-first across
         // all actors (not grouped by actor). The per-actor outboxes are each newest-first, but the

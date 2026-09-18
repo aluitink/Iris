@@ -29,11 +29,19 @@ public interface IPublicFeedService
     /// An optional ActivityStreams type filter (e.g. "Create"). Null/empty/whitespace returns the
     /// feed unfiltered by type.
     /// </param>
+    /// <param name="requesterIri">
+    /// The requesting actor's IRI, or null for an anonymous / unsigned request. When set,
+    /// non-public items (followers-only or direct) addressed to that actor are included in the
+    /// feed; when null, only public items are returned. This is the audience/visibility filter —
+    /// without it a direct message would surface in the public timeline to everyone (the Phase
+    /// 136.18 / 139.2-s5 gap).
+    /// </param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the feed items (possibly empty).</returns>
     Task<IReadOnlyList<IObjectOrLink>> GetPublicFeedAsync(
         int maxItems,
         string? query = null,
         string? activityType = null,
+        Iri? requesterIri = null,
         CancellationToken ct = default);
 }

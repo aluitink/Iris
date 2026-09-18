@@ -1288,8 +1288,9 @@ public static class ActivityPubServerExtensions
         // served through the local collection-page cache).
         group.MapGet("/search",
             (HttpContext context, IGlobalSearchService searchService, IPersistenceProvider persistence,
-                IOptions<ActivityPubServerOptions> optionsAccessor, CancellationToken ct)
-                => GlobalSearchHandler(context, searchService, persistence, optionsAccessor, ct));
+                IOptions<ActivityPubServerOptions> optionsAccessor, ISignatureValidator signatureValidator,
+                CancellationToken ct)
+                => GlobalSearchHandler(context, searchService, persistence, optionsAccessor, signatureValidator, ct));
 
         // Cached actor document by IRI: GET /ap/v1/actor?iri={absolute-actor-iri} — serves the actor
         // document the instance has cached in its database (134.1 — directory "All known" / known
@@ -9220,13 +9221,18 @@ public static class ActivityPubServerExtensions
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var page = ParsePageNumber(context.Request.Query["page"].ToString());
 
+        // Resolve the requesting actor first so the feed can apply the audience/visibility filter:
+        // an anonymous / unsigned request sees only public content; a signed request also sees the
+        // non-public items (followers-only / direct) addressed to it.
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+
         var items = await feedService.GetPublicFeedAsync(
             200,
             query.Length > 0 ? query : null,
             activityType.Length > 0 ? activityType : null,
+            requesterIri,
             ct).ConfigureAwait(false);
 
-        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
         var ns = IrisExtensionNamespace(options);
         var enrichedItems = await EnrichCollectionItemsAsync(items, persistence, requesterIri, ns, ct).ConfigureAwait(false);
 
@@ -10697,6 +10703,7 @@ public static class ActivityPubServerExtensions
         IGlobalSearchService searchService,
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
+        ISignatureValidator signatureValidator,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -10710,12 +10717,17 @@ public static class ActivityPubServerExtensions
         var limit = ParsePageSize(context.Request.Query["limit"].ToString());
         var offset = ParseOffset(context.Request.Query[ActivityPubServerConstants.OffsetQueryParameterName].ToString());
 
+        // Resolve the requesting actor so the content results can apply the audience/visibility filter
+        // (139.2-s5): an anonymous / unsigned request sees only public content; a signed request also
+        // sees the non-public items (followers-only / direct) addressed to it.
+        var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+
         // 57.4: search the full surface and let BuildSearchPageDocument slice the page. The paged store
         // methods (SearchPagedAsync) push the slice into the store for large result sets, but the page
         // document builder derives totalItems from the full match count, so the handler fetches the full
         // list and slices here. For the local surface (a single instance's directory + content) the full
         // list is small and the slice is O(page size).
-        var items = await searchService.SearchAsync(query, ct, type, localOnly).ConfigureAwait(false);
+        var items = await searchService.SearchAsync(query, ct, type, localOnly, requesterIri).ConfigureAwait(false);
 
         // Enrich actor (person/community) results with the cacheable per-actor counters (posts/followers/
         // following) so a client's directory card can display the stats off the search result alone

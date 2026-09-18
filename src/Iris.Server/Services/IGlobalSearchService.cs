@@ -50,10 +50,15 @@ public interface IGlobalSearchService
     /// <param name="localOnly">When true, the actor pass is restricted to this instance's own actors
     /// (the directory); a cached remote actor is excluded. When false (the default), the whole stored
     /// actor surface is searched. Content is unaffected (it is always the instance's stored content).</param>
+    /// <param name="requesterIri">The requesting actor's IRI, or null for an anonymous / unsigned
+    /// request. When set, non-public content (followers-only or direct) not addressed to that actor is
+    /// excluded from the content results; when null, only public content is returned. Actors are
+    /// unaffected (a directory entry is about a person, not a specific post). This is the
+    /// audience/visibility filter (closes the Phase 136.18 / 139.2-s5 gap for the search surface).</param>
     /// <returns>A task that completes with the matching items (actors first, then content objects, each
     /// sub-list sorted by IRI). Each item is an <see cref="IObjectOrLink"/>; callers pattern-match
     /// (an <see cref="Actor"/> or a content <see cref="IObject"/>).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null, bool localOnly = false);
+    public Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null, bool localOnly = false, Iri? requesterIri = null);
 
     /// <summary>
     /// Searches the instance's local actors and content objects for <paramref name="query"/> and returns
@@ -71,6 +76,11 @@ public interface IGlobalSearchService
     /// <param name="localOnly">When true, the actor pass is restricted to this instance's own actors
     /// (the directory); a cached remote actor is excluded. When false (the default), the whole stored
     /// actor surface is searched.</param>
+    /// <param name="requesterIri">The requesting actor's IRI, or null for an anonymous / unsigned
+    /// request. When set, non-public content (followers-only or direct) not addressed to that actor is
+    /// excluded from the content results and the total; when null, only public content is returned.
+    /// Actors are unaffected. This is the audience/visibility filter (closes the Phase 136.18 /
+    /// 139.2-s5 gap for the search surface).</param>
     /// <returns>A task that completes with the page of matching items (actors first, then content objects,
     /// each sub-list sorted by IRI) and the full match total (for a search page's <c>totalItems</c>).</returns>
     public Task<(IReadOnlyList<IObjectOrLink> Items, int Total)> SearchPagedAsync(
@@ -79,5 +89,6 @@ public interface IGlobalSearchService
         string? type,
         int limit,
         int offset,
-        bool localOnly = false);
+        bool localOnly = false,
+        Iri? requesterIri = null);
 }

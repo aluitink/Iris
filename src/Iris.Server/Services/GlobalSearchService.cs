@@ -43,9 +43,9 @@ public sealed class GlobalSearchService : IGlobalSearchService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null, bool localOnly = false)
+    public async Task<IReadOnlyList<IObjectOrLink>> SearchAsync(string? query, CancellationToken ct = default, string? type = null, bool localOnly = false, Iri? requesterIri = null)
     {
-        var (items, _) = await SearchPagedAsync(query, ct, type, int.MaxValue, 0, localOnly).ConfigureAwait(false);
+        var (items, _) = await SearchPagedAsync(query, ct, type, int.MaxValue, 0, localOnly, requesterIri).ConfigureAwait(false);
         return items;
     }
 
@@ -56,7 +56,8 @@ public sealed class GlobalSearchService : IGlobalSearchService
         string? type,
         int limit,
         int offset,
-        bool localOnly = false)
+        bool localOnly = false,
+        Iri? requesterIri = null)
     {
         var normalized = query?.Trim();
 
@@ -65,128 +66,93 @@ public sealed class GlobalSearchService : IGlobalSearchService
         var actorPass = !hasType || string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
         var contentPass = !hasType || !string.Equals(typeFilter!, "Actor", StringComparison.OrdinalIgnoreCase);
 
-        int total;
+        // Audience/visibility filter (139.2-s5): the content results always drop non-public items not
+        // addressed to the requester (a null requester is anonymous and sees public content only), and
+        // the total reflects only the visible content. The store's count helpers
+        // (CountSearchMatchesAsync) have no visibility predicate, so the content is loaded, filtered in
+        // memory (the objects are already deserialized, so their to/cc audience is readable), and the
+        // total is computed from the filtered set. This replaces the previous unfiltered path, which
+        // let a direct message surface in global search to anyone (the Phase 136.18 / 139.2-s5 gap).
+        return await SearchPagedWithVisibilityAsync(
+            normalized, ct, typeFilter, hasType, actorPass, contentPass, limit, offset, localOnly,
+            requesterIri).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The audience-aware search path (139.2-s5): the content results are filtered by
+    /// <see cref="VisibilityFilter"/> so a non-public (followers-only or direct) item is returned only
+    /// to its intended recipient (a null <paramref name="requesterIri"/> is anonymous and sees public
+    /// content only), and the content total reflects only the visible content. Because the store's
+    /// count helpers carry no visibility predicate, the content is loaded in full (it is already
+    /// deserialized, so its <c>to</c>/<c>cc</c> audience is readable), filtered, and the total is
+    /// computed from the filtered set. Actors are unaffected (a directory entry is about a person, not
+    /// a specific post).
+    /// </summary>
+    private async Task<(IReadOnlyList<IObjectOrLink> Items, int Total)> SearchPagedWithVisibilityAsync(
+        string? normalized,
+        CancellationToken ct,
+        string? typeFilter,
+        bool hasType,
+        bool actorPass,
+        bool contentPass,
+        int limit,
+        int offset,
+        bool localOnly,
+        Iri? requesterIri)
+    {
         var results = new List<IObjectOrLink>();
 
+        // Actor pass (always visible — a directory entry is not gated by a post's audience).
+        var actorMatches = new List<IObjectOrLink>();
+        var actorTotal = 0;
         if (actorPass)
         {
-            // When localOnly and the instance base is known, do IRI-prefix-based filtering in the
-            // service (the store's preferredUsername heuristic is unreliable for remote actors from
-            // other platforms that also carry a preferredUsername). Otherwise, delegate to the store.
-            var useServiceFilter = localOnly && _instanceBase is not null;
-
-            if (useServiceFilter)
+            if (localOnly && _instanceBase is not null)
             {
                 var (filteredActors, filteredTotal) = await GetLocalActorsFilteredAsync(normalized, ct).ConfigureAwait(false);
-                total = filteredTotal;
-
-                if (contentPass)
-                {
-                    var contentTotal = hasType
-                        ? (await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false))
-                            .Count(o => ItemMatchesType(o, typeFilter!))
-                        : await _persistence.Objects.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
-                    total += contentTotal;
-
-                    if (offset < filteredTotal)
-                    {
-                        var actorLimit = Math.Min(limit, filteredTotal - offset);
-                        var actorSlice = filteredActors.Skip(offset).Take(actorLimit).Cast<IObjectOrLink>().ToList();
-                        results.AddRange(actorSlice);
-
-                        var remaining = limit - actorSlice.Count;
-                        if (contentPass && remaining > 0)
-                        {
-                            var contentOffset = Math.Max(0, offset - filteredTotal);
-                            var contentLimit = Math.Min(remaining, contentTotal - contentOffset);
-                            results.AddRange(await _persistence.Objects.SearchObjectsAsync(normalized, contentLimit, contentOffset, ct).ConfigureAwait(false));
-                        }
-                    }
-                    else if (contentPass)
-                    {
-                        var contentOffset = offset - filteredTotal;
-                        if (contentOffset < contentTotal)
-                        {
-                            var contentLimit = Math.Min(limit, contentTotal - contentOffset);
-                            results.AddRange(await _persistence.Objects.SearchObjectsAsync(normalized, contentLimit, contentOffset, ct).ConfigureAwait(false));
-                        }
-                    }
-                }
-                else
-                {
-                    if (offset < filteredTotal)
-                    {
-                        var actorLimit = Math.Min(limit, filteredTotal - offset);
-                        results.AddRange(filteredActors.Skip(offset).Take(actorLimit).Cast<IObjectOrLink>());
-                    }
-                }
+                actorTotal = filteredTotal;
+                actorMatches = filteredActors.Cast<IObjectOrLink>().ToList();
             }
             else
             {
-                var actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct, localOnly).ConfigureAwait(false);
-
-                if (contentPass && !hasType)
+                actorTotal = await _persistence.Actors.CountSearchMatchesAsync(normalized, ct, localOnly).ConfigureAwait(false);
+                if (actorTotal > 0)
                 {
-                    var contentTotal = await _persistence.Objects.CountSearchMatchesAsync(normalized, ct).ConfigureAwait(false);
-                    total = actorTotal + contentTotal;
-
-                    var actorTaken = 0;
-                    if (offset < actorTotal)
-                    {
-                        var actorLimit = Math.Min(limit, actorTotal - offset);
-                        actorTaken = actorLimit;
-                        results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct, localOnly).ConfigureAwait(false));
-                    }
-
-                    var contentOffset = Math.Max(0, offset - actorTotal);
-                    var remaining = limit - actorTaken;
-                    if (contentOffset < contentTotal && remaining > 0)
-                    {
-                        var contentLimit = Math.Min(remaining, contentTotal - contentOffset);
-                        results.AddRange(await _persistence.Objects.SearchObjectsAsync(normalized, contentLimit, contentOffset, ct).ConfigureAwait(false));
-                    }
-                }
-                else
-                {
-                    var contentAll = contentPass
-                        ? await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false)
-                        : Array.Empty<IObject>();
-                    var contentMatches = contentPass
-                        ? contentAll.Where(o => ItemMatchesType(o, typeFilter!)).ToList()
-                        : new List<IObject>();
-                    total = actorTotal + contentMatches.Count;
-
-                    var actorTaken = 0;
-                    if (offset < actorTotal)
-                    {
-                        var actorLimit = Math.Min(limit, actorTotal - offset);
-                        actorTaken = actorLimit;
-                        results.AddRange(await _persistence.Actors.SearchActorsAsync(normalized, actorLimit, offset, ct, localOnly).ConfigureAwait(false));
-                    }
-
-                    var contentOffset = Math.Max(0, offset - actorTotal);
-                    var remaining = limit - actorTaken;
-                    if (contentOffset < contentMatches.Count && remaining > 0)
-                    {
-                        var contentLimit = Math.Min(remaining, contentMatches.Count - contentOffset);
-                        results.AddRange(contentMatches.Skip(contentOffset).Take(contentLimit));
-                    }
+                    actorMatches = (await _persistence.Actors.SearchActorsAsync(normalized, int.MaxValue, 0, ct, localOnly).ConfigureAwait(false))
+                        .Cast<IObjectOrLink>().ToList();
                 }
             }
         }
-        else
+
+        // Content pass: load all matching content, apply the audience/visibility filter, then the type
+        // filter. The total is the count of the visible, type-matching content.
+        var contentMatches = new List<IObject>();
+        if (contentPass)
         {
             var contentAll = await _persistence.Objects.SearchObjectsAsync(normalized, int.MaxValue, 0, ct).ConfigureAwait(false);
-            var contentMatches = hasType
-                ? contentAll.Where(o => ItemMatchesType(o, typeFilter!)).ToList()
-                : contentAll.ToList();
-            total = contentMatches.Count;
+            contentMatches = contentAll
+                .Where(o => VisibilityFilter.IsVisibleTo(o, requesterIri))
+                .Where(o => !hasType || ItemMatchesType(o, typeFilter!))
+                .ToList();
+        }
 
-            if (offset < contentMatches.Count)
-            {
-                var contentLimit = Math.Min(limit, contentMatches.Count - offset);
-                results.AddRange(contentMatches.Skip(offset).Take(contentLimit));
-            }
+        var total = actorTotal + contentMatches.Count;
+
+        // Paginate: actors first (sorted by IRI), then content (already in the store's IRI order).
+        var actorTaken = 0;
+        if (actorPass && offset < actorMatches.Count)
+        {
+            var actorLimit = Math.Min(limit, actorMatches.Count - offset);
+            actorTaken = actorLimit;
+            results.AddRange(actorMatches.Skip(offset).Take(actorLimit));
+        }
+
+        var contentOffset = Math.Max(0, offset - actorMatches.Count);
+        var remaining = limit - actorTaken;
+        if (contentPass && contentOffset < contentMatches.Count && remaining > 0)
+        {
+            var contentLimit = Math.Min(remaining, contentMatches.Count - contentOffset);
+            results.AddRange(contentMatches.Skip(contentOffset).Take(contentLimit));
         }
 
         return (results, total);

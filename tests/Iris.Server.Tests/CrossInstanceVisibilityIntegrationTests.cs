@@ -147,25 +147,26 @@ public sealed class CrossInstanceVisibilityIntegrationTests : IAsyncLifetime
         await DeliverDirectlyAsync(aliceIri, _aliceKey,
             new Iri($"https://{AHost}/ap/v1/u/{Alice}/inbox"), create, () => _fixture.ServerA);
 
-        // The note is stored in alice's outbox (the author's outbox always contains their posts).
+        // The note is stored in alice's outbox (the author's outbox always contains their posts — the
+        // author can always see their own DMs; the outbox is owner-scoped, not a public surface).
         var outbox = await _aPersistence.Activities.GetOutboxAsync(aliceIri);
         Assert.Contains(outbox, i => i is IObject { Id: var id } && id == noteIri.Value);
 
-        // CURRENT BEHAVIOR (known gap): the direct post is ALSO visible in the public feed.
-        // Iris does not filter the public feed by visibility — any post in a local actor's outbox
-        // appears in the public feed regardless of its to/cc audience.
+        // FIXED (139.2-s5): an anonymous request to the public feed must NOT surface the direct post —
+        // its audience (to=[bob], no as:Public) names a recipient, so it is non-public and is filtered
+        // out for a requester who is not bob.
         var feedResp = await _aHttp.GetAsync($"https://{AHost}/ap/v1/public/feed?limit=50");
         feedResp.EnsureSuccessStatusCode();
         var feedDoc = JsonDocument.Parse(await feedResp.Content.ReadAsStringAsync());
         var feedItems = GetItemIds(feedDoc.RootElement);
-        Assert.Contains(noteIri.Value, feedItems);
+        Assert.DoesNotContain(noteIri.Value, feedItems);
 
-        // CURRENT BEHAVIOR (known gap): the direct post is also found by global search.
+        // FIXED (139.2-s5): an anonymous request to global search must NOT find the direct post either.
         var searchResp = await _aHttp.GetAsync($"https://{AHost}/ap/v1/search?q=directvisibility");
         searchResp.EnsureSuccessStatusCode();
         var searchDoc = JsonDocument.Parse(await searchResp.Content.ReadAsStringAsync());
         var searchItems = GetItemIds(searchDoc.RootElement);
-        Assert.Contains(noteIri.Value, searchItems);
+        Assert.DoesNotContain(noteIri.Value, searchItems);
     }
 
     // --- 3. Public post federated to remote is visible in remote object store -------------
