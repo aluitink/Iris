@@ -29,8 +29,8 @@ doc.
 
 ## Progress tracking
 
-- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6
-- [ ] 7  - [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
+- [x] 1  - [x] 2  - [x] 3  - [x] 4  - [x] 5  - [x] 6  - [x] 7
+- [ ] 8  - [ ] 9  - [ ] 10 - [ ] 11
 
 Check a scenario off only once its pass criterion is met with evidence attached (link/path). Update
 the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-e2e-review.md) to
@@ -80,4 +80,20 @@ the area's Status cell in [phase-139-platform-e2e-review.md](phase-139-platform-
     a REST-addressability gap, not a UI gap. Follow-up: serve stored foreign objects by `?iri=` lookup
     or document full-IRI addressing. [change doc](../changes/1393-6-offline-rebuild.md)
 
-**Resume checkpoint:** scenarios 1–6 done. Next: scenario 7 (duplicate/replay delivery idempotency).
+  - Scenario 7 (duplicate/replay delivery idempotency): **PASS** (verified; +1 DB-row-count test). The
+    Phase 136.17 / C-07 guard is `InboxProcessor.ProcessAsync` → `Activities.TryAddActivityAsync`
+    (add-if-absent by activity IRI): a redelivery returns `false` ⇒ dispatch is skipped ⇒ the endpoint
+    still returns 202 (no 409/500). Duplicate rows are prevented twice over — the add-if-absent check
+    and the PKs on `Activities.Id` and `BoxItems(Direction, ActorId, ItemIri)`. The inbox recording
+    (`AddToInboxAsync`) is independently IRI-deduped, so a redelivered activity can't create a duplicate
+    notification. Existing coverage (`CrossInstanceReplayDefenseIntegrationTests`,
+    `DuplicateInboundDeliveryIdempotencyIntegrationTests`) asserted the *logical* no-op but not the
+    *physical* row count. **Closed that gap**: `EfPersistenceContractTests.
+    RedeliveredActivity_StoredOnce_SingleRowInDatabase` drives the add-if-absent twice against a real
+    Testcontainers Postgres and counts the rows in `Activities` + `BoxItems` directly (raw
+    `SELECT count(*)`) — each is exactly 1. **Live UI check** (Playwright, as andrew): the
+    notifications page renders 12 distinct notifications, no duplicates, no console errors. 1306+12
+    green. [change doc](../changes/1393-7-duplicate-replay-idempotency.md)
+
+**Resume checkpoint:** scenarios 1–7 done. Next: scenario 8 (media lifecycle — survives restart,
+proxy rewrite, dead-source-URL degrades to 502 not a broken icon).
