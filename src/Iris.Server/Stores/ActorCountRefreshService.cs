@@ -58,6 +58,7 @@ public sealed class ActorCountRefreshService : BackgroundService
     private readonly ILogger<ActorCountRefreshService> _logger;
     private readonly TimeSpan _interval;
     private readonly string? _namespace;
+    private readonly bool _enabled;
 
     /// <summary>
     /// Initializes a new <see cref="ActorCountRefreshService"/>.
@@ -82,6 +83,7 @@ public sealed class ActorCountRefreshService : BackgroundService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _interval = _options.Value.ActorCountRefreshInterval;
         _namespace = ResolveIrisNamespace(_options.Value);
+        _enabled = _options.Value.EnableActorCountRefresh;
     }
 
     /// <summary>
@@ -106,6 +108,13 @@ public sealed class ActorCountRefreshService : BackgroundService
     /// <inheritdoc/>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!_enabled)
+        {
+            // The host disabled the actor-count refresh (e.g. a test fixture that seeds data before the
+            // host starts; the startup pass would write zero counts to the seeded actors).
+            return;
+        }
+
         await RefreshOnceAsync(stoppingToken).ConfigureAwait(false);
 
         if (_interval <= TimeSpan.Zero)

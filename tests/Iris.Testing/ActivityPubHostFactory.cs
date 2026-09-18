@@ -106,6 +106,14 @@ public sealed class ActivityPubHostOptions
     public bool RegisterLocalKey { get; init; } = true;
 
     /// <summary>
+    /// Whether the host's <c>ActorCountRefreshService</c> is enabled. Defaults to <c>false</c> in test
+    /// fixtures: the service's startup pass would write zero counts to actors seeded before the host
+    /// starts, making the stored counts stale (the read path prefers stored counts over the live
+    /// computation). Set to <c>true</c> in tests that exercise the refresh service end-to-end.
+    /// </summary>
+    public bool EnableActorCountRefresh { get; init; } = false;
+
+    /// <summary>
     /// A test-built identity (key store + provider + signer) to register with the host in place of the
     /// default <see cref="IKeyStore"/>/signing seam. Used by the few tests that need a custom signer or a
     /// specific key store (e.g. signing outbound deliveries as a community). When set,
@@ -177,6 +185,8 @@ public static class ActivityPubHostFactory
                     {
                         opts.SharedInboxIri = options.SharedInboxIri;
                     }
+
+                    opts.EnableActorCountRefresh = options.EnableActorCountRefresh;
                 });
                 s.AddInMemoryPersistence();
                 s.AddSingleton<IPersistenceProvider>(options.Persistence);

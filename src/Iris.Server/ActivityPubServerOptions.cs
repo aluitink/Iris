@@ -142,6 +142,15 @@ public sealed class ActivityPubServerOptions
     public TimeSpan ActorCountRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// When <see langword="true"/> (the default), the <strong>actor-count refresh</strong> hosted service
+    /// is registered and runs. When <see langword="false"/>, the service is not registered (the actor
+    /// counters are always computed live from the outbox and follow store on every read). Set to
+    /// <see langword="false"/> in test fixtures that seed data before the host starts (the startup pass
+    /// would write zero counts to the seeded actors, making the stored counts stale).
+    /// </summary>
+    public bool EnableActorCountRefresh { get; set; } = true;
+
+    /// <summary>
     /// The shared hit/miss counter for all server-side caches. When null (the default), each cache
     /// uses a no-op <see cref="NullCacheMetrics"/>. Set a <see cref="CacheMetrics"/> instance to
     /// collect per-cache counters, exposed via <c>GET /ap/v1/diagnostics/caches</c>.

@@ -790,7 +790,8 @@ public static class ActivityPubServerExtensions
         // followingCount) and persists them onto the stored actor documents. Registered the same way as the
         // object-interaction-count service: AddHostedService (TryAddEnumerable) so it coexists with the other
         // hosted services, and a factory that resolves the (possibly null) IPersistenceProvider so a host
-        // without persistence gets an inert service rather than a resolution failure.
+        // without persistence gets an inert service rather than a resolution failure. The service checks
+        // EnableActorCountRefresh in its constructor and is inert (no-op loop) when disabled.
         services.AddHostedService(sp =>
             new Stores.ActorCountRefreshService(
                 sp.GetService<IPersistenceProvider>(),
@@ -6134,6 +6135,40 @@ public static class ActivityPubServerExtensions
     }
 
     /// <summary>
+    /// Attempts to read the three pre-computed per-actor counters (<c>iris:postsCount</c>,
+    /// <c>iris:followersCount</c>, <c>iris:followingCount</c>) from the stored actor's
+    /// <see cref="IObject.ExtensionData"/>. Returns <see langword="true"/> when all three are present
+    /// and are integers (the <see cref="Stores.ActorCountRefreshService"/> persisted them);
+    /// <see langword="false"/> when any is absent (the caller falls back to a live computation from
+    /// the outbox and follow store).
+    /// </summary>
+    private static bool TryReadStoredActorCounts(
+        Actor actor,
+        string ns,
+        out int postsCount,
+        out int followersCount,
+        out int followingCount)
+    {
+        postsCount = 0;
+        followersCount = 0;
+        followingCount = 0;
+
+        if (actor.ExtensionData is not { } ext)
+        {
+            return false;
+        }
+
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.PostsCount, out postsCount) ||
+            !TryGetInt(ext, ns + IrisExtensionTerms.FollowersCount, out followersCount) ||
+            !TryGetInt(ext, ns + IrisExtensionTerms.FollowingCount, out followingCount))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Counts the content posts (the outbox items a client would render in a "posts" view — a
     /// <c>Create</c> whose object is a <c>Note</c>/<c>Article</c>, or an <c>Announce</c>) in an actor's
     /// outbox. This is the value advertised as <c>iris:postsCount</c> on the actor document and on
@@ -6189,18 +6224,56 @@ public static class ActivityPubServerExtensions
         ActivityPubServerOptions options,
         CancellationToken ct)
     {
-        var postsTask = CountPostsAsync(persistence, actorIri, ct);
-        var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
-        var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
-        var posts = await postsTask.ConfigureAwait(false);
-        var followers = await followersTask.ConfigureAwait(false);
-        var following = await followingTask.ConfigureAwait(false);
-
-        var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
         var ns = IrisExtensionNamespace(options);
+        var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+
+        // Prefer the pre-computed counters persisted by the ActorCountRefreshService. A community is a
+        // Group (not an Actor), so it does not go through BuildActorDocumentAsync; the stored counts are
+        // read from the doc's ExtensionData (the deep-copy carries them from the stored actor).
+        if (!TryReadStoredActorCountsOnDoc(doc, ns, out var posts, out var followers, out var following))
+        {
+            var postsTask = CountPostsAsync(persistence, actorIri, ct);
+            var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+            var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+            posts = await postsTask.ConfigureAwait(false);
+            followers = (await followersTask.ConfigureAwait(false)).Count;
+            following = (await followingTask.ConfigureAwait(false)).Count;
+        }
+
         AddExtensionInt(ext, ns + IrisExtensionTerms.PostsCount, posts);
-        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers.Count);
-        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following.Count);
+        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers);
+        AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following);
+    }
+
+    /// <summary>
+    /// Attempts to read the three pre-computed per-actor counters from an <see cref="IObject"/>
+    /// (a community document) whose <see cref="IObject.ExtensionData"/> may carry them from a prior
+    /// deep-copy of the stored actor. Returns <see langword="false"/> when any is absent.
+    /// </summary>
+    private static bool TryReadStoredActorCountsOnDoc(
+        IObject doc,
+        string ns,
+        out int postsCount,
+        out int followersCount,
+        out int followingCount)
+    {
+        postsCount = 0;
+        followersCount = 0;
+        followingCount = 0;
+
+        if (doc.ExtensionData is not { } ext)
+        {
+            return false;
+        }
+
+        if (!TryGetInt(ext, ns + IrisExtensionTerms.PostsCount, out postsCount) ||
+            !TryGetInt(ext, ns + IrisExtensionTerms.FollowersCount, out followersCount) ||
+            !TryGetInt(ext, ns + IrisExtensionTerms.FollowingCount, out followingCount))
+        {
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -6235,24 +6308,29 @@ public static class ActivityPubServerExtensions
         ActivityPubServerOptions options,
         CancellationToken ct)
     {
-        // Counters are independent; fetch in parallel.
-        // The three reads are independent; start them concurrently, then await.
-        var postsTask = CountPostsAsync(persistence, actorIri, ct);
-        var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
-        var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
-        var posts = await postsTask.ConfigureAwait(false);
-        var followers = await followersTask.ConfigureAwait(false);
-        var following = await followingTask.ConfigureAwait(false);
-
         var doc = BuildActorDocumentCore(actor, actorIri, authenticatedHandle, persistence, options);
         var ext = doc.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
         var ns = IrisExtensionNamespace(options);
+
+        // Prefer the pre-computed counters the ActorCountRefreshService persisted onto the stored actor
+        // (avoids the per-read outbox/follow-store sweep). Fall back to a live computation when the
+        // stored counts are absent (a fresh actor not yet refreshed, or a host that disabled the service).
+        if (!TryReadStoredActorCounts(actor, ns, out var posts, out var followers, out var following))
+        {
+            var postsTask = CountPostsAsync(persistence, actorIri, ct);
+            var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+            var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+            posts = await postsTask.ConfigureAwait(false);
+            followers = (await followersTask.ConfigureAwait(false)).Count;
+            following = (await followingTask.ConfigureAwait(false)).Count;
+        }
+
         ext[ns + IrisExtensionTerms.PostsCount] =
             System.Text.Json.JsonSerializer.SerializeToElement(posts);
         ext[ns + IrisExtensionTerms.FollowersCount] =
-            System.Text.Json.JsonSerializer.SerializeToElement(followers.Count);
+            System.Text.Json.JsonSerializer.SerializeToElement(followers);
         ext[ns + IrisExtensionTerms.FollowingCount] =
-            System.Text.Json.JsonSerializer.SerializeToElement(following.Count);
+            System.Text.Json.JsonSerializer.SerializeToElement(following);
         return doc;
     }
 
@@ -10552,17 +10630,23 @@ public static class ActivityPubServerExtensions
 
                 var copy = ActivityJson.Deserialize<KristofferStrube.ActivityStreams.Actor>(
                     ActivityJson.Serialize(original))!;
-                var postsTask = CountPostsAsync(persistence, actorIri, ct);
-                var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
-                var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
-                var posts = await postsTask.ConfigureAwait(false);
-                var followers = await followersTask.ConfigureAwait(false);
-                var following = await followingTask.ConfigureAwait(false);
+
+                // Prefer the pre-computed counters the ActorCountRefreshService persisted (the deep-copy
+                // carries them from the stored actor). Fall back to a live computation when absent.
+                if (!TryReadStoredActorCounts(copy, ns, out var posts, out var followers, out var following))
+                {
+                    var postsTask = CountPostsAsync(persistence, actorIri, ct);
+                    var followersTask = persistence.Follows.GetFollowersAsync(actorIri, ct);
+                    var followingTask = persistence.Follows.GetFollowingAsync(actorIri, ct);
+                    posts = await postsTask.ConfigureAwait(false);
+                    followers = (await followersTask.ConfigureAwait(false)).Count;
+                    following = (await followingTask.ConfigureAwait(false)).Count;
+                }
 
                 var ext = copy.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
                 AddExtensionInt(ext, ns + IrisExtensionTerms.PostsCount, posts);
-                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers.Count);
-                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following.Count);
+                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowersCount, followers);
+                AddExtensionInt(ext, ns + IrisExtensionTerms.FollowingCount, following);
                 return (IObjectOrLink)copy;
             }, ct));
         }
