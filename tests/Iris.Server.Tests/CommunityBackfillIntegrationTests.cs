@@ -86,6 +86,56 @@ public sealed class CommunityBackfillIntegrationTests
         Assert.Equal(countAfterFirst, countAfterSecond);
     }
 
+    /// <summary>
+    /// 139.3 scenario 5 regression: a REMOTE community the instance has interacted with is persisted to
+    /// the community store by the remote community persister (135.1). When the local community follows
+    /// that remote community, its outbox must be fetched OVER THE WIRE — not read from the (empty) local
+    /// activity store. Before the fix, <c>ReadOutboxAsync</c> treated any community in the community
+    /// store as local, so a followed remote (Lemmy) community was misrouted to its empty local outbox
+    /// and the first-peer backfill captured nothing.
+    /// </summary>
+    [Fact]
+    public async Task RemoteCommunity_PersistedToStore_IsFetchedOverWire_NotReadLocally()
+    {
+        var persistence = new InMemoryPersistenceProvider();
+        TestSeeder.SeedCommunityWithKey(persistence, Host, Community, memberIri: MemberIri);
+        await persistence.Communities.AddFollowAsync(CommunityIri, RemoteCommunityIri);
+
+        // Simulate the remote community persister (135.1): the remote Lemmy community is now in the
+        // local community store (as it is in production after the instance interacts with it). Without
+        // the 139.3 s5 host-locality gate, this makes ReadOutboxAsync treat the remote community as
+        // local and read its (empty) local outbox.
+        await persistence.Communities.PutCommunityAsync(new Group
+        {
+            Id = RemoteCommunityIri.Value,
+            PreferredUsername = "interop",
+            Outbox = new Link { Href = new Uri(RemoteCommunityIri.Value + "/outbox") },
+        });
+
+        var outboxJson = BuildOutboxJson(idSuffix: "3");
+        var client = BuildClientWithStubHandler(outboxJson);
+
+        // The instance base is the LOCAL host, so the remote community (on RemoteHost) is NOT hosted
+        // on the instance and must be fetched over the wire.
+        var service = new CommunityFeedService(
+            persistence, null, new StubLocalActorResolver(),
+            new StubActorDocumentFetcher(RemoteCommunityIri), client,
+            new FeedOptions { PagesPerActor = 5, MaxItems = 50 },
+            instanceBase: new Iri($"https://{Host}"));
+
+        var feed = await service.GetFeedAsync(CommunityIri);
+
+        // The remote community's outbox WAS fetched over the wire (the relayed content is present),
+        // proving it was not misrouted to the empty local outbox.
+        Assert.NotEmpty(feed);
+
+        // The backfilled Page is persisted locally (the wire fetch path ran, not the local read).
+        var pageIri = new Iri($"https://{RemoteHost}/post/3");
+        Assert.True(
+            await persistence.Objects.TryGetObjectAsync(pageIri, out _),
+            "the remote community's content should be backfilled locally via the wire fetch");
+    }
+
     // --- Helpers ------------------------------------------------------------------------------------
 
     private static string BuildOutboxJson(string idSuffix = "1")

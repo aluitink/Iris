@@ -493,7 +493,7 @@ public static class ActivityPubServerExtensions
                     new HttpClientHandler());
             }
 
-            return new CommunityFeedService(persistence, persistence.Communities, localActors, actorDocs, client, options);
+            return new CommunityFeedService(persistence, persistence.Communities, localActors, actorDocs, client, options, serverOptions.BaseUri);
         });
 
         // Global search (F-13): searches the instance's local actors (the directory) and stored content

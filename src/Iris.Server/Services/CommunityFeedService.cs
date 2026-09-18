@@ -53,6 +53,7 @@ public sealed class CommunityFeedService : ICommunityFeedService
     private readonly IActorDocumentFetcher? _actorDocs;
     private readonly IActivityPubClient? _client;
     private readonly FeedOptions _options;
+    private readonly Iri? _instanceBase;
 
     /// <summary>
     /// Initializes a new feed service over the given persistence provider.
@@ -84,13 +85,21 @@ public sealed class CommunityFeedService : ICommunityFeedService
     /// <param name="client">Fetches a remote member's outbox pages over the wire. Required when
     /// <paramref name="localActors"/> is non-null.</param>
     /// <param name="options">The feed options (pages per remote member + max items).</param>
+    /// <param name="instanceBase">
+    /// The instance's base IRI (e.g. <c>https://iris.example</c>). When set, a community contributor is
+    /// only read from the local activity store when its IRI is hosted on this base; a community on
+    /// another host (a followed remote community, e.g. a Lemmy community persisted by the remote
+    /// community persister) is fetched over the wire (139.3 s5). When null, any community in the
+    /// community store is treated as local (the legacy behavior for in-process test hosts without a base).
+    /// </param>
     public CommunityFeedService(
         IPersistenceProvider persistence,
         ICommunityStore? communities,
         ILocalActorResolver? localActors,
         IActorDocumentFetcher? actorDocs,
         IActivityPubClient? client,
-        FeedOptions options)
+        FeedOptions options,
+        Iri? instanceBase = null)
     {
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         _communities = communities;
@@ -98,6 +107,7 @@ public sealed class CommunityFeedService : ICommunityFeedService
         _actorDocs = actorDocs;
         _client = client;
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        _instanceBase = instanceBase;
     }
 
     /// <inheritdoc/>
@@ -229,11 +239,18 @@ public sealed class CommunityFeedService : ICommunityFeedService
     {
         IReadOnlyList<IObjectOrLink> outbox =
             await ReadOutboxAsync(contributorIri, ct).ConfigureAwait(false);
+        // isRemote must agree with ReadOutboxAsync's routing: a followed contributor is remote (its
+        // items are wire-fetched and eligible for the 138.20 backfill) when it is NOT a local community
+        // (hosted on the instance base — 139.3 s5) AND not a local actor. A REMOTE community persisted
+        // to the community store by the remote community persister (135.1) is wire-fetched here, so it
+        // must count as remote; treating it as local (the pre-139.3 s5 behavior) would silently skip the
+        // backfill persistence for its content.
         var isRemote = !requireCommunityTagged &&
                        _localActors is not null &&
                        _actorDocs is not null &&
                        _client is not null &&
-                       !await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false) &&
+                       !(await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false)
+                          && IsLocalCommunity(contributorIri)) &&
                        !await _localActors.IsLocalActorAsync(contributorIri, ct).ConfigureAwait(false);
         for (var position = 0; position < outbox.Count; position++)
         {
@@ -394,12 +411,22 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         // Peering (89): a community (Group) contributor's outbox is read from the local activity store
-        // when it is a local community. A community's outbox is always resolvable locally (a community
-        // the reader's community follows is a local community with a local outbox); routing it through
-        // the remote-wire path (which would fail for an in-process test host, or be an unnecessary
+        // when it is a LOCAL community. A community's outbox is always resolvable locally (a community
+        // the reader's community follows that is local has a local outbox); routing it through the
+        // remote-wire path (which would fail for an in-process test host, or be an unnecessary
         // round-trip) is avoided by treating a known local community as local regardless of the
         // person-actor resolver (which only consults the person store).
-        if (await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false))
+        //
+        // IMPORTANT (139.3 s5): the community check must ALSO confirm the community is hosted on this
+        // instance. A REMOTE community the instance has interacted with is persisted to the durable
+        // store by the remote community persister (135.1), so <c>TryGetCommunityAsync</c> returns true
+        // for remote communities too. Without the host-locality gate, a followed REMOTE community
+        // (e.g. a Lemmy community) is misrouted to its (empty) local outbox instead of being fetched
+        // over the wire — the first-peer backfill (138.20) silently captures nothing. When no instance
+        // base is configured (some in-process test hosts), the legacy behavior is preserved: any
+        // community in the community store is treated as local.
+        if (await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false)
+            && IsLocalCommunity(contributorIri))
         {
             return await _persistence.Activities.GetOutboxAsync(contributorIri, ct).ConfigureAwait(false);
         }
@@ -411,6 +438,25 @@ public sealed class CommunityFeedService : ICommunityFeedService
         }
 
         return await FetchRemoteOutboxAsync(contributorIri, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns whether a community IRI is hosted on this instance (139.3 s5). When no instance base is
+    /// configured (some in-process test hosts), every community is treated as local (the legacy
+    /// behavior) — there is no host to discriminate against. When a base is configured, only a
+    /// community whose IRI starts with the base prefix is local; a community on another host (a
+    /// followed remote community persisted by the remote community persister) is remote and must be
+    /// fetched over the wire.
+    /// </summary>
+    private bool IsLocalCommunity(Iri communityIri)
+    {
+        if (_instanceBase is not { } instanceBase)
+        {
+            return true;
+        }
+
+        var prefix = instanceBase.Value.TrimEnd('/');
+        return communityIri.Value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

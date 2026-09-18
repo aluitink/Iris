@@ -334,4 +334,63 @@ public class CollectionTests
         };
         Assert.False(page.IsLastPage);
     }
+
+    // --- Lemmy outbox shape (items directly on the collection, no `first` link) ----
+
+    private const string LemmyOutboxIri = "https://lemmy.luit.ink/c/interop/outbox";
+
+    /// <summary>
+    /// The real Lemmy outbox shape: an <c>OrderedCollection</c> that carries its items directly in
+    /// <c>orderedItems</c> and has <em>no</em> <c>first</c> link (Lemmy serves the full first page on
+    /// the collection document itself, not behind a separate first-page IRI). This is the shape
+    /// <c>lemmy.world/c/technology/outbox</c> and <c>lemmy.luit.ink/c/interop/outbox</c> actually
+    /// return (verified live in 139.3 scenario 5).
+    /// </summary>
+    private static string LemmyOutboxDoc() => $$"""
+        {
+          "@context": "https://www.w3.org/ns/activitystreams",
+          "id": "{{LemmyOutboxIri}}",
+          "type": "OrderedCollection",
+          "totalItems": 3,
+          "orderedItems": [
+            { "id": "https://lemmy.luit.ink/announce/1", "type": "Announce", "object": { "id": "https://lemmy.luit.ink/create/1", "type": "Create", "object": { "id": "https://lemmy.luit.ink/post/1", "type": "Page", "name": "one" } } },
+            { "id": "https://lemmy.luit.ink/announce/2", "type": "Announce", "object": { "id": "https://lemmy.luit.ink/create/2", "type": "Create", "object": { "id": "https://lemmy.luit.ink/post/2", "type": "Page", "name": "two" } } },
+            { "id": "https://lemmy.luit.ink/announce/3", "type": "Announce", "object": { "id": "https://lemmy.luit.ink/create/3", "type": "Create", "object": { "id": "https://lemmy.luit.ink/post/3", "type": "Page", "name": "three" } } }
+          ]
+        }
+        """;
+
+    private static FakeHttpHandler LemmyOutboxHandler()
+    {
+        return new FakeHttpHandler(request =>
+        {
+            var uri = request.RequestUri!.ToString();
+            if (uri.EndsWith("/c/interop/outbox"))
+            {
+                return Json(LemmyOutboxDoc());
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.NotFound);
+        });
+    }
+
+    [Fact]
+    public async Task GetCollectionAsync_LemmyOutboxShape_NoFirstLink_YieldsOrderedItems()
+    {
+        var client = Client(LemmyOutboxHandler());
+        var pages = new List<CollectionPage>();
+        await foreach (var page in client.GetCollectionAsync(new Iri(LemmyOutboxIri)))
+        {
+            pages.Add(page);
+        }
+
+        // The collection document itself is the first (and only) page; its orderedItems are the items.
+        Assert.True(pages.Count == 1, $"expected 1 page, got {pages.Count}");
+
+        var first = pages[0];
+        Assert.True(first.Items.Count == 3, $"expected 3 items, got {first.Items.Count}");
+        Assert.Equal(3, first.TotalItems);
+        Assert.Null(first.NextPage);
+        Assert.True(first.IsLastPage);
+    }
 }
