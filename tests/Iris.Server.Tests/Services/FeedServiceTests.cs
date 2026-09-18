@@ -309,6 +309,162 @@ public sealed class FeedServiceTests
         Assert.Equal($"https://{LocalHost}/notes/b-1", IdOf(feed[0]));
     }
 
+    // --- Audience / visibility (139.2-s5, follow-feed surface) ------------------------
+    //
+    // Without a visibility filter, an anonymous request to GET /u/{handle}/feed would surface the
+    // feed owner's direct messages (in their own outbox) and their follows' non-public posts (in the
+    // follows' outboxes). The filter drops non-public items not addressed to the requester and not
+    // authored by them; the owner additionally sees their own non-public posts (the author clause).
+
+    [Fact]
+    public async Task Feed_Audience_AnonymousSeesOnlyPublic()
+    {
+        var (service, p) = Build(SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, alice, "Alice");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            // alice's own outbox: a public post, a DM to bob, a followers-only post (to bob + carol).
+            AddPost(persistence, alice, "a-pub", "alice public");
+            AddPostTo(persistence, alice, "a-dm", "alice dm", [Actor(LocalHost, "bob")]);
+            AddPostTo(persistence, alice, "a-fol", "alice followers", [Actor(LocalHost, "bob"), Actor(LocalHost, "carol")]);
+
+            // bob's outbox (alice follows bob): a public post and a DM to carol (not alice).
+            AddPost(persistence, bob, "b-pub", "bob public");
+            AddPostTo(persistence, bob, "b-dm", "bob dm", [Actor(LocalHost, "carol")]);
+        }));
+
+        // Anonymous: only the public posts (alice's + bob's) are visible. threadDepth 1 includes the
+        // non-public (reply-classified) items so the visibility filter is what gates them.
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1, requesterIri: null);
+        var ids = new HashSet<string?>(feed.Select(IdOf));
+        Assert.Equal(2, feed.Count);
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-pub");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/b-pub");
+        Assert.DoesNotContain(ids, id => id == $"https://{LocalHost}/notes/a-dm");
+        Assert.DoesNotContain(ids, id => id == $"https://{LocalHost}/notes/a-fol");
+        Assert.DoesNotContain(ids, id => id == $"https://{LocalHost}/notes/b-dm");
+    }
+
+    [Fact]
+    public async Task Feed_Audience_OwnerSeesOwnNonPublicAndFollowsPublic()
+    {
+        var (service, _) = Build(SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, alice, "Alice");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            AddPost(persistence, alice, "a-pub", "alice public");
+            AddPostTo(persistence, alice, "a-dm", "alice dm", [Actor(LocalHost, "bob")]);
+            AddPostTo(persistence, alice, "a-fol", "alice followers", [Actor(LocalHost, "bob"), Actor(LocalHost, "carol")]);
+
+            AddPost(persistence, bob, "b-pub", "bob public");
+            AddPostTo(persistence, bob, "b-dm", "bob dm", [Actor(LocalHost, "carol")]);
+        }));
+
+        var alice = Actor(LocalHost, "alice");
+        var feed = await service.GetFeedAsync(alice, threadDepth: 1, requesterIri: alice);
+        var ids = new HashSet<string?>(feed.Select(IdOf));
+
+        // The owner sees their own posts (public, DM, followers-only — the author clause) and the
+        // follow's public post, but NOT the follow's DM (bob's DM is addressed to carol, not alice).
+        Assert.Equal(4, feed.Count);
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-pub");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-dm");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-fol");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/b-pub");
+        Assert.DoesNotContain(ids, id => id == $"https://{LocalHost}/notes/b-dm");
+    }
+
+    [Fact]
+    public async Task Feed_Audience_RecipientSeesAddressedItems()
+    {
+        var (service, _) = Build(SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, alice, "Alice");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            AddPost(persistence, alice, "a-pub", "alice public");
+            AddPostTo(persistence, alice, "a-dm", "alice dm", [Actor(LocalHost, "bob")]);
+            AddPostTo(persistence, alice, "a-fol", "alice followers", [Actor(LocalHost, "bob"), Actor(LocalHost, "carol")]);
+
+            AddPost(persistence, bob, "b-pub", "bob public");
+            AddPostTo(persistence, bob, "b-dm", "bob dm", [Actor(LocalHost, "carol")]);
+        }));
+
+        // bob is a named recipient of alice's DM and followers-only post: he sees those in addition to
+        // the public posts and his own DM (he is its author).
+        var bob = Actor(LocalHost, "bob");
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1, requesterIri: bob);
+        var ids = new HashSet<string?>(feed.Select(IdOf));
+        Assert.Equal(5, feed.Count);
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-dm");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-fol");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/b-dm");
+    }
+
+    [Fact]
+    public async Task Feed_Audience_NonRecipientSeesOnlyPublic()
+    {
+        var (service, _) = Build(SeedLocal(persistence =>
+        {
+            var alice = Actor(LocalHost, "alice");
+            var bob = Actor(LocalHost, "bob");
+            SeedActor(persistence, alice, "Alice");
+            SeedActor(persistence, bob, "Bob");
+            persistence.Follows.RecordFollowAsync(alice, bob).GetAwaiter().GetResult();
+
+            AddPost(persistence, alice, "a-pub", "alice public");
+            AddPostTo(persistence, alice, "a-dm", "alice dm", [Actor(LocalHost, "bob")]);
+            AddPostTo(persistence, alice, "a-fol", "alice followers", [Actor(LocalHost, "bob"), Actor(LocalHost, "carol")]);
+
+            AddPost(persistence, bob, "b-pub", "bob public");
+            AddPostTo(persistence, bob, "b-dm", "bob dm", [Actor(LocalHost, "carol")]);
+        }));
+
+        // carol is a recipient of alice's followers-only post and bob's DM, but not of alice's DM.
+        var carol = Actor(LocalHost, "carol");
+        var feed = await service.GetFeedAsync(Actor(LocalHost, "alice"), threadDepth: 1, requesterIri: carol);
+        var ids = new HashSet<string?>(feed.Select(IdOf));
+        Assert.Equal(4, feed.Count);
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-fol");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/b-dm");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/a-pub");
+        Assert.Contains(ids, id => id == $"https://{LocalHost}/notes/b-pub");
+        Assert.DoesNotContain(ids, id => id == $"https://{LocalHost}/notes/a-dm");
+    }
+
+    /// <summary>
+    /// Seeds a <c>Create</c> of a note addressed to <paramref name="to"/> (a non-public audience) into
+    /// the actor's outbox — the non-public shape the audience/visibility filter must handle.
+    /// </summary>
+    private static void AddPostTo(
+        InMemoryPersistenceProvider persistence, Iri actorIri, string suffix, string content, IReadOnlyList<Iri> to)
+    {
+        var noteIri = $"https://{LocalHost}/notes/{suffix}";
+        persistence.Activities.AddToOutboxAsync(actorIri, new Create
+        {
+            Id = noteIri,
+            Actor = [new Link { Href = new Uri(actorIri.Value) }],
+            Object = [new Note
+            {
+                Id = noteIri,
+                Content = [content],
+                AttributedTo = [new Link { Href = new Uri(actorIri.Value) }],
+                To = to.Select(a => (IObjectOrLink)new Link { Href = new Uri(a.Value) }).ToList(),
+            }],
+        }).GetAwaiter().GetResult();
+    }
+
     // --- Remote follows --------------------------------------------------------------
 
     [Fact]

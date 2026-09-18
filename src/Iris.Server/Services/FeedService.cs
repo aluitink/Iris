@@ -87,7 +87,7 @@ public sealed class FeedService : IFollowFeedService
     }
 
     /// <inheritdoc/>
-    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, CancellationToken ct = default)
+    public async Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, CancellationToken ct = default)
     {
         var feed = await BuildFeedAsync(actorIri, threadDepth, ct).ConfigureAwait(false);
 
@@ -105,6 +105,15 @@ public sealed class FeedService : IFollowFeedService
         {
             feed = FilterFeedByType(feed, activityType);
         }
+
+        // Audience/visibility filter (139.2-s5, follow-feed surface): drop non-public items (followers-only
+        // or direct) that are not addressed to the requesting actor and not authored by them. An
+        // anonymous / unsigned request (requesterIri null) therefore sees only public content; the feed's
+        // owner (a signed request as the actor) additionally sees their own non-public posts (the author
+        // clause) and any non-public items addressed to them; a signed non-recipient sees only public
+        // content. Filtering after the query/type filters (and before the handler's paginate) means the
+        // viewer is not returned a page dominated by content they cannot legitimately see.
+        feed = feed.Where(item => VisibilityFilter.IsFeedItemVisibleTo(item, requesterIri)).ToList();
 
         return feed;
     }

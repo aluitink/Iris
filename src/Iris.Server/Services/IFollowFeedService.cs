@@ -52,10 +52,17 @@ public interface IFollowFeedService
     /// <param name="threadDepth">Optional reply-depth threshold (117.1): when non-null and > 0, replies up
     /// to this depth from followed actors are included in the feed. When null or 0, all replies from
     /// followed actors are filtered out (the default). The actor's own replies are always kept regardless.</param>
+    /// <param name="requesterIri">The requesting actor's IRI, or null for an anonymous / unsigned
+    /// request. When set, non-public items (followers-only or direct) not addressed to the requester
+    /// (and not authored by them) are excluded from the feed; when null, only public items are
+    /// returned. The feed's owner always sees their own posts (the author clause). This is the
+    /// audience/visibility filter — without it an anonymous request to <c>GET /u/{handle}/feed</c>
+    /// would surface the owner's direct messages and their follows' non-public posts (the Phase
+    /// 136.18 / 139.2-s5 gap, follow-feed surface).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>A task that completes with the feed items (the actor's own posts plus the follows' posts;
     /// filtered when a query/type filter is supplied; empty only when the actor has no posts of their own
     /// and no followed actor has content, or nothing matches the filters). A remote outbox that cannot be
     /// fetched contributes nothing (it does not fail the whole feed).</returns>
-    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, CancellationToken ct = default);
+    public Task<IReadOnlyList<IObjectOrLink>> GetFeedAsync(Iri actorIri, string? query = null, string? activityType = null, int? threadDepth = null, Iri? requesterIri = null, CancellationToken ct = default);
 }

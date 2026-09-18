@@ -131,6 +131,39 @@ public sealed class VisibilityFilterTests
         };
         Assert.True(VisibilityFilter.IsFeedItemVisibleTo(bareActivity, null));
     }
+
+    [Fact]
+    public void Author_SeesTheirOwnDm()
+    {
+        // A DM's audience is the recipient (bob), but the author (alice) must still see their own post
+        // in their home timeline — the author clause.
+        var dm = NoteWithAudience(new Link { Href = new Uri("https://iris.example/ap/v1/u/bob") });
+        dm.AttributedTo = [new Person { Id = "https://iris.example/ap/v1/u/alice" }];
+
+        Iri alice = new("https://iris.example/ap/v1/u/alice");
+        Iri bob = new("https://iris.example/ap/v1/u/bob");
+
+        // The author sees their own DM.
+        Assert.True(VisibilityFilter.IsVisibleTo(dm, alice));
+        // The recipient also sees it (audience clause).
+        Assert.True(VisibilityFilter.IsVisibleTo(dm, bob));
+        // A non-recipient, non-author does not.
+        Assert.False(VisibilityFilter.IsVisibleTo(dm, new Iri("https://iris.example/ap/v1/u/carol")));
+        // Anonymous does not.
+        Assert.False(VisibilityFilter.IsVisibleTo(dm, null));
+    }
+
+    [Fact]
+    public void AuthorClause_DoesNotOverrideForPublic()
+    {
+        // A public post is visible to everyone regardless of authorship (the author clause is
+        // only reached for non-public content).
+        var note = NoteWithAudience(PublicAudience());
+        note.AttributedTo = [new Person { Id = "https://iris.example/ap/v1/u/alice" }];
+
+        Assert.True(VisibilityFilter.IsVisibleTo(note, null));
+        Assert.True(VisibilityFilter.IsVisibleTo(note, new Iri("https://iris.example/ap/v1/u/stranger")));
+    }
 }
 
 /// <summary>

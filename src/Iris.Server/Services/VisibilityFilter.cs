@@ -42,7 +42,10 @@ internal static class VisibilityFilter
     /// unauthenticated request.</param>
     /// <returns>
     /// <see langword="true"/> when the object is public (public sentinel, or no named audience), or
-    /// when the requester is a named recipient; <see langword="false"/> otherwise.
+    /// when the requester is a named recipient, or when the requester is the author
+    /// (<c>attributedTo</c>) — an actor can always see their own content; <see langword="false"/>
+    /// otherwise. The author clause is what lets an actor see their own direct messages in their
+    /// home timeline (a DM's audience is the recipient, not the sender).
     /// </returns>
     public static bool IsVisibleTo(IObject? obj, Iri? requester)
     {
@@ -56,7 +59,7 @@ internal static class VisibilityFilter
             return true;
         }
 
-        return requester is { } r && ContainsAudience(obj, r);
+        return requester is { } r && (ContainsAudience(obj, r) || IsAuthor(obj, r));
     }
 
     /// <summary>
@@ -148,6 +151,17 @@ internal static class VisibilityFilter
     {
         return (obj.To is { } to && to.Any(e => MatchesAudience(e, requester)))
             || (obj.Cc is { } cc && cc.Any(e => MatchesAudience(e, requester)));
+    }
+
+    /// <summary>
+    /// Reports whether <paramref name="requester"/> is the author of <paramref name="obj"/> (its
+    /// <c>attributedTo</c> names the requester). An author can always see their own content — this is
+    /// what lets an actor see their own direct messages (a DM's audience is the recipient, not the
+    /// sender) in their home timeline.
+    /// </summary>
+    private static bool IsAuthor(IObject obj, Iri requester)
+    {
+        return obj.AttributedTo is { } attributedTo && attributedTo.Any(e => MatchesAudience(e, requester));
     }
 
     private static bool MatchesAudience(IObjectOrLink entry, Iri requester)
