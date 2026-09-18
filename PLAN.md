@@ -96,10 +96,11 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 7. **Web tests**: `cd /workspace && dotnet test --no-build -c Release` — keep passing tests; **delete** any test broken by the change; **skip/comment out** any single test >15 s (find offenders via `dotnet test tests/Iris.Web.Tests -v n --logger "console;verbosity=detailed"` per-test timings). No new coded tests. **Every deleted or skipped test is logged** (test name, action, reason, restore-by) — no silent deletions; the phase's closeout reviews the ledger. Try to not create any new tests.. we have too many.
 8. **Update PLAN.md**: move the finished slice to Recently Completed; keep Up Next sorted by priority (blockers first). At phase closeout: distill the next-next phase's topics into this file.
 
-## Up Next
+## Active Slice
 
-1. **UI/UX: Complete like/boost count fix** (S2) — The partial fix (994) reads `likes.totalItems`/`shares.totalItems` from remote objects, but objects stored locally without these collections still show 0. A complete fix would require changes to how remote objects are stored or fetched: (a) When a remote object is first stored, also fetch and store its `likes`/`shares` collections, or (b) When rendering a remote object, fetch its `likes`/`shares` counts from the remote instance on-demand (expensive), or (c) Periodically refresh the `likes`/`shares` counts for stored remote objects.
-2. **General UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
+**UI/UX: Complete like/boost count fix** (S2) — Investigating where `likes`/`shares` collections are lost for remote objects. The partial fix (994) is in place and works for objects that have the collections. For objects that don't, the collections are likely being lost when the object is first stored (or when the `ObjectInteractionCountRefreshService` re-stores it). Need to verify whether the embedded object from a Create activity includes `likes`/`shares`, and whether they survive the `PutObjectAsync` round-trip.
+
+`remaining:` Determine whether `likes`/`shares` are preserved in the stored object document. If not, fix the storage path to preserve them. If yes, investigate why the client's fallback to `likes.totalItems`/`shares.totalItems` is not working.
 
 ## Inbox
 
