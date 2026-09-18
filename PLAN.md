@@ -102,8 +102,9 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-1. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. The only console errors are the known cosmetic 401/404/418 proxy fetch errors for remote objects (documented in Phase 144). Once improvements are made, this item will come up again for further refinement.
-2. **Complete like/boost count fix (with remote fetching)** (S2, **deferred**) — Extensive investigation completed. The partial fix (994) works correctly for objects that arrive with `likes`/`shares` collections. A complete fix would require one of: (a) extending the `ObjectInteractionCountRefreshService` to fetch remote counts (expensive — one HTTP request per remote object per refresh cycle), or (b) modifying the client to fetch remote object documents on-demand when counts are missing (expensive — one HTTP request per remote object rendered). Both approaches have significant performance implications. The partial fix is the current best solution; a complete fix is deferred as a future enhancement that requires careful performance analysis.
+1. **139.5 Performance review: WASM cold-start (scenario 5)** — Measure first-load time (bundle size, loading-screen duration) on a throttled connection. Compare against the Phase 61.1 baseline. Evidence: timing capture.
+2. **139.5 Performance review: Pagination/backfill cost (scenario 7)** — Measure the cost of a first-peer historical backfill against a community with substantial history. Verify it completes in a bounded, documented time and doesn't block the UI thread/request. Evidence: timing capture.
+3. **General UI/UX review** (recurring) — Reviewed Home, Notifications, Profile, Compose, Communities pages via MCP Playwright as andrew:Password1. All pages look consistent and functional. No major inconsistencies or improvements found. Once improvements are made, this item will come up again for further refinement.
 
 ## Inbox
 
