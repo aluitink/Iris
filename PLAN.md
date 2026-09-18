@@ -98,7 +98,8 @@ Each slice is a **Playwright-driven pass**, not a code-first slice.
 
 ## Up Next
 
-- *(empty)*
+1. **UI/UX: Complete like/boost count fix** (S2) — The partial fix (994) reads `likes.totalItems`/`shares.totalItems` from remote objects, but objects stored locally without these collections still show 0. A complete fix would require changes to how remote objects are stored or fetched: (a) When a remote object is first stored, also fetch and store its `likes`/`shares` collections, or (b) When rendering a remote object, fetch its `likes`/`shares` counts from the remote instance on-demand (expensive), or (c) Periodically refresh the `likes`/`shares` counts for stored remote objects.
+2. **General UI/UX review** - Use MCP Playwright to test the Iris user interface as andrew:Password1 - identify any inconsistencies or improvements to be made in the Up Next section of the plan. Once we have a list of improvements, move this item to the end of the list and end your turn to work on the improvements. Once the improvements are complete this item will come up again for further refinement.
 
 ## Inbox
 
