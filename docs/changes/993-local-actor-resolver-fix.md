@@ -73,7 +73,35 @@ a self-signed cert, hosts entry + CA trust in the Iris container):
    `Inbox accepted: Accept from https://mastodon.luit.ink/... targeting
    https://iris.luit.ink/ap/v1/u/mastodtest/follows/...`
 
-**Known issue (separate):** the `iris_delivery_delivered_total` counter
-stays at 0 even though deliveries succeed (the Mastodon followers count
-and Accept response prove the delivery worked). The metrics tracking
-code is not incrementing the `delivered` counter.
+## Second bug: delivery metrics not wired into the production worker
+
+While verifying the fix, the `iris_delivery_delivered_total` counter
+stayed at 0 even though deliveries succeeded. The root cause: the
+production `DeliveryWorker` constructor (the one `AddActivityPubServer`
+uses) did not accept an `IrisDeliveryMetrics` parameter — it passed
+`null` for the metrics field. The `IrisDeliveryMetrics` singleton was
+registered in DI and passed to `DeliveryService` (which records
+enqueued), but never to `DeliveryWorker` (which records delivered /
+attempt_failed / dead_lettered).
+
+### Fix
+
+Added an `IrisDeliveryMetrics?` parameter to the production constructor
+and updated the DI registration in `ActivityPubServerExtensions` to
+resolve and pass the singleton.
+
+### Files changed
+
+- `src/Iris.Server/Delivery/DeliveryWorker.cs` — added `metrics`
+  parameter to the production constructor
+- `src/Iris.Server/ActivityPubServerExtensions.cs` — DI registration
+  passes `IrisDeliveryMetrics`
+
+### Verification
+
+After redeploying:
+- `iris_delivery_enqueued_total 3`
+- `iris_delivery_delivered_total 3`
+- `iris_delivery_attempt_failed_total 0`
+- `iris_delivery_dead_lettered_total 0`
+- Per-type breakdown shows Follow, Undo, and Create all delivered.

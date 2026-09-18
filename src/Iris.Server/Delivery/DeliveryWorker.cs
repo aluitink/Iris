@@ -139,6 +139,8 @@ public sealed class DeliveryWorker : BackgroundService
     /// (<c>Iris:Delivery:ShutdownDrainTimeout</c>). Null uses the default budget.</param>
     /// <param name="circuitBreaker">The per-peer outbound-delivery circuit breaker (Phase 17.3). Null
     /// disables circuit breaking.</param>
+    /// <param name="metrics">The delivery metrics (Phase 17.2). Null disables metric recording (the
+    /// worker delivers exactly as before).</param>
     /// <param name="trace">The federation trace collector (Phase 136.1). Null disables trace capture
     /// (the worker delivers exactly as before).</param>
     public DeliveryWorker(
@@ -153,9 +155,10 @@ public sealed class DeliveryWorker : BackgroundService
         IDeliveryRateLimiter? rateLimiter,
         IConfiguration? configuration,
         IDeliveryCircuitBreaker? circuitBreaker,
+        Iris.Server.Observability.IrisDeliveryMetrics? metrics,
         Iris.Server.Observability.IFederationTraceCollector? trace)
         : this(queue, clientFactory, transportFactory, options, logger, retryOptions, deadLetter,
-            maxConcurrentDeliveries, rateLimiter, null, circuitBreaker,
+            maxConcurrentDeliveries, rateLimiter, metrics, circuitBreaker,
             ResolveShutdownDrainTimeoutMs(configuration), trace)
     {
     }
