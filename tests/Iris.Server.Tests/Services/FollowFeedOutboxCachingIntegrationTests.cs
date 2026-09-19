@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text.Json;
 using Iris.Client;
 using Iris.Client.Caching;
 using ClientCollectionPageCache = Iris.Client.Collections.CollectionPageCache;
@@ -9,6 +8,7 @@ using Iris.Server.InMemory;
 using Iris.Server.Security;
 using Iris.Server.Services;
 using Iris.Testing;
+using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -41,6 +41,7 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
     private readonly InMemoryPersistenceProvider _aPersistence;
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly HttpClient _http;
+    private readonly IActivityPubClient _signedClient;
     private readonly CountingHandler _counter;
 
     public FollowFeedOutboxCachingIntegrationTests()
@@ -74,6 +75,12 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
 
         // A hosts alice. Override IFollowFeedService to route outbound fetches through the counting
         // handler. The outbound client carries a CollectionPageCache (146.3) + ActorCache (146.1).
+        //
+        // The signed test client below signs as alice, so A's inbound signature validator resolves
+        // alice's key by fetching A's OWN actor document. A's default IActorDocumentFetcher would use a
+        // real HttpClientHandler (which cannot reach the in-process TestServer), so it is overridden
+        // with one wired to A's own TestServer (deferred via the LazyHandler — A does not exist yet
+        // while the host is being constructed).
         var aKeyStore = new InMemoryKeyStore();
         aKeyStore.PutKey(aKey);
         var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
@@ -83,6 +90,22 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
 
         var pageCache = new ClientCollectionPageCache();
         var actorCache = new ActorCache();
+
+        TestServer? aServerRef = null;
+        var selfFetcher = new IrisActorDocumentFetcher(
+            clientFactory.Create(
+                new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
+                new LazyHandler(() => aServerRef!.CreateHandler())),
+            new RemoteActorCache());
+
+        // A signed client (signed as alice) that reaches A's own endpoint. The follow-feed endpoint is
+        // owner-gated (139.2-s5c): only a valid signature as the feed's owner is served the feed, so the
+        // test's reads go through this signed client instead of an unsigned HttpClient (an unsigned GET
+        // is 403'd). The LazyHandler defers A's TestServer handler to the first request (A does not
+        // exist yet while the test is being constructed).
+        _signedClient = clientFactory.Create(
+            new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
+            new LazyHandler(() => aServerRef!.CreateHandler()));
 
         var outboundClient = clientFactory.Create(
             new ActivityPubClientOptions
@@ -101,9 +124,7 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
             RegisterLocalKey = false,
             ExtraServices = s =>
             {
-                s.AddSingleton<IActorDocumentFetcher>(sp => new IrisActorDocumentFetcher(
-                    outboundClient,
-                    sp.GetRequiredService<RemoteActorCache>()));
+                s.AddSingleton<IActorDocumentFetcher>(selfFetcher);
 
                 s.AddSingleton<IFollowFeedService>(sp => new FeedService(
                     sp.GetRequiredService<IPersistenceProvider>(),
@@ -114,12 +135,14 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
             },
         });
         _a = a;
+        aServerRef = _a;
 
         _http = new HttpClient(_a.CreateHandler(), disposeHandler: false);
     }
 
     public void Dispose()
     {
+        _signedClient.Dispose();
         _http.Dispose();
         _a.Dispose();
         _b.Dispose();
@@ -131,9 +154,12 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
     {
         var aBase = $"https://{AHost}";
 
-        // First feed call: fetches bob's and dave's actor docs + outbox pages over the wire.
-        var response1 = await _http.GetAsync($"{aBase}/ap/v1/u/{Alice}/feed?limit=10");
-        response1.EnsureSuccessStatusCode();
+        // First feed call: fetches bob's and dave's actor docs + outbox pages over the wire. The read is
+        // signed as alice (the feed's owner) via the signed client — the endpoint is owner-gated
+        // (139.2-s5c) and 403s an unsigned GET. GetObjectAsync returns the feed's page-1 document
+        // (an OrderedCollection carrying its items); a null return means the request failed.
+        var first = await _signedClient.GetObjectAsync(new Iri($"{aBase}/ap/v1/u/{Alice}/feed?limit=10"));
+        Assert.NotNull(first);
 
         // The first call should have made GETs to B (actor docs + outbox pages).
         var gets1 = _counter.TotalGets;
@@ -142,16 +168,16 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
         _counter.Reset();
 
         // Second feed call (within the 30 s TTL): all actor docs + outbox pages should be served from cache.
-        var response2 = await _http.GetAsync($"{aBase}/ap/v1/u/{Alice}/feed?limit=10");
-        response2.EnsureSuccessStatusCode();
+        var second = await _signedClient.GetObjectAsync(new Iri($"{aBase}/ap/v1/u/{Alice}/feed?limit=10"));
+        Assert.NotNull(second);
 
-        // Both responses should return the same feed (4 items: bob's 2 + dave's 2).
-        using var doc1 = JsonDocument.Parse(await response1.Content.ReadAsStringAsync());
-        using var doc2 = JsonDocument.Parse(await response2.Content.ReadAsStringAsync());
-        var items1 = JsonDoc.GetItems(doc1.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
-        var items2 = JsonDoc.GetItems(doc2.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
-        Assert.Equal(4, items1.Length);
-        Assert.Equal(items1, items2);
+        // Both responses should return the same feed (4 items: bob's 2 + dave's 2). The items are the
+        // outbox pages' contents: Create activities, each carrying the created note as `object`. The
+        // item's identity is the note's IRI (the Create's `object`), which is what the feed dedupes by.
+        var ids1 = FeedItemIds(first!);
+        var ids2 = FeedItemIds(second!);
+        Assert.Equal(4, ids1.Length);
+        Assert.Equal(ids1, ids2);
 
         // The second call should make zero GETs to B (all cached within the TTL).
         var gets2 = _counter.TotalGets;
@@ -160,6 +186,51 @@ public sealed class FollowFeedOutboxCachingIntegrationTests : IDisposable
     }
 
     // --- Helpers --------------------------------------------------------------------------
+
+    /// <summary>
+    /// Reads the item IRIs from a feed page document (an <see cref="OrderedCollection"/>/
+    /// <see cref="OrderedCollectionPage"/>). Each feed item is a <see cref="Create"/> activity whose
+    /// <c>object</c> is the created note; the note's IRI (the Create's <c>object</c> href, or the
+    /// Create's own IRI when the note is inline) is the item's identity.
+    /// </summary>
+    private static string[] FeedItemIds(IObject page)
+    {
+        var items = (page as Collection) is { } collection
+            ? CollectionPageFactory.ResolveCollectionItems(collection)
+            : [];
+        var ids = new List<string>();
+        foreach (var item in items)
+        {
+            var id = FeedItemId(item);
+            if (id is not null)
+            {
+                ids.Add(id);
+            }
+        }
+
+        return [.. ids];
+    }
+
+    private static string? FeedItemId(IObjectOrLink item)
+    {
+        var obj = item as IObject;
+        if (obj is null)
+        {
+            return null;
+        }
+
+        // A Create carries the created note as `object` (a Link to the note's IRI, or the note inline).
+        if (obj is Create { Object: { } objects })
+        {
+            var note = objects.FirstOrDefault() as IObjectOrLink;
+            if (note is not null && note.Id is { } noteId)
+            {
+                return noteId;
+            }
+        }
+
+        return obj.Id;
+    }
 
     /// <summary>
     /// A counting <see cref="DelegatingHandler"/> that records every GET and forwards via

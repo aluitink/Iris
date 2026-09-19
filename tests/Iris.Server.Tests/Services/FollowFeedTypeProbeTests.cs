@@ -1,7 +1,9 @@
 using System.Text;
 using Iris.Client;
+using Iris.Client.Auth;
 using Iris.Client.Collections;
 using Iris.Core;
+using Iris.Core.Collections;
 using Iris.Core.Identity;
 using Iris.Server;
 using Iris.Server.InMemory;
@@ -109,30 +111,28 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
     {
         var expected = ExpectedSuffixes.Select(suffix => $"{host.Carol.Value}/{suffix}").ToList();
 
+        // The follow feed is owner-gated (139.2-s5c): only a signed request as the actor (alice) is
+        // accepted. The signed client signs as alice; the server's signature validator resolves alice's
+        // public key via the host's self-fetching IActorDocumentFetcher.
+        using var client = host.CreateSignedClient();
+        var items = new List<string>();
         if (!useClient)
         {
-            using var http = new HttpClient(host.Server.CreateHandler(), disposeHandler: false);
-            var response = await http.GetAsync($"https://{Host}/ap/v1/u/{Alice}/feed?limit=10");
-            response.EnsureSuccessStatusCode();
-            var body = await response.Content.ReadAsStringAsync();
-            Assert.Equal(expected, JsonDoc.ItemIdsOf(body));
-            return;
+            var collection = await client.GetObjectAsync(
+                new Iri($"https://{Host}/ap/v1/u/{Alice}/feed?limit=10"));
+            Assert.NotNull(collection);
+            items = CollectionPageFactory
+                .ResolveCollectionItems((Collection)collection!)
+                .Select(ItemIri)
+                .ToList();
         }
-
-        using var client = new ActivityPubClient(
-            new HttpClient(host.Server.CreateHandler(), disposeHandler: false),
-            null,
-            new Iris.Client.Collections.CollectionPageCache());
-        var items = new List<string>();
-        await foreach (var item in client.GetFollowFeedAsync(
-            new Iri($"https://{Host}/ap/v1/u/{Alice}"), new CollectionQuery { Limit = 10 }))
+        else
         {
-            items.Add(item switch
+            await foreach (var item in client.GetFollowFeedAsync(
+                new Iri($"https://{Host}/ap/v1/u/{Alice}"), new CollectionQuery { Limit = 10 }))
             {
-                IObject { Id: { } id } => id,
-                ILink { Href: { } href } => href.ToString(),
-                _ => "(unrecognized)",
-            });
+                items.Add(ItemIri(item));
+            }
         }
 
         Assert.Equal(expected, items);
@@ -142,7 +142,7 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
     public async Task Probe_UiPath_CollectionIriWithQuery_ReturnsAllActivityTypes()
     {
         using var host = ProbeHost.Create(new InMemoryPersistenceProvider());
-        var client = NewClient(host);
+        var client = host.CreateSignedClient();
         try
         {
             // Feed.razor's exact call: GetCollectionAsync on {actor}/feed (here with ?q=), one page at a
@@ -196,7 +196,7 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
         var (aliceIri, rayvenIri) = SeedRemoteGraph(out var aPersistence, out var aKey);
 
         using var a = CreateFollowFeedHost(aPersistence, aliceIri, aKey);
-        var body = await FetchFeedAsync(a, limit: 10);
+        var items = await FetchFeedItemsAsync(a, aliceIri, aKey, limit: 10);
 
         // rayven's 5 items (newest first: Note, Accept, Like, Announce, Create) + alice's 0 = 5.
         var expected = new[]
@@ -207,7 +207,7 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
             $"{rayvenIri.Value}/activities/announce-1",
             $"{rayvenIri.Value}/activities/create-1",
         };
-        Assert.Equal(expected, JsonDoc.ItemIdsOf(body));
+        Assert.Equal(expected, items);
     }
 
     private (Iri Alice, Iri Rayven) SeedRemoteGraph(
@@ -265,12 +265,32 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
         }).GetAwaiter().GetResult();
     }
 
-    private static async Task<string> FetchFeedAsync(TestServer a, int limit)
+    private static async Task<List<string>> FetchFeedItemsAsync(TestServer a, Iri aliceIri, KeyPair aliceKey, int limit)
     {
-        using var http = new HttpClient(a.CreateHandler(), disposeHandler: false);
-        var response = await http.GetAsync($"https://{AHost}/ap/v1/u/{Alice}/feed?limit={limit}");
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStringAsync();
+        // The follow feed is owner-gated (139.2-s5c): the request must be signed as alice. A's host is
+        // wired with a self-fetching IActorDocumentFetcher, so the signature validator can resolve
+        // alice's public key from A's own actor-document endpoint.
+        using var client = NewSignedClient(a, aliceIri, aliceKey);
+        var collection = await client.GetObjectAsync(
+            new Iri($"https://{AHost}/ap/v1/u/{Alice}/feed?limit={limit}"));
+        Assert.NotNull(collection);
+        return CollectionPageFactory
+            .ResolveCollectionItems((Collection)collection!)
+            .Select(ItemIri)
+            .ToList();
+    }
+
+    private static IActivityPubClient NewSignedClient(TestServer server, Iri actorIri, KeyPair actorKey)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(actorKey);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, actorKey.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        return factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            server.CreateHandler());
     }
 
     /// <summary>
@@ -295,6 +315,16 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
         var aSigner = new HttpSignatureSigner(aKeyStore);
         var bWiredClientFactory = new ActivityPubClientFactory(aKeyStore, aKeyProvider, aSigner);
 
+        // A's inbound signature validator resolves alice's public key by fetching A's OWN actor
+        // document over the in-process wire (the production default routes to a real
+        // HttpClientHandler that cannot reach a TestServer). The lazy handler defers the handler
+        // lookup until the first fetch, when the TestServer already exists.
+        TestServer? aServerRef = null;
+        var selfHandlerFactory = () => aServerRef!.CreateHandler();
+        var selfClient = bWiredClientFactory.Create(
+            new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
+            new LazyHandler(selfHandlerFactory));
+
         var a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
             Host = AHost,
@@ -307,7 +337,7 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
                     new ActivityPubClientOptions { ActorId = aliceIri, EnableRetry = false },
                     bHandler);
                 s.AddSingleton<IActorDocumentFetcher>(sp => new IrisActorDocumentFetcher(
-                    bClient, sp.GetRequiredService<RemoteActorCache>()));
+                    selfClient, sp.GetRequiredService<RemoteActorCache>()));
                 s.AddSingleton<IFollowFeedService>(sp => new FeedService(
                     sp.GetRequiredService<IPersistenceProvider>(),
                     sp.GetRequiredService<ILocalActorResolver>(),
@@ -316,12 +346,10 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
                     sp.GetRequiredService<IOptions<FeedOptions>>()));
             },
         });
+        aServerRef = a;
 
         return a;
     }
-
-    private static ActivityPubClient NewClient(ProbeHost host)
-        => new(new HttpClient(host.Server.CreateHandler(), disposeHandler: false), null, new Iris.Client.Collections.CollectionPageCache());
 
     private static string ItemIri(IObjectOrLink item)
         => item switch
@@ -348,28 +376,62 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
     /// seeded with alice following carol, whose outbox holds one item of every feed-relevant activity
     /// type. The given <see cref="IPersistenceProvider"/> is bound as the server's persistence
     /// aggregate (overlaid via the factory's extra-service escape hatch, so it wins for
-    /// <c>GetService&lt;IPersistenceProvider&gt;</c>); the factory's key seam is an empty key store
-    /// (the feed endpoints perform no outbound delivery, so no signing is needed).
+    /// <c>GetService&lt;IPersistenceProvider&gt;</c>). The follow feed is owner-gated (139.2-s5c), so
+    /// alice is seeded with a real key and the host's <see cref="IActorDocumentFetcher"/> is wired to
+    /// fetch the host's OWN actor documents over the in-process wire (the production default routes to
+    /// a real <c>HttpClientHandler</c> that cannot reach a TestServer) — that is what lets the inbound
+    /// signature validator resolve alice's public key for the owner gate.
     /// </summary>
     private sealed class ProbeHost : IDisposable
     {
+        private readonly IActivityPubClientFactory _clientFactory;
+
         public TestServer Server { get; }
         public Iri Alice { get; }
         public Iri Carol { get; }
+        public KeyPair AliceKey { get; }
 
-        private ProbeHost(TestServer server, Iri alice, Iri carol)
+        private ProbeHost(TestServer server, Iri alice, Iri carol, KeyPair aliceKey, IActivityPubClientFactory clientFactory)
         {
             Server = server;
             Alice = alice;
             Carol = carol;
+            AliceKey = aliceKey;
+            _clientFactory = clientFactory;
         }
+
+        /// <summary>
+        /// A signed <see cref="IActivityPubClient"/> that signs as alice and reaches this host's
+        /// in-process <see cref="TestServer"/> (the follow feed is owner-gated, so the request must be
+        /// signed as the actor).
+        /// </summary>
+        public IActivityPubClient CreateSignedClient()
+            => _clientFactory.Create(
+                new ActivityPubClientOptions { ActorId = Alice, EnableRetry = false },
+                Server.CreateHandler());
 
         public static ProbeHost Create(IPersistenceProvider persistence)
         {
-            var alice = SeedActor(persistence, "alice");
+            var (aliceKey, alice, aliceKeyId) = SeedActorWithKey(persistence, "alice");
             var carol = SeedActor(persistence, "carol");
             persistence.Follows.RecordFollowAsync(alice, carol).GetAwaiter().GetResult();
             SeedOutbox(persistence, carol);
+
+            // The host's self-fetching client: signed as alice, routed to this host's own TestServer
+            // (which does not exist yet — the lazy handler defers the handler lookup until the first
+            // fetch). Its publicKey (seeded by SeedPersonWithKey) is what the signature validator
+            // verifies against.
+            var keyStore = new InMemoryKeyStore();
+            keyStore.PutKey(aliceKey);
+            var keyProvider = new InMemoryKeyProvider(keyStore);
+            keyProvider.RegisterKey(alice, aliceKey.KeyId);
+            var signer = new HttpSignatureSigner(keyStore);
+            var clientFactory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+
+            TestServer? serverRef = null;
+            var selfClient = clientFactory.Create(
+                new ActivityPubClientOptions { ActorId = alice, EnableRetry = false },
+                new LazyHandler(() => serverRef!.CreateHandler()));
 
             var options = new ActivityPubHostOptions
             {
@@ -388,9 +450,13 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
                     services.AddSingleton<IPersistenceProvider>(persistence);
                     services.AddSingleton<IKeyStore>(new InMemoryKeyStore());
                 },
+                Fetcher = new IrisActorDocumentFetcher(selfClient, new RemoteActorCache()),
             };
 
-            return new ProbeHost(ActivityPubHostFactory.Create(options), alice, carol);
+            var server = ActivityPubHostFactory.Create(options);
+            serverRef = server;
+
+            return new ProbeHost(server, alice, carol, aliceKey, clientFactory);
         }
 
         public void Dispose() => Server.Dispose();
@@ -405,6 +471,35 @@ public sealed class FollowFeedTypeProbeTests : IDisposable
                 Name = [handle],
             }).GetAwaiter().GetResult();
             return actorIri;
+        }
+
+        private static (KeyPair Key, Iri ActorIri, Iri KeyId) SeedActorWithKey(
+            IPersistenceProvider persistence, string handle)
+        {
+            var actorIriString = $"https://{Host}/ap/v1/u/{handle}";
+            var actorIri = new Iri(actorIriString);
+            var keyId = new Iri($"{actorIriString}#key-1");
+
+            var key = KeyPairGenerator.GenerateRsa(keyId);
+            persistence.Keys.PutKey(key);
+
+            var actor = new Person
+            {
+                Id = actorIriString,
+                PreferredUsername = handle,
+                Name = [handle],
+            };
+            actor.ExtensionData ??= new Dictionary<string, System.Text.Json.JsonElement>();
+            actor.ExtensionData[ActivityPubExtensionNames.PublicKey] =
+                System.Text.Json.JsonSerializer.SerializeToElement(new
+                {
+                    id = keyId.Value,
+                    owner = actorIriString,
+                    publicKeyPem = key.ExportPublicKeyPem(),
+                });
+            persistence.Actors.PutActorAsync(actor).GetAwaiter().GetResult();
+
+            return (key, actorIri, keyId);
         }
 
         private static void SeedOutbox(IPersistenceProvider persistence, Iri carol)

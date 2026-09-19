@@ -9167,6 +9167,17 @@ public static class ActivityPubServerExtensions
         // (the author clause) and any non-public items addressed to them.
         var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
 
+        // Gate the follow-feed request to the actor's owner (139.2-s5c, authz): the follow feed is a
+        // private view (it shows the actor's own non-public posts), so only the actor themselves may
+        // fetch it. A non-owner (a different actor, or an anonymous/unsigned request) is denied with
+        // 403. The WASM client signs every request with the session actor's key, so the owner's own
+        // requests resolve correctly; remote instances federate via the public outbox, not the follow
+        // feed, so this gate does not break cross-instance reads.
+        if (requesterIri is null || requesterIri != actorIri)
+        {
+            return Results.StatusCode(403);
+        }
+
         var items = await feedService.GetFeedAsync(
             actorIri,
             query.Length > 0 ? query : null,

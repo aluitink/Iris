@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Collections;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
@@ -40,6 +41,7 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
     private readonly InMemoryPersistenceProvider _persistence;
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
+    private IActivityPubClient _signedClient;
     private KeyPair _bobKey;
 
     public FlagsCollectionIntegrationTests(FlagsCollectionSharedHost fixture)
@@ -49,6 +51,7 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
         _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
         _carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
         _bobKey = null!;
+        _signedClient = null!;
         _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
     }
 
@@ -60,6 +63,7 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
         var keyId = new Iri($"{_bobActorIri.Value}#key-1");
         _persistence.Keys.TryGetKey(keyId, out var key);
         _bobKey = (KeyPair)key!;
+        _signedClient = BuildDeliveryClient(_bobActorIri, _bobKey, new LazyHandler(() => _fixture.Server.CreateHandler()));
         return Task.CompletedTask;
     }
 
@@ -67,6 +71,7 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
     public Task DisposeAsync()
     {
         _http.Dispose();
+        _signedClient.Dispose();
         return Task.CompletedTask;
     }
 
@@ -222,28 +227,44 @@ public sealed class FlagsCollectionIntegrationTests : IAsyncLifetime
     }
 
     /// <summary>
-    /// Reads bob's followed feed over the wire and returns the IRIs of the content objects (the
-    /// <c>Note</c>s) it contains. The feed's items include the actor's own activities (54.17) as well
-    /// as the followed actors' <c>Create</c>s; each item's embedded note IRI is read from its
-    /// <c>object</c> (a one-or-many array of one, or a bare object). Items whose <c>object</c> is a
-    /// link (e.g. a <c>Block</c>/<c>Undo</c>/<c>Flag</c> whose object is an actor IRI) are skipped —
-    /// they have no content object.
+    /// Reads bob's followed feed over the wire (signed as bob, since the feed is owner-gated) and
+    /// returns the IRIs of the content objects (the <c>Note</c>s) it contains. The feed's items include
+    /// the actor's own activities (54.17) as well as the followed actors' <c>Create</c>s; each
+    /// activity item's embedded note IRI is read from its <c>Object</c>. Items whose object is a link
+    /// (e.g. a <c>Block</c>/<c>Undo</c>/<c>Flag</c> whose object is an actor IRI) are skipped — they
+    /// have no content object.
     /// </summary>
     private async Task<IReadOnlyList<string>> FeedNoteIrisAsync(Iri actorIri)
     {
-        var response = await _http.GetAsync($"https://{BHost}/ap/v1/u/{Bob}/feed");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return JsonDoc.GetItems(doc.RootElement)
-            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("object", out var obj)
-                && (obj.ValueKind == JsonValueKind.Object
-                    || (obj.ValueKind == JsonValueKind.Array && obj.EnumerateArray().Any()
-                        && obj.EnumerateArray().First().ValueKind == JsonValueKind.Object)))
-            .Select(e => e.GetProperty("object"))
-            .Select(o => o.ValueKind == JsonValueKind.Array
-                ? o.EnumerateArray().First().GetProperty("id").GetString()!
-                : o.GetProperty("id").GetString()!)
-            .ToList();
+        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed"));
+        if (collection is not Collection coll)
+        {
+            return [];
+        }
+
+        var iris = new List<string>();
+        foreach (var item in CollectionPageFactory.ResolveCollectionItems(coll))
+        {
+            if (item is not Activity activity)
+            {
+                continue;
+            }
+
+            if (activity.Object is not { } objects)
+            {
+                continue;
+            }
+
+            foreach (var obj in objects.OfType<IObject>())
+            {
+                if (obj.Id is { Length: > 0 } id && !iris.Contains(id))
+                {
+                    iris.Add(id);
+                }
+            }
+        }
+
+        return iris;
     }
 
     // --- Helpers ----------------------------------------------------------------------

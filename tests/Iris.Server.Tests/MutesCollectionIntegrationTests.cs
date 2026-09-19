@@ -2,11 +2,14 @@ using System.Text;
 using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Collections;
 using Iris.Server;
 using Iris.Server.InMemory;
+using Iris.Server.Security;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 namespace Iris.Server.Tests;
@@ -44,18 +47,18 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
     private readonly Iri _bobActorIri;
     private readonly Iri _carolActorIri;
     private IActivityPubClient _client;
+    private IActivityPubClient _signedClient;
     private ILocalModerationClient _local;
 
     public MutesCollectionIntegrationTests(MutesCollectionSharedHost fixture)
     {
         _fixture = fixture;
         _persistence = (InMemoryPersistenceProvider)fixture.Persistence;
-        var bob = TestSeeder.SeedPersonWithKey(_persistence, BHost, Bob);
-        var carol = TestSeeder.SeedPersonWithKey(_persistence, BHost, Carol);
-        _bobActorIri = bob.ActorIri;
-        _carolActorIri = carol.ActorIri;
+        _bobActorIri = new Iri($"https://{BHost}/ap/v1/u/{Bob}");
+        _carolActorIri = new Iri($"https://{BHost}/ap/v1/u/{Carol}");
         _http = new HttpClient(fixture.Server.CreateHandler(), disposeHandler: false);
         _client = null!;
+        _signedClient = null!;
         _local = null!;
     }
 
@@ -63,15 +66,32 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
     public Task InitializeAsync()
     {
         _fixture.Reset();
-        SeedForFixture(_persistence);
+        ReseedWithExistingKeys(_persistence);
+        ClearRemoteCaches();
         RebuildClients();
         return Task.CompletedTask;
+    }
+
+    private void ClearRemoteCaches()
+    {
+        if (_fixture.Server.Services.GetService<RemoteActorCache>() is { } actorCache)
+        {
+            actorCache.Clear();
+        }
+
+        if (_fixture.Server.Services.GetService<RemoteKeyCache>() is { } keyCache)
+        {
+            keyCache.Clear();
+        }
+
+        _fixture.SelfFetcherCache?.Clear();
     }
 
     /// <inheritdoc/>
     public Task DisposeAsync()
     {
         _client.Dispose();
+        _signedClient.Dispose();
         _http.Dispose();
         return Task.CompletedTask;
     }
@@ -81,6 +101,7 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
         var bobKey = GetBobKey();
         _client = BuildLocalClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
             new ProxyCredentials(Bob, "bob-password"));
+        _signedClient = BuildDeliveryClient(_bobActorIri, bobKey, new LazyHandler(() => _fixture.Server.CreateHandler()));
         _local = BuildLocalModerationClient(_bobActorIri, bobKey, () => _fixture.Server.CreateHandler(),
             new ProxyCredentials(Bob, "bob-password"));
     }
@@ -238,28 +259,44 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
     // --- Helpers ----------------------------------------------------------------------
 
     /// <summary>
-    /// Reads bob's followed feed over the wire and returns the IRIs of the content objects (the
-    /// <c>Note</c>s) it contains. The feed's items include the actor's own activities (54.17) as well
-    /// as the followed actors' <c>Create</c>s; each item's embedded note IRI is read from its
-    /// <c>object</c> (a one-or-many array of one, or a bare object). Items whose <c>object</c> is a
-    /// link (e.g. a <c>Block</c>/<c>Undo</c>/<c>Flag</c> whose object is an actor IRI) are skipped —
-    /// they have no content object.
+    /// Reads bob's followed feed over the wire (signed as bob, since the feed is owner-gated) and
+    /// returns the IRIs of the content objects (the <c>Note</c>s) it contains. The feed's items include
+    /// the actor's own activities (54.17) as well as the followed actors' <c>Create</c>s; each
+    /// activity item's embedded note IRI is read from its <c>Object</c>. Items whose object is a link
+    /// (e.g. a <c>Block</c>/<c>Undo</c>/<c>Flag</c> whose object is an actor IRI) are skipped — they
+    /// have no content object.
     /// </summary>
     private async Task<IReadOnlyList<string>> FeedNoteIrisAsync()
     {
-        var response = await _http.GetAsync($"https://{BHost}/ap/v1/u/{Bob}/feed");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        return JsonDoc.GetItems(doc.RootElement)
-            .Where(e => e.ValueKind == JsonValueKind.Object && e.TryGetProperty("object", out var obj)
-                && (obj.ValueKind == JsonValueKind.Object
-                    || (obj.ValueKind == JsonValueKind.Array && obj.EnumerateArray().Any()
-                        && obj.EnumerateArray().First().ValueKind == JsonValueKind.Object)))
-            .Select(e => e.GetProperty("object"))
-            .Select(o => o.ValueKind == JsonValueKind.Array
-                ? o.EnumerateArray().First().GetProperty("id").GetString()!
-                : o.GetProperty("id").GetString()!)
-            .ToList();
+        var collection = await _signedClient.GetObjectAsync(new Iri($"https://{BHost}/ap/v1/u/{Bob}/feed"));
+        if (collection is not Collection coll)
+        {
+            return [];
+        }
+
+        var iris = new List<string>();
+        foreach (var item in CollectionPageFactory.ResolveCollectionItems(coll))
+        {
+            if (item is not Activity activity)
+            {
+                continue;
+            }
+
+            if (activity.Object is not { } objects)
+            {
+                continue;
+            }
+
+            foreach (var obj in objects.OfType<IObject>())
+            {
+                if (obj.Id is { Length: > 0 } id && !iris.Contains(id))
+                {
+                    iris.Add(id);
+                }
+            }
+        }
+
+        return iris;
     }
 
     /// <summary>
@@ -281,6 +318,21 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
 
         using var response = await _http.SendAsync(request);
         return (int)response.StatusCode;
+    }
+
+    private static IActivityPubClient BuildDeliveryClient(
+        Iri actorIri, KeyPair key, HttpMessageHandler handler)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        return factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            handler);
     }
 
     private static IActivityPubClient BuildLocalClient(
@@ -328,7 +380,7 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
             new LazyHandler(handlerFactory));
     }
 
-    internal static IActorDocumentFetcher BuildSelfFetcher(
+    internal static (IActorDocumentFetcher Fetcher, RemoteActorCache ActorCache) BuildSelfFetcher(
         KeyPair authorKey, Iri actorIri, Func<HttpMessageHandler> handlerFactory)
     {
         var keyStore = new InMemoryKeyStore();
@@ -342,7 +394,8 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
             new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
             new LazyHandler(handlerFactory));
 
-        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+        var actorCache = new RemoteActorCache();
+        return (new IrisActorDocumentFetcher(client, actorCache), actorCache);
     }
 
     /// <summary>
@@ -371,6 +424,18 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
         TestSeeder.SeedPersonWithKey(persistence, BHost, Bob);
         TestSeeder.SeedPersonWithKey(persistence, BHost, Carol);
     }
+
+    /// <summary>
+    /// Re-seeds the actors with the SAME keys (the key store is preserved across resets), so the
+    /// self-fetcher's copy of bob's key and the key the test signs with stay the same instance.
+    /// </summary>
+    internal static void ReseedWithExistingKeys(InMemoryPersistenceProvider persistence)
+    {
+        var bobKeyId = new Iri($"https://{BHost}/ap/v1/u/{Bob}#key-1");
+        var carolKeyId = new Iri($"https://{BHost}/ap/v1/u/{Carol}#key-1");
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Bob, bobKeyId);
+        TestSeeder.SeedPersonWithExistingKey(persistence, BHost, Carol, carolKeyId);
+    }
 }
 
 /// <summary>
@@ -381,6 +446,10 @@ public sealed class MutesCollectionIntegrationTests : IAsyncLifetime
 /// </summary>
 public sealed class MutesCollectionSharedHost : SharedHostFixture
 {
+    public RemoteActorCache? SelfFetcherActorCache { get; private set; }
+
+    private static RemoteActorCache? _selfFetcherActorCache;
+
     public MutesCollectionSharedHost()
         : base(BuildOptions())
     {
@@ -403,6 +472,9 @@ public sealed class MutesCollectionSharedHost : SharedHostFixture
 
         var serverRef = SharedHostFixture.ServerRefFor(persistence);
 
+        var (fetcher, actorCache) = MutesCollectionIntegrationTests.BuildSelfFetcher(bobKey!, bobActorIri, () => serverRef().CreateHandler());
+        _selfFetcherActorCache = actorCache;
+
         return new ActivityPubHostOptions
         {
             Host = MutesCollectionIntegrationTests.BHost,
@@ -410,9 +482,11 @@ public sealed class MutesCollectionSharedHost : SharedHostFixture
             Persistence = persistence,
             ExtraLocalActors = [carolActorIri],
             CredentialValidator = credentialValidator,
-            Fetcher = MutesCollectionIntegrationTests.BuildSelfFetcher(bobKey!, bobActorIri, () => serverRef().CreateHandler()),
+            Fetcher = fetcher,
         };
     }
+
+    public RemoteActorCache? SelfFetcherCache => _selfFetcherActorCache;
 }
 
 /// <summary>

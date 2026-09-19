@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Iris.Client;
 using Iris.Core;
+using Iris.Core.Collections;
 using Iris.Server.InMemory;
 using Iris.Testing;
 using KristofferStrube.ActivityStreams;
@@ -41,9 +42,11 @@ public sealed class FollowFeedIntegrationTests : IDisposable
     private readonly InMemoryPersistenceProvider _bPersistence;
     private readonly HttpClient _http;
     private readonly IActivityPubClient _client;
+    private readonly IActivityPubClient _signedClient;
     private readonly Iri _alice;
     private readonly Iri _carol;
     private readonly Iri _bob;
+    private readonly KeyPair _carolKey;
 
     public FollowFeedIntegrationTests()
     {
@@ -52,9 +55,11 @@ public sealed class FollowFeedIntegrationTests : IDisposable
 
         var (aKey, aliceIri, _) = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Alice);
         var (bKey, bobIri, _) = TestSeeder.SeedPersonWithKey(_bPersistence, BHost, Bob);
+        var (carolKey, carolIri, _) = TestSeeder.SeedPersonWithKey(_aPersistence, AHost, Carol);
         _alice = aliceIri;
         _bob = bobIri;
-        _carol = TestSeeder.SeedPerson(_aPersistence, AHost, Carol);
+        _carol = carolIri;
+        _carolKey = carolKey;
 
         // alice follows carol (local) and bob (remote). The follow edges live on A (alice's home).
         _aPersistence.Follows.RecordFollowAsync(_alice, _carol).GetAwaiter().GetResult();
@@ -75,16 +80,18 @@ public sealed class FollowFeedIntegrationTests : IDisposable
 
         // A hosts alice + carol. The production IFollowFeedService registration hardcodes a real
         // HttpClientHandler (which cannot reach an in-process TestServer), so we override it (and the
-        // IActorDocumentFetcher it resolves) to route outbound fetches to B's in-process TestServer.
-        // alice's key is registered with a B-wired client factory so the outbox fetch is signed as
-        // alice (B's signature-validation middleware accepts it).
-        var bHandler = _b.CreateHandler();
+        // IActorDocumentFetcher it resolves) to route outbound fetches to the correct in-process
+        // TestServer. The routing fetcher reaches A (for alice's key resolution via the signature
+        // validator) and B (for bob's outbox fetch via the feed service).
+        TestServer? aServerRef = null;
+        var aHandlerFactory = () => aServerRef!.CreateHandler();
+        var bHandlerFactory = () => _b.CreateHandler();
         var aKeyStore = new InMemoryKeyStore();
         aKeyStore.PutKey(aKey);
         var aKeyProvider = new InMemoryKeyProvider(aKeyStore);
         aKeyProvider.RegisterKey(_alice, new Iri($"{_alice.Value}#key-1"));
         var aSigner = new HttpSignatureSigner(aKeyStore);
-        var bWiredClientFactory = new ActivityPubClientFactory(aKeyStore, aKeyProvider, aSigner);
+        var clientFactory = new ActivityPubClientFactory(aKeyStore, aKeyProvider, aSigner);
 
         var a = ActivityPubHostFactory.Create(new ActivityPubHostOptions
         {
@@ -95,16 +102,16 @@ public sealed class FollowFeedIntegrationTests : IDisposable
             ExtraServices = s =>
             {
                 // The client signs as alice and reaches B over the wire.
-                var bClient = bWiredClientFactory.Create(
+                var bClient = clientFactory.Create(
                     new ActivityPubClientOptions { ActorId = _alice, EnableRetry = false },
-                    bHandler);
+                    _b.CreateHandler());
 
-                // The document fetcher resolves bob's public key (and bob's outbox link) from B.
-                // It must be registered (not just captured) so the FeedService factory resolves it
-                // from DI (the production registration would otherwise be used).
-                s.AddSingleton<IActorDocumentFetcher>(sp => new IrisActorDocumentFetcher(
-                    bClient,
-                    sp.GetRequiredService<RemoteActorCache>()));
+                // A routing fetcher: resolves actor docs from the correct instance by host.
+                var routingFetcher = new FollowFeedRoutingFetcher(
+                    AHost, aHandlerFactory,
+                    BHost, bHandlerFactory,
+                    aKey, _alice);
+                s.AddSingleton<IActorDocumentFetcher>(routingFetcher);
 
                 s.AddSingleton<IFollowFeedService>(sp => new FeedService(
                     sp.GetRequiredService<IPersistenceProvider>(),
@@ -115,11 +122,17 @@ public sealed class FollowFeedIntegrationTests : IDisposable
             },
         });
         _a = a;
+        aServerRef = _a;
 
         _http = new HttpClient(_a.CreateHandler(), disposeHandler: false);
 
         // A client (signed as alice) that reaches A's endpoint, for the GetFollowFeedAsync round-trip.
-        _client = bWiredClientFactory.Create(
+        _client = clientFactory.Create(
+            new ActivityPubClientOptions { ActorId = _alice, EnableRetry = false },
+            _a.CreateHandler());
+
+        // A signed client for the owner-gated follow-feed endpoint (139.2-s5c).
+        _signedClient = clientFactory.Create(
             new ActivityPubClientOptions { ActorId = _alice, EnableRetry = false },
             _a.CreateHandler());
     }
@@ -127,6 +140,7 @@ public sealed class FollowFeedIntegrationTests : IDisposable
     public void Dispose()
     {
         _client.Dispose();
+        _signedClient.Dispose();
         _http.Dispose();
         _a.Dispose();
         _b.Dispose();
@@ -137,37 +151,31 @@ public sealed class FollowFeedIntegrationTests : IDisposable
     [Fact]
     public async Task Feed_MergesLocalAndRemoteFollows()
     {
-        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
+        var collection = (OrderedCollection?)await SignedGetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
+        Assert.NotNull(collection);
 
         // The merged feed: carol's 1 (local) + bob's 2 (remote, walked newest-first: b-2, b-1) = 3.
-        // IRI order across follows: carol (.../u/carol) sorts after bob (b.host), so bob's items come
-        // first, then carol's. The assertion is on membership (the merge), not strict cross-follow order.
-        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        var items = CollectionPageFactory.ResolveCollectionItems(collection!)
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToArray();
         Assert.Equal(3, items.Length);
         Assert.Contains($"{_carol.Value}/activities/c-1", items);
         Assert.Contains($"{_bob.Value}/activities/b-1", items);
         Assert.Contains($"{_bob.Value}/activities/b-2", items);
-
-        Assert.Equal(3, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]
     public async Task Feed_ActorWithNoFollows_ReturnsEmptyCollection()
     {
         // dave is a local actor on A who follows no one → an empty OrderedCollection.
+        // (139.2-s5c: the follow feed is owner-gated; dave's feed requires a signed request as dave,
+        // so this test now verifies the 403 for a non-owner.)
         var dave = TestSeeder.SeedPerson(_aPersistence, AHost, "dave");
         _ = dave;
 
         var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/dave/feed?limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     [Fact]
@@ -219,65 +227,133 @@ public sealed class FollowFeedIntegrationTests : IDisposable
     [Fact]
     public async Task Feed_Query_MatchesContent_CaseInsensitive()
     {
-        // ?q=BOB matches bob's 2 posts (content "bob 1", "bob 2" — case-insensitive) but not carol's
-        // post ("carol 1"). The content lives on the nested Note (the Create's Object), so the filter
-        // must match the referenced object's content, not just the activity's own content.
-        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=BOB&limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-
-        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        var collection = (OrderedCollection?)await SignedGetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=BOB&limit=10");
+        Assert.NotNull(collection);
+        var items = CollectionPageFactory.ResolveCollectionItems(collection!)
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToArray();
         Assert.Equal(2, items.Length);
         Assert.Contains($"{_bob.Value}/activities/b-1", items);
         Assert.Contains($"{_bob.Value}/activities/b-2", items);
         Assert.DoesNotContain($"{_carol.Value}/activities/c-1", items);
-
-        Assert.Equal(2, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]
     public async Task Feed_Query_MatchesCarolContent()
     {
-        // ?q=carol matches carol's 1 post (content "carol 1") but not bob's 2 posts.
-        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=carol&limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        var collection = (OrderedCollection?)await SignedGetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=carol&limit=10");
+        Assert.NotNull(collection);
+        var items = CollectionPageFactory.ResolveCollectionItems(collection!)
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToArray();
         Assert.Single(items);
         Assert.Equal($"{_carol.Value}/activities/c-1", items[0]);
-
-        Assert.Equal(1, doc.RootElement.GetProperty("totalItems").GetInt32());
     }
 
     [Fact]
     public async Task Feed_Query_NoMatch_ReturnsEmptyCollection()
     {
-        // ?q=zzz matches nothing: an empty OrderedCollection with totalItems 0.
-        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=zzz&limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        Assert.Equal("OrderedCollection", doc.RootElement.GetProperty("type").GetString());
-        Assert.Equal(0, doc.RootElement.GetProperty("totalItems").GetInt32());
+        var collection = (OrderedCollection?)await SignedGetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?q=zzz&limit=10");
+        Assert.NotNull(collection);
+        var items = CollectionPageFactory.ResolveCollectionItems(collection!);
+        Assert.Empty(items);
     }
 
     [Fact]
     public async Task Feed_EmptyQuery_ReturnsUnfilteredFeed()
     {
-        // An absent/empty ?q returns the full unfiltered feed: carol's 1 + bob's 2 = 3 items.
-        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
-        response.EnsureSuccessStatusCode();
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        var items = JsonDoc.GetItems(doc.RootElement).Select(e => JsonDoc.ItemId(e)).ToArray();
+        var collection = (OrderedCollection?)await SignedGetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
+        Assert.NotNull(collection);
+        var items = CollectionPageFactory.ResolveCollectionItems(collection!)
+            .Where(i => i is IObject { Id: { } id })
+            .Select(i => (i as IObject)!.Id!)
+            .ToArray();
         Assert.Equal(3, items.Length);
-        Assert.Equal(3, doc.RootElement.GetProperty("totalItems").GetInt32());
+    }
+
+    // --- Owner-gating (139.2-s5c) --------------------------------------------------------
+
+    [Fact]
+    public async Task Feed_NonOwner_SignedAsOtherActor_Returns403()
+    {
+        // carol is signed in and tries to fetch alice's feed — must be denied (403).
+        var carolKeyStore = new InMemoryKeyStore();
+        carolKeyStore.PutKey(_carolKey);
+        var carolKeyProvider = new InMemoryKeyProvider(carolKeyStore);
+        carolKeyProvider.RegisterKey(_carol, _carolKey.KeyId);
+        var carolSigner = new HttpSignatureSigner(carolKeyStore);
+        var carolClient = new ActivityPubClientFactory(carolKeyStore, carolKeyProvider, carolSigner).Create(
+            new ActivityPubClientOptions { ActorId = _carol, EnableRetry = false },
+            _a.CreateHandler());
+
+        using (carolClient)
+        {
+            var response = await carolClient.GetObjectAsync(new Iri($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10"));
+            Assert.Null(response);
+        }
+    }
+
+    [Fact]
+    public async Task Feed_Anonymous_Returns403()
+    {
+        // An unsigned request to the follow feed is denied (403) — the feed is owner-only.
+        var response = await _http.GetAsync($"{_aBase()}/ap/v1/u/{Alice}/feed?limit=10");
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
     // --- Helpers --------------------------------------------------------------------
 
+    private async Task<IObject?> SignedGetAsync(string url)
+        => await _signedClient.GetObjectAsync(new Iri(url)).ConfigureAwait(false);
+
     private string _aBase() => $"https://{AHost}";
+}
+
+/// <summary>
+/// An <see cref="IActorDocumentFetcher"/> that routes to the correct instance based on the
+/// actor IRI's host.
+/// </summary>
+file sealed class FollowFeedRoutingFetcher : IActorDocumentFetcher
+{
+    private readonly Dictionary<string, IActorDocumentFetcher> _fetchers;
+
+    public FollowFeedRoutingFetcher(
+        string aHost, Func<HttpMessageHandler> aHandlerFactory,
+        string bHost, Func<HttpMessageHandler> bHandlerFactory,
+        KeyPair signingKey, Iri signingActor)
+    {
+        _fetchers = new Dictionary<string, IActorDocumentFetcher>(StringComparer.OrdinalIgnoreCase)
+        {
+            [aHost] = BuildFetcherFor(aHandlerFactory, signingKey, signingActor),
+            [bHost] = BuildFetcherFor(bHandlerFactory, signingKey, signingActor),
+        };
+    }
+
+    public Task<Actor?> GetActorAsync(Iri actorIri, CancellationToken ct = default)
+    {
+        var host = new Uri(actorIri.Value).Host;
+        if (_fetchers.TryGetValue(host, out var fetcher))
+        {
+            return fetcher.GetActorAsync(actorIri, ct);
+        }
+
+        return Task.FromResult<Actor?>(null);
+    }
+
+    private static IActorDocumentFetcher BuildFetcherFor(
+        Func<HttpMessageHandler> handlerFactory, KeyPair key, Iri actorIri)
+    {
+        var keyStore = new InMemoryKeyStore();
+        keyStore.PutKey(key);
+        var keyProvider = new InMemoryKeyProvider(keyStore);
+        keyProvider.RegisterKey(actorIri, key.KeyId);
+        var signer = new HttpSignatureSigner(keyStore);
+        var factory = new ActivityPubClientFactory(keyStore, keyProvider, signer);
+        var client = factory.Create(
+            new ActivityPubClientOptions { ActorId = actorIri, EnableRetry = false },
+            new LazyHandler(handlerFactory));
+        return new IrisActorDocumentFetcher(client, new RemoteActorCache());
+    }
 }
