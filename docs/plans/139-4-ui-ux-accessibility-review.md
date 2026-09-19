@@ -60,7 +60,7 @@ if the pass spans multiple sessions.
 | 9 | `/community` | | done | | | | known | | done | done | done | done | |
 | 10 | `/compose` | | done | | | | known | | done | done | done | done | |
 | 11 | `/directory` | | done | | | | | | done | done | done | done | |
-| 12 | `/home` | | done | | | | known | | done | done | done | done | |
+| 12 | `/home` | | done | | | | known | | done | done | done | done | known |
 | 13 | `/login` | | done | | | | | | done | done | done | done | |
 | 14 | `/notifications` | | done | | | | known | | done | done | done | done | |
 | 15 | `/object` | | done | | | | | | done | done | done | done | |
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-9 and 11 (responsive). Item 10 (contrast) verified via JS contrast-ratio checker on 8 routes (Home, Compose, Communities, Search, Profile, Settings, Notifications, Directory) — 0 violations (dark theme: body bg rgb(17,19,24), text rgb(230,232,236)). Remaining: item 10 for 11 routes + item 12 (design tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-9 and 11 (responsive). Item 10 (contrast) verified via JS contrast-ratio checker on 8 routes — 0 violations (dark theme). Item 12 (design tokens): CSS spot-check found ~30 hardcoded values outside the token system (spacing: 4px, 6px, 14px, 28px, 36px, 64px; font-size: 0.7rem, 1.4rem, 1.05rem, 2rem, 2.75rem, 1.8rem; color: #fff, #1c1f26, #3a3f4b, #9aa3b2, #e6e9ef, rgba(0,0,0,0.7)); also `--space-85` referenced but not defined. The token system (Phase 113) is well-established for the core UI; the hardcoded values are in secondary surfaces (tombstone icons, actor card avatars, settings subsections, admin tables, media overlays). Remaining: item 10 for 11 routes + 4 cross-page scenarios + fix ~30 hardcoded CSS values (item 12).
