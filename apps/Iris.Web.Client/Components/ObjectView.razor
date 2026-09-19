@@ -11,19 +11,19 @@
             }
             <div class="object-header">
                 <div class="object-header-actor">
-                    @if (ActivityActorIri is { } actor)
-                    {
-                        <ActorBar ActorIri="actor" />
-                    }
-                    @if (ShowModeration && CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
-                    {
-                        <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
-                            OnBlock="() => CardBlockAsync(modAuthor)"
-                            OnMute="() => CardMuteAsync(modAuthor)"
-                            OnReport="() => CardReportAsync(modAuthor)" />
-                    }
+                @if (ActivityActorIri is { } actor)
+                {
+                    <ActorBar ActorIri="actor" />
+                }
+                @if (ShowModeration && CanModerateAuthor(ActivityActorIri) && ActivityActorIri is { } modAuthor)
+                {
+                    <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                        OnBlock="() => CardBlockAsync(modAuthor)"
+                        OnMute="() => CardMuteAsync(modAuthor)"
+                        OnReport="() => CardReportAsync(modAuthor)" />
+                }
                 </div>
-                @if (ActivityPublished is { } pub)
+                @if (!SuppressTime && ActivityPublished is { } pub)
                 {
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
@@ -193,9 +193,9 @@
             }
             @if (IsContentCreate)
             {
-                @if (IsLemmyPost)
+                @if (HasVoteData)
                 {
-                    <LemmyVoteBar ObjectIri="@CreatedObjectIri" Score="LemmyScore" />
+                    <VoteBar ObjectIri="@CreatedObjectIri" Score="LemmyScore" />
                     @if (LemmyScore is { } ls)
                     {
                         <span class="lemmy-score-comments" title="Comments">@ls.Comments comments</span>
@@ -210,13 +210,20 @@
     }
     else if (Item is Announce)
     {
-        <div class="object-item object-item--boost">
+        <div class="object-item object-item--boost @(BoostCardLinkIri is { } ? "object-item--clickable" : string.Empty)" style="@BoostCardHueStyle">
+            @if (BoostCardLinkIri is { } cardIri)
+            {
+                // The whole boosted-post card navigates to the post detail (same stretched-link pattern
+                // as the Create/direct-object cards); the "Boosted by" line and all interactive
+                // children sit above the overlay via z-index.
+                <a href="@ObjectHref(cardIri)" class="object-card-link" aria-label="Open boosted post"></a>
+            }
             @if (ActivityActorIri is { } booster)
             {
                 <div class="object-boost-by">
                     <span class="object-action">Boosted by</span>
                     <ActorBar ActorIri="booster" />
-                    @if (ActivityPublished is { } boostTime)
+                    @if (!SuppressBoostTime && BoostActivityPublished is { } boostTime)
                     {
                         <time class="object-time object-boost-time" title="@boostTime.ToString("o")">@RelativeTime(boostTime)</time>
                     }
@@ -234,63 +241,68 @@
             {
                 @if (BoostedRenderTarget is { } boosted)
                 {
-                    <div class="object-item object-item--boosted">
-                        <div class="object-header">
+                    <div class="object-header">
+                        <div class="object-header-actor">
                             @if (BoostedAuthorIri is { } ba)
                             {
                                 <ActorBar ActorIri="ba" />
                             }
-                            @if (BoostedPublished is { } bt)
+                            @if (ShowModeration && CanModerateAuthor(BoostedAuthorIri) && BoostedAuthorIri is { } modAuthor)
                             {
-                                <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
+                                <CardModerationButtons Author="@modAuthor" Busy="_cardModBusy"
+                                    OnBlock="() => CardBlockAsync(modAuthor)"
+                                    OnMute="() => CardMuteAsync(modAuthor)"
+                                    OnReport="() => CardReportAsync(modAuthor)" />
                             }
                         </div>
-                        @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor) && !BoostedTitleDuplicatesContent)
+                        @if (!SuppressTime && BoostedPublished is { } bt)
                         {
-                            <div class="object-title">@boostedTitle</div>
-                        }
-                        @if (boosted is Actor)
-                        {
-                            <div class="object-content">
-                                <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
-                            </div>
-                        }
-                        else
-                        {
-                            @if (boosted is KristofferStrube.ActivityStreams.Object bao2 && JoinStrings(bao2.Content) is { Length: > 0 } content2)
-                            {
-                                <a href="@ObjectHref(targetIri)" class="object-post-link">
-                                    <div class="object-content">@RenderBoostedContent(boosted)</div>
-                                </a>
-                            }
-                            else
-                            {
-                                <div class="object-content">
-                                    <a href="@ObjectHref(targetIri)" title="@targetIri">Content unavailable — view original post</a>
-                                </div>
-                            }
-                        }
-                        <MediaGallery Attachments="ResolveBoostedAttachments(boosted)" Blurred="false" />
-                        @if (IsLemmyPost)
-                        {
-                            <LemmyVoteBar ObjectIri="@(BoostedContentIri ?? targetIri)" Score="LemmyScore" />
-                            @if (LemmyScore is { } ls2)
-                            {
-                                <span class="lemmy-score-comments" title="Comments">@ls2.Comments comments</span>
-                            }
-                        }
-                        else
-                        {
-                            @if (BoostedContentIri is { } contentIri)
-                            {
-                                <EngagementBar ObjectIri="@contentIri" Object="boosted" />
-                            }
-                            else
-                            {
-                                <EngagementBar ObjectIri="@targetIri" Object="boosted" />
-                            }
+                            <time class="object-time" title="@bt.ToString("o")">@RelativeTime(bt)</time>
                         }
                     </div>
+                    @if (BoostedName is { Length: > 0 } boostedTitle && !(boosted is Actor) && !BoostedTitleDuplicatesContent)
+                    {
+                        <div class="object-title">@boostedTitle</div>
+                    }
+                    @if (boosted is Actor)
+                    {
+                        <div class="object-content">
+                            <a href="@ObjectHref(targetIri)" title="@targetIri">View boosted post →</a>
+                        </div>
+                    }
+                    else
+                    {
+                        @if (boosted is KristofferStrube.ActivityStreams.Object bao2 && JoinStrings(bao2.Content) is { Length: > 0 } content2)
+                        {
+                            <div class="object-content">@RenderBoostedContent(boosted)</div>
+                        }
+                        else
+                        {
+                            <div class="object-content">
+                                <a href="@ObjectHref(targetIri)" title="@targetIri">Content unavailable — view original post</a>
+                            </div>
+                        }
+                    }
+                    <MediaGallery Attachments="ResolveBoostedAttachments(boosted)" Blurred="false" />
+                    @if (HasVoteData)
+                    {
+                        <VoteBar ObjectIri="@(BoostedContentIri ?? targetIri)" Score="LemmyScore" />
+                        @if (LemmyScore is { } ls2)
+                        {
+                            <span class="lemmy-score-comments" title="Comments">@ls2.Comments comments</span>
+                        }
+                    }
+                    else
+                    {
+                        @if (BoostedContentIri is { } contentIri)
+                        {
+                            <EngagementBar ObjectIri="@contentIri" Object="boosted" />
+                        }
+                        else
+                        {
+                            <EngagementBar ObjectIri="@targetIri" Object="boosted" />
+                        }
+                    }
                 }
                 else
                 {
@@ -311,7 +323,7 @@
                 {
                     <a href="@ActorHref(actor)" title="@actor" class="object-actor-handle">@HandleOf(actor)</a>
                 }
-                @if (ActivityPublished is { } pub)
+                @if (!SuppressTime && ActivityPublished is { } pub)
                 {
                     <time class="object-time" title="@pub.ToString("o")">@RelativeTime(pub)</time>
                 }
@@ -623,9 +635,9 @@
                     </div>
                 </div>
             }
-            @if (IsLemmyPost)
+            @if (HasVoteData)
             {
-                <LemmyVoteBar ObjectIri="@BareObjectIri" Score="LemmyScore" />
+                <VoteBar ObjectIri="@BareObjectIri" Score="LemmyScore" />
                 @if (LemmyScore is { } lsBare)
                 {
                     <span class="lemmy-score-comments" title="Comments">@lsBare.Comments comments</span>

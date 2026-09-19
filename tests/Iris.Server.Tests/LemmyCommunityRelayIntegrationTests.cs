@@ -185,7 +185,7 @@ public sealed class LemmyCommunityRelayIntegrationTests
     /// 138.19 (shares/boosts interop) — the relay-unwrap path correctly attributes the content to the
     /// underlying <c>Create</c>'s actor (the original Lemmy member), NOT to the relaying community
     /// (the <c>Announce</c>'s actor). The community-feed merge path shows the original author, and the
-    /// UI renders a <c>LemmyVoteBar</c> (upvote/downvote/score) instead of the <c>EngagementBar</c>
+    /// UI renders a <c>VoteBar</c> (upvote/downvote/score) instead of the <c>EngagementBar</c>
     /// (which carries the Boost button), so no boost affordance is offered for Lemmy-sourced content.
     /// </summary>
     [Fact]

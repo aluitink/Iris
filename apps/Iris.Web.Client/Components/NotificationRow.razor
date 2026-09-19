@@ -242,72 +242,28 @@
                 builder.AddAttribute(1, "class", "notification-card__object");
                 builder.OpenComponent(2, typeof(ObjectView));
                 builder.AddComponentParameter(3, nameof(ObjectView.Item), noteObj);
+                // For a reply/post the note's `published` equals the notification activity's `published`
+                // (Mastodon sets both to the status creation time), so the card's own timestamp would be
+                // an exact duplicate of the header time above. Suppress it in that case.
+                builder.AddComponentParameter(4, nameof(ObjectView.SuppressTime), TimeMatchesHeader(noteObj));
                 builder.CloseComponent();
                 builder.CloseElement();
             }
-            else if (objectFirst is IObject otherObj && otherObj.GetType() != typeof(Activity))
+            else if (IsLikeOrAnnounce(activity))
             {
+                // A Like or Announce (boost): render the boosted/liked post as a full object card (author,
+                // content, media, engagement) instead of a compact preview, so the notification shows the
+                // actual post that was liked/boosted. The activity is passed (not just its object) so the
+                // card keeps the "Liked" / "Boosted by" indicator. The notification header already carries
+                // the boost/like time, so the indicator line's own time is suppressed (SuppressBoostTime)
+                // while the boosted post below keeps its own timestamp — the same way posts render under
+                // reply/post notifications.
                 builder.OpenElement(0, "div");
-                builder.AddAttribute(1, "class", "notification-card__note");
-
-                // Note author
-                if (otherObj.AttributedTo?.FirstOrDefault()?.ResolveObjectIri() is { } noteAuthor)
-                {
-                    builder.OpenElement(2, "div");
-                    builder.AddAttribute(3, "class", "notification-card__note-author");
-                    builder.OpenElement(4, "a");
-                    builder.AddAttribute(5, "href", ActorHref(noteAuthor));
-                    builder.AddAttribute(6, "title", noteAuthor.ToString());
-                    builder.AddContent(7, HandleOf(noteAuthor));
-                    builder.CloseElement();
-                    builder.CloseElement();
-                }
-
-                // Note content preview
-                var preview = TargetPreview(objectFirst);
-                if (preview is { })
-                {
-                    builder.OpenElement(8, "div");
-                    builder.AddAttribute(9, "class", "notification-card__note-content");
-                    if (objectIri is { } ti)
-                    {
-                        builder.OpenElement(10, "a");
-                        builder.AddAttribute(11, "href", ObjectHref(ti));
-                        builder.AddAttribute(12, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
-                        builder.AddContent(13, preview);
-                        builder.CloseElement();
-                    }
-                    else
-                    {
-                        builder.AddContent(10, preview);
-                    }
-                    builder.CloseElement();
-                }
-                else if (objectIri is { } ti)
-                {
-                    builder.OpenElement(8, "div");
-                    builder.AddAttribute(9, "class", "notification-card__note-content");
-                    builder.OpenElement(10, "a");
-                    builder.AddAttribute(11, "href", ObjectHref(ti));
-                    builder.AddContent(12, ShortLabel(ti));
-                    builder.CloseElement();
-                    builder.CloseElement();
-                }
-
-                // "View" link (154: clicking through marks the notification viewed → clears the highlight)
-                if (objectIri is { } vi)
-                {
-                    builder.OpenElement(13, "div");
-                    builder.AddAttribute(14, "class", "notification-card__actions");
-                    builder.OpenElement(15, "a");
-                    builder.AddAttribute(16, "href", ObjectHref(vi));
-                    builder.AddAttribute(17, "class", "notification-card__view-link");
-                    builder.AddAttribute(18, "onclick", EventCallback.Factory.Create<MouseEvent>(this, OnViewedClick));
-                    builder.AddContent(19, "View →");
-                    builder.CloseElement();
-                    builder.CloseElement();
-                }
-
+                builder.AddAttribute(1, "class", "notification-card__object");
+                builder.OpenComponent(2, typeof(ObjectView));
+                builder.AddComponentParameter(3, nameof(ObjectView.Item), (IObjectOrLink)activity);
+                builder.AddComponentParameter(4, nameof(ObjectView.SuppressBoostTime), true);
+                builder.CloseComponent();
                 builder.CloseElement();
             }
             else if (objectIri is { } target)
@@ -404,6 +360,33 @@
     {
         var type = obj.Type?.FirstOrDefault();
         return type is "Note" or "Article";
+    }
+
+    /// <summary>
+    /// Whether the embedded note's <c>published</c> time is the same instant as the notification
+    /// activity's <c>published</c> (Mastodon sets both to the status creation time, so they are equal to
+    /// the second). When true the notification card should suppress the note's own timestamp — it would
+    /// otherwise render as an exact duplicate of the header time.
+    /// </summary>
+    private bool TimeMatchesHeader(IObject noteObj)
+    {
+        if (Published is not { } pub
+            || (noteObj as ActivityObject)?.Published is not { } notePub)
+        {
+            return false;
+        }
+
+        return pub.Date == notePub.Date && pub.TimeOfDay == notePub.TimeOfDay;
+    }
+
+    /// <summary>
+    /// Whether the activity is a Like or Announce (boost) — the two notification types whose target
+    /// object (the liked/boosted post) should render as a full object card below the header.
+    /// </summary>
+    private static bool IsLikeOrAnnounce(Activity activity)
+    {
+        var type = activity.Type?.FirstOrDefault();
+        return type is "Like" or "Announce";
     }
 
     /// <summary>

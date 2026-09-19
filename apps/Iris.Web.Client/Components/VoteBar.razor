@@ -6,9 +6,9 @@
 
 @if (ObjectIri is { } iri)
 {
-    <div class="lemmy-vote-bar">
+    <div class="vote-bar">
         <button type="button"
-                class="lemmy-vote-btn lemmy-vote-btn--up @(_vote == LemmyVoteState.Up ? "lemmy-vote-btn--active-up" : "")"
+                class="vote-btn vote-btn--up @(_vote == LemmyVoteState.Up ? "vote-btn--active-up" : "")"
                 title="Upvote"
                 aria-label="Upvote"
                 aria-pressed="@(_vote == LemmyVoteState.Up ? "true" : "false")"
@@ -17,10 +17,10 @@
             <svg viewBox="0 0 24 24" fill="@(_vote == LemmyVoteState.Up ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M12 4l-8 8h5v8h6v-8h5z" />
             </svg>
-            <span class="lemmy-vote-count">@_upvotes</span>
+            <span class="vote-count">@_upvotes</span>
         </button>
         <button type="button"
-                class="lemmy-vote-btn lemmy-vote-btn--down @(_vote == LemmyVoteState.Down ? "lemmy-vote-btn--active-down" : "")"
+                class="vote-btn vote-btn--down @(_vote == LemmyVoteState.Down ? "vote-btn--active-down" : "")"
                 title="Downvote"
                 aria-label="Downvote"
                 aria-pressed="@(_vote == LemmyVoteState.Down ? "true" : "false")"
@@ -29,9 +29,9 @@
             <svg viewBox="0 0 24 24" fill="@(_vote == LemmyVoteState.Down ? "currentColor" : "none")" stroke="currentColor" stroke-width="2" aria-hidden="true">
                 <path d="M12 20l8-8h-5V4H9v8H4z" />
             </svg>
-            <span class="lemmy-vote-count">@_downvotes</span>
+            <span class="vote-count">@_downvotes</span>
         </button>
-        <span class="lemmy-vote-score" title="Score">@_score</span>
+        <span class="vote-score" title="Score">@_score</span>
     </div>
 }
 

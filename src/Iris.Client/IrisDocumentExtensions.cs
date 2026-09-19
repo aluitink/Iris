@@ -421,6 +421,40 @@ public static class IrisDocumentExtensions
         => GetInt(document, namespaceIri + IrisExtensionTerms.RepliedCount);
 
     /// <summary>
+    /// Reads the <c>iris:dislikedCount</c> extension property from a content object (including a nested
+    /// object in a collection item), returning the number of distinct actors that have disliked
+    /// (downvoted) the object. This is a cacheable, per-object interaction counter (not per-requester).
+    /// Returns <see langword="null"/> when the property is absent.
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The dislike count, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static int? GetDislikedCount(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetInt(document, namespaceIri + IrisExtensionTerms.DislikedCount);
+
+    /// <summary>
+    /// Reads the <c>iris:isDisliked</c> extension property from a content object, returning the
+    /// <em>requesting</em> user's net dislike (downvote) state on the object (per-requester, read-time
+    /// state). Returns <see langword="true"/> when the term is present and <c>true</c> (the requester has
+    /// disliked the object), <see langword="false"/> when present but <c>false</c>, and
+    /// <see langword="null"/> when the term is absent (the read was anonymous / unauthenticated, or the
+    /// object is not a content object).
+    /// </summary>
+    /// <param name="document">The content object (an <see cref="IObject"/> with
+    /// <see cref="IObject.ExtensionData"/>). Must not be null.</param>
+    /// <param name="namespaceIri">The <c>iris:</c> namespace base IRI (the deployment's
+    /// <c>ActivityPubServerOptions.NamespaceIri</c>, or <see cref="DefaultNamespaceIri"/> when the
+    /// deployment does not override it).</param>
+    /// <returns>The requester's dislike state, or <see langword="null"/> when the property is absent.</returns>
+    /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
+    public static bool? GetIsDisliked(this IObject document, string namespaceIri = DefaultNamespaceIri)
+        => GetBool(document, namespaceIri + IrisExtensionTerms.IsDisliked);
+
+    /// <summary>
     /// Reads the <c>totalItems</c> from the <c>likes</c> collection on a content object, returning the
     /// number of likes as reported by the object's source instance. This is used for remote objects
     /// where the <c>iris:likedCount</c> extension is absent (the proxy returns the raw remote object,

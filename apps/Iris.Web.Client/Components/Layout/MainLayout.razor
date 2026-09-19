@@ -78,6 +78,15 @@
             </span>
         </div>
     </footer>
+
+    <AuthorizeView>
+        <NotAuthorized>
+            <div class="auth-bar">
+                <a class="button" href="/login">Log in</a>
+                <a class="button button--secondary" href="/register">Sign up</a>
+            </div>
+        </NotAuthorized>
+    </AuthorizeView>
 </div>
 
 @code {

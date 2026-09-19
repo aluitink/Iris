@@ -13,20 +13,8 @@
         <p class="muted">Taking you to your timeline…</p>
     </Authorized>
     <NotAuthorized>
-        <div class="landing-hero">
-            <h1 class="landing-title">Iris</h1>
-            <p class="landing-tagline">
-                An ActivityPub social platform — follow people you know and read their notes in one feed.
-            </p>
-            <p class="landing-actions">
-                <a class="button" href="/login">Sign in</a>
-                <a class="button button--secondary" href="/register">Create an account</a>
-            </p>
-        </div>
-
         @if (Session.PublicFeedIri is { } feedIri)
         {
-            <h2>Public timeline</h2>
             <PagedCollection
                 @key="@PublicFeedKey"
                 CollectionIri="feedIri"

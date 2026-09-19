@@ -36,6 +36,25 @@ public partial class ObjectView
     [Parameter]
     public bool ShowModeration { get; set; } = true;
 
+    /// <summary>
+    /// Suppress the card's <c>.object-time</c> timestamp. Set by <c>NotificationRow</c> for a
+    /// Create/reply whose embedded note's <c>published</c> equals the notification activity's
+    /// <c>published</c> (Mastodon sets both to the status creation time), so the notification header
+    /// time and the embedded post time don't render as an identical duplicate.
+    /// </summary>
+    [Parameter]
+    public bool SuppressTime { get; set; }
+
+    /// <summary>
+    /// Suppress the <em>activity-level</em> timestamp of a boost card — the time on the "Boosted by"
+    /// line (when the boost was made) — while keeping the boosted post's own timestamp. Set by
+    /// <c>NotificationRow</c> for an Announce, where the notification header already carries the boost
+    /// time; the rendered post below then shows only the post's own time (matching how posts render
+    /// under reply/post notifications).
+    /// </summary>
+    [Parameter]
+    public bool SuppressBoostTime { get; set; }
+
     [Microsoft.AspNetCore.Components.Inject]
     private Iris.Web.Client.Accounts.IActorSessionAccessor Session { get; set; } = default!;
 
@@ -471,6 +490,13 @@ public partial class ObjectView
 
     private DateTime? ActivityPublished => ActivityEmbeddedObject?.Published;
 
+    /// <summary>
+    /// The boost activity's own <c>published</c> (when the boost was made) — distinct from
+    /// <see cref="BoostedPublished"/>, which is the boosted post's time. Rendered on the "Boosted by"
+    /// line when <c>SuppressBoostTime</c> is false.
+    /// </summary>
+    private DateTime? BoostActivityPublished => (Item as Activity)?.Published;
+
     private Iri? CreatedObjectIri
     {
         get
@@ -487,11 +513,14 @@ public partial class ObjectView
     private bool IsContentCreate => Item is Create && ActivityEmbeddedObject is ActivityObject;
 
     /// <summary>
-    /// Whether the current post is a Lemmy post (a Page object whose IRI matches the
-    /// <c>/post/{id}</c> pattern). Used to decide whether to show the Lemmy-style vote bar
-    /// instead of the standard engagement bar.
+    /// Whether the current post should show the vote bar (upvote/downvote/score) instead of the
+    /// standard engagement bar. Generalized from the original Lemmy-IRI gate (138.27 S2): the vote
+    /// bar is shown when the content object carries vote data — either the <c>iris:dislikedCount</c>
+    /// extension (a non-zero dislike count, meaning the source instance supports downvotes) or a
+    /// <c>LemmyPostScore</c> fetched from the Lemmy REST API (a Lemmy-IRI-shaped post). This allows
+    /// any downvote-capable peer (not just Lemmy) to get the downvote affordance.
     /// </summary>
-    private bool IsLemmyPost
+    private bool HasVoteData
     {
         get
         {
@@ -502,10 +531,29 @@ public partial class ObjectView
                 IObject o => o,
                 _ => null
             };
+            if (contentObj is null)
+            {
+                return false;
+            }
+
+            if (_lemmyScore is not null)
+            {
+                return true;
+            }
+
+            var ns = Session.IrisNamespaceBase?.Value;
+            if (ns is { } n
+                && (contentObj.GetDislikedCount(n) is > 0
+                    || contentObj.GetIsDisliked(n) is true))
+            {
+                return true;
+            }
+
             if (contentObj is { Id: { Length: > 0 } id })
             {
                 return LemmyPostScore.TryParsePostIri(new Iri(id)) is not null;
             }
+
             return false;
         }
     }
@@ -601,7 +649,7 @@ public partial class ObjectView
     {
         get
         {
-            if (Obj is not (Note or Article) && !IsLemmyPost)
+            if (Obj is not (Note or Article) && !HasVoteData)
             {
                 return null;
             }
@@ -682,6 +730,24 @@ public partial class ObjectView
     /// carries the full object) or the fetched object (when the target is a bare link and has been
     /// resolved in <see cref="OnInitializedAsync"/>). Null when neither is available.
     /// </summary>
+    /// <summary>
+    /// The object IRI the boosted-post card links to (the stretched-link overlay target): the rendered
+    /// target's IRI (the original post when the boost is of a reply, the boosted object otherwise),
+    /// falling back to the Announce's target IRI. Null when neither is available — then the card is not
+    /// whole-card-clickable.
+    /// </summary>
+    private Iri? BoostCardLinkIri
+        => BoostedRenderTarget is { Id: { Length: > 0 } id } ? new Iri(id)
+        : AnnounceTargetIri;
+
+    /// <summary>
+    /// The banner-strip tint for a boosted-post card, derived from the boosted post's author (the same
+    /// deterministic hue as every other content card, so the boosted post reads like any other post by
+    /// that author).
+    /// </summary>
+    private string BoostCardHueStyle =>
+        BoostedAuthorIri is { } iri ? $"--card-hue: {CardHue(iri.Value)};" : string.Empty;
+
     private IObject? BoostedObject
     {
         get
