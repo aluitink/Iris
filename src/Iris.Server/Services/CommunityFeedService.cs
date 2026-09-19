@@ -163,35 +163,90 @@ public sealed class CommunityFeedService : ICommunityFeedService
         // object), and <c>Like</c> (the liked object). A member's outbox items that are not community-
         // tagged are dropped before the merge.
         var communityIriValue = communityIri.Value;
-        var seen = new HashSet<Iri>();
-        var merged = new List<(int Position, Iri ContributorIri, IObjectOrLink Item)>();
 
         // Member branch: a member's content is admitted only when it is tagged to this community
         // (40.3 — the note's attributedTo carries the community IRI).
-        foreach (var memberIri in orderedMembers)
-        {
-            ct.ThrowIfCancellationRequested();
-            await MergeContributorOutboxAsync(
-                memberIri, communityIriValue, requireCommunityTagged: true,
-                seen, merged, ct).ConfigureAwait(false);
-        }
+        // 147.2 follow-up: parallelize the per-member fan-out. Previously each member's outbox was
+        // awaited sequentially, so a community with N remote members took the SUM of all fetch
+        // latencies. With Task.WhenAll the total latency is bounded by the SLOWEST single member,
+        // not the sum. A failed/slow member contributes an empty list (preserves the "one broken
+        // remote must not fail the feed" guarantee).
+        var memberResults = await Task.WhenAll(
+            orderedMembers.Select(async memberIri =>
+            {
+                try
+                {
+                    return await MergeContributorOutboxAsync(
+                        memberIri, communityIriValue, requireCommunityTagged: true, ct);
+                }
+                catch
+                {
+                    return (new List<(int Position, IObjectOrLink Item)>(), new List<IObjectOrLink>());
+                }
+            }));
 
         // Peering (89): the actors (communities or persons) the community follows contribute their
         // content to the feed too. A followed actor's content is attributed to <em>that</em> actor, not
         // this community, so it is admitted without the community-tagged filter — that is what makes the
         // community's unified feed a federated (peered) feed. A member the community also follows
         // contributes only once (deduplicated by activity IRI below).
+        // 147.2 follow-up: parallelize the per-follow fan-out (same rationale as the member branch).
         var follows = await _persistence.Communities.GetFollowsAsync(communityIri, ct).ConfigureAwait(false);
         var orderedFollows = follows
             .OrderBy(f => f.Value, StringComparer.Ordinal)
             .ToList();
+        var followResults = await Task.WhenAll(
+            orderedFollows.Select(async followedIri =>
+            {
+                try
+                {
+                    return await MergeContributorOutboxAsync(
+                        followedIri, communityIriValue, requireCommunityTagged: false, ct);
+                }
+                catch
+                {
+                    return (new List<(int Position, IObjectOrLink Item)>(), new List<IObjectOrLink>());
+                }
+            }));
+
+        // Merge the results in deterministic IRI order (members first, then follows), applying
+        // cross-contributor dedup by activity IRI (keep the first, i.e. newest, occurrence).
+        var seen = new HashSet<Iri>();
+        var merged = new List<(int Position, Iri ContributorIri, IObjectOrLink Item)>();
         var remoteOutboxItems = new List<IObjectOrLink>();
-        foreach (var followedIri in orderedFollows)
+
+        for (var i = 0; i < orderedMembers.Count; i++)
         {
-            ct.ThrowIfCancellationRequested();
-            await MergeContributorOutboxAsync(
-                followedIri, communityIriValue, requireCommunityTagged: false,
-                seen, merged, ct, remoteOutboxItems).ConfigureAwait(false);
+            var (memberItems, _) = memberResults[i];
+            foreach (var (position, item) in memberItems)
+            {
+                if (item is IObject { Id: { Length: > 0 } id })
+                {
+                    if (!seen.Add(new Iri(id)))
+                    {
+                        continue;
+                    }
+                }
+                merged.Add((position, orderedMembers[i], item));
+            }
+        }
+
+        for (var i = 0; i < orderedFollows.Count; i++)
+        {
+            var (followItems, remoteItems) = followResults[i];
+            foreach (var (position, item) in followItems)
+            {
+                if (item is IObject { Id: { Length: > 0 } id })
+                {
+                    if (!seen.Add(new Iri(id)))
+                    {
+                        continue;
+                    }
+                }
+                merged.Add((position, orderedFollows[i], item));
+            }
+            // Collect remote outbox items for the 138.20 backfill persistence.
+            remoteOutboxItems.AddRange(remoteItems);
         }
 
         // 138.20 (full-thread backfill on first peer): persist the remote outbox items' embedded
@@ -212,30 +267,25 @@ public sealed class CommunityFeedService : ICommunityFeedService
     }
 
     /// <summary>
-    /// Reads a single contributor's outbox (a member or a followed actor) and appends its items to the
-    /// merge list, subject to the contributor's community-tag filter and the shared activity-IRI dedup
-    /// set. A contributor whose outbox cannot be read contributes nothing. When
-    /// <paramref name="remoteOutboxItems"/> is non-null, remote (wire-fetched) items are also collected
-    /// into it for the 138.20 backfill persistence.
+    /// Reads a single contributor's outbox (a member or a followed actor) and returns its items,
+    /// subject to the contributor's community-tag filter. A contributor whose outbox cannot be read
+    /// contributes nothing (an empty list). The caller is responsible for cross-contributor dedup
+    /// (by activity IRI) when merging the results. Remote (wire-fetched) items are also returned
+    /// for the 138.20 backfill persistence.
     /// </summary>
     /// <param name="contributorIri">The IRI of the actor whose outbox is read.</param>
     /// <param name="communityIriValue">The community's IRI (the community-tag filter's target).</param>
     /// <param name="requireCommunityTagged">When true, only items tagged to the community are admitted
     /// (the member branch); when false, the contributor's own content is admitted (the peered/followed
     /// branch).</param>
-    /// <param name="seen">The shared set of activity IRIs already admitted (dedup across contributors).</param>
-    /// <param name="merged">The accumulating merge list (position, contributor, item).</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <param name="remoteOutboxItems">When non-null, remote (wire-fetched) outbox items are collected
-    /// into this list for the 138.20 backfill persistence. Null (the member branch) skips collection.</param>
-    private async Task MergeContributorOutboxAsync(
+    /// <returns>A tuple of (Items, RemoteItems): the contributor's admitted items (position, item) and
+    /// the subset of those items that are remote (wire-fetched, eligible for backfill).</returns>
+    private async Task<(List<(int Position, IObjectOrLink Item)> Items, List<IObjectOrLink> RemoteItems)> MergeContributorOutboxAsync(
         Iri contributorIri,
         string communityIriValue,
         bool requireCommunityTagged,
-        HashSet<Iri> seen,
-        List<(int Position, Iri ContributorIri, IObjectOrLink Item)> merged,
-        CancellationToken ct,
-        List<IObjectOrLink>? remoteOutboxItems = null)
+        CancellationToken ct)
     {
         IReadOnlyList<IObjectOrLink> outbox =
             await ReadOutboxAsync(contributorIri, ct).ConfigureAwait(false);
@@ -252,6 +302,8 @@ public sealed class CommunityFeedService : ICommunityFeedService
                        !(await _persistence.Communities.TryGetCommunityAsync(contributorIri, out _, ct).ConfigureAwait(false)
                           && IsLocalCommunity(contributorIri)) &&
                        !await _localActors.IsLocalActorAsync(contributorIri, ct).ConfigureAwait(false);
+        var items = new List<(int Position, IObjectOrLink Item)>();
+        var remoteItems = new List<IObjectOrLink>();
         for (var position = 0; position < outbox.Count; position++)
         {
             var item = outbox[position];
@@ -261,20 +313,13 @@ public sealed class CommunityFeedService : ICommunityFeedService
                 continue;
             }
 
-            if (item is IObject { Id: { Length: > 0 } id })
+            items.Add((position, item));
+            if (isRemote)
             {
-                // Keep the newest (first) occurrence of a repeated IRI; drop the rest.
-                if (!seen.Add(new Iri(id)))
-                {
-                    continue;
-                }
+                remoteItems.Add(item);
             }
-            if (isRemote && remoteOutboxItems is not null)
-            {
-                remoteOutboxItems.Add(item);
-            }
-            merged.Add((position, contributorIri, item));
         }
+        return (items, remoteItems);
     }
 
     /// <summary>
