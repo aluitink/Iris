@@ -52,10 +52,10 @@ if the pass spans multiple sessions.
 | 1 | `/` (Home) | n/a | done | done | done | done | known | done | | | | | |
 | 2 | `/actor` | | done | | | | | | | | | | |
 | 3 | `/admin` | | | done | | | | | | | | | |
-| 4 | `/admin/dashboard` | | | | | | | | | | | | |
-| 5 | `/admin/instance` | | | | | | | | | | | | |
-| 6 | `/admin/moderation` | | | | | | | | | | | | |
-| 7 | `/admin/users` | | | | | | | | | | | | |
+| 4 | `/admin/dashboard` | | | done | | | | | | | | | |
+| 5 | `/admin/instance` | | | done | | | | | | | | | |
+| 6 | `/admin/moderation` | | | done | | | | | | | | | |
+| 7 | `/admin/users` | | | done | | | | | | | | | |
 | 8 | `/communities` | done | done | | | | known | | | | | | |
 | 9 | `/community` | | done | | | | known | | | | | | |
 | 10 | `/compose` | | done | | | | known | | | | | | |
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** Routes 1,2,3,8,9,10,11,12,13,14,15,16,17,18,19 done (items 2-7 as applicable). Admin routes 4-7 not yet checked (same authz gating expected as route 3). Remaining: routes 4-7 (items 2-5) + all routes items 8-12 (a11y: keyboard, ARIA, contrast, responsive, tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-7 (done/known/n/a as applicable). Remaining: all routes items 8-12 (a11y: keyboard nav, ARIA landmarks, color contrast, responsive layout, design token consistency) + 4 cross-page scenarios (new-user walk, multi-account, Lemmy rendering, global error boundary).
