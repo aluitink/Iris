@@ -13,6 +13,13 @@ namespace Iris.Server.Data.Stores;
 public sealed class EfActorStore : IActorStore
 {
     private readonly IDbContextFactory<IrisDbContext> _factory;
+    // IRIs of actors that were once provisioned (stored) and then removed (139.3-F2). The edge stores
+    // use this to exclude edges whose source was a *locally-provisioned-then-deleted* actor, while
+    // keeping edges whose source is a remote actor (or a local actor never provisioned) — neither of
+    // which is in this set, so their edges are unaffected by the filter. In-process only: after a
+    // restart the set is empty, and the durable Actors table is the source of truth (a deleted actor
+    // has no row, so its edges are re-included — acceptable, the deletion is local to a live instance).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> _provisionedRemoved = new();
 
     /// <summary>
     /// Initializes the store over a context factory.
@@ -20,6 +27,16 @@ public sealed class EfActorStore : IActorStore
     /// <param name="factory">The <see cref="IrisDbContext"/> factory. Must not be null.</param>
     public EfActorStore(IDbContextFactory<IrisDbContext> factory)
         => _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+
+    /// <summary>
+    /// Synchronously reports whether an edge source IRI should surface in the edge stores' read paths
+    /// (the deleted-actor filter, 139.3-F2). The IRI is hidden only when it was a locally-provisioned
+    /// actor that has since been removed (it is in the removed set); a remote actor or an un-provisioned
+    /// local actor surfaces (it was never provisioned, so it is not in the removed set).
+    /// </summary>
+    /// <param name="sourceIri">The edge source IRI to check.</param>
+    /// <returns><see langword="true"/> when the IRI is not a deleted local actor (the edge surfaces).</returns>
+    public bool SourceSurvives(string sourceIri) => !_provisionedRemoved.ContainsKey(sourceIri);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -108,6 +125,7 @@ public sealed class EfActorStore : IActorStore
 
         db.Set<ActorEntity>().Remove(existing);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        _provisionedRemoved[actorIri.Value] = 0;
         return true;
     }
 

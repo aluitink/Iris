@@ -25,5 +25,5 @@ public sealed class EfDislikeStore : IDislikeStore
         => _edges.ContainsAsync(EdgeKind.Dislike, dislikerIri.Value, objectIri.Value, ct);
 
     public Task<IReadOnlyList<Iri>> GetDislikersAsync(Iri objectIri, CancellationToken ct = default)
-        => _edges.InSourcesAsync(EdgeKind.Dislike, objectIri.Value, ct);
+        => _edges.InSourcesAsync(EdgeKind.Dislike, objectIri.Value, ct, filterDeletedActors: true);
 }

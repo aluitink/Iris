@@ -13,11 +13,32 @@ namespace Iris.Server.InMemory.Stores;
 public sealed class InMemoryActorStore : IActorStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, Actor> _actors = new();
+    // IRIs of actors that were once stored and then removed (139.3-F2). The edge stores use this to
+    // exclude edges whose source was a *locally-stored-then-deleted* actor, while still keeping edges
+    // whose source is a remote actor (or a local actor not yet provisioned) — neither of which is in
+    // this set, so their edges are unaffected by the filter.
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, byte> _removed = new();
 
     /// <summary>
     /// Removes all actors (test isolation / teardown).
     /// </summary>
-    public void Clear() => _actors.Clear();
+    public void Clear()
+    {
+        _actors.Clear();
+        _removed.Clear();
+    }
+
+    /// <summary>
+    /// Synchronously reports whether an edge source IRI should surface in the edge stores' read paths
+    /// (the deleted-actor filter, 139.3-F2). The IRI is hidden only when it was a locally-stored actor
+    /// that has since been removed (it is in <c>_removed</c> and no longer in <c>_actors</c>); a stored
+    /// actor, a remote actor, or an un-provisioned local actor all surface. A synchronous
+    /// <see cref="System.Collections.Concurrent.ConcurrentDictionary{TKey,TValue}.ContainsKey"/> pair —
+    /// no allocation, no async — so the edge stores apply the filter inside their read paths.
+    /// </summary>
+    /// <param name="actorIri">The edge source IRI to check.</param>
+    /// <returns><see langword="true"/> when the IRI is not a deleted local actor (the edge surfaces).</returns>
+    public bool SourceSurvives(Iri actorIri) => !_removed.ContainsKey(actorIri) || _actors.ContainsKey(actorIri);
 
     /// <inheritdoc/>
     public Task<bool> TryGetActorAsync(Iri actorIri, out Actor? actor, CancellationToken ct = default)
@@ -37,7 +58,9 @@ public sealed class InMemoryActorStore : IActorStore
         }
 
         ct.ThrowIfCancellationRequested();
-        _actors[new Iri(actor.Id)] = actor;
+        var iri = new Iri(actor.Id);
+        _actors[iri] = actor;
+        _removed.TryRemove(iri, out _);
         return Task.CompletedTask;
     }
 
@@ -45,7 +68,13 @@ public sealed class InMemoryActorStore : IActorStore
     public Task<bool> RemoveActorAsync(Iri actorIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(_actors.TryRemove(actorIri, out _));
+        var removed = _actors.TryRemove(actorIri, out _);
+        if (removed)
+        {
+            _removed[actorIri] = 0;
+        }
+
+        return Task.FromResult(removed);
     }
 
     /// <inheritdoc/>

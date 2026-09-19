@@ -199,9 +199,11 @@ public sealed class AccountDeletionRetentionTests : IClassFixture<PostgresFixtur
         var aliceFollowers = await p.Follows.GetFollowersAsync(alice);
         Assert.Contains(bob, aliceFollowers);
 
-        // (c) the CommunityMember edge (alice in the community) survives.
+        // (c) the CommunityMember edge (alice in the community) is FILTERED from the member list
+        //     (139.3-F2): a deleted local actor no longer surfaces as a community member, even though
+        //     the underlying edge row still exists (the read path applies the deleted-actor filter).
         var members = await p.Communities.GetMembersAsync(community);
-        Assert.Contains(alice, members);
+        Assert.DoesNotContain(alice, members);
 
         // (d) the Like edge (bob -> note1) survives.
         Assert.True(await p.Likes.HasLikedAsync(bob, note1));

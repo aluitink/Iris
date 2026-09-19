@@ -29,7 +29,7 @@ public sealed class EfModerationStore : IModerationStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetBlocksAsync(Iri blockerIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Block, blockerIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Block, blockerIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> IsBlockedAsync(Iri blockerIri, Iri blockedIri, CancellationToken ct = default)
@@ -37,7 +37,7 @@ public sealed class EfModerationStore : IModerationStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetBlockersAsync(Iri blockedIri, CancellationToken ct = default)
-        => _edges.InSourcesAsync(EdgeKind.Block, blockedIri.Value, ct);
+        => _edges.InSourcesAsync(EdgeKind.Block, blockedIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task RecordFlagAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
@@ -49,7 +49,7 @@ public sealed class EfModerationStore : IModerationStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetFlagsAsync(Iri flaggerIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Flag, flaggerIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Flag, flaggerIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> HasFlaggedAsync(Iri flaggerIri, Iri flaggedIri, CancellationToken ct = default)
@@ -65,7 +65,7 @@ public sealed class EfModerationStore : IModerationStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetMutesAsync(Iri muterIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Mute, muterIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Mute, muterIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> IsMutedAsync(Iri muterIri, Iri mutedIri, CancellationToken ct = default)

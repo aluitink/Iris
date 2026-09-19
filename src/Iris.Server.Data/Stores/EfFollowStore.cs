@@ -29,11 +29,11 @@ public sealed class EfFollowStore : IFollowStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetFollowersAsync(Iri actorIri, CancellationToken ct = default)
-        => _edges.InSourcesAsync(EdgeKind.Follow, actorIri.Value, ct);
+        => _edges.InSourcesAsync(EdgeKind.Follow, actorIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetFollowingAsync(Iri actorIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Follow, actorIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Follow, actorIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> IsFollowingAsync(Iri followerIri, Iri targetIri, CancellationToken ct = default)

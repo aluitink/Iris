@@ -86,6 +86,21 @@ public sealed class InMemoryPersistenceProvider : IPersistenceProvider
         _communities = communities ?? throw new ArgumentNullException(nameof(communities));
         _keys = keys ?? throw new ArgumentNullException(nameof(keys));
         _media = media ?? throw new ArgumentNullException(nameof(media));
+
+        // Wire the deleted-actor filter (139.3-F2) into every in-memory edge store: read paths exclude
+        // edges whose source was a *locally-stored-then-deleted* actor (the EF sibling applies the same
+        // filter at the SQL level). Edges from remote actors and from un-provisioned local actors are
+        // kept (their source is not in the actor store's removed set). The predicate is a synchronous
+        // ConcurrentDictionary read.
+        var actorStore = actors;
+        System.Func<Iri, bool> sourceExists = iri => actorStore.SourceSurvives(iri);
+        _follows.SetSourceExistsPredicate(sourceExists);
+        _likes.SetSourceExistsPredicate(sourceExists);
+        _dislikes.SetSourceExistsPredicate(sourceExists);
+        _announces.SetSourceExistsPredicate(sourceExists);
+        _moderation.SetSourceExistsPredicate(sourceExists);
+        _relays.SetSourceExistsPredicate(sourceExists);
+        _communities.SetSourceExistsPredicate(sourceExists);
     }
 
     /// <inheritdoc/>

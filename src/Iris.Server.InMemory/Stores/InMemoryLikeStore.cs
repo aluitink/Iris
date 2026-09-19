@@ -18,6 +18,19 @@ public sealed class InMemoryLikeStore : ILikeStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _liked = new();
     // liked object → set of liker IRIs (the object's `likes` reverse index, decision 056 (d)).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _likedBy = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     /// <summary>
     /// Removes all like edges and reverse indices (test isolation / teardown).
@@ -54,7 +67,7 @@ public sealed class InMemoryLikeStore : ILikeStore
     public Task<IReadOnlyList<Iri>> GetLikedAsync(Iri likerIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_liked, likerIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_liked, likerIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -68,7 +81,7 @@ public sealed class InMemoryLikeStore : ILikeStore
     public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_likedBy, likedObjectIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_likedBy, likedObjectIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -145,8 +158,9 @@ public sealed class InMemoryLikeStore : ILikeStore
         return set;
     }
 
-    private static IReadOnlyList<Iri> Snapshot(
-        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key)
+    private IReadOnlyList<Iri> Snapshot(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key,
+        bool filterSource = false)
     {
         if (!index.TryGetValue(key, out var set))
         {
@@ -155,6 +169,12 @@ public sealed class InMemoryLikeStore : ILikeStore
 
         lock (set)
         {
+            var exists = _sourceExists;
+            if (filterSource && exists is not null)
+            {
+                return set.Where(exists).ToList();
+            }
+
             return set.ToList();
         }
     }

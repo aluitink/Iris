@@ -18,6 +18,19 @@ public sealed class InMemoryFollowStore : IFollowStore
     // appended last, so the queue is served newest-first by reversing on read). A list (not a set) is
     // used so insertion order is preserved for the newest-first ordering the queue surface wants.
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Generic.List<Iri>> _followRequests = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     /// <summary>
     /// Removes all follow edges and reverse indices (test isolation / teardown).
@@ -60,14 +73,14 @@ public sealed class InMemoryFollowStore : IFollowStore
     public Task<IReadOnlyList<Iri>> GetFollowersAsync(Iri actorIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_followers, actorIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_followers, actorIri, filterSource: true));
     }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetFollowingAsync(Iri actorIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_following, actorIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_following, actorIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -145,9 +158,10 @@ public sealed class InMemoryFollowStore : IFollowStore
         return set;
     }
 
-    private static IReadOnlyList<Iri> Snapshot(
+    private IReadOnlyList<Iri> Snapshot(
         System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> map,
-        Iri key)
+        Iri key,
+        bool filterSource = false)
     {
         if (!map.TryGetValue(key, out var set))
         {
@@ -156,6 +170,12 @@ public sealed class InMemoryFollowStore : IFollowStore
 
         lock (set)
         {
+            var exists = _sourceExists;
+            if (filterSource && exists is not null)
+            {
+                return set.Where(exists).ToList();
+            }
+
             return set.ToList();
         }
     }

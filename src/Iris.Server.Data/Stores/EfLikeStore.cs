@@ -29,7 +29,7 @@ public sealed class EfLikeStore : ILikeStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetLikedAsync(Iri likerIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Like, likerIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Like, likerIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> HasLikedAsync(Iri likerIri, Iri likedObjectIri, CancellationToken ct = default)
@@ -37,7 +37,7 @@ public sealed class EfLikeStore : ILikeStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetLikersAsync(Iri likedObjectIri, CancellationToken ct = default)
-        => _edges.InSourcesAsync(EdgeKind.Like, likedObjectIri.Value, ct);
+        => _edges.InSourcesAsync(EdgeKind.Like, likedObjectIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetLikersBatchAsync(

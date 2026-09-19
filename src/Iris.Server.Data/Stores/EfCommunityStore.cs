@@ -104,7 +104,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityMember, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.OutTargetsAsync(EdgeKind.CommunityMember, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public Task<bool> AddJoinRequestAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
@@ -120,7 +120,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetJoinRequestsAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityJoinRequest, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.OutTargetsAsync(EdgeKind.CommunityJoinRequest, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetFollowsAsync(Iri communityIri, CancellationToken ct = default)
@@ -136,7 +136,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetFollowersAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.InSourcesAsync(EdgeKind.CommunityFollower, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.InSourcesAsync(EdgeKind.CommunityFollower, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public Task<bool> AddFollowerAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
@@ -167,7 +167,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetBlocksAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityBlock, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.OutTargetsAsync(EdgeKind.CommunityBlock, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public Task<bool> AddFlagAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
@@ -179,7 +179,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetFlagsAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityFlag, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.OutTargetsAsync(EdgeKind.CommunityFlag, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <inheritdoc/>
     public Task<bool> AddMuteAsync(Iri communityIri, Iri actorIri, CancellationToken ct = default)
@@ -191,7 +191,7 @@ public sealed class EfCommunityStore : ICommunityStore
 
     /// <inheritdoc/>
     public async Task<IReadOnlyCollection<Iri>> GetMutesAsync(Iri communityIri, CancellationToken ct = default)
-        => await _edges.OutTargetsAsync(EdgeKind.CommunityMute, communityIri.Value, ct).ConfigureAwait(false);
+        => await _edges.OutTargetsAsync(EdgeKind.CommunityMute, communityIri.Value, ct, filterDeletedActors: true).ConfigureAwait(false);
 
     /// <summary>
     /// Resolves the wire type to store for a community document: <c>"Feed"</c> when the document's

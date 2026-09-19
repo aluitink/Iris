@@ -29,7 +29,7 @@ public sealed class EfRelayStore : IRelayStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetRelaysAsync(Iri actorIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Relay, actorIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Relay, actorIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> IsRelayAsync(Iri actorIri, Iri relayIri, CancellationToken ct = default)

@@ -19,6 +19,19 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _announced = new();
     // announced object → set of announcer IRIs (the object's `shares` reverse index, decision 056 (d)).
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _announcedBy = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     /// <summary>
     /// Removes all announce edges and reverse indices (test isolation / teardown).
@@ -55,7 +68,7 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
     public Task<IReadOnlyList<Iri>> GetAnnouncedAsync(Iri announcerIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_announced, announcerIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_announced, announcerIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -69,7 +82,7 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
     public Task<IReadOnlyList<Iri>> GetAnnouncersAsync(Iri announcedObjectIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_announcedBy, announcedObjectIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_announcedBy, announcedObjectIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -146,8 +159,9 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
         return set;
     }
 
-    private static IReadOnlyList<Iri> Snapshot(
-        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key)
+    private IReadOnlyList<Iri> Snapshot(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key,
+        bool filterSource = false)
     {
         if (!index.TryGetValue(key, out var set))
         {
@@ -156,6 +170,12 @@ public sealed class InMemoryAnnounceStore : IAnnounceStore
 
         lock (set)
         {
+            var exists = _sourceExists;
+            if (filterSource && exists is not null)
+            {
+                return set.Where(exists).ToList();
+            }
+
             return set.ToList();
         }
     }

@@ -12,6 +12,19 @@ public sealed class InMemoryDislikeStore : IDislikeStore
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _disliked = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _dislikedBy = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     public void Clear()
     {
@@ -44,9 +57,13 @@ public sealed class InMemoryDislikeStore : IDislikeStore
     public Task<IReadOnlyList<Iri>> GetDislikersAsync(Iri objectIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(_dislikedBy.TryGetValue(objectIri, out var set)
-            ? [.. set]
-            : []);
+        if (!_dislikedBy.TryGetValue(objectIri, out var set))
+        {
+            return Task.FromResult<IReadOnlyList<Iri>>([]);
+        }
+
+        var exists = _sourceExists;
+        return Task.FromResult<IReadOnlyList<Iri>>(exists is null ? [.. set] : [.. set.Where(exists)]);
     }
 
     private static void AddEdge(

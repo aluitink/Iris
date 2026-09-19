@@ -24,6 +24,19 @@ public sealed class InMemoryModerationStore : IModerationStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _flags = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> _mutes = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<(Iri Flagger, Iri Flagged), DateTimeOffset> _flagTimestamps = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     /// <summary>
     /// Removes all moderation edges (blocks, flags, mutes) and reverse indices (test isolation / teardown).
@@ -60,7 +73,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     public Task<IReadOnlyList<Iri>> GetBlocksAsync(Iri blockerIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_blocks, blockerIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_blocks, blockerIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -74,7 +87,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     public Task<IReadOnlyList<Iri>> GetBlockersAsync(Iri blockedIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_blockers, blockedIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_blockers, blockedIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -98,7 +111,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     public Task<IReadOnlyList<Iri>> GetFlagsAsync(Iri flaggerIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_flags, flaggerIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_flags, flaggerIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -127,7 +140,7 @@ public sealed class InMemoryModerationStore : IModerationStore
     public Task<IReadOnlyList<Iri>> GetMutesAsync(Iri muterIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_mutes, muterIri));
+        return Task.FromResult<IReadOnlyList<Iri>>(Snapshot(_mutes, muterIri, filterSource: true));
     }
 
     /// <inheritdoc/>
@@ -192,8 +205,9 @@ public sealed class InMemoryModerationStore : IModerationStore
         }
     }
 
-    private static IReadOnlyList<Iri> Snapshot(
-        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key)
+    private IReadOnlyList<Iri> Snapshot(
+        System.Collections.Concurrent.ConcurrentDictionary<Iri, HashSet<Iri>> index, Iri key,
+        bool filterSource = false)
     {
         if (!index.TryGetValue(key, out var set))
         {
@@ -202,9 +216,14 @@ public sealed class InMemoryModerationStore : IModerationStore
 
         lock (set)
         {
+            var exists = _sourceExists;
+            var filtered = filterSource && exists is not null
+                ? set.Where(exists).ToHashSet()
+                : set;
+
             // IRI-sorted for a deterministic collection order (the blocks collection is insertion-
             // unordered, so a stable sort makes the paged output stable across requests).
-            return set.OrderBy(iri => iri.Value, StringComparer.Ordinal).ToList();
+            return filtered.OrderBy(iri => iri.Value, StringComparer.Ordinal).ToList();
         }
     }
 

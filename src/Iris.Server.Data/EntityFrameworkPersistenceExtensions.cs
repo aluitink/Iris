@@ -50,7 +50,12 @@ public static class EntityFrameworkPersistenceExtensions
         services.TryAddSingleton<IDbContextFactory<IrisDbContext>>(sp => new IrisDbContextFactory(connectionString));
 
         // The shared edge store (every relationship store reads/writes the same Edges table through it).
-        services.TryAddSingleton<EdgeStore>(sp => new EdgeStore(sp.GetRequiredService<IDbContextFactory<IrisDbContext>>()));
+        // The deleted-actor filter (139.3-F2) is wired from the EF actor store: a read with
+        // filterDeletedActors excludes edges whose source was a locally-provisioned-then-removed actor,
+        // while keeping edges from remote actors and un-provisioned local actors.
+        services.TryAddSingleton<EdgeStore>(sp => new EdgeStore(
+            sp.GetRequiredService<IDbContextFactory<IrisDbContext>>(),
+            sourceSurvives: iri => sp.GetRequiredService<EfActorStore>().SourceSurvives(iri)));
 
         // The individual stores.
         services.TryAddSingleton<EfActorStore>();

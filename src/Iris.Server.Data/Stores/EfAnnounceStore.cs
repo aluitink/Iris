@@ -29,7 +29,7 @@ public sealed class EfAnnounceStore : IAnnounceStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetAnnouncedAsync(Iri announcerIri, CancellationToken ct = default)
-        => _edges.OutTargetsAsync(EdgeKind.Announce, announcerIri.Value, ct);
+        => _edges.OutTargetsAsync(EdgeKind.Announce, announcerIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public Task<bool> HasAnnouncedAsync(Iri announcerIri, Iri announcedObjectIri, CancellationToken ct = default)
@@ -37,7 +37,7 @@ public sealed class EfAnnounceStore : IAnnounceStore
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<Iri>> GetAnnouncersAsync(Iri announcedObjectIri, CancellationToken ct = default)
-        => _edges.InSourcesAsync(EdgeKind.Announce, announcedObjectIri.Value, ct);
+        => _edges.InSourcesAsync(EdgeKind.Announce, announcedObjectIri.Value, ct, filterDeletedActors: true);
 
     /// <inheritdoc/>
     public async Task<IReadOnlyDictionary<Iri, IReadOnlyList<Iri>>> GetAnnouncersBatchAsync(

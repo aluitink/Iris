@@ -21,6 +21,19 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _flags = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _mutes = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> _joinRequests = new();
+    // Deleted-actor filter (139.3-F2): an actor-existence predicate wired by the provider (the EF
+    // sibling applies the same filter at the SQL level). Null = no filtering (standalone use, e.g. the
+    // store's own unit tests), which preserves prior behavior.
+    private System.Func<Iri, bool>? _sourceExists;
+
+    /// <summary>
+    /// Wires the deleted-actor filter (139.3-F2): read paths exclude edges whose source no longer
+    /// names a stored actor. Called by the persistence provider; a store used standalone (unit tests)
+    /// leaves this unset and filters nothing.
+    /// </summary>
+    /// <param name="exists">The actor-existence predicate, or null to disable filtering.</param>
+    public void SetSourceExistsPredicate(System.Func<Iri, bool>? exists)
+        => _sourceExists = exists;
 
     /// <summary>
     /// Removes all communities, members, follows, followers, moderation edges, and join requests
@@ -91,12 +104,16 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     public Task<IReadOnlyCollection<Iri>> GetMembersAsync(Iri communityIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var exists = _sourceExists;
         var result = new List<Iri>();
         if (_members.TryGetValue(communityIri, out var members))
         {
             foreach (var member in members.Keys)
             {
-                result.Add(member);
+                if (exists is null || exists(member))
+                {
+                    result.Add(member);
+                }
             }
         }
 
@@ -164,12 +181,16 @@ public sealed class InMemoryCommunityStore : ICommunityStore
     public Task<IReadOnlyCollection<Iri>> GetFollowersAsync(Iri communityIri, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        var exists = _sourceExists;
         var result = new List<Iri>();
         if (_followers.TryGetValue(communityIri, out var followers))
         {
             foreach (var follower in followers.Keys)
             {
-                result.Add(follower);
+                if (exists is null || exists(follower))
+                {
+                    result.Add(follower);
+                }
             }
         }
 
@@ -264,17 +285,21 @@ public sealed class InMemoryCommunityStore : ICommunityStore
         return Task.FromResult(set.TryRemove(actorIri, out _));
     }
 
-    private static Task<IReadOnlyCollection<Iri>> GetSetAsync(
+    private Task<IReadOnlyCollection<Iri>> GetSetAsync(
         System.Collections.Concurrent.ConcurrentDictionary<Iri, System.Collections.Concurrent.ConcurrentDictionary<Iri, byte>> index,
         Iri communityIri, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        var exists = _sourceExists;
         var result = new List<Iri>();
         if (index.TryGetValue(communityIri, out var set))
         {
             foreach (var actor in set.Keys)
             {
-                result.Add(actor);
+                if (exists is null || exists(actor))
+                {
+                    result.Add(actor);
+                }
             }
         }
 
