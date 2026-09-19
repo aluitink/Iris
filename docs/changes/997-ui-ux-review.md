@@ -1,5 +1,9 @@
 # 997: General UI/UX Review
 
+## Pass 4 (2026-09-19)
+
+Post-139.2-s5c verification pass. Reviewed all 8 signed-in routes: Home, Compose, Profile, Settings, Communities, Search, Notifications, Directory. All pages load correctly with 0 console errors. Home timeline renders 33 items with "Load more" pagination. Navigation bar shows all expected links (Home, New post, Notifications 99+, Directory, Communities, Profile, Settings, Search, Log out). No new defects. The follow-feed owner gate (139.2-s5c) does not affect the UI — the WASM client signs as the session actor, so the owner's feed loads normally.
+
 ## Pass 3 (2026-09-19)
 
 Post-139.4 verification pass. Reviewed Home, Settings, Compose after the design token migration (~30 hardcoded CSS values migrated to tokens) and the 404 page error overlay fix. All pages consistent and functional. 0 new defects. Console: 1 known cosmetic 404 proxy error (haunted.computer). Dark theme, spacing, and typography all render correctly with the new design tokens.
