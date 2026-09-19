@@ -37,14 +37,15 @@ public class EmbeddedSignatureTests
             ["to"] = new[] { "https://www.w3.org/ns/activitystreams#Public" },
         };
 
-        // The signature options (without signatureValue).
+        // The signature options (without signatureValue). The expires date is far in the future
+        // so the test does not break when the current time passes a hardcoded expiration.
         var options = new Dictionary<string, object>
         {
             ["@context"] = "https://w3id.org/identity/v1",
             ["type"] = "RsaSignature2017",
             ["creator"] = keyIri,
             ["created"] = "2026-09-17T12:00:00Z",
-            ["expires"] = "2026-09-19T12:00:00Z",
+            ["expires"] = "2099-01-01T00:00:00Z",
         };
 
         // Serialize the document (activity without signature) and the options.
@@ -69,7 +70,7 @@ public class EmbeddedSignatureTests
             ["type"] = "RsaSignature2017",
             ["creator"] = keyIri,
             ["created"] = "2026-09-17T12:00:00Z",
-            ["expires"] = "2026-09-19T12:00:00Z",
+            ["expires"] = "2099-01-01T00:00:00Z",
             ["signatureValue"] = signatureB64,
         };
 
