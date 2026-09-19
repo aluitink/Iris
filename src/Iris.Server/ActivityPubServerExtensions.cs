@@ -6895,6 +6895,8 @@ public static class ActivityPubServerExtensions
     /// <param name="signatureValidator">Validates the request's HTTP signature inline (for the per-requester
     /// <c>isLiked</c> extension); a signed object read's authenticated actor is resolved here rather than via
     /// the middleware, so the validation never re-enters on a key-resolution fetch.</param>
+    /// <param name="localActors">Resolves whether an actor is local (for the 139.2-s5a visibility gate:
+    /// non-public local content is only served to named recipients or the author).</param>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The object (or its tombstone) as <c>application/activity+json</c>, or <c>404</c>.</returns>
     private static async Task<IResult> ObjectDocumentHandler(
@@ -6903,6 +6905,7 @@ public static class ActivityPubServerExtensions
         IPersistenceProvider persistence,
         IOptions<ActivityPubServerOptions> optionsAccessor,
         ISignatureValidator signatureValidator,
+        ILocalActorResolver localActors,
         CancellationToken ct)
     {
         var options = optionsAccessor.Value;
@@ -7007,6 +7010,26 @@ public static class ActivityPubServerExtensions
         // carries them (a tombstone / a minted activity such as a Like or Announce itself has no like /
         // boost state to surface).
         var requesterIri = await ResolveAuthenticatedRequesterAsync(context, signatureValidator, ct).ConfigureAwait(false);
+
+        // 139.2-s5a: visibility gate for local content objects. A non-public (followers-only or
+        // direct) post authored by a LOCAL actor is only served to a requester who is a named
+        // recipient or the author. Remote objects are exempt: the remote instance already has its
+        // own copy (federation stores the full document), and the origin instance's copy is not the
+        // authoritative source for the remote's read path. A 404 (not 403) hides the object's
+        // existence — the standard ActivityPub privacy convention (Mastodon, Pleroma).
+        if (obj is IObject visObj && visObj is not Tombstone)
+        {
+            if (visObj.AttributedTo is { } authors)
+            {
+                var authorIri = authors.FirstOrDefault()?.ResolveObjectIri();
+                if (authorIri is { } ai
+                    && await localActors.IsLocalActorAsync(ai, ct).ConfigureAwait(false)
+                    && !VisibilityFilter.IsVisibleTo(visObj, requesterIri))
+                {
+                    return Results.NotFound();
+                }
+            }
+        }
         bool? isLikedValue = null;
         bool? isSharedValue = null;
         bool? isDislikedValue = null;
