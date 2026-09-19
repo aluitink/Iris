@@ -1,5 +1,9 @@
 # 997: General UI/UX Review
 
+## Pass 6 (2026-09-19)
+
+Post-147.2-follow-up verification pass. Reviewed all 8 signed-in routes: Home, Compose, Profile, Settings, Communities, Search, Notifications, Directory, plus a community-detail feed (the code path changed by the 147.2 parallel fan-out). All pages load and render correctly. Home timeline renders boosted posts with like/boost counts and "Load more" pagination. Communities list and detail (Feed tab) render; the community feed resolved correctly to an empty state for a memberless community. Console: 1 transient `net::ERR_NETWORK_CHANGED` on the first community-feed fetch (resolved cleanly on retry — a network blip, not a code defect). No new defects. The 147.2 parallel fan-out does not regress the UI.
+
 ## Pass 5 (2026-09-19)
 
 Post-139.2-s5a verification pass. Reviewed 6 signed-in routes: Home, Notifications, Search, Communities, Profile. All pages load correctly with 0 console errors. Home timeline renders correctly with boosted posts, like/boost counts, and "Load more" pagination. The object-document visibility gate (139.2-s5a) does not affect the UI — the WASM client signs as the session actor, so the user's own posts and DMs load normally. No new defects.
@@ -48,6 +52,7 @@ None.
 
 - Build: 0 warnings, 0 errors (unchanged)
 - Tests: 1,346 passed, 0 failed, 25 skipped (unchanged)
+- Live verification (Pass 6): All 8 signed-in routes + community-detail feed reviewed via MCP Playwright as andrew:Password1; 0 new defects; 1 transient `ERR_NETWORK_CHANGED` (network blip, not a code defect) on first community-feed fetch, resolved on retry.
 - Live verification (Pass 3): Home, Settings, Compose reviewed via MCP Playwright as andrew:Password1; 0 new defects; design tokens render correctly; 1 known cosmetic 404 proxy error.
 - Live verification (Pass 2): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; 0 new defects. Console: 2 known cosmetic 404 proxy errors.
 - Live verification (Pass 1): All pages reviewed via MCP Playwright as andrew:Password1; Compose end-to-end post returned HTTP 202; Community detail feed 0 console errors/warnings.
