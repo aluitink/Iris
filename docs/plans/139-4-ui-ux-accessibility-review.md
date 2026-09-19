@@ -65,7 +65,6 @@ if the pass spans multiple sessions.
 | 14 | `/notifications` | | done | | | | known | | done | done | | done | |
 | 15 | `/object` | | done | | | | | | | | | | |
 | 16 | `/profile` | | done | | | | known | | done | done | | done | |
-| 15 | `/object` | | done | | | | | | | | | | |
 | 17 | `/register` | | done | | | | | | | | | | |
 | 18 | `/search` | | done | | | | done | | done | done | | | |
 | 19 | `/settings` | | done | | | | | | done | done | | | |
