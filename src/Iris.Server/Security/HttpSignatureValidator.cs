@@ -620,6 +620,11 @@ public sealed class HttpSignatureValidator(
                       Signatures.ContentTypeHeaderName,
                       Signatures.DigestHeaderName,
                       Signatures.SignatureDateHeaderName,
+                      // RFC 9530 content-digest: modern fediverse peers (Mastodon 4.5+, hachyderm,
+                      // Pleroma) cover `content-digest` in an RFC 9421 signature. Without it in the
+                      // metadata, SignatureBase9421.Build throws "Header 'content-digest' is not
+                      // present" and the whole signature is rejected 401.
+                      SignatureBase9421.ContentDigestHeaderName,
                   })
         {
             if (request.Headers.TryGetValue(headerName, out var value))
