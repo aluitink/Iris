@@ -149,6 +149,33 @@ public static class IrisDocumentExtensions
     public const string LemmyContextIri = "https://join-lemmy.org/context.json";
 
     /// <summary>
+    /// The <em>bare</em> (un-namespaced) JSON property names Lemmy emits on every community (Group)
+    /// document — <c>language</c>, <c>featured</c>, <c>sensitive</c>, and
+    /// <c>postingRestrictedToMods</c>. These are the positive signal <see cref="IsLemmy(IObject)"/>
+    /// detects on (a cached remote Lemmy community still carries them after the instance stamps its own
+    /// <c>iris:</c>-namespaced counters on the document, which a "no iris: keys" negative test would miss).
+    /// They are distinct from the <c>iris:</c>-namespaced equivalents the 138.25 readers
+    /// (<see cref="GetLanguage(IObject, string)"/>, <see cref="GetFeatured(IObject, string)"/>,
+    /// <see cref="GetCommunityNsfw(IObject, string)"/>,
+    /// <see cref="GetPostingRestrictedToMods(IObject, string)"/>) read off a <em>served</em> document,
+    /// where the server has re-rendered the bare fields under the deployment's <c>iris:</c> namespace.
+    /// </summary>
+    public static class LemmyFieldNames
+    {
+        /// <summary>The bare <c>language</c> community property (ISO-639 code).</summary>
+        public const string Language = "language";
+
+        /// <summary>The bare <c>featured</c> community property (the pinned/featured flag).</summary>
+        public const string Featured = "featured";
+
+        /// <summary>The bare <c>sensitive</c> community property (the NSFW flag).</summary>
+        public const string Sensitive = "sensitive";
+
+        /// <summary>The bare <c>postingRestrictedToMods</c> community property (the mod-only flag).</summary>
+        public const string PostingRestrictedToMods = "postingRestrictedToMods";
+    }
+
+    /// <summary>
     /// Reports whether a community document is a <strong>non-Iris Group</strong> whose content is served
     /// through its <c>outbox</c> and whose members are served through its <c>followers</c> — the standard
     /// ActivityStreams shape for a Group actor (the shape Lemmy, and any AP-compliant Group server,
@@ -157,47 +184,58 @@ public static class IrisDocumentExtensions
     /// (outbox) and members (followers) IRIs for a community that does not advertise Iris-specific
     /// endpoints (137.2).
     /// <para>
-    /// An <strong>Iris</strong> community is a Group that advertises <c>iris:</c>-namespaced extension
-    /// properties on its public document (e.g. <c>{namespace}feed</c>, <c>{namespace}capabilities</c>).
-    /// The namespace base is deployment-configurable, so detection scans the <see cref="IObject.ExtensionData"/>
-    /// for any key containing a <c>#</c> fragment separator (the JSON-LD namespace marker) rather than
-    /// matching a fixed namespace. A Lemmy (or other non-Iris) Group document has no such keys — its
-    /// <c>@context</c> is stripped by the JSON deserializer — so the absence of any <c>#</c>-containing
-    /// extension key is the reliable "not Iris" signal.
+    /// Detection is <strong>positive</strong> on Lemmy's own <em>bare</em> (un-namespaced) community
+    /// properties — <c>language</c>, <c>featured</c>, <c>sensitive</c>, and
+    /// <c>postingRestrictedToMods</c> — which Lemmy emits on every community document and which the
+    /// <see cref="GetLanguage(IObject, string)"/>/
+    /// <see cref="GetFeatured(IObject, string)"/>/
+    /// <see cref="GetCommunityNsfw(IObject, string)"/>/
+    /// <see cref="GetPostingRestrictedToMods(IObject, string)"/> readers (138.25) read the
+    /// <c>iris:</c>-namespaced renderings of these same fields on a served document. Detection is deliberately NOT "a Group with an outbox and no
+    /// <c>iris:</c>-namespaced extension keys": that negative test is defeated once the instance stamps
+    /// its own <c>iris:</c>-namespaced properties onto a <em>remote</em> community's stored document
+    /// (the per-actor counter refresh writes <c>iris:postsCount</c>/<c>iris:followersCount</c>/
+    /// <c>iris:followingCount</c> onto every stored Group, remote and local alike), which would make a
+    /// cached Lemmy community misclassify as Iris and its feed/members resolve to <c>/feed</c>+
+    /// <c>/members</c> (404 on Lemmy) instead of <c>/outbox</c>+<c>/followers</c>. The bare Lemmy fields
+    /// are the instance's own, but they are not <c>iris:</c>-namespaced, so they survive that stamping.
+    /// An Iris community never emits the bare Lemmy fields (it renders its equivalents under the
+    /// <c>iris:</c> namespace), so it is not misclassified.
     /// </para>
     /// </summary>
     /// <param name="document">The actor/community document (an <see cref="IObject"/>). Must not be null.</param>
-    /// <returns><see langword="true"/> when the document is a <see cref="Group"/> with an <c>outbox</c> link and no <c>iris:</c>-namespaced extension properties.</returns>
+    /// <returns><see langword="true"/> when the document is a <see cref="Group"/> carrying a bare Lemmy community property (<c>language</c>, <c>featured</c>, <c>sensitive</c>, or <c>postingRestrictedToMods</c>).</returns>
     /// <exception cref="ArgumentNullException">When <paramref name="document"/> is null.</exception>
     public static bool IsLemmy(this IObject document)
     {
         ArgumentNullException.ThrowIfNull(document);
 
-        // Must be a Group with an outbox (the AP-standard shape for a community whose posts are
-        // Create/Announce activities in its outbox and whose members are its followers).
-        if (document is not Group { Outbox: not null })
+        if (document is not Group)
         {
             return false;
         }
 
-        // An Iris community advertises iris:-namespaced extension properties on its public document.
-        // The namespace base is deployment-configurable (ActivityPubServerOptions.NamespaceIri), so we
-        // cannot match a fixed namespace. Instead, scan the ExtensionData for any key containing a '#'
-        // fragment separator — the JSON-LD namespace marker. A Lemmy (or other non-Iris) Group document
-        // has no such keys (its @context is stripped by the JSON deserializer), so the absence of any
-        // '#' -containing extension key is the reliable "not Iris" signal.
-        if (document.ExtensionData is { } ext)
+        // Positive Lemmy detection: the bare (un-namespaced) community properties Lemmy emits on every
+        // community document. Any one of them present identifies the community as Lemmy-shaped. The
+        // keys are matched exactly (no '#'), so an iris:-namespaced rendering (e.g.
+        // "iris:communityNsfw") is NOT counted as the bare Lemmy "sensitive".
+        if (document.ExtensionData is not { } ext)
         {
-            foreach (var key in ext.Keys)
+            return false;
+        }
+
+        foreach (var key in ext.Keys)
+        {
+            if (key == LemmyFieldNames.Language
+                || key == LemmyFieldNames.Featured
+                || key == LemmyFieldNames.Sensitive
+                || key == LemmyFieldNames.PostingRestrictedToMods)
             {
-                if (key.AsSpan().Contains('#'))
-                {
-                    return false;
-                }
+                return true;
             }
         }
 
-        return true;
+        return false;
     }
 
     /// <summary>

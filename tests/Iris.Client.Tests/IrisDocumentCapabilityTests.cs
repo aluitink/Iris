@@ -49,8 +49,9 @@ public class IrisDocumentCapabilityTests
     public void IsLemmy_DeserializedLemmyDocument_ReturnsTrue()
     {
         // The real-world path: the document arrives via JSON deserialization (the @context is stripped
-        // by the deserializer, so detection must rely on the Group.Outbox shape, not @context).
-        var json = """{"@context":["https://join-lemmy.org/context.json","https://www.w3.org/ns/activitystreams"],"type":"Group","id":"https://lemmy.luit.ink/c/interop","preferredUsername":"interop","name":"Iris Interop","outbox":"https://lemmy.luit.ink/c/interop/outbox","followers":"https://lemmy.luit.ink/c/interop/followers"}""";
+        // by the deserializer, so detection relies on the bare Lemmy fields Lemmy emits on every
+        // community — here "language" — not on @context or the Group.Outbox shape alone).
+        var json = """{"@context":["https://join-lemmy.org/context.json","https://www.w3.org/ns/activitystreams"],"type":"Group","id":"https://lemmy.luit.ink/c/interop","preferredUsername":"interop","name":"Iris Interop","outbox":"https://lemmy.luit.ink/c/interop/outbox","followers":"https://lemmy.luit.ink/c/interop/followers","language":"en"}""";
         var doc = ActivityJson.Deserialize<Group>(json);
         Assert.NotNull(doc);
         Assert.True(doc!.IsLemmy());
@@ -75,6 +76,38 @@ public class IrisDocumentCapabilityTests
         // fixed namespace — it must scan for any '#' -containing extension key.
         var doc = IrisGroupWithFeed(namespaceIri: "https://iris.luit.ink/ns#");
         Assert.False(doc.IsLemmy());
+    }
+
+    [Fact]
+    public void IsLemmy_LemmyGroupWithIrisCounterKeysStillDetected_ReturnsTrue()
+    {
+        // Pass-10 regression: the instance's per-actor counter refresh stamps iris:postsCount /
+        // iris:followersCount / iris:followingCount onto every stored Group (remote communities
+        // included). A cached remote Lemmy community therefore arrives with BOTH the bare Lemmy fields
+        // AND iris:-namespaced extension keys. The old negative "no '#' keys" test misclassified such a
+        // community as Iris (its feed/members then resolved to /feed + /members — 404 on Lemmy).
+        // Positive detection on the bare Lemmy fields is immune to the iris counters.
+        var doc = LemmyGroup();
+        var ns = "https://iris.luit.ink/ns#";
+        doc.ExtensionData![ns + "postsCount"] = IntElement(42);
+        doc.ExtensionData![ns + "followersCount"] = IntElement(1000);
+        doc.ExtensionData![ns + "followingCount"] = IntElement(7);
+
+        Assert.True(doc.IsLemmy());
+    }
+
+    [Fact]
+    public void ResolveFeedIri_LemmyGroupWithIrisCounterKeysUsesOutbox()
+    {
+        // The live symptom: with the iris counters stamped, ResolveFeedIri must still resolve a Lemmy
+        // community to its outbox (not /feed), and ResolveMembersIri to /followers (not /members).
+        var doc = LemmyGroup();
+        var ns = "https://iris.luit.ink/ns#";
+        doc.ExtensionData![ns + "postsCount"] = IntElement(42);
+
+        Assert.Equal($"{CommunityIri}/outbox", doc.ResolveFeedIri(Iri).Value);
+        Assert.Equal($"{CommunityIri}/followers", doc.ResolveMembersIri(Iri).Value);
+        Assert.True(doc.IsActivityFeed(Iri));
     }
 
     [Fact]
@@ -188,9 +221,11 @@ public class IrisDocumentCapabilityTests
     // --- Helpers -----------------------------------------------------------------------
 
     /// <summary>
-    /// A minimal Lemmy community document: a <c>Group</c> whose <c>outbox</c>/<c>followers</c> are
-    /// present (the AP-standard shape for a community: its posts are in its outbox, its members are
-    /// its followers).
+    /// A minimal Lemmy community document: a <c>Group</c> whose <c>outbox</c>/<c>followers</c> are present
+    /// (the AP-standard shape for a community: its posts are in its outbox, its members are its
+    /// followers) that also carries the bare Lemmy <c>language</c> field (the positive signal
+    /// <see cref="IrisDocumentExtensions.IsLemmy(IObject)"/> detects on — Lemmy emits it on every
+    /// community document).
     /// </summary>
     private static Group LemmyGroup()
     {
@@ -199,6 +234,10 @@ public class IrisDocumentCapabilityTests
             Id = CommunityIri,
             Outbox = new Link { Href = new Uri($"{CommunityIri}/outbox") },
             Followers = new Link { Href = new Uri($"{CommunityIri}/followers") },
+            ExtensionData = new Dictionary<string, JsonElement>
+            {
+                ["language"] = StringElement("en"),
+            },
         };
     }
 
@@ -223,4 +262,6 @@ public class IrisDocumentCapabilityTests
     }
 
     private static JsonElement StringElement(string value) => JsonSerializer.SerializeToElement(value);
+
+    private static JsonElement IntElement(int value) => JsonSerializer.SerializeToElement(value);
 }

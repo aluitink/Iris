@@ -480,7 +480,13 @@ public sealed class UiContext
         // fetches it live and refreshes the cache. This is the single seam for every remote actor /
         // object read. A local actor is NOT routed here: its canonical document (via /u/{handle})
         // carries the Iris-local extensions (capabilities, feed, …) the cached copy does not.
-        if (IsRemoteActorIri(actorIri))
+        //
+        // The proxy endpoint is authenticated (it signs the forwarded request with the actor's key),
+        // so it is only usable when signed in. A signed-out visitor must NOT call it — a 401 here
+        // (a) does nothing useful and (b) makes the browser log a console error for every remote
+        // actor on a public feed (one per avatar). Skip the proxy when the session has no signing
+        // client and fall through to the anonymous live read (actor documents are public).
+        if (_session.Client is not null && IsRemoteActorIri(actorIri))
         {
             try
             {

@@ -2000,7 +2000,31 @@ public static class ActivityPubServerExtensions
             },
             transportFactory());
 
-        using var response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        // The outbound fetch can fail for reasons other than a remote 4xx/5xx: a DNS error, a
+        // connection reset, a TLS abort (e.g. the Kerberos/GSSAPI negotiation on some remote hosts
+        // ending the response prematurely), or a timeout. None of these is a condition the client can
+        // act on as a remote status, so map them to a clean 502 Bad Gateway instead of letting the
+        // exception escape as an unhandled 500 (a 500 also makes the browser log a console error for
+        // every affected avatar/object on the page — the same noise the media proxy already avoids by
+        // returning 502 for unreachable sources). The client's FetchViaProxyAsync treats any
+        // non-success as a proxy miss and falls through to its own live-fetch path, so a 502 is a
+        // safe, expected outcome here.
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            context.Response.StatusCode = (int)HttpStatusCode.BadGateway;
+            context.Response.ContentType = ActivityJson.ActivityJsonContentType;
+            return Results.Json(new { error = $"Upstream request failed: {ex.Message}" });
+        }
+
         var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
 
         // Relay the remote response's status and body (content type defaults to ActivityPub JSON-LD).
