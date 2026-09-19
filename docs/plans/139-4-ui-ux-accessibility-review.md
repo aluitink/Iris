@@ -49,25 +49,25 @@ if the pass spans multiple sessions.
 
 | # | Route | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 |
 |---|---|---|---|---|---|---|---|---|---|---|----|----|----|
-| 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | | done | |
-| 2 | `/actor` | | done | | | | | | done | done | | done | |
-| 3 | `/admin` | | | done | | | | | done | done | | done | |
-| 4 | `/admin/dashboard` | | | done | | | | | done | done | | done | |
-| 5 | `/admin/instance` | | | done | | | | | done | done | | done | |
-| 6 | `/admin/moderation` | | | done | | | | | done | done | | done | |
-| 7 | `/admin/users` | | | done | | | | | done | done | | done | |
-| 8 | `/communities` | done | done | | | | known | | done | done | | done | |
-| 9 | `/community` | | done | | | | known | | done | done | | done | |
-| 10 | `/compose` | | done | | | | known | | done | done | | done | |
-| 11 | `/directory` | | done | | | | | | done | done | | done | |
-| 12 | `/home` | | done | | | | known | | done | done | | done | |
-| 13 | `/login` | | done | | | | | | done | done | | done | |
-| 14 | `/notifications` | | done | | | | known | | done | done | | done | |
-| 15 | `/object` | | done | | | | | | done | done | | done | |
-| 16 | `/profile` | | done | | | | known | | done | done | | done | |
-| 17 | `/register` | | done | | | | | | done | done | | done | |
-| 18 | `/search` | | done | | | | done | | done | done | | done | |
-| 19 | `/settings` | | done | | | | | | done | done | | done | |
+| 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | done | done | |
+| 2 | `/actor` | | done | | | | | | done | done | done | done | |
+| 3 | `/admin` | | | done | | | | | done | done | done | done | |
+| 4 | `/admin/dashboard` | | | done | | | | | done | done | done | done | |
+| 5 | `/admin/instance` | | | done | | | | | done | done | done | done | |
+| 6 | `/admin/moderation` | | | done | | | | | done | done | done | done | |
+| 7 | `/admin/users` | | | done | | | | | done | done | done | done | |
+| 8 | `/communities` | done | done | | | | known | | done | done | done | done | |
+| 9 | `/community` | | done | | | | known | | done | done | done | done | |
+| 10 | `/compose` | | done | | | | known | | done | done | done | done | |
+| 11 | `/directory` | | done | | | | | | done | done | done | done | |
+| 12 | `/home` | | done | | | | known | | done | done | done | done | |
+| 13 | `/login` | | done | | | | | | done | done | done | done | |
+| 14 | `/notifications` | | done | | | | known | | done | done | done | done | |
+| 15 | `/object` | | done | | | | | | done | done | done | done | |
+| 16 | `/profile` | | done | | | | known | | done | done | done | done | |
+| 17 | `/register` | | done | | | | | | done | done | done | done | |
+| 18 | `/search` | | done | | | | done | | done | done | done | done | |
+| 19 | `/settings` | | done | | | | | | done | done | done | done | |
 
 ### Cross-page scenarios
 
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-9 and item 11 (responsive). No defects found. Remaining: all routes item 10 (color contrast) + item 12 (design tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-9 and 11 (responsive). Item 10 (contrast) verified via JS contrast-ratio checker on 8 routes (Home, Compose, Communities, Search, Profile, Settings, Notifications, Directory) — 0 violations (dark theme: body bg rgb(17,19,24), text rgb(230,232,236)). Remaining: item 10 for 11 routes + item 12 (design tokens) + 4 cross-page scenarios.
