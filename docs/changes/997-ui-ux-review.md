@@ -1,5 +1,25 @@
 # 997: General UI/UX Review
 
+## Pass 10 (2026-09-19)
+
+Post-138.25-follow-up verification pass. Two-part pass: (1) an **authless (signed-out) pass** of the public home feed, and (2) a **signed-in pass** (pass10review, newly registered) focused on the 138.25 Lemmy-metadata surfaces and on browsing a remote **Lemmy** community end-to-end. This pass found and fixed **three real defects** (all committed in `fix(web,client,server): Pass 10 proxy + Lemmy-capability defects`):
+
+**Defect 1 — signed-out 401 console spam (high, fixed).** The signed-out home feed called the *authenticated* `POST /ap/v1/proxy/{target}` endpoint for every remote actor (one per avatar), logging a 401 per actor (15–17 console errors) plus a CORS error, and leaving remote avatars blank. Root cause: `UiContext.FetchActorAsync` routed remote actors through the proxy even when the session had no signing client (the `_session.Client is null` guard came after the proxy branch). Fix: skip the proxy when signed out and fall through to the anonymous live read (actor documents are public). **Live-verified:** signed-out home feed now **0 console errors** (was 17).
+
+**Defect 2 — proxy upstream abort surfaced as unhandled 500 (medium, fixed).** On a Lemmy community page, an outbound proxy fetch to `lemmy.ml` aborted (`HttpIOException: The response ended prematurely` — the Kerberos/GSSAPI TLS negotiation) and escaped as an **unhandled 500** (6 console errors) instead of a clean 502. Fix: `ProxyHandler` now catches non-cancellation outbound exceptions and returns **502 Bad Gateway**, matching the media proxy's existing unreachable-upstream behavior. **Live-verified:** `lemmy.ml` proxy calls now return clean 502s; the app stays fully usable (other Lemmy instances render normally).
+
+**Defect 3 — cached Lemmy community misclassified as Iris → `/feed`+`/members` 404s (high, fixed).** A remote Lemmy community page showed "No posts yet" and 404'd its `/feed` + `/members` collections (2×404) instead of loading the community's real feed. Root cause: `IsLemmy()` used the *negative* test "a Group with an outbox and **no** `iris:`-namespaced extension keys". But the per-actor counter refresh (`ActorCountRefreshService`) stamps `iris:postsCount`/`iris:followersCount`/`iris:followingCount` onto **every** stored Group — remote communities included — so a cached Lemmy community arrived carrying `iris:` keys and was misclassified as Iris; `ResolveFeedIri`/`ResolveMembersIri` then fell to the Mastodon/Pleroma `/feed` + `/members` convention, which Lemmy does not serve (404). Fix: `IsLemmy()` is now **positive** on Lemmy's own bare community fields (`language`, `featured`, `sensitive`, `postingRestrictedToMods`), which survive the `iris:` counter stamping; added `LemmyFieldNames` + a regression test (a Lemmy Group carrying `iris:` counter keys still resolves to `/outbox` + `/followers`). **Live-verified:** the Lemmy community now dials `/outbox` + `/followers` (both 200) and renders its real feed (dozens of posts from lemmy.world / piefed / lemmy.zip / thelemmy.club / feddit.org); the only remaining console errors are the expected `lemmy.ml` upstream 502s (Defect 2 class).
+
+**Authless pass (signed-out):** home feed renders public remote content with 0 console errors (Defect 1 fixed); nav shows Log in / Register only.
+
+**Signed-in pass:** `/home` (empty timeline + good empty state, 0 errors); `/communities` (Following + All-on-this-instance tabs, local communities render, 0 errors); Lemmy community detail (real feed via outbox, member count via followers); `/object?iri=…` and `/compose?replyTo=…` (parent prefilled with quote) render once the session is warm.
+
+**138.25 surfaces:** the locked/pinned/language/NSFW/mod-only readers are wired, but no live Lemmy post or community currently carries those flags (most communities have `sensitive=false`, `postingRestrictedToMods=false`, no `featured`, posts carry no `language`/`locked`), so no banner/badge was visible against real data this pass — nothing to fix, but nothing to confirm visually either. (The `sensitive`/`postingRestrictedToMods` bare fields ARE present on the Lemmy community doc; they only render when `true`.)
+
+**Console errors (all remote-availability, not Iris bugs):** the only errors on the Lemmy community page are `lemmy.ml` upstream 502s (the Kerberos/TLS abort — now a clean 502 per Defect 2). No 400s/401s/500s, no unhandled exceptions.
+
+**3 defects found and fixed (committed). 0 remaining.**
+
 ## Pass 8 (2026-09-19)
 
 Post-139.2-s5a/s5b verification pass. Two-part pass: (1) an **authless (signed-out) pass** covering every route, and (2) a **signed-in spot-check** as uxreview8 (newly registered) across the routes most likely to have regressed (the S5b visibility area and the object-document federated gate).
