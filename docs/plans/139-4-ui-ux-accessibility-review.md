@@ -51,23 +51,23 @@ if the pass spans multiple sessions.
 |---|---|---|---|---|---|---|---|---|---|---|----|----|----|
 | 1 | `/` (Home) | n/a | done | done | done | done | known | done | done | done | | done | |
 | 2 | `/actor` | | done | | | | | | done | done | | done | |
-| 3 | `/admin` | | | done | | | | | done | done | | | |
-| 4 | `/admin/dashboard` | | | done | | | | | done | done | | | |
-| 5 | `/admin/instance` | | | done | | | | | done | done | | | |
-| 6 | `/admin/moderation` | | | done | | | | | done | done | | | |
-| 7 | `/admin/users` | | | done | | | | | done | done | | | |
+| 3 | `/admin` | | | done | | | | | done | done | | done | |
+| 4 | `/admin/dashboard` | | | done | | | | | done | done | | done | |
+| 5 | `/admin/instance` | | | done | | | | | done | done | | done | |
+| 6 | `/admin/moderation` | | | done | | | | | done | done | | done | |
+| 7 | `/admin/users` | | | done | | | | | done | done | | done | |
 | 8 | `/communities` | done | done | | | | known | | done | done | | done | |
 | 9 | `/community` | | done | | | | known | | done | done | | done | |
 | 10 | `/compose` | | done | | | | known | | done | done | | done | |
-| 11 | `/directory` | | done | | | | | | done | done | | | |
-| 12 | `/home` | | done | | | | known | | done | done | | | |
-| 13 | `/login` | | done | | | | | | done | done | | | |
+| 11 | `/directory` | | done | | | | | | done | done | | done | |
+| 12 | `/home` | | done | | | | known | | done | done | | done | |
+| 13 | `/login` | | done | | | | | | done | done | | done | |
 | 14 | `/notifications` | | done | | | | known | | done | done | | done | |
-| 15 | `/object` | | done | | | | | | done | done | | | |
+| 15 | `/object` | | done | | | | | | done | done | | done | |
 | 16 | `/profile` | | done | | | | known | | done | done | | done | |
-| 17 | `/register` | | done | | | | | | done | done | | | |
-| 18 | `/search` | | done | | | | done | | done | done | | | |
-| 19 | `/settings` | | done | | | | | | done | done | | | |
+| 17 | `/register` | | done | | | | | | done | done | | done | |
+| 18 | `/search` | | done | | | | done | | done | done | | done | |
+| 19 | `/settings` | | done | | | | | | done | done | | done | |
 
 ### Cross-page scenarios
 
@@ -78,4 +78,4 @@ if the pass spans multiple sessions.
 | 15 | Lemmy-sourced content rendering | | |
 | 16 | Global error boundary | | |
 
-**Resume checkpoint:** All 19 routes verified for items 1-7 and items 8,9 (keyboard nav, ARIA landmarks). Routes 1, 2, 8, 9, 10, 14, 16 verified for item 11 (responsive). Admin routes 3-7 items 8,9 inferred from shared nav structure (verified on route 3). Remaining: item 11 (responsive) for routes 3-7,11,12,13,15,17,18,19 + all routes item 10 (contrast) + item 12 (design tokens) + 4 cross-page scenarios.
+**Resume checkpoint:** All 19 routes verified for items 1-9 and item 11 (responsive). No defects found. Remaining: all routes item 10 (color contrast) + item 12 (design tokens) + 4 cross-page scenarios.
