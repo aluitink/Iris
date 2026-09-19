@@ -111,7 +111,17 @@ else if (ObjectDoc is null)
             }
         }
         <div class="object-detail-actions">
-            @if (ReplyHref is not null)
+            @if (IsLocked)
+            {
+                <span class="object-locked-indicator" title="Replies are disabled (post is locked)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                        <rect x="5" y="11" width="14" height="10" rx="2" />
+                        <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                    </svg>
+                    Replies disabled (post is locked)
+                </span>
+            }
+            else if (ReplyHref is not null)
             {
                 <a class="button button--secondary" href="@ReplyHref">Reply</a>
             }
@@ -341,7 +351,8 @@ else if (ObjectDoc is null)
 
     /// <summary>
     /// The href for the "Reply" button, or null when the object is not a replyable content type
-    /// (a Note, or any non-actor content object).
+    /// (a Note, or any non-actor content object) or when the post is locked (<c>iris:locked: true</c>,
+    /// 138.25 follow-up).
     /// </summary>
     private string? ReplyHref
     {
@@ -352,12 +363,30 @@ else if (ObjectDoc is null)
                 return null;
             }
 
+            if (IsLocked)
+            {
+                return null;
+            }
+
             if (ObjectIri is not { } iri)
             {
                 return null;
             }
 
             return $"/compose?replyTo={Uri.EscapeDataString(iri.Value)}";
+        }
+    }
+
+    /// <summary>
+    /// Whether the object is locked (<c>iris:locked: true</c>) — replies are disabled. Read from the
+    /// <c>iris:</c> extension terms the server renders (138.25).
+    /// </summary>
+    private bool IsLocked
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            return ns is not null && SubjectObject?.GetLocked(ns) == true;
         }
     }
 

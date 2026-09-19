@@ -119,6 +119,56 @@ public partial class ObjectView
     private string? Summary => Obj?.GetSummary();
     private string? ActorName => (Obj as Actor)?.Name?.FirstOrDefault();
 
+    /// <summary>
+    /// Whether the content object is locked (<c>iris:locked: true</c>) — replies are disabled on the
+    /// originating post. Read from the <c>iris:</c> extension terms the server renders (138.25).
+    /// Null-safe: returns <c>false</c> when the term is absent or the namespace is unknown.
+    /// </summary>
+    private bool IsLocked
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            return ns is not null && Obj?.GetLocked(ns) == true;
+        }
+    }
+
+    /// <summary>
+    /// Whether the content object is featured/pinned (<c>iris:featured: true</c>). Read from the
+    /// <c>iris:</c> extension terms the server renders (138.25).
+    /// </summary>
+    private bool IsFeatured
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            return ns is not null && Obj?.GetFeatured(ns) == true;
+        }
+    }
+
+    /// <summary>
+    /// The language tag (<c>iris:language</c>) the server rendered on the content object (138.25).
+    /// Falls back to the standard ActivityStreams <c>inLanguage</c> extension when the <c>iris:</c>
+    /// term is absent.
+    /// </summary>
+    private string? ObjectLanguage
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            if (ns is not null)
+            {
+                var irisLang = Obj?.GetLanguage(ns);
+                if (!string.IsNullOrWhiteSpace(irisLang))
+                {
+                    return irisLang;
+                }
+            }
+
+            return Obj?.GetInLanguage();
+        }
+    }
+
     // 153 — the object IRI the whole content card links to (the stretched-link overlay target). For a
     // Create this is the created object's IRI; for a bare content object it is its own IRI. Null when
     // the card has no navigable object (e.g. a link-only Create or an actor/tombstone card), in which

@@ -53,6 +53,25 @@ else
         {
             <p class="muted">This is your community.</p>
         }
+        @if (IsNsfw)
+        {
+            <div class="community-nsfw-banner" role="note">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                </svg>
+                This community contains adult content.
+            </div>
+        }
+        @if (IsPostingRestrictedToMods)
+        {
+            <div class="community-mod-only-banner" role="note">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <rect x="5" y="11" width="14" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                Posting is restricted to moderators.
+            </div>
+        }
     </div>
 
     @if (IsEditingCommunity)
@@ -346,6 +365,32 @@ else
 
     private bool IsSelf
         => Session.ActorId is { } me && CommunityDoc?.Id is { } id && me.Value == id;
+
+    /// <summary>
+    /// Whether the community is flagged NSFW (<c>iris:communityNsfw: true</c>, 138.25 follow-up).
+    /// Read from the <c>iris:</c> extension terms the server renders on community documents.
+    /// </summary>
+    private bool IsNsfw
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            return ns is not null && CommunityDoc?.GetCommunityNsfw(ns) == true;
+        }
+    }
+
+    /// <summary>
+    /// Whether posting is restricted to moderators (<c>iris:postingRestrictedToMods: true</c>,
+    /// 138.25 follow-up).
+    /// </summary>
+    private bool IsPostingRestrictedToMods
+    {
+        get
+        {
+            var ns = Session.IrisNamespaceBase?.Value;
+            return ns is not null && CommunityDoc?.GetPostingRestrictedToMods(ns) == true;
+        }
+    }
 
     private bool IsCreator
     {

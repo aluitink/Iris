@@ -34,18 +34,36 @@
             </svg>
             <span class="engagement-count">@_boostCount</span>
         </button>
-        <a class="engagement-btn"
-           href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
-           title="Reply"
-           aria-label="Reply">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </svg>
-            @if (_replyCount > 0)
-            {
-                <span class="engagement-count">@_replyCount</span>
-            }
-        </a>
+        @if (Locked)
+        {
+            <span class="engagement-btn engagement-btn--disabled"
+                  title="Replies are disabled (post is locked)"
+                  aria-label="Replies disabled">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <rect x="5" y="11" width="14" height="10" rx="2" />
+                    <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+                </svg>
+                @if (_replyCount > 0)
+                {
+                    <span class="engagement-count">@_replyCount</span>
+                }
+            </span>
+        }
+        else
+        {
+            <a class="engagement-btn"
+               href="/compose?replyTo=@Uri.EscapeDataString(iri.Value)"
+               title="Reply"
+               aria-label="Reply">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                @if (_replyCount > 0)
+                {
+                    <span class="engagement-count">@_replyCount</span>
+                }
+            </a>
+        }
         @if (CanModerate)
         {
             <div class="engagement-more" role="button" tabindex="0" aria-label="More options" aria-expanded="_showModeration"
@@ -104,6 +122,14 @@
     /// </summary>
     [Parameter]
     public IObject? Object { get; set; }
+
+    /// <summary>
+    /// Whether the post is locked (<c>iris:locked: true</c>) — replies are disabled. When true the
+    /// reply button is rendered as a disabled span (no link) with a lock icon and a tooltip explaining
+    /// the post is locked (138.25 follow-up).
+    /// </summary>
+    [Parameter]
+    public bool Locked { get; set; }
 
     private int _likeCount;
     private int _boostCount;

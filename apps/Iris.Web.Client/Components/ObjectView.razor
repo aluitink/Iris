@@ -49,6 +49,10 @@
                 {
                     <div class="object-title">@title</div>
                 }
+                @if (IsFeatured)
+                {
+                    <span class="object-featured-badge" title="Pinned">📌 Pinned</span>
+                }
                 @if (contentObj is KristofferStrube.ActivityStreams.Object ao && JoinStrings(ao.Content) is { Length: > 0 } content)
                 {
                     @if (ActivityIsSensitive)
@@ -120,7 +124,7 @@
                         <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
                     </div>
                 }
-                @if (ArticleInLanguage is { Length: > 0 } lang)
+                @if (ObjectLanguage is { Length: > 0 } lang)
                 {
                     <div class="object-article-meta">
                         <span class="object-article-language">@lang</span>
@@ -203,7 +207,7 @@
                 }
                 else
                 {
-                    <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" />
+                    <EngagementBar ObjectIri="@CreatedObjectIri" AuthorIri="ActivityActorIri" Object="ActivityEmbeddedObject" Locked="IsLocked" />
                 }
             }
         </div>
@@ -475,6 +479,10 @@
             {
                 <div class="object-title">@title</div>
             }
+            @if (IsFeatured)
+            {
+                <span class="object-featured-badge" title="Pinned">📌 Pinned</span>
+            }
             @if (JoinStrings(obj.Content) is { Length: > 0 } content)
             {
                 @if (IsSensitive)
@@ -546,7 +554,7 @@
                     <span class="object-article-duration">@(duration.TotalHours >= 1 ? $"{(int)duration.TotalHours}h {(int)duration.TotalMinutes % 60}m" : $"{(int)duration.TotalMinutes} min")</span>
                 </div>
             }
-            @if (ArticleInLanguage is { Length: > 0 } lang)
+            @if (ObjectLanguage is { Length: > 0 } lang)
             {
                 <div class="object-article-meta">
                     <span class="object-article-language">@lang</span>
@@ -645,7 +653,7 @@
             }
             else if (obj is Note or Article)
             {
-                <EngagementBar ObjectIri="@BareObjectIri" Object="obj" />
+                <EngagementBar ObjectIri="@BareObjectIri" Object="obj" Locked="IsLocked" />
             }
         </div>
     }
