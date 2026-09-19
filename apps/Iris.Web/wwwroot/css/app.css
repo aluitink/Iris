@@ -1288,6 +1288,83 @@ ul.object-list li {
     overflow-wrap: break-word;
 }
 
+/* 138.25 follow-up: pinned (featured) badge on the post card */
+.object-featured-badge {
+    display: inline-block;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    border-radius: var(--radius-sm);
+    padding: 0.1em 0.5em;
+    margin-bottom: var(--space-1);
+}
+
+/* 138.25 follow-up: locked indicator on the object detail page */
+.object-locked-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: var(--font-size-sm);
+    color: var(--text-muted, var(--text));
+    opacity: 0.7;
+}
+.object-locked-indicator svg {
+    width: 1em;
+    height: 1em;
+    flex-shrink: 0;
+}
+
+/* 138.25 follow-up: disabled reply button in the engagement bar */
+.engagement-btn--disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+.engagement-btn--disabled svg {
+    stroke: currentColor;
+}
+
+/* 138.25 follow-up: NSFW community banner */
+.community-nsfw-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    background: color-mix(in srgb, var(--danger, #e74c3c) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--danger, #e74c3c) 25%, transparent);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+}
+.community-nsfw-banner svg {
+    width: 1.2em;
+    height: 1.2em;
+    flex-shrink: 0;
+    color: var(--danger, #e74c3c);
+}
+
+/* 138.25 follow-up: mod-only posting banner */
+.community-mod-only-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    background: color-mix(in srgb, var(--warning, #f39c12) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--warning, #f39c12) 25%, transparent);
+    border-radius: var(--radius-md);
+    color: var(--text);
+    font-size: var(--font-size-sm);
+}
+.community-mod-only-banner svg {
+    width: 1.2em;
+    height: 1.2em;
+    flex-shrink: 0;
+    color: var(--warning, #f39c12);
+}
+
 .object-content {
     color: var(--text);
     font-size: var(--font-size-base);
