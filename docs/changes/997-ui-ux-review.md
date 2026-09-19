@@ -1,5 +1,19 @@
 # 997: General UI/UX Review
 
+## Pass 8 (2026-09-19)
+
+Post-139.2-s5a/s5b verification pass. Two-part pass: (1) an **authless (signed-out) pass** covering every route, and (2) a **signed-in spot-check** as uxreview8 (newly registered) across the routes most likely to have regressed (the S5b visibility area and the object-document federated gate).
+
+**Authless pass (signed-out):** all 8 authenticated routes (`/home`, `/compose`, `/notifications`, `/directory`, `/communities`, `/profile`, `/settings`, `/search`) correctly redirect to `/login`. The signed-out nav shows only Log in / Register (no authenticated links — no data leak). The 404 page (`/nonexistent-page-12345`) renders publicly with "Not found" + "Sorry, there's nothing at this address." The register page is accessible signed-out with handle, display name, and password fields. 0 new console errors beyond remote-instance availability.
+
+**Signed-in spot-check:** registration → `/home` works (empty timeline with "Follow people to see their posts here" + "Browse the directory" link). Communities page renders (description, "+ Create a community", Following/All tabs, 6 community cards with Follow buttons). Community detail (`interop`) renders header + Follow/Join + "Post to this community" + Feed/Members tabs + in-community search. Profile page renders (banner, handle, display name, Edit profile, 5 tabs). Compose deep-link renders ("Posting as uxreview8", content textbox, attachments, character count 0/500, type selector, visibility selector, content warning, formatting tips). Directory renders 14 people with "Find someone on another server" search + tabs + scope buttons. Settings renders tabs (Account/Content/Danger) + Profile/Security/Change password/Moderation sections. Search renders textbox + "Actors only" + Search button. Notifications renders filter tabs + "Mark all as read" + empty state. **Hard-refresh stability:** Home, Communities, Community detail, Profile, Compose, Settings, Search, Notifications — all 0 console errors.
+
+**Console errors (all remote-availability, not Iris bugs):** 20× HTTP 401 from `/ap/v1/proxy/https://{remote}/users/…` (remote instances returning 401 for the proxy fetch) + 2× CORS errors from direct remote fetches (cyberpunk.lol, cyberplace.social). The proxy correctly forwards upstream status codes and the app degrades gracefully (content renders; remote media shows fallbacks). Same class as Pass 7's transient remote-availability errors — external availability, not a regression.
+
+**Minor observation (not a defect):** some remote posts show numeric IDs as display names (e.g., "115588296584761431" for cyberplace.social, "117024347319605995" for cyberpunk.lol) because those instances use numeric user IDs and the `preferredUsername` isn't available in the proxy response. The display fallback works correctly given the data.
+
+**0 new defects.**
+
 ## Pass 7 (2026-09-19)
 
 Post-S5b verification pass. Two-part pass: (1) an **authless (signed-out) pass** covering every route, and (2) a **signed-in spot-check** as andrew:Password1 across the routes most likely to have regressed (the 147.2 parallel-fan-out community feed and the S5b visibility area).
@@ -66,6 +80,7 @@ None.
 
 - Build: 0 warnings, 0 errors (unchanged)
 - Tests: 1,346 passed, 0 failed, 25 skipped (unchanged)
+- Live verification (Pass 8): Authless pass — all 8 authenticated routes redirect to `/login`, 404 page + register accessible, 0 new console errors. Signed-in spot-check (uxreview8, newly registered) — Home, Communities, Community detail (hard-refresh stable), Profile, Compose deep-link (hard-refresh stable), Directory, Settings (hard-refresh stable), Search (hard-refresh stable), Notifications (hard-refresh stable); 0 new defects; only console errors were remote-instance availability (401s from `/ap/v1/proxy/`, CORS from direct remote fetches), not Iris bugs.
 - Live verification (Pass 7): Authless pass — all 8 authenticated routes redirect to `/login`, 404 page + register accessible, 0 console errors. Signed-in spot-check (andrew:Password1) — Home, Communities, Community detail (hard-refresh stable), Profile, Compose deep-link (hard-refresh stable); 0 new defects; only console errors were remote-instance availability (lemmy.ml 500, lemmy.luit.ink 403), not Iris bugs.
 - Live verification (Pass 6): All 8 signed-in routes + community-detail feed reviewed via MCP Playwright as andrew:Password1; 0 new defects; 1 transient `ERR_NETWORK_CHANGED` (network blip, not a code defect) on first community-feed fetch, resolved on retry.
 - Live verification (Pass 3): Home, Settings, Compose reviewed via MCP Playwright as andrew:Password1; 0 new defects; design tokens render correctly; 1 known cosmetic 404 proxy error.
